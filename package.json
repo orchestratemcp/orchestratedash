@@ -1,0 +1,21 @@
+{
+  "name": "orchestratedash",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Monitor-first dashboard for AI agents planned with OrchestrateKit — telemetry contract package.",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "verify": "pnpm test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

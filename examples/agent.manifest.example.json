@@ -1,5 +1,5 @@
 {
-  "manifest_version": 0,
+  "manifest_version": 1,
   "agent": {
     "name": "email-lead-to-crm",
     "goal": "Read inbound email, detect sales leads, write a CRM note, and draft a follow-up for my approval",

@@ -69,11 +69,17 @@ point.
 
 ## Contract documents
 
-- [`docs/telemetry-contract-v0.md`](docs/telemetry-contract-v0.md) — the agent
-  manifest + run-event schema (the seam between the MCP, built agents, and DASH).
+- [`docs/telemetry-contract-v1.md`](docs/telemetry-contract-v1.md) — the agent
+  manifest + run-event schema (the seam between the MCP, built agents, and DASH),
+  frozen at v1 with all open questions settled (MAR-295 / DASH-01).
+- [`contracts/agent.manifest.schema.json`](contracts/agent.manifest.schema.json) and
+  [`contracts/run-event.schema.json`](contracts/run-event.schema.json) — the JSON
+  Schemas that enforce the contract, validated against the example files in CI.
 - [`examples/agent.manifest.example.json`](examples/agent.manifest.example.json) —
   what `export_build_brief` will emit, based on the published
   `email_lead_to_crm` playbook.
+- [`examples/run-event.example.json`](examples/run-event.example.json) — a sample
+  `step_completed` run event.
 
 ## Repo family
 

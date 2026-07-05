@@ -1,0 +1,15 @@
+{
+  "event_version": 1,
+  "agent": "email-lead-to-crm",
+  "run_id": "2026-07-04T09-15-abc123",
+  "seq": 3,
+  "ts": "2026-07-04T09:15:12Z",
+  "type": "step_completed",
+  "component_id": "email_draft",
+  "status": "ok",
+  "model": "anthropic/claude-sonnet-4-6",
+  "tokens_in": 1420,
+  "tokens_out": 310,
+  "cost_usd": 0.0041,
+  "detail": "draft created for lead acme.com"
+}
