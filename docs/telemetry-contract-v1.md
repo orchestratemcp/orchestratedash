@@ -21,6 +21,26 @@ Design rules:
   message bodies, tokens, or credentials. `detail` is a short human hint, and the
   brief instructs builders to keep PII out of it.
 
+## Canonical conformance assets
+
+DASH is the canonical owner of telemetry contract v1. Consumers copy three
+code-free assets rather than importing DASH application code:
+
+- `contracts/agent.manifest.schema.json`;
+- `contracts/run-event.schema.json`;
+- `contracts/contract.lock.json` and `conformance/v1/*`.
+
+The lock stores whitespace-independent SHA-256 fingerprints for both schemas.
+Every producer/consumer CI validates the same synthetic MAR-363 manifest and
+run sequence, including monotonic sequence numbers and a resolved gate before
+each irreversible component starts. The fixture contains no prompts, message
+bodies, credentials, or personal data.
+
+Additive fields remain compatible with v1 because schemas accept unknown
+fields. A removed or renamed required field, enum change, or semantic ordering
+change requires a new integer contract version and a new conformance folder;
+do not silently rewrite the v1 lock or fixtures.
+
 ## Decisions (settled in DASH-01 / MAR-295)
 
 1. **Ingest auth: static bearer token per agent.** One long-lived token per agent,
