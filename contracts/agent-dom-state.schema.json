@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orchestratemcp.dev/orchestratedash/contracts/agent-dom-state.schema.json",
+  "title": "OrchestrateDASH Agent DOM state v1",
+  "description": "Transport-independent state snapshot published by an Agent DOM v1 adapter. It contains safe status and descriptors, never provider payloads or credentials. Unknown fields are additive.",
+  "type": "object",
+  "required": ["state_version", "manifest_version", "agent_id", "observed_at", "status", "connections", "runs", "tasks", "choices", "actions", "approval_requests", "approval_decisions", "memory", "audit_events", "plan_vs_actual"],
+  "properties": {
+    "state_version": { "const": 1 },
+    "manifest_version": { "const": 2 },
+    "agent_id": { "type": "string", "minLength": 1 },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "status": { "enum": ["inactive", "ready", "running", "paused", "needs_attention", "offline", "error"] },
+    "connections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": { "not": { "enum": ["value", "secret", "password", "token", "access_token", "refresh_token", "client_secret", "api_key", "credential_value"] } },
+        "required": ["connection_id", "state", "checked_at", "reauthorization_required"],
+        "properties": {
+          "connection_id": { "type": "string", "minLength": 1 },
+          "state": { "enum": ["not_configured", "connected", "degraded", "expired", "revoked", "unknown"] },
+          "masked_account": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "[*•…]",
+            "description": "Optional account hint that must contain a visible masking character; never a complete account identifier."
+          },
+          "checked_at": { "type": "string", "format": "date-time" },
+          "reauthorization_required": { "type": "boolean" },
+          "detail": { "type": "string", "maxLength": 300 }
+        }
+      }
+    },
+    "runs": { "type": "array", "items": { "$ref": "#/$defs/run" } },
+    "tasks": { "type": "array", "items": { "$ref": "#/$defs/task" } },
+    "choices": { "type": "array", "items": { "$ref": "#/$defs/choice" } },
+    "actions": { "type": "array", "items": { "$ref": "#/$defs/action" } },
+    "approval_requests": { "type": "array", "items": { "$ref": "#/$defs/approvalRequest" } },
+    "approval_decisions": { "type": "array", "items": { "$ref": "#/$defs/approvalDecision" } },
+    "memory": { "type": "array", "items": { "$ref": "#/$defs/memoryDescriptor" } },
+    "audit_events": { "type": "array", "items": { "$ref": "#/$defs/auditEvent" } },
+    "plan_vs_actual": {
+      "type": "object",
+      "required": ["run_id", "planned_components", "executed_components", "deviations"],
+      "properties": {
+        "run_id": { "type": "string", "minLength": 1 },
+        "planned_components": { "type": "array", "items": { "type": "string" } },
+        "executed_components": { "type": "array", "items": { "type": "string" } },
+        "deviations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind", "detail"],
+            "properties": {
+              "kind": { "enum": ["missing", "unexpected", "reordered", "gate_violation", "model_tier", "none"] },
+              "detail": { "type": "string", "maxLength": 300 }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "auditCorrelation": {
+      "type": "object",
+      "required": ["correlation_id"],
+      "properties": {
+        "correlation_id": { "type": "string", "minLength": 8 },
+        "causation_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "run": {
+      "type": "object",
+      "required": ["id", "status", "started_at", "progress"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["queued", "running", "waiting_for_choice", "waiting_for_approval", "paused", "completed", "failed", "cancelled"] },
+        "started_at": { "type": "string", "format": "date-time" },
+        "finished_at": { "type": "string", "format": "date-time" },
+        "progress": { "type": "number", "minimum": 0, "maximum": 1 },
+        "current_step": { "type": "string" }
+      }
+    },
+    "task": {
+      "type": "object",
+      "required": ["id", "run_id", "label", "status", "created_at"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "run_id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["pending", "in_progress", "waiting_for_choice", "waiting_for_approval", "completed", "failed", "cancelled"] },
+        "created_at": { "type": "string", "format": "date-time" },
+        "detail": { "type": "string", "maxLength": 300 }
+      }
+    },
+    "choice": {
+      "type": "object",
+      "required": ["id", "task_id", "label", "options", "expires_at"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "task_id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "required": ["id", "label"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "label": { "type": "string", "minLength": 1 },
+              "detail": { "type": "string", "maxLength": 300 }
+            }
+          }
+        },
+        "expires_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "action": {
+      "type": "object",
+      "required": ["id", "task_id", "label", "command", "approval_required", "approval"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "task_id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "command": { "enum": ["approve", "reject", "choose", "retry", "pause", "resume", "cancel"] },
+        "approval_required": { "type": "boolean" },
+        "approval": {
+          "type": "object",
+          "required": ["enforcement"],
+          "properties": {
+            "enforcement": { "enum": ["none", "runner_enforced"] },
+            "request_id": { "type": "string", "minLength": 1 }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "approval_required": { "const": true } }, "required": ["approval_required"] },
+          "then": {
+            "properties": {
+              "approval": {
+                "type": "object",
+                "required": ["enforcement", "request_id"],
+                "properties": {
+                  "enforcement": { "const": "runner_enforced" },
+                  "request_id": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "approvalRequest": {
+      "type": "object",
+      "required": ["id", "task_id", "action_id", "label", "status", "requested_at", "expires_at", "runner_enforced", "audit"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "task_id": { "type": "string", "minLength": 1 },
+        "action_id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["pending", "approved", "rejected", "expired", "cancelled"] },
+        "requested_at": { "type": "string", "format": "date-time" },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "runner_enforced": { "const": true },
+        "audit": { "$ref": "#/$defs/auditCorrelation" }
+      }
+    },
+    "approvalDecision": {
+      "type": "object",
+      "required": ["id", "request_id", "decision", "actor_id", "decided_at", "audit"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "request_id": { "type": "string", "minLength": 1 },
+        "decision": { "enum": ["approved", "rejected"] },
+        "actor_id": { "type": "string", "minLength": 1 },
+        "decided_at": { "type": "string", "format": "date-time" },
+        "audit": { "$ref": "#/$defs/auditCorrelation" }
+      }
+    },
+    "memoryDescriptor": {
+      "type": "object",
+      "required": ["id", "label", "summary", "provenance", "retention", "user_visible", "updated_at"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "provenance": { "type": "string", "minLength": 1 },
+        "retention": { "enum": ["descriptor_only", "user_approved"] },
+        "user_visible": { "const": true },
+        "updated_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "auditEvent": {
+      "type": "object",
+      "required": ["id", "type", "actor_id", "target_id", "ts", "audit"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "actor_id": { "type": "string", "minLength": 1 },
+        "target_id": { "type": "string", "minLength": 1 },
+        "ts": { "type": "string", "format": "date-time" },
+        "detail": { "type": "string", "maxLength": 300 },
+        "audit": { "$ref": "#/$defs/auditCorrelation" }
+      }
+    }
+  }
+}

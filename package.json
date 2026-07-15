@@ -2,7 +2,7 @@
   "name": "orchestratedash",
   "version": "0.1.0",
   "private": true,
-  "description": "Monitor-first dashboard for AI agents planned with OrchestrateKit — telemetry contract package.",
+  "description": "Telemetry v1 and Agent DOM v2 contract package for OrchestrateDASH.",
   "type": "module",
   "scripts": {
     "test": "vitest run",

@@ -1,0 +1,98 @@
+{
+  "manifest_version": 2,
+  "agent": {
+    "name": "synthetic-gmail-meeting-assistant",
+    "display_name": "Meeting Assistant",
+    "goal": "Read meeting requests, propose two available times, and after approval create a calendar invite and save a Gmail draft",
+    "plan_source": "composed",
+    "playbook_id": "",
+    "route_id": "",
+    "build_target": "code"
+  },
+  "planned_route": [
+    { "step": 1, "component_id": "gmail_meeting_request_read", "risk_level": "low", "model_tier": "none" },
+    { "step": 2, "component_id": "calendar_availability_read", "risk_level": "low", "model_tier": "none" },
+    { "step": 3, "component_id": "propose_two_times", "risk_level": "low", "model_tier": "standard" },
+    { "step": 4, "component_id": "human_approval_gate", "risk_level": "low", "model_tier": "none" },
+    { "step": 5, "component_id": "calendar_event_create", "risk_level": "high", "model_tier": "none" },
+    { "step": 6, "component_id": "gmail_draft_create", "risk_level": "medium", "model_tier": "standard" },
+    { "step": 7, "component_id": "audit_log", "risk_level": "low", "model_tier": "none" }
+  ],
+  "safety_contract": {
+    "automation_clearance": "L3",
+    "enforced_approval_gates": ["human_approval_gate"],
+    "irreversible_components": ["calendar_event_create"]
+  },
+  "monitoring": {
+    "events": ["run_started", "step_started", "step_completed", "gate_requested", "gate_resolved", "run_completed", "run_failed"],
+    "endpoint_env": "DASH_INGEST_URL",
+    "token_env": "DASH_INGEST_TOKEN",
+    "output_location": "Google Calendar event and Gmail drafts folder"
+  },
+  "provenance": {
+    "generated_by": "synthetic MAR-382 example",
+    "registry_fingerprint": "example-meeting-assistant",
+    "generated_at": "2026-07-16T08:20:00Z"
+  },
+  "agent_dom": {
+    "dom_version": 1,
+    "runtime": {
+      "class": "local_process",
+      "provider": "user workstation",
+      "label": "Local meeting assistant worker",
+      "availability": "on_demand",
+      "continues_when_dash_closed": true
+    },
+    "trigger": { "type": "poll", "label": "Check for meeting requests when the worker runs" },
+    "locations": {
+      "runtime": { "id": "meeting-worker", "label": "Local meeting assistant worker", "kind": "local", "offline_behavior": "No requests are processed while the worker is offline" },
+      "control": [
+        { "id": "meeting-control", "label": "Meeting assistant controls", "kind": "local", "uri": "http://127.0.0.1:4319/agent-dom", "offline_behavior": "Actions become read-only while the worker is offline" }
+      ],
+      "interaction": [
+        { "id": "dash-workspace", "label": "DASH agent workspace", "kind": "dash", "offline_behavior": "Last safe state remains read-only" }
+      ]
+    },
+    "connections": [
+      {
+        "id": "gmail",
+        "provider": "google-gmail",
+        "label": "Gmail",
+        "purpose": "Read meeting requests and save reply drafts",
+        "ownership": "dash_managed",
+        "capabilities": [
+          { "id": "gmail.meeting_requests.read", "label": "Read meeting requests", "access": "read" },
+          { "id": "gmail.drafts.create", "label": "Create Gmail drafts", "access": "write" }
+        ],
+        "fields": [
+          { "id": "gmail-account", "label": "Gmail account", "purpose": "Authorize meeting-request reading and draft creation", "kind": "oauth_reauthorization", "required": true, "help": "Reconnect and test this account. Existing OAuth credentials are not copied." }
+        ],
+        "validation_action": { "id": "connect-gmail", "label": "Reconnect and test Gmail", "behavior": "reconnect_test_switch" }
+      },
+      {
+        "id": "calendar",
+        "provider": "google-calendar",
+        "label": "Google Calendar",
+        "purpose": "Check availability and create an event only after approval",
+        "ownership": "dash_managed",
+        "capabilities": [
+          { "id": "calendar.availability.read", "label": "Check calendar availability", "access": "read" },
+          { "id": "calendar.events.create_after_approval", "label": "Create an approved calendar event", "access": "write" }
+        ],
+        "fields": [
+          { "id": "calendar-account", "label": "Calendar account", "purpose": "Authorize availability checks and approved event creation", "kind": "oauth_reauthorization", "required": true, "help": "Reconnect and test this account. Existing OAuth credentials are not copied." }
+        ],
+        "validation_action": { "id": "connect-calendar", "label": "Reconnect and test Calendar", "behavior": "reconnect_test_switch" }
+      }
+    ],
+    "control": {
+      "supported": true,
+      "command_version": 1,
+      "location_id": "meeting-control",
+      "commands": ["approve", "reject", "choose", "retry", "pause", "resume", "cancel"]
+    },
+    "memory": [
+      { "id": "meeting-preferences", "label": "Meeting preferences", "description": "User-approved scheduling preferences with visible provenance", "visibility": "user_visible", "retention": "user_approved" }
+    ]
+  }
+}
