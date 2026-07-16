@@ -41,6 +41,15 @@ fields. A removed or renamed required field, enum change, or semantic ordering
 change requires a new integer contract version and a new conformance folder;
 do not silently rewrite the v1 lock or fixtures.
 
+## Additive Agent DOM successor
+
+Telemetry v1 remains frozen and valid. The additive Agent DOM contract uses a
+separate `manifest_version: 2` schema while retaining these required telemetry
+fields and the `event_version: 1` run-event stream. A v1 manifest is interpreted
+as telemetry-only and read-only; controls are never inferred. See
+[`agent-dom-contract-v2.md`](agent-dom-contract-v2.md) for version dispatch,
+compatibility, command security, and trust boundaries.
+
 ## Decisions (settled in DASH-01 / MAR-295)
 
 1. **Ingest auth: static bearer token per agent.** One long-lived token per agent,

@@ -1,0 +1,82 @@
+{
+  "manifest_version": 2,
+  "agent": {
+    "name": "synthetic-project-reporter",
+    "display_name": "Project Reporter",
+    "goal": "Read synthetic project updates and prepare a status summary",
+    "plan_source": "composed",
+    "playbook_id": "",
+    "route_id": "",
+    "build_target": "code"
+  },
+  "planned_route": [
+    { "step": 1, "component_id": "project_update_read", "risk_level": "low", "model_tier": "none" },
+    { "step": 2, "component_id": "status_summary", "risk_level": "low", "model_tier": "standard" }
+  ],
+  "safety_contract": {
+    "automation_clearance": "L2",
+    "enforced_approval_gates": [],
+    "irreversible_components": []
+  },
+  "monitoring": {
+    "events": ["run_started", "step_started", "step_completed", "run_completed", "run_failed"],
+    "endpoint_env": "DASH_INGEST_URL",
+    "token_env": "DASH_INGEST_TOKEN",
+    "output_location": "DASH task output"
+  },
+  "provenance": {
+    "generated_by": "synthetic MAR-382 example",
+    "registry_fingerprint": "example-dash-managed",
+    "generated_at": "2026-07-16T08:10:00Z"
+  },
+  "agent_dom": {
+    "dom_version": 1,
+    "runtime": {
+      "class": "managed_worker",
+      "provider": "example worker provider",
+      "label": "Remote report worker",
+      "availability": "always_on",
+      "continues_when_dash_closed": true
+    },
+    "trigger": { "type": "schedule", "label": "Every weekday morning", "schedule": "weekdays at 08:00 local time" },
+    "locations": {
+      "runtime": { "id": "report-worker", "label": "Remote report worker", "kind": "remote", "offline_behavior": "Runs independently of DASH" },
+      "control": [
+        { "id": "report-control", "label": "Report worker control endpoint", "kind": "remote", "uri": "https://agents.example.test/project-reporter/agent-dom", "offline_behavior": "DASH shows read-only state if the endpoint is unreachable" }
+      ],
+      "interaction": [
+        { "id": "dash-workspace", "label": "DASH agent workspace", "kind": "dash", "offline_behavior": "Last safe state remains read-only" }
+      ]
+    },
+    "connections": [
+      {
+        "id": "project-service",
+        "provider": "synthetic-project-service",
+        "label": "Project updates",
+        "purpose": "Read project updates for the status summary",
+        "ownership": "dash_managed",
+        "capabilities": [
+          { "id": "project.updates.read", "label": "Read project updates", "access": "read" }
+        ],
+        "fields": [
+          {
+            "id": "account-authorization",
+            "label": "Project service account",
+            "purpose": "Authorize read-only access to project updates",
+            "kind": "oauth_reauthorization",
+            "required": true,
+            "help": "Reconnect and test the account before switching this agent to the DASH-managed connection."
+          }
+        ],
+        "validation_action": { "id": "adopt-project-connection", "label": "Reconnect, test, and switch", "behavior": "reconnect_test_switch" }
+      }
+    ],
+    "control": {
+      "supported": true,
+      "command_version": 1,
+      "location_id": "report-control",
+      "commands": ["retry", "pause", "resume", "cancel"]
+    },
+    "memory": []
+  }
+}

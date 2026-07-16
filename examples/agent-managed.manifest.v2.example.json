@@ -1,0 +1,105 @@
+{
+  "manifest_version": 2,
+  "agent": {
+    "name": "synthetic-invoice-reviewer",
+    "display_name": "Invoice Reviewer",
+    "goal": "Review synthetic invoice records and prepare exceptions for a person to resolve",
+    "plan_source": "composed",
+    "playbook_id": "",
+    "route_id": "",
+    "build_target": "code"
+  },
+  "planned_route": [
+    { "step": 1, "component_id": "invoice_record_read", "risk_level": "low", "model_tier": "none" },
+    { "step": 2, "component_id": "invoice_exception_review", "risk_level": "low", "model_tier": "standard" }
+  ],
+  "safety_contract": {
+    "automation_clearance": "L2",
+    "enforced_approval_gates": [],
+    "irreversible_components": []
+  },
+  "monitoring": {
+    "events": ["run_started", "step_started", "step_completed", "run_completed", "run_failed"],
+    "endpoint_env": "DASH_INGEST_URL",
+    "token_env": "DASH_INGEST_TOKEN",
+    "output_location": "Local exception report"
+  },
+  "provenance": {
+    "generated_by": "synthetic MAR-382 example",
+    "registry_fingerprint": "example-agent-managed",
+    "generated_at": "2026-07-16T08:00:00Z"
+  },
+  "agent_dom": {
+    "dom_version": 1,
+    "runtime": {
+      "class": "local_process",
+      "provider": "user workstation",
+      "label": "Local invoice worker",
+      "availability": "on_demand",
+      "continues_when_dash_closed": true
+    },
+    "trigger": {
+      "type": "manual",
+      "label": "Run when requested"
+    },
+    "locations": {
+      "runtime": {
+        "id": "invoice-worker",
+        "label": "Local invoice worker",
+        "kind": "local",
+        "offline_behavior": "Stops when the local worker is closed"
+      },
+      "control": [
+        {
+          "id": "invoice-control",
+          "label": "Invoice worker controls",
+          "kind": "local",
+          "uri": "http://127.0.0.1:4318/agent-dom",
+          "offline_behavior": "Controls are unavailable while the worker is offline"
+        }
+      ],
+      "interaction": [
+        { "id": "dash-workspace", "label": "DASH agent workspace", "kind": "dash", "offline_behavior": "Last safe state remains read-only" }
+      ]
+    },
+    "connections": [
+      {
+        "id": "invoice-store",
+        "provider": "synthetic-ledger",
+        "label": "Invoice records",
+        "purpose": "Read invoice records selected for review",
+        "ownership": "agent_managed",
+        "capabilities": [
+          { "id": "invoice.records.read", "label": "Read invoice records", "access": "read" }
+        ],
+        "fields": [
+          {
+            "id": "service-credential",
+            "label": "Invoice service credential",
+            "purpose": "Authenticate the local worker to the invoice service",
+            "kind": "secret",
+            "required": true,
+            "help": "Keep this credential in the agent's existing secret store.",
+            "technical": { "environment_name": "INVOICE_SERVICE_CREDENTIAL" }
+          }
+        ],
+        "validation_action": { "id": "test-invoice-store", "label": "Test invoice connection", "behavior": "test" }
+      }
+    ],
+    "control": {
+      "supported": true,
+      "command_version": 1,
+      "location_id": "invoice-control",
+      "commands": ["retry", "pause", "resume", "cancel"]
+    },
+    "memory": [
+      {
+        "id": "review-preferences",
+        "label": "Review preferences",
+        "description": "User-approved invoice review preferences only",
+        "visibility": "user_visible",
+        "retention": "user_approved"
+      }
+    ]
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orchestratemcp.dev/orchestratedash/contracts/agent-command.schema.json",
+  "title": "OrchestrateDASH Agent DOM command v1",
+  "description": "Transport-independent command envelope. Authentication is established by the adapter transport; this envelope binds the authenticated actor to a target, expiry, replay nonce, idempotency key, and audit correlation.",
+  "type": "object",
+  "required": ["command_version", "manifest_version", "command_id", "command", "actor", "target", "issued_at", "expires_at", "nonce", "idempotency_key", "audit"],
+  "properties": {
+    "command_version": { "const": 1 },
+    "manifest_version": { "const": 2 },
+    "command_id": { "type": "string", "minLength": 8 },
+    "command": { "enum": ["approve", "reject", "choose", "retry", "pause", "resume", "cancel"] },
+    "actor": {
+      "type": "object",
+      "required": ["id", "type", "authenticated_by"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["user", "service"] },
+        "authenticated_by": { "enum": ["dash_session", "signed_identity", "runtime_adapter"] },
+        "display_name": { "type": "string" }
+      }
+    },
+    "target": {
+      "type": "object",
+      "required": ["agent_id"],
+      "properties": {
+        "agent_id": { "type": "string", "minLength": 1 },
+        "run_id": { "type": "string", "minLength": 1 },
+        "task_id": { "type": "string", "minLength": 1 },
+        "choice_id": { "type": "string", "minLength": 1 },
+        "approval_id": { "type": "string", "minLength": 1 },
+        "action_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "issued_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "nonce": { "type": "string", "minLength": 16 },
+    "idempotency_key": { "type": "string", "minLength": 8 },
+    "payload": {
+      "type": "object",
+      "propertyNames": { "not": { "enum": ["value", "secret", "password", "token", "access_token", "refresh_token", "client_secret", "api_key", "credential_value"] } },
+      "properties": {
+        "option_id": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "maxLength": 300 }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "required": ["correlation_id"],
+      "properties": {
+        "correlation_id": { "type": "string", "minLength": 8 },
+        "causation_id": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "command": { "enum": ["approve", "reject"] } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "target": {
+            "type": "object",
+            "required": ["agent_id", "task_id", "approval_id"],
+            "properties": {
+              "agent_id": { "type": "string", "minLength": 1 },
+              "task_id": { "type": "string", "minLength": 1 },
+              "approval_id": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "command": { "const": "choose" } }, "required": ["command"] },
+      "then": {
+        "required": ["payload"],
+        "properties": {
+          "target": {
+            "type": "object",
+            "required": ["agent_id", "task_id", "choice_id"],
+            "properties": {
+              "agent_id": { "type": "string", "minLength": 1 },
+              "task_id": { "type": "string", "minLength": 1 },
+              "choice_id": { "type": "string", "minLength": 1 }
+            }
+          },
+          "payload": {
+            "type": "object",
+            "required": ["option_id"],
+            "properties": { "option_id": { "type": "string", "minLength": 1 } }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "command": { "enum": ["retry", "pause", "resume", "cancel"] } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "target": {
+            "type": "object",
+            "anyOf": [
+              { "required": ["run_id"], "properties": { "run_id": { "type": "string", "minLength": 1 } } },
+              { "required": ["task_id"], "properties": { "task_id": { "type": "string", "minLength": 1 } } }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
