@@ -1,10 +1,13 @@
 import type { ReactNode } from "react";
-import { listAgents } from "../lib/store";
+import { AgentComplianceChips } from "./_components/verdict";
+import { complianceForAgent, ROLLUP_RUN_COUNT } from "../lib/insights";
+import { listAgents, readStore } from "../lib/store";
 
 export const dynamic = "force-dynamic";
 
 export default function AgentsPage(): ReactNode {
-  const agents = listAgents();
+  const store = readStore();
+  const agents = listAgents(store);
 
   return (
     <>
@@ -35,6 +38,7 @@ export default function AgentsPage(): ReactNode {
                 <th>Planned steps</th>
                 <th>Clearance</th>
                 <th>Runs</th>
+                <th>Last {ROLLUP_RUN_COUNT} runs</th>
               </tr>
             </thead>
             <tbody>
@@ -49,6 +53,11 @@ export default function AgentsPage(): ReactNode {
                   <td>{agent.planned_steps}</td>
                   <td>{agent.automation_clearance}</td>
                   <td>{agent.run_count}</td>
+                  <td>
+                    <AgentComplianceChips
+                      compliance={complianceForAgent(agent.name, store)}
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>

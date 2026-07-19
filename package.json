@@ -10,6 +10,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "demo:violation": "node scripts/demo-violation.mjs",
     "verify": "pnpm typecheck && pnpm test"
   },
   "devDependencies": {

@@ -138,6 +138,82 @@ code {
   color: var(--warn);
 }
 
+/* Plan-vs-actual verdicts (DASH-04). A gate violation is the one finding that
+   earns red: the agent took an irreversible action nobody approved. */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.chip {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.chip-err {
+  color: var(--err);
+  font-weight: 600;
+}
+
+.chip-warn {
+  color: var(--warn);
+}
+
+.chip-ok {
+  color: var(--ok);
+}
+
+.chip-muted {
+  color: var(--muted);
+}
+
+.findings {
+  margin: 0 0 1.5rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--err);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.findings.is-clean {
+  border-left-color: var(--ok);
+}
+
+.findings h2 {
+  font-size: 0.95rem;
+  margin: 0 0 0.6rem;
+}
+
+.findings ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--muted);
+}
+
+.findings li + li {
+  margin-top: 0.3rem;
+}
+
+.section {
+  margin-bottom: 1.75rem;
+}
+
+a.plain {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a.plain:hover {
+  text-decoration: underline;
+}
+
 .empty {
   border: 1px dashed var(--line);
   border-radius: 8px;
