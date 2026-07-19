@@ -228,3 +228,33 @@ a.plain:hover {
   border-radius: 6px;
   color: var(--fg);
 }
+
+/* Connection Center */
+
+.muted {
+  color: var(--muted);
+}
+
+.agent-connections {
+  margin-bottom: 2.5rem;
+}
+
+.connection-group {
+  margin-bottom: 1.5rem;
+}
+
+.connection-group h3 {
+  margin-bottom: 0.2rem;
+}
+
+/* Capabilities are a plain list of sentences; the bullets add nothing and the
+   markers misalign against the chips in the neighbouring cell. */
+.capability-list {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+
+.capability-list li + li {
+  margin-top: 0.3rem;
+}
