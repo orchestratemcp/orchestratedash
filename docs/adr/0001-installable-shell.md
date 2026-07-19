@@ -1,9 +1,18 @@
 # ADR 0001 — Installable shell for DASH
 
-- **Status:** Proposed (awaiting Henrik's approval)
+- **Status:** **Accepted** — approved by Henrik, 2026-07-19
 - **Date:** 2026-07-19
 - **Issue:** MAR-383 (DASH-08) — Local-first installable shell + agent discovery + Connection Center
 - **Scope:** This ADR **decides only**. No packaging, shell, vault or OAuth code ships with it.
+
+> Accepting this ADR settles *which* shell DASH targets. It does not schedule the
+> build: secret storage, OAuth, the credential UI and packaging remain unstarted
+> and are tracked as later phases of MAR-383.
+>
+> The Tauri rejection stays revisitable on the terms set out below. If the local
+> bridge's surface stabilises and stays small, revisit — this decision is not a
+> commitment to Chromium forever, and the `SecureStore` seam exists to keep that
+> door open.
 
 ## Context
 
