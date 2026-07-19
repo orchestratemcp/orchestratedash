@@ -21,6 +21,7 @@ export default function RootLayout({
             <Link href="/">Agents</Link>
             <Link href="/runs">Runs</Link>
             <Link href="/connections">Connections</Link>
+            <Link href="/agents/add">Add agent</Link>
           </nav>
           <span className="badge">monitor only &middot; never hosts agents</span>
         </header>

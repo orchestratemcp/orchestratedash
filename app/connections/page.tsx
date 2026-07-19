@@ -36,11 +36,10 @@ export default function ConnectionsPage(): ReactNode {
             No agent with declared connections has been imported. Connection
             requirements come from a v2 manifest&rsquo;s Agent DOM block.
           </p>
-          <pre>
-            {
-              "curl -X POST http://localhost:3000/api/agents \\\n  -H 'Content-Type: application/json' \\\n  --data-binary @examples/gmail-meeting-assistant.manifest.v2.example.json"
-            }
-          </pre>
+          <p>
+            <a href="/agents/add">Add an agent</a> to see what it needs to
+            connect to.
+          </p>
         </div>
       ) : (
         agents.map(({ name, manifest }) => (

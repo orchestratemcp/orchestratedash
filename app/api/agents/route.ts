@@ -10,9 +10,10 @@ export async function GET(): Promise<NextResponse> {
 
 /**
  * Imports one agent.manifest.json, as emitted by orchestratekit-mcp's
- * export_build_brief. The manifest is validated against the frozen v1 schema
- * before it is stored; an agent is keyed by agent.name, so re-importing the
- * same agent replaces its plan rather than creating a duplicate.
+ * export_build_brief. The manifest is validated against the schema for the
+ * version it declares — v1 or v2 — before it is stored; an agent is keyed by
+ * agent.name, so re-importing the same agent replaces its plan rather than
+ * creating a duplicate.
  */
 export async function POST(request: Request): Promise<NextResponse> {
   let body: unknown;
@@ -28,7 +29,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   const result = importManifest(body);
   if (!result.ok) {
     return NextResponse.json(
-      { error: "manifest failed v1 schema validation", details: result.errors },
+      { error: "manifest failed schema validation", details: result.errors },
       { status: 400 },
     );
   }
