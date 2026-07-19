@@ -2,20 +2,31 @@
   "name": "orchestratedash",
   "version": "0.1.0",
   "private": true,
-  "description": "Telemetry v1 and Agent DOM v2 contract package for OrchestrateDASH.",
+  "description": "Telemetry v1 and Agent DOM v2 contracts plus the local monitor app for OrchestrateDASH.",
   "type": "module",
   "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "verify": "pnpm test"
+    "verify": "pnpm typecheck && pnpm test"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "ajv": "^8.17.1",
-    "ajv-formats": "^3.0.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
     "typescript": "^5.8.0",
     "vitest": "^4.1.0"
   },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "next": "^16.2.10",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.9.0"
   }
 }

@@ -1,0 +1,154 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #16181d;
+  --muted: #5f6672;
+  --line: #e3e6ea;
+  --panel: #f7f8fa;
+  --accent: #2f6feb;
+  --ok: #1a7f4b;
+  --warn: #9a6700;
+  --err: #b3261e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --fg: #e6e8ec;
+    --muted: #9099a6;
+    --line: #262a31;
+    --panel: #161a20;
+    --accent: #6ea0ff;
+    --ok: #4ec27f;
+    --warn: #e0b341;
+    --err: #ff6b5e;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  padding: 0.9rem 1.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+header nav {
+  display: flex;
+  gap: 1rem;
+}
+
+header a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+header a:hover {
+  text-decoration: underline;
+}
+
+.badge {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+main {
+  padding: 1.5rem;
+  max-width: 72rem;
+}
+
+h1 {
+  font-size: 1.35rem;
+  margin: 0 0 0.35rem;
+}
+
+.lede {
+  color: var(--muted);
+  margin: 0 0 1.5rem;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 44rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+th {
+  background: var(--panel);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+td.wrap {
+  white-space: normal;
+  min-width: 20rem;
+}
+
+code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.88em;
+}
+
+.status-completed {
+  color: var(--ok);
+}
+
+.status-running {
+  color: var(--accent);
+}
+
+.status-failed {
+  color: var(--err);
+}
+
+.flag {
+  color: var(--warn);
+}
+
+.empty {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 1.5rem;
+  color: var(--muted);
+}
+
+.empty pre {
+  overflow-x: auto;
+  background: var(--panel);
+  padding: 0.85rem;
+  border-radius: 6px;
+  color: var(--fg);
+}
