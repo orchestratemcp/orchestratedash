@@ -1,4 +1,4 @@
-import type { AgentManifest, RunEvent } from "./contracts";
+import type { AgentManifestBody, RunEvent } from "./contracts";
 
 /**
  * Plan-vs-actual analysis: judge a run against the plan its manifest declared.
@@ -66,7 +66,7 @@ function orderEvents(events: RunEvent[]): RunEvent[] {
  * jumps its predecessor is drift even when every planned step eventually ran.
  */
 function analyzeDrift(
-  manifest: AgentManifest,
+  manifest: AgentManifestBody,
   executed: string[],
 ): DriftFinding[] {
   const plannedOrder = [...manifest.planned_route].sort((a, b) => a.step - b.step);
@@ -137,7 +137,7 @@ function analyzeDrift(
  * pairing is expressible — see the DASH-04 notes in the PR for that follow-up.
  */
 function analyzeGates(
-  manifest: AgentManifest,
+  manifest: AgentManifestBody,
   ordered: RunEvent[],
 ): GateViolation[] {
   const irreversible = new Set(manifest.safety_contract.irreversible_components);
@@ -171,7 +171,7 @@ function analyzeGates(
  * gate traffic at all, ran unattended against an attended plan.
  */
 function analyzeClearance(
-  manifest: AgentManifest,
+  manifest: AgentManifestBody,
   ordered: RunEvent[],
 ): ClearanceFinding[] {
   const clearance = manifest.safety_contract.automation_clearance;
@@ -200,7 +200,7 @@ function analyzeClearance(
  * pass a single run's events (see `analyzeRunsForAgent`).
  */
 export function analyzeRun(
-  manifest: AgentManifest,
+  manifest: AgentManifestBody,
   events: RunEvent[],
 ): RunAnalysis {
   const ordered = orderEvents(events);

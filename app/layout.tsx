@@ -20,6 +20,7 @@ export default function RootLayout({
           <nav>
             <Link href="/">Agents</Link>
             <Link href="/runs">Runs</Link>
+            <Link href="/connections">Connections</Link>
           </nav>
           <span className="badge">monitor only &middot; never hosts agents</span>
         </header>
