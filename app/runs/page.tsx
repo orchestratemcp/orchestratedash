@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
-import { listRuns } from "../../lib/store";
+import { RunVerdictChips } from "../_components/verdict";
+import { listAnalyzedRuns } from "../../lib/insights";
 
 export const dynamic = "force-dynamic";
 
 export default function RunsPage(): ReactNode {
-  const runs = listRuns();
+  const runs = listAnalyzedRuns();
 
   return (
     <>
@@ -30,6 +31,7 @@ export default function RunsPage(): ReactNode {
               <tr>
                 <th>Run</th>
                 <th>Agent</th>
+                <th>Plan-vs-actual</th>
                 <th>Status</th>
                 <th>Events</th>
                 <th>Started</th>
@@ -41,10 +43,18 @@ export default function RunsPage(): ReactNode {
               {runs.map((run) => (
                 <tr key={`${run.agent} ${run.run_id}`}>
                   <td>
-                    <code>{run.run_id}</code>
+                    <a
+                      className="plain"
+                      href={`/runs/${encodeURIComponent(run.agent)}/${encodeURIComponent(run.run_id)}`}
+                    >
+                      <code>{run.run_id}</code>
+                    </a>
                   </td>
                   <td>
                     <code>{run.agent}</code>
+                  </td>
+                  <td>
+                    <RunVerdictChips analysis={run.analysis} />
                   </td>
                   <td className={`status-${run.status}`}>{run.status}</td>
                   <td>{run.event_count}</td>

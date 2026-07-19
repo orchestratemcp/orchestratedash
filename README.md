@@ -34,20 +34,22 @@ The agent then appears under **Agents** and the run under **Runs**.
 
 | Route | Purpose |
 | --- | --- |
-| `/` | Agents list — every imported `agent.manifest.json` with its plan metadata |
-| `/runs` | Runs list — runs reconstructed from received telemetry v1 events |
+| `/` | Agents list — every imported `agent.manifest.json`, with a compliance rollup of its last 5 runs |
+| `/runs` | Runs list — runs reconstructed from received telemetry v1 events, each with its plan-vs-actual verdict |
+| `/runs/{agent}/{run_id}` | Run detail — the plan-vs-actual view: drift, gate compliance, clearance behavior |
 | `POST /api/agents` | Import one manifest, validated against the frozen v1 schema |
 | `GET /api/agents` | The same agents list as JSON |
 | `POST /api/events` | The v1 ingest endpoint; accepts one event or a batch |
+| `GET /api/runs/{agent}/{run_id}` | The run's plan-vs-actual verdict as JSON |
 
 Events are validated individually, so one malformed event in a batch is reported
 without discarding the rest. Ingest answers `202` and never asks a runner to
 retry or block: monitoring stays fire-and-forget, and an unreachable DASH must
 not break an agent run.
 
-The Runs list reports only what the transport tells it — run status, event
-counts, sequence gaps, and whether the agent's manifest is known. Comparing
-executed steps against the planned route is deliberately **not** part of v0.
+The Runs list also reports what the transport alone tells it — run status, event
+counts, sequence gaps, and whether the agent's manifest is known — independently
+of the plan-vs-actual verdict described below.
 
 ### Local storage and secrets
 
@@ -88,15 +90,39 @@ authorization and approval again at execution time.
 ## Plan vs actual
 
 OrchestrateKit plans are deterministic, registry-grounded routes with a safety
-contract. DASH can join a manifest to run events to inspect:
+contract. DASH joins a manifest to a run's events and judges the run against the
+plan it declared. This is the thing a generic agent dashboard cannot copy: it
+needs the planning layer to have produced a plan in the first place.
 
-- whether executed steps match the planned route;
-- whether irreversible steps have runner-enforced approval evidence;
-- whether automation clearance and model tiers match the plan; and
-- cost and token metadata when a runtime safely emits it.
+`analyzeRun(manifest, events)` in `lib/analyze.ts` is a pure function — no I/O,
+fully unit-tested — and reports three kinds of finding:
 
-The v1 monitoring flow remains fire-and-forget: an unreachable DASH must not
+- **Route drift** — planned steps that never ran, steps that ran without being
+  planned, and steps that ran out of plan order. Rendered as amber chips.
+- **Gate compliance** — a `step_started` for a component the manifest lists in
+  `irreversible_components`, with no `gate_resolved` earlier in the same run.
+  This is the headline check: the agent took an unrecoverable action nobody
+  approved. Red badge on the run *and* the agent card.
+- **Clearance behavior** — a plan at clearance L3 or L4 (a human is expected in
+  the loop) whose run carries no gate traffic at all: it ran unattended against
+  an attended plan.
+
+Drift alone does not fail a run; a gate violation or a clearance finding does.
+
+Replay a violating run against the bundled example manifest to see it end to end
+(with the app running):
+
+```bash
+pnpm demo:violation
+# or against a non-default port:
+DASH_BASE_URL=http://localhost:3020 pnpm demo:violation
+```
+
+DASH observes and reports; it cannot stop a remote agent, and nothing here tries
+to. The v1 monitoring flow remains fire-and-forget: an unreachable DASH must not
 break an agent run.
+
+Cost and token enrichment is out of scope here — that is DASH-05.
 
 ## Connection modes
 
