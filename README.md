@@ -3,10 +3,67 @@
 **An optional, open-source agent browser and workspace for agents planned with
 [OrchestrateKit](https://github.com/orchestratemcp/OrchestrateKIT-MCP).**
 
-> **Status: contract and design phase.** This repository defines frozen telemetry
-> v1 and the additive Agent DOM v2 contract. It does not yet contain the DASH
-> application, credential storage, OAuth flows, a connection broker, or an agent
-> runtime.
+> **Status: contracts plus a monitor-only v0 app.** This repository defines frozen
+> telemetry v1 and the additive Agent DOM v2 contract, and now ships a minimal
+> local app that imports manifests and receives run events. It still contains no
+> credential storage, no OAuth flows, no connection broker, no control surface,
+> and no agent runtime. **DASH never hosts or executes agents.**
+
+## Quick start
+
+```sh
+pnpm install
+pnpm dev          # http://localhost:3000
+```
+
+Import the example agent and send it an example run event:
+
+```sh
+curl -X POST http://localhost:3000/api/agents \
+  -H 'Content-Type: application/json' \
+  --data-binary @examples/agent.manifest.example.json
+
+curl -X POST http://localhost:3000/api/events \
+  -H 'Content-Type: application/json' \
+  --data-binary @examples/run-event.example.json
+```
+
+The agent then appears under **Agents** and the run under **Runs**.
+
+### What the v0 app does
+
+| Route | Purpose |
+| --- | --- |
+| `/` | Agents list — every imported `agent.manifest.json` with its plan metadata |
+| `/runs` | Runs list — runs reconstructed from received telemetry v1 events |
+| `POST /api/agents` | Import one manifest, validated against the frozen v1 schema |
+| `GET /api/agents` | The same agents list as JSON |
+| `POST /api/events` | The v1 ingest endpoint; accepts one event or a batch |
+
+Events are validated individually, so one malformed event in a batch is reported
+without discarding the rest. Ingest answers `202` and never asks a runner to
+retry or block: monitoring stays fire-and-forget, and an unreachable DASH must
+not break an agent run.
+
+The Runs list reports only what the transport tells it — run status, event
+counts, sequence gaps, and whether the agent's manifest is known. Comparing
+executed steps against the planned route is deliberately **not** part of v0.
+
+### Local storage and secrets
+
+State is a single JSON file at `.data/dash.json`, gitignored and easy to delete.
+There is no database and no hosted service.
+
+`DASH_INGEST_TOKEN` is optional. When set, `POST /api/events` requires a matching
+`Authorization: Bearer` header; when unset, this local monitor accepts loopback
+traffic so a fresh clone runs with no configuration. The token is only ever
+compared — it is never written to the store. Run events themselves carry no
+prompts, message bodies, credentials, or PII, per the contract's no-secrets rule.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DASH_INGEST_TOKEN` | unset | Optional bearer token for `POST /api/events` |
+| `DASH_DATA_DIR` | `.data/` | Where the local JSON store is written |
 
 ## Direction
 
@@ -84,6 +141,12 @@ availability, and creates a Calendar event only after runner-enforced approval.
 pnpm install --frozen-lockfile
 pnpm verify
 ```
+
+`pnpm verify` runs `tsc --noEmit` and the full test suite. Tests validate every
+example, preserve additive-field behavior, exercise negative cases for secret
+leakage, unsafe commands, approval semantics, version mixing, and the draft-only
+Gmail boundary, and cover the v0 app's manifest import, event ingest, and run
+reconstruction.
 
 Tests validate every example, preserve additive-field behavior, and exercise
 negative cases for secret leakage, unsafe commands, approval semantics, version
