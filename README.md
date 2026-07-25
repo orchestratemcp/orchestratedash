@@ -16,6 +16,17 @@ pnpm install
 pnpm dev          # http://localhost:3000
 ```
 
+To run the same UI inside the installable shell instead of a browser tab, leave
+`pnpm dev` running and, in a second terminal:
+
+```sh
+pnpm shell        # builds electron/ and launches the window
+```
+
+The shell is where secrets and audited commands live — see
+[`electron/`](electron/README.md). It is not packaged yet: no installer, no
+signing, no auto-update.
+
 Import the example agent and send it an example run event:
 
 ```sh
