@@ -18,7 +18,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # 22.5 is the floor: the store uses node:sqlite from the standard
+          # library rather than a native driver, so there is no compiled addon
+          # to rebuild against each Electron ABI. 24 is the current LTS.
+          node-version: "24"
           cache: "pnpm"
 
       - run: pnpm install --frozen-lockfile

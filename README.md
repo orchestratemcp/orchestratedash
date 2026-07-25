@@ -53,8 +53,16 @@ of the plan-vs-actual verdict described below.
 
 ### Local storage and secrets
 
-State is a single JSON file at `.data/dash.json`, gitignored and easy to delete.
-There is no database and no hosted service.
+State is a local SQLite database at `.data/dash.sqlite`, gitignored and easy to
+delete. It is a file on your machine — there is no server and no hosted service.
+An existing `.data/dash.json` from an earlier version is imported on first run
+and left on disk untouched. See [local store and vault](docs/local-store-and-vault.md).
+
+Credentials do **not** live in that database. They go to the operating system's
+own vault — Credential Manager, Keychain or your Linux keyring — and the store
+keeps only the name a credential is filed under and a masked hint like `••••4f2a`.
+If no OS vault is reachable, DASH says so and refuses to store the credential
+rather than falling back to a file it would have to invent a key for.
 
 `DASH_INGEST_TOKEN` is optional. When set, `POST /api/events` requires a matching
 `Authorization: Bearer` header; when unset, this local monitor accepts loopback
@@ -65,7 +73,7 @@ prompts, message bodies, credentials, or PII, per the contract's no-secrets rule
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DASH_INGEST_TOKEN` | unset | Optional bearer token for `POST /api/events` |
-| `DASH_DATA_DIR` | `.data/` | Where the local JSON store is written |
+| `DASH_DATA_DIR` | `.data/` | Where `dash.sqlite` and the vault directory are written |
 
 ## Direction
 

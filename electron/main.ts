@@ -30,6 +30,7 @@ import {
   assertHardenedWebPreferences,
   isAllowedRendererUrl,
 } from "../lib/shell/window";
+import { secureStore, useUserDataDirectory } from "./secure-store";
 
 /**
  * Where the renderer loads from.
@@ -111,8 +112,28 @@ export function registerCommandChannel(): void {
  * Guarded so importing this module in a test or a tool does not try to start an
  * app. `app` is undefined outside a real Electron process.
  */
+/**
+ * Report which vault DASH is actually using, once, at startup.
+ *
+ * `describeBacking()` returns only a backend name, a label and a reason — all
+ * of which the seam guarantees are safe to log. Reporting it here means an
+ * unusable vault is visible in the logs from the first launch rather than being
+ * discovered at the moment a user tries to connect something, and it makes the
+ * `basic_text` refusal legible on the Linux machines where it fires.
+ */
+function reportSecureStoreBacking(): void {
+  const backing = secureStore().describeBacking();
+  console.warn(
+    `[dash-shell] secure store: ${backing.label} os_backed=${backing.os_backed}` +
+      (backing.unavailable_reason ? ` reason=${backing.unavailable_reason}` : ""),
+  );
+}
+
 if (typeof app !== "undefined") {
   void app.whenReady().then(() => {
+    // Before anything imports the store, which resolves its location once.
+    useUserDataDirectory();
+    reportSecureStoreBacking();
     registerCommandChannel();
     createWindow();
 

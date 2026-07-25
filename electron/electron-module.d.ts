@@ -55,7 +55,22 @@ declare module "electron" {
     whenReady(): Promise<void>;
     on(event: "activate" | "window-all-closed", listener: () => void): void;
     quit(): void;
+    getPath(name: "userData" | "home" | "appData" | "temp" | "logs"): string;
   }
+
+  /**
+   * Typed to match the real API's shape where it matters: `decryptString` takes
+   * a Buffer and `getSelectedStorageBackend` exists only on Linux. `lib/vault.ts`
+   * consumes this through its own structural port and never imports it.
+   */
+  export interface SafeStorage {
+    isEncryptionAvailable(): boolean;
+    getSelectedStorageBackend(): string;
+    encryptString(plainText: string): Buffer;
+    decryptString(encrypted: Uint8Array): string;
+  }
+
+  export const safeStorage: SafeStorage;
 
   export const app: App;
 
