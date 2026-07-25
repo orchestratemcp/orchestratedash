@@ -10,6 +10,8 @@ that had never executed.
 | `preload.ts` | The narrow bridge. One named method per command. No `ipcRenderer`, no channel name, no secrets. |
 | `secure-store.ts` | The only file that imports `safeStorage`. Wiring only. |
 | `data-dir.ts` | Points the store at `userData`. **Exists for its import position** — see below. |
+| `runner-process.ts` | Starts, adopts and stops the bundled runner (MAR-415). |
+| `agent-adapters.ts` | Which channel reaches which agent, and the state poller. |
 | `smoke.ts` | The MAR-424 proof harness. Not part of the shipped shell. |
 | `smoke-identity.ts` | Gives the harness the app name a real launch would have. |
 
@@ -96,22 +98,41 @@ Secret *storage* is now implemented (MAR-416) — see
 [local store and vault](../docs/local-store-and-vault.md).
 
 The Agent DOM command channel is implemented (MAR-417) — see
-[the command channel](../docs/agent-command-channel.md). As of MAR-424 it has
-executed: a real renderer's `approve` passes enforcement, reaches `noAdapter`,
-and both the authorisation and the refusal are in `command_audit` on disk. No
-adapter exists yet, so that is where every accepted command still stops. The
-bundled runner is MAR-415 (DASH-11).
+[the command channel](../docs/agent-command-channel.md). MAR-424 proved it
+executes in a real shell.
+
+**MAR-415 gave it somewhere to arrive.** A command now reaches the bundled
+runner over the contract's HTTP profile, is adjudicated a second time there, and
+is delivered to a real child process that must acknowledge it. `noAdapter`
+remains the answer for an agent DASH holds no channel to — an agent with no
+control location, or a remote one with no credential — and still refuses
+honestly. See [`runner/`](../runner/README.md), which also lists what that slice
+deliberately does not do.
+
+Two things about the shell changed with it, both worth knowing before reading
+`main.ts`:
+
+- **`window-all-closed` is unchanged, and that is the point.** Agents survive
+  the window closing because they are children of the *runner*, which is
+  detached — not because DASH stays alive.
+- **DASH now leaves a process running after it quits.** Deliberately, and
+  contrary to the default MAR-424 argued for. It is stoppable from the UI via
+  `runner.stop`, and its pid and port are in `runner.json` in the data
+  directory.
 
 ## Known open items for the packaging phase
 
 MAR-424 closed the three that blocked the shell from running at all. What is
 left is genuinely packaging work:
 
-1. **`lib/contracts.ts` finds its schemas relative to `process.cwd()`.** That
-   holds for `pnpm shell` and `pnpm dev`, both of which run from the repo root,
-   and it breaks outright in a packaged app where the working directory is
-   arbitrary. Deliberately not worked around here — a bundling trick would have
-   hidden it from the phase that has to solve it properly.
+1. ~~**`lib/contracts.ts` finds its schemas relative to `process.cwd()`.**~~
+   **Fixed in MAR-415.** It had to be: the runner is a separate process with its
+   own working directory, so a cwd-relative lookup failed outright rather than
+   waiting for packaging. It now searches `DASH_CONTRACTS_DIR`, then walks up
+   from its own `import.meta.url` — correct from `lib/` and from
+   `dist/electron/` without either knowing its depth — and falls back to `cwd`
+   last, because Next may not preserve `import.meta` in a server build. A
+   packaged app sets the environment variable.
 2. **No electron-builder, signing, notarisation or auto-update.** Out of scope
    for MAR-424 by its own terms. ADR 0001 records that signing certificates are
    not yet arranged.

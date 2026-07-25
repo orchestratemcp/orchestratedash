@@ -108,6 +108,12 @@ describe("the audited command chokepoint", () => {
     expect(SHELL_COMMAND_CHANNEL).toBe("dash:shell-command");
     expect(Object.keys(COMMANDS)).toEqual([
       "shell.ping",
+      // MAR-415. Lifecycle, not Agent DOM commands: they act on a process, no
+      // manifest declares them, and they never become an envelope. The
+      // `runner.` prefix is what keeps that legible at every call site.
+      "runner.start",
+      "runner.stop",
+      "runner.status",
       "agent.approve",
       "agent.reject",
       "agent.choose",
@@ -117,6 +123,7 @@ describe("the audited command chokepoint", () => {
       "agent.cancel",
     ]);
     expect(COMMANDS["shell.ping"].mutates).toBe(false);
+    expect(COMMANDS["runner.status"].mutates).toBe(false);
   });
 
   /**
@@ -313,9 +320,11 @@ describe("dispatch", () => {
   function context() {
     const audited: CommandAuditRecord[] = [];
     const inputs: AgentCommandInput[] = [];
+    const lifecycle: Array<{ action: string; agent_id: string | undefined }> = [];
     return {
       audited,
       inputs,
+      lifecycle,
       audit: (record: CommandAuditRecord) => audited.push(record),
       runAgentCommand: (input: AgentCommandInput) => {
         inputs.push(input);
@@ -325,6 +334,12 @@ describe("dispatch", () => {
           command_id: "cmd-1",
           correlation_id: "corr-1",
         });
+      },
+      // MAR-415. Recorded rather than performed: what these tests are about is
+      // that lifecycle is routed somewhere other than the envelope machinery.
+      runnerLifecycle: (action: string, agentId: string | undefined) => {
+        lifecycle.push({ action, agent_id: agentId });
+        return Promise.resolve({ ok: true, detail: `${action} ok` });
       },
     };
   }
@@ -359,6 +374,58 @@ describe("dispatch", () => {
 
     expect(result).toMatchObject({ ok: true, data: { pong: true } });
     expect(ctx.inputs).toHaveLength(0);
+  });
+
+  /**
+   * MAR-415. Lifecycle is routed away from the envelope machinery, which is the
+   * structural half of "start and stop are not Agent DOM commands": if these
+   * ever reached `runAgentCommand`, DASH would be building an envelope for a
+   * verb `agent-command.schema.json` does not contain.
+   */
+  it("routes a runner lifecycle command to the runner, never into an envelope", async () => {
+    const ctx = context();
+    const result = await dispatchCommand(
+      { command: "runner.start", request_id: "req-d", payload: { agent_id: "fixture-agent" } },
+      ctx,
+    );
+
+    expect(result).toMatchObject({ ok: true, detail: "start ok" });
+    expect(ctx.lifecycle).toEqual([{ action: "start", agent_id: "fixture-agent" }]);
+    expect(ctx.inputs).toHaveLength(0);
+  });
+
+  it("still audits a lifecycle command at the IPC boundary", async () => {
+    const ctx = context();
+    await dispatchCommand(
+      { command: "runner.stop", request_id: "req-e", payload: { agent_id: "fixture-agent" } },
+      ctx,
+    );
+
+    expect(ctx.audited.at(-1)).toMatchObject({
+      command: "runner.stop",
+      decision: "allowed",
+      payload_keys: ["agent_id"],
+      mutates: true,
+    });
+  });
+
+  it("denies a lifecycle command that names no agent", async () => {
+    const ctx = context();
+    const result = await dispatchCommand({ command: "runner.start", request_id: "req-f" }, ctx);
+
+    expect(result).toMatchObject({ ok: false, reason: "missing_payload_field" });
+    expect(ctx.lifecycle).toHaveLength(0);
+  });
+
+  it("refuses to execute a lifecycle command outside the dispatcher", () => {
+    // The same guard agent commands have: reaching `executeCommand` directly
+    // would mean a call site bypassed the trusted side.
+    const review = reviewCommand({
+      command: "runner.start",
+      request_id: "req-g",
+      payload: { agent_id: "fixture-agent" },
+    });
+    expect(() => executeCommand(review)).toThrow(/must go through dispatchCommand/);
   });
 
   /**

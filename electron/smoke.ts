@@ -43,7 +43,7 @@ import "./main.js";
 
 import { app, BrowserWindow } from "electron";
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { putAgentDomState, readCommandAudit } from "../lib/agent-dom/store";
@@ -231,7 +231,65 @@ check(
   { payload_keys: written.at(-1)?.payload_keys, marker_absent: true },
 );
 
+/* -- Proof 4: the bundled runner started, from a real shell ------------- */
+
+/**
+ * MAR-415. The one part of the runner that no test can reach.
+ *
+ * `tests/runner-*.test.ts` cover the runner itself thoroughly, in CI, against
+ * real processes — but they construct it in-process. What they cannot show is
+ * *Electron spawning it*: a detached child, launched with
+ * `ELECTRON_RUN_AS_NODE=1`, finding its own contracts directory from inside
+ * `dist/electron/`, and listening. That is exactly the class of thing MAR-424's
+ * "three traps that only a real launch finds" was written about, so it is
+ * proven here rather than assumed.
+ *
+ * The port file is the runner's own claim; the HTTP round trip is the check.
+ */
+const portFile = path.join(dataDir, "runner.json");
+const recorded = existsSync(portFile)
+  ? (JSON.parse(readFileSync(portFile, "utf8")) as { pid: number; port: number })
+  : null;
+check("4a. the runner wrote a port file", recorded !== null, recorded);
+
+if (recorded !== null) {
+  let health: unknown = null;
+  try {
+    const response = await fetch(`http://127.0.0.1:${String(recorded.port)}/health`, {
+      signal: AbortSignal.timeout(5_000),
+    });
+    health = await response.json();
+  } catch (error: unknown) {
+    health = { error: error instanceof Error ? error.message : String(error) };
+  }
+  check(
+    "4b. the runner is listening and answers on loopback",
+    (health as { ok?: boolean } | null)?.ok === true,
+    health,
+  );
+
+  // The credential is not optional. An unauthenticated caller must not be able
+  // to read an agent's state off a port every local process can reach.
+  let unauthorized = 0;
+  try {
+    unauthorized = (
+      await fetch(`http://127.0.0.1:${String(recorded.port)}/agents`, {
+        signal: AbortSignal.timeout(5_000),
+      })
+    ).status;
+  } catch {
+    unauthorized = 0;
+  }
+  check("4c. the runner refuses an unauthenticated caller", unauthorized === 401, {
+    status: unauthorized,
+  });
+}
+
 console.log(`\n[smoke] ${failures.length === 0 ? "all proofs passed" : `FAILED: ${failures.join(", ")}`}\n`);
+console.log(
+  `[smoke] the runner is left running on purpose (pid ${String(recorded?.pid ?? "-")}). ` +
+    `That is what "closing DASH leaves agents running" means; see runner/README.md.\n`,
+);
 }
 
 void run().then(

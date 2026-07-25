@@ -3,11 +3,25 @@
 **An optional, open-source agent browser and workspace for agents planned with
 [OrchestrateKit](https://github.com/orchestratemcp/OrchestrateKIT-MCP).**
 
-> **Status: contracts plus a monitor-only v0 app.** This repository defines frozen
-> telemetry v1 and the additive Agent DOM v2 contract, and now ships a minimal
-> local app that imports manifests and receives run events. It still contains no
-> credential storage, no OAuth flows, no connection broker, no control surface,
-> and no agent runtime. **DASH never hosts or executes agents.**
+> **Status: contracts, a local app, an Electron shell, and a bundled Agent
+> Runner.** This repository defines frozen telemetry v1 and the additive Agent
+> DOM v2 contract, and ships a local app that imports manifests, receives run
+> events, stores credentials in the OS vault (MAR-416), and sends audited Agent
+> DOM commands (MAR-417) from a shell that runs (MAR-424). It still contains no
+> OAuth flows and no connection broker.
+>
+> **DASH never hosts or executes agents.** That sentence is still exactly true
+> of DASH, and as of MAR-415 it is no longer the whole story for the product:
+> DASH now ships an **Agent Runner** — a separate OS process, in the same
+> install, started by the shell and detached from it. The runner launches agents
+> as its own child processes and is authoritative for their execution. DASH
+> remains a control surface that observes and requests; it does not become the
+> runtime by displaying or commanding one.
+>
+> The boundary is real rather than rhetorical: the runner has its own process,
+> its own database, its own audit trail and its own credential, and it
+> independently validates and authorizes every command DASH sends it. See
+> [`runner/`](runner/README.md).
 
 ## Quick start
 

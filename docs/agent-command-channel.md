@@ -16,22 +16,45 @@ Read this section before the rest.
 | --- | --- |
 | Envelope construction, actor binding, nonce, idempotency, enforcement, audit | **Built and tested** |
 | `agent-command.schema.json` compiled and validated against | **Built** — first execution of that contract |
-| A command reaching an actual runner | **Not built.** No adapter exists |
-| Starting or stopping a hosted process | **Not built, and not this contract** |
-| The Electron shell running at all | **Built** (MAR-424). A real renderer's command reaches `noAdapter` and is audited on disk |
+| A command reaching an actual runner | **Built** (MAR-415). `httpAdapter` over the contract's HTTP profile v0 |
+| The runner independently enforcing what DASH enforced | **Built** (MAR-415). Its own nonces, idempotency, approvals and audit |
+| A command having an effect on a real process | **Built** (MAR-415). Delivered over the agent's stdin and acknowledged, or reported unacknowledged |
+| Starting or stopping a hosted process | **Built** (MAR-415) as `runner.*` lifecycle — still **not** an Agent DOM command |
+| The Electron shell running at all | **Built** (MAR-424) |
+| An agent DASH holds no credential for | **Still `noAdapter`.** Read-only, and honest about why |
 
 Everything up to "DASH decided to send this envelope, and recorded why" is
 proven by `tests/agent-command.test.ts` against the real store, the real
-contract validators and the real workspace rules — and, since MAR-424, by
-`pnpm shell:smoke` through a real window, preload and IPC channel into the real
-user-data store. **Everything after that is still not.** `AgentDomAdapter` is an
-interface with no implementation; the shipped `noAdapter` refuses every command
-and the refusal is audited like any other. The bundled runner is MAR-415
-(DASH-11).
+contract validators and the real workspace rules, and by `pnpm shell:smoke`
+through a real window, preload and IPC channel into the real user-data store.
 
-This is stated rather than stubbed. An adapter that returned success would make
-the channel report a delivered effect that nothing performed, which is the
-failure this issue's rules exist to prevent.
+**As of MAR-415 the rest is proven too, and by a different suite.**
+`tests/runner-server.test.ts` and `tests/runner-supervisor.test.ts` run a real
+loopback server, a real SQLite store and a real child process: a command posted
+to `POST {control-location-uri}/commands` is adjudicated a second time by the
+runner, written to the agent's stdin, and reported back only once the agent
+acknowledges it. Killing that process shows the agent as stopped rather than
+healthy. Those tests run in CI, which the shell's own proofs cannot.
+
+**What is still not built** is stated rather than stubbed:
+
+- **DASH cannot reach a remote agent-managed runner it has no credential for.**
+  Adapter enrollment is on the Agent DOM v2 contract's deferred list. If an
+  operator places a token in the vault under `dash.adapter.{agent}.token` the
+  same `httpAdapter` reaches it; DASH has no flow that mints one. Until then
+  such an agent stays on `noAdapter` and renders read-only.
+- **No Agent Kit.** `npx create-dash-agent` does not exist. An agent becomes
+  hostable by having a v2 manifest and a registration file, both written by
+  hand. MAR-415's second slice is the template that generates them.
+- **No CPU or memory reporting.** The runner reports a real PID and real
+  liveness because it started the process. It does not report CPU or RSS,
+  because doing that portably needs a native dependency or a per-poll
+  subprocess. An absent field is honest; a zero would not be.
+
+An adapter that returned success would make the channel report a delivered
+effect that nothing performed. That is why acknowledgement is mandatory: a line
+written to a pipe proves nothing about whether the agent read it, and the runner
+reports `delivery_unacknowledged` rather than assuming.
 
 ## There is no `start`, `stop` or `trigger`
 
@@ -49,10 +72,20 @@ would begin a new one.
 
 Starting and stopping a locally hosted agent is **runner lifecycle**, not an
 Agent DOM command — DASH supervising a process it hosts, rather than DASH asking
-an adapter about a run. It belongs to MAR-415 (DASH-11), which builds the runner
-that would have something to start. Adding those names to the catalogue here
-would have given DASH three buttons no manifest can declare and no adapter is
-obliged to honour.
+an adapter about a run. Adding those names to the catalogue here would have
+given DASH three buttons no manifest can declare and no adapter is obliged to
+honour.
+
+**MAR-415 built the runner and did not change this.** Starting and stopping are
+now possible, and they are `runner.start` and `runner.stop` in `COMMANDS` — a
+separate family with a separate prefix, routed to the runner's `/lifecycle`
+endpoint. They never become an envelope, are never validated against
+`agent-command.schema.json`, and carry no nonce, idempotency key or correlation,
+because none of those concepts applies to "send SIGTERM to a process". Their
+audit is the IPC boundary record.
+
+`trigger` still does not exist in any form. Nothing in the runner begins a new
+run, so there would be nothing behind the name.
 
 ## The two layers
 
@@ -185,11 +218,16 @@ claiming DASH refused something it in fact allowed.
 - **Nonce and idempotency retention.** Nothing prunes `command_nonces` or
   `command_results`. The contract lists retention duration as deferred; it needs
   a decision before either table is old enough to matter.
-- **Snapshot ingest.** `putAgentDomState` validates and stores, and its only
-  callers are `tests/agent-command.test.ts` and MAR-424's proof harness
-  (`electron/smoke.ts`), which seeds a fixture so a command has a live target to
-  reach. Neither is ingest: the adapter that would poll a control endpoint is
-  DASH-11's. The table is real; the source of its rows is not.
+- ~~**Snapshot ingest.**~~ **Settled by MAR-415.** `putAgentDomState` now has a
+  real caller: `electron/agent-adapters.ts` polls `GET {control-location-uri}`
+  every five seconds for every agent DASH holds a channel to, and stores what
+  comes back. The fixtures still exist and still seed rows, but they are no
+  longer the only source. The poll interval is what the acceptance criterion
+  "shows as stopped within one poll interval" is measured against.
+
+  What remains open is narrower: polling is all there is. Push, streaming and
+  delta synchronisation are deferred by the contract, so a state change is
+  visible in at most one interval and no sooner.
 
 Whether the free-text `reason` should be audited was asked and answered — see
 the next section. It is settled, not open.

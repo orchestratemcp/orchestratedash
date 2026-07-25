@@ -93,16 +93,46 @@ export interface CommandSpec {
  *
  * The Agent DOM entries are exactly the seven verbs of
  * `contracts/agent-command.schema.json` and `agent.manifest.v2.schema.json`.
- * There is no `agent.start`, `agent.stop` or `agent.trigger`: the contract's
- * command vocabulary does not contain them, and inventing a name here for
- * something no manifest can declare would give DASH a button no adapter is
- * obliged to honour. Starting and stopping a locally hosted process is runner
- * lifecycle, not an Agent DOM command, and belongs to MAR-415 (DASH-11).
+ * There is still no `agent.start`, `agent.stop` or `agent.trigger`: the
+ * contract's command vocabulary does not contain them, and inventing a name
+ * here for something no manifest can declare would give DASH a button no
+ * adapter is obliged to honour.
+ *
+ * MAR-415 added `runner.*` instead, and the separate prefix is the point.
+ * Starting and stopping a hosted process is **runner lifecycle** — DASH
+ * supervising something it launched — and it is routed to the runner's
+ * `/lifecycle` endpoint, never built into an envelope, never validated against
+ * `agent-command.schema.json`, and never mistaken for one of the seven verbs.
  */
 export const COMMANDS = {
   "shell.ping": {
     effect: "Confirm the shell's command boundary is reachable. Changes nothing.",
     payload_keys: ["issued_at"],
+    required_keys: [],
+    mutates: false,
+    irreversible: false,
+  },
+
+  "runner.start": {
+    effect: "Start a registered agent's process on this machine. Not an Agent DOM command.",
+    payload_keys: ["agent_id"],
+    required_keys: ["agent_id"],
+    mutates: true,
+    // Starting twice is refused by the supervisor rather than starting a second
+    // process, and starting an agent does nothing to the world that stopping it
+    // does not undo.
+    irreversible: false,
+  },
+  "runner.stop": {
+    effect: "Stop a running agent's process on this machine. Not an Agent DOM command.",
+    payload_keys: ["agent_id"],
+    required_keys: ["agent_id"],
+    mutates: true,
+    irreversible: false,
+  },
+  "runner.status": {
+    effect: "Report which agents the bundled runner is supervising, and their process ids.",
+    payload_keys: [],
     required_keys: [],
     mutates: false,
     irreversible: false,
@@ -188,14 +218,37 @@ export function isAgentCommandName(value: CommandName): value is AgentCommandCha
 }
 
 /**
- * Every command is either local or an Agent DOM command.
+ * The lifecycle commands, and what each one asks the runner to do.
+ *
+ * A separate map from `AGENT_COMMAND_VERBS` rather than more entries in it,
+ * because they are not the same kind of thing and the type system should say
+ * so: an agent command becomes an envelope and is adjudicated against a
+ * manifest, a lifecycle command becomes a process operation and is not.
+ */
+export const RUNNER_LIFECYCLE = {
+  "runner.start": "start",
+  "runner.stop": "stop",
+  "runner.status": "status",
+} as const;
+
+export type RunnerCommandName = keyof typeof RUNNER_LIFECYCLE;
+
+export function isRunnerCommandName(value: CommandName): value is RunnerCommandName {
+  return Object.hasOwn(RUNNER_LIFECYCLE, value);
+}
+
+/**
+ * Every command is local, an Agent DOM command, or runner lifecycle.
  *
  * This is a compile-time assertion, not a runtime one: adding an entry to
  * `COMMANDS` without routing it produces a type error here. The `never` check in
  * `executeCommand` catches the same class of mistake for local commands, and
  * this catches it for the dispatcher.
  */
-type UnroutedCommand = Exclude<CommandName, AgentCommandChannelName | "shell.ping">;
+type UnroutedCommand = Exclude<
+  CommandName,
+  AgentCommandChannelName | RunnerCommandName | "shell.ping"
+>;
 const _allCommandsAreRouted: UnroutedCommand extends never ? true : never = true;
 void _allCommandsAreRouted;
 
@@ -405,7 +458,7 @@ export function executeCommand(review: CommandReview): CommandResult {
     return { ok: false, request_id: review.audit.request_id, reason: review.reason };
   }
 
-  if (isAgentCommandName(review.command)) {
+  if (isAgentCommandName(review.command) || isRunnerCommandName(review.command)) {
     // Not a denial and not a result: a caller that reached here bypassed the
     // trusted side entirely. Throwing is the only honest answer — returning a
     // failure would let a miswired call site look like a refused command, and
@@ -436,8 +489,34 @@ export function executeCommand(review: CommandReview): CommandResult {
  * untestable without a store and unimportable from the preload. Electron main
  * supplies the real one; tests supply a fake.
  */
+export interface RunnerLifecycleResult {
+  ok: boolean;
+  detail?: string;
+  /**
+   * `runner.status` only, and primitives only — the same constraint every other
+   * command result carries.
+   *
+   * Deliberately a summary rather than per-agent process facts. An agent's
+   * status, pid and lifecycle belong in its Agent DOM state, which the poller
+   * already writes to the store and the UI already renders; returning a second
+   * copy down the IPC channel would be a parallel source of truth that drifts
+   * the moment one of them is a poll interval behind the other.
+   */
+  data?: Record<string, string | number | boolean>;
+}
+
 export interface DispatchContext {
   runAgentCommand(input: AgentCommandInput): Promise<AgentCommandResult>;
+  /**
+   * Ask the bundled runner to start or stop a process, or report what it holds.
+   *
+   * Injected for the same reason `runAgentCommand` is: this module must stay
+   * importable from a sandboxed preload, and the runner client reaches the
+   * network. Supplying it here also means a build with no runner — the vault
+   * was unavailable, say — passes one that refuses honestly, rather than this
+   * module having to know that could happen.
+   */
+  runnerLifecycle(action: string, agentId: string | undefined): Promise<RunnerLifecycleResult>;
   /**
    * Where the IPC-level audit record goes.
    *
@@ -488,6 +567,23 @@ export async function dispatchCommand(
       correlation_id: result.correlation_id,
       duplicate: result.duplicate,
       detail: result.detail,
+    };
+  }
+
+  if (isRunnerCommandName(review.command)) {
+    // No envelope, no nonce, no idempotency key, no correlation. A lifecycle
+    // command is not an Agent DOM command and does not borrow its machinery —
+    // see the note on `COMMANDS`. The IPC audit record above is its audit.
+    const agentId = review.payload["agent_id"];
+    const result = await context.runnerLifecycle(
+      RUNNER_LIFECYCLE[review.command],
+      typeof agentId === "string" ? agentId : undefined,
+    );
+    return {
+      ok: result.ok,
+      request_id: review.audit.request_id,
+      detail: result.detail,
+      data: result.data,
     };
   }
 
