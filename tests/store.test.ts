@@ -13,6 +13,7 @@ process.env.DASH_DATA_DIR = dataDir;
 
 const { importManifest, ingestEvents, listAgents, listRuns, resetStore } =
   await import("../lib/store");
+const { closeDb } = await import("../lib/db");
 
 function example(name: string): unknown {
   return JSON.parse(readFileSync(path.join(repoRoot, "examples", name), "utf8"));
@@ -26,6 +27,10 @@ beforeEach(() => {
 });
 
 afterAll(() => {
+  // The database handle has to be released before the directory can go: an
+  // open SQLite file is a real handle now, where the JSON store left nothing
+  // behind between calls.
+  closeDb();
   rmSync(dataDir, { recursive: true, force: true });
 });
 

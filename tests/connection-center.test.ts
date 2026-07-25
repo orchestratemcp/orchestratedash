@@ -14,6 +14,8 @@ process.env.DASH_DATA_DIR = dataDir;
 
 const { importManifest, listAgents, listConnectionCapableAgents, resetStore } =
   await import("../lib/store");
+const { closeDb } = await import("../lib/db");
+const { readStoreBytes } = await import("./helpers/store-bytes");
 
 function example(name: string): unknown {
   return JSON.parse(readFileSync(path.join(repoRoot, "examples", name), "utf8"));
@@ -28,6 +30,7 @@ beforeEach(() => {
 });
 
 afterAll(() => {
+  closeDb();
   rmSync(dataDir, { recursive: true, force: true });
 });
 
@@ -162,12 +165,13 @@ describe("the acceptance criterion, end to end through the store", () => {
 
   /**
    * The store must not become a place credentials live. v2 manifests are
-   * forbidden from carrying values by the schema; this asserts the file DASH
-   * writes stays clean after a real import.
+   * forbidden from carrying values by the schema; this asserts what DASH
+   * actually writes to disk stays clean after a real import.
    */
   it("writes no secret-shaped value into the store file", () => {
     importManifest(gmailV2);
-    const raw = readFileSync(path.join(dataDir, "dash.json"), "utf8");
-    expect(raw).not.toMatch(/sk-|Bearer |refresh_token"\s*:\s*"[^"]+"|password/i);
+    expect(readStoreBytes(dataDir)).not.toMatch(
+      /sk-|Bearer |refresh_token"\s*:\s*"[^"]+"|password/i,
+    );
   });
 });

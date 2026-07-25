@@ -7,19 +7,31 @@ Structural slice of the shell decided in [ADR 0001](../docs/adr/0001-installable
 | --- | --- |
 | `main.ts` | Window creation, navigation allowlist, one audited IPC channel. Wiring only. |
 | `preload.ts` | The narrow bridge. Exposes one command, `ping`. No `ipcRenderer`, no channel name, no secrets. |
+| `secure-store.ts` | The only file that imports `safeStorage`. Wiring only. |
 | `electron-module.d.ts` | **Temporary** ambient types. Delete when `electron` is installed. |
 
 The rules live in pure, unit-tested modules, not here:
 
 - `lib/shell/window.ts` — renderer security posture + the local-only URL allowlist
 - `lib/shell/ipc.ts` — command allowlist, review, audit records
-- `lib/secure-store.ts` — the `SecureStore` seam (interface only; **no implementation**)
+- `lib/secure-store.ts` — the `SecureStore` seam (interface only)
+- `lib/vault.ts` — the `safeStorage` implementation behind that seam, over an
+  injected port so it is testable without launching Electron
+
+`electron/secure-store.ts` lives here rather than in `lib/` on purpose: a
+credential store that renderer code can reach by following an import is what
+`contextIsolation` and the narrow preload exist to prevent, and placement makes
+that a property of the tree rather than a convention. Nothing under `app/` may
+import it, and `tests/redaction.test.ts` enforces that.
 
 ## Not in this slice
 
-No `safeStorage`/keychain implementation, no OAuth, no credential UI, no secret
-of any kind through IPC, no local bridge or ingest server, no packaging, no
-electron-builder, no code signing. See ADR 0001 → "Not decided here".
+No OAuth, no credential UI, no secret of any kind through IPC, no local bridge
+or ingest server, no packaging, no electron-builder, no code signing. See
+ADR 0001 → "Not decided here".
+
+Secret *storage* is now implemented (MAR-416) — see
+[local store and vault](../docs/local-store-and-vault.md).
 
 ## Known open items for the packaging phase
 

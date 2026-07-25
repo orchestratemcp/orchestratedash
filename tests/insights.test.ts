@@ -12,6 +12,7 @@ const dataDir = mkdtempSync(path.join(tmpdir(), "dash-insights-"));
 process.env.DASH_DATA_DIR = dataDir;
 
 const { importManifest, ingestEvents, resetStore } = await import("../lib/store");
+const { closeDb } = await import("../lib/db");
 const { analysisForRun, complianceForAgent, listAnalyzedRuns } = await import(
   "../lib/insights"
 );
@@ -30,6 +31,7 @@ beforeEach(() => {
 });
 
 afterAll(() => {
+  closeDb();
   rmSync(dataDir, { recursive: true, force: true });
 });
 
