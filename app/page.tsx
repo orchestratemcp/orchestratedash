@@ -19,12 +19,12 @@ export default function AgentsPage(): ReactNode {
 
       {agents.length === 0 ? (
         <div className="empty">
-          <p>No agents imported yet. Import the bundled example:</p>
-          <pre>
-            {
-              "curl -X POST http://localhost:3000/api/agents \\\n  -H 'Content-Type: application/json' \\\n  --data-binary @examples/agent.manifest.example.json"
-            }
-          </pre>
+          <p>
+            No agents imported yet. <a href="/agents/add">Add an agent</a> by
+            importing the <code>agent.manifest.json</code> OrchestrateKit
+            exported — the bundled examples under <code>examples/</code> work
+            too.
+          </p>
         </div>
       ) : (
         <div className="table-wrap">

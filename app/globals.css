@@ -229,6 +229,69 @@ a.plain:hover {
   color: var(--fg);
 }
 
+/* Add agent */
+
+.add-agent textarea {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.7rem;
+}
+
+.field-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+.add-agent button {
+  margin-top: 0.6rem;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.add-agent button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.notice {
+  margin-top: 1.25rem;
+  padding: 0.9rem 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+
+.notice p {
+  margin: 0 0 0.5rem;
+}
+
+.notice p:last-child {
+  margin-bottom: 0;
+}
+
+.notice-ok {
+  border-color: var(--ok);
+}
+
+.notice-err {
+  border-color: var(--err);
+}
+
+.notice summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
 /* Connection Center */
 
 .muted {
