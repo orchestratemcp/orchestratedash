@@ -25,7 +25,21 @@ jobs:
           cache: "pnpm"
 
       - run: pnpm install --frozen-lockfile
+        env:
+          # Electron ships a ~138 MB platform zip from a postinstall hook. CI
+          # typechecks the shell and bundles it, but never launches it — and the
+          # TypeScript definitions live in the npm package itself, not in the
+          # binary. Skipping the download keeps the dependency's CI cost close to
+          # zero; the trade is that no CI job can run Electron, so the shell's
+          # proofs are a local `pnpm shell:smoke` (see electron/README.md).
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
 
       - run: pnpm verify
+
+      # Bundling is where the shell's build constraints are enforced — a CJS,
+      # self-contained preload for `sandbox: true` above all. esbuild needs no
+      # Electron binary, so this costs seconds and catches a regression that
+      # would otherwise only appear on someone's desktop.
+      - run: pnpm build:shell
 
       - run: pnpm build

@@ -17,9 +17,18 @@
  * Electron process and therefore should be as small as possible.
  */
 
+// MUST BE FIRST. This import's side effect points the store at the per-user
+// data directory, and ES modules evaluate imports in source order — so it runs
+// before the runner's import chain below reaches `lib/db.ts`, which resolves its
+// location once at module-evaluation time. Moving or sorting this line silently
+// sends the store back to the source tree; `assertStoreLocation` catches that at
+// startup. See `electron/data-dir.ts`.
+import { assertStoreLocation } from "./data-dir";
+
 import { app, BrowserWindow, ipcMain } from "electron";
 
 import { userInfo } from "node:os";
+import { fileURLToPath } from "node:url";
 
 import {
   localPrincipal,
@@ -27,13 +36,14 @@ import {
   runAgentCommand,
   type AgentCommandInput,
 } from "../lib/agent-dom/runner";
+import { dataDir } from "../lib/db";
 import { SHELL_COMMAND_CHANNEL, dispatchCommand, formatAuditLine } from "../lib/shell/ipc";
 import {
   SHELL_WEB_PREFERENCES,
   assertHardenedWebPreferences,
   isAllowedRendererUrl,
 } from "../lib/shell/window";
-import { secureStore, useUserDataDirectory } from "./secure-store";
+import { secureStore } from "./secure-store";
 
 /**
  * Where the renderer loads from.
@@ -71,11 +81,29 @@ export function createWindow(): BrowserWindow {
     show: false,
     webPreferences: {
       ...SHELL_WEB_PREFERENCES,
-      preload: new URL("./preload.js", import.meta.url).pathname,
+      // `fileURLToPath`, not `URL.pathname`: on Windows the latter yields
+      // "/C:/Users/..." — a string Electron cannot resolve, and one that looks
+      // close enough to a path to survive a code review. The preload is built
+      // beside this file (see `scripts/build-shell.mjs`), so it is always the
+      // sibling of whichever bundle is running.
+      preload: fileURLToPath(new URL("./preload.js", import.meta.url)),
     },
   });
 
   window.once("ready-to-show", () => window.show());
+
+  // Without this, a renderer that fails to load never fires `ready-to-show`, so
+  // `show: false` above leaves an invisible process and no message anywhere. The
+  // most likely cause by far is the dev server not running, so say that.
+  window.webContents.on(
+    "did-fail-load",
+    (_event, errorCode: number, errorDescription: string, validatedURL: string) => {
+      console.error(
+        `[dash-shell] failed to load ${validatedURL}: ${errorDescription} (${errorCode}). ` +
+          `If this is the developer path, is \`pnpm dev\` running?`,
+      );
+    },
+  );
 
   // Two escapes from the allowlist, both closed. Without these, any link in the
   // UI — or injected into it — could navigate the privileged renderer to a
@@ -148,10 +176,25 @@ function reportSecureStoreBacking(): void {
   );
 }
 
+/**
+ * Report where the store actually is, once, at startup.
+ *
+ * The companion to `assertStoreLocation`: the assertion proves the location is
+ * right, and this makes it visible. "Which database did that audit row land in"
+ * is otherwise a question you can only answer by guessing at the platform's
+ * conventions for `userData`.
+ */
+function reportStoreLocation(): void {
+  console.warn(`[dash-shell] store: ${dataDir}`);
+}
+
 if (typeof app !== "undefined") {
   void app.whenReady().then(() => {
-    // Before anything imports the store, which resolves its location once.
-    useUserDataDirectory();
+    // `electron/data-dir.ts` already pointed the store at `userData`, as the
+    // first import in this file. This is the proof it worked — see that module
+    // for why the old `useUserDataDirectory()` call here could never have.
+    assertStoreLocation(dataDir);
+    reportStoreLocation();
     reportSecureStoreBacking();
     registerCommandChannel();
     createWindow();
@@ -162,6 +205,16 @@ if (typeof app !== "undefined") {
         createWindow();
       }
     });
+  }).catch((error: unknown) => {
+    // Every check above is written to throw — the store location, the renderer
+    // posture, the URL allowlist. Inside a promise callback a throw is only an
+    // unhandled rejection, which prints a warning and lets the app carry on in
+    // exactly the state the check refused to accept. This is what makes "fail
+    // loudly at startup" true rather than aspirational.
+    console.error(
+      `[dash-shell] startup failed: ${error instanceof Error ? error.stack : String(error)}`,
+    );
+    app.exit(1);
   });
 
   app.on("window-all-closed", () => {

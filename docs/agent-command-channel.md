@@ -18,14 +18,16 @@ Read this section before the rest.
 | `agent-command.schema.json` compiled and validated against | **Built** — first execution of that contract |
 | A command reaching an actual runner | **Not built.** No adapter exists |
 | Starting or stopping a hosted process | **Not built, and not this contract** |
-| The Electron shell running at all | **Not built.** See `electron/README.md` |
+| The Electron shell running at all | **Built** (MAR-424). A real renderer's command reaches `noAdapter` and is audited on disk |
 
 Everything up to "DASH decided to send this envelope, and recorded why" is
 proven by `tests/agent-command.test.ts` against the real store, the real
-contract validators and the real workspace rules. **Everything after that is
-not.** `AgentDomAdapter` is an interface with no implementation; the shipped
-`noAdapter` refuses every command and the refusal is audited like any other.
-The bundled runner is MAR-415 (DASH-11).
+contract validators and the real workspace rules — and, since MAR-424, by
+`pnpm shell:smoke` through a real window, preload and IPC channel into the real
+user-data store. **Everything after that is still not.** `AgentDomAdapter` is an
+interface with no implementation; the shipped `noAdapter` refuses every command
+and the refusal is audited like any other. The bundled runner is MAR-415
+(DASH-11).
 
 This is stated rather than stubbed. An adapter that returned success would make
 the channel report a delivered effect that nothing performed, which is the
@@ -183,8 +185,10 @@ claiming DASH refused something it in fact allowed.
 - **Nonce and idempotency retention.** Nothing prunes `command_nonces` or
   `command_results`. The contract lists retention duration as deferred; it needs
   a decision before either table is old enough to matter.
-- **Snapshot ingest.** `putAgentDomState` validates and stores, and nothing
-  calls it outside tests — the adapter that would poll a control endpoint is
+- **Snapshot ingest.** `putAgentDomState` validates and stores, and its only
+  callers are `tests/agent-command.test.ts` and MAR-424's proof harness
+  (`electron/smoke.ts`), which seeds a fixture so a command has a live target to
+  reach. Neither is ingest: the adapter that would poll a control endpoint is
   DASH-11's. The table is real; the source of its rows is not.
 
 Whether the free-text `reason` should be audited was asked and answered — see

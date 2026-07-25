@@ -4,10 +4,14 @@
   "private": true,
   "description": "Telemetry v1 and Agent DOM v2 contracts plus the local monitor app for OrchestrateDASH.",
   "type": "module",
+  "main": "dist/electron/main.mjs",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "build:shell": "node scripts/build-shell.mjs",
+    "shell": "pnpm build:shell && electron .",
+    "shell:smoke": "pnpm build:shell && electron dist/electron/smoke.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "demo:violation": "node scripts/demo-violation.mjs",
@@ -17,6 +21,8 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "electron": "^43.2.0",
+    "esbuild": "^0.28.1",
     "typescript": "^5.8.0",
     "vitest": "^4.1.0"
   },
@@ -29,5 +35,11 @@
   },
   "engines": {
     "node": ">=22.5.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
   }
 }
