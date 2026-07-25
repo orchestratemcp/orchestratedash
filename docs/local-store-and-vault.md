@@ -124,7 +124,12 @@ success for it would be worse than the option that was rejected.
 
 - **Credential UI.** DASH-08's Connection Center can now be given a real
   backing; the input flow is its own work.
-- **Command audit and transcripts.** DASH-13 and DASH-15. The schema has a
-  versioned migration list and a `runs` table to anchor them to; their columns
-  get designed by the issues that own them, not guessed here.
-- **Event retention.** Nothing prunes `events` yet.
+- **Transcripts.** DASH-15. The schema has a versioned migration list; its
+  columns get designed by the issue that owns it, not guessed here.
+- **Event retention.** Nothing prunes `events` yet — and, since MAR-417, nothing
+  prunes `command_nonces` or `command_results` either.
+
+The command audit arrived in MAR-417 as migration 1: `agent_dom_state`,
+`command_nonces`, `command_results` and `command_audit`. See
+[the Agent DOM command channel](agent-command-channel.md), including why that
+audit table deliberately does *not* foreign-key to `runs`.

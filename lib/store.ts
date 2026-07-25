@@ -89,7 +89,24 @@ export function resetStore(): void {
     database.exec("DELETE FROM runs");
     database.exec("DELETE FROM agents");
     database.exec("DELETE FROM connection_secrets");
+    database.exec("DELETE FROM agent_dom_state");
+    database.exec("DELETE FROM command_nonces");
+    database.exec("DELETE FROM command_results");
+    database.exec("DELETE FROM command_audit");
   });
+}
+
+/**
+ * One agent's manifest, or null when DASH has never imported it.
+ *
+ * The first targeted read in this module. `readStore` deliberately materialises
+ * everything for the pages, but the command channel asks about one agent per
+ * command and answering that by loading every manifest and every event would
+ * make the cost of a command scale with the size of the store.
+ */
+export function readAgentManifest(name: string): AnyAgentManifest | null {
+  const row = db().prepare("SELECT manifest_json FROM agents WHERE name = ?").get(name);
+  return row === undefined ? null : (JSON.parse(text(row, "manifest_json")) as AnyAgentManifest);
 }
 
 export type ImportResult =
