@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
+import type { AgentCommandEnvelope } from "./agent-dom/envelope";
 import type { ManifestConnection } from "./connections";
+import type { AgentDomState } from "./workspace";
 
 /**
  * Validation against the frozen telemetry v1 schemas. DASH is the canonical
@@ -22,6 +24,8 @@ function buildValidators(): {
   manifest: ValidateFunction;
   manifestV2: ValidateFunction;
   event: ValidateFunction;
+  state: ValidateFunction;
+  command: ValidateFunction;
 } {
   const ajv = new Ajv2020({ strict: true, allErrors: true });
   addFormats(ajv);
@@ -29,6 +33,10 @@ function buildValidators(): {
     manifest: ajv.compile(loadSchema("contracts/agent.manifest.schema.json")),
     manifestV2: ajv.compile(loadSchema("contracts/agent.manifest.v2.schema.json")),
     event: ajv.compile(loadSchema("contracts/run-event.schema.json")),
+    // MAR-417. Both schemas have existed since MAR-382 and neither had ever
+    // been compiled by anything; the schema files themselves are untouched.
+    state: ajv.compile(loadSchema("contracts/agent-dom-state.schema.json")),
+    command: ajv.compile(loadSchema("contracts/agent-command.schema.json")),
   };
 }
 
@@ -110,6 +118,41 @@ export function validateEvent(input: unknown): ValidationResult<RunEvent> {
   const validate = validators().event;
   if (validate(input)) {
     return { ok: true, value: input as RunEvent };
+  }
+  return { ok: false, errors: formatErrors(validate) };
+}
+
+/**
+ * Validate an Agent DOM state snapshot (MAR-417).
+ *
+ * The returned type is `lib/workspace.ts`'s `AgentDomState` — the subset DASH
+ * actually reads — rather than a second transcription of the schema. The schema
+ * is the authority on what is valid; the interface is the authority on what we
+ * look at, and keeping those separate is why `lib/workspace.ts` can stay pure
+ * while this module does the file reading.
+ */
+export function validateState(input: unknown): ValidationResult<AgentDomState> {
+  const validate = validators().state;
+  if (validate(input)) {
+    return { ok: true, value: input as AgentDomState };
+  }
+  return { ok: false, errors: formatErrors(validate) };
+}
+
+/**
+ * Validate an Agent DOM command envelope (MAR-417).
+ *
+ * DASH constructs its own envelopes in Electron main and could in principle
+ * trust them. It validates them anyway, at the point of enforcement, because
+ * the envelope is a *transport* document: the same seam accepts one built by a
+ * remote adapter, and a check that only runs when we happen to be the author is
+ * not a check. It also means `agent-command.schema.json` is executed rather
+ * than merely honoured, which is the whole point of this issue.
+ */
+export function validateCommand(input: unknown): ValidationResult<AgentCommandEnvelope> {
+  const validate = validators().command;
+  if (validate(input)) {
+    return { ok: true, value: input as AgentCommandEnvelope };
   }
   return { ok: false, errors: formatErrors(validate) };
 }

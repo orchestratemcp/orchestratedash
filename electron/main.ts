@@ -19,12 +19,15 @@
 
 import { app, BrowserWindow, ipcMain } from "electron";
 
+import { userInfo } from "node:os";
+
 import {
-  SHELL_COMMAND_CHANNEL,
-  executeCommand,
-  formatAuditLine,
-  reviewCommand,
-} from "../lib/shell/ipc";
+  localPrincipal,
+  noAdapter,
+  runAgentCommand,
+  type AgentCommandInput,
+} from "../lib/agent-dom/runner";
+import { SHELL_COMMAND_CHANNEL, dispatchCommand, formatAuditLine } from "../lib/shell/ipc";
 import {
   SHELL_WEB_PREFERENCES,
   assertHardenedWebPreferences,
@@ -94,17 +97,33 @@ export function createWindow(): BrowserWindow {
  *
  * One `handle` call, for one channel, for every command — see `lib/shell/ipc.ts`
  * for why that is the design and not an accident. The handler's whole job is:
- * review, audit, then execute only if allowed.
+ * review, audit, then dispatch only if allowed.
  *
- * The audit currently goes to stderr. Durable audit storage belongs with the
- * workspace/audit work in MAR-384, not here; what matters for this slice is
- * that the record is produced at the chokepoint and that no path skips it.
+ * The IPC-level audit goes to stderr; the Agent DOM command audit is durable in
+ * SQLite from MAR-417 (`command_audit`). Both are produced at the chokepoint and
+ * no path skips either.
+ *
+ * **This is where the actor is bound.** The principal is derived from the
+ * process's own OS session, here in main, and handed to the runner as a
+ * parameter. The request that arrived over IPC is never consulted for it — and
+ * cannot be, since no command declares a payload key that could carry one.
  */
 export function registerCommandChannel(): void {
-  ipcMain.handle(SHELL_COMMAND_CHANNEL, (_event, request: unknown) => {
-    const review = reviewCommand(request);
-    console.warn(formatAuditLine(review.audit));
-    return executeCommand(review);
+  const principal = localPrincipal(userInfo().username);
+
+  ipcMain.handle(SHELL_COMMAND_CHANNEL, async (_event, request: unknown) => {
+    return dispatchCommand(request, {
+      audit: (record) => console.warn(formatAuditLine(record)),
+      runAgentCommand: (input: AgentCommandInput) =>
+        runAgentCommand(input, {
+          principal,
+          // No adapter is installed. MAR-415 (DASH-11) builds the bundled
+          // runner and a later slice builds the HTTP transport; until then
+          // every accepted command is refused here rather than reported as
+          // delivered. See `noAdapter`.
+          adapter: noAdapter,
+        }),
+    });
   });
 }
 

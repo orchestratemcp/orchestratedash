@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   COMMANDS,
   SHELL_COMMAND_CHANNEL,
+  dispatchCommand,
   executeCommand,
   formatAuditLine,
   isCommandName,
   reviewCommand,
 } from "../lib/shell/ipc";
+import type { CommandAuditRecord } from "../lib/shell/ipc";
+import type { AgentCommandInput } from "../lib/agent-dom/runner";
 import {
   SHELL_WEB_PREFERENCES,
   assertHardenedWebPreferences,
@@ -95,10 +98,62 @@ describe("no remote content in the renderer", () => {
 });
 
 describe("the audited command chokepoint", () => {
-  it("exposes exactly one channel and one command in this slice", () => {
+  /**
+   * The catalogue is spelled out rather than counted. Adding a command must
+   * change this list, which is the review event `lib/shell/ipc.ts` is built
+   * around — a test that asserted `length > 0` would let the next command in
+   * without anyone reading it.
+   */
+  it("exposes exactly one channel and exactly the declared commands", () => {
     expect(SHELL_COMMAND_CHANNEL).toBe("dash:shell-command");
-    expect(Object.keys(COMMANDS)).toEqual(["shell.ping"]);
+    expect(Object.keys(COMMANDS)).toEqual([
+      "shell.ping",
+      "agent.approve",
+      "agent.reject",
+      "agent.choose",
+      "agent.retry",
+      "agent.pause",
+      "agent.resume",
+      "agent.cancel",
+    ]);
     expect(COMMANDS["shell.ping"].mutates).toBe(false);
+  });
+
+  /**
+   * The contract's command enum has seven members and none of them is `start`,
+   * `stop` or `trigger`. A command named here that no manifest can declare
+   * would be a button DASH offers and no adapter is obliged to honour.
+   */
+  it("declares no command outside the Agent DOM contract's vocabulary", () => {
+    const contractVerbs = new Set([
+      "approve",
+      "reject",
+      "choose",
+      "retry",
+      "pause",
+      "resume",
+      "cancel",
+    ]);
+    for (const name of Object.keys(COMMANDS)) {
+      if (!name.startsWith("agent.")) {
+        continue;
+      }
+      expect(contractVerbs.has(name.slice("agent.".length)), name).toBe(true);
+    }
+  });
+
+  /** Every mutating command must say whether repeating it could do lasting harm. */
+  it("marks every agent command as mutating and states its irreversibility", () => {
+    for (const [name, spec] of Object.entries(COMMANDS)) {
+      if (!name.startsWith("agent.")) {
+        continue;
+      }
+      expect(spec.mutates, name).toBe(true);
+      expect(typeof spec.irreversible, name).toBe("boolean");
+      // A command that names no target is a command aimed at whatever is handy.
+      expect(spec.required_keys, name).toContain("agent_id");
+      expect(spec.required_keys, name).toContain("observed_at");
+    }
   });
 
   it("allows the declared command and audits it", () => {
@@ -193,6 +248,152 @@ describe("the audited command chokepoint", () => {
     // Object.hasOwn, so inherited members are not commands.
     expect(isCommandName("toString")).toBe(false);
     expect(isCommandName("__proto__")).toBe(false);
+  });
+});
+
+describe("the renderer's half of an agent command", () => {
+  const approve = {
+    command: "agent.approve",
+    request_id: "req-a",
+    payload: {
+      agent_id: "meeting-assistant",
+      task_id: "task-1",
+      approval_id: "approval-1",
+      observed_at: "2026-07-16T09:05:00Z",
+    },
+  };
+
+  /** Everything a command needs that the renderer must not be able to choose. */
+  it("declares no payload key for an actor, a nonce, an expiry or an idempotency key", () => {
+    const forbidden = ["actor", "actor_id", "nonce", "expires_at", "idempotency_key", "command_id"];
+    for (const [name, spec] of Object.entries(COMMANDS)) {
+      const declared: readonly string[] = spec.payload_keys;
+      for (const key of forbidden) {
+        expect(declared.includes(key), `${name}.${key}`).toBe(false);
+      }
+    }
+  });
+
+  it("denies an attempt to name the actor, because the key is not declared", () => {
+    const review = reviewCommand({
+      ...approve,
+      payload: { ...approve.payload, actor_id: "someone-else" },
+    });
+    expect(review).toMatchObject({ decision: "denied", reason: "unexpected_payload_field" });
+  });
+
+  it("denies a command that names no target", () => {
+    for (const missing of ["agent_id", "approval_id", "observed_at"]) {
+      const payload: Record<string, string> = { ...approve.payload };
+      delete payload[missing];
+      const review = reviewCommand({ ...approve, payload });
+      expect(review, missing).toMatchObject({
+        decision: "denied",
+        reason: "missing_payload_field",
+      });
+    }
+  });
+
+  /** An empty string is a present-but-absent field, and the contract has no id of length zero. */
+  it("denies an empty target id rather than passing it on", () => {
+    const review = reviewCommand({
+      ...approve,
+      payload: { ...approve.payload, approval_id: "" },
+    });
+    expect(review).toMatchObject({ decision: "denied", reason: "missing_payload_field" });
+  });
+
+  it("refuses to execute an agent command without the trusted side", () => {
+    const review = reviewCommand(approve);
+    expect(() => executeCommand(review)).toThrowError(/must go through dispatchCommand/);
+  });
+});
+
+describe("dispatch", () => {
+  function context() {
+    const audited: CommandAuditRecord[] = [];
+    const inputs: AgentCommandInput[] = [];
+    return {
+      audited,
+      inputs,
+      audit: (record: CommandAuditRecord) => audited.push(record),
+      runAgentCommand: (input: AgentCommandInput) => {
+        inputs.push(input);
+        return Promise.resolve({
+          ok: true,
+          request_id: input.request_id,
+          command_id: "cmd-1",
+          correlation_id: "corr-1",
+        });
+      },
+    };
+  }
+
+  it("routes an agent command to the trusted side with the payload unpacked", async () => {
+    const ctx = context();
+    const result = await dispatchCommand(
+      {
+        command: "agent.cancel",
+        request_id: "req-b",
+        payload: {
+          agent_id: "meeting-assistant",
+          run_id: "run-1",
+          observed_at: "2026-07-16T09:05:00Z",
+        },
+      },
+      ctx,
+    );
+
+    expect(result).toMatchObject({ ok: true, correlation_id: "corr-1" });
+    expect(ctx.inputs[0]).toMatchObject({
+      command: "cancel",
+      target: { agent_id: "meeting-assistant", run_id: "run-1" },
+      observed_at: "2026-07-16T09:05:00Z",
+      mutates: true,
+    });
+  });
+
+  it("handles a local command without involving the trusted side at all", async () => {
+    const ctx = context();
+    const result = await dispatchCommand({ command: "shell.ping", request_id: "req-c" }, ctx);
+
+    expect(result).toMatchObject({ ok: true, data: { pong: true } });
+    expect(ctx.inputs).toHaveLength(0);
+  });
+
+  /**
+   * The property the chokepoint exists for. Denied, local or agent — there is
+   * no route out of `dispatchCommand` that skips the record.
+   */
+  it("emits an IPC audit record on every route", async () => {
+    const ctx = context();
+    await dispatchCommand({ command: "shell.ping", request_id: "req-d" }, ctx);
+    await dispatchCommand({ command: "shell.nope", request_id: "req-e" }, ctx);
+    await dispatchCommand(null, ctx);
+    await dispatchCommand(
+      {
+        command: "agent.cancel",
+        request_id: "req-f",
+        payload: { agent_id: "a", run_id: "r", observed_at: "2026-07-16T09:05:00Z" },
+      },
+      ctx,
+    );
+
+    expect(ctx.audited.map((record) => record.decision)).toEqual([
+      "allowed",
+      "denied",
+      "denied",
+      "allowed",
+    ]);
+  });
+
+  it("never lets an agent command reach the trusted side unreviewed", async () => {
+    const ctx = context();
+    await dispatchCommand(
+      { command: "agent.approve", request_id: "req-g", payload: { agent_id: "a" } },
+      ctx,
+    );
+    expect(ctx.inputs).toHaveLength(0);
   });
 });
 

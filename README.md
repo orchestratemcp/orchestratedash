@@ -162,7 +162,9 @@ the contract.
   current Agent DOM resources.
 - [`contracts/agent-command.schema.json`](contracts/agent-command.schema.json) -
   actor-bound command envelope with target, expiry, replay protection,
-  idempotency, and audit correlation.
+  idempotency, and audit correlation. Executed since MAR-417 — see
+  [the Agent DOM command channel](docs/agent-command-channel.md), which is also
+  where the honest account of what does *not* work yet lives.
 
 Examples cover the frozen telemetry-only agent, agent-managed credentials,
 DASH-manageable connection requirements, and a synthetic draft-only Gmail Meeting

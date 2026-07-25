@@ -5,8 +5,8 @@ Structural slice of the shell decided in [ADR 0001](../docs/adr/0001-installable
 
 | File | What it is |
 | --- | --- |
-| `main.ts` | Window creation, navigation allowlist, one audited IPC channel. Wiring only. |
-| `preload.ts` | The narrow bridge. Exposes one command, `ping`. No `ipcRenderer`, no channel name, no secrets. |
+| `main.ts` | Window creation, navigation allowlist, one audited IPC channel, actor binding. Wiring only. |
+| `preload.ts` | The narrow bridge. One named method per command. No `ipcRenderer`, no channel name, no secrets. |
 | `secure-store.ts` | The only file that imports `safeStorage`. Wiring only. |
 | `electron-module.d.ts` | **Temporary** ambient types. Delete when `electron` is installed. |
 
@@ -32,6 +32,13 @@ ADR 0001 → "Not decided here".
 
 Secret *storage* is now implemented (MAR-416) — see
 [local store and vault](../docs/local-store-and-vault.md).
+
+The Agent DOM command channel is implemented (MAR-417) — see
+[the command channel](../docs/agent-command-channel.md). Note what that means
+here: `main.ts` now binds the actor and dispatches seven Agent DOM commands,
+**and none of it has ever executed**, because of the three open items below. The
+logic is tested without Electron; the wiring in this directory is not tested at
+all. No adapter exists either, so an accepted command stops at `noAdapter`.
 
 ## Known open items for the packaging phase
 

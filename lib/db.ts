@@ -140,6 +140,106 @@ const MIGRATIONS: readonly string[] = [
     PRIMARY KEY (agent, connection_id, field_id)
   );
   `,
+
+  // ---------------------------------------------------------------------
+  // MAR-417 (DASH-13): the Agent DOM command channel.
+  //
+  // Migration 0 said the command audit "gets designed by the issue that owns
+  // it, not guessed here". This is that issue, and this is that design.
+  // ---------------------------------------------------------------------
+  `
+  -- The latest Agent DOM state snapshot per agent, verbatim and validated
+  -- against agent-dom-state.schema.json before it lands here.
+  --
+  -- One row per agent, not a history: this table exists so DASH can answer
+  -- "does that target exist, and is the approval still open?" at the moment a
+  -- command arrives. Snapshot history is a transcript concern (DASH-15).
+  --
+  -- observed_at gets its own column because the command layer binds to it: an
+  -- envelope names the snapshot its control was rendered from, and a value
+  -- that is not this one is a stale display (see lib/agent-dom/enforce.ts).
+  CREATE TABLE agent_dom_state (
+    agent       TEXT PRIMARY KEY,
+    observed_at TEXT NOT NULL,
+    state_json  TEXT NOT NULL,
+    received_at TEXT NOT NULL
+  );
+
+  -- Replay protection. The primary key *is* the check: recording a nonce and
+  -- detecting its reuse are one atomic INSERT, so there is no read-then-write
+  -- window for two concurrent submissions of the same envelope to slip through.
+  CREATE TABLE command_nonces (
+    nonce      TEXT PRIMARY KEY,
+    agent      TEXT NOT NULL,
+    command_id TEXT NOT NULL,
+    seen_at    TEXT NOT NULL
+  );
+
+  -- Idempotency. The contract requires the runner to "store the idempotency
+  -- result before or with an irreversible effect and return the same result for
+  -- duplicates", so a row is written in the "in_flight" state *before* the
+  -- adapter is called and settled afterwards.
+  --
+  -- The consequence is deliberate: if DASH dies mid-dispatch, the row survives
+  -- as "in_flight" and a duplicate is told the outcome is unknown rather than
+  -- being allowed to act again. An unknown outcome is recoverable by looking;
+  -- a duplicated calendar invite or payment is not.
+  CREATE TABLE command_results (
+    idempotency_key TEXT PRIMARY KEY,
+    agent           TEXT NOT NULL,
+    command         TEXT NOT NULL,
+    command_id      TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    outcome_json    TEXT NOT NULL,
+    started_at      TEXT NOT NULL,
+    settled_at      TEXT
+  );
+
+  -- Every attempt, accepted or refused.
+  --
+  -- **No foreign key to the runs table**, despite that table existing to be
+  -- foreign-keyed to. Two reasons, and the first is fatal on its own:
+  --
+  -- 1. Auditing a command that targets an unknown agent or run is an acceptance
+  --    criterion of this issue. A foreign key would make exactly those rows
+  --    un-insertable — the audit log would fall silent precisely about the
+  --    attempts most worth recording.
+  -- 2. the runs table is populated from telemetry ingest; Agent DOM runs arrive from an
+  --    adapter's state snapshots. Until something reconciles those two
+  --    populations they are not the same set, and constraining one to the other
+  --    would reject honest commands for runs DASH has state for but no events.
+  --
+  -- payload_keys is a JSON array of key *names*. No payload value is stored,
+  -- including "reason": lib/shell/ipc.ts has audited keys and never values
+  -- since the boundary was built, and a table is not a reason to relax it.
+  CREATE TABLE command_audit (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    command_id       TEXT NOT NULL,
+    request_id       TEXT NOT NULL,
+    correlation_id   TEXT NOT NULL,
+    causation_id     TEXT,
+    agent            TEXT,
+    run_id           TEXT,
+    command          TEXT NOT NULL,
+    actor_id         TEXT NOT NULL,
+    actor_type       TEXT NOT NULL,
+    authenticated_by TEXT NOT NULL,
+    decision         TEXT NOT NULL,
+    reason           TEXT,
+    payload_keys     TEXT NOT NULL,
+    mutates          INTEGER NOT NULL,
+    irreversible     INTEGER NOT NULL,
+    issued_at        TEXT,
+    expires_at       TEXT,
+    decided_at       TEXT NOT NULL
+  );
+
+  -- Correlation first: "show me every attempt against this approval" is the
+  -- question an audit trail exists to answer, and the acceptance criterion
+  -- about accepted and rejected attempts sharing a correlation is read here.
+  CREATE INDEX command_audit_by_correlation ON command_audit (correlation_id);
+  CREATE INDEX command_audit_by_agent ON command_audit (agent, decided_at);
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *
