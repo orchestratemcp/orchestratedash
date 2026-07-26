@@ -15,6 +15,8 @@ import {
   assertHardenedWebPreferences,
   isAllowedRendererUrl,
 } from "../lib/shell/window";
+import { isInsideInstallRoot } from "../lib/shell/install-layout";
+import path from "node:path";
 
 describe("renderer security posture", () => {
   /**
@@ -491,5 +493,52 @@ describe("audit lines carry keys, never values", () => {
     expect(line).toContain("reason=unexpected_payload_field");
     expect(line).toContain("keys=[issued_at,api_key]");
     expect(line).not.toContain("sk-live-000");
+  });
+});
+
+/**
+ * MAR-429. The packaged app must read its schemas from its own install layout.
+ *
+ * The failure this guards against is silent on the only machine likely to run
+ * it: a build box still has `<repo>/contracts`, so `lib/contracts.ts`'s
+ * walk-up fallback finds it and the package looks fine right up until it
+ * reaches a machine that has no development tree. See
+ * `electron/resources.ts`.
+ */
+describe("install layout containment", () => {
+  const root = path.join(path.sep, "app", "resources");
+
+  it("accepts a directory inside the install root", () => {
+    expect(isInsideInstallRoot(root, path.join(root, "contracts"))).toBe(true);
+  });
+
+  it("accepts the root itself", () => {
+    expect(isInsideInstallRoot(root, root)).toBe(true);
+  });
+
+  /**
+   * The case a `startsWith` check gets wrong, and the one an *update* — the
+   * lifecycle step MAR-429 exists to prove — actually produces on disk.
+   */
+  it("rejects a sibling directory sharing the root's name as a prefix", () => {
+    expect(isInsideInstallRoot(root, `${root}-old`)).toBe(false);
+  });
+
+  it("rejects a development tree elsewhere on the disk", () => {
+    expect(isInsideInstallRoot(root, path.join(path.sep, "src", "dash", "contracts"))).toBe(
+      false,
+    );
+  });
+
+  it("rejects a path that traverses back out of the root", () => {
+    expect(isInsideInstallRoot(root, path.join(root, "..", "..", "contracts"))).toBe(false);
+  });
+
+  /**
+   * A leading `..` in the *relative* result means escape; a directory whose
+   * name merely begins with dots does not.
+   */
+  it("accepts a directory whose name starts with dots", () => {
+    expect(isInsideInstallRoot(root, path.join(root, "..config"))).toBe(true);
   });
 });

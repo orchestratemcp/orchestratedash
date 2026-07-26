@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!--
+      No script, no style sheet, no image, no connection. The posture in
+      lib/shell/window.ts already forbids remote content; this says the same
+      thing a second time, in the document, where a reviewer looking at the
+      shipped page can see it without reading the main process.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
+    />
+    <title>OrchestrateDASH — packaging proof build</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 2rem;
+        line-height: 1.6;
+        background: Canvas;
+        color: CanvasText;
+      }
+      main {
+        max-width: 34rem;
+      }
+      h1 {
+        font-size: 1.35rem;
+        font-weight: 600;
+        margin: 0 0 0.25rem;
+      }
+      .tag {
+        font-size: 0.75rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        opacity: 0.6;
+        margin: 0 0 1.5rem;
+      }
+      p {
+        margin: 0 0 1rem;
+      }
+      ul {
+        margin: 0 0 1rem;
+        padding-left: 1.2rem;
+      }
+      li {
+        margin-bottom: 0.35rem;
+      }
+      code {
+        font-family: "Cascadia Mono", Consolas, monospace;
+        font-size: 0.9em;
+      }
+      .quiet {
+        opacity: 0.7;
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="tag">MAR-429 · DASH-18a</p>
+      <h1>This is a packaging proof build, not the DASH app.</h1>
+
+      <p>
+        The window opening is the point. This build exists to prove that the
+        Windows package installs, launches, and manages the background Agent
+        Runner correctly through its whole lifecycle.
+      </p>
+
+      <p>Everything being proved happens outside this window:</p>
+      <ul>
+        <li>the runner starts from inside the installed package</li>
+        <li>closing this window leaves running agents running</li>
+        <li>reopening finds the existing runner instead of starting a second one</li>
+        <li>updating the app does not leave an old runner behind</li>
+        <li>uninstalling leaves no runner process</li>
+      </ul>
+
+      <p class="quiet">
+        Evidence lives in <code>runner.log</code> and <code>runner.json</code> in
+        the per-user data directory, and in the main process console — not here.
+        The real DASH interface is packaged separately; see MAR-422.
+      </p>
+    </main>
+  </body>
+</html>

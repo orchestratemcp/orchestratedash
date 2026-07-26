@@ -25,6 +25,17 @@
 // startup. See `electron/data-dir.ts`.
 import { assertStoreLocation } from "./data-dir";
 
+// ALSO ORDER-SENSITIVE, for the same reason and one step further along.
+// `lib/contracts.ts` resolves and caches the schema directory at first use, so
+// a packaged app has to name it before anything validates anything. See
+// `electron/resources.ts` — the fallbacks it replaces are correct in a
+// development tree and wrong in an install, which is the worst combination.
+import {
+  assertContractsLocation,
+  assertRendererPresent,
+  packagedRendererUrl,
+} from "./resources";
+
 import { app, BrowserWindow, ipcMain } from "electron";
 
 import { userInfo } from "node:os";
@@ -67,7 +78,10 @@ const DEFAULT_RENDERER_URL = "http://127.0.0.1:3000";
 let stopPolling: (() => void) | null = null;
 
 function rendererUrl(): string {
-  const url = process.env.DASH_SHELL_URL ?? DEFAULT_RENDERER_URL;
+  // Packaged: the local placeholder page shipped beside the bundles. Unpacked:
+  // the loopback dev server, unchanged. `DASH_SHELL_URL` still overrides both,
+  // and still goes through the allowlist — see below.
+  const url = process.env.DASH_SHELL_URL ?? packagedRendererUrl() ?? DEFAULT_RENDERER_URL;
   if (!isAllowedRendererUrl(url)) {
     // Fail loudly at startup rather than rendering off-machine content in a
     // window that holds a command channel.
@@ -269,6 +283,13 @@ if (typeof app !== "undefined") {
     assertStoreLocation(dataDir);
     reportStoreLocation();
     reportSecureStoreBacking();
+
+    // MAR-429. The read-only half of the same question: the store must land in
+    // the user's data directory, and the schemas must come from this install
+    // rather than from a development tree that happens to be on the build
+    // machine. Both fail loudly here or not at all.
+    assertContractsLocation();
+    assertRendererPresent();
 
     // MAR-415. The runner is started before the window so the first render
     // already has somewhere to poll. A machine that cannot host one still gets

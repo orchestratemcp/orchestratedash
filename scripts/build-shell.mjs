@@ -21,7 +21,7 @@
  */
 
 import { build } from "esbuild";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -111,5 +111,24 @@ await Promise.all([
     format: "esm",
   }),
 ]);
+
+/**
+ * The packaged renderer (MAR-429).
+ *
+ * Copied rather than bundled: it is one static file with no imports, and
+ * `electron/resources.ts` resolves it relative to `main.mjs`, so it has to land
+ * beside it. Only the packaged app loads it — `pnpm dev` and `pnpm shell` still
+ * point at the loopback Next server — but it is built every time so that a
+ * packaging run can never be the first thing to discover it is missing.
+ *
+ * It is a placeholder for the real UI, and says so in its own text. See
+ * `electron/resources.ts` for why DASH's Next renderer is not packaged yet.
+ */
+const rendererDir = path.join(outDir, "renderer");
+mkdirSync(rendererDir, { recursive: true });
+copyFileSync(
+  path.join(repoRoot, "electron", "renderer", "index.html"),
+  path.join(rendererDir, "index.html"),
+);
 
 console.log(`[build-shell] wrote ${path.relative(repoRoot, outDir)}`);
