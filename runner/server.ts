@@ -9,9 +9,9 @@
  * ```
  *
  * The first two are the profile verbatim, which is what makes a runner-hosted
- * agent and a remote one reachable by the same adapter: an agent's manifest
- * names `http://127.0.0.1:{port}/agents/{id}` as its control location, and
- * `lib/agent-dom/transport.ts` neither knows nor cares that this one is local.
+ * agent and a remote one reachable by the same adapter: DASH hands the adapter
+ * a control location either way, and `lib/agent-dom/transport.ts` neither knows
+ * nor cares that this one arrives down a socket rather than over a network.
  *
  * **`/lifecycle` is deliberately not a command.** `start` and `stop` are not in
  * the contract's seven verbs, and `docs/agent-command-channel.md` explains at
@@ -22,12 +22,14 @@
  *
  * ## The posture
  *
- * - **Loopback only**, twice: the listener binds `127.0.0.1`, and every request
- *   is checked for a loopback peer anyway. Binding is configuration and can be
- *   got wrong; the check is code.
- * - **Bearer token, compared in constant time.** A naive `===` on a secret
- *   leaks its prefix to anyone who can time requests, and this endpoint is
- *   reachable by every process on the machine.
+ * - **No port at all.** Since MAR-430 the listener is a Unix socket or a
+ *   Windows named pipe, so the endpoint is not reachable by every process on
+ *   the machine the way a loopback port is. `runner/endpoint.ts` owns that and
+ *   documents what each platform does and does not enforce.
+ * - **Bearer token, compared in constant time.** The credential survives the
+ *   move: OS access control is the first gate and this is the second, and on
+ *   Windows the second is the one this project can both set and verify. A naive
+ *   `===` on a secret leaks its prefix to anyone who can time requests.
  * - **Bounded bodies.** An unbounded read on a local port is a denial of
  *   service any local process can perform.
  * - **The token is never logged**, and neither is a request body: an envelope
@@ -76,10 +78,10 @@ async function handle(
   options: RunnerServerOptions,
   log: (line: string) => void,
 ): Promise<void> {
-  if (!isLoopbackPeer(request)) {
-    // Belt and braces with the bind address. A runner that ever grows a
+  if (!isLocalPeer(request)) {
+    // Belt and braces with the endpoint. A runner that ever grows a
     // non-loopback listener must not silently become reachable.
-    send(response, 403, { ok: false, detail: "The runner accepts loopback connections only." });
+    send(response, 403, { ok: false, detail: "The runner accepts local connections only." });
     return;
   }
 
@@ -285,10 +287,24 @@ export function isAuthorized(request: IncomingMessage, token: string): boolean {
   return timingSafeEqual(presented, expected);
 }
 
-export function isLoopbackPeer(request: IncomingMessage): boolean {
+/**
+ * Is this connection one the runner may answer?
+ *
+ * Since MAR-430 the runner listens on a Unix socket or a named pipe and never
+ * on a port, and an IPC connection has **no remote address** — there is no peer
+ * IP because there is no IP. So an absent address is the expected case and is
+ * allowed: the operating system already decided who may connect, by socket mode
+ * and directory ownership on POSIX and by the pipe's descriptor on Windows.
+ *
+ * The loopback branch is kept for the case that no longer occurs. A future
+ * change that reintroduces a TCP listener — for a remote runner, say — must not
+ * get a non-loopback peer accepted by default just because this check was
+ * written when there was nothing to check.
+ */
+export function isLocalPeer(request: IncomingMessage): boolean {
   const address = request.socket.remoteAddress;
   if (address === undefined) {
-    return false;
+    return true;
   }
   return (
     address === "127.0.0.1" ||

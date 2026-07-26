@@ -33,6 +33,7 @@
  */
 
 import type { AgentCommandEnvelope } from "./envelope";
+import { ipcFetch } from "./ipc-fetch";
 import type { AdapterOutcome, AgentDomAdapter } from "./runner";
 
 /**
@@ -50,6 +51,15 @@ export interface ControlChannel {
   uri: string;
   /** Bearer credential. Never logged and never placed in a URL. */
   token: string;
+  /**
+   * A Unix socket or Windows named pipe to dial instead of resolving `uri`.
+   *
+   * Set for the bundled runner since MAR-430 and never for a remote one: a
+   * local endpoint is access-controlled by the OS, and a remote one is reached
+   * over HTTPS. When present, `uri`'s authority is a placeholder that is never
+   * looked up — see `lib/agent-dom/ipc-fetch.ts`.
+   */
+  ipc_path?: string;
 }
 
 export interface TransportOptions {
@@ -211,7 +221,11 @@ async function request(
   channel: ControlChannel,
   options: TransportOptions,
 ): Promise<RequestResult> {
-  const doFetch = options.fetch ?? globalThis.fetch;
+  // An injected fetch wins, so tests keep working without a listening endpoint.
+  // Otherwise the channel decides: a local runner is dialled down its socket or
+  // pipe, and everything else goes over the network exactly as before.
+  const doFetch =
+    options.fetch ?? (channel.ipc_path === undefined ? globalThis.fetch : ipcFetch(channel.ipc_path));
   const timeout = options.timeout_ms ?? DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
@@ -330,11 +344,18 @@ export function describeTransportError(
   channel: ControlChannel,
   timeoutMs: number,
 ): string {
-  const host = hostOf(channel.uri);
+  // A local endpoint's `uri` authority is a placeholder nobody resolves, so
+  // naming it would show a person a hostname that does not exist and cannot be
+  // pinged. "The local runner" is both true and actionable.
+  const where = channel.ipc_path === undefined ? `the runner at ${hostOf(channel.uri)}` : "the local runner";
   if (error instanceof Error && error.name === "AbortError") {
-    return `The runner at ${host} did not answer within ${String(timeoutMs)} ms.`;
+    return `${capitalise(where)} did not answer within ${String(timeoutMs)} ms.`;
   }
-  return `The runner at ${host} could not be reached.`;
+  return `${capitalise(where)} could not be reached.`;
+}
+
+function capitalise(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function hostOf(uri: string): string {

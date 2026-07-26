@@ -12,24 +12,39 @@
  * `electron/README.md` records that CI cannot run the shell, because
  * `ELECTRON_SKIP_BINARY_DOWNLOAD=1` keeps the platform binary out of CI and the
  * proofs are a local `pnpm shell:smoke`. This process has no such constraint.
- * It is Node, spawning Node, over a loopback socket — so the supervision, the
+ * It is Node, spawning Node, over an OS-local socket — so the supervision, the
  * protocol, the enforcement and the HTTP surface are all reachable by the test
  * suite that already runs on every push. Only the *spawning of the runner by
  * Electron* stays in the local smoke.
  *
- * ## Configuration is environment, and one variable is a secret
+ * ## Configuration, and where the credential went
  *
- * `DASH_RUNNER_TOKEN` is the channel credential. It arrives in the environment
- * because that is the one channel between main and a detached child that does
- * not touch disk, and it is never written to the port file, never logged, and
- * never passed to an agent — `runner/supervisor.ts` strips it from every child
- * environment and asserts that it did.
+ * MAR-415 passed `DASH_RUNNER_TOKEN` in the environment, on the argument that
+ * it was the one channel to a detached child that did not touch disk. MAR-430
+ * removes it. The credential is now minted and read through
+ * `runner/channel-secret.ts`, in a file whose ACL this project sets and then
+ * proves — which is what let the OS vault stop being a precondition for hosting
+ * a local agent at all.
+ *
+ * The practical consequences are both good ones: the runner can be started by
+ * hand for debugging without anybody minting a token first, and a secret that
+ * used to sit in an environment block — readable, on Linux, by any process of
+ * the same user via `/proc/{pid}/environ` — now sits behind file permissions.
  */
 
+import { randomBytes } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { contractsDirectory } from "../lib/contracts";
+import { ensureChannelSecret } from "./channel-secret";
+import {
+  listenOnEndpoint,
+  prepareEndpoint,
+  releaseEndpoint,
+  runnerEndpoint,
+  type RunnerEndpoint,
+} from "./endpoint";
 import { DASH_LOCAL_PRINCIPAL } from "./execute";
 import { createRunnerServer } from "./server";
 import { openRunnerStore } from "./store";
@@ -38,18 +53,22 @@ import { Supervisor, loadRegistrations } from "./supervisor";
 /**
  * Where DASH looks to find a runner it did not just start.
  *
- * Written after the socket is listening, so its existence means "there was a
- * runner on this port", not "one is being attempted". It holds a pid and a port
- * and nothing else — in particular not the token, because a file readable by
- * every process on the machine is not where a credential goes.
+ * Written after the endpoint is listening, so its existence means "there was a
+ * runner on this endpoint", not "one is being attempted". It holds a pid and a
+ * path and nothing else — in particular not the channel secret, because a file
+ * readable by every process on the machine is not where a credential goes. The
+ * secret is in `runner.key` next to it, and that file is not readable by every
+ * process on the machine; that is the whole difference and it is deliberate.
  */
-export interface RunnerPortFile {
+export interface RunnerEndpointFile {
   pid: number;
-  port: number;
+  /** The Unix socket path or Windows pipe name. Not a secret. */
+  endpoint: string;
+  transport: "unix" | "pipe";
   started_at: string;
 }
 
-export function portFilePath(dataDir: string): string {
+export function endpointFilePath(dataDir: string): string {
   return path.join(dataDir, "runner.json");
 }
 
@@ -63,11 +82,18 @@ function requiredEnvironment(name: string): string {
 
 async function main(): Promise<void> {
   const dataDir = requiredEnvironment("DASH_RUNNER_DATA_DIR");
-  const token = requiredEnvironment("DASH_RUNNER_TOKEN");
-  // 0 asks the OS for a free port, which is the sane default: a fixed port is a
-  // collision waiting for a second install, and DASH reads the real one back
-  // out of the port file.
-  const requestedPort = Number(process.env.DASH_RUNNER_PORT ?? "0");
+  /**
+   * DASH mints this per spawn so the endpoint name cannot be guessed in
+   * advance. Optional here so the runner stays runnable by hand: a debugging
+   * session that has to invent one is a debugging session that will paste the
+   * same value twice and then wonder why the second runner refused to start.
+   */
+  const endpointId =
+    process.env["DASH_RUNNER_ENDPOINT_ID"] ?? randomBytes(12).toString("hex");
+
+  const secret = ensureChannelSecret(dataDir);
+  const endpoint: RunnerEndpoint = runnerEndpoint(dataDir, endpointId);
+  await prepareEndpoint(endpoint);
 
   const store = openRunnerStore(dataDir);
   const { registrations, skipped } = loadRegistrations(path.join(dataDir, "agents"));
@@ -79,27 +105,28 @@ async function main(): Promise<void> {
   const server = createRunnerServer({
     supervisor,
     database: store.database,
-    token,
+    token: secret,
     principal: DASH_LOCAL_PRINCIPAL,
   });
 
-  await new Promise<void>((resolve) => {
-    // 127.0.0.1 explicitly, never 0.0.0.0. The contract permits loopback HTTP
-    // for a local adapter and requires HTTPS for anything else; binding wider
-    // would put a plaintext command channel on the network.
-    server.listen(requestedPort, "127.0.0.1", resolve);
-  });
-
-  const address = server.address();
-  const port = typeof address === "object" && address !== null ? address.port : requestedPort;
+  await listenOnEndpoint(server, endpoint);
 
   writeFileSync(
-    portFilePath(dataDir),
-    `${JSON.stringify({ pid: process.pid, port, started_at: new Date().toISOString() } satisfies RunnerPortFile, null, 2)}\n`,
+    endpointFilePath(dataDir),
+    `${JSON.stringify(
+      {
+        pid: process.pid,
+        endpoint: endpoint.path,
+        transport: endpoint.transport,
+        started_at: new Date().toISOString(),
+      } satisfies RunnerEndpointFile,
+      null,
+      2,
+    )}\n`,
     "utf8",
   );
 
-  console.warn(`[runner] listening on http://127.0.0.1:${String(port)} pid=${String(process.pid)}`);
+  console.warn(`[runner] listening on ${endpoint.path} pid=${String(process.pid)}`);
   console.warn(`[runner] store: ${dataDir}`);
   console.warn(`[runner] contracts: ${contractsDirectory()}`);
   console.warn(`[runner] supervising ${String(registrations.length)} registered agent(s)`);
@@ -107,10 +134,12 @@ async function main(): Promise<void> {
   /**
    * Shut down once, whatever arrives.
    *
-   * Agents are stopped before the socket closes, so a DASH that is still up
+   * Agents are stopped before the endpoint closes, so a DASH that is still up
    * sees "not running" rather than a connection refused it would have to guess
    * about. The store is closed last: an agent exiting can still settle a
-   * command result on its way out.
+   * command result on its way out. The socket is unlinked at the very end, so
+   * the only path that ever leaves one behind is a crash — which is exactly the
+   * case `prepareEndpoint` is written to recover from.
    */
   let shuttingDown = false;
   const shutdown = (signal: string): void => {
@@ -120,16 +149,15 @@ async function main(): Promise<void> {
     shuttingDown = true;
     console.warn(`[runner] ${signal}: stopping agents`);
     supervisor.stopAll();
-    server.close(() => {
+    const finish = (): never => {
       store.close();
+      releaseEndpoint(endpoint);
       process.exit(0);
-    });
-    // A socket with a wedged keep-alive connection must not stop the runner
+    };
+    server.close(finish);
+    // An endpoint with a wedged keep-alive connection must not stop the runner
     // from exiting when it was asked to.
-    setTimeout(() => {
-      store.close();
-      process.exit(0);
-    }, 8_000).unref();
+    setTimeout(finish, 8_000).unref();
   };
 
   process.on("SIGTERM", () => { shutdown("SIGTERM"); });

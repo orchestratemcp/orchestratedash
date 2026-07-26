@@ -17,6 +17,7 @@
  * mitigation written down and not implemented.
  */
 
+import { randomBytes } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -25,7 +26,15 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { buildEnvelope, type AgentCommandEnvelope, type CommandActor } from "../lib/agent-dom/envelope";
+import { IPC_ORIGIN, ipcFetch } from "../lib/agent-dom/ipc-fetch";
 import { validateState } from "../lib/contracts";
+import {
+  listenOnEndpoint,
+  prepareEndpoint,
+  releaseEndpoint,
+  runnerEndpoint,
+  type RunnerEndpoint,
+} from "../runner/endpoint";
 import { DASH_LOCAL_PRINCIPAL } from "../runner/execute";
 import { createRunnerServer } from "../runner/server";
 import { openRunnerStore, readRunnerAudit, type RunnerStore } from "../runner/store";
@@ -98,11 +107,23 @@ async function waitFor(predicate: () => boolean, label: string, timeoutMs = 8_00
 
 interface Harness {
   base: string;
+  /** Speaks HTTP down this runner's socket or pipe. */
+  call: typeof globalThis.fetch;
+  endpoint: RunnerEndpoint;
   supervisor: Supervisor;
   store: RunnerStore;
   close(): Promise<void>;
 }
 
+/**
+ * Every test below runs over the **real** local transport (MAR-430).
+ *
+ * It used to be a loopback port, which was convenient and no longer
+ * representative: the shipped runner does not open one. Binding the same
+ * endpoint the product binds is what makes this file evidence for the issue's
+ * "same message shapes and runner enforcement on every local transport"
+ * criterion rather than a suite that happens to agree with it.
+ */
 async function startRunner(
   env: Record<string, string> = {},
   manifestPath: string = MANIFEST,
@@ -120,12 +141,14 @@ async function startRunner(
     log: () => {},
   });
 
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  const port = typeof address === "object" && address !== null ? address.port : 0;
+  const endpoint = runnerEndpoint(dataDir, randomBytes(8).toString("hex"));
+  await prepareEndpoint(endpoint);
+  await listenOnEndpoint(server, endpoint);
 
   return {
-    base: `http://127.0.0.1:${String(port)}`,
+    base: IPC_ORIGIN,
+    call: ipcFetch(endpoint.path),
+    endpoint,
     supervisor,
     store,
     close(): Promise<void> {
@@ -133,6 +156,7 @@ async function startRunner(
       return new Promise<void>((resolve) => {
         server.close(() => {
           store.close();
+          releaseEndpoint(endpoint);
           resolve();
         });
       });
@@ -198,11 +222,11 @@ interface CommandResponse {
 }
 
 async function postCommand(
-  base: string,
+  runner: Harness,
   body: unknown,
   token: string = TOKEN,
 ): Promise<{ status: number; body: CommandResponse }> {
-  const response = await fetch(`${base}/agents/${AGENT}/commands`, {
+  const response = await runner.call(`${runner.base}/agents/${AGENT}/commands`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
     body: JSON.stringify(body),
@@ -223,17 +247,17 @@ describe("authentication", () => {
   });
 
   it("serves /health without a token", async () => {
-    const response = await fetch(`${harness.base}/health`);
+    const response = await harness.call(`${harness.base}/health`);
     expect(response.status).toBe(200);
     expect(((await response.json()) as { ok: boolean }).ok).toBe(true);
   });
 
   it("refuses a state read with no token", async () => {
-    expect((await fetch(`${harness.base}/agents/${AGENT}`)).status).toBe(401);
+    expect((await harness.call(`${harness.base}/agents/${AGENT}`)).status).toBe(401);
   });
 
   it("refuses a wrong token", async () => {
-    const response = await fetch(`${harness.base}/agents/${AGENT}`, {
+    const response = await harness.call(`${harness.base}/agents/${AGENT}`, {
       headers: { authorization: "Bearer not-the-token" },
     });
     expect(response.status).toBe(401);
@@ -242,14 +266,14 @@ describe("authentication", () => {
   it("refuses a token of the right length but the wrong value", async () => {
     // The constant-time comparison's own case: same length, different bytes.
     const wrong = `${"x".repeat(TOKEN.length - 1)}y`;
-    const response = await fetch(`${harness.base}/agents/${AGENT}`, {
+    const response = await harness.call(`${harness.base}/agents/${AGENT}`, {
       headers: { authorization: `Bearer ${wrong}` },
     });
     expect(response.status).toBe(401);
   });
 
   it("says nothing about why a token failed", async () => {
-    const response = await fetch(`${harness.base}/agents/${AGENT}`, {
+    const response = await harness.call(`${harness.base}/agents/${AGENT}`, {
       headers: { authorization: "Bearer wrong" },
     });
     const body = (await response.json()) as { detail?: string };
@@ -270,14 +294,14 @@ describe("GET {control-location-uri}", () => {
   });
 
   it("404s for an agent nobody registered", async () => {
-    const response = await fetch(`${harness.base}/agents/nope`, {
+    const response = await harness.call(`${harness.base}/agents/nope`, {
       headers: { authorization: `Bearer ${TOKEN}` },
     });
     expect(response.status).toBe(404);
   });
 
   it("serves a snapshot that satisfies the contract before the agent has started", async () => {
-    const response = await fetch(`${harness.base}/agents/${AGENT}`, {
+    const response = await harness.call(`${harness.base}/agents/${AGENT}`, {
       headers: { authorization: `Bearer ${TOKEN}` },
     });
     expect(response.status).toBe(200);
@@ -292,7 +316,7 @@ describe("GET {control-location-uri}", () => {
     harness.supervisor.start(AGENT);
     await waitFor(() => harness.supervisor.report(AGENT) !== null, "the agent's first report");
 
-    const response = await fetch(`${harness.base}/agents/${AGENT}`, {
+    const response = await harness.call(`${harness.base}/agents/${AGENT}`, {
       headers: { authorization: `Bearer ${TOKEN}` },
     });
     const state = (await response.json()) as Record<string, unknown>;
@@ -307,7 +331,7 @@ describe("GET {control-location-uri}", () => {
     harness.supervisor.stop(AGENT);
     await waitFor(() => harness.supervisor.facts(AGENT)?.lifecycle === "exited", "exit");
 
-    const response = await fetch(`${harness.base}/agents/${AGENT}`, {
+    const response = await harness.call(`${harness.base}/agents/${AGENT}`, {
       headers: { authorization: `Bearer ${TOKEN}` },
     });
     const state = (await response.json()) as Record<string, unknown>;
@@ -332,7 +356,7 @@ describe("POST {control-location-uri}/commands", () => {
   });
 
   it("delivers an accepted command and reports the agent's acknowledgement", async () => {
-    const { status, body } = await postCommand(harness.base, envelope());
+    const { status, body } = await postCommand(harness, envelope());
     expect(status).toBe(200);
     expect(body.ok).toBe(true);
     expect(body.detail).toBe("handled by the fixture");
@@ -344,7 +368,7 @@ describe("POST {control-location-uri}/commands", () => {
   it("records the approval decision, with the reason, where DASH refuses to", async () => {
     // `docs/agent-command-channel.md` settled that DASH stores keys and never
     // values, and named the runner as where the rationale actually lives.
-    await postCommand(harness.base, envelope({ reason: "spoke to the customer" }));
+    await postCommand(harness, envelope({ reason: "spoke to the customer" }));
 
     const row = harness.store.database
       .prepare("SELECT decision, actor_id, reason FROM approval_decisions WHERE request_id = ?")
@@ -357,29 +381,29 @@ describe("POST {control-location-uri}/commands", () => {
   });
 
   it("keeps the free-text reason out of its own audit table", async () => {
-    await postCommand(harness.base, envelope({ reason: "sk-live-not-a-real-secret" }));
+    await postCommand(harness, envelope({ reason: "sk-live-not-a-real-secret" }));
     const audit = readRunnerAudit(harness.store.database);
     expect(JSON.stringify(audit)).not.toContain("sk-live-not-a-real-secret");
   });
 
   it("refuses a replayed nonce", async () => {
     const first = envelope();
-    expect((await postCommand(harness.base, first)).body.ok).toBe(true);
+    expect((await postCommand(harness, first)).body.ok).toBe(true);
 
     // Same nonce, different everything else, so only the nonce can refuse it.
     const replay = envelope({ nonce: first.nonce });
-    const { body } = await postCommand(harness.base, replay);
+    const { body } = await postCommand(harness, replay);
     expect(body).toMatchObject({ ok: false, reason: "replayed_nonce" });
   });
 
   it("returns the stored result for a duplicate rather than acting again", async () => {
     const first = envelope();
-    await postCommand(harness.base, first);
+    await postCommand(harness, first);
 
     // A fresh nonce but the same intent: the idempotency key is derived from
     // the intent, so this is the double-click case.
     const duplicate = envelope({ observed_at: first.payload?.observed_at });
-    const { body } = await postCommand(harness.base, duplicate);
+    const { body } = await postCommand(harness, duplicate);
     expect(body.duplicate).toBe(true);
 
     // And the approval was decided exactly once.
@@ -391,7 +415,7 @@ describe("POST {control-location-uri}/commands", () => {
 
   it("refuses an expired envelope", async () => {
     const stale = envelope({ now: new Date(Date.now() - 600_000) });
-    const { body } = await postCommand(harness.base, stale);
+    const { body } = await postCommand(harness, stale);
     expect(body).toMatchObject({ ok: false, reason: "expired_command" });
   });
 
@@ -401,7 +425,7 @@ describe("POST {control-location-uri}/commands", () => {
     const forged = envelope({
       actor: { ...ACTOR, authenticated_by: "signed_identity" },
     });
-    const { body } = await postCommand(harness.base, forged);
+    const { body } = await postCommand(harness, forged);
     expect(body).toMatchObject({ ok: false, reason: "unassertable_actor" });
   });
 
@@ -417,28 +441,28 @@ describe("POST {control-location-uri}/commands", () => {
       command: "pause",
       target: { agent_id: AGENT, task_id: TASK },
     });
-    const { body } = await postCommand(narrow.base, undeclared);
+    const { body } = await postCommand(narrow, undeclared);
     expect(body).toMatchObject({ ok: false, reason: "undeclared_capability" });
 
     await narrow.close();
   });
 
   it("refuses an approval it has already decided", async () => {
-    expect((await postCommand(harness.base, envelope())).body.ok).toBe(true);
+    expect((await postCommand(harness, envelope())).body.ok).toBe(true);
 
     // A genuinely different command against the same, now-resolved approval.
     const again = envelope({ observed_at: new Date(Date.now() + 1_000).toISOString() });
-    const { body } = await postCommand(harness.base, again);
+    const { body } = await postCommand(harness, again);
     expect(body).toMatchObject({ ok: false, reason: "approval_not_open" });
   });
 
   it("refuses an envelope that is not a command at all", async () => {
-    const { body } = await postCommand(harness.base, { hello: "world" });
+    const { body } = await postCommand(harness, { hello: "world" });
     expect(body).toMatchObject({ ok: false, reason: "invalid_envelope" });
   });
 
   it("refuses a body that is not JSON", async () => {
-    const response = await fetch(`${harness.base}/agents/${AGENT}/commands`, {
+    const response = await harness.call(`${harness.base}/agents/${AGENT}/commands`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
       body: "{ not json",
@@ -447,7 +471,7 @@ describe("POST {control-location-uri}/commands", () => {
   });
 
   it("refuses an oversized body", async () => {
-    const response = await fetch(`${harness.base}/agents/${AGENT}/commands`, {
+    const response = await harness.call(`${harness.base}/agents/${AGENT}/commands`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
       body: JSON.stringify({ padding: "x".repeat(300_000) }),
@@ -456,7 +480,7 @@ describe("POST {control-location-uri}/commands", () => {
   });
 
   it("audits refusals as well as acceptances", async () => {
-    await postCommand(harness.base, envelope({ now: new Date(Date.now() - 600_000) }));
+    await postCommand(harness, envelope({ now: new Date(Date.now() - 600_000) }));
     const audit = readRunnerAudit(harness.store.database);
     expect(audit.at(-1)).toMatchObject({ decision: "refused", reason_code: "expired_command" });
   });
@@ -467,13 +491,13 @@ describe("POST {control-location-uri}/commands", () => {
     // link an investigation is supposed to follow. The refusal is still
     // returned to the caller.
     const before = readRunnerAudit(harness.store.database).length;
-    const { body } = await postCommand(harness.base, { hello: "world" });
+    const { body } = await postCommand(harness, { hello: "world" });
     expect(body.reason).toBe("invalid_envelope");
     expect(readRunnerAudit(harness.store.database)).toHaveLength(before);
   });
 
   it("carries DASH's correlation into its own trail", async () => {
-    await postCommand(harness.base, envelope());
+    await postCommand(harness, envelope());
     const audit = readRunnerAudit(harness.store.database);
     expect(audit.at(-1)?.correlation_id).toBe("corr-fixture-01");
   });
@@ -488,12 +512,12 @@ describe("commands against an agent that is not running", () => {
   });
 
   it("refuses rather than reporting a delivery that could not happen", async () => {
-    const { body } = await postCommand(harness.base, envelope());
+    const { body } = await postCommand(harness, envelope());
     expect(body).toMatchObject({ ok: false, reason: "agent_not_running" });
   });
 
   it("refuses a command for an agent nobody registered", async () => {
-    const response = await fetch(`${harness.base}/agents/ghost/commands`, {
+    const response = await harness.call(`${harness.base}/agents/ghost/commands`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
       body: JSON.stringify(
@@ -518,7 +542,7 @@ describe("POST /agents/{id}/lifecycle", () => {
   });
 
   async function lifecycle(action: unknown): Promise<{ status: number; body: CommandResponse }> {
-    const response = await fetch(`${harness.base}/agents/${AGENT}/lifecycle`, {
+    const response = await harness.call(`${harness.base}/agents/${AGENT}/lifecycle`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
       body: JSON.stringify({ action }),
@@ -542,7 +566,7 @@ describe("POST /agents/{id}/lifecycle", () => {
   });
 
   it("requires the channel token", async () => {
-    const response = await fetch(`${harness.base}/agents/${AGENT}/lifecycle`, {
+    const response = await harness.call(`${harness.base}/agents/${AGENT}/lifecycle`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action: "start" }),
