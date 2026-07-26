@@ -117,8 +117,17 @@ Two things about the shell changed with it, both worth knowing before reading
   detached — not because DASH stays alive.
 - **DASH now leaves a process running after it quits.** Deliberately, and
   contrary to the default MAR-424 argued for. It is stoppable from the UI via
-  `runner.stop`, and its pid and port are in `runner.json` in the data
+  `runner.stop`, and its pid and endpoint are in `runner.json` in the data
   directory.
+
+**MAR-430 took the port away.** The runner listens on a Unix socket or a Windows
+named pipe, so nothing in a DASH install opens a listening port at all. Two
+consequences reach this directory: `runner-process.ts` no longer needs the OS
+vault to start a runner — the channel credential is a file with an owner-only
+ACL, not a keyring entry — and every call to the runner goes through
+`runnerFetch`, because global `fetch` resolves hosts and there is no host. The
+reasoning, and an honest account of what a Windows named pipe's default
+descriptor does and does not permit, is in [`runner/`](../runner/README.md).
 
 ## Known open items for the packaging phase
 

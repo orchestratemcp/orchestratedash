@@ -22,16 +22,20 @@
  * one environment variable this module sets for a reason a reader would not
  * guess.
  *
- * ## The channel credential
+ * ## The vault is no longer a precondition (MAR-430)
  *
- * The token lives in the OS vault (MAR-416), because it must survive a DASH
- * restart: a runner adopted after a restart is one DASH has to be able to
- * authenticate to, and a token held only in memory would mean the choice
- * between killing a running fleet and talking to it. **When the vault is not
- * OS-backed the runner is not started at all** — `lib/secure-store.ts` already
- * decided that a credential never falls back to plaintext, and a control
- * channel for a process that executes agent code is not the place to make the
- * first exception.
+ * MAR-415 held the channel token in the OS vault and refused to start the
+ * runner at all without one. That coupled *hosting a local agent* to *having a
+ * keyring*, which on a Linux box with no libsecret meant DASH could not host
+ * even an agent that had no credentials to protect. `runner/README.md` item 7
+ * recorded it as a known defect; this is the fix.
+ *
+ * The channel credential now lives in `runner.key` under an ACL this project
+ * sets and verifies — see `runner/channel-secret.ts` — and the endpoint is a
+ * Unix socket or a named pipe rather than a TCP port. What still requires
+ * `SecureStore`, and still fails closed without it, is everything a *person*
+ * entrusted to DASH: provider credentials, and the bearer token for a remote
+ * runner reached over HTTPS. Those are in `electron/agent-adapters.ts`.
  */
 
 import { spawn } from "node:child_process";
@@ -40,16 +44,22 @@ import { existsSync, openSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { isSecureStoreError, type SecureStore } from "../lib/secure-store";
-import type { RunnerPortFile } from "../runner/main";
-
-/** The vault key. Must satisfy `isValidSecretName`. */
-export const RUNNER_TOKEN_NAME = "dash.runner.channel-token";
+import { IPC_ORIGIN, ipcFetch } from "../lib/agent-dom/ipc-fetch";
+import { ChannelSecretError, ensureChannelSecret } from "../runner/channel-secret";
+import { EndpointError } from "../runner/endpoint";
+import type { RunnerEndpointFile } from "../runner/main";
 
 export interface RunnerHandle {
-  /** The base for every agent's control location on this machine. */
+  /**
+   * The base every agent's control location is built on.
+   *
+   * A placeholder authority, not a host: the bytes go down `endpoint`. See
+   * `lib/agent-dom/ipc-fetch.ts` for why it is deliberately unresolvable.
+   */
   origin: string;
-  port: number;
+  /** The Unix socket path or Windows pipe name this runner listens on. */
+  endpoint: string;
+  transport: "unix" | "pipe";
   pid: number;
   token: string;
   /** True when DASH attached to a runner that was already up. */
@@ -60,69 +70,55 @@ export type EnsureRunnerResult =
   | { ok: true; handle: RunnerHandle }
   | {
       ok: false;
-      reason: "vault_unavailable" | "spawn_failed" | "never_listened";
+      reason: "endpoint_refused" | "spawn_failed" | "never_listened";
       detail: string;
     };
 
-function portFilePath(dataDir: string): string {
+function endpointFilePath(dataDir: string): string {
   return path.join(dataDir, "runner.json");
 }
 
-/**
- * Get the channel token, minting one the first time.
- *
- * 32 bytes of CSPRNG output, base64url — the same shape and the same reasoning
- * as the command nonce in `lib/agent-dom/envelope.ts`.
- */
-async function ensureToken(store: SecureStore): Promise<string> {
-  try {
-    return await store.get(RUNNER_TOKEN_NAME);
-  } catch (error: unknown) {
-    if (!isSecureStoreError(error) || error.code !== "not_found") {
-      throw error;
-    }
-  }
-  const token = randomBytes(32).toString("base64url");
-  await store.set(RUNNER_TOKEN_NAME, token);
-  return token;
+/** A `fetch` bound to one runner's endpoint. */
+export function runnerFetch(handle: RunnerHandle): typeof globalThis.fetch {
+  return ipcFetch(handle.endpoint);
 }
 
 /**
  * Is a runner already listening, and is it ours?
  *
- * The port file says where to look; the health check says whether anything is
- * there; the authenticated probe says whether it is a runner that accepts our
- * token. All three matter — a stale port file after a crash can point at a port
- * some unrelated process has since taken, and DASH must not start posting
- * command envelopes at it.
+ * The endpoint file says where to look; the health check says whether anything
+ * is there; the authenticated probe says whether it is a runner that accepts
+ * our secret. All three still matter. What changed with MAR-430 is what a
+ * stale file can point at: a dead runner's *port* could be reused by an
+ * unrelated process, whereas a dead runner's socket path or pipe name simply
+ * does not answer. The authenticated probe is kept anyway — a path under the
+ * user's own control could still be occupied by something the user ran.
  */
 async function adopt(dataDir: string, token: string): Promise<RunnerHandle | null> {
-  const file = portFilePath(dataDir);
+  const file = endpointFilePath(dataDir);
   if (!existsSync(file)) {
     return null;
   }
 
-  let recorded: RunnerPortFile;
+  let recorded: RunnerEndpointFile;
   try {
-    recorded = JSON.parse(readFileSync(file, "utf8")) as RunnerPortFile;
+    recorded = JSON.parse(readFileSync(file, "utf8")) as RunnerEndpointFile;
   } catch {
     return null;
   }
-  if (typeof recorded.port !== "number" || typeof recorded.pid !== "number") {
+  if (typeof recorded.endpoint !== "string" || typeof recorded.pid !== "number") {
     return null;
   }
 
-  const origin = `http://127.0.0.1:${String(recorded.port)}`;
+  const call = ipcFetch(recorded.endpoint);
   try {
-    const health = await fetch(`${origin}/health`, {
-      signal: AbortSignal.timeout(2_000),
-    });
+    const health = await call(`${IPC_ORIGIN}/health`, { signal: AbortSignal.timeout(2_000) });
     if (!health.ok) {
       return null;
     }
     // Authenticated probe. A 401 means something is listening that does not
-    // share our token, which is not a runner we may adopt.
-    const probe = await fetch(`${origin}/agents/__probe__`, {
+    // share our secret, which is not a runner we may adopt.
+    const probe = await call(`${IPC_ORIGIN}/agents/__probe__`, {
       headers: { authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(2_000),
     });
@@ -133,7 +129,14 @@ async function adopt(dataDir: string, token: string): Promise<RunnerHandle | nul
     return null;
   }
 
-  return { origin, port: recorded.port, pid: recorded.pid, token, adopted: true };
+  return {
+    origin: IPC_ORIGIN,
+    endpoint: recorded.endpoint,
+    transport: recorded.transport === "pipe" ? "pipe" : "unix",
+    pid: recorded.pid,
+    token,
+    adopted: true,
+  };
 }
 
 /**
@@ -143,32 +146,22 @@ async function adopt(dataDir: string, token: string): Promise<RunnerHandle | nul
  * runner along with every agent it holds, which is the same failure as killing
  * the fleet on restart wearing a different hat.
  */
-export async function ensureRunner(
-  dataDir: string,
-  store: SecureStore,
-): Promise<EnsureRunnerResult> {
-  const backing = store.describeBacking();
-  if (!backing.os_backed) {
-    return {
-      ok: false,
-      reason: "vault_unavailable",
-      detail:
-        `The bundled runner needs an OS-backed vault to hold its control-channel token, and this ` +
-        `machine reports "${backing.label}". DASH will run without hosting agents; remote ` +
-        `agent-managed agents are unaffected.`,
-    };
-  }
-
+export async function ensureRunner(dataDir: string): Promise<EnsureRunnerResult> {
   let token: string;
   try {
-    token = await ensureToken(store);
+    token = ensureChannelSecret(dataDir);
   } catch (error: unknown) {
+    // The one remaining reason a machine cannot host agents, and it is a much
+    // narrower one than "no keyring": DASH could not put an owner-only ACL on
+    // one file, or could not prove that it had. Failing closed here is the
+    // issue's own instruction — an unprovable ACL is not a protected secret.
     return {
       ok: false,
-      reason: "vault_unavailable",
-      detail: isSecureStoreError(error)
-        ? `The vault refused to hold the runner's token (${error.code}).`
-        : "The vault refused to hold the runner's token.",
+      reason: "endpoint_refused",
+      detail:
+        error instanceof ChannelSecretError || error instanceof EndpointError
+          ? error.message
+          : "The runner's channel credential could not be prepared.",
     };
   }
 
@@ -177,9 +170,22 @@ export async function ensureRunner(
     return { ok: true, handle: existing };
   }
 
-  // A port file that survived a crash points nowhere useful and would otherwise
-  // be adopted again on the next launch.
-  rmSync(portFilePath(dataDir), { force: true });
+  retireLegacyRunner(dataDir);
+
+  // An endpoint file that survived a crash points nowhere useful and would
+  // otherwise be adopted again on the next launch.
+  rmSync(endpointFilePath(dataDir), { force: true });
+
+  /**
+   * A fresh endpoint name per spawn.
+   *
+   * The issue asks for unpredictable-per-install; per-spawn is strictly
+   * stronger. It is what stops a local process pre-creating the Windows pipe
+   * DASH is about to bind — and if one somehow did, libuv's
+   * `FILE_FLAG_FIRST_PIPE_INSTANCE` makes the bind fail rather than silently
+   * join, so the failure is closed either way.
+   */
+  const endpointId = randomBytes(12).toString("hex");
 
   const entry = fileURLToPath(new URL("./runner.mjs", import.meta.url));
   const logFile = openSync(path.join(dataDir, "runner.log"), "a");
@@ -196,7 +202,10 @@ export async function ensureRunner(
         ...cleanEnvironment(),
         ELECTRON_RUN_AS_NODE: "1",
         DASH_RUNNER_DATA_DIR: dataDir,
-        DASH_RUNNER_TOKEN: token,
+        // Not a secret, unlike the token this replaced. A Windows pipe name is
+        // enumerable by any local process, so its value is that it could not be
+        // guessed beforehand — not that it stays hidden afterwards.
+        DASH_RUNNER_ENDPOINT_ID: endpointId,
       },
     });
     child.unref();
@@ -209,25 +218,69 @@ export async function ensureRunner(
     };
   }
 
-  const listening = await waitForPortFile(dataDir);
+  const listening = await waitForEndpointFile(dataDir);
   if (listening === null) {
     return {
       ok: false,
       reason: "never_listened",
-      detail: `The runner started as pid ${String(pid)} but never reported a port. See runner.log in the data directory.`,
+      detail: `The runner started as pid ${String(pid)} but never reported an endpoint. See runner.log in the data directory.`,
     };
   }
 
   return {
     ok: true,
     handle: {
-      origin: `http://127.0.0.1:${String(listening.port)}`,
-      port: listening.port,
+      origin: IPC_ORIGIN,
+      endpoint: listening.endpoint,
+      transport: listening.transport === "pipe" ? "pipe" : "unix",
       pid: listening.pid,
       token,
       adopted: false,
     },
   };
+}
+
+/**
+ * Stop a runner left behind by a version that listened on a port.
+ *
+ * The upgrade case, and the only one where "adopt or spawn" is not enough. A
+ * pre-MAR-430 `runner.json` carries `port` and no `endpoint`, so `adopt`
+ * correctly declines it — and without this, the old process would keep running
+ * forever, holding agents DASH can no longer see or stop, while a second runner
+ * starts beside it. Two runners supervising one machine is precisely what the
+ * endpoint's exactly-one guarantee exists to prevent, and an update is not
+ * allowed to be the way around it.
+ *
+ * Signalled rather than adopted: the old runner speaks a transport this build
+ * no longer dials, so there is nothing to say to it but "stop".
+ */
+function retireLegacyRunner(dataDir: string): void {
+  const file = endpointFilePath(dataDir);
+  if (!existsSync(file)) {
+    return;
+  }
+  let recorded: { pid?: unknown; port?: unknown; endpoint?: unknown };
+  try {
+    recorded = JSON.parse(readFileSync(file, "utf8")) as typeof recorded;
+  } catch {
+    return;
+  }
+  if (typeof recorded.port !== "number" || typeof recorded.endpoint === "string") {
+    return;
+  }
+  if (typeof recorded.pid !== "number") {
+    return;
+  }
+
+  try {
+    process.kill(recorded.pid, "SIGTERM");
+    console.warn(
+      `[dash-shell] stopped a pre-MAR-430 runner (pid ${String(recorded.pid)}) that listened on a port.`,
+    );
+  } catch {
+    // Already gone, or not ours to signal. Either way there is nothing left to
+    // retire and the new runner's endpoint cannot collide with a TCP port.
+  }
 }
 
 /**
@@ -244,17 +297,17 @@ function cleanEnvironment(): NodeJS.ProcessEnv {
   return rest;
 }
 
-/** Poll for the port file the runner writes once it is listening. */
-async function waitForPortFile(
+/** Poll for the endpoint file the runner writes once it is listening. */
+async function waitForEndpointFile(
   dataDir: string,
   timeoutMs = 10_000,
-): Promise<RunnerPortFile | null> {
-  const file = portFilePath(dataDir);
+): Promise<RunnerEndpointFile | null> {
+  const file = endpointFilePath(dataDir);
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (existsSync(file)) {
       try {
-        return JSON.parse(readFileSync(file, "utf8")) as RunnerPortFile;
+        return JSON.parse(readFileSync(file, "utf8")) as RunnerEndpointFile;
       } catch {
         // Written but not yet flushed. Try again.
       }
@@ -270,7 +323,7 @@ async function waitForPortFile(
  * A signal rather than an HTTP route: stopping the runner is not something an
  * authenticated caller does to a resource, it is something the machine's owner
  * does to a process, and giving it an endpoint would make "shut down the thing
- * holding every agent" reachable by anything that ever learns the token.
+ * holding every agent" reachable by anything that ever learns the credential.
  */
 export function stopRunner(handle: RunnerHandle): { ok: boolean; detail: string } {
   try {

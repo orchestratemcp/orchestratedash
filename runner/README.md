@@ -8,7 +8,9 @@ The process that actually holds a running agent.
 
 | File | What it is |
 | --- | --- |
-| `main.ts` | Entry point. Config from the environment, socket, signals. Wiring only. |
+| `main.ts` | Entry point. Config from the environment, endpoint, signals. Wiring only. |
+| `endpoint.ts` | Where it listens: Unix socket or named pipe. Binding, stale recovery, modes. |
+| `channel-secret.ts` | The channel credential and the owner-only ACL that protects it. |
 | `server.ts` | The HTTP surface: the v0 profile plus `/lifecycle` and `/health`. |
 | `execute.ts` | The runner's own adjudication of a command. The order is the argument. |
 | `supervisor.ts` | Child processes: spawn, stop, watch, deliver. |
@@ -45,9 +47,9 @@ So the boundary is made of things, not of words:
   sent.
 - **Its own audit trail**, carrying DASH's correlation id so one investigation
   spans both.
-- **Its own credential.** A bearer token, minted by main, held in the OS vault,
-  never written to the port file, never logged, and stripped from every agent's
-  environment.
+- **Its own credential.** A bearer token, minted on first run, held in
+  `runner.key` under an owner-only ACL, never written to `runner.json`, never
+  logged, and stripped from every agent's environment.
 
 ## Where the free-text approval reason lives
 
@@ -112,25 +114,91 @@ The runner refuses to start an agent whose manifest is not valid v2, and it
 checks that **before** spawning anything — a refusal that happened after the
 agent ran would not be a refusal.
 
+## Where it listens (MAR-430)
+
+**Not on a port.** A loopback TCP listener is reachable by every process on the
+machine, which left a bearer token as the only thing between a hostile local
+program and the command channel. The endpoint is now the operating system's
+problem:
+
+| Platform | Endpoint | What limits access |
+| --- | --- | --- |
+| macOS / Linux | Unix-domain socket | 0700 runtime directory, 0600 socket, ownership checked before use |
+| Windows | Named pipe | The pipe's descriptor, plus the channel secret — read on |
+
+The HTTP above it is unchanged. `node:http` serves a `socketPath` exactly as it
+serves a port, so this is a transport swap and not a protocol change, and
+`tests/runner-server.test.ts` runs its whole suite over the real endpoint.
+
+### The Windows part, stated honestly
+
+**Node cannot author a named pipe's DACL.** libuv calls `CreateNamedPipeW` with
+`lpSecurityAttributes = NULL` and exposes no override, and fixing it after
+`listen()` does not work either: each pipe *instance* is given its descriptor at
+creation and libuv creates a fresh instance per connection.
+
+The descriptor Windows assigns — measured on this project's own runner, not
+assumed — is:
+
+```
+D:(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;<owner>)(A;;FR;;;WD)(A;;FR;;;AN)
+```
+
+`WD` is Everyone and `AN` is Anonymous, both with `FILE_GENERIC_READ`. That is
+wider than owner-only and it is why MAR-430 named the DACL as an acceptance
+criterion.
+
+What it does **not** grant is `FILE_WRITE_DATA`. A foreign principal can connect
+and occupy a pipe instance; it cannot write a byte. Every byte this runner emits
+is a response to a request the peer had to send first, so a peer that cannot
+write learns nothing and commands nothing — which is the criterion "a different
+local user cannot read state or submit a command", met.
+
+Depth for the part that cannot be authored comes from the credential, whose ACL
+*can* be set and *can* be verified. `channel-secret.ts` writes `runner.key`, then
+proves what it wrote by reading the descriptor back with `icacls /save` — which
+emits SDDL with raw SIDs, so the check does not depend on the machine's
+language. Anything that is neither this user, SYSTEM nor Administrators is
+removed; if the ACL still cannot be proven after that, the runner refuses to
+start. An unprovable ACL is not a protected secret.
+
+Two guarantees come free from the platform and are relied on deliberately:
+libuv passes `FILE_FLAG_FIRST_PIPE_INSTANCE`, so a second bind to a live name is
+`EADDRINUSE` rather than a silent join; and the endpoint name is minted fresh
+per spawn, so it cannot be squatted in advance.
+
 ## Running it
 
 The runner is started by DASH. To run it by hand for debugging:
 
 ```sh
 pnpm build:shell
-DASH_RUNNER_DATA_DIR=/tmp/dash-runner DASH_RUNNER_TOKEN=$(openssl rand -base64 32) \
-  node dist/electron/runner.mjs
+DASH_RUNNER_DATA_DIR=/tmp/dash-runner node dist/electron/runner.mjs
 ```
 
 | Variable | Meaning |
 | --- | --- |
-| `DASH_RUNNER_DATA_DIR` | Required. Database, registrations, port file and log. |
-| `DASH_RUNNER_TOKEN` | Required. The channel credential. |
-| `DASH_RUNNER_PORT` | Optional. `0` (the default) asks the OS for a free port. |
+| `DASH_RUNNER_DATA_DIR` | Required. Database, registrations, credential, endpoint file and log. |
+| `DASH_RUNNER_ENDPOINT_ID` | Optional. DASH mints one per spawn; a hand-run generates its own. |
 
-It writes `runner.json` — pid and port, never the token — once it is listening.
-That file is how a restarted DASH finds and re-adopts a runner instead of
-choosing between killing the fleet and being unable to talk to it.
+No token variable any more. It used to be one, on the argument that the
+environment was the only channel to a detached child that did not touch disk;
+`runner.key` touches disk on purpose and is better for it, since an environment
+block is readable on Linux by any process of the same user via
+`/proc/{pid}/environ`.
+
+It writes `runner.json` — pid, endpoint path and transport, never the
+credential — once it is listening. That file is how a restarted DASH finds and
+re-adopts a runner instead of choosing between killing the fleet and being
+unable to talk to it. The endpoint path in it is not a secret: a Windows pipe
+name is enumerable by any local process anyway, and its value is that it could
+not be guessed *beforehand*.
+
+A crash leaves nothing wedged. A named pipe dies with the process holding it; a
+Unix socket can outlive one, so `prepareEndpoint` probes it first and unlinks it
+only on `ECONNREFUSED` — never merely because the file is there, which would be
+a race with a runner that is busy, and never on `EACCES`, which would be this
+process deleting another user's socket.
 
 ## What CI covers, and why that is new
 
@@ -138,11 +206,21 @@ choosing between killing the fleet and being unable to talk to it.
 `ELECTRON_SKIP_BINARY_DOWNLOAD=1` keeps the platform binary out of CI, so the
 shell's proofs are a local `pnpm shell:smoke`.
 
-The runner has no such constraint. It is Node spawning Node over a loopback
+The runner has no such constraint. It is Node spawning Node over an OS-local
 socket, so `tests/runner-*.test.ts` run on every push against real processes and
 a real server — including "SIGTERM actually stops it" and "an invalid manifest
 is refused before anything spawns". Only *Electron spawning the runner* stays in
 the local smoke.
+
+MAR-430's proofs are split by what each platform can actually demonstrate.
+`tests/runner-endpoint.test.ts` binds real endpoints: that `address()` returns a
+path and not a port, that a second runner is refused, and — on POSIX only — that
+a crashed runner's socket is reclaimed while a live one's is left alone.
+`tests/channel-secret.test.ts` exercises the ACL rule as a pure function over
+SDDL strings, including the verbatim named-pipe default with `WD` and `AN` in
+it, so the case that motivates the whole issue is asserted on Linux CI where no
+named pipe exists. The `icacls` path itself only runs on Windows, and the
+cross-principal negative test is a manual one — CI has one user.
 
 One test is skipped on Windows: the SIGKILL escalation, because Node emulates
 `kill` with `TerminateProcess` there, so an agent cannot decline SIGTERM and
@@ -179,5 +257,16 @@ Named here rather than discovered later:
    DASH at a *remote* runner. `httpAdapter` would reach one, and the vault would
    hold its token under `dash.adapter.{agent}.token`, but nothing mints or
    exchanges that credential.
-7. **No OS-backed vault means no runner.** DASH still runs and still monitors;
-   it just does not host agents on that machine, and says so once at startup.
+7. ~~**No OS-backed vault means no runner.**~~ **Fixed in MAR-430.** It was the
+   right instinct applied to the wrong secret. A vault protects a credential a
+   *person* entrusted to DASH; the channel token is one this installation minted
+   to talk to a process it started, under the same user, on the same machine.
+   Requiring a keyring for it meant a Linux box without libsecret could not host
+   even an agent that had no credentials of its own.
+
+   The line is now drawn where it belongs. Provider credentials and remote
+   enrollment tokens still require `SecureStore` and still fail closed without
+   it. The channel credential lives in `runner.key` under an ACL this project
+   sets and proves. The one remaining reason a machine cannot host agents is
+   that the ACL could not be applied or could not be verified — a real refusal,
+   and a much rarer one.

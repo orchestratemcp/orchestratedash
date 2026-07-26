@@ -12,12 +12,32 @@
  * `tests/runner-server.test.ts` covers the other end against a real server.
  */
 
-import { describe, expect, it } from "vitest";
+import { randomBytes } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 
 import { checkControlUrl, resolveControlLocation } from "../lib/agent-dom/control-location";
 import type { AgentManifestV2 } from "../lib/contracts";
 import type { AgentCommandEnvelope } from "../lib/agent-dom/envelope";
-import { fetchAgentDomState, httpAdapter, safeDetail } from "../lib/agent-dom/transport";
+import { IPC_ORIGIN } from "../lib/agent-dom/ipc-fetch";
+import {
+  fetchAgentDomState,
+  httpAdapter,
+  safeDetail,
+  type ControlChannel,
+} from "../lib/agent-dom/transport";
+import {
+  listenOnEndpoint,
+  prepareEndpoint,
+  releaseEndpoint,
+  runnerEndpoint,
+  type RunnerEndpoint,
+} from "../runner/endpoint";
+
+const ipcWorkDir = mkdtempSync(path.join(tmpdir(), "dash-transport-ipc-"));
 
 /* ---------------------------------------------------------------------- *
  * Control locations
@@ -341,5 +361,105 @@ describe("text the runner chose", () => {
     expect(safeDetail("   ")).toBeUndefined();
     expect(safeDetail(42)).toBeUndefined();
     expect(safeDetail(undefined)).toBeUndefined();
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * The same adapter, over a socket instead of a network
+ * ---------------------------------------------------------------------- */
+
+/**
+ * MAR-430's fifth criterion, met by construction rather than by arranging for
+ * two implementations to behave alike.
+ *
+ * Everything above this point injects a fake `fetch`, which is the right way to
+ * test the rules and the wrong way to prove the wiring: an injected fetch would
+ * pass whether or not `ipc_path` reached the dialer at all. So this block does
+ * the opposite — a real endpoint, a real server, no injection — and asserts
+ * that the *unmodified* `httpAdapter` and `fetchAgentDomState` speak to it.
+ */
+describe("a local channel", () => {
+  const started: { server: Server; endpoint: RunnerEndpoint }[] = [];
+
+  afterAll(async () => {
+    for (const { server, endpoint } of started) {
+      await new Promise<void>((resolve) => { server.close(() => { resolve(); }); });
+      releaseEndpoint(endpoint);
+    }
+    rmSync(ipcWorkDir, { recursive: true, force: true });
+  });
+
+  async function endpointServing(
+    handler: (request: IncomingMessage, response: ServerResponse) => void,
+  ): Promise<ControlChannel> {
+    const endpoint = runnerEndpoint(
+      mkdtempSync(path.join(ipcWorkDir, "data-")),
+      randomBytes(8).toString("hex"),
+    );
+    const server = createServer(handler);
+    await prepareEndpoint(endpoint);
+    await listenOnEndpoint(server, endpoint);
+    started.push({ server, endpoint });
+    return { uri: `${IPC_ORIGIN}/agents/demo`, token: "channel-token-value", ipc_path: endpoint.path };
+  }
+
+  it("submits a command down the endpoint and reads the runner's answer", async () => {
+    let seen: { url?: string; auth?: string; body: string } | null = null;
+    const channel = await endpointServing((request, response) => {
+      let body = "";
+      request.on("data", (chunk: Buffer) => { body += chunk.toString("utf8"); });
+      request.on("end", () => {
+        seen = { url: request.url, auth: request.headers.authorization, body };
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ ok: true, detail: "handled" }));
+      });
+    });
+
+    expect(await httpAdapter(channel).submit(ENVELOPE)).toEqual({ ok: true, detail: "handled" });
+    // The profile's path, and the credential still in the header where it
+    // belongs. A local transport does not get to relax either.
+    expect(seen).toMatchObject({
+      url: "/agents/demo/commands",
+      auth: "Bearer channel-token-value",
+    });
+  });
+
+  it("reads a state snapshot down the endpoint", async () => {
+    const channel = await endpointServing((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ agent_id: "demo", status: "running" }));
+    });
+
+    expect(await fetchAgentDomState(channel)).toEqual({
+      ok: true,
+      state: { agent_id: "demo", status: "running" },
+    });
+  });
+
+  it("keeps the byte ceiling that a hostile runner would otherwise defeat", async () => {
+    // The ceiling is a property of the transport, so moving the transport must
+    // not have moved it. A megabyte-plus body over a socket is exactly as much
+    // of an unbounded allocation as one over TCP.
+    const channel = await endpointServing((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ padding: "x".repeat(1_200_000) }));
+    });
+
+    expect(await fetchAgentDomState(channel)).toMatchObject({ ok: false, reason: "failed" });
+  });
+
+  it("calls an endpoint nobody is listening on unavailable, not failed", async () => {
+    // The rejection taxonomy survives the move: "could not reach it" and
+    // "reached it and it went wrong" still need different recoveries.
+    const channel: ControlChannel = {
+      uri: `${IPC_ORIGIN}/agents/demo`,
+      token: "channel-token-value",
+      ipc_path: runnerEndpoint(ipcWorkDir, "nobody-is-here").path,
+    };
+    const result = await fetchAgentDomState(channel);
+    expect(result).toMatchObject({ ok: false, reason: "unavailable" });
+    // And it names something a person can act on rather than a hostname that
+    // does not resolve and never did.
+    expect((result as { detail: string }).detail).toContain("local runner");
   });
 });

@@ -44,7 +44,7 @@ import {
   type RunnerLifecycleResult,
 } from "../lib/shell/ipc";
 import { createAgentChannels, startPolling, type AgentChannels } from "./agent-adapters";
-import { ensureRunner, stopRunner, type RunnerHandle } from "./runner-process";
+import { ensureRunner, runnerFetch, stopRunner, type RunnerHandle } from "./runner-process";
 import {
   SHELL_WEB_PREFERENCES,
   assertHardenedWebPreferences,
@@ -190,9 +190,13 @@ async function runnerLifecycle(
     };
   }
 
+  // The runner's socket or pipe, not the network. Global `fetch` resolves a
+  // host and opens a TCP connection; there is no host and no port to open.
+  const call = runnerFetch(runner);
+
   if (action === "status") {
     try {
-      const response = await fetch(`${runner.origin}/agents`, {
+      const response = await call(`${runner.origin}/agents`, {
         headers: { authorization: `Bearer ${runner.token}` },
         signal: AbortSignal.timeout(3_000),
       });
@@ -211,7 +215,7 @@ async function runnerLifecycle(
   }
 
   try {
-    const response = await fetch(`${runner.origin}/agents/${encodeURIComponent(agentId)}/lifecycle`, {
+    const response = await call(`${runner.origin}/agents/${encodeURIComponent(agentId)}/lifecycle`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${runner.token}` },
       body: JSON.stringify({ action }),
@@ -267,15 +271,20 @@ if (typeof app !== "undefined") {
     reportSecureStoreBacking();
 
     // MAR-415. The runner is started before the window so the first render
-    // already has somewhere to poll. A machine that cannot host one — no
-    // OS-backed vault — still gets a working DASH; it just does not host
-    // agents, and says so once rather than failing per click.
-    const started = await ensureRunner(dataDir, secureStore());
+    // already has somewhere to poll. A machine that cannot host one still gets
+    // a working DASH; it just does not host agents, and says so once rather
+    // than failing per click.
+    //
+    // MAR-430 narrowed what "cannot host one" means. It used to include every
+    // machine without an OS keyring. Now it means DASH could not put a proven
+    // owner-only ACL on one file — which is a real refusal, and a much rarer
+    // one.
+    const started = await ensureRunner(dataDir);
     const runner = started.ok ? started.handle : null;
     if (started.ok) {
       console.warn(
-        `[dash-shell] runner: ${started.handle.origin} pid=${String(started.handle.pid)}` +
-          `${started.handle.adopted ? " (adopted)" : ""}`,
+        `[dash-shell] runner: ${started.handle.transport} ${started.handle.endpoint} ` +
+          `pid=${String(started.handle.pid)}${started.handle.adopted ? " (adopted)" : ""}`,
       );
     } else {
       console.warn(`[dash-shell] no runner (${started.reason}): ${started.detail}`);

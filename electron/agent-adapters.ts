@@ -37,7 +37,7 @@ import { fetchAgentDomState, httpAdapter, type ControlChannel } from "../lib/age
 import { isManifestV2 } from "../lib/contracts";
 import { isSecureStoreError, type SecureStore } from "../lib/secure-store";
 import { listAgentNames, readAgentManifest } from "../lib/store";
-import type { RunnerHandle } from "./runner-process";
+import { runnerFetch, type RunnerHandle } from "./runner-process";
 
 /**
  * How often DASH re-reads every agent's state.
@@ -85,7 +85,9 @@ export function createAgentChannels(
       return;
     }
     try {
-      const response = await fetch(`${runner.origin}/agents`, {
+      // The runner's own endpoint, not the network. `runnerFetch` speaks HTTP
+      // down the socket or pipe; global `fetch` cannot reach either.
+      const response = await runnerFetch(runner)(`${runner.origin}/agents`, {
         headers: { authorization: `Bearer ${runner.token}` },
         signal: AbortSignal.timeout(3_000),
       });
@@ -120,7 +122,15 @@ export function createAgentChannels(
   /** Synchronous channel resolution, for the command path. */
   function channelFor(agentId: string): ControlChannel | null {
     if (runner !== null && hosted.has(agentId)) {
-      return { uri: `${runner.origin}/agents/${encodeURIComponent(agentId)}`, token: runner.token };
+      return {
+        uri: `${runner.origin}/agents/${encodeURIComponent(agentId)}`,
+        token: runner.token,
+        // What makes this channel local. `lib/agent-dom/transport.ts` dials the
+        // endpoint instead of resolving the uri, and everything else about the
+        // adapter — the byte ceiling, the timeout, the scrubbed detail — is the
+        // same code a remote agent gets.
+        ipc_path: runner.endpoint,
+      };
     }
 
     const manifest = readAgentManifest(agentId);

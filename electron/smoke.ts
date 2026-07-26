@@ -46,6 +46,7 @@ import { app, BrowserWindow } from "electron";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
+import { IPC_ORIGIN, ipcFetch } from "../lib/agent-dom/ipc-fetch";
 import { putAgentDomState, readCommandAudit } from "../lib/agent-dom/store";
 import { dataDir } from "../lib/db";
 import { importManifest } from "../lib/store";
@@ -244,45 +245,58 @@ check(
  * "three traps that only a real launch finds" was written about, so it is
  * proven here rather than assumed.
  *
- * The port file is the runner's own claim; the HTTP round trip is the check.
+ * The endpoint file is the runner's own claim; the HTTP round trip is the
+ * check. Since MAR-430 that round trip goes down a named pipe or a Unix socket
+ * rather than to a port, which is the other thing only a real launch shows:
+ * `runner/endpoint.ts` binding successfully inside a packaged layout.
  */
-const portFile = path.join(dataDir, "runner.json");
-const recorded = existsSync(portFile)
-  ? (JSON.parse(readFileSync(portFile, "utf8")) as { pid: number; port: number })
+const endpointFile = path.join(dataDir, "runner.json");
+const recorded = existsSync(endpointFile)
+  ? (JSON.parse(readFileSync(endpointFile, "utf8")) as {
+      pid: number;
+      endpoint: string;
+      transport: string;
+    })
   : null;
-check("4a. the runner wrote a port file", recorded !== null, recorded);
+check("4a. the runner wrote an endpoint file", recorded !== null, recorded);
 
 if (recorded !== null) {
+  const call = ipcFetch(recorded.endpoint);
+
   let health: unknown = null;
   try {
-    const response = await fetch(`http://127.0.0.1:${String(recorded.port)}/health`, {
-      signal: AbortSignal.timeout(5_000),
-    });
+    const response = await call(`${IPC_ORIGIN}/health`, { signal: AbortSignal.timeout(5_000) });
     health = await response.json();
   } catch (error: unknown) {
     health = { error: error instanceof Error ? error.message : String(error) };
   }
   check(
-    "4b. the runner is listening and answers on loopback",
+    `4b. the runner is listening on its ${recorded.transport} endpoint`,
     (health as { ok?: boolean } | null)?.ok === true,
     health,
   );
 
-  // The credential is not optional. An unauthenticated caller must not be able
-  // to read an agent's state off a port every local process can reach.
+  // The credential is not optional. OS access control is the first gate and
+  // this is the second, and on Windows the second is the one this project can
+  // both set and verify — see `runner/channel-secret.ts`.
   let unauthorized = 0;
   try {
-    unauthorized = (
-      await fetch(`http://127.0.0.1:${String(recorded.port)}/agents`, {
-        signal: AbortSignal.timeout(5_000),
-      })
-    ).status;
+    unauthorized = (await call(`${IPC_ORIGIN}/agents`, { signal: AbortSignal.timeout(5_000) }))
+      .status;
   } catch {
     unauthorized = 0;
   }
   check("4c. the runner refuses an unauthenticated caller", unauthorized === 401, {
     status: unauthorized,
   });
+
+  // MAR-430's headline: there is no port. A runner that still opened one would
+  // pass every check above and defeat the point of the issue.
+  check(
+    "4d. the endpoint is a socket or a pipe, not a port",
+    recorded.transport === "pipe" || recorded.transport === "unix",
+    { transport: recorded.transport, endpoint: recorded.endpoint },
+  );
 }
 
 console.log(`\n[smoke] ${failures.length === 0 ? "all proofs passed" : `FAILED: ${failures.join(", ")}`}\n`);
