@@ -109,6 +109,21 @@ export function readAgentManifest(name: string): AnyAgentManifest | null {
   return row === undefined ? null : (JSON.parse(text(row, "manifest_json")) as AnyAgentManifest);
 }
 
+/**
+ * Every imported agent's name, and nothing else.
+ *
+ * A targeted read for the same reason `readAgentManifest` is one: MAR-415's
+ * state poller asks "which agents exist" on a timer, and answering that by
+ * materialising every manifest and every event would make the cost of a poll
+ * scale with the size of the store.
+ */
+export function listAgentNames(): string[] {
+  return db()
+    .prepare("SELECT name FROM agents ORDER BY name")
+    .all()
+    .map((row) => text(row, "name"));
+}
+
 export type ImportResult =
   | { ok: true; agent: string; replaced: boolean }
   | { ok: false; errors: string[] };

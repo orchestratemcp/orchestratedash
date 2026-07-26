@@ -37,7 +37,14 @@ import {
   type AgentCommandInput,
 } from "../lib/agent-dom/runner";
 import { dataDir } from "../lib/db";
-import { SHELL_COMMAND_CHANNEL, dispatchCommand, formatAuditLine } from "../lib/shell/ipc";
+import {
+  SHELL_COMMAND_CHANNEL,
+  dispatchCommand,
+  formatAuditLine,
+  type RunnerLifecycleResult,
+} from "../lib/shell/ipc";
+import { createAgentChannels, startPolling, type AgentChannels } from "./agent-adapters";
+import { ensureRunner, stopRunner, type RunnerHandle } from "./runner-process";
 import {
   SHELL_WEB_PREFERENCES,
   assertHardenedWebPreferences,
@@ -55,6 +62,9 @@ import { secureStore } from "./secure-store";
  * even when the caller is us.
  */
 const DEFAULT_RENDERER_URL = "http://127.0.0.1:3000";
+
+/** Stops the Agent DOM state poller. Null when no runner was available. */
+let stopPolling: (() => void) | null = null;
 
 function rendererUrl(): string {
   const url = process.env.DASH_SHELL_URL ?? DEFAULT_RENDERER_URL;
@@ -136,7 +146,10 @@ export function createWindow(): BrowserWindow {
  * parameter. The request that arrived over IPC is never consulted for it — and
  * cannot be, since no command declares a payload key that could carry one.
  */
-export function registerCommandChannel(): void {
+export function registerCommandChannel(
+  channels: AgentChannels | null,
+  runner: RunnerHandle | null,
+): void {
   const principal = localPrincipal(userInfo().username);
 
   ipcMain.handle(SHELL_COMMAND_CHANNEL, async (_event, request: unknown) => {
@@ -145,14 +158,70 @@ export function registerCommandChannel(): void {
       runAgentCommand: (input: AgentCommandInput) =>
         runAgentCommand(input, {
           principal,
-          // No adapter is installed. MAR-415 (DASH-11) builds the bundled
-          // runner and a later slice builds the HTTP transport; until then
-          // every accepted command is refused here rather than reported as
-          // delivered. See `noAdapter`.
-          adapter: noAdapter,
+          // MAR-415: the adapter is chosen per agent, and is the real HTTP one
+          // for any agent DASH holds a channel to. `noAdapter` remains the
+          // answer for the rest — an agent with no control location, or a
+          // remote one DASH has no credential for — and it still refuses
+          // honestly rather than reporting an effect nothing performed.
+          adapter: channels?.adapterFor(input.target.agent_id) ?? noAdapter,
         }),
+      runnerLifecycle: (action, agentId) => runnerLifecycle(runner, action, agentId),
     });
   });
+}
+
+/**
+ * Start or stop a hosted agent, or report what the runner holds.
+ *
+ * Goes to the runner's `/lifecycle` route, never through the command channel.
+ * The separation is the whole reason `runner.*` exists as its own family: these
+ * act on a process, and no manifest declares them.
+ */
+async function runnerLifecycle(
+  runner: RunnerHandle | null,
+  action: string,
+  agentId: string | undefined,
+): Promise<RunnerLifecycleResult> {
+  if (runner === null) {
+    return {
+      ok: false,
+      detail:
+        "No bundled runner is available on this machine, so DASH cannot start or stop agents here.",
+    };
+  }
+
+  if (action === "status") {
+    try {
+      const response = await fetch(`${runner.origin}/agents`, {
+        headers: { authorization: `Bearer ${runner.token}` },
+        signal: AbortSignal.timeout(3_000),
+      });
+      const body = (await response.json()) as { agents?: unknown[] };
+      return {
+        ok: true,
+        data: { available: true, supervising: (body.agents ?? []).length },
+      };
+    } catch {
+      return { ok: false, detail: "The runner did not answer." };
+    }
+  }
+
+  if (agentId === undefined) {
+    return { ok: false, detail: "No agent was named." };
+  }
+
+  try {
+    const response = await fetch(`${runner.origin}/agents/${encodeURIComponent(agentId)}/lifecycle`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${runner.token}` },
+      body: JSON.stringify({ action }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const body = (await response.json()) as { ok?: boolean; detail?: string };
+    return { ok: body.ok === true, detail: body.detail };
+  } catch {
+    return { ok: false, detail: "The runner could not be reached." };
+  }
 }
 
 /**
@@ -189,14 +258,35 @@ function reportStoreLocation(): void {
 }
 
 if (typeof app !== "undefined") {
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     // `electron/data-dir.ts` already pointed the store at `userData`, as the
     // first import in this file. This is the proof it worked — see that module
     // for why the old `useUserDataDirectory()` call here could never have.
     assertStoreLocation(dataDir);
     reportStoreLocation();
     reportSecureStoreBacking();
-    registerCommandChannel();
+
+    // MAR-415. The runner is started before the window so the first render
+    // already has somewhere to poll. A machine that cannot host one — no
+    // OS-backed vault — still gets a working DASH; it just does not host
+    // agents, and says so once rather than failing per click.
+    const started = await ensureRunner(dataDir, secureStore());
+    const runner = started.ok ? started.handle : null;
+    if (started.ok) {
+      console.warn(
+        `[dash-shell] runner: ${started.handle.origin} pid=${String(started.handle.pid)}` +
+          `${started.handle.adopted ? " (adopted)" : ""}`,
+      );
+    } else {
+      console.warn(`[dash-shell] no runner (${started.reason}): ${started.detail}`);
+    }
+
+    const channels = runner === null ? null : createAgentChannels(runner, secureStore());
+    if (channels !== null) {
+      stopPolling = startPolling(channels);
+    }
+
+    registerCommandChannel(channels, runner);
     createWindow();
 
     app.on("activate", () => {
@@ -218,12 +308,24 @@ if (typeof app !== "undefined") {
   });
 
   app.on("window-all-closed", () => {
-    // The long-lived bridge that would justify staying alive here does not
-    // exist yet (ADR 0001 requirement 3, a later phase). Until it does, closing
-    // the last window quits — leaving an invisible process running would be a
-    // worse default to have to walk back.
+    // Unchanged by MAR-415, and that is the interesting part. The issue's
+    // acceptance criterion is that closing the DASH window leaves running
+    // agents running — and it does, because the agents are children of the
+    // *runner*, which is detached and is not torn down with this process.
+    // Quitting DASH here costs nothing but the poller.
+    //
+    // What did change is that DASH now leaves a process behind on purpose. The
+    // runner is stopped by `runner.stop`, not by closing the window; see
+    // `runner/README.md`.
     if (process.platform !== "darwin") {
       app.quit();
     }
+  });
+
+  app.on("before-quit", () => {
+    // Stop polling a runner we are about to stop talking to. The runner itself
+    // is deliberately left alone.
+    stopPolling?.();
+    stopPolling = null;
   });
 }

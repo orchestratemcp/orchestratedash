@@ -177,3 +177,76 @@ Rejected on three counts, in order of severity:
 Per MAR-383's phasing, this ADR does not cover secret storage implementation,
 OAuth flows, credential input UI, local folder inspection, existing-agent
 discovery, or any packaging work. Those need Henrik present.
+
+---
+
+## Amendment 1 — the Agent Runner is a separate process (MAR-415, DASH-11)
+
+- **Status:** Accepted, 2026-07-25
+- **Amends:** the Decision, requirement 3 of the Context, and the "Bridge (3)"
+  paragraph of the Reasoning.
+
+### What changed
+
+This ADR said the local bridge would be "a module in [the main process], not a
+separate installed daemon with its own lifecycle". For ingest and for the
+command *client*, that is still true and unchanged.
+
+It is **not** true for hosting agents. DASH now ships an **Agent Runner**: a
+separate OS process, inside the same install, started by Electron main and
+detached from it. The runner launches agents as its own child processes. DASH
+remains a control surface and still never executes an agent itself.
+
+### Why the earlier reasoning does not survive contact with hosting
+
+The "bridge is a module in main" argument was made about a bridge that talks to
+agent runtimes. Holding them is a different job, and three consequences follow
+that a module in main cannot deliver:
+
+1. **Quitting the UI would kill the fleet.** Agents parented to the Electron
+   process die when the window closes. A monitor whose own shutdown takes down
+   what it monitors is not a monitor.
+2. **An agent holds live provider credentials and executes model-chosen paths.**
+   This ADR already isolates the renderer from the command path for exactly that
+   reason; in-process agents would discard the isolation one layer further up,
+   inside the process that owns the vault.
+3. **Remote agents exist regardless.** In-process execution would mean two
+   implementations — an in-process path and the HTTP path — and the local one
+   would inevitably grow abilities the remote one cannot have.
+
+### What is preserved
+
+- **Node parity, which was the deciding technical factor.** The runner is Node,
+  launched via `ELECTRON_RUN_AS_NODE=1`, so it validates against the same
+  `contracts/*.schema.json` files with the same `lib/contracts.ts`. No port, no
+  second validator, no drift. The one thing that had to change is that
+  `lib/contracts.ts` no longer resolves schemas against `process.cwd()`.
+- **The audited chokepoint.** Commands still originate in main and still cross
+  one IPC boundary. The runner adds a *second* enforcement point rather than
+  replacing the first: per the Agent DOM v2 contract it independently validates,
+  authorizes, records nonces and rechecks approvals, because the threat model
+  assumes a compromised DASH can request any displayed action.
+- **The renderer posture.** Untouched. `contextIsolation` on, `nodeIntegration`
+  off, `sandbox: true`, narrow preload, no remote content.
+
+### Newly accepted costs
+
+- **DASH leaves a process running after it quits.** Deliberate, and the point:
+  it is what "closing the window leaves running agents running" means. It is
+  stoppable from the UI via `runner.stop`, and its pid and port are recorded in
+  `runner.json` in the data directory.
+- **The runner is a new trust boundary to keep honest.** It has its own SQLite
+  database, its own audit trail and its own credential, and it must not be
+  allowed to become "the part of DASH that happens to run elsewhere".
+- **The channel credential must persist.** It lives in the OS vault so a
+  restarted DASH can re-adopt a running runner instead of choosing between
+  killing the fleet and being unable to talk to it. Where no OS-backed vault
+  exists, **no runner is started** — `lib/secure-store.ts` already decided a
+  credential never falls back to plaintext, and this is not the place for the
+  first exception.
+
+### Still not decided
+
+Agent Kit distribution (`create-dash-agent`), agent auto-registration, adapter
+enrollment for *remote* runners, and per-agent resource accounting. See
+`runner/README.md` for what the runner does not yet do.

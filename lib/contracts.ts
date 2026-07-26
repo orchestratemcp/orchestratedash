@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import type { AgentCommandEnvelope } from "./agent-dom/envelope";
@@ -12,12 +13,104 @@ import type { AgentDomState } from "./workspace";
  * read rather than keeping a second copy of the rules.
  */
 
-const repoRoot = process.cwd();
+/**
+ * The schema files this module compiles. Also the probe: a candidate directory
+ * counts as the contracts directory only if it holds all of them, so a stray
+ * `contracts/` folder somewhere up the tree cannot half-satisfy the search and
+ * produce a confusing missing-file error three frames later.
+ */
+const SCHEMA_FILES = [
+  "agent.manifest.schema.json",
+  "agent.manifest.v2.schema.json",
+  "run-event.schema.json",
+  "agent-dom-state.schema.json",
+  "agent-command.schema.json",
+] as const;
 
-function loadSchema(relativePath: string): object {
-  return JSON.parse(
-    readFileSync(path.join(repoRoot, relativePath), "utf8"),
-  ) as object;
+/**
+ * Where the schemas are, found rather than assumed.
+ *
+ * This used to be `process.cwd()`, which held for `pnpm dev` and `pnpm shell`
+ * — both launched from the repo root — and was written up in
+ * `electron/README.md` as a packaging-phase blocker. MAR-415 turned it into a
+ * present-tense one: the bundled runner is a separate process with its own
+ * working directory, so a cwd-relative lookup fails outright the first time the
+ * runner tries to validate anything.
+ *
+ * The search order is deliberate:
+ *
+ * 1. `DASH_CONTRACTS_DIR`, when set. The explicit override a packaged app will
+ *    use to point at its resource directory, and the one a test uses to prove
+ *    the other two branches are not silently carrying it.
+ * 2. Walking up from this module's own location. Correct for the source tree
+ *    (`lib/` → repo root) and for an esbuild bundle (`dist/electron/` → repo
+ *    root) without either needing to know its own depth.
+ * 3. `process.cwd()`. Kept last rather than deleted: Next bundles this module
+ *    into a server build where `import.meta.url` may not survive the transform,
+ *    and that path has always run from the repo root.
+ *
+ * Resolved once, at first use, and cached with the compiled validators.
+ */
+function findContractsDir(): string {
+  const candidates: string[] = [];
+
+  const override = process.env.DASH_CONTRACTS_DIR;
+  if (override !== undefined && override.length > 0) {
+    candidates.push(override);
+  }
+
+  // Guarded: a bundler that rewrites `import.meta` leaves this undefined rather
+  // than throwing, and the cwd candidate below still answers.
+  const here = moduleDirectory();
+  if (here !== null) {
+    let directory = here;
+    while (true) {
+      candidates.push(path.join(directory, "contracts"));
+      const parent = path.dirname(directory);
+      if (parent === directory) {
+        break;
+      }
+      directory = parent;
+    }
+  }
+
+  candidates.push(path.join(process.cwd(), "contracts"));
+
+  for (const candidate of candidates) {
+    if (SCHEMA_FILES.every((file) => existsSync(path.join(candidate, file)))) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    `Could not find the contracts directory. Looked in:\n` +
+      candidates.map((candidate) => `  ${candidate}`).join("\n") +
+      `\nSet DASH_CONTRACTS_DIR to the directory holding ${SCHEMA_FILES[0]}.`,
+  );
+}
+
+/**
+ * This module's directory, or null when the bundler did not preserve it.
+ *
+ * `fileURLToPath`, not `URL.pathname`, for the reason `electron/main.ts`
+ * records at its own preload resolution: on Windows the latter yields
+ * "/C:/Users/..." — a string no filesystem call accepts, and one that looks
+ * close enough to a path to survive a code review.
+ */
+function moduleDirectory(): string | null {
+  try {
+    const url = import.meta.url;
+    if (typeof url !== "string" || !url.startsWith("file:")) {
+      return null;
+    }
+    return path.dirname(fileURLToPath(url));
+  } catch {
+    return null;
+  }
+}
+
+function loadSchema(directory: string, fileName: string): object {
+  return JSON.parse(readFileSync(path.join(directory, fileName), "utf8")) as object;
 }
 
 function buildValidators(): {
@@ -29,15 +122,28 @@ function buildValidators(): {
 } {
   const ajv = new Ajv2020({ strict: true, allErrors: true });
   addFormats(ajv);
+  const dir = findContractsDir();
   return {
-    manifest: ajv.compile(loadSchema("contracts/agent.manifest.schema.json")),
-    manifestV2: ajv.compile(loadSchema("contracts/agent.manifest.v2.schema.json")),
-    event: ajv.compile(loadSchema("contracts/run-event.schema.json")),
+    manifest: ajv.compile(loadSchema(dir, "agent.manifest.schema.json")),
+    manifestV2: ajv.compile(loadSchema(dir, "agent.manifest.v2.schema.json")),
+    event: ajv.compile(loadSchema(dir, "run-event.schema.json")),
     // MAR-417. Both schemas have existed since MAR-382 and neither had ever
     // been compiled by anything; the schema files themselves are untouched.
-    state: ajv.compile(loadSchema("contracts/agent-dom-state.schema.json")),
-    command: ajv.compile(loadSchema("contracts/agent-command.schema.json")),
+    state: ajv.compile(loadSchema(dir, "agent-dom-state.schema.json")),
+    command: ajv.compile(loadSchema(dir, "agent-command.schema.json")),
   };
+}
+
+/**
+ * Which directory the schemas were loaded from.
+ *
+ * Exported so the runner can report it at startup. A separate process
+ * validating against a contracts directory nobody can name is the failure mode
+ * this search was written to end, and printing the answer is cheaper than
+ * inferring it from a stack trace.
+ */
+export function contractsDirectory(): string {
+  return findContractsDir();
 }
 
 // Compiling is not free and the schemas are frozen, so do it once per process.

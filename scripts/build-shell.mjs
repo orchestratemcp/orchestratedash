@@ -1,7 +1,7 @@
 /**
- * Build the Electron shell.
+ * Build the Electron shell and the bundled runner.
  *
- * Three bundles, and the interesting part is that they are not all the same
+ * Four bundles, and the interesting part is that they are not all the same
  * module format. `sandbox: true` (ADR 0001's standing obligation, asserted in
  * `lib/shell/window.ts`) means a sandboxed preload cannot use ESM and cannot
  * import anything at runtime — so the preload must be one CommonJS file. The
@@ -85,6 +85,21 @@ await Promise.all([
     entryPoints: [path.join(repoRoot, "electron", "preload.ts")],
     outfile: path.join(outDir, "preload.js"),
     format: "cjs",
+  }),
+
+  // The bundled runner (MAR-415). A separate process, launched by main with
+  // `ELECTRON_RUN_AS_NODE=1`, so it is plain Node and needs no Electron API —
+  // but it is bundled here rather than run from source for the same reason main
+  // is: a packaged app has no TypeScript and no node_modules to resolve `ajv`
+  // out of.
+  //
+  // ESM, and it must stay ESM: `lib/contracts.ts` finds the schema directory by
+  // walking up from `import.meta.url`, which a CJS bundle would not have.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "runner", "main.ts")],
+    outfile: path.join(outDir, "runner.mjs"),
+    format: "esm",
   }),
 
   // The proof harness. Never on the `electron .` path — it is built here only
