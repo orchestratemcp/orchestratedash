@@ -55,6 +55,23 @@ export function ipcFetch(socketPath: string): typeof globalThis.fetch {
     const url = new URL(typeof input === "string" ? input : input.toString());
 
     return new Promise<Response>((resolve, reject) => {
+      /**
+       * Whether a `Response` has already been handed to the caller.
+       *
+       * This matters more over a socket than it did over TCP. A server may
+       * answer — 413 on an oversized body, say — while the client is still
+       * writing that body, and the write then fails with `EPIPE`. Over
+       * loopback TCP the kernel buffer usually swallowed the whole request
+       * first and the race never showed; a Unix socket's buffer is smaller,
+       * and CI found it.
+       *
+       * A write error after the answer arrived is not actionable: the caller
+       * already has the server's decision, which is the thing it asked for.
+       * Rejecting would be wrong and letting it escape as an unhandled error
+       * would take the process down over a refusal that worked correctly.
+       */
+      let settled = false;
+
       const request = http.request(
         {
           socketPath,
@@ -70,6 +87,7 @@ export function ipcFetch(socketPath: string): typeof globalThis.fetch {
         },
         (message) => {
           const status = message.statusCode ?? 502;
+          settled = true;
           resolve(
             new Response(
               BODILESS.has(status) ? null : (Readable.toWeb(message) as ReadableStream<Uint8Array>),
@@ -83,23 +101,48 @@ export function ipcFetch(socketPath: string): typeof globalThis.fetch {
         },
       );
 
-      request.on("error", (error: unknown) => { reject(asFetchError(error)); });
+      request.on("error", (error: unknown) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        reject(asFetchError(error));
+      });
+
+      // A failed write can surface on the socket rather than on the request,
+      // and an `error` event with no listener at all is an uncaught exception.
+      // Merely having this listener is most of the point; when the response is
+      // already in hand the socket is also finished with, so it is released.
+      request.on("socket", (socket) => {
+        socket.on("error", () => {
+          if (settled) {
+            socket.destroy();
+          }
+        });
+      });
 
       const signal = init.signal;
       if (signal !== null && signal !== undefined) {
         if (signal.aborted) {
+          settled = true;
           request.destroy();
           reject(abortError());
           return;
         }
         // `transport.ts` distinguishes a timeout from an unreachable endpoint
         // purely by `error.name === "AbortError"`, so the abort path must
-        // produce exactly that and not a generic socket error.
+        // produce exactly that and not a generic socket error — which is also
+        // why `settled` is set before `destroy`, so the teardown's own error
+        // does not overwrite the reason.
         signal.addEventListener(
           "abort",
           () => {
+            const first = !settled;
+            settled = true;
             request.destroy();
-            reject(abortError());
+            if (first) {
+              reject(abortError());
+            }
           },
           { once: true },
         );

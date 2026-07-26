@@ -314,7 +314,17 @@ export function isLocalPeer(request: IncomingMessage): boolean {
   );
 }
 
-/** Read a bounded body, or null when the caller sent too much. */
+/**
+ * Read a bounded body, or null when the caller sent too much.
+ *
+ * The early return **pauses** the request rather than walking away from it.
+ * Abandoning a half-read stream leaves the peer writing into a reader that
+ * will never drain, and the answer this runner has already decided on — a 413 —
+ * then races the peer's remaining bytes. Over loopback TCP the kernel buffer
+ * usually hid that; over a Unix socket the buffer is smaller and it surfaces as
+ * an `EPIPE` on whichever side loses. Pausing stops the read without
+ * discarding the connection, so the refusal reaches the caller first.
+ */
 async function readBody(request: IncomingMessage): Promise<string | null> {
   const chunks: Buffer[] = [];
   let total = 0;
@@ -322,6 +332,7 @@ async function readBody(request: IncomingMessage): Promise<string | null> {
     const buffer = chunk as Buffer;
     total += buffer.byteLength;
     if (total > MAX_REQUEST_BYTES) {
+      request.pause();
       return null;
     }
     chunks.push(buffer);
