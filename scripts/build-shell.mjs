@@ -21,12 +21,13 @@
  */
 
 import { build } from "esbuild";
-import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = path.join(repoRoot, "dist", "electron");
+const rootPackage = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"));
 
 /**
  * `electron` is external because it is supplied by the runtime, never bundled.
@@ -57,14 +58,35 @@ mkdirSync(outDir, { recursive: true });
  * Written by the build rather than committed: it is a fact about the output
  * format, so it belongs next to the thing that chooses the output format.
  *
- * A `name` here would do nothing. Electron takes the app name from the
- * package.json of the *app directory*, which is the repo root under `electron .`
- * and is not consulted at all when a file is launched directly — see
+ * Under `electron .` at the repo root, only `type` matters here — Electron
+ * reads the *repo root's* package.json for the app name, not this one; see
  * `electron/smoke-identity.ts` for how the harness deals with that.
+ *
+ * `name`, `productName`, `version` and `main` matter for a different reader:
+ * `@electron/packager` (MAR-429) stages *this* directory as the packaged app,
+ * and Electron resolves `app.getName()` — and therefore `app.getPath("userData")`
+ * — from a packaged app's own bundled package.json, `productName` first. That
+ * name must stay `OrchestrateDASH` on every future build: changing it would
+ * silently point an updated package at a different user-data folder, which is
+ * exactly the update-orphans-data failure this issue exists to rule out. It is
+ * deliberately not the same as the dev path's app name (`orchestratedash`,
+ * lowercase, from the repo root's package.json) — dev and packaged installs
+ * already use different `userData` roots for other reasons, so there is no
+ * continuity to preserve between them, only within each.
  */
 writeFileSync(
   path.join(outDir, "package.json"),
-  `${JSON.stringify({ type: "commonjs" }, null, 2)}\n`,
+  `${JSON.stringify(
+    {
+      type: "commonjs",
+      name: "orchestratedash",
+      productName: "OrchestrateDASH",
+      version: rootPackage.version,
+      main: "main.mjs",
+    },
+    null,
+    2,
+  )}\n`,
   "utf8",
 );
 

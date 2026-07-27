@@ -6,3 +6,8 @@ next-env.d.ts
 *.tsbuildinfo
 .env
 .env.local
+
+# MAR-429: generated packaging output. build/appx/AppxManifest.xml is the
+# committed template; everything scripts/package-msix.mjs writes is not.
+build/appx/packager-out/
+build/appx/*.msix

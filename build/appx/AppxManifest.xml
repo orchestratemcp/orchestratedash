@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MAR-429 (DASH-18a) — the smallest private/test MSIX for the current
+  Electron + bundled-runner architecture.
+
+  Hand-written on purpose, not electron-builder-generated: the issue requires
+  the trust level to be declared explicitly rather than defaulted, and a
+  hand-written manifest makes package identity and runFullTrust literal text
+  in this diff instead of a packaging tool's config schema.
+
+  The Identity element's Version attribute below is the one substitution
+  scripts/package-msix.mjs performs, via
+  lib/shell/appx-manifest.ts::toMsixVersion(package.json's version) — a
+  computation, not a literal, and tested as one. Everything else here is
+  committed text.
+
+  Identity/Publisher must equal, character for character, the -Subject of the
+  self-signed certificate used to sign the built package (see
+  docs/msix-test-signing.md). Changing either without regenerating and
+  re-trusting that certificate will make Add-AppxPackage refuse the package.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <Identity
+    Name="OrchestrateDASH"
+    Publisher="CN=Alohana Group AB"
+    Version="{{VERSION}}"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>OrchestrateDASH (packaging proof)</DisplayName>
+    <PublisherDisplayName>Alohana Group AB</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <!--
+      MinVersion is the 1809 (October 2018) SDK, the oldest still-serviced
+      release with modern Desktop Bridge support. MaxVersionTested is this
+      dev machine's own build (Windows 11 Home, 10.0.26200) rather than a
+      guess, because that is the only version this package has actually run
+      on.
+    -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26200.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <!--
+      EntryPoint="Windows.FullTrustApplication" is the Desktop Bridge shape:
+      an ordinary Win32/Electron executable running under the AppX host,
+      not a UWP app and not an AppContainer. Executable must match the "name"
+      @electron/packager was given exactly (scripts/package-msix.mjs passes
+      "OrchestrateDASH").
+    -->
+    <Application Id="OrchestrateDASH" Executable="OrchestrateDASH.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="OrchestrateDASH (packaging proof)"
+        Description="MAR-429 packaging lifecycle proof build. Not for distribution."
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+    </Application>
+  </Applications>
+
+  <!--
+    Exactly one capability. lib/shell/appx-manifest.ts::assertOnlyRunFullTrustCapability
+    re-parses the staged copy of this file and fails the build if this ever
+    stops being true — see scripts/package-msix.mjs.
+  -->
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>
