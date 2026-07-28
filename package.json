@@ -1,6 +1,6 @@
 {
   "name": "orchestratedash",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Telemetry v1 and Agent DOM v2 contracts plus the local monitor app for OrchestrateDASH.",
   "type": "module",
