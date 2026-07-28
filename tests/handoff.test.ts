@@ -57,14 +57,30 @@ function handoff(overrides: Partial<AgentHandoff> = {}): AgentHandoff {
 }
 
 describe("the handoff URL", () => {
-  it("round-trips a Windows path with spaces", () => {
-    // The case a hand-built query string gets wrong on somebody else's machine:
-    // a drive colon, backslashes and a space, all at once.
-    const file = "C:\\Users\\Someone\\My Agents\\folder-digest\\" + HANDOFF_FILE_NAME;
+  it("round-trips an absolute path with a space in it", () => {
+    const file = path.join(workDir, "My Agents", "folder-digest", HANDOFF_FILE_NAME);
     const parsed = parseHandoffUrl(handoffUrl(file, NONCE));
     expect(parsed.ok).toBe(true);
     expect(parsed.ok && parsed.value.file).toBe(path.normalize(file));
     expect(parsed.ok && parsed.value.nonce).toBe(NONCE);
+  });
+
+  it("encodes a Windows path without mangling it", () => {
+    // The case a hand-built query string gets wrong on somebody else's machine:
+    // a drive colon, backslashes and a space, all at once. Asserted on the
+    // encoding rather than through `parseHandoffUrl`, because `path.isAbsolute`
+    // is platform-dependent and CI is Linux — where "C:\..." is a relative path
+    // and the parse would correctly refuse it.
+    const file = "C:\\Users\\Someone\\My Agents\\folder-digest\\" + HANDOFF_FILE_NAME;
+    const url = handoffUrl(file, NONCE);
+
+    expect(url).toContain("C%3A%5CUsers%5CSomeone%5CMy+Agents");
+    expect(new URL(url).searchParams.get("file")).toBe(file);
+  });
+
+  it.runIf(process.platform === "win32")("parses that Windows path on Windows", () => {
+    const file = "C:\\Users\\Someone\\My Agents\\folder-digest\\" + HANDOFF_FILE_NAME;
+    expect(parseHandoffUrl(handoffUrl(file, NONCE))).toMatchObject({ ok: true });
   });
 
   it("refuses a link that is not a DASH link", () => {
