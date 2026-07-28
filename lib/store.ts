@@ -93,6 +93,34 @@ export function resetStore(): void {
     database.exec("DELETE FROM command_nonces");
     database.exec("DELETE FROM command_results");
     database.exec("DELETE FROM command_audit");
+    database.exec("DELETE FROM agent_handoffs");
+  });
+}
+
+/**
+ * Forget one agent (MAR-428).
+ *
+ * What goes: the imported manifest, and the last Agent DOM state snapshot. Those
+ * are DASH's *current* picture of an agent, and keeping them after the user
+ * removed it would leave a ghost in the agent list.
+ *
+ * What stays, deliberately: the events it emitted, the runs derived from them,
+ * and every command audit row naming it. A monitor that erases its own record of
+ * what happened, because the thing it happened to is gone, is not a monitor —
+ * and the command audit exists precisely to answer questions about agents
+ * somebody may since have wanted to be rid of. `removeRegistration`'s cleanup
+ * report says so in plain language rather than leaving the user to discover it.
+ *
+ * Returns whether there was anything to forget, so the caller can tell "removed"
+ * from "was never here" instead of reporting both as success.
+ */
+export function forgetAgent(name: string): { existed: boolean } {
+  const database = db();
+  return transact(database, () => {
+    const existed = database.prepare("SELECT 1 FROM agents WHERE name = ?").get(name) !== undefined;
+    database.prepare("DELETE FROM agents WHERE name = ?").run(name);
+    database.prepare("DELETE FROM agent_dom_state WHERE agent = ?").run(name);
+    return { existed };
   });
 }
 

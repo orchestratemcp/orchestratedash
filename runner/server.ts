@@ -43,10 +43,15 @@ import type { DatabaseSync } from "node:sqlite";
 import { validateState } from "../lib/contracts";
 import { executeCommand, type ChannelPrincipal } from "./execute";
 import { buildAgentDomState, type ProcessReport } from "./state";
-import type { Supervisor } from "./supervisor";
+import type { AdoptionResult, Supervisor } from "./supervisor";
 
 /** Generous for an envelope, far too small to be a useful memory attack. */
 export const MAX_REQUEST_BYTES = 262_144;
+
+export interface ReloadSummary extends AdoptionResult {
+  /** Registration files that could not be used, by file name and why. */
+  skipped: Array<{ file: string; problem: string }>;
+}
 
 export interface RunnerServerOptions {
   supervisor: Supervisor;
@@ -54,6 +59,15 @@ export interface RunnerServerOptions {
   /** The channel credential. Compared, never logged, never echoed. */
   token: string;
   principal: ChannelPrincipal;
+  /**
+   * Re-read the registration directory (MAR-428).
+   *
+   * Injected rather than done here because this module has no idea where the
+   * data directory is, and should not: it serves a supervisor it was handed.
+   * Absent means the route answers 501 rather than pretending to have reloaded,
+   * which keeps a runner built without it honest instead of silently useless.
+   */
+  reload?: () => ReloadSummary;
   now?: () => Date;
   log?: (line: string) => void;
 }
@@ -113,6 +127,37 @@ async function handle(
   // more than a liveness fact.
   if (request.method === "GET" && segments.length === 1 && segments[0] === "agents") {
     send(response, 200, { ok: true, agents: processReports(options.supervisor) });
+    return;
+  }
+
+  // POST /registrations/reload — take up a fresh reading of the directory.
+  //
+  // A POST rather than a GET because it changes what the runner supervises, and
+  // a route of its own rather than a lifecycle action because it is not about
+  // one agent. Note what it still cannot do: the body is ignored entirely, so
+  // the caller chooses *when* the runner re-reads its directory and never *what*
+  // it finds there. "The API chooses which registration to start, never what to
+  // run" survives intact — this route does not even choose which.
+  if (
+    request.method === "POST" &&
+    segments.length === 2 &&
+    segments[0] === "registrations" &&
+    segments[1] === "reload"
+  ) {
+    if (options.reload === undefined) {
+      send(response, 501, {
+        ok: false,
+        detail: "This runner was started without the ability to re-read its registrations.",
+      });
+      return;
+    }
+    const summary = options.reload();
+    send(response, 200, { ok: true, ...summary });
+    log(
+      `[runner] reload: +${String(summary.added.length)} ~${String(summary.updated.length)} ` +
+        `-${String(summary.removed.length)} deferred=${String(summary.deferred.length)} ` +
+        `skipped=${String(summary.skipped.length)}`,
+    );
     return;
   }
 

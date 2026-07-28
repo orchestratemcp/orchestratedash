@@ -48,6 +48,8 @@ import {
   type AgentCommandInput,
 } from "../lib/agent-dom/runner";
 import { dataDir } from "../lib/db";
+import type { HandoffPorts } from "../lib/handoff-flow";
+import { findDeepLink } from "../lib/shell/deep-link";
 import {
   SHELL_COMMAND_CHANNEL,
   dispatchCommand,
@@ -55,6 +57,13 @@ import {
   type RunnerLifecycleResult,
 } from "../lib/shell/ipc";
 import { createAgentChannels, startPolling, type AgentChannels } from "./agent-adapters";
+import {
+  handoffPorts,
+  openHandoffLink,
+  registerProtocolClient,
+  removeAgentWithReport,
+  surfaceWindow,
+} from "./handoff-host";
 import { ensureRunner, runnerFetch, stopRunner, type RunnerHandle } from "./runner-process";
 import {
   SHELL_WEB_PREFERENCES,
@@ -76,6 +85,54 @@ const DEFAULT_RENDERER_URL = "http://127.0.0.1:3000";
 
 /** Stops the Agent DOM state poller. Null when no runner was available. */
 let stopPolling: (() => void) | null = null;
+
+/**
+ * The handoff ports, once the runner's fate is known (MAR-428).
+ *
+ * Null until `whenReady` has resolved. A `dash://` link can arrive before that —
+ * a cold start *is* the link — so links are queued rather than dropped, and
+ * `drainHandoffQueue` runs them once there is a store, a window and either a
+ * runner or a decided absence of one.
+ */
+let handoffContext: HandoffPorts | null = null;
+const pendingHandoffs: string[] = [];
+
+/**
+ * One link at a time, in the order they arrived.
+ *
+ * An impatient double click on "Open in DASH" produces two identical links. The
+ * flow's idempotency makes the *outcome* right either way; serialising is what
+ * stops two modal dialogs racing each other in front of one confused user.
+ */
+let handoffChain: Promise<void> = Promise.resolve();
+
+function enqueueHandoff(url: string): void {
+  if (handoffContext === null) {
+    pendingHandoffs.push(url);
+    return;
+  }
+  const ports = handoffContext;
+  handoffChain = handoffChain
+    .then(async () => {
+      await openHandoffLink(url, ports);
+    })
+    .catch((error: unknown) => {
+      // A throw here would leave the chain permanently rejected and every later
+      // link silently ignored, which is the worst failure this feature has: the
+      // user clicks and nothing at all happens, forever.
+      console.error(
+        `[dash-shell] handoff failed: ${error instanceof Error ? error.stack : String(error)}`,
+      );
+    });
+}
+
+function drainHandoffQueue(ports: HandoffPorts): void {
+  handoffContext = ports;
+  const queued = pendingHandoffs.splice(0, pendingHandoffs.length);
+  for (const url of queued) {
+    enqueueHandoff(url);
+  }
+}
 
 function rendererUrl(): string {
   // Packaged: the local placeholder page shipped beside the bundles. Unpacked:
@@ -196,6 +253,24 @@ async function runnerLifecycle(
   action: string,
   agentId: string | undefined,
 ): Promise<RunnerLifecycleResult> {
+  if (action === "remove") {
+    // Handled here rather than at the runner, because removing an agent is a
+    // sequence — stop the process, delete DASH's registration and manifest
+    // copy, forget the store row, have the runner take a fresh reading — and
+    // only the shell can perform it in that order. See `lib/handoff-flow.ts`
+    // for why the order is the safety property.
+    if (agentId === undefined) {
+      return { ok: false, detail: "No agent was named." };
+    }
+    if (handoffContext === null) {
+      return { ok: false, detail: "DASH is still starting up." };
+    }
+    // Deliberately reachable with no runner. A machine that could not start one
+    // can still have a registration on disk from a previous launch, and
+    // "DASH cannot remove this because it cannot run it" would be a trap.
+    return removeAgentWithReport(agentId, handoffContext);
+  }
+
   if (runner === null) {
     return {
       ok: false,
@@ -276,6 +351,45 @@ function reportStoreLocation(): void {
 }
 
 if (typeof app !== "undefined") {
+  /**
+   * Exactly one DASH per user session (MAR-428).
+   *
+   * Required by the deep link and not merely tidy. Windows launches a *second*
+   * copy of the executable with the URL in its argv; without the lock, that copy
+   * would open its own window, adopt the same runner, and start a second poller
+   * against one store. With it, the second copy exits immediately and the first
+   * one is handed the argv through `second-instance`.
+   *
+   * The lock is taken before `whenReady` on purpose: the losing copy should not
+   * get as far as creating a window to then destroy.
+   */
+  if (!app.requestSingleInstanceLock()) {
+    app.quit();
+  } else {
+    registerProtocolClient();
+
+    // A cold start *is* the link: Windows launched this process because of it,
+    // so it is in our own argv and there is no `second-instance` event coming.
+    const launchLink = findDeepLink(process.argv);
+    if (launchLink !== null) {
+      enqueueHandoff(launchLink);
+    }
+
+    app.on("second-instance", (_event, argv) => {
+      surfaceWindow();
+      const url = findDeepLink(argv);
+      if (url !== null) {
+        enqueueHandoff(url);
+      }
+    });
+
+    // macOS does not use argv for this at all.
+    app.on("open-url", (event, url) => {
+      event.preventDefault();
+      enqueueHandoff(url);
+    });
+  }
+
   void app.whenReady().then(async () => {
     // `electron/data-dir.ts` already pointed the store at `userData`, as the
     // first import in this file. This is the proof it worked — see that module
@@ -318,6 +432,12 @@ if (typeof app !== "undefined") {
 
     registerCommandChannel(channels, runner);
     createWindow();
+
+    // MAR-428. Only now is there a store, a window to parent a dialog to, and a
+    // decided answer about whether this machine can host agents. Any link that
+    // arrived before this — including the one that started the process — has
+    // been waiting rather than being dropped.
+    drainHandoffQueue(handoffPorts(dataDir, runner));
 
     app.on("activate", () => {
       // macOS convention: clicking the dock icon with no windows open reopens one.

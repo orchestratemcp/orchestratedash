@@ -116,6 +116,11 @@ describe("the audited command chokepoint", () => {
       "runner.start",
       "runner.stop",
       "runner.status",
+      // MAR-428. Same family and the same reasoning: DASH acting on something
+      // it launched. Handled in the shell rather than forwarded to the runner,
+      // because removing an agent is a sequence of file, store and process
+      // operations only the shell can order correctly.
+      "runner.remove",
       "agent.approve",
       "agent.reject",
       "agent.choose",

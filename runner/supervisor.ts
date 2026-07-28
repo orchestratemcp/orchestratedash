@@ -31,6 +31,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 import { isManifestV2, validateManifest } from "../lib/contracts";
+import { sameRegistration, type AgentRegistration } from "../lib/registration";
 import type { AgentCommand } from "../lib/workspace";
 import { createLineReader, encodeCommand, parseAgentMessage } from "./protocol";
 import type { ProcessFacts } from "./state";
@@ -39,16 +40,15 @@ import type { ProcessFacts } from "./state";
  * Registrations
  * ---------------------------------------------------------------------- */
 
-export interface AgentRegistration {
-  agent_id: string;
-  /** Absolute, or relative to the registration file. */
-  manifest_path: string;
-  command: string;
-  args: string[];
-  cwd?: string;
-  /** Extra environment for the child. Never merged with the runner's own. */
-  env?: Record<string, string>;
-}
+/**
+ * The shape moved to `lib/registration.ts` in MAR-428 and is re-exported here.
+ *
+ * DASH writes these files now, so the definition belongs where both the writer
+ * and the reader can see it. Re-exporting keeps every existing import — and the
+ * documentation in this file about *why* a registration is a file — working
+ * unchanged.
+ */
+export type { AgentRegistration };
 
 /**
  * Load every registration in a directory, skipping the ones that are unusable.
@@ -183,6 +183,22 @@ export type DeliveryResult =
   | { ok: true; detail?: string }
   | { ok: false; problem: "not_running" | "unacknowledged" | "refused"; detail: string };
 
+/** What one pass of `adopt` changed, and what it declined to change. */
+export interface AdoptionResult {
+  added: string[];
+  updated: string[];
+  removed: string[];
+  /**
+   * Changes a live process prevented. Reported rather than applied, and
+   * reported rather than dropped: a caller that asked for a change and got
+   * silence would have no way to tell it from a change that happened.
+   */
+  deferred: Array<{
+    agent_id: string;
+    reason: "running_registration_changed" | "running_registration_removed";
+  }>;
+}
+
 interface Supervised {
   registration: AgentRegistration;
   child: ChildProcess | null;
@@ -215,37 +231,105 @@ export class Supervisor {
     },
   ) {
     for (const registration of registrations) {
-      // The manifest is read now, not only at start. What an agent may be
-      // commanded to do is a property of its manifest, not of whether its
-      // process happens to be up — and a runner that only learned the command
-      // list at spawn time would refuse a command against a stopped agent with
-      // "it never declared that", which is both wrong and the more alarming of
-      // the two messages. A stopped agent should be told it is stopped.
-      //
-      // A manifest that fails to load here is left as no commands and no
-      // complaint: `start` reads it again and is the place that reports why.
-      const manifest = this.readManifest(registration);
-
-      this.agents.set(registration.agent_id, {
-        registration,
-        child: null,
-        facts: {
-          agent_id: registration.agent_id,
-          pid: null,
-          lifecycle: "stopped",
-          exit_code: null,
-          exit_signal: null,
-          started_at: null,
-        },
-        report: null,
-        commands: manifest.ok ? manifest.commands : [],
-        pending: new Map(),
-      });
+      this.agents.set(registration.agent_id, this.entryFor(registration));
     }
   }
 
   list(): string[] {
     return [...this.agents.keys()];
+  }
+
+  /**
+   * Take up a fresh reading of the registration directory (MAR-428).
+   *
+   * Before this, the set of supervised agents was decided once, at process
+   * start. That was tolerable while every registration was hand-written — you
+   * had already opened an editor, so restarting the runner was no imposition.
+   * It is not tolerable once DASH writes registrations itself: the acceptance
+   * criterion is that approving a handoff "produces one registered agent with
+   * live state", and a criterion met only after the user restarts something is
+   * not met.
+   *
+   * **A running agent is never disturbed.** Not restarted, not re-parented, not
+   * silently re-pointed at a different command line. The runner's whole claim is
+   * that it owns lifecycle facts because it started the process; quietly
+   * swapping the registration underneath a live child would make its own record
+   * of what it started a guess. So a change to a running agent is *deferred* and
+   * reported as deferred, and it takes effect the next time that agent starts.
+   *
+   * Removal follows the same rule for the same reason. A registration file that
+   * vanished under a running agent leaves the agent supervised — a process
+   * nobody has a record of is strictly worse than a record of a process the user
+   * meant to delete, and `lib/handoff-flow.ts` stops before it deletes precisely
+   * so this branch stays an edge case rather than the normal path.
+   */
+  adopt(registrations: readonly AgentRegistration[]): AdoptionResult {
+    const result: AdoptionResult = { added: [], updated: [], removed: [], deferred: [] };
+    const incoming = new Map(registrations.map((entry) => [entry.agent_id, entry]));
+
+    for (const [agentId, registration] of incoming) {
+      const existing = this.agents.get(agentId);
+      if (existing === undefined) {
+        this.agents.set(agentId, this.entryFor(registration));
+        result.added.push(agentId);
+        continue;
+      }
+      if (sameRegistration(existing.registration, registration)) {
+        continue;
+      }
+      if (existing.child !== null) {
+        result.deferred.push({
+          agent_id: agentId,
+          reason: "running_registration_changed",
+        });
+        continue;
+      }
+      this.agents.set(agentId, this.entryFor(registration));
+      result.updated.push(agentId);
+    }
+
+    for (const [agentId, entry] of [...this.agents]) {
+      if (incoming.has(agentId)) {
+        continue;
+      }
+      if (entry.child !== null) {
+        result.deferred.push({ agent_id: agentId, reason: "running_registration_removed" });
+        continue;
+      }
+      this.agents.delete(agentId);
+      result.removed.push(agentId);
+    }
+
+    return result;
+  }
+
+  private entryFor(registration: AgentRegistration): Supervised {
+    // The manifest is read now, not only at start. What an agent may be
+    // commanded to do is a property of its manifest, not of whether its
+    // process happens to be up — and a runner that only learned the command
+    // list at spawn time would refuse a command against a stopped agent with
+    // "it never declared that", which is both wrong and the more alarming of
+    // the two messages. A stopped agent should be told it is stopped.
+    //
+    // A manifest that fails to load here is left as no commands and no
+    // complaint: `start` reads it again and is the place that reports why.
+    const manifest = this.readManifest(registration);
+
+    return {
+      registration,
+      child: null,
+      facts: {
+        agent_id: registration.agent_id,
+        pid: null,
+        lifecycle: "stopped",
+        exit_code: null,
+        exit_signal: null,
+        started_at: null,
+      },
+      report: null,
+      commands: manifest.ok ? manifest.commands : [],
+      pending: new Map(),
+    };
   }
 
   facts(agentId: string): ProcessFacts | null {

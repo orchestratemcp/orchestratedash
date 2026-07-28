@@ -96,7 +96,8 @@ async function main(): Promise<void> {
   await prepareEndpoint(endpoint);
 
   const store = openRunnerStore(dataDir);
-  const { registrations, skipped } = loadRegistrations(path.join(dataDir, "agents"));
+  const registrationsDir = path.join(dataDir, "agents");
+  const { registrations, skipped } = loadRegistrations(registrationsDir);
   for (const failure of skipped) {
     console.warn(`[runner] ignoring registration ${failure.file}: ${failure.problem}`);
   }
@@ -107,6 +108,19 @@ async function main(): Promise<void> {
     database: store.database,
     token: secret,
     principal: DASH_LOCAL_PRINCIPAL,
+    /**
+     * MAR-428. The directory is read again, here, rather than the caller
+     * sending its contents: a reload that accepted registrations over the wire
+     * would be the remote shell `runner/README.md` refuses to build, wearing a
+     * different name. DASH asks the runner to look; the filesystem answers.
+     */
+    reload: () => {
+      const fresh = loadRegistrations(registrationsDir);
+      for (const failure of fresh.skipped) {
+        console.warn(`[runner] ignoring registration ${failure.file}: ${failure.problem}`);
+      }
+      return { ...supervisor.adopt(fresh.registrations), skipped: fresh.skipped };
+    },
   });
 
   await listenOnEndpoint(server, endpoint);
