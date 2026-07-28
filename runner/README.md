@@ -114,6 +114,34 @@ The runner refuses to start an agent whose manifest is not valid v2, and it
 checks that **before** spawning anything — a refusal that happened after the
 agent ran would not be a refusal.
 
+**Since MAR-428, DASH writes these files too.** A registration DASH created from
+a handoff the user approved carries an extra `dash` block naming its owner; this
+runner reads the fields it knows and carries the rest through untouched, so
+ownership costs it nothing. See [`docs/agent-handoff.md`](../docs/agent-handoff.md).
+
+### Taking up a fresh reading (MAR-428)
+
+```
+POST /registrations/reload
+```
+
+Authenticated, and the **request body is ignored entirely**. The runner re-reads
+the directory itself, so the caller chooses *when* it looks and never *what* it
+finds — the rule above survives intact, and this route does not even choose
+which registration to act on.
+
+Before this, the set of supervised agents was decided once at process start.
+That was tolerable while every registration was hand-written; it is not once DASH
+writes them, because "approving a handoff produces a registered agent with live
+state" is not met by a criterion the user has to restart something to satisfy.
+
+**A running agent is never disturbed by a reload.** Not restarted, not re-pointed
+at a different command line, not forgotten because its file vanished. This
+runner's claim to own lifecycle facts rests on having started the process, and
+swapping the registration under a live child would make its own record a guess.
+Changes to a running agent are *deferred*, reported as deferred, and applied the
+next time that agent starts.
+
 ## Where it listens (MAR-430)
 
 **Not on a port.** A loopback TCP listener is reachable by every process on the
@@ -230,11 +258,15 @@ there is nothing to escalate from. It runs on CI's Linux.
 
 Named here rather than discovered later:
 
-1. **No Agent Kit.** `npx create-dash-agent` does not exist. An agent becomes
-   hostable by having a v2 manifest and a registration file, both written by
-   hand. That template is MAR-415's second slice, along with the auto-
-   registration that would make an agent appear in DASH without a manual
-   manifest import.
+1. ~~**No Agent Kit.**~~ **Delivered in MAR-428.** `agent-kit/` is
+   `create-dash-agent`: one command produces a project with a v2 manifest,
+   telemetry v1 and this protocol wired by default, and a second one hands it to
+   DASH over a `dash://` link. Nobody writes a registration file by hand any
+   more — though the hand-written path still works, is still documented above,
+   and DASH will not delete a registration it did not create.
+
+   Still not published to a registry: the package is `private: true`, so today
+   it is `pnpm build:agent-kit && node agent-kit/dist/cli.mjs my-agent`.
 2. **No CPU or memory reporting.** The issue asks for it and says the runner can
    report it honestly because it started the process. That is true of the PID
    and of liveness, and not yet true of the rest: reading a child's CPU and RSS

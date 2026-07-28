@@ -1,0 +1,19 @@
+{
+  "name": "create-dash-agent",
+  "version": "0.1.1",
+  "private": true,
+  "description": "Create an agent that OrchestrateDASH can host, with one command.",
+  "type": "module",
+  "bin": {
+    "create-dash-agent": "dist/cli.mjs"
+  },
+  "files": [
+    "dist",
+    "template",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "UNLICENSED"
+}

@@ -67,6 +67,34 @@
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png" />
+
+      <!--
+        MAR-428 (DASH-11b). The "Open in DASH" handoff.
+
+        This is how an *installed* DASH claims the scheme.
+        electron/handoff-host.ts also calls setAsDefaultProtocolClient, which
+        is what makes the developer path work; in a package the manifest is
+        the registration and that call is a no-op that has already lost.
+
+        Windows launches OrchestrateDASH.exe with the URL appended to its
+        argv. There is exactly one DASH per user session
+        (app.requestSingleInstanceLock), so a second launch hands its argv to
+        the running copy through `second-instance` and exits.
+
+        Declaring a scheme is not a capability and does not widen the
+        package's trust level: it makes DASH *reachable*, and every question
+        about whether a link may do anything is answered in
+        lib/handoff-flow.ts, which asks the user before it writes anything.
+        lib/shell/appx-manifest.ts::assertDeclaresHandoffProtocol fails the
+        build if this element ever stops naming the scheme the code expects.
+      -->
+      <Extensions>
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="dash">
+            <uap:DisplayName>OrchestrateDASH agent handoff</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+      </Extensions>
     </Application>
   </Applications>
 
