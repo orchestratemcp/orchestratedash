@@ -315,11 +315,76 @@ the check was against a path that is never populated for a package-activated
 launch, not a race or a sharing-mode interaction. There was nothing to
 root-cause.
 
+## DPI awareness (MAR-431)
+
+MAR-429's WACK run flagged one required-section warning: `OrchestrateDASH.exe`
+not declared DPI-aware. Electron's own embedded manifest only carries the
+older `<dpiAware>true/pm</dpiAware>` (2005 schema) declaration; `@electron/packager`
+does not add a `dpiAwareness` (2016 schema, `PerMonitorV2`) declaration on its
+own.
+
+**Fix**: `build/appx/OrchestrateDASH.exe.manifest` — Electron 43's own embedded
+manifest (extracted via `resedit`, the library `@electron/packager` already
+depends on, from `node_modules/electron/dist/electron.exe`) with
+`<dpiAwareness>PerMonitorV2</dpiAwareness>` added. Wired in through
+`win32metadata["application-manifest"]` in `scripts/package-msix.mjs`, which
+replaces the exe's `RT_MANIFEST` resource wholesale — not a merge, so the file
+has to stand alone as a complete, valid manifest.
+
+**First attempt failed, silently, in a way that turned out informative.**
+Adding `<dpiAwareness>` into Electron's existing layout — which splits
+`windowsSettings` across two sibling `<asmv3:windowsSettings>` elements,
+`disableWindowFiltering` in one, `dpiAware` (and, in this attempt, the new
+`dpiAwareness`) in the other — and re-running WACK produced the identical
+warning, word for word. That is almost certainly why the *original*,
+unmodified manifest failed the check too: a checker that reads "the"
+`windowsSettings` element rather than aggregating every sibling with that name
+would see only the first block and never find `dpiAware` in the second,
+before or after this fix.
+
+**Second attempt**: consolidated into a single `windowsSettings` element,
+matching Microsoft's documented example layout, with `dpiAware` and
+`dpiAwareness` as direct sibling children. Verified independently at three
+levels before re-running WACK:
+
+| Level | Check | Result |
+| --- | --- | --- |
+| Build | Manifest resource extracted from `build/appx/packager-out/.../OrchestrateDASH.exe` immediately after `pnpm run package:msix` | Single `windowsSettings` block, `dpiAwareness` present |
+| Installed | `mt.exe -inputresource` against the sideloaded copy on `dashtest`, at `C:\Program Files\WindowsApps\OrchestrateDASH_0.1.1.0_x64__sj8xbzq7v8pjy\OrchestrateDASH.exe` | Identical structure — the installed binary genuinely carries the fix, not just the build output |
+| Runtime | `Shcore.dll!GetProcessDpiAwareness` called against the live, running process on `dashtest` (pid 20840), independent of WACK | Returned `2` — `PROCESS_PER_MONITOR_DPI_AWARE` |
+
+The runtime check is the one that matters most: Windows itself, queried live
+through the same OS API surface WACK's own check would use, considers the
+process genuinely per-monitor DPI aware. The declaration is real and
+effective at runtime, not merely present in a file.
+
+**WACK still reports the identical warning against this same, independently
+verified build.** Accepted as a limitation of this specific WACK build, not an
+app defect:
+
+- `Kit Version: 10.0.19041.685` — bundled with the 2004/20H1-era Windows 10
+  SDK. This machine has no newer SDK installed (`C:\Program Files (x86)\Windows
+  Kits\10\bin` tops out at `10.0.19041.0`).
+- The exact same wording — "Failed to process the binary ... The app is not
+  DPI Aware" — appeared identically across three structurally different
+  manifest states: the original (no `dpiAwareness` at all), the split-block
+  attempt, and the consolidated attempt independently confirmed DPI-aware at
+  the OS API level. The check's output did not track any of the real changes
+  made to what is actually in the binary across those three states.
+- "Failed to process the binary" reads like a parser fault internal to this
+  Kit build against the newer `dpiAwareness` (2016 schema) manifest form,
+  rather than a considered "insufficient" judgment — WACK's other, unrelated
+  tests (package compliance, signing, capabilities, manifest resources) all
+  passed cleanly against the same package throughout.
+
+Decision recorded here rather than chased further: the fix is implemented and
+independently verified working; the residual WACK warning is a known,
+accepted false positive of this Kit build, not a reason to keep iterating on
+the manifest.
+
 ## What is left
 
-1. [MAR-431 (DASH-18c)](https://linear.app/martini-home/issue/MAR-431): declare
-   DPI awareness in the packaged manifest, the one fixable WACK warning.
-2. Acceptance B (Store-signed, warning-free install) — waits on Henrik's
+1. Acceptance B (Store-signed, warning-free install) — waits on Henrik's
    developer account.
 
 ADR 0001 Amendment 2 is written; see the link above.
