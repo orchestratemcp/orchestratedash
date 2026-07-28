@@ -1,6 +1,6 @@
 {
   "name": "orchestratedash",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Telemetry v1 and Agent DOM v2 contracts plus the local monitor app for OrchestrateDASH.",
   "type": "module",
@@ -12,12 +12,14 @@
     "build:shell": "node scripts/build-shell.mjs",
     "shell": "pnpm build:shell && electron .",
     "shell:smoke": "pnpm build:shell && electron dist/electron/smoke.mjs",
+    "package:msix": "node scripts/package-msix.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "demo:violation": "node scripts/demo-violation.mjs",
     "verify": "pnpm typecheck && pnpm test"
   },
   "devDependencies": {
+    "@electron/packager": "^20.0.4",
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",

@@ -54,6 +54,56 @@ Everything survives, and nothing is held in memory that matters:
   upgrade cannot orphan them. `tests/vault.test.ts` asserts this on the actual
   path rather than trusting it.
 
+## Uninstall
+
+**Measured, MAR-429 (DASH-18a): uninstall performs a full wipe, not
+retention.** This corrects an earlier draft of this section, written from a
+launch that turned out not to be representative — see below.
+
+A full-trust MSIX app activated the way a real user actually launches it (the
+Start Menu tile) runs under **package identity**, and Windows transparently
+virtualises its AppData: `app.getPath("userData")` still reports the ordinary-
+looking `%APPDATA%\OrchestrateDASH`, but every read and write is silently
+redirected to
+`%LOCALAPPDATA%\Packages\OrchestrateDASH_<publisherId>\LocalCache\Roaming\OrchestrateDASH`.
+The app never sees the redirected path; only the real filesystem underneath it
+does. Measured directly: `dash.sqlite`, `runner.sqlite`, `runner.key` and
+everything else DASH writes live there, not at the naive path.
+
+That redirected folder belongs to the package's own machine-wide registration,
+not to the app. Removing the package — `Remove-AppxPackage`, or Settings →
+Uninstall — deletes the whole `Packages\<PackageFamilyName>` tree as part of
+deregistering it. Measured directly on `dashtest`: after
+`Get-AppxPackage OrchestrateDASH | Remove-AppxPackage`, `Test-Path` on the
+package folder returned `False` — `dash.sqlite`, `vault/` (if it existed) and
+`runner.key` are gone, not merely unreachable.
+
+**Why the earlier conclusion was wrong.** An earlier session recorded
+`runner.key` surviving uninstall at the naive `%APPDATA%\OrchestrateDASH`
+path. That is only possible if that session's launch bypassed package
+activation — running the staged `.exe` directly rather than through the Start
+Menu tile — which gets no AppData redirection at all and writes to the real
+path for real. A real user has no such path available; the Start Menu tile is
+the only entry point that ships. So the behavior that matters is the
+redirected one, and it says the opposite of what was first written down.
+
+**Consequences, now that this is the actual behavior:**
+
+- **No retention policy is needed.** There is nothing to decide, and nothing
+  to build — a full wipe is what Windows already does, for free, on every
+  uninstall.
+- `runner.key` needs no special handling either way: it never survives to be a
+  concern.
+- **The real risk moved from "stale credential lingers" to "silent data
+  loss."** A user who uninstalls DASH to fix a bad update, meaning to
+  reinstall it a minute later, loses every agent, connection and approval
+  record with no prompt warning them first — Windows' own uninstall
+  confirmation says nothing about it, and DASH has no opportunity to say
+  anything either, since no app code runs on the way out. That is worth
+  knowing before shipping, not a UX gap DASH can currently close: there is no
+  hook to show a warning from, the same way there is no hook to run cleanup
+  from.
+
 ## Offline
 
 DASH is a monitor, not a runtime, and nothing on the local path needs the

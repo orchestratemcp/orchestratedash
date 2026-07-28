@@ -250,3 +250,145 @@ that a module in main cannot deliver:
 Agent Kit distribution (`create-dash-agent`), agent auto-registration, adapter
 enrollment for *remote* runners, and per-agent resource accounting. See
 `runner/README.md` for what the runner does not yet do.
+
+---
+
+## Amendment 2 — the full package lifecycle, measured (MAR-429, DASH-18a)
+
+- **Status:** Accepted, 2026-07-28
+- **Amends:** Amendment 1's claim that "DASH may come and go, the thing
+  holding the agents does not" — narrowing it to what was actually measured —
+  and the uninstall data-retention question Amendment 1 left as "must
+  persist".
+
+### What this proves
+
+A self-signed, sideloaded test MSIX was carried through the full package
+lifecycle — install, first launch, window close, reopen/adopt, update,
+repair, uninstall — on a second local Windows account with no prior DASH
+data, plus the MAR-430 cross-principal negative test (first execution ever;
+a different local user can neither read runner state nor submit a command)
+and a full Windows App Certification Kit pass. Full evidence, with pids,
+paths and exact command output, is in
+[msix-lifecycle-evidence.md](../msix-lifecycle-evidence.md); this amendment
+states the conclusions.
+
+### The central finding: applying an update or a repair requires killing the runner
+
+Amendment 1's premise is that the runner survives DASH closing. That held —
+closing the window left the detached runner alive and reachable, reproduced
+twice. **It does not extend to updates.** Measured directly: `Add-AppxPackage`
+refused to apply `0.1.1.0` over a running `0.1.0.0` install with the DASH
+window closed and *only the detached, windowless runner* still alive —
+`HRESULT 0x80073D02`, "the following apps need to be closed." Settings'
+Repair path hit the identical wall. MSIX requires every process belonging to
+a package to exit before it will update or repair that package, and it does
+not distinguish "the UI" from "a background process the UI deliberately left
+running."
+
+The only way through, in both cases, is a forced kill —
+`Add-AppxPackage -ForceApplicationShutdown` from the command line, or the
+**Terminate** button Settings itself offers as the discoverable equivalent.
+Both are hard stops: `runner.log`'s last line is identical before and after,
+meaning the runner was given no chance to log a shutdown, let alone finish an
+in-flight run. A real update or repair, today, is indistinguishable from a
+power failure from the perspective of an agent that happens to be running at
+that moment — safety depends entirely on SQLite's WAL journalling, not on any
+orderly stop DASH controls or is even consulted about.
+
+**What does survive, verified byte-for-byte:** `runner.key`'s hash was
+identical before and after both Update and Repair. `dash.sqlite` and
+`runner.sqlite` (with their WAL/SHM files) survived both intact. Relaunching
+after either produced **exactly one** new runner — no duplicate, no attempt
+to adopt the dead pid found in a stale `runner.json`, correct contracts
+resolution against the new install root. The acceptance criteria for Update
+and Repair are met; the cost of meeting them is now named rather than
+assumed away.
+
+### AppData virtualization: a packaging fact that changes what "the data directory" means
+
+A full-trust MSIX app launched the way a real user launches it — the Start
+Menu tile, package-activated — gets its AppData transparently redirected by
+Windows. `app.getPath("userData")` still returns the ordinary-looking
+`%APPDATA%\OrchestrateDASH`; the actual bytes live at
+`%LOCALAPPDATA%\Packages\<PackageFamilyName>\LocalCache\Roaming\OrchestrateDASH`.
+Nothing in DASH's own code can see or change this — it is DASH's identity as
+a package, not anything `lib/db.ts` or `electron/secure-store.ts` do, that
+puts the data there. This single fact resolved what had looked like a
+Node-level file-handle race in the original evidence pass; there was no race.
+
+### Uninstall reverses what Amendment 1 assumed, not merely refines it
+
+Amendment 1 anticipated `runner.key` needing a retention story because it
+"must persist" across restarts. An earlier evidence pass concluded exactly
+that — uninstall left `runner.key`, `dash.sqlite` and `runner.sqlite` in
+place — and a retention policy was drafted on that basis. **That conclusion
+was wrong**, measured against a launch that had bypassed package activation.
+Measured again against a package-activated install: `Remove-AppxPackage`
+deletes the entire `Packages\<PackageFamilyName>` tree, because that tree is
+part of the package's own machine registration, not the app's. `runner.key`
+does not survive to be a concern; there is no retention policy left to write,
+because Windows already performs a full wipe, for free, with no code
+required or able to change it.
+
+Uninstall also behaved differently from Update and Repair in one respect
+worth recording: `Remove-AppxPackage` succeeded immediately with the full
+shell and the runner both still running — no force flag needed — and left no
+process behind afterward, shell or runner. Uninstall is the one lifecycle
+event that does not require killing anything by hand first.
+
+**The risk this leaves is the opposite of the one anticipated.** Not "a stale
+credential lingers" — it never does. It is silent, total loss of every
+agent, connection and approval record on uninstall, with no warning from
+Windows and none possible from DASH, since no application code runs on the
+way out of a full-trust MSIX package. A user uninstalling to fix a bad
+update, meaning to reinstall a minute later, loses everything with no
+prompt. Accepted as a consequence of the packaging model chosen in the
+original Decision above, not solved here.
+
+### Windows App Certification Kit: PASSED WITH WARNINGS
+
+Full required-section pass except one: the packaged `.exe` is not declared
+DPI-aware, so Windows treats it as DPI-unaware at the OS level despite
+Chromium itself handling scaling correctly. Real, small, fixable — filed as
+[MAR-431 (DASH-18c)](https://linear.app/martini-home/issue/MAR-431), not yet
+done.
+
+The one failure is in WACK's own "informational only, not used to evaluate
+Microsoft Store onboarding" optional section. One hit in it is real and
+structural rather than a defect: `OrchestrateDASH.exe` references
+`kernel32.dll!CreateProcessW`, which is exactly how the runner spawns agents
+— meaning **DASH cannot run on Windows 10 S**, a locked-down SKU that forbids
+launching arbitrary executables. This is the same tradeoff Amendment 1 made
+knowingly when it gave agents a real child process instead of some sandboxed
+alternative, arriving at the door of a different Windows edition rather than
+a new one. The remaining hits in that section are byte-substring false
+positives inside stock Chromium blobs (`d3dcompiler_47.dll`, `icudtl.dat`,
+locale `.pak` files) that a WACK run against any Electron app would also
+produce.
+
+### Newly accepted costs
+
+- **An update or repair always kills the runner, with no grace period.** Any
+  agent running at that moment stops exactly as it would in a crash. DASH has
+  no say in the timing and gets no warning to relay to the user before it
+  happens, because the OS decides when Update/Repair may proceed, not DASH.
+- **Uninstall is a silent, total data wipe**, not a retention story. No code
+  can change this for a full-trust MSIX package, and no warning can precede
+  it either.
+- **DASH cannot run on Windows 10 S.** A direct consequence of the runner
+  spawning real child processes, accepted at the same point Amendment 1
+  accepted a real OS process boundary over an in-process alternative.
+
+### Still not decided
+
+- **Acceptance B** — a Store-signed, warning-free install — waits on
+  Henrik's developer account (Alohana Group AB, in employment verification as
+  of 2026-07-26).
+- **MAR-431**, the DPI-awareness manifest fix, is filed and not yet applied.
+- Whether DASH's own update-check UX (if one is ever built, separate from
+  Store-managed updates) should warn a user about live agents before
+  triggering an OS-level update remains open; there is no code to write
+  against it yet because no such UX exists.
+- MAR-428 (Agent Kit, auto-registration) is unrelated to this amendment and
+  was not started here.
