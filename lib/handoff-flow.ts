@@ -39,7 +39,6 @@
  */
 
 import { readFileSync, statSync } from "node:fs";
-import path from "node:path";
 
 import { isManifestV2, validateManifest, type AnyAgentManifest } from "./contracts";
 import type { HandoffOutcome, HandoffRecord } from "./handoff-ledger";
@@ -50,6 +49,7 @@ import {
   type AgentHandoff,
 } from "./handoff";
 import {
+  describeRegistrationChange,
   manifestDigest,
   readRegistration,
   removeRegistration,
@@ -400,11 +400,18 @@ async function register(
  * An empty list means "the same agent, described the same way" — which is what
  * makes re-opening a handoff idempotent rather than merely repeated.
  *
- * `manifest_path` is deliberately *not* compared. The handoff carries the
- * author's path and the stored registration carries DASH's copy of it, so
- * comparing the two would report a change on every single handoff and no agent
- * would ever be recognised as already added. The manifest's **content** is
- * compared instead, through its digest, which is what anybody actually means by
+ * The comparison itself is `lib/registration.ts`'s, not a second one written
+ * here. `writeRegistration` uses the same function to decide whether it has
+ * anything to write, and two implementations of "is this the same registration"
+ * that disagreed would produce the worst possible pair of outcomes: a dialog
+ * asking the user to approve a change, followed by a write that decided there
+ * was nothing to change.
+ *
+ * `manifest_path` is deliberately not part of that comparison. The handoff
+ * carries the author's path and the stored registration carries DASH's copy of
+ * it, so comparing the two would report a change on every single handoff and no
+ * agent would ever be recognised as already added. The manifest's **content** is
+ * compared instead, through its digest — which is what anybody actually means by
  * "the plan changed".
  */
 function changesFrom(
@@ -412,30 +419,14 @@ function changesFrom(
   handoff: AgentHandoff,
   manifestJson: string,
 ): string[] {
-  const changes: string[] = [];
-
-  if (existing.command !== handoff.command || !sameArgs(existing.args, handoff.args)) {
-    changes.push("what DASH would run has changed");
-  }
-  if (path.resolve(existing.cwd ?? "") !== path.resolve(handoff.project_dir)) {
-    changes.push("it has moved to a different folder");
-  }
-  if (!sameEnv(existing.env ?? {}, handoff.env)) {
-    changes.push("its settings have changed");
-  }
-  if (existing.dash.manifest_sha256 !== manifestDigest(manifestJson)) {
-    changes.push("what the agent plans to do has changed");
-  }
-  return changes;
-}
-
-function sameArgs(a: readonly string[], b: readonly string[]): boolean {
-  return a.length === b.length && a.every((item, index) => item === b[index]);
-}
-
-function sameEnv(a: Record<string, string>, b: Record<string, string>): boolean {
-  const keys = Object.keys(a);
-  return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
+  return describeRegistrationChange(existing, {
+    ...existing,
+    command: handoff.command,
+    args: handoff.args,
+    cwd: handoff.project_dir,
+    env: handoff.env,
+    dash: { ...existing.dash, manifest_sha256: manifestDigest(manifestJson) },
+  });
 }
 
 /**
