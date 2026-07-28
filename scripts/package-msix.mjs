@@ -69,6 +69,11 @@ const [outputDir] = await packager({
     ProductName: APP_NAME,
     FileDescription: "OrchestrateDASH — packaging lifecycle proof build (MAR-429)",
     InternalName: APP_NAME,
+    // MAR-431: declares PerMonitorV2 DPI awareness on the packaged .exe.
+    // @electron/packager/resedit replaces the whole RT_MANIFEST resource
+    // with this file's bytes rather than merging into Electron's own
+    // manifest — see the comment atop the file itself for why.
+    "application-manifest": path.join(appxDir, "OrchestrateDASH.exe.manifest"),
   },
 });
 
