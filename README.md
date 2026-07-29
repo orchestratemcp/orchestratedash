@@ -144,6 +144,17 @@ Existing telemetry-only agents remain valid and read-only. Controls appear only
 when an adapter declares and implements them, and the runner enforces every
 authorization and approval again at execution time.
 
+## Who the interface is for
+
+[`docs/design-brief.md`](docs/design-brief.md) decides it: **the calm view is the
+default and density is opt-in**, the guided path carries no raw identifiers, and
+every error names a next action. Developer surfaces keep everything they have —
+including manifest import, JSON and raw ids — reached deliberately rather than
+landed on.
+
+The no-raw-identifier rule is enforced by tests over rendered copy, not by
+review. [`lib/copy/`](lib/copy) holds the one definition.
+
 ## Plan vs actual
 
 OrchestrateKit plans are deterministic, registry-grounded routes with a safety
