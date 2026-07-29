@@ -59,7 +59,14 @@ import {
   type ReadResponse,
   type ReadResults,
 } from "../lib/shell/read";
-import { agentsView, connectionsView, runView, runsView } from "../lib/views/build";
+import {
+  agentsView,
+  connectionsView,
+  runView,
+  runsView,
+  workInboxView,
+  workspaceView,
+} from "../lib/views/build";
 import { createAgentChannels, startPolling, type AgentChannels } from "./agent-adapters";
 import {
   handoffPorts,
@@ -354,6 +361,16 @@ export function registerReadChannel(): void {
           ok: true,
           data: connectionsView(),
         } satisfies ReadResponse<ReadResults["view.connections"]>;
+      case "view.inbox":
+        return {
+          ok: true,
+          data: workInboxView(),
+        } satisfies ReadResponse<ReadResults["view.inbox"]>;
+      case "view.workspace":
+        return {
+          ok: true,
+          data: workspaceView(review.params["agent"] ?? ""),
+        } satisfies ReadResponse<ReadResults["view.workspace"]>;
       default: {
         const unreachable: never = review.read;
         throw new Error(`Unhandled read: ${String(unreachable)}`);

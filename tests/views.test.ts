@@ -26,10 +26,17 @@ process.env.DASH_DATA_DIR = dataDir;
 
 const { importManifest, ingestEvents, resetStore } = await import("../lib/store");
 const { closeDb } = await import("../lib/db");
+const { putAgentDomState } = await import("../lib/agent-dom/store");
 const { writeRegistration } = await import("../lib/registration");
-const { agentOrigin, agentsView, connectionsView, runView, runsView } = await import(
-  "../lib/views/build"
-);
+const {
+  agentOrigin,
+  agentsView,
+  connectionsView,
+  runView,
+  runsView,
+  workInboxView,
+  workspaceView,
+} = await import("../lib/views/build");
 
 function example(name: string): unknown {
   return JSON.parse(readFileSync(path.join(repoRoot, "examples", name), "utf8"));
@@ -37,7 +44,10 @@ function example(name: string): unknown {
 
 const manifest = example("agent.manifest.example.json");
 const v2Manifest = example("dash-managed.manifest.v2.example.json");
+const workspaceManifest = example("gmail-meeting-assistant.manifest.v2.example.json");
+const workspaceState = example("gmail-meeting-assistant.state.example.json");
 const violatingRun = example("run-events.gate-violation.example.json") as unknown[];
+const BEFORE_WORK_EXPIRY = new Date("2026-07-16T10:00:00Z");
 
 beforeEach(() => {
   resetStore();
@@ -227,17 +237,77 @@ describe("connectionsView", () => {
   });
 });
 
+describe("workspaceView", () => {
+  it("distinguishes an absent agent from an imported agent with no live state", () => {
+    expect(workspaceView("nobody", BEFORE_WORK_EXPIRY)).toEqual({ found: false });
+
+    importManifest(workspaceManifest);
+    const view = workspaceView("synthetic-gmail-meeting-assistant", BEFORE_WORK_EXPIRY);
+    expect(view).toMatchObject({
+      found: true,
+      title: "Meeting Assistant",
+      snapshot: null,
+    });
+  });
+
+  it("projects the live workspace, exact approval effect and only targetable run controls", () => {
+    importManifest(workspaceManifest);
+    expect(putAgentDomState(workspaceState).ok).toBe(true);
+
+    const view = workspaceView("synthetic-gmail-meeting-assistant", BEFORE_WORK_EXPIRY);
+    expect(view.found).toBe(true);
+    if (!view.found || view.snapshot === null) {
+      return;
+    }
+
+    expect(view.snapshot.overview.next_action).toBe("Review 1 item waiting for you");
+    expect(view.snapshot.inbox[0]).toMatchObject({
+      kind: "approval",
+      action_id: "action-create-invite-draft",
+      action_label: "Create invite and save Gmail draft",
+    });
+    expect(view.snapshot.runs[0]?.controls.map(({ command }) => command)).toEqual([
+      "cancel",
+    ]);
+    expect(view.snapshot.memory[0]).toMatchObject({
+      retention: "user_approved",
+      provenance: "User approved this preference on 2026-07-10",
+    });
+    expect(view.snapshot.audit_events[0]).not.toHaveProperty("detail");
+  });
+
+  it("builds one cross-agent inbox without reading unrelated workspace documents", () => {
+    importManifest(workspaceManifest);
+    const live = structuredClone(workspaceState) as {
+      choices: Array<Record<string, unknown>>;
+    };
+    delete live.choices[0]?.["selected_option_id"];
+    expect(putAgentDomState(live).ok).toBe(true);
+
+    const view = workInboxView(BEFORE_WORK_EXPIRY);
+    expect(view.items.map(({ kind }) => kind)).toEqual(["approval", "choice"]);
+    expect(view.items.every((item) => item.agent === "synthetic-gmail-meeting-assistant")).toBe(
+      true,
+    );
+  });
+});
+
 describe("every view", () => {
   it("survives the boundary it has to cross", () => {
     importManifest(manifest);
     importManifest(v2Manifest);
     ingestEvents(violatingRun);
     addRegistration("email-lead-to-crm", "dash_handoff");
+    importManifest(workspaceManifest);
+    putAgentDomState(workspaceState);
 
     const views: unknown[] = [
       agentsView(),
       runsView(),
       connectionsView(),
+      workInboxView(BEFORE_WORK_EXPIRY),
+      workspaceView("synthetic-gmail-meeting-assistant", BEFORE_WORK_EXPIRY),
+      workspaceView("nobody", BEFORE_WORK_EXPIRY),
       runView("email-lead-to-crm", "run-gate-violation-demo"),
       runView("nobody", "no-such-run"),
     ];

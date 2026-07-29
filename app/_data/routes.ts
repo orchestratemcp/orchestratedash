@@ -28,3 +28,11 @@ export function runDetailHref(agent: string, runId: string): string {
   });
   return `/runs/detail?${params.toString()}`;
 }
+
+/** Static-export-safe agent workspace route, for the same reason as run detail. */
+export const AGENT_WORKSPACE_PARAMS = { agent: "agent" } as const;
+
+export function agentWorkspaceHref(agent: string): string {
+  const params = new URLSearchParams({ [AGENT_WORKSPACE_PARAMS.agent]: agent });
+  return `/agents/detail?${params.toString()}`;
+}

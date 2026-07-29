@@ -19,11 +19,12 @@ export default function RootLayout({
           <strong>OrchestrateDASH</strong>
           <nav>
             <Link href="/">Agents</Link>
+            <Link href="/work">Work inbox</Link>
             <Link href="/runs">Runs</Link>
             <Link href="/connections">Connections</Link>
             <Link href="/agents/add">Add agent</Link>
           </nav>
-          <span className="badge">monitor only &middot; never hosts agents</span>
+          <span className="badge">local agent workspace &middot; audited controls</span>
         </header>
         <main>{children}</main>
       </body>

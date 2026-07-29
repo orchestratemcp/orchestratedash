@@ -95,6 +95,16 @@ describe("buildWorkInbox", () => {
     const inbox = buildWorkInbox(manifest, state, BEFORE_EXPIRY);
     expect(inbox[0].task_label).toBe("Schedule a synthetic project review");
     expect(inbox[0].run_id).toBe(RUN_ID);
+    const approval = inbox[0];
+    expect(approval.kind).toBe("approval");
+    if (approval.kind !== "approval") {
+      throw new Error("expected the first inbox item to be an approval");
+    }
+    expect(approval.action_id).toBe("action-create-invite-draft");
+    expect(approval.action_label).toBe("Create invite and save Gmail draft");
+    expect(approval.context).toEqual([
+      { label: "Tuesday at 10:00", detail: "30 minutes" },
+    ]);
   });
 
   it("keeps expired items and flags them rather than dropping them silently", () => {

@@ -72,11 +72,35 @@ export interface WorkspaceManifest {
 }
 
 export interface AgentDomState {
+  state_version?: 1;
+  manifest_version?: 2;
   agent_id: string;
   observed_at: string;
   status: AgentStatus;
-  runs?: Array<{ id: string; status: RunStatus; current_step?: string; progress?: number }>;
-  tasks?: Array<{ id: string; run_id: string; label: string; status: string; detail?: string }>;
+  connections?: Array<{
+    connection_id: string;
+    state: "not_configured" | "connected" | "degraded" | "expired" | "revoked" | "unknown";
+    masked_account?: string;
+    checked_at: string;
+    reauthorization_required: boolean;
+    detail?: string;
+  }>;
+  runs?: Array<{
+    id: string;
+    status: RunStatus;
+    started_at?: string;
+    finished_at?: string;
+    current_step?: string;
+    progress?: number;
+  }>;
+  tasks?: Array<{
+    id: string;
+    run_id: string;
+    label: string;
+    status: string;
+    created_at?: string;
+    detail?: string;
+  }>;
   choices?: Array<{
     id: string;
     task_id: string;
@@ -99,10 +123,46 @@ export interface AgentDomState {
     action_id: string;
     label: string;
     status: "pending" | "approved" | "rejected" | "expired" | "cancelled";
+    requested_at?: string;
     expires_at: string;
     runner_enforced: boolean;
+    audit?: { correlation_id: string; causation_id?: string };
   }>;
-  plan_vs_actual?: { run_id: string; executed_components?: string[] };
+  approval_decisions?: Array<{
+    id: string;
+    request_id: string;
+    decision: "approved" | "rejected";
+    actor_id: string;
+    decided_at: string;
+    audit: { correlation_id: string; causation_id?: string };
+  }>;
+  memory?: Array<{
+    id: string;
+    label: string;
+    summary: string;
+    provenance: string;
+    retention: "descriptor_only" | "user_approved";
+    user_visible: true;
+    updated_at: string;
+  }>;
+  audit_events?: Array<{
+    id: string;
+    type: string;
+    actor_id: string;
+    target_id: string;
+    ts: string;
+    detail?: string;
+    audit: { correlation_id: string; causation_id?: string };
+  }>;
+  plan_vs_actual?: {
+    run_id: string;
+    planned_components?: string[];
+    executed_components?: string[];
+    deviations?: Array<{
+      kind: "missing" | "unexpected" | "reordered" | "gate_violation" | "model_tier" | "none";
+      detail: string;
+    }>;
+  };
 }
 
 /* ---------------------------------------------------------------------- *
@@ -186,8 +246,7 @@ function describeNextAction(waiting: InboxItem[], status: AgentStatus): string |
 
 export type InboxItemKind = "choice" | "approval";
 
-export interface InboxItem {
-  kind: InboxItemKind;
+interface InboxItemBase {
   id: string;
   task_id: string;
   /** The task's own label, so the inbox reads as work rather than as ids. */
@@ -196,9 +255,27 @@ export interface InboxItem {
   label: string;
   expires_at: string;
   expired: boolean;
-  /** Choices only. Empty for approvals. */
+}
+
+export interface ChoiceInboxItem extends InboxItemBase {
+  kind: "choice";
   options: Array<{ id: string; label: string; detail?: string }>;
 }
+
+export interface ApprovalInboxItem extends InboxItemBase {
+  kind: "approval";
+  options: [];
+  /** The exact action the user is being asked to permit. */
+  action_id: string;
+  action_label: string;
+  /**
+   * Human-readable choices already made for this task, so an approval can show
+   * the concrete time/recipient/variant rather than only an action category.
+   */
+  context?: Array<{ label: string; detail?: string }>;
+}
+
+export type InboxItem = ChoiceInboxItem | ApprovalInboxItem;
 
 /**
  * Everything currently waiting on the user, choices and approvals together.
@@ -218,6 +295,7 @@ export function buildWorkInbox(
 ): InboxItem[] {
   const taskLabel = new Map((state.tasks ?? []).map((task) => [task.id, task.label]));
   const taskRun = new Map((state.tasks ?? []).map((task) => [task.id, task.run_id]));
+  const actions = new Map((state.actions ?? []).map((action) => [action.id, action]));
   const items: InboxItem[] = [];
 
   for (const choice of state.choices ?? []) {
@@ -244,6 +322,23 @@ export function buildWorkInbox(
     if (!approvalIsEnforceable(request, state)) {
       continue;
     }
+    // `approvalIsEnforceable` already proved this exists. Looking it up again
+    // keeps the proof local and avoids a non-null assertion at the boundary.
+    const action = actions.get(request.action_id);
+    if (action === undefined) {
+      continue;
+    }
+    const context = (state.choices ?? []).flatMap((choice) => {
+      if (choice.task_id !== request.task_id || choice.selected_option_id === undefined) {
+        return [];
+      }
+      const selected = choice.options.find(
+        (option) => option.id === choice.selected_option_id,
+      );
+      return selected === undefined
+        ? []
+        : [{ label: selected.label, ...(selected.detail === undefined ? {} : { detail: selected.detail }) }];
+    });
     items.push({
       kind: "approval",
       id: request.id,
@@ -254,6 +349,9 @@ export function buildWorkInbox(
       expires_at: request.expires_at,
       expired: hasExpired(request.expires_at, now),
       options: [],
+      action_id: action.id,
+      action_label: action.label,
+      ...(context.length === 0 ? {} : { context }),
     });
   }
 
