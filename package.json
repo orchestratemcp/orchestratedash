@@ -9,6 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "build:renderer": "node scripts/build-renderer.mjs",
     "build:shell": "node scripts/build-shell.mjs",
     "build:agent-kit": "node scripts/build-agent-kit.mjs",
     "shell": "pnpm build:shell && electron .",

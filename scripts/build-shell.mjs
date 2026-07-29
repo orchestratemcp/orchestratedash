@@ -21,7 +21,7 @@
  */
 
 import { build } from "esbuild";
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -180,22 +180,37 @@ copyFileSync(
 );
 
 /**
- * The packaged renderer (MAR-429).
+ * The packaged renderer (MAR-432).
  *
- * Copied rather than bundled: it is one static file with no imports, and
- * `electron/resources.ts` resolves it relative to `main.mjs`, so it has to land
- * beside it. Only the packaged app loads it — `pnpm dev` and `pnpm shell` still
- * point at the loopback Next server — but it is built every time so that a
- * packaging run can never be the first thing to discover it is missing.
+ * DASH's actual UI, statically exported by `pnpm build:renderer`, copied to sit
+ * beside `main.mjs` — `electron/renderer-host.ts` resolves it relative to
+ * `import.meta.url`, the one anchor that holds in a development tree and under a
+ * version-stamped MSIX install root alike.
  *
- * It is a placeholder for the real UI, and says so in its own text. See
- * `electron/resources.ts` for why DASH's Next renderer is not packaged yet.
+ * **Copied if it is there, and reported if it is not.** Not built from here: a
+ * full Next export takes tens of seconds, and `pnpm shell` runs this script on
+ * the developer path where the loopback dev server is what gets loaded and the
+ * export is never opened. Failing here would tax the common case for the sake of
+ * the rare one.
+ *
+ * What makes that safe is that nothing *silently* ships without it. A packaged
+ * launch calls `assertRendererPresent()` and crashes on line one with the
+ * command to run; `scripts/package-msix.mjs` refuses before it stages anything.
+ * The one thing that cannot happen is a package with a blank window in it.
  */
 const rendererDir = path.join(outDir, "renderer");
-mkdirSync(rendererDir, { recursive: true });
-copyFileSync(
-  path.join(repoRoot, "electron", "renderer", "index.html"),
-  path.join(rendererDir, "index.html"),
-);
+rmSync(rendererDir, { recursive: true, force: true });
+
+const exportDir = path.join(repoRoot, "out");
+if (existsSync(exportDir)) {
+  cpSync(exportDir, rendererDir, { recursive: true });
+  console.log(`[build-shell] copied the exported renderer from ${path.relative(repoRoot, exportDir)}`);
+} else {
+  mkdirSync(rendererDir, { recursive: true });
+  console.log(
+    "[build-shell] no exported renderer found — run `pnpm build:renderer` before packaging. " +
+      "The developer path (`pnpm dev` + `pnpm shell`) does not need it.",
+  );
+}
 
 console.log(`[build-shell] wrote ${path.relative(repoRoot, outDir)}`);
