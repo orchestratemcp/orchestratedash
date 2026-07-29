@@ -30,11 +30,7 @@ import { assertStoreLocation } from "./data-dir";
 // a packaged app has to name it before anything validates anything. See
 // `electron/resources.ts` — the fallbacks it replaces are correct in a
 // development tree and wrong in an install, which is the worst combination.
-import {
-  assertContractsLocation,
-  assertRendererPresent,
-  packagedRendererUrl,
-} from "./resources";
+import { assertContractsLocation } from "./resources";
 
 import { app, BrowserWindow, ipcMain, Menu } from "electron";
 
@@ -57,6 +53,13 @@ import {
   formatAuditLine,
   type RunnerLifecycleResult,
 } from "../lib/shell/ipc";
+import {
+  SHELL_READ_CHANNEL,
+  reviewRead,
+  type ReadResponse,
+  type ReadResults,
+} from "../lib/shell/read";
+import { agentsView, connectionsView, runView, runsView } from "../lib/views/build";
 import { createAgentChannels, startPolling, type AgentChannels } from "./agent-adapters";
 import {
   handoffPorts,
@@ -65,6 +68,12 @@ import {
   removeAgentWithReport,
   surfaceWindow,
 } from "./handoff-host";
+import {
+  assertRendererPresent,
+  registerRendererScheme,
+  serveRenderer,
+} from "./renderer-host";
+import { RENDERER_ENTRY_URL } from "../lib/shell/renderer-scheme";
 import { ensureRunner, runnerFetch, stopRunner, type RunnerHandle } from "./runner-process";
 import { assertSampleTemplatesPresent, offerSampleAgent } from "./sample-agent";
 import {
@@ -137,15 +146,18 @@ function drainHandoffQueue(ports: HandoffPorts): void {
 }
 
 function rendererUrl(): string {
-  // Packaged: the local placeholder page shipped beside the bundles. Unpacked:
-  // the loopback dev server, unchanged. `DASH_SHELL_URL` still overrides both,
-  // and still goes through the allowlist — see below.
-  const url = process.env.DASH_SHELL_URL ?? packagedRendererUrl() ?? DEFAULT_RENDERER_URL;
+  // Packaged: the static export, served from inside the install over DASH's own
+  // scheme (MAR-432). Unpacked: the loopback dev server, unchanged.
+  // `DASH_SHELL_URL` still overrides both, and still goes through the allowlist
+  // — which is also how the packaged renderer is exercised without packaging:
+  // `pnpm build:renderer && DASH_SHELL_URL=dash-app://ui/ pnpm shell`.
+  const url =
+    process.env.DASH_SHELL_URL ?? (app.isPackaged ? RENDERER_ENTRY_URL : DEFAULT_RENDERER_URL);
   if (!isAllowedRendererUrl(url)) {
     // Fail loudly at startup rather than rendering off-machine content in a
     // window that holds a command channel.
     throw new Error(
-      `Refusing to load "${url}": DASH's renderer may only load local files or loopback origins.`,
+      `Refusing to load "${url}": DASH's renderer may only load its installed origin or a loopback development origin.`,
     );
   }
   return url;
@@ -301,6 +313,56 @@ export function registerCommandChannel(
 }
 
 /**
+ * Register the read channel (MAR-432).
+ *
+ * A second `ipcMain.handle`, and the only other one there is. It answers with
+ * the same `lib/views/build.ts` projections the developer path's GET routes
+ * answer with, which is the mechanism behind "one renderer, two data sources":
+ * neither source builds anything, so neither can drift from the other.
+ *
+ * No audit record, no principal, no adapter, no runner. A read reaches SQLite
+ * and comes back. See `lib/shell/read.ts` for the argument that this is the
+ * right shape rather than an omission.
+ *
+ * Registered unconditionally — unlike the command channel, this needs no runner
+ * and no vault. A machine that could not start a runner still has agents,
+ * events and connection requirements to show, and a DASH that could not render
+ * its own store because it could not host a process would be a worse failure
+ * than the one it was reporting.
+ */
+export function registerReadChannel(): void {
+  ipcMain.handle(SHELL_READ_CHANNEL, (_event, request: unknown) => {
+    const review = reviewRead(request);
+    if (review.decision === "denied") {
+      return { ok: false, reason: review.reason } satisfies ReadResponse<never>;
+    }
+
+    // Exhaustive over `READS`: adding a read without answering it here is a
+    // compile error, the same way `executeCommand` treats a new command.
+    switch (review.read) {
+      case "view.agents":
+        return { ok: true, data: agentsView() } satisfies ReadResponse<ReadResults["view.agents"]>;
+      case "view.runs":
+        return { ok: true, data: runsView() } satisfies ReadResponse<ReadResults["view.runs"]>;
+      case "view.run":
+        return {
+          ok: true,
+          data: runView(review.params["agent"] ?? "", review.params["run_id"] ?? ""),
+        } satisfies ReadResponse<ReadResults["view.run"]>;
+      case "view.connections":
+        return {
+          ok: true,
+          data: connectionsView(),
+        } satisfies ReadResponse<ReadResults["view.connections"]>;
+      default: {
+        const unreachable: never = review.read;
+        throw new Error(`Unhandled read: ${String(unreachable)}`);
+      }
+    }
+  });
+}
+
+/**
  * Start or stop a hosted agent, or report what the runner holds.
  *
  * Goes to the runner's `/lifecycle` route, never through the command channel.
@@ -410,6 +472,14 @@ function reportStoreLocation(): void {
 }
 
 if (typeof app !== "undefined") {
+  // ORDER-SENSITIVE, like the two imports at the top of this file and for a
+  // comparable reason. `registerSchemesAsPrivileged` is only honoured before
+  // `app.ready`; called later it succeeds silently and the packaged renderer
+  // loads as an opaque origin, failing at its first module script with a message
+  // about the origin rather than about the registration. See
+  // `electron/renderer-host.ts`.
+  registerRendererScheme();
+
   /**
    * Exactly one DASH per user session (MAR-428).
    *
@@ -463,6 +533,12 @@ if (typeof app !== "undefined") {
     // machine. Both fail loudly here or not at all.
     assertContractsLocation();
     assertRendererPresent();
+    // MAR-432. After `whenReady`, unlike `registerRendererScheme` above.
+    // Registered whether or not this launch will load it, so that
+    // `DASH_SHELL_URL=dash-app://ui/` exercises the packaged renderer's real
+    // path on a development machine — the only way to reach it without
+    // packaging, which needs a certificate and is not this session's to do.
+    serveRenderer();
     // MAR-423. The same shape of check for the sample agent's two template
     // files: a packaging mistake should be a crash here, not a menu item that
     // only fails in the shipped build.
@@ -494,6 +570,7 @@ if (typeof app !== "undefined") {
     }
 
     registerCommandChannel(channels, runner);
+    registerReadChannel();
     installApplicationMenu();
     createWindow();
 

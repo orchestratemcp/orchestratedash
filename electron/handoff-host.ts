@@ -10,17 +10,16 @@
  *
  * ## Why the consent question is a native dialog and not a page
  *
- * DASH's packaged renderer is still the placeholder `electron/renderer/index.html`
- * (see `electron/resources.ts`); the React UI is the developer path. A consent
- * question that only existed in the Next app would therefore not exist at all in
- * the installed product — which is the only place a novice ever sees it, and the
- * whole audience of this issue.
+ * The handoff originates outside the renderer and may be the event that starts
+ * DASH, before any page exists. Its consent gate therefore cannot depend on a
+ * page loading successfully. Keeping it native also makes the question
+ * unspoofable by page content and prevents a compromised or broken renderer
+ * from replacing, suppressing or approving it.
  *
- * A native modal is also the better answer on its own merits here. It is
- * unspoofable by page content, it cannot be dismissed by a renderer bug, and it
- * is the shape of dialog every other "an app wants to do something" prompt on
- * the machine already uses. MAR-423 (DASH-19) owns making the rest of the
- * onboarding beautiful; this is the part that has to be *trustworthy*.
+ * MAR-432 (DASH-20) replaced the packaged placeholder with the real UI. That
+ * removes the historical reason a page could not host the question; it does not
+ * remove any of the trust or startup reasons above. MAR-423 (DASH-19) owns
+ * making the rest of onboarding beautiful. This gate has to remain trustworthy.
  */
 
 import { app, dialog, BrowserWindow } from "electron";

@@ -38,8 +38,9 @@ pnpm shell        # builds electron/ and launches the window
 ```
 
 The shell is where secrets and audited commands live — see
-[`electron/`](electron/README.md). It is not packaged yet: no installer, no
-signing, no auto-update.
+[`electron/`](electron/README.md). `pnpm package:msix` builds the packaging-proof
+MSIX, including the static renderer. Signing, sideloading and Store publishing
+remain human-gated, and there is no auto-update flow.
 
 ### The shortest path: DASH makes one for you (MAR-423)
 
@@ -54,9 +55,9 @@ terminal does; the only difference is who ran the scaffolder. See
 
 > The agent registers and runs, but its runs are not visible yet — see
 > [MAR-433](https://linear.app/martini-home/issue/MAR-433), which found that a
-> runner-hosted agent's telemetry never reaches DASH. The installed app also
-> still shows a placeholder page rather than the UI below; that is
-> [MAR-432](https://linear.app/martini-home/issue/MAR-432).
+> runner-hosted agent's telemetry never reaches DASH. The installed app does
+> render the agents, runs and connections UI from a static export inside the
+> package; it opens no web server to do so.
 
 ### Make an agent yourself and add it (MAR-428)
 
@@ -102,7 +103,8 @@ The agent then appears under **Agents** and the run under **Runs**.
 | --- | --- |
 | `/` | Agents list — every imported `agent.manifest.json`, with a compliance rollup of its last 5 runs |
 | `/runs` | Runs list — runs reconstructed from received telemetry v1 events, each with its plan-vs-actual verdict |
-| `/runs/{agent}/{run_id}` | Run detail — the plan-vs-actual view: drift, gate compliance, clearance behavior |
+| `/runs/detail?agent={agent}&run={run_id}` | Run detail — the plan-vs-actual view: drift, gate compliance, clearance behavior |
+| `/connections` | Connection Center — requirements, ownership and safe health, never credential values |
 | `POST /api/agents` | Import one manifest, validated against the frozen v1 schema |
 | `GET /api/agents` | The same agents list as JSON |
 | `POST /api/events` | The v1 ingest endpoint; accepts one event or a batch |

@@ -48,10 +48,32 @@ const electronPackage = JSON.parse(
  */
 const APP_NAME = "OrchestrateDASH";
 
+/**
+ * The renderer, before anything else (MAR-432).
+ *
+ * Built here rather than left to whoever runs this: the export is what the
+ * installed app displays, and a package staged without it is a package whose
+ * window is blank. `build-shell.mjs` deliberately does not build it — `pnpm
+ * shell` runs that script on the developer path many times a day and does not
+ * open the export at all — so this is the place that insists.
+ */
+console.log("[package-msix] building the renderer's static export");
+execFileSync(process.execPath, [path.join(repoRoot, "scripts", "build-renderer.mjs")], {
+  stdio: "inherit",
+});
+
 console.log("[package-msix] building the shell and runner bundles");
 execFileSync(process.execPath, [path.join(repoRoot, "scripts", "build-shell.mjs")], {
   stdio: "inherit",
 });
+
+const stagedRenderer = path.join(repoRoot, "dist", "electron", "renderer", "index.html");
+if (!existsSync(stagedRenderer)) {
+  throw new Error(
+    `The renderer's entry page is missing at "${stagedRenderer}" after both build steps ran. ` +
+      `Packaging would produce an app with a blank window. See scripts/build-renderer.mjs.`,
+  );
+}
 
 console.log("[package-msix] running @electron/packager");
 const [outputDir] = await packager({

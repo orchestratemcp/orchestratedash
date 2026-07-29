@@ -10,8 +10,15 @@ import { listRuns, readStore, type RunSummary, type StoreShape } from "./store";
  * from stored events joined to a stored manifest.
  */
 
-/** How many recent runs the agent card rolls up. */
-export const ROLLUP_RUN_COUNT = 5;
+/**
+ * How many recent runs the agent card rolls up.
+ *
+ * Re-exported rather than defined here since MAR-432: the agents list renders it
+ * in a column heading and is now a client component, which cannot import this
+ * module. `lib/views/rollup.ts` holds the number so both sides read the same one.
+ */
+import { ROLLUP_RUN_COUNT } from "./views/rollup";
+export { ROLLUP_RUN_COUNT };
 
 export function eventsForRun(
   agent: string,

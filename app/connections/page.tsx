@@ -1,9 +1,9 @@
+"use client";
+
 import type { ReactNode } from "react";
 import { ConnectionChecklist } from "../_components/connection-checklist";
-import { deriveConnectionRequirements } from "../../lib/connections";
-import { listAgents, listConnectionCapableAgents, readStore } from "../../lib/store";
-
-export const dynamic = "force-dynamic";
+import { HostNotice, ViewFailed, ViewLoading } from "../_components/view-state";
+import { useHost, useView } from "../_data/use-view";
 
 /**
  * The Connection Center, read-only for now.
@@ -18,9 +18,8 @@ export const dynamic = "force-dynamic";
  * old to declare any" are different facts.
  */
 export default function ConnectionsPage(): ReactNode {
-  const store = readStore();
-  const agents = listConnectionCapableAgents(store);
-  const olderAgents = listAgents(store).filter((agent) => agent.manifest_version === 1);
+  const state = useView((source) => source.connections());
+  const host = useHost();
 
   return (
     <>
@@ -29,39 +28,48 @@ export default function ConnectionsPage(): ReactNode {
         What each imported agent needs to be connected to, taken from its
         manifest. DASH does not hold any of these credentials yet.
       </p>
+      <HostNotice host={host} />
 
-      {agents.length === 0 ? (
-        <div className="empty">
-          <p>
-            No agent with declared connections has been imported. Connection
-            requirements come from a v2 manifest&rsquo;s Agent DOM block.
-          </p>
-          <p>
-            <a href="/agents/add">Add an agent</a> to see what it needs to
-            connect to.
-          </p>
-        </div>
+      {state.status === "loading" ? (
+        <ViewLoading what="what your agents need" />
+      ) : state.status === "failed" ? (
+        <ViewFailed recovery={state.recovery} />
       ) : (
-        agents.map(({ name, manifest }) => (
-          <section key={name} className="agent-connections">
-            <h2>
-              <code>{name}</code>
-            </h2>
-            <ConnectionChecklist rows={deriveConnectionRequirements(manifest)} />
-          </section>
-        ))
-      )}
+        <>
+          {state.data.agents.length === 0 ? (
+            <div className="empty">
+              <p>
+                No agent with declared connections has been imported. Connection
+                requirements come from a v2 manifest&rsquo;s Agent DOM block.
+              </p>
+              <p>
+                <a href="/agents/add">Add an agent</a> to see what it needs to
+                connect to.
+              </p>
+            </div>
+          ) : (
+            state.data.agents.map(({ name, rows }) => (
+              <section key={name} className="agent-connections">
+                <h2>
+                  <code>{name}</code>
+                </h2>
+                <ConnectionChecklist rows={rows} />
+              </section>
+            ))
+          )}
 
-      {olderAgents.length > 0 ? (
-        <p className="muted">
-          {olderAgents.length === 1
-            ? "1 imported agent uses"
-            : `${olderAgents.length} imported agents use`}{" "}
-          a v1 manifest, which cannot declare connections:{" "}
-          {olderAgents.map((agent) => agent.name).join(", ")}. DASH does not
-          guess what they need.
-        </p>
-      ) : null}
+          {state.data.older_agent_names.length > 0 ? (
+            <p className="muted">
+              {state.data.older_agent_names.length === 1
+                ? "1 imported agent uses"
+                : `${state.data.older_agent_names.length} imported agents use`}{" "}
+              a v1 manifest, which cannot declare connections:{" "}
+              {state.data.older_agent_names.join(", ")}. DASH does not guess what
+              they need.
+            </p>
+          ) : null}
+        </>
+      )}
     </>
   );
 }

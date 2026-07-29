@@ -7,15 +7,18 @@
  * template files inside whichever layout this build is running from, choosing a
  * folder, and reporting.
  *
- * ## Why this is a menu item and not a button
+ * ## Why this remains a menu item
  *
- * MAR-432 (DASH-20) has not landed, so the packaged app's renderer is still the
- * placeholder. A button in the Next UI would not exist in the installed product,
- * which is the only place the person this issue serves ever looks. The native
- * menu exists in both, today.
+ * MAR-432 (DASH-20) replaced the packaged placeholder with the real UI, so a
+ * page button can now exist in the installed product. Adding that button still
+ * belongs to MAR-423's page work: this issue preserves the four pages while it
+ * changes their host.
  *
- * The same argument `electron/handoff-host.ts` makes about the consent dialog,
- * one step earlier in the same sequence.
+ * The menu remains useful on its own terms. It is app-wide, reachable before a
+ * page finishes loading, and maps directly to work owned by main rather than by
+ * the renderer: choose a folder, write the sample, then raise the native consent
+ * dialog. A future page button is another entrance to this same operation, not
+ * a replacement implementation and not a reason to remove the menu.
  */
 
 import { app, dialog, BrowserWindow } from "electron";

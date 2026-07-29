@@ -39,9 +39,7 @@
 
 import { app } from "electron";
 
-import { existsSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { contractsDirectory } from "../lib/contracts";
 import { isInsideInstallRoot } from "../lib/shell/install-layout";
@@ -72,38 +70,6 @@ function packagedResourcesDir(): string | null {
 const resources = packagedResourcesDir();
 if (resources !== null) {
   process.env.DASH_CONTRACTS_DIR ??= path.join(resources, "contracts");
-}
-
-/**
- * The renderer the packaged app loads.
- *
- * **A placeholder, on purpose, and only for MAR-429.** DASH's real UI is a Next
- * server application with API routes that read SQLite; it is not a static
- * export and cannot be one without moving that data access somewhere else.
- * Packaging a loopback Next server instead would re-open a listening TCP port
- * and undo MAR-430, which took the last one away.
- *
- * That decision belongs to **MAR-432 (DASH-20)**, which owns it and describes
- * the way through: a conditional static export, one renderer over two data
- * sources, and a read-only IPC surface beside the audited command channel. It
- * was filed by MAR-423 rather than assumed, because this comment used to point
- * at MAR-422 — whose description covers Store distribution, packaging and the
- * update lifecycle, and never says what the window contains.
- *
- * What MAR-429 needs is a window that opens,
- * because every lifecycle claim it makes — runner spawns, survives the window
- * closing, is re-adopted on reopen, is not orphaned by an update — is a
- * main-process and runner behaviour that no renderer participates in.
- *
- * Returns null when unpackaged, so `pnpm dev` + `pnpm shell` keep pointing at
- * the dev server exactly as they do today.
- */
-export function packagedRendererUrl(): string | null {
-  if (!app.isPackaged) {
-    return null;
-  }
-  const file = fileURLToPath(new URL("./renderer/index.html", import.meta.url));
-  return new URL(`file://${file.replace(/\\/g, "/")}`).href;
 }
 
 /**
@@ -147,24 +113,4 @@ export function assertContractsLocation(): void {
   }
 
   console.warn(`[dash-shell] contracts: ${resolved}`);
-}
-
-/**
- * Prove the packaged renderer was actually shipped.
- *
- * `loadURL` on a missing `file:` URL fails into a blank window rather than an
- * error, which would make a packaging mistake look like a renderer bug.
- */
-export function assertRendererPresent(): void {
-  const url = packagedRendererUrl();
-  if (url === null) {
-    return;
-  }
-  const file = fileURLToPath(url);
-  if (!existsSync(file)) {
-    throw new Error(
-      `The packaged renderer is missing at "${file}". ` +
-        `scripts/build-shell.mjs copies electron/renderer/ into dist/electron/renderer/.`,
-    );
-  }
 }

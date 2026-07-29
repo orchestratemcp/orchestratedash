@@ -1,22 +1,21 @@
+"use client";
+
 import type { ReactNode } from "react";
 import { AgentComplianceChips } from "./_components/verdict";
 import { AgentOrigin } from "./_components/agent-origin";
-import { dataDir } from "../lib/db";
-import { complianceForAgent, ROLLUP_RUN_COUNT } from "../lib/insights";
-import { listRegistrations } from "../lib/registration";
-import { listAgents, readStore } from "../lib/store";
+import { HostNotice, ViewFailed, ViewLoading } from "./_components/view-state";
+import { useHost, useView } from "./_data/use-view";
+import { ROLLUP_RUN_COUNT } from "../lib/views/rollup";
 
-export const dynamic = "force-dynamic";
-
+/**
+ * The agents list.
+ *
+ * A client component since MAR-432, like every page here. What it renders is
+ * unchanged; where the data comes from is not. See `app/_data/source.ts`.
+ */
 export default function AgentsPage(): ReactNode {
-  const store = readStore();
-  const agents = listAgents(store);
-  // MAR-428. Read from the registration directory rather than from the store,
-  // because ownership is a fact about a file the runner reads, and a second copy
-  // of it in the database would be free to disagree with the thing that matters.
-  const registrations = new Map(
-    listRegistrations(dataDir).map((registration) => [registration.agent_id, registration]),
-  );
+  const state = useView((source) => source.agents());
+  const host = useHost();
 
   return (
     <>
@@ -24,8 +23,13 @@ export default function AgentsPage(): ReactNode {
       <p className="lede">
         Every agent this DASH knows about, and where each one came from.
       </p>
+      <HostNotice host={host} />
 
-      {agents.length === 0 ? (
+      {state.status === "loading" ? (
+        <ViewLoading what="your agents" />
+      ) : state.status === "failed" ? (
+        <ViewFailed recovery={state.recovery} />
+      ) : state.data.agents.length === 0 ? (
         <div className="empty">
           <p>
             No agents yet. <a href="/agents/add">Add one</a> — it takes two
@@ -49,14 +53,14 @@ export default function AgentsPage(): ReactNode {
               </tr>
             </thead>
             <tbody>
-              {agents.map((agent) => (
+              {state.data.agents.map((agent) => (
                 <tr key={agent.name}>
                   <td>
                     <code>{agent.name}</code>
                   </td>
                   <td className="wrap">{agent.goal}</td>
                   <td>
-                    <AgentOrigin registration={registrations.get(agent.name)} />
+                    <AgentOrigin origin={agent.origin} />
                   </td>
                   <td>{agent.plan_source}</td>
                   <td>{agent.build_target}</td>
@@ -64,9 +68,7 @@ export default function AgentsPage(): ReactNode {
                   <td>{agent.automation_clearance}</td>
                   <td>{agent.run_count}</td>
                   <td>
-                    <AgentComplianceChips
-                      compliance={complianceForAgent(agent.name, store)}
-                    />
+                    <AgentComplianceChips compliance={agent.compliance} />
                   </td>
                 </tr>
               ))}
