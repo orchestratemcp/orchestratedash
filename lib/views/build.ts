@@ -22,6 +22,10 @@
  */
 
 import { deriveConnectionRequirements } from "../connections";
+import {
+  readAgentDomState,
+  readCommandAudit,
+} from "../agent-dom/store";
 import { dataDir } from "../db";
 import {
   analysisForRun,
@@ -32,10 +36,19 @@ import {
 import { listRegistrations, type ManagedRegistration } from "../registration";
 import {
   listAgents,
+  listAgentNames,
   listConnectionCapableAgents,
+  readAgentManifest,
   readStore,
   type StoreShape,
 } from "../store";
+import {
+  availableControls,
+  buildOverview,
+  buildWorkInbox,
+  type AgentDomState,
+  type WorkspaceManifest,
+} from "../workspace";
 import type {
   AgentOriginView,
   AgentsView,
@@ -43,6 +56,9 @@ import type {
   PlannedStepView,
   RunView,
   RunsView,
+  WorkInboxView,
+  WorkspaceSnapshotView,
+  WorkspaceView,
 } from "./types";
 
 /**
@@ -166,5 +182,173 @@ export function connectionsView(store: StoreShape = readStore()): ConnectionsVie
     older_agent_names: listAgents(store)
       .filter((agent) => agent.manifest_version === 1)
       .map((agent) => agent.name),
+  };
+}
+
+/* ---------------------------------------------------------------------- *
+ * Live workspace (MAR-384, DASH-09)
+ * ---------------------------------------------------------------------- */
+
+/** A bounded screen, not an export of the audit tables. */
+const WORKSPACE_AUDIT_LIMIT = 100;
+
+function workspaceSnapshot(
+  manifest: WorkspaceManifest,
+  stored: NonNullable<ReturnType<typeof readAgentDomState>>,
+  now: Date,
+): WorkspaceSnapshotView {
+  const state: AgentDomState = stored.state;
+
+  return {
+    observed_at: stored.observed_at,
+    received_at: stored.received_at,
+    overview: buildOverview(manifest, state, now),
+    inbox: buildWorkInbox(manifest, state, now),
+    runs: (state.runs ?? []).map((run) => ({
+      id: run.id,
+      status: run.status,
+      started_at: run.started_at ?? null,
+      finished_at: run.finished_at ?? null,
+      current_step: run.current_step ?? null,
+      progress: run.progress ?? null,
+      // Approval/choice commands require concrete resource ids and therefore
+      // render on inbox items, never as broad run controls.
+      controls: availableControls(manifest, state, run.id).filter(
+        ({ command }) => command !== "approve" && command !== "reject" && command !== "choose",
+      ),
+    })),
+    tasks: (state.tasks ?? []).map((task) => ({
+      id: task.id,
+      run_id: task.run_id,
+      label: task.label,
+      status: task.status,
+      created_at: task.created_at ?? null,
+      detail: task.detail ?? null,
+    })),
+    connections: (state.connections ?? []).map((connection) => ({
+      connection_id: connection.connection_id,
+      state: connection.state,
+      masked_account: connection.masked_account ?? null,
+      checked_at: connection.checked_at,
+      reauthorization_required: connection.reauthorization_required,
+      detail: connection.detail ?? null,
+    })),
+    memory: (state.memory ?? []).map((entry) => ({
+      id: entry.id,
+      label: entry.label,
+      summary: entry.summary,
+      provenance: entry.provenance,
+      retention: entry.retention,
+      updated_at: entry.updated_at,
+    })),
+    approval_decisions: (state.approval_decisions ?? []).map((decision) => ({
+      id: decision.id,
+      request_id: decision.request_id,
+      decision: decision.decision,
+      actor_id: decision.actor_id,
+      decided_at: decision.decided_at,
+      correlation_id: decision.audit.correlation_id,
+    })),
+    // The state contract permits a short `detail`, but the audit screen does
+    // not need it. Omitting agent-supplied prose keeps this read surface to
+    // identity, actor, target, time and correlation.
+    audit_events: (state.audit_events ?? [])
+      .slice(-WORKSPACE_AUDIT_LIMIT)
+      .reverse()
+      .map((event) => ({
+        id: event.id,
+        type: event.type,
+        actor_id: event.actor_id,
+        target_id: event.target_id,
+        ts: event.ts,
+        correlation_id: event.audit.correlation_id,
+      })),
+    command_audit: readCommandAudit({ agent: state.agent_id })
+      .slice(-WORKSPACE_AUDIT_LIMIT)
+      .reverse()
+      .map((record) => ({
+        command: record.command,
+        decision: record.decision,
+        reason: record.reason ?? null,
+        actor_id: record.actor_id,
+        actor_type: record.actor_type,
+        authenticated_by: record.authenticated_by,
+        run_id: record.run_id,
+        correlation_id: record.correlation_id,
+        decided_at: record.decided_at,
+      })),
+    plan_vs_actual:
+      state.plan_vs_actual === undefined
+        ? null
+        : {
+            run_id: state.plan_vs_actual.run_id,
+            planned_components: [...(state.plan_vs_actual.planned_components ?? [])],
+            executed_components: [...(state.plan_vs_actual.executed_components ?? [])],
+            deviations: (state.plan_vs_actual.deviations ?? []).map((deviation) => ({
+              kind: deviation.kind,
+              detail: deviation.detail,
+            })),
+          },
+  };
+}
+
+/**
+ * One imported agent's safe live workspace.
+ *
+ * The manifest and Agent DOM snapshot stay in main. The renderer receives only
+ * fields a workspace renders, and command availability is already narrowed by
+ * manifest capability plus current state before it crosses the boundary.
+ */
+export function workspaceView(
+  agent: string,
+  now: Date = new Date(),
+): WorkspaceView {
+  const manifest = readAgentManifest(agent);
+  if (manifest === null) {
+    return { found: false };
+  }
+
+  const workspaceManifest = manifest as WorkspaceManifest;
+  const stored = readAgentDomState(agent);
+  return {
+    found: true,
+    agent,
+    title: workspaceManifest.agent.display_name ?? workspaceManifest.agent.name,
+    goal: workspaceManifest.agent.goal,
+    snapshot: stored === null ? null : workspaceSnapshot(workspaceManifest, stored, now),
+  };
+}
+
+/**
+ * Pending choices and approvals across all imported agents.
+ *
+ * This intentionally does not call `workspaceView`: the global inbox has no
+ * reason to read command audit rows, tasks, memory or connections for every
+ * agent. It asks for exactly the document it renders.
+ */
+export function workInboxView(now: Date = new Date()): WorkInboxView {
+  const items = listAgentNames().flatMap((agent) => {
+    const manifest = readAgentManifest(agent);
+    const stored = readAgentDomState(agent);
+    if (manifest === null || stored === null) {
+      return [];
+    }
+    const workspaceManifest = manifest as WorkspaceManifest;
+    const title = workspaceManifest.agent.display_name ?? workspaceManifest.agent.name;
+    return buildWorkInbox(workspaceManifest, stored.state, now).map((item) => ({
+      ...item,
+      agent,
+      agent_title: title,
+      observed_at: stored.observed_at,
+    }));
+  });
+
+  return {
+    items: items.sort(
+      (a, b) =>
+        a.expires_at.localeCompare(b.expires_at) ||
+        a.agent.localeCompare(b.agent) ||
+        a.id.localeCompare(b.id),
+    ),
   };
 }

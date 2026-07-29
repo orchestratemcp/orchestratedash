@@ -53,6 +53,11 @@ describe("reviewRead", () => {
       read: "view.run",
       params: { agent: "a", run_id: "r" },
     });
+    expect(reviewRead({ read: "view.workspace", params: { agent: "a" } })).toEqual({
+      decision: "allowed",
+      read: "view.workspace",
+      params: { agent: "a" },
+    });
   });
 
   it("denies a read nobody declared", () => {
@@ -176,6 +181,8 @@ describe("the preload's exposed surface", () => {
 describe("isReadName", () => {
   it("recognises exactly the catalogue", () => {
     expect(isReadName("view.agents")).toBe(true);
+    expect(isReadName("view.inbox")).toBe(true);
+    expect(isReadName("view.workspace")).toBe(true);
     expect(isReadName("view.nothing")).toBe(false);
     expect(isReadName("toString")).toBe(false);
     expect(isReadName(undefined)).toBe(false);

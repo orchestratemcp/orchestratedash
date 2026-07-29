@@ -24,21 +24,47 @@
  * ## What is *not* the same, and is not hidden
  *
  * A browser tab cannot act. `window.dashShell` is a preload bridge and a page
- * served over HTTP has no preload, so no command can be issued from one — not
- * today, and not when the buttons arrive. `capabilities.can_act` reports that,
+ * served over HTTP has no preload, so no command can be issued from one.
+ * `capabilities.can_act` reports that,
  * and `lib/copy/host.ts` is what a page says about it. See that module for why
  * this is stated rather than quietly branched on.
  */
 
 import { describeViewFailure, type Recovery } from "../../lib/copy/recovery";
 import type { RenderHost } from "../../lib/copy/host";
+import type { CommandResult } from "../../lib/shell/ipc";
 import type { DashReadApi } from "../../lib/shell/read";
+import type { AgentCommand } from "../../lib/workspace";
 import type {
   AgentsView,
   ConnectionsView,
   RunView,
   RunsView,
+  WorkInboxView,
+  WorkspaceView,
 } from "../../lib/views/types";
+
+export interface AgentCommandArgs {
+  agent_id: string;
+  observed_at: string;
+  run_id?: string;
+  task_id?: string;
+  approval_id?: string;
+  action_id?: string;
+  choice_id?: string;
+  option_id?: string;
+  reason?: string;
+}
+
+interface DashShellClient {
+  approve(args: AgentCommandArgs): Promise<CommandResult>;
+  reject(args: AgentCommandArgs): Promise<CommandResult>;
+  choose(args: AgentCommandArgs): Promise<CommandResult>;
+  retry(args: AgentCommandArgs): Promise<CommandResult>;
+  pause(args: AgentCommandArgs): Promise<CommandResult>;
+  resume(args: AgentCommandArgs): Promise<CommandResult>;
+  cancel(args: AgentCommandArgs): Promise<CommandResult>;
+}
 
 declare global {
   interface Window {
@@ -49,10 +75,10 @@ declare global {
      */
     dashData?: DashReadApi;
     /**
-     * The audited command bridge. Named here only so that `can_act` can ask
-     * whether it exists — nothing in `app/` calls it yet.
+     * The audited command bridge. Optional because the developer browser path
+     * genuinely has no preload and is read-only by construction.
      */
-    dashShell?: unknown;
+    dashShell?: DashShellClient;
   }
 }
 
@@ -73,6 +99,8 @@ export interface DashDataSource {
   runs(): Promise<ViewResult<RunsView>>;
   run(agent: string, runId: string): Promise<ViewResult<RunView>>;
   connections(): Promise<ViewResult<ConnectionsView>>;
+  inbox(): Promise<ViewResult<WorkInboxView>>;
+  workspace(agent: string): Promise<ViewResult<WorkspaceView>>;
 }
 
 /**
@@ -103,6 +131,8 @@ function shellSource(bridge: DashReadApi): DashDataSource {
     runs: () => fromBridge(() => bridge.runs()),
     run: (agent, runId) => fromBridge(() => bridge.run(agent, runId)),
     connections: () => fromBridge(() => bridge.connections()),
+    inbox: () => fromBridge(() => bridge.inbox()),
+    workspace: (agent) => fromBridge(() => bridge.workspace(agent)),
   };
 }
 
@@ -138,6 +168,9 @@ function browserSource(): DashDataSource {
         `/api/views/run?agent=${encodeURIComponent(agent)}&run_id=${encodeURIComponent(runId)}`,
       ),
     connections: () => fromHttp("/api/views/connections"),
+    inbox: () => fromHttp("/api/views/inbox"),
+    workspace: (agent) =>
+      fromHttp(`/api/views/workspace?agent=${encodeURIComponent(agent)}`),
   };
 }
 
@@ -151,4 +184,48 @@ function browserSource(): DashDataSource {
 export function dataSource(): DashDataSource {
   const bridge = typeof window === "undefined" ? undefined : window.dashData;
   return bridge === undefined ? browserSource() : shellSource(bridge);
+}
+
+/**
+ * Submit one of the seven Agent DOM verbs through a named preload method.
+ *
+ * The switch is exhaustive and no generic `invoke` or command string crosses
+ * into the preload surface. Main still reviews the request, binds the actor,
+ * mints nonce/idempotency/correlation, audits it, and the runner independently
+ * rechecks the target and approval.
+ */
+export async function submitAgentCommand(
+  command: AgentCommand,
+  args: AgentCommandArgs,
+): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to use agent controls.",
+    };
+  }
+
+  switch (command) {
+    case "approve":
+      return bridge.approve(args);
+    case "reject":
+      return bridge.reject(args);
+    case "choose":
+      return bridge.choose(args);
+    case "retry":
+      return bridge.retry(args);
+    case "pause":
+      return bridge.pause(args);
+    case "resume":
+      return bridge.resume(args);
+    case "cancel":
+      return bridge.cancel(args);
+    default: {
+      const unreachable: never = command;
+      throw new Error(`Unhandled agent command: ${String(unreachable)}`);
+    }
+  }
 }

@@ -38,7 +38,10 @@ export type ViewState<T> =
  * that the source is resolved inside the effect, in the browser, after the
  * server-rendered pass on the developer path has already happened.
  */
-export function useView<T>(read: (source: DashDataSource) => Promise<ViewResult<T>>): ViewState<T> {
+export function useView<T>(
+  read: (source: DashDataSource) => Promise<ViewResult<T>>,
+  refreshKey: string | number = 0,
+): ViewState<T> {
   const [state, setState] = useState<ViewState<T>>({ status: "loading" });
 
   useEffect(() => {
@@ -46,6 +49,7 @@ export function useView<T>(read: (source: DashDataSource) => Promise<ViewResult<
     // set state on a component nobody is looking at, and — worse — could show
     // one page's data under another page's heading.
     let current = true;
+    setState({ status: "loading" });
 
     void read(dataSource()).then((result) => {
       if (!current) {
@@ -61,7 +65,7 @@ export function useView<T>(read: (source: DashDataSource) => Promise<ViewResult<
     // deliberately not a dependency: including it would re-read on every render,
     // forever. The pages pass a pure function of the source and nothing else.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refreshKey]);
 
   return state;
 }

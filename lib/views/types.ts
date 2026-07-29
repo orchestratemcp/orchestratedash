@@ -32,6 +32,11 @@ import type { ConnectionRequirementRow } from "../connections";
 import type { RunEvent } from "../contracts";
 import type { AgentCompliance } from "../insights";
 import type { RunSummary } from "../store";
+import type {
+  AvailableControl,
+  InboxItem,
+  WorkspaceOverview,
+} from "../workspace";
 
 /* ---------------------------------------------------------------------- *
  * Agents
@@ -147,4 +152,126 @@ export interface ConnectionsView {
    * make the first when it means the second.
    */
   older_agent_names: string[];
+}
+
+/* ---------------------------------------------------------------------- *
+ * Live workspace
+ * ---------------------------------------------------------------------- */
+
+export interface WorkspaceRunView {
+  id: string;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  current_step: string | null;
+  progress: number | null;
+  /**
+   * Run-scoped controls only. Approval and choice controls live on their
+   * concrete inbox item, where the target ids and side-effect preview exist.
+   */
+  controls: AvailableControl[];
+}
+
+export interface WorkspaceTaskView {
+  id: string;
+  run_id: string;
+  label: string;
+  status: string;
+  created_at: string | null;
+  detail: string | null;
+}
+
+export interface WorkspaceConnectionView {
+  connection_id: string;
+  state: string;
+  masked_account: string | null;
+  checked_at: string;
+  reauthorization_required: boolean;
+  detail: string | null;
+}
+
+export interface WorkspaceMemoryView {
+  id: string;
+  label: string;
+  summary: string;
+  provenance: string;
+  retention: "descriptor_only" | "user_approved";
+  updated_at: string;
+}
+
+export interface WorkspaceApprovalDecisionView {
+  id: string;
+  request_id: string;
+  decision: "approved" | "rejected";
+  actor_id: string;
+  decided_at: string;
+  correlation_id: string;
+}
+
+export interface WorkspaceAuditEventView {
+  id: string;
+  type: string;
+  actor_id: string;
+  target_id: string;
+  ts: string;
+  correlation_id: string;
+}
+
+export interface WorkspaceCommandAuditView {
+  command: string;
+  decision: "allowed" | "denied" | "duplicate";
+  reason: string | null;
+  actor_id: string;
+  actor_type: string;
+  authenticated_by: string;
+  run_id: string | null;
+  correlation_id: string;
+  decided_at: string;
+}
+
+export interface WorkspacePlanView {
+  run_id: string;
+  planned_components: string[];
+  executed_components: string[];
+  deviations: Array<{ kind: string; detail: string }>;
+}
+
+export interface WorkspaceSnapshotView {
+  observed_at: string;
+  received_at: string;
+  overview: WorkspaceOverview;
+  inbox: InboxItem[];
+  runs: WorkspaceRunView[];
+  tasks: WorkspaceTaskView[];
+  connections: WorkspaceConnectionView[];
+  memory: WorkspaceMemoryView[];
+  approval_decisions: WorkspaceApprovalDecisionView[];
+  audit_events: WorkspaceAuditEventView[];
+  command_audit: WorkspaceCommandAuditView[];
+  plan_vs_actual: WorkspacePlanView | null;
+}
+
+/**
+ * An imported agent can legitimately have no live Agent DOM snapshot yet.
+ * Keeping that as `snapshot: null` lets the workspace explain "not connected"
+ * without pretending the agent itself is absent.
+ */
+export type WorkspaceView =
+  | { found: false }
+  | {
+      found: true;
+      agent: string;
+      title: string;
+      goal: string;
+      snapshot: WorkspaceSnapshotView | null;
+    };
+
+export type WorkInboxRow = InboxItem & {
+  agent: string;
+  agent_title: string;
+  observed_at: string;
+};
+
+export interface WorkInboxView {
+  items: WorkInboxRow[];
 }

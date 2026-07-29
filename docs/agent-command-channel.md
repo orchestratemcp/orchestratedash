@@ -21,6 +21,7 @@ Read this section before the rest.
 | A command having an effect on a real process | **Built** (MAR-415). Delivered over the agent's stdin and acknowledged, or reported unacknowledged |
 | Starting or stopping a hosted process | **Built** (MAR-415) as `runner.*` lifecycle — still **not** an Agent DOM command |
 | The Electron shell running at all | **Built** (MAR-424) |
+| Capability-driven controls in the agent workspace | **Built** (MAR-384). The renderer receives only controls meaningful for the current validated snapshot |
 | An agent DASH holds no credential for | **Still `noAdapter`.** Read-only, and honest about why |
 
 Everything up to "DASH decided to send this envelope, and recorded why" is
@@ -43,9 +44,6 @@ healthy. Those tests run in CI, which the shell's own proofs cannot.
   operator places a token in the vault under `dash.adapter.{agent}.token` the
   same `httpAdapter` reaches it; DASH has no flow that mints one. Until then
   such an agent stays on `noAdapter` and renders read-only.
-- **No Agent Kit.** `npx create-dash-agent` does not exist. An agent becomes
-  hostable by having a v2 manifest and a registration file, both written by
-  hand. MAR-415's second slice is the template that generates them.
 - **No CPU or memory reporting.** The runner reports a real PID and real
   liveness because it started the process. It does not report CPU or RSS,
   because doing that portably needs a native dependency or a per-poll
@@ -93,6 +91,14 @@ run, so there would be nothing behind the name.
 (`lib/shell/ipc.ts`) whose payload names which agent, which run or task, which
 approval or choice, and which state snapshot the control was rendered from.
 That is the entire vocabulary.
+
+MAR-384 makes that vocabulary reachable from the live workspace without
+widening it. `lib/views/build.ts` derives controls from the validated manifest
+and latest durable Agent DOM snapshot before anything crosses into the
+renderer. Approval and choice buttons stay attached to their concrete resource
+ids and side-effect preview; run controls never receive those broader verbs.
+The browser development host has no preload bridge and therefore renders the
+same workspace read-only.
 
 **Main says the rest.** The actor, the nonce, the command id, the expiry, the
 correlation and the idempotency key are all minted in `lib/agent-dom/runner.ts`.

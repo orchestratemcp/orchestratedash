@@ -1,10 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { AgentComplianceChips } from "./_components/verdict";
 import { AgentOrigin } from "./_components/agent-origin";
 import { HostNotice, ViewFailed, ViewLoading } from "./_components/view-state";
 import { useHost, useView } from "./_data/use-view";
+import { agentWorkspaceHref } from "./_data/routes";
 import { ROLLUP_RUN_COUNT } from "../lib/views/rollup";
 
 /**
@@ -56,7 +58,9 @@ export default function AgentsPage(): ReactNode {
               {state.data.agents.map((agent) => (
                 <tr key={agent.name}>
                   <td>
-                    <code>{agent.name}</code>
+                    <Link className="plain" href={agentWorkspaceHref(agent.name)}>
+                      <code>{agent.name}</code>
+                    </Link>
                   </td>
                   <td className="wrap">{agent.goal}</td>
                   <td>

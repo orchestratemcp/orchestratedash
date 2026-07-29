@@ -197,7 +197,7 @@ check(
   "2c. the preload exposes only the named read methods",
   dataBridge.present &&
     JSON.stringify(dataBridge.methods) ===
-      JSON.stringify(["agents", "connections", "run", "runs"]) &&
+      JSON.stringify(["agents", "connections", "inbox", "run", "runs", "workspace"]) &&
     dataBridge.leaks.length === 0,
   dataBridge,
 );
@@ -222,6 +222,21 @@ const observedAt = new Date().toISOString();
 const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 const seeded = putAgentDomState(liveSnapshot(observedAt, expiresAt));
 check("3b. seeded a live state snapshot", seeded.ok, seeded);
+
+const workspaceRead = (await window.webContents.executeJavaScript(
+  `window.dashData.workspace(${JSON.stringify(AGENT)})`,
+)) as {
+  ok?: boolean;
+  data?: { found?: boolean; snapshot?: { observed_at?: string; inbox?: unknown[] } | null };
+};
+check(
+  "3c. the live workspace completes a narrowed read round trip",
+  workspaceRead.ok === true &&
+    workspaceRead.data?.found === true &&
+    workspaceRead.data.snapshot?.observed_at === observedAt &&
+    Array.isArray(workspaceRead.data.snapshot?.inbox),
+  workspaceRead,
+);
 
 /**
  * A distinctive free-text reason. `command_audit` records that a reason was

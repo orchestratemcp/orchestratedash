@@ -26,6 +26,7 @@ function example(name: string): Record<string, unknown> {
 
 const manifest = example("agent.manifest.example.json");
 const runEvent = example("run-event.example.json");
+const workspaceState = example("gmail-meeting-assistant.state.example.json");
 
 /**
  * Both modules resolve the data directory once, at import time. Every scenario
@@ -114,6 +115,32 @@ describe("schema", () => {
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
     ).toBe(3);
+  });
+
+  it("preserves pending tasks and approvals across a DASH restart", async () => {
+    const first = await freshStore();
+    const agentDom = await import("../lib/agent-dom/store");
+    expect(agentDom.putAgentDomState(workspaceState).ok).toBe(true);
+    first.db.closeDb();
+
+    process.env.DASH_DATA_DIR = first.dataDir;
+    vi.resetModules();
+    const reopenedDb = await import("../lib/db");
+    const reopenedAgentDom = await import("../lib/agent-dom/store");
+    opened.push({ dataDir: first.dataDir, closeDb: reopenedDb.closeDb });
+
+    const snapshot = reopenedAgentDom.readAgentDomState(
+      "synthetic-gmail-meeting-assistant",
+    );
+    expect(snapshot?.state.tasks?.[0]).toMatchObject({
+      id: "task-meeting-01",
+      status: "waiting_for_approval",
+    });
+    expect(snapshot?.state.approval_requests?.[0]).toMatchObject({
+      id: "approval-meeting-01",
+      status: "pending",
+      runner_enforced: true,
+    });
   });
 
   /**

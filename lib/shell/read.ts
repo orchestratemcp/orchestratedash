@@ -50,7 +50,14 @@
  * can run no Node built-ins and resolve no imports at runtime.
  */
 
-import type { AgentsView, ConnectionsView, RunView, RunsView } from "../views/types";
+import type {
+  AgentsView,
+  ConnectionsView,
+  RunView,
+  RunsView,
+  WorkInboxView,
+  WorkspaceView,
+} from "../views/types";
 
 /** The single read channel. Separate from `SHELL_COMMAND_CHANNEL` on purpose. */
 export const SHELL_READ_CHANNEL = "dash:shell-read";
@@ -75,7 +82,7 @@ export interface ReadSpec {
  * Every document the renderer may ask for. Adding an entry is the only way to
  * add a read, and is a deliberate review event.
  *
- * Four entries, one per page. Deliberately not a general "query the store"
+ * Six entries, one per page-shaped document. Deliberately not a general "query the store"
  * surface: the catalogue *is* the security argument above, and it only holds
  * while somebody can read it in one sitting and say what the renderer can see.
  */
@@ -95,6 +102,14 @@ export const READS = {
   "view.connections": {
     returns: "What each imported agent declares it needs to be connected to.",
     params: [],
+  },
+  "view.inbox": {
+    returns: "Pending choices and enforceable approvals across every imported agent.",
+    params: [],
+  },
+  "view.workspace": {
+    returns: "One agent's safe live state, capability-driven controls, memory and audit history.",
+    params: ["agent"],
   },
 } as const satisfies Record<string, ReadSpec>;
 
@@ -116,6 +131,8 @@ export interface ReadResults {
   "view.runs": RunsView;
   "view.run": RunView;
   "view.connections": ConnectionsView;
+  "view.inbox": WorkInboxView;
+  "view.workspace": WorkspaceView;
 }
 
 type UntypedRead = Exclude<ReadName, keyof ReadResults>;
@@ -209,6 +226,8 @@ export interface DashReadApi {
   runs(): Promise<ReadResponse<ReadResults["view.runs"]>>;
   run(agent: string, runId: string): Promise<ReadResponse<ReadResults["view.run"]>>;
   connections(): Promise<ReadResponse<ReadResults["view.connections"]>>;
+  inbox(): Promise<ReadResponse<ReadResults["view.inbox"]>>;
+  workspace(agent: string): Promise<ReadResponse<ReadResults["view.workspace"]>>;
 }
 
 /**
