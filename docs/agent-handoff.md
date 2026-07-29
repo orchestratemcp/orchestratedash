@@ -241,11 +241,12 @@ front of one confused user.
   is a decision about a name and a namespace, not something this issue should
   have made on anybody's behalf. Until then:
   `pnpm build:agent-kit && node agent-kit/dist/cli.mjs my-agent`.
-- **The consent dialog is a native modal, not a DASH page.** DASH's packaged
-  renderer is still a placeholder, so a consent question that lived only in the
-  Next app would not exist in the installed product — which is the only place a
-  novice sees it. That placeholder is MAR-432 (DASH-20)'s to replace; this part
-  had to be unspoofable more than it had to be pretty.
+- **The consent dialog is a native modal, not a DASH page.** A handoff arrives
+  from outside the renderer and may be what starts DASH, before a page exists.
+  The gate must survive a renderer that is slow, broken or compromised, and
+  page content must not be able to imitate, suppress or approve it. MAR-432
+  (DASH-20) replaced the packaged placeholder with the real UI; that made a page
+  possible, but deliberately did not move this trust decision into one.
 - **A sample agent's run is not visible yet.** It registers, it starts, and it
   keeps running — but MAR-433 (DASH-21) found that a runner-hosted agent's
   telemetry never reaches DASH at all, so its runs do not appear under Runs and

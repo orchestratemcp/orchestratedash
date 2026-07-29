@@ -10,13 +10,14 @@
  * So the template is data and this module is pure. `electron/main.ts` maps each
  * `action` to a handler; nothing here knows what any of them do.
  *
- * ## Why the sample agent is in a menu at all
+ * ## Why the sample agent remains in a menu
  *
- * Because MAR-432 (DASH-20) has not landed, so the packaged renderer is still a
- * placeholder and a button in the Next UI would not exist in the installed
- * product. The menu exists in both. When the real renderer lands the button
- * belongs on the page too — the menu item is not a substitute for it, and it is
- * not a reason to skip it.
+ * MAR-432 (DASH-20) made the real renderer available in the installed product,
+ * so the original placeholder-based reason no longer applies. The menu remains
+ * because it is app-wide, reachable while a page is loading, and invokes a
+ * main-owned operation that ends in a native consent dialog. MAR-423's page work
+ * may add a second entrance; this item is neither a substitute for that button
+ * nor a reason to implement the operation twice.
  */
 
 /** Everything the menu can ask `electron/main.ts` to do. */

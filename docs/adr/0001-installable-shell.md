@@ -431,10 +431,12 @@ So the answer is not a wider allowlist. It is three properties, in
 2. **The link must prove the opener read that file.** A single-use nonce, held
    inside the handoff, compared in constant time. This is what a page that
    guessed a project path cannot produce.
-3. **The user decides, every time, in a native modal.** Not a page: DASH's
-   packaged renderer is a placeholder, so a consent question living only in the
-   Next app would not exist in the installed product. A native modal is also
-   unspoofable by page content and cannot be dismissed by a renderer bug.
+3. **The user decides, every time, in a native modal.** The handoff originates
+   outside the renderer and may be what starts DASH, before a page exists. The
+   gate therefore cannot depend on the renderer loading correctly. A native
+   modal is also unspoofable by page content and cannot be replaced, suppressed
+   or approved by a compromised renderer. Amendment 5 records why this remains
+   true now that the packaged renderer is the real UI rather than a placeholder.
 
 The first two narrow *who may ask*. The third decides *whether it happens*.
 Neither substitutes for the other.
@@ -545,3 +547,185 @@ agent's script as its argument. That ordering is a test, not a comment.
   that today.
 - Whether the Agent Kit should ever emit the sentinel. It should not until
   there is a reason, and there is not one yet.
+
+---
+
+## Amendment 5 — the packaged renderer is the DASH UI (MAR-432, DASH-20)
+
+- **Status:** Accepted, 2026-07-29
+- **Amends:** the Decision's promise of one UI over a static export or a
+  loopback development server; the renderer/main structure by adding a
+  read-only data channel; and Amendment 3's placeholder-based explanation for
+  keeping handoff consent native.
+
+### What changed
+
+The installed app no longer loads a packaging-proof page. It loads the same
+agents, runs, run detail and Connection Center renderer as `pnpm dev`, built as
+a Next static export and served from inside the install.
+
+The pages no longer read SQLite directly. They render documents from one small
+data source chosen at runtime:
+
+- inside the shell, four named methods on `window.dashData` cross the
+  `dash:shell-read` channel into main;
+- in a browser tab, four development-only GET routes return the same documents;
+- both sides call the same projections in `lib/views/build.ts`, so transport
+  cannot acquire a second definition of what a page sees.
+
+The existing `window.dashShell` command bridge is unchanged. Reads do not widen
+`CommandResult.data`, do not share its channel and cannot name one of its
+commands.
+
+### Why reads are a second preload surface
+
+`CommandResult.data` is deliberately restricted to
+`Record<string, string | number | boolean>`. That restriction makes "no secret
+crosses this command boundary" reviewable as a type. An agents list, a run with
+its events or a connection checklist is a document; allowing documents through
+the command result would turn the restriction into a convention and create
+exactly the place a token, environment block or masked secret could hide.
+
+The read surface therefore has its own complete vocabulary:
+`agents()`, `runs()`, `run(agent, runId)` and `connections()`. The preload
+exposes no generic `invoke`, no channel name and no method that accepts an
+arbitrary object. `lib/shell/read.ts` owns the allowlist, parameter review and
+result type for every read. No entry reaches the vault, `connection_secrets`,
+the runner command channel or anything that is not content the corresponding
+page is permitted to display.
+
+### Why the command audit trail does not record reads
+
+The command ledger records **effects**. Its `mutates` and `irreversible` fields
+exist so a person can reconstruct what changed and which consequential action
+was approved. A read changes nothing and leaves no effect to reconstruct.
+
+Recording renderer reads would also make that ledger less useful. A renderer
+refreshes state continuously; a log containing thousands of "the agents list
+was rendered" records around a handful of irreversible commands buries the
+events the ledger exists to surface.
+
+Nor would a read record prevent the threat it might appear to answer. A
+compromised renderer already owns the window and can ask for every document
+that window is allowed to show. The defence must be limiting that vocabulary,
+not recording after the fact that it was used. The residual is accepted and
+named: a compromised renderer can enumerate agents, runs and connection
+requirements without leaving an audit record. It cannot read a credential or
+expand that enumeration into a generic store query.
+
+### Why the static export uses `dash-app://ui/`
+
+Loading a Next export from `file:` does not work beyond a proof page. Next emits
+absolute asset paths such as `/_next/static/…` and absolute client navigation
+such as `/runs`; under `file:` those resolve against the drive root. A relative
+asset prefix fixes one directory depth while DASH has several.
+
+A loopback server would work technically and is rejected architecturally. It
+would re-open a listening TCP port after MAR-430 removed the last one, and it
+would recreate the browser-reachable origin this ADR rejected under "Local
+service + browser UI".
+
+The package instead registers a distinct standard, secure scheme,
+`dash-app://`, and pins its only accepted authority to `ui`. It is deliberately
+not the `dash://` handoff scheme: one is a renderer origin whose bytes come from
+the install; the other is an operating-system entry point carrying
+attacker-authored input.
+
+The handler is GET-only, resolves every candidate inside one renderer directory,
+ignores the query string when choosing a file, refuses unknown file types and
+sets content types from a fixed allowlist. It does not bypass CSP and is not
+CORS-enabled. Scheme privileges are registered before `app.ready`; the handler
+itself is installed after readiness. `lib/shell/renderer-scheme.ts` holds these
+rules as pure, unit-tested decisions rather than leaving path traversal and
+origin checks inside Electron wiring.
+
+### Why the export is conditional
+
+The development build still owns two contracts that require a Next server:
+`POST /api/agents` for manifest import and the frozen telemetry v1
+`POST /api/events` ingest used by agents and `pnpm demo:violation`. Making
+`output: "export"` unconditional would remove both.
+
+Next also rejects a static export merely because a dynamic route handler is
+present; a runtime guard cannot opt it out. Route handlers are therefore named
+`route.dev.ts`, and `next.config.mjs` recognises the `dev.ts` extension only in
+the normal build. `pnpm build` retains every route. `pnpm build:renderer`
+recognises only the pages and produces `out/`, which the shell build stages
+under `dist/electron/renderer/`. Packaging builds that export first and refuses
+to stage a window without an entry page.
+
+An arbitrary run id cannot have a meaningful `generateStaticParams`. Run detail
+therefore moved from `/runs/[agent]/[run_id]` to the static document
+`/runs/detail`, with `agent` and `run` in its query string for the client data
+source to read.
+
+### The developer path is preserved, with its cost stated
+
+This is one renderer over two transports, not two renderers. The browser path
+keeps manifest import, telemetry ingest and every read page. It also keeps the
+same projection and failure vocabulary as the shell.
+
+It is not identical:
+
+- every page now renders a loading state before its data arrives. IPC makes that
+  interval small in the installed app; the browser path has lost the complete
+  server-rendered first response it had before;
+- a browser tab has no command bridge and is read-only by construction. It says
+  which window the user is in and that starting, answering and removing happen
+  in the DASH app rather than presenting dead controls;
+- manifest import points the other way: it remains a development route, so the
+  installed page explains that the import form is available only when DASH is
+  run from its source folder.
+
+These are host capabilities, not rendering branches. A page does not decide to
+show different data because of its origin.
+
+### Why the handoff consent remains native
+
+Amendment 3 reached the right conclusion partly from a premise this amendment
+removes: at that time a consent question implemented only in React would not
+have existed in the package at all.
+
+The conclusion survives for stronger reasons. A `dash://` handoff originates
+outside the renderer, can be the event that starts the process and can arrive
+before a page or window is ready. Its approval gate must therefore exist even
+when the renderer is slow or broken. Keeping it native also means page content
+cannot imitate it and a compromised renderer cannot suppress, replace or
+approve it. The safe default remains "no".
+
+The sample-agent menu item also remains, but no longer because a page button is
+impossible. It is an app-wide entrance to a main-owned operation and is
+reachable while a page loads. MAR-423's remaining page work may add another
+entrance to the same operation; it does not need a second implementation.
+
+### What is preserved
+
+- **One UI codebase.** The installed and development paths render the same
+  components over the same view documents.
+- **The renderer posture.** `contextIsolation` remains on, `nodeIntegration`
+  off, `sandbox: true`, no remote content, no generic preload method.
+- **The audited command chokepoint.** No command, approval or effect moved to
+  the read channel, and its primitive-only result type did not change.
+- **No listening TCP port in the installed app.** The scheme handler serves
+  files inside main and is not addressable by another process or browser.
+
+### Newly accepted costs
+
+- A second, separately reviewed renderer/main IPC surface: the read-only
+  document channel.
+- A custom renderer scheme whose registration order, path containment and
+  content-type allowlist are now security obligations.
+- Client-side loading on both hosts, including the loss of server-rendered page
+  data on the development path.
+- A deliberately read-only browser window and an unaudited, bounded ability for
+  a compromised renderer to enumerate the data already visible in that window.
+
+### Still not decided
+
+- The empty-state teaching, Connection Center recovery UI, calm/density toggle
+  and `runner.remove` button remain MAR-423 page work on top of this conversion.
+- MAR-433 remains the independent telemetry gap between a runner-hosted agent
+  and DASH.
+- The renderer has been exercised through its real `dash-app://ui/` origin
+  without packaging. Verifying it inside a sideloaded MSIX still belongs to
+  Henrik because installation and certificate-store changes are human-gated.

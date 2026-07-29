@@ -157,7 +157,7 @@ function rendererUrl(): string {
     // Fail loudly at startup rather than rendering off-machine content in a
     // window that holds a command channel.
     throw new Error(
-      `Refusing to load "${url}": DASH's renderer may only load local files or loopback origins.`,
+      `Refusing to load "${url}": DASH's renderer may only load its installed origin or a loopback development origin.`,
     );
   }
   return url;
