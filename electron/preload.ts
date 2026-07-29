@@ -11,14 +11,24 @@
  * - nothing that reads, writes or names a secret. `SecureStore` lives in main
  *   and never crosses this boundary.
  *
- * Every method here maps to exactly one entry in `COMMANDS`, and reaches it
- * through the single audited channel.
+ * **Two bridges, and they are separate on purpose (MAR-432).** `dashShell`
+ * carries effects: every method maps to exactly one entry in `COMMANDS` and
+ * reaches it through the single audited channel. `dashData` carries documents,
+ * on its own channel, and changes nothing — see `lib/shell/read.ts` for why
+ * reads cannot ride the command channel and why they are not audited.
+ *
+ * They are two objects rather than one with a `read` sub-object so that "can
+ * this page do anything, or only look?" is answerable by checking which globals
+ * exist. The developer path's browser tab has neither, which is what makes it
+ * read-only by construction rather than by discipline.
  */
 
 import { contextBridge, ipcRenderer } from "electron";
 
 import { SHELL_COMMAND_CHANNEL } from "../lib/shell/ipc";
 import type { CommandResult } from "../lib/shell/ipc";
+import { SHELL_READ_CHANNEL } from "../lib/shell/read";
+import type { ReadResponse, ReadResults } from "../lib/shell/read";
 
 /**
  * Request ids are generated here rather than in main so the renderer can
@@ -111,3 +121,39 @@ const dashShell = {
 export type DashShellApi = typeof dashShell;
 
 contextBridge.exposeInMainWorld("dashShell", dashShell);
+
+/* ---------------------------------------------------------------------- *
+ * The read surface (MAR-432)
+ * ---------------------------------------------------------------------- */
+
+function read<K extends keyof ReadResults>(
+  name: K,
+  params?: Record<string, string>,
+): Promise<ReadResponse<ReadResults[K]>> {
+  return ipcRenderer.invoke(SHELL_READ_CHANNEL, { read: name, params }) as Promise<
+    ReadResponse<ReadResults[K]>
+  >;
+}
+
+/**
+ * One named method per readable document, and nothing generic.
+ *
+ * The same argument that keeps `invoke` off `dashShell` applies here with no
+ * discount: a `read(name)` method would let page script address any entry in the
+ * catalogue, including entries added later for something else. That the
+ * catalogue currently holds only four harmless documents is not the property
+ * being protected — the property is that widening it stays a review event.
+ *
+ * No method takes a callback, returns a subscription, or accepts anything but
+ * strings. A page that wants fresher data asks again.
+ */
+const dashData = {
+  agents: () => read("view.agents"),
+  runs: () => read("view.runs"),
+  run: (agent: string, runId: string) => read("view.run", { agent, run_id: runId }),
+  connections: () => read("view.connections"),
+};
+
+export type DashDataApi = typeof dashData;
+
+contextBridge.exposeInMainWorld("dashData", dashData);

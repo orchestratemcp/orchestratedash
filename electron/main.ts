@@ -57,6 +57,13 @@ import {
   formatAuditLine,
   type RunnerLifecycleResult,
 } from "../lib/shell/ipc";
+import {
+  SHELL_READ_CHANNEL,
+  reviewRead,
+  type ReadResponse,
+  type ReadResults,
+} from "../lib/shell/read";
+import { agentsView, connectionsView, runView, runsView } from "../lib/views/build";
 import { createAgentChannels, startPolling, type AgentChannels } from "./agent-adapters";
 import {
   handoffPorts,
@@ -301,6 +308,56 @@ export function registerCommandChannel(
 }
 
 /**
+ * Register the read channel (MAR-432).
+ *
+ * A second `ipcMain.handle`, and the only other one there is. It answers with
+ * the same `lib/views/build.ts` projections the developer path's GET routes
+ * answer with, which is the mechanism behind "one renderer, two data sources":
+ * neither source builds anything, so neither can drift from the other.
+ *
+ * No audit record, no principal, no adapter, no runner. A read reaches SQLite
+ * and comes back. See `lib/shell/read.ts` for the argument that this is the
+ * right shape rather than an omission.
+ *
+ * Registered unconditionally — unlike the command channel, this needs no runner
+ * and no vault. A machine that could not start a runner still has agents,
+ * events and connection requirements to show, and a DASH that could not render
+ * its own store because it could not host a process would be a worse failure
+ * than the one it was reporting.
+ */
+export function registerReadChannel(): void {
+  ipcMain.handle(SHELL_READ_CHANNEL, (_event, request: unknown) => {
+    const review = reviewRead(request);
+    if (review.decision === "denied") {
+      return { ok: false, reason: review.reason } satisfies ReadResponse<never>;
+    }
+
+    // Exhaustive over `READS`: adding a read without answering it here is a
+    // compile error, the same way `executeCommand` treats a new command.
+    switch (review.read) {
+      case "view.agents":
+        return { ok: true, data: agentsView() } satisfies ReadResponse<ReadResults["view.agents"]>;
+      case "view.runs":
+        return { ok: true, data: runsView() } satisfies ReadResponse<ReadResults["view.runs"]>;
+      case "view.run":
+        return {
+          ok: true,
+          data: runView(review.params["agent"] ?? "", review.params["run_id"] ?? ""),
+        } satisfies ReadResponse<ReadResults["view.run"]>;
+      case "view.connections":
+        return {
+          ok: true,
+          data: connectionsView(),
+        } satisfies ReadResponse<ReadResults["view.connections"]>;
+      default: {
+        const unreachable: never = review.read;
+        throw new Error(`Unhandled read: ${String(unreachable)}`);
+      }
+    }
+  });
+}
+
+/**
  * Start or stop a hosted agent, or report what the runner holds.
  *
  * Goes to the runner's `/lifecycle` route, never through the command channel.
@@ -494,6 +551,7 @@ if (typeof app !== "undefined") {
     }
 
     registerCommandChannel(channels, runner);
+    registerReadChannel();
     installApplicationMenu();
     createWindow();
 
