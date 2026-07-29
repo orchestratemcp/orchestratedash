@@ -474,3 +474,74 @@ Neither substitutes for the other.
   audited; the button belongs with MAR-423's UX pass.
 - **The packaged deep link has not been exercised on a real install.**
   Sideloading touches the certificate store and is Henrik's step.
+
+---
+
+## Amendment 4 — DASH's own binary is an interpreter it can offer (MAR-423, DASH-19)
+
+- **Status:** Accepted, 2026-07-29
+- **Amends:** Amendment 1's account of what the runner spawns, by adding one
+  name that is not a program.
+
+### What changed
+
+The runner spawns whatever a registration's `command` names. It now recognises
+exactly one name that is not a program on the machine — `dash:node` — and
+resolves it, at the moment of spawning, to its own `process.execPath` with
+`ELECTRON_RUN_AS_NODE=1`.
+
+That pair is not new. Amendment 1 already launches the runner itself that way,
+because the Electron binary *is* Node when asked. What is new is offering it to
+an agent.
+
+### Why a novice-first onboarding forced the question
+
+MAR-423's outcome is that first run ends in a success rather than a setup. The
+Agent Kit registers agents with `command: "node"`, resolved against `PATH`, which
+is right for somebody who typed `npx create-dash-agent` — they demonstrably have
+Node. It is fatal for someone who installed DASH from the Store and has never
+installed anything else: the spawn fails, and first run ends in "the agent is
+saved, but it did not start."
+
+### Why a sentinel rather than a path
+
+Because a registration outlives the process that wrote it, and the path does not.
+Amendment 2 measured the MSIX install root as version-stamped —
+`WindowsApps\OrchestrateDASH_0.1.0.0_x64__…` became `…_0.1.1.0_…` across the
+update. A registration holding a real `execPath` is a registration that stops
+working at the first update, which is the same failure
+`agent-kit/open-in-dash.ts` avoids by refusing to pin to a Node install,
+arriving by a different door.
+
+A sentinel is resolved by the process doing the spawning, against its own
+`execPath`. Nothing version-stamped is ever written down.
+
+### What it does not grant
+
+Nothing. A registration may already name any command on the machine; this names
+strictly one, and it is DASH's own binary rather than anything on disk. The
+decision about whether an agent is registered at all is still consent, taken
+before any of this is written, in a native modal, per Amendment 3.
+
+The resolution is applied **after** the registration's own environment block, so
+a registration cannot ask for DASH's interpreter and then unset the variable that
+makes it one — which would spawn the shell itself, windows and all, with an
+agent's script as its argument. That ordering is a test, not a comment.
+
+### Newly accepted costs
+
+- **DASH's binary now appears in a process tree as an agent's interpreter.** A
+  user looking at Task Manager sees a second `OrchestrateDASH.exe` that is not a
+  window. This was already true of the runner; it is now true once more per
+  sample agent.
+- **Two ways to spawn an agent's interpreter**, and the Agent Kit deliberately
+  keeps using the other one. A project that only ran inside DASH is not what the
+  Kit is for, and an agent author who has Node should be registered against it.
+
+### Still not decided
+
+- Whether an agent registered against `dash:node` should be pinned to the
+  Node version a given DASH ships, or told which one it got. Nothing consumes
+  that today.
+- Whether the Agent Kit should ever emit the sentinel. It should not until
+  there is a reason, and there is not one yet.

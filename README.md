@@ -41,9 +41,26 @@ The shell is where secrets and audited commands live — see
 [`electron/`](electron/README.md). It is not packaged yet: no installer, no
 signing, no auto-update.
 
-### Make an agent and add it (MAR-428)
+### The shortest path: DASH makes one for you (MAR-423)
 
-The path a person actually takes. No manifest to find, no JSON to transcribe,
+In the installed app, **DASH › Try a sample agent**. It builds a working agent
+in your documents folder, asks whether to add it, and starts it. No terminal, no
+file picker, and nothing to install — not even Node, because DASH runs the
+sample with the copy it already ships.
+
+It goes through the same handoff and the same consent dialog a link from a
+terminal does; the only difference is who ran the scaffolder. See
+[`docs/agent-handoff.md`](docs/agent-handoff.md).
+
+> The agent registers and runs, but its runs are not visible yet — see
+> [MAR-433](https://linear.app/martini-home/issue/MAR-433), which found that a
+> runner-hosted agent's telemetry never reaches DASH. The installed app also
+> still shows a placeholder page rather than the UI below; that is
+> [MAR-432](https://linear.app/martini-home/issue/MAR-432).
+
+### Make an agent yourself and add it (MAR-428)
+
+The path a developer takes. No manifest to find, no JSON to transcribe,
 no file picker:
 
 ```sh

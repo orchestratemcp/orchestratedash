@@ -83,7 +83,14 @@ if (resources !== null) {
  * Packaging a loopback Next server instead would re-open a listening TCP port
  * and undo MAR-430, which took the last one away.
  *
- * That decision belongs to MAR-422. What MAR-429 needs is a window that opens,
+ * That decision belongs to **MAR-432 (DASH-20)**, which owns it and describes
+ * the way through: a conditional static export, one renderer over two data
+ * sources, and a read-only IPC surface beside the audited command channel. It
+ * was filed by MAR-423 rather than assumed, because this comment used to point
+ * at MAR-422 — whose description covers Store distribution, packaging and the
+ * update lifecycle, and never says what the window contains.
+ *
+ * What MAR-429 needs is a window that opens,
  * because every lifecycle claim it makes — runner spawns, survives the window
  * closing, is re-adopted on reopen, is not orphaned by an update — is a
  * main-process and runner behaviour that no renderer participates in.
