@@ -30,11 +30,7 @@ import { assertStoreLocation } from "./data-dir";
 // a packaged app has to name it before anything validates anything. See
 // `electron/resources.ts` — the fallbacks it replaces are correct in a
 // development tree and wrong in an install, which is the worst combination.
-import {
-  assertContractsLocation,
-  assertRendererPresent,
-  packagedRendererUrl,
-} from "./resources";
+import { assertContractsLocation } from "./resources";
 
 import { app, BrowserWindow, ipcMain, Menu } from "electron";
 
@@ -72,6 +68,12 @@ import {
   removeAgentWithReport,
   surfaceWindow,
 } from "./handoff-host";
+import {
+  assertRendererPresent,
+  registerRendererScheme,
+  serveRenderer,
+} from "./renderer-host";
+import { RENDERER_ENTRY_URL } from "../lib/shell/renderer-scheme";
 import { ensureRunner, runnerFetch, stopRunner, type RunnerHandle } from "./runner-process";
 import { assertSampleTemplatesPresent, offerSampleAgent } from "./sample-agent";
 import {
@@ -144,10 +146,13 @@ function drainHandoffQueue(ports: HandoffPorts): void {
 }
 
 function rendererUrl(): string {
-  // Packaged: the local placeholder page shipped beside the bundles. Unpacked:
-  // the loopback dev server, unchanged. `DASH_SHELL_URL` still overrides both,
-  // and still goes through the allowlist — see below.
-  const url = process.env.DASH_SHELL_URL ?? packagedRendererUrl() ?? DEFAULT_RENDERER_URL;
+  // Packaged: the static export, served from inside the install over DASH's own
+  // scheme (MAR-432). Unpacked: the loopback dev server, unchanged.
+  // `DASH_SHELL_URL` still overrides both, and still goes through the allowlist
+  // — which is also how the packaged renderer is exercised without packaging:
+  // `pnpm build:renderer && DASH_SHELL_URL=dash-app://ui/ pnpm shell`.
+  const url =
+    process.env.DASH_SHELL_URL ?? (app.isPackaged ? RENDERER_ENTRY_URL : DEFAULT_RENDERER_URL);
   if (!isAllowedRendererUrl(url)) {
     // Fail loudly at startup rather than rendering off-machine content in a
     // window that holds a command channel.
@@ -467,6 +472,14 @@ function reportStoreLocation(): void {
 }
 
 if (typeof app !== "undefined") {
+  // ORDER-SENSITIVE, like the two imports at the top of this file and for a
+  // comparable reason. `registerSchemesAsPrivileged` is only honoured before
+  // `app.ready`; called later it succeeds silently and the packaged renderer
+  // loads as an opaque origin, failing at its first module script with a message
+  // about the origin rather than about the registration. See
+  // `electron/renderer-host.ts`.
+  registerRendererScheme();
+
   /**
    * Exactly one DASH per user session (MAR-428).
    *
@@ -520,6 +533,12 @@ if (typeof app !== "undefined") {
     // machine. Both fail loudly here or not at all.
     assertContractsLocation();
     assertRendererPresent();
+    // MAR-432. After `whenReady`, unlike `registerRendererScheme` above.
+    // Registered whether or not this launch will load it, so that
+    // `DASH_SHELL_URL=dash-app://ui/` exercises the packaged renderer's real
+    // path on a development machine — the only way to reach it without
+    // packaging, which needs a certificate and is not this session's to do.
+    serveRenderer();
     // MAR-423. The same shape of check for the sample agent's two template
     // files: a packaging mistake should be a crash here, not a menu item that
     // only fails in the shipped build.

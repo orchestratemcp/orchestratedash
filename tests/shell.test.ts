@@ -67,10 +67,10 @@ describe("renderer security posture", () => {
 });
 
 describe("no remote content in the renderer", () => {
-  it("allows local files and loopback origins", () => {
+  it("allows the packaged renderer's origin and loopback origins", () => {
     for (const url of [
-      "file:///C:/Users/x/AppData/Local/DASH/out/index.html",
-      "file:///opt/dash/out/index.html",
+      "dash-app://ui/",
+      "dash-app://ui/runs",
       "http://127.0.0.1:3000",
       "http://127.0.0.1:3000/agents/abc",
       "http://[::1]:3000/",
@@ -91,6 +91,14 @@ describe("no remote content in the renderer", () => {
       // Non-http schemes that could reach other local surfaces.
       "javascript:alert(1)",
       "data:text/html,<script>1</script>",
+      // MAR-432 withdrew `file:`. It was here for the packaging proof build's
+      // single static page, which a static export cannot be served as; leaving
+      // it would leave the renderer permitted to load any readable path on the
+      // machine in service of a page that no longer exists.
+      "file:///C:/Users/x/AppData/Local/DASH/out/index.html",
+      "file:///opt/dash/out/index.html",
+      // Our scheme, somebody else's authority.
+      "dash-app://elsewhere/index.html",
       "not a url",
       "",
     ]) {

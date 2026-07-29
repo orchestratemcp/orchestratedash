@@ -13,6 +13,8 @@
  * rather than shipping.
  */
 
+import { RENDERER_HOST, RENDERER_SCHEME } from "./renderer-scheme";
+
 /**
  * The `webPreferences` DASH's window is created with. Frozen because these are
  * a security boundary, not defaults to tweak at a call site — a caller that
@@ -79,7 +81,7 @@ export function assertHardenedWebPreferences(preferences: Partial<ShellWebPrefer
 /**
  * "No remote content in the renderer" (ADR 0001) made checkable.
  *
- * DASH is local-first: the UI is a local static export or a loopback dev
+ * DASH is local-first: the UI is the packaged static export or a loopback dev
  * server, and nothing else. Anything off-machine — an OAuth page, a doc link,
  * an agent's own web UI — belongs in the user's real browser, where it gets
  * that browser's isolation and the user can see the address bar.
@@ -87,6 +89,11 @@ export function assertHardenedWebPreferences(preferences: Partial<ShellWebPrefer
  * `localhost` is deliberately *not* accepted as a bare hostname alias: it can
  * resolve through DNS, and honouring only the literal loopback addresses keeps
  * the check independent of resolver behaviour.
+ *
+ * **`file:` is no longer accepted (MAR-432).** It was here for the packaging
+ * proof build's one static page, and a static export cannot be served over it
+ * anyway. Leaving it would leave the renderer permitted to load any readable
+ * path on the machine in service of a page that no longer exists.
  */
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]", "::1"]);
 
@@ -99,9 +106,21 @@ export function isAllowedRendererUrl(url: string): boolean {
     return false;
   }
 
-  // The packaged app loads the static export straight off disk.
-  if (parsed.protocol === "file:") {
-    return true;
+  /**
+   * The packaged renderer's own scheme (MAR-432).
+   *
+   * Pinned to one host, so this admits exactly one origin rather than a scheme's
+   * worth of them. The handler behind it serves read-only from a single
+   * directory inside the install and refuses anything that resolves outside it —
+   * see `lib/shell/renderer-scheme.ts`, which is where that is decided and
+   * tested.
+   *
+   * This is a *narrowing* of what the allowlist used to permit here, not a
+   * widening: `file:` was accepted wholesale, and a `file:` URL can name any
+   * readable path on the machine.
+   */
+  if (parsed.protocol === `${RENDERER_SCHEME}:`) {
+    return parsed.hostname === RENDERER_HOST;
   }
 
   // The developer `pnpm dev` path, which ADR 0001 keeps as a second entry point.
