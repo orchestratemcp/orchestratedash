@@ -79,6 +79,18 @@ export interface ManifestConnectionField {
   purpose: string;
   kind: "secret" | "non_secret" | "oauth_reauthorization";
   required: boolean;
+  /** Author-written guidance, e.g. where to find the key. Safe to render. */
+  help?: string;
+  /**
+   * The schema's escape hatch for things a novice should never see. Read by
+   * `lib/connection-credentials.ts` — `environment_name` is the delivery target
+   * for a DASH-held secret — and deliberately not surfaced by
+   * `deriveConnectionRequirements`, which builds the plain-language checklist.
+   */
+  technical?: {
+    environment_name?: string;
+    provider_scopes?: string[];
+  };
 }
 
 export interface ManifestConnection {
@@ -172,7 +184,8 @@ function modelProviderRow(
     provider: "model-provider",
     purpose:
       `Run the ${stepCount} step${stepCount === 1 ? "" : "s"} in this agent's plan ` +
-      `that need a language model (highest tier required: ${TIER_LABEL[highest]})`,
+      `that ${stepCount === 1 ? "needs" : "need"} a language model ` +
+      `(highest tier required: ${TIER_LABEL[highest]})`,
     capabilities: usedTiers.map((tier) => ({
       id: `model.completion.${tier}`,
       label: `Send plan steps to a ${TIER_LABEL[tier]}-tier model`,

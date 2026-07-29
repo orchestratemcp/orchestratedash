@@ -24,6 +24,7 @@ import { pathToFileURL } from "node:url";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { CREDENTIAL_PROMPT_ROUTE } from "../lib/shell/credential-prompt";
 import {
   RENDERER_SCHEME,
   resolveRendererRequest,
@@ -130,6 +131,19 @@ export function assertRendererPresent(): void {
       `The packaged renderer is missing at "${entry}". ` +
         `Run \`pnpm build:renderer\` before \`pnpm build:shell\` — the export is ` +
         `what the packaged app displays, and without it the window is blank.`,
+    );
+  }
+
+  // MAR-383. The credential prompt is a route in the same export, and it is the
+  // one page whose absence would not look like a missing renderer: the app
+  // would start, the Connection Center would render, and Connect would open an
+  // empty window with a credential bridge attached to nothing. Checked
+  // separately so that failure is a crash at startup instead.
+  const prompt = path.join(rendererRoot(), `${CREDENTIAL_PROMPT_ROUTE.replace(/^\//, "")}.html`);
+  if (!existsSync(prompt)) {
+    throw new Error(
+      `The packaged renderer is missing the credential prompt at "${prompt}". ` +
+        `Connecting a service would open a blank window. Run \`pnpm build:renderer\`.`,
     );
   }
 }

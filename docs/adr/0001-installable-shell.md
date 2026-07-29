@@ -789,3 +789,101 @@ a transport the existing runner channel already supplies.
   signing, certificate installation and sideloading. The local named-pipe path
   is covered by the same runner and Electron polling integration used by the
   package.
+
+---
+
+## Amendment 7 — DASH holds and delivers connection credentials (MAR-383, DASH-08)
+
+**Status:** Accepted, 2026-07-29.
+
+### What changed
+
+The Connection Center connects. A user presses **Connect** on a declared row;
+main resolves the target against the agent's validated manifest, opens a modal
+window with its own preload, takes the value there, and writes it to the OS
+vault. `connection_secrets` — present and unused since MAR-416 — gets its first
+production writer, holding the vault key and a masked hint and never a value.
+
+At `runner.start`, main reads the vault for fields whose manifest declares
+`technical.environment_name` and sends them down the runner's existing
+authenticated socket or pipe for that one spawn. `runner/supervisor.ts` merges
+them into the child environment after the registration's own block and before
+the interpreter's, then applies `assertNoRunnerSecrets` unchanged.
+
+### Why a second preload rather than a method on `dashShell`
+
+The narrow preload's standing obligation says nothing that "reads, writes or
+names a secret" may be on it, and `lib/shell/ipc.ts` enforces the matching rule
+for the command channel by declaring every payload key. Adding a secret-carrying
+method to either would repeal a rule that is currently absolute, in the one
+feature where it is load-bearing.
+
+A separate window with a disjoint bridge keeps both rules literally true and
+buys something the method would not: the page a credential is typed into renders
+no agent-influenced content at all. `dashCredential` is never exposed to the app
+window and `dashShell`/`dashData` are never exposed to the prompt, so no renderer
+can both read a document and submit a secret. Main checks `event.sender` on every
+credential message, so the channels answer exactly one renderer.
+
+The cost is a second preload bundle, a second window lifecycle and a route that
+must be present in the packaged export — the last of which is why
+`assertRendererPresent` now checks for it by name.
+
+### Why the credential is not written into the registration
+
+`registration.env` would have delivered it with no new transport. It is rejected
+because a registration is plaintext on disk that outlives the process: moving a
+credential there would take it *out* of the OS vault, which is the opposite of
+what holding it in the vault is for. Sending it in the start request keeps the
+vault the only at-rest store and the runner's copy in memory for one spawn.
+
+### Why the environment name is validated when connecting, not at spawn
+
+`runner/supervisor.ts` already refuses the `DASH_` namespace, so a manifest
+claiming one would fail — at spawn, as an agent that will not start. Checking
+the same rule at connect time, from the manifest, turns that into a refusal with
+a sentence naming the problem, at the moment the user asked. The supervisor's
+guard is unchanged and remains the enforcing one.
+
+### Why `check` does not contact the provider
+
+DASH holds an opaque string for a service it has no client for; no request it
+could make would distinguish a good key from a bad one. `check` answers whether
+the credential is still readable — gone, locked, or present — which is three
+real answers with three different recoveries. Whether the provider accepts it is
+reported by the agent in its Agent DOM state, and the two stay separate because
+they fail separately.
+
+### What is preserved
+
+- No secret crosses `dashShell`, `dashData`, the audited command channel or the
+  read channel. The connection commands declare three id payload keys and the
+  boundary refuses any other field.
+- The IPC audit still records keys and never values, and every connection
+  command produces a record at the same chokepoint as the rest.
+- No `DASH_*` variable and no runner credential enters a child environment.
+  `assertNoRunnerSecrets` and the registration `DASH_` guard are unchanged.
+- No new TCP listener, no new schema, no OAuth flow, and no change to actor
+  binding, nonce, idempotency, correlation, expiry or approval enforcement.
+- The browser development path remains read-only: it has no bridge, so the rows
+  render without controls and the prompt route says so.
+
+### Newly accepted costs
+
+- A second `contextBridge` surface exists. It is one window, three channels, one
+  of which carries a value, and it is sender-checked — but it is a surface, and
+  the review burden for adding anything to it is the same as for the first.
+- A credential DASH delivers is plaintext in the agent's process environment
+  while that process runs. This is what "DASH-managed" has to mean for an agent
+  that reads a key from its environment; DASH's contribution is that the value is
+  at rest only in the OS vault and reaches the child without touching disk.
+
+### Still not decided
+
+- **OAuth.** `oauth_reauthorization` fields are refused with an explanation.
+  Every connection in the Gmail example is of that kind, so MAR-383's
+  "importing the Gmail example … DASH-managed path passes" criterion is *not*
+  met by this amendment and needs the authorization flow it defers.
+- Adoption of an agent-managed credential into DASH ("reconnect, test, switch")
+  remains unimplemented; the ownership modes render honestly in the meantime.
+- Installed-MSIX verification remains human-gated for the reasons in Amendment 6.

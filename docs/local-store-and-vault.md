@@ -170,10 +170,47 @@ key compiled into Chromium. DASH checks `getSelectedStorageBackend()` and treats
 This is the case ADR 0001 rejected the local-service option over, and reporting
 success for it would be worse than the option that was rejected.
 
+## Connecting a credential (MAR-383)
+
+The Connection Center takes credentials as of MAR-383, and the path a value
+takes is deliberately short and one-way.
+
+1. The user presses **Connect** on a row. The renderer sends three ids —
+   agent, connection, field — through the audited command channel. No value.
+2. Main resolves those ids against the agent's **validated manifest**. DASH
+   takes a credential only for a field declared `kind: "secret"` on a connection
+   declared `ownership: "dash_managed"`. An OAuth field, an agent-managed
+   connection and the inferred model-provider row are all refused, each with its
+   own sentence.
+3. Main opens a **separate modal window** with its own preload
+   (`electron/credential-preload.ts`). This is the only bridge in DASH a secret
+   crosses. That window renders one page and has no `dashData` or `dashShell`.
+4. The value goes from that window to `SecureStore.set`, and a masked hint plus
+   the vault key go to `connection_secrets`. The plaintext is never returned to
+   either renderer, never logged, and never written to `dash.sqlite`.
+
+**Delivery.** At `runner.start`, main reads the vault for the fields whose
+manifest declares `technical.environment_name`, and sends them down the runner's
+authenticated socket or pipe for that one spawn. They are merged into the child
+environment by `runner/supervisor.ts` and are never written into the
+registration file — a registration is plaintext on disk and outlives the
+process, which is the opposite of what the vault is for. A name in the `DASH_`
+namespace, or one like `PATH` or `NODE_OPTIONS`, is refused when the user
+connects rather than at spawn, so the message can explain it.
+
+**Check** reads the vault and drops the value. It answers whether DASH can still
+*read* the credential — gone, locked, or present — and contacts no provider.
+Whether the provider accepts it is a separate fact, reported by the agent in its
+Agent DOM state and rendered through `describeConnectionCondition`.
+
+**Disconnect** deletes from the vault first and forgets the row second. The
+other order would leave a credential nothing in DASH remembers or can delete.
+
 ## What is deliberately not here yet
 
-- **Credential UI.** DASH-08's Connection Center can now be given a real
-  backing; the input flow is its own work.
+- **OAuth.** DASH has no authorization flow, so an `oauth_reauthorization` field
+  is refused rather than offered a text box that would take a token DASH could
+  never refresh. The Gmail example's connections are all of this kind.
 - **Transcripts.** DASH-15. The schema has a versioned migration list; its
   columns get designed by the issue that owns it, not guessed here.
 - **Event retention.** Nothing prunes `events` yet — and, since MAR-417, nothing

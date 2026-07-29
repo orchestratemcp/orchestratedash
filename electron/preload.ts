@@ -61,6 +61,19 @@ interface AgentCommandArgs {
   reason?: string;
 }
 
+/**
+ * What the renderer may say about a connection command (MAR-383).
+ *
+ * Three ids and nothing else. There is deliberately no field for a value, and
+ * adding one would be refused at the boundary anyway — `connection.connect`
+ * declares exactly these three payload keys.
+ */
+interface ConnectionArgs {
+  agent_id: string;
+  connection_id: string;
+  field_id: string;
+}
+
 function send(command: string, payload: Record<string, string>): Promise<CommandResult> {
   return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
     command,
@@ -109,6 +122,23 @@ const dashShell = {
    * including ones added later for something else, which is the same argument
    * that keeps `invoke` and the channel name off this object.
    */
+  /**
+   * The three connection commands (MAR-383).
+   *
+   * `connect` asks main to *ask* the user for a credential — it does not carry
+   * one, cannot be given one, and does not receive one back. The value is typed
+   * into a window main opens with a different preload
+   * (`electron/credential-preload.ts`), so the bridge this file exposes still
+   * satisfies the rule at the top: nothing here reads, writes or names a secret.
+   *
+   * Named methods for the same reason as everything above. Three entries a
+   * reviewer can count beats a `connection(action, target)` that would let page
+   * script address whatever the fourth one turns out to be.
+   */
+  connectConnection: (args: ConnectionArgs) => send("connection.connect", { ...args }),
+  testConnection: (args: ConnectionArgs) => send("connection.test", { ...args }),
+  disconnectConnection: (args: ConnectionArgs) => send("connection.disconnect", { ...args }),
+
   approve: (args: AgentCommandArgs) => send("agent.approve", fields(args, APPROVAL_FIELDS)),
   reject: (args: AgentCommandArgs) => send("agent.reject", fields(args, APPROVAL_FIELDS)),
   choose: (args: AgentCommandArgs) => send("agent.choose", fields(args, CHOICE_FIELDS)),

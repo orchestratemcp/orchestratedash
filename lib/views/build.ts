@@ -21,7 +21,9 @@
  * separation from the other side by exercising these against a real store.
  */
 
-import { deriveConnectionRequirements } from "../connections";
+import { heldCredentials } from "../connection-actions";
+import { connectableFields } from "../connection-credentials";
+import { deriveConnectionRequirements, type ConnectionSourceManifest } from "../connections";
 import {
   readAgentDomState,
   readCommandAudit,
@@ -173,12 +175,72 @@ export function runView(
   };
 }
 
+/**
+ * What DASH holds for one agent, folded onto the checklist rows (MAR-383).
+ *
+ * Two facts per row, and they answer different questions: `credential` says
+ * whether DASH may take a credential for it at all — which is a property of the
+ * manifest — and `held` says whether it currently has one, which is a property
+ * of the vault reference table. A row can be connectable and unheld (the
+ * ordinary first-run state), or held and no longer connectable (a manifest that
+ * changed under a credential), and the UI needs to tell those apart.
+ *
+ * Reads `connection_secrets` and never the vault itself. Opening the vault here
+ * would mean an OS unlock prompt every time somebody looked at this page — see
+ * `heldCredentials` for the same argument at its own layer.
+ */
+function credentialStatus(
+  agentName: string,
+  manifest: ConnectionSourceManifest,
+): Map<string, { field_id: string; masked_hint: string | null; deliverable: boolean }> {
+  const held = new Map<string, string | null>(
+    heldCredentials(agentName).map((entry): [string, string | null] => [
+      `${entry.connection_id} ${entry.field_id}`,
+      entry.masked_hint,
+    ]),
+  );
+
+  const status = new Map<
+    string,
+    { field_id: string; masked_hint: string | null; deliverable: boolean }
+  >();
+
+  for (const target of connectableFields(agentName, manifest)) {
+    // First connectable field per connection wins. A v2 connection may declare
+    // several, but the checklist is one row per connection, and a row with two
+    // Connect buttons is a design decision nobody has made yet — so the row
+    // acts on the first field the manifest declared, in the author's order.
+    if (status.has(target.connection_id)) {
+      continue;
+    }
+    status.set(target.connection_id, {
+      field_id: target.field_id,
+      masked_hint: held.get(`${target.connection_id} ${target.field_id}`) ?? null,
+      deliverable: target.environment_name !== null,
+    });
+  }
+
+  return status;
+}
+
 export function connectionsView(store: StoreShape = readStore()): ConnectionsView {
   return {
-    agents: listConnectionCapableAgents(store).map(({ name, manifest }) => ({
-      name,
-      rows: deriveConnectionRequirements(manifest),
-    })),
+    agents: listConnectionCapableAgents(store).map(({ name, manifest }) => {
+      const status = credentialStatus(name, manifest);
+      return {
+        name,
+        rows: deriveConnectionRequirements(manifest).map((row) => {
+          const credential = status.get(row.connection_id);
+          return {
+            ...row,
+            dash_can_hold: credential !== undefined,
+            field_id: credential?.field_id ?? null,
+            masked_hint: credential?.masked_hint ?? null,
+            delivered_to_agent: credential?.deliverable ?? false,
+          };
+        }),
+      };
+    }),
     older_agent_names: listAgents(store)
       .filter((agent) => agent.manifest_version === 1)
       .map((agent) => agent.name),

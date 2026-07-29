@@ -43,6 +43,9 @@ import {
   runAgentCommand,
   type AgentCommandInput,
 } from "../lib/agent-dom/runner";
+import { heldCredentials, performConnectionAction } from "../lib/connection-actions";
+import { deliverableFields } from "../lib/connection-credentials";
+import type { ConnectionSourceManifest } from "../lib/connections";
 import { dataDir } from "../lib/db";
 import type { HandoffPorts } from "../lib/handoff-flow";
 import { findDeepLink } from "../lib/shell/deep-link";
@@ -80,7 +83,9 @@ import {
   registerRendererScheme,
   serveRenderer,
 } from "./renderer-host";
-import { RENDERER_ENTRY_URL } from "../lib/shell/renderer-scheme";
+import { RENDERER_ENTRY_URL, RENDERER_ORIGIN } from "../lib/shell/renderer-scheme";
+import { readAgentManifest } from "../lib/store";
+import { promptForSecret, registerCredentialChannels } from "./credential-prompt";
 import { ensureRunner, runnerFetch, stopRunner, type RunnerHandle } from "./runner-process";
 import { assertSampleTemplatesPresent, offerSampleAgent } from "./sample-agent";
 import {
@@ -315,6 +320,27 @@ export function registerCommandChannel(
           adapter: channels?.adapterFor(input.target.agent_id) ?? noAdapter,
         }),
       runnerLifecycle: (action, agentId) => runnerLifecycle(runner, action, agentId),
+      // MAR-383. The vault is reachable from exactly this one entry in exactly
+      // this one context object, and the value the user types never comes back
+      // through it — see `lib/connection-actions.ts` for what does.
+      connectionAction: (action, target) =>
+        performConnectionAction(action, target, {
+          store: secureStore(),
+          readManifest: (agentId) =>
+            readAgentManifest(agentId) as ConnectionSourceManifest | null,
+          promptForSecret: (credential, vaultLabel) =>
+            promptForSecret(
+              credential,
+              vaultLabel,
+              heldCredentials(credential.agent_id).some(
+                (held) =>
+                  held.connection_id === credential.connection_id &&
+                  held.field_id === credential.field_id,
+              ),
+              BrowserWindow.getAllWindows()[0] ?? null,
+              RENDERER_ORIGIN,
+            ),
+        }),
     });
   });
 }
@@ -386,6 +412,46 @@ export function registerReadChannel(): void {
  * The separation is the whole reason `runner.*` exists as its own family: these
  * act on a process, and no manifest declares them.
  */
+/**
+ * The credentials this agent's manifest says DASH should deliver (MAR-383).
+ *
+ * Driven by the *manifest*, not by what happens to be in the vault: a value left
+ * over from a manifest that has since stopped declaring the field is never sent
+ * anywhere. `deliverableFields` is the filtered list — fields DASH may hold
+ * *and* that name somewhere to be delivered — so a credential DASH holds for its
+ * own use cannot leak into a child process by being iterated with the rest.
+ *
+ * A missing or unreadable credential is skipped rather than fatal. The agent
+ * starts and fails at the thing that needed it, which is a failure the user can
+ * see and act on in the workspace; refusing to start would turn one unconfigured
+ * connection into an agent that will not run at all and does not say why.
+ *
+ * Nothing here is logged. Not the values, and not the names either — a log line
+ * listing which connections resolved would be a map of this machine's
+ * credentials sitting in a file.
+ */
+async function collectSpawnCredentials(agentId: string): Promise<Record<string, string>> {
+  const manifest = readAgentManifest(agentId) as ConnectionSourceManifest | null;
+  if (manifest === null) {
+    return {};
+  }
+
+  const store = secureStore();
+  const credentials: Record<string, string> = {};
+
+  for (const field of deliverableFields(agentId, manifest)) {
+    try {
+      credentials[field.environment_name] = await store.get(field.secret_name);
+    } catch {
+      // `not_found` on first run, `vault_locked` on a machine whose keychain is
+      // shut. Both mean "DASH has nothing to hand over right now", and both are
+      // already reported on the Connection Center, where the user asked.
+    }
+  }
+
+  return credentials;
+}
+
 async function runnerLifecycle(
   runner: RunnerHandle | null,
   action: string,
@@ -445,7 +511,14 @@ async function runnerLifecycle(
     const response = await call(`${runner.origin}/agents/${encodeURIComponent(agentId)}/lifecycle`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${runner.token}` },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({
+        action,
+        // MAR-383. Read from the OS vault at the moment of starting and sent
+        // down the runner's authenticated socket or pipe — never written into
+        // the registration file, which is plaintext on disk and survives the
+        // process. The runner holds these for the length of one spawn.
+        credentials: action === "start" ? await collectSpawnCredentials(agentId) : undefined,
+      }),
       signal: AbortSignal.timeout(10_000),
     });
     const body = (await response.json()) as { ok?: boolean; detail?: string };
@@ -588,6 +661,9 @@ if (typeof app !== "undefined") {
 
     registerCommandChannel(channels, runner);
     registerReadChannel();
+    // MAR-383. The third and last `ipcMain.handle` group. Registered here beside
+    // the other two so every channel DASH answers is visible in one place.
+    registerCredentialChannels();
     installApplicationMenu();
     createWindow();
 

@@ -56,7 +56,22 @@ export interface AgentCommandArgs {
   reason?: string;
 }
 
+/**
+ * What the renderer may say about a connection command (MAR-383).
+ *
+ * Three ids. There is no field for a value here and none in the preload: the
+ * credential is typed into a window main owns, not into this page.
+ */
+export interface ConnectionCommandArgs {
+  agent_id: string;
+  connection_id: string;
+  field_id: string;
+}
+
 interface DashShellClient {
+  connectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
+  testConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
+  disconnectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   approve(args: AgentCommandArgs): Promise<CommandResult>;
   reject(args: AgentCommandArgs): Promise<CommandResult>;
   choose(args: AgentCommandArgs): Promise<CommandResult>;
@@ -226,6 +241,45 @@ export async function submitAgentCommand(
     default: {
       const unreachable: never = command;
       throw new Error(`Unhandled agent command: ${String(unreachable)}`);
+    }
+  }
+}
+
+/**
+ * Submit one connection command through a named preload method (MAR-383).
+ *
+ * The same shape as `submitAgentCommand` and for the same reasons: an
+ * exhaustive switch over named methods, no command string crossing the bridge,
+ * and an honest refusal in the host that has no bridge at all.
+ *
+ * Nothing in this function's arguments or return value can hold a credential.
+ * `connect` asks main to open its own prompt; what the user types there never
+ * comes back through here.
+ */
+export async function submitConnectionCommand(
+  action: "connect" | "test" | "disconnect",
+  args: ConnectionCommandArgs,
+): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to connect a service.",
+    };
+  }
+
+  switch (action) {
+    case "connect":
+      return bridge.connectConnection(args);
+    case "test":
+      return bridge.testConnection(args);
+    case "disconnect":
+      return bridge.disconnectConnection(args);
+    default: {
+      const unreachable: never = action;
+      throw new Error(`Unhandled connection command: ${String(unreachable)}`);
     }
   }
 }

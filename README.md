@@ -217,8 +217,12 @@ The contract supports three ownership modes without serializing credential
 values:
 
 - **Agent-managed:** the existing runner owns credentials and reports safe health.
-- **DASH-managed:** a future DASH connection service may provide a scoped grant or
-  broker a call. No such service is implemented in this repository today.
+- **DASH-managed:** DASH holds the credential in the OS vault and passes it to
+  the agent at spawn, as the environment variable the manifest's
+  `technical.environment_name` names (MAR-383). This covers fields declared
+  `kind: "secret"`. Fields declared `oauth_reauthorization` are **not** covered:
+  DASH has no authorization flow, and says so on the row rather than offering a
+  box for a token it could never refresh.
 - **External:** credentials remain in a provider or secret manager outside DASH.
 
 Moving an existing OAuth connection to DASH is represented as reconnect, test,
