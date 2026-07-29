@@ -30,6 +30,17 @@ const outDir = path.join(repoRoot, "dist", "electron");
 const rootPackage = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"));
 
 /**
+ * The two Agent Kit files "Try a sample agent" needs (MAR-423).
+ *
+ * Inside `outDir` because `@electron/packager` stages that directory as the
+ * packaged app, so anything under it ships and anything outside it does not.
+ */
+const kitDir = path.join(outDir, "agent-kit");
+const kitVersion = JSON.parse(
+  readFileSync(path.join(repoRoot, "agent-kit", "package.json"), "utf8"),
+).version;
+
+/**
  * `electron` is external because it is supplied by the runtime, never bundled.
  * Node built-ins are external automatically under `platform: "node"`.
  *
@@ -49,6 +60,7 @@ const shared = {
 };
 
 mkdirSync(outDir, { recursive: true });
+mkdirSync(kitDir, { recursive: true });
 
 /**
  * The repo root is `"type": "module"`, which would make a `.js` file in here
@@ -132,7 +144,40 @@ await Promise.all([
     outfile: path.join(outDir, "smoke.mjs"),
     format: "esm",
   }),
+
+  // MAR-423. "Try a sample agent" scaffolds a project, and a scaffold needs the
+  // same `scripts/open-in-dash.mjs` the Agent Kit copies in, so the user can
+  // re-add their agent later from their own folder without DASH.
+  //
+  // Built here rather than copied from `agent-kit/dist/`, which is gitignored
+  // and only exists after `pnpm build:agent-kit`: a packaging run must not
+  // depend on somebody having remembered a separate command, and the failure if
+  // they had not would be a menu item that is broken only in the shipped build.
+  //
+  // `node20`, matching `scripts/build-agent-kit.mjs` and not the shell's
+  // `node24`: this file is copied into the user's project and runs on whatever
+  // Node they have, if they ever run it at all.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "agent-kit", "bin", "open-in-dash.ts")],
+    outfile: path.join(kitDir, "open-in-dash.mjs"),
+    format: "esm",
+    target: "node20",
+    define: { __AGENT_KIT_VERSION__: JSON.stringify(kitVersion) },
+  }),
 ]);
+
+/**
+ * The generated agent, copied verbatim beside the bundles.
+ *
+ * Same placement argument as the renderer below: `electron/sample-agent.ts`
+ * resolves it relative to `import.meta.url`, which is the one anchor that holds
+ * in a development tree and under an immutable MSIX install root alike.
+ */
+copyFileSync(
+  path.join(repoRoot, "agent-kit", "template", "agent.mjs"),
+  path.join(kitDir, "agent.mjs"),
+);
 
 /**
  * The packaged renderer (MAR-429).

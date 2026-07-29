@@ -36,7 +36,7 @@ import {
   packagedRendererUrl,
 } from "./resources";
 
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, Menu } from "electron";
 
 import { userInfo } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -50,6 +50,7 @@ import {
 import { dataDir } from "../lib/db";
 import type { HandoffPorts } from "../lib/handoff-flow";
 import { findDeepLink } from "../lib/shell/deep-link";
+import { applicationMenu, type MenuAction, type MenuItemSpec } from "../lib/shell/menu";
 import {
   SHELL_COMMAND_CHANNEL,
   dispatchCommand,
@@ -65,6 +66,7 @@ import {
   surfaceWindow,
 } from "./handoff-host";
 import { ensureRunner, runnerFetch, stopRunner, type RunnerHandle } from "./runner-process";
+import { assertSampleTemplatesPresent, offerSampleAgent } from "./sample-agent";
 import {
   SHELL_WEB_PREFERENCES,
   assertHardenedWebPreferences,
@@ -147,6 +149,63 @@ function rendererUrl(): string {
     );
   }
   return url;
+}
+
+/**
+ * Install the application menu (MAR-423).
+ *
+ * The template is `lib/shell/menu.ts`'s and is pure; this turns each `action`
+ * into a handler. The mapping is a `switch` over a union rather than a lookup
+ * table so that adding a menu action without wiring it is a compile error —
+ * the same argument `executeCommand` makes about the command catalogue.
+ *
+ * Every DASH-specific item goes through this one function, so a future item that
+ * does something consequential cannot quietly acquire a handler that skips
+ * whatever the consequential thing needs.
+ */
+function installApplicationMenu(): void {
+  const toItem = (spec: MenuItemSpec): Electron.MenuItemConstructorOptions => {
+    if (spec.separator === true) {
+      return { type: "separator" };
+    }
+    if (spec.role !== undefined) {
+      return { role: spec.role as Electron.MenuItemConstructorOptions["role"] };
+    }
+    return {
+      label: spec.label,
+      accelerator: spec.accelerator,
+      click: () => {
+        void runMenuAction(spec.action);
+      },
+    };
+  };
+
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate(
+      applicationMenu(process.platform, app.getName()).map((menu) => ({
+        label: menu.label,
+        submenu: menu.items.map(toItem),
+      })),
+    ),
+  );
+}
+
+async function runMenuAction(action: MenuAction | undefined): Promise<void> {
+  switch (action) {
+    case "sample_agent":
+      // `handoffContext` is null until `drainHandoffQueue` runs, which is after
+      // the store, the runner decision and the window all exist. The sample goes
+      // through the same ports a deep link does, so it needs the same readiness
+      // and says so rather than half-working.
+      await offerSampleAgent(handoffContext);
+      return;
+    case undefined:
+      return;
+    default: {
+      const unreachable: never = action;
+      throw new Error(`Unhandled menu action: ${String(unreachable)}`);
+    }
+  }
 }
 
 export function createWindow(): BrowserWindow {
@@ -404,6 +463,10 @@ if (typeof app !== "undefined") {
     // machine. Both fail loudly here or not at all.
     assertContractsLocation();
     assertRendererPresent();
+    // MAR-423. The same shape of check for the sample agent's two template
+    // files: a packaging mistake should be a crash here, not a menu item that
+    // only fails in the shipped build.
+    assertSampleTemplatesPresent();
 
     // MAR-415. The runner is started before the window so the first render
     // already has somewhere to poll. A machine that cannot host one still gets
@@ -431,6 +494,7 @@ if (typeof app !== "undefined") {
     }
 
     registerCommandChannel(channels, runner);
+    installApplicationMenu();
     createWindow();
 
     // MAR-428. Only now is there a store, a window to parent a dialog to, and a
