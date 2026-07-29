@@ -149,6 +149,16 @@ export function childEnvironment(
     }
   }
   for (const [key, value] of Object.entries(registration.env ?? {})) {
+    // A handoff already refuses these names. Repeat the invariant here for
+    // externally-authored registration files so no child can recover the old
+    // HTTP telemetry path (or any other DASH-owned setting) by bypassing the
+    // handoff. `assertNoRunnerSecrets` below stays intact as the credential
+    // guard; this is the broader namespace boundary.
+    if (key.toUpperCase().startsWith("DASH_")) {
+      throw new Error(
+        `Refusing to start an agent with a DASH-owned environment variable: that namespace is reserved for the runner/DASH boundary.`,
+      );
+    }
     environment[key] = value;
   }
   // Applied *after* the registration's own block, so a registration cannot ask
@@ -205,6 +215,22 @@ export interface AdoptionResult {
   }>;
 }
 
+/** One agent-emitted telemetry candidate waiting for DASH to validate it. */
+export interface BufferedTelemetryEvent {
+  /**
+   * The supervisor identity, kept beside the untrusted event so ingest can bind
+   * a schema-valid `event.agent` to the child process that actually emitted it.
+   */
+  agent_id: string;
+  event: unknown;
+}
+
+export interface TelemetryDrain {
+  events: BufferedTelemetryEvent[];
+  /** Candidates refused because the bounded buffer was already full. */
+  dropped: number;
+}
+
 interface Supervised {
   registration: AgentRegistration;
   child: ChildProcess | null;
@@ -227,8 +253,23 @@ export const ACK_TIMEOUT_MS = 15_000;
 /** How long a stopping agent gets to exit on its own before it is killed. */
 export const STOP_GRACE_MS = 5_000;
 
+/**
+ * A hostile or broken child must not turn telemetry into unbounded runner
+ * memory. The line reader already caps one candidate at 256 KiB; this caps the
+ * aggregate between DASH's five-second polls.
+ */
+export const MAX_TELEMETRY_BUFFER_BYTES = 4 * 1024 * 1024;
+export const MAX_TELEMETRY_BUFFER_EVENTS = 10_000;
+
+interface BufferedTelemetryEntry extends BufferedTelemetryEvent {
+  bytes: number;
+}
+
 export class Supervisor {
   private readonly agents = new Map<string, Supervised>();
+  private readonly telemetry: BufferedTelemetryEntry[] = [];
+  private telemetryBytes = 0;
+  private droppedTelemetry = 0;
 
   constructor(
     registrations: readonly AgentRegistration[],
@@ -348,6 +389,22 @@ export class Supervisor {
 
   commands(agentId: string): AgentCommand[] {
     return this.agents.get(agentId)?.commands ?? [];
+  }
+
+  /**
+   * Remove every currently buffered candidate in one bounded batch.
+   *
+   * Delivery is intentionally fire-and-forget: the agent's JSONL file remains
+   * the primary record. Draining is kept separate from state so telemetry volume
+   * cannot make an Agent DOM snapshot fail its own schema.
+   */
+  drainTelemetry(): TelemetryDrain {
+    const events = this.telemetry.map(({ agent_id, event }) => ({ agent_id, event }));
+    const dropped = this.droppedTelemetry;
+    this.telemetry.length = 0;
+    this.telemetryBytes = 0;
+    this.droppedTelemetry = 0;
+    return { events, dropped };
   }
 
   /**
@@ -629,6 +686,15 @@ export class Supervisor {
       return;
     }
 
+    if (message.type === "telemetry") {
+      this.bufferTelemetry(
+        entry.registration.agent_id,
+        message.event,
+        Buffer.byteLength(line, "utf8"),
+      );
+      return;
+    }
+
     const resolve = entry.pending.get(message.command_id);
     if (resolve === undefined) {
       // An ack for something we are not waiting for: a late answer after a
@@ -649,5 +715,21 @@ export class Supervisor {
             detail: message.detail ?? "The agent refused the command.",
           },
     );
+  }
+
+  private bufferTelemetry(agentId: string, event: unknown, bytes: number): void {
+    if (
+      this.telemetry.length >= MAX_TELEMETRY_BUFFER_EVENTS ||
+      this.telemetryBytes + bytes > MAX_TELEMETRY_BUFFER_BYTES
+    ) {
+      this.droppedTelemetry += 1;
+      this.log(
+        `[runner] ${agentId} emitted telemetry while the bounded buffer was full; the candidate was dropped`,
+      );
+      return;
+    }
+
+    this.telemetry.push({ agent_id: agentId, event, bytes });
+    this.telemetryBytes += bytes;
   }
 }

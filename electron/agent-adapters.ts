@@ -36,7 +36,7 @@ import { putAgentDomState } from "../lib/agent-dom/store";
 import { fetchAgentDomState, httpAdapter, type ControlChannel } from "../lib/agent-dom/transport";
 import { isManifestV2 } from "../lib/contracts";
 import { isSecureStoreError, type SecureStore } from "../lib/secure-store";
-import { listAgentNames, readAgentManifest } from "../lib/store";
+import { ingestEvents, listAgentNames, readAgentManifest } from "../lib/store";
 import { runnerFetch, type RunnerHandle } from "./runner-process";
 
 /**
@@ -68,6 +68,11 @@ export interface AgentChannels {
 
 interface HostedAgent {
   agent_id: string;
+}
+
+interface HostedTelemetry {
+  agent_id: string;
+  event: unknown;
 }
 
 export function createAgentChannels(
@@ -119,6 +124,71 @@ export function createAgentChannels(
     return token;
   }
 
+  /**
+   * Drain hosted telemetry on the same authenticated IPC channel as state.
+   *
+   * The runner only frames and buffers candidates. `ingestEvents` remains the
+   * one contract boundary, validates every item independently and binds each
+   * valid event to the supervisor identity carried beside it.
+   */
+  async function drainTelemetry(): Promise<void> {
+    if (runner === null) {
+      return;
+    }
+
+    try {
+      const response = await runnerFetch(runner)(`${runner.origin}/telemetry/drain`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${runner.token}` },
+        signal: AbortSignal.timeout(3_000),
+      });
+      if (!response.ok) {
+        return;
+      }
+
+      const body = (await response.json()) as { events?: unknown; dropped?: unknown };
+      if (typeof body.dropped === "number" && body.dropped > 0) {
+        log(
+          `[dash-shell] runner telemetry buffer dropped ${String(body.dropped)} ` +
+            `candidate${body.dropped === 1 ? "" : "s"} before this poll`,
+        );
+      }
+      if (!Array.isArray(body.events) || body.events.length === 0) {
+        return;
+      }
+
+      const batch: HostedTelemetry[] = [];
+      body.events.forEach((candidate, index) => {
+        if (
+          typeof candidate !== "object" ||
+          candidate === null ||
+          typeof (candidate as { agent_id?: unknown }).agent_id !== "string" ||
+          !Object.hasOwn(candidate, "event")
+        ) {
+          log(
+            `[dash-shell] rejected runner telemetry envelope at index ${String(index)}: invalid provenance`,
+          );
+          return;
+        }
+        batch.push(candidate as HostedTelemetry);
+      });
+
+      const result = ingestEvents(
+        batch.map((candidate) => candidate.event),
+        { sourceAgents: batch.map((candidate) => candidate.agent_id) },
+      );
+      for (const rejection of result.rejected) {
+        log(
+          `[dash-shell] rejected runner-hosted telemetry event at index ${String(rejection.index)}: ` +
+            rejection.errors.slice(0, 3).join("; "),
+        );
+      }
+    } catch {
+      // Delivery is fire-and-forget. A failed drain must not stop the poll loop,
+      // and the agent's own events.jsonl remains the primary record.
+    }
+  }
+
   /** Synchronous channel resolution, for the command path. */
   function channelFor(agentId: string): ControlChannel | null {
     if (runner !== null && hosted.has(agentId)) {
@@ -159,6 +229,7 @@ export function createAgentChannels(
 
     async poll(): Promise<void> {
       await refresh();
+      await drainTelemetry();
 
       for (const agentId of listAgentNames()) {
         // Warm the vault lookup so `channelFor` can stay synchronous on the

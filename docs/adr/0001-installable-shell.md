@@ -724,8 +724,68 @@ entrance to the same operation; it does not need a second implementation.
 
 - The empty-state teaching, Connection Center recovery UI, calm/density toggle
   and `runner.remove` button remain MAR-423 page work on top of this conversion.
-- MAR-433 remains the independent telemetry gap between a runner-hosted agent
-  and DASH.
+- The runner-hosted telemetry gap is decided in Amendment 6.
 - The renderer has been exercised through its real `dash-app://ui/` origin
   without packaging. Verifying it inside a sideloaded MSIX still belongs to
   Henrik because installation and certificate-store changes are human-gated.
+
+## Amendment 6 — hosted telemetry rides the runner pipe (MAR-433, DASH-21)
+
+**Status:** Accepted, 2026-07-29.
+
+### What changed
+
+A runner-hosted agent now emits a `{ "type": "telemetry", "event": … }`
+message on the newline-delimited JSON stdout channel it already uses for Agent
+DOM state and command acknowledgements. The supervisor holds a bounded
+in-memory batch. Electron main drains that batch over the runner's existing
+authenticated Unix socket or Windows named pipe during the existing five-second
+poll, then calls `ingestEvents`.
+
+`ingestEvents` remains the canonical telemetry v1 boundary. It validates each
+candidate independently, accepts valid neighbours when one is malformed, and,
+for hosted delivery, additionally binds `event.agent` to the supervisor identity
+of the child that emitted it. Rejections are recorded in the shell log without
+logging event values. The agent's `runs/events.jsonl` remains the primary record;
+delivery to DASH remains fire-and-forget.
+
+### Why the environment-variable route is rejected
+
+Adding `DASH_INGEST_URL` to the supervisor's inherited environment would share a
+DASH endpoint with every hosted child and would require a listening port for
+that URL to name. Both costs are unnecessary because the runner already owns
+the child's pipes and DASH already polls the runner.
+
+Adding a `DASH_INGEST_URL` exception to `secretsInEnvironment` is also rejected.
+The guard's value is that a handoff cannot smuggle any DASH-owned setting into a
+registration; an exception would weaken the secret handoff boundary to recreate
+a transport the existing runner channel already supplies.
+
+### What is preserved
+
+- No new TCP listener. Hosted telemetry uses the owner-restricted runner
+  endpoint and its existing bearer authentication.
+- No `DASH_*` variable or ingest credential enters a child environment.
+  `assertNoRunnerSecrets` and `secretsInEnvironment` are unchanged.
+- The frozen telemetry v1 schema is unchanged. Remote agents retain
+  `POST /api/events` and its optional bearer token.
+- Owner-only IPC, Windows named-pipe depth, Agent DOM schema validation and both
+  command audit chokepoints are unchanged. Telemetry drain is not a command and
+  cannot submit an effect.
+
+### Newly accepted costs
+
+- The detached runner holds up to a bounded four-megabyte telemetry batch in
+  memory between polls. Candidates beyond the bound are dropped and counted;
+  the agent's JSONL history remains authoritative.
+- A successful drain removes the in-memory batch before SQLite ingest finishes.
+  That delivery is intentionally best-effort rather than a durable queue; a
+  future replay feature must read the agent-owned JSONL rather than silently
+  turning the runner into a second telemetry store.
+
+### Still not decided
+
+- Installed-MSIX verification remains human-gated because it requires package
+  signing, certificate installation and sideloading. The local named-pipe path
+  is covered by the same runner and Electron polling integration used by the
+  package.

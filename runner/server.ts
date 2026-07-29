@@ -5,6 +5,7 @@
  * GET  /agents/{id}            one Agent DOM state snapshot
  * POST /agents/{id}/commands   one command envelope
  * POST /agents/{id}/lifecycle  start or stop the agent's process
+ * POST /telemetry/drain        hosted-agent event candidates since the last poll
  * GET  /health                 what this runner is supervising
  * ```
  *
@@ -158,6 +159,20 @@ async function handle(
         `-${String(summary.removed.length)} deferred=${String(summary.deferred.length)} ` +
         `skipped=${String(summary.skipped.length)}`,
     );
+    return;
+  }
+
+  // POST /telemetry/drain — one bounded fire-and-forget batch from hosted
+  // children. This is on the authenticated runner channel and therefore adds no
+  // listener, credential or environment variable. The event bodies are not
+  // interpreted here: main hands each one to the canonical ingest boundary.
+  if (
+    request.method === "POST" &&
+    segments.length === 2 &&
+    segments[0] === "telemetry" &&
+    segments[1] === "drain"
+  ) {
+    send(response, 200, { ok: true, ...options.supervisor.drainTelemetry() });
     return;
   }
 

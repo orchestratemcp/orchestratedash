@@ -76,6 +76,7 @@ Agent to runner:
 ```json
 {"type":"ack","command_id":"…","ok":true,"detail":"…"}
 {"type":"state","state":{"status":"running","runs":[…],"approval_requests":[…]}}
+{"type":"telemetry","event":{"event_version":1,"agent":"my-agent","run_id":"…","seq":0,"ts":"…","type":"run_started"}}
 ```
 
 **Acknowledgement is mandatory.** A line written to a pipe proves nothing about
@@ -83,6 +84,14 @@ whether the agent read it, so an unacknowledged command settles as
 `delivery_unacknowledged` rather than as success. Non-protocol output is not an
 error: agents log, and the first `console.log` in anybody's agent must not look
 like a fault.
+
+**Telemetry uses this existing pipe.** The runner holds a bounded in-memory
+batch, and DASH main drains it through the same authenticated local endpoint on
+the state poll. Main passes every candidate to `ingestEvents`, so the frozen v1
+schema and per-item rejection behavior are identical to `POST /api/events`.
+Malformed neighbours do not discard valid events and do not stop the child.
+`runs/events.jsonl` remains the agent's primary record; the buffer is
+fire-and-forget delivery, not a second history.
 
 **The agent does not get to say whether it is alive.** It contributes runs,
 tasks and approvals; the runner owns `agent_id`, `observed_at`, and `status`

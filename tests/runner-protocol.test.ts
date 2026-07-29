@@ -68,6 +68,24 @@ describe("parsing agent messages", () => {
     expect(message).toEqual({ type: "state", state: { status: "running" } });
   });
 
+  it("reads a telemetry candidate without pre-validating the event body", () => {
+    const valid = parseAgentMessage(
+      '{"type":"telemetry","event":{"event_version":1,"agent":"a","run_id":"r","seq":0,"ts":"2026-07-29T12:00:00Z","type":"run_started"}}',
+    );
+    expect(valid).toMatchObject({
+      type: "telemetry",
+      event: { event_version: 1, agent: "a", run_id: "r" },
+    });
+
+    // The NDJSON envelope is valid even though the telemetry contract is not.
+    // Keeping it recognizable lets ingestEvents reject and record this one
+    // without discarding valid neighbours in the runner's batch.
+    expect(parseAgentMessage('{"type":"telemetry","event":{"event_version":1}}')).toEqual({
+      type: "telemetry",
+      event: { event_version: 1 },
+    });
+  });
+
   it.each([
     ["ordinary logging", "starting up..."],
     ["an empty line", "   "],
@@ -77,6 +95,7 @@ describe("parsing agent messages", () => {
     ["an ack with no command id", '{"type":"ack","ok":true}'],
     ["an ack whose ok is not a boolean", '{"type":"ack","command_id":"c","ok":"yes"}'],
     ["a state message whose state is an array", '{"type":"state","state":[]}'],
+    ["a telemetry message with no event", '{"type":"telemetry"}'],
   ])("returns null for %s", (_label, line) => {
     expect(parseAgentMessage(line)).toBeNull();
   });

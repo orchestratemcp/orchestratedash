@@ -17,6 +17,7 @@
  * - `AGENT_ACK=never`    never acknowledge, to exercise the delivery timeout
  * - `AGENT_IGNORE_TERM=1` ignore SIGTERM, to exercise the SIGKILL escalation
  * - `AGENT_NOISE=1`      write non-protocol lines, which must be tolerated
+ * - `AGENT_TELEMETRY=valid|mixed` emit telemetry candidates for drain tests
  */
 
 const ack = process.env.AGENT_ACK ?? "ok";
@@ -84,6 +85,26 @@ send({
     ],
   },
 });
+
+if (process.env.AGENT_TELEMETRY === "valid" || process.env.AGENT_TELEMETRY === "mixed") {
+  send({
+    type: "telemetry",
+    event: {
+      event_version: 1,
+      agent: "fixture-agent",
+      run_id: "run-telemetry-fixture-01",
+      seq: 0,
+      ts: "2026-07-29T12:00:00Z",
+      type: "run_started",
+    },
+  });
+}
+
+if (process.env.AGENT_TELEMETRY === "mixed") {
+  // A valid protocol envelope carrying an invalid telemetry body. DASH must
+  // reject this candidate without losing the valid neighbour or stopping us.
+  send({ type: "telemetry", event: { event_version: 1 } });
+}
 
 let buffer = "";
 process.stdin.setEncoding("utf8");

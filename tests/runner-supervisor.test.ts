@@ -190,6 +190,27 @@ describe("a running agent", () => {
     await waitFor(() => instance.report("fixture-agent") !== null, "a state report after noise");
     expect(instance.report("fixture-agent")?.["status"]).toBe("running");
   });
+
+  it("buffers valid and malformed telemetry candidates without stopping the agent", async () => {
+    const instance = makeSupervisor([registration({ env: { AGENT_TELEMETRY: "mixed" } })]);
+    instance.start("fixture-agent");
+    await waitFor(() => instance.report("fixture-agent") !== null, "startup");
+    // The fixture writes both telemetry lines immediately after its state line.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(instance.drainTelemetry()).toEqual({
+      events: [
+        {
+          agent_id: "fixture-agent",
+          event: expect.objectContaining({ run_id: "run-telemetry-fixture-01" }),
+        },
+        { agent_id: "fixture-agent", event: { event_version: 1 } },
+      ],
+      dropped: 0,
+    });
+    expect(instance.drainTelemetry()).toEqual({ events: [], dropped: 0 });
+    expect(instance.facts("fixture-agent")?.lifecycle).toBe("running");
+  });
 });
 
 describe("delivering a command", () => {
@@ -295,6 +316,29 @@ describe("the child environment", () => {
     expect(environment["PATH"]).toBe("/usr/bin");
     expect(environment["DASH_RUNNER_TOKEN"]).toBeUndefined();
     expect(Object.values(environment)).not.toContain("super-secret");
+  });
+
+  it("does not inherit DASH telemetry variables from the runner environment", () => {
+    const environment = childEnvironment(registration(), {
+      PATH: "/usr/bin",
+      DASH_INGEST_URL: "http://should-not-arrive.invalid/api/events",
+      DASH_INGEST_TOKEN: "should-not-arrive",
+    });
+    expect(Object.keys(environment).filter((key) => key.startsWith("DASH_"))).toEqual([]);
+  });
+
+  it("refuses DASH telemetry variables in an external registration too", () => {
+    expect(() =>
+      childEnvironment(
+        registration({
+          env: {
+            DASH_INGEST_URL: "http://should-not-arrive.invalid/api/events",
+            DASH_INGEST_TOKEN: "should-not-arrive",
+          },
+        }),
+        { PATH: "/usr/bin" },
+      ),
+    ).toThrow(/DASH-owned environment variable/);
   });
 
   it("refuses a registration that tries to set one", () => {

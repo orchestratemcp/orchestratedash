@@ -41,6 +41,16 @@ export const IPC_ORIGIN = "http://runner.orchestratedash.invalid";
 const BODILESS = new Set([101, 103, 204, 205, 304]);
 
 /**
+ * Sockets may be reused by Node's HTTP agent.
+ *
+ * Each needs one lifetime guard for a late write error, but only one: adding a
+ * request-scoped listener on every poll leaks listeners, while removing it when
+ * the request closes is too early on Linux, where an EPIPE can arrive just
+ * afterwards.
+ */
+const GUARDED_SOCKETS = new WeakSet<object>();
+
+/**
  * Build a `fetch` bound to one endpoint path.
  *
  * The returned function ignores the URL's authority and honours its path,
@@ -113,11 +123,17 @@ export function ipcFetch(socketPath: string): typeof globalThis.fetch {
       // and an `error` event with no listener at all is an uncaught exception.
       // Merely having this listener is most of the point; when the response is
       // already in hand the socket is also finished with, so it is released.
+      //
       request.on("socket", (socket) => {
+        if (GUARDED_SOCKETS.has(socket)) {
+          return;
+        }
+        GUARDED_SOCKETS.add(socket);
         socket.on("error", () => {
-          if (settled) {
-            socket.destroy();
-          }
+          // The request's own error listener rejects an unsettled call. This
+          // socket-level listener exists for the later error, after a response
+          // has already settled the call and there is nothing left to reject.
+          socket.destroy();
         });
       });
 

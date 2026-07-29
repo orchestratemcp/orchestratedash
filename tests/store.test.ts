@@ -82,6 +82,26 @@ describe("event ingest", () => {
     expect(result.rejected[0]?.index).toBe(1);
   });
 
+  it("binds runner-hosted telemetry to the child that emitted it", () => {
+    const result = ingestEvents(
+      [
+        runEvent,
+        { ...(runEvent as object), agent: "another-agent", seq: 1 },
+      ],
+      { sourceAgents: ["email-lead-to-crm", "email-lead-to-crm"] },
+    );
+
+    expect(result).toEqual({
+      accepted: 1,
+      rejected: [
+        {
+          index: 1,
+          errors: ["/agent must match the runner-hosted source"],
+        },
+      ],
+    });
+  });
+
   it("rejects an event from an unsupported version", () => {
     const result = ingestEvents({ ...(runEvent as object), event_version: 2 });
     expect(result.accepted).toBe(0);

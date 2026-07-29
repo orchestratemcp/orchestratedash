@@ -342,6 +342,57 @@ describe("GET {control-location-uri}", () => {
 });
 
 /* ---------------------------------------------------------------------- *
+ * Telemetry drain
+ * ---------------------------------------------------------------------- */
+
+describe("POST /telemetry/drain", () => {
+  beforeEach(async () => {
+    harness = await startRunner({ AGENT_TELEMETRY: "mixed" });
+    harness.supervisor.start(AGENT);
+    await waitFor(() => harness.supervisor.report(AGENT) !== null, "the agent's first report");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  });
+  afterEach(async () => {
+    await harness.close();
+  });
+
+  it("requires the runner credential and preserves the mixed batch", async () => {
+    const unauthorized = await harness.call(`${harness.base}/telemetry/drain`, {
+      method: "POST",
+    });
+    expect(unauthorized.status).toBe(401);
+
+    const response = await harness.call(`${harness.base}/telemetry/drain`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ok: true,
+      events: [
+        {
+          agent_id: AGENT,
+          event: expect.objectContaining({ run_id: "run-telemetry-fixture-01" }),
+        },
+        { agent_id: AGENT, event: { event_version: 1 } },
+      ],
+      dropped: 0,
+    });
+    expect(harness.supervisor.facts(AGENT)?.lifecycle).toBe("running");
+  });
+
+  it("drains candidates exactly once", async () => {
+    const options = {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}` },
+    };
+    await harness.call(`${harness.base}/telemetry/drain`, options);
+    const second = await harness.call(`${harness.base}/telemetry/drain`, options);
+    expect(await second.json()).toEqual({ ok: true, events: [], dropped: 0 });
+  });
+});
+
+/* ---------------------------------------------------------------------- *
  * Commands
  * ---------------------------------------------------------------------- */
 
