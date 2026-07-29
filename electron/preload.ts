@@ -28,7 +28,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import { SHELL_COMMAND_CHANNEL } from "../lib/shell/ipc";
 import type { CommandResult } from "../lib/shell/ipc";
 import { SHELL_READ_CHANNEL } from "../lib/shell/read";
-import type { ReadResponse, ReadResults } from "../lib/shell/read";
+import type { DashReadApi, ReadResponse, ReadResults } from "../lib/shell/read";
 
 /**
  * Request ids are generated here rather than in main so the renderer can
@@ -152,7 +152,10 @@ const dashData = {
   runs: () => read("view.runs"),
   run: (agent: string, runId: string) => read("view.run", { agent, run_id: runId }),
   connections: () => read("view.connections"),
-};
+  // `satisfies`, so the pages and this bridge cannot drift: the shape is
+  // declared in `lib/shell/read.ts`, which a client component may import and
+  // this file may not be imported by.
+} satisfies DashReadApi;
 
 export type DashDataApi = typeof dashData;
 

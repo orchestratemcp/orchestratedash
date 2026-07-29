@@ -214,6 +214,45 @@ export function describeConnectionCondition(
 }
 
 /* ---------------------------------------------------------------------- *
+ * Reading DASH's own store
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What to say when a page could not get the thing it is meant to show
+ * (MAR-432).
+ *
+ * A new failure state, and it exists because the pages stopped being rendered on
+ * the same side of the boundary as the database. A server component that could
+ * not read the store did not render at all; a client component that cannot read
+ * the store renders, and has to say something.
+ *
+ * Neither of these is ever the user's doing, so neither asks them to fix
+ * anything they caused. `refused` is DASH's fault outright — a page asked for a
+ * document this build does not offer, which is a wiring mistake — and says so
+ * rather than inventing a plausible-sounding cause.
+ */
+export function describeViewFailure(reason: "unreachable" | "refused"): Recovery {
+  switch (reason) {
+    case "unreachable":
+      return {
+        headline: "DASH could not read its own records just now.",
+        meaning:
+          "Nothing is lost and nothing has changed. This page simply has nothing to show until it can read them.",
+        next_action: "Try again in a moment.",
+        actor: "user",
+      };
+
+    case "refused":
+      return {
+        headline: "This page asked DASH for something it does not offer.",
+        meaning: "This is a fault in DASH, not something you did. Nothing was changed.",
+        next_action: "Report this, and use the other pages in the meantime.",
+        actor: "dash",
+      };
+  }
+}
+
+/* ---------------------------------------------------------------------- *
  * Hosting
  * ---------------------------------------------------------------------- */
 

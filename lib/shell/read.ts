@@ -193,6 +193,25 @@ export function reviewRead(request: unknown): ReadReview {
 }
 
 /**
+ * The bridge the preload exposes, described once.
+ *
+ * Declared here rather than inferred from `electron/preload.ts` because both
+ * sides need it and only one of them may import that file: the preload imports
+ * `electron`, and a page that reached for its type would be one bundler
+ * heuristic away from trying to resolve it. This module is pure and imports
+ * nothing at runtime, so a client component can name the shape without pulling
+ * anything toward the browser.
+ *
+ * `electron/preload.ts` satisfies this, which is what keeps the two in step.
+ */
+export interface DashReadApi {
+  agents(): Promise<ReadResponse<ReadResults["view.agents"]>>;
+  runs(): Promise<ReadResponse<ReadResults["view.runs"]>>;
+  run(agent: string, runId: string): Promise<ReadResponse<ReadResults["view.run"]>>;
+  connections(): Promise<ReadResponse<ReadResults["view.connections"]>>;
+}
+
+/**
  * What a denied read looks like to the renderer.
  *
  * A read is answered with a document, so a refusal needs a shape the caller can

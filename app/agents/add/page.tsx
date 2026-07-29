@@ -1,7 +1,9 @@
+"use client";
+
 import type { ReactNode } from "react";
 import { AddAgentForm } from "../../_components/add-agent-form";
-
-export const dynamic = "force-dynamic";
+import { useHost } from "../../_data/use-view";
+import { describeImportUnavailable } from "../../../lib/copy/host";
 
 /**
  * Add agent (MAR-428).
@@ -16,8 +18,15 @@ export const dynamic = "force-dynamic";
  * fallback, not the novice path" is an explicit scope line, and it is the only
  * way in for an agent that was not built with the Agent Kit — including every
  * agent that already exists.
+ *
+ * MAR-432 added the one honest caveat: that fallback posts to a route which only
+ * exists while DASH runs from its source folder, so the installed app says so
+ * instead of showing a form that would fail on submit.
  */
 export default function AddAgentPage(): ReactNode {
+  const host = useHost();
+  const unavailable = host === null ? null : describeImportUnavailable(host);
+
   return (
     <>
       <h1>Add agent</h1>
@@ -48,13 +57,24 @@ export default function AddAgentPage(): ReactNode {
       <div className="section">
         <details>
           <summary>I already have an agent&rsquo;s manifest file</summary>
-          <p className="muted">
-            For agents that were not built with the Agent Kit. DASH reads what
-            the agent plans to do and what it needs to connect to. It does not
-            run the agent this way, and it does not take custody of any
-            credentials.
-          </p>
-          <AddAgentForm />
+          {unavailable === null ? (
+            <>
+              <p className="muted">
+                For agents that were not built with the Agent Kit. DASH reads
+                what the agent plans to do and what it needs to connect to. It
+                does not run the agent this way, and it does not take custody of
+                any credentials.
+              </p>
+              {/* Rendered only once the host is known, so the installed app
+                  never shows a form for one frame before withdrawing it. */}
+              {host === null ? null : <AddAgentForm />}
+            </>
+          ) : (
+            <>
+              <p className="muted">{unavailable.headline}</p>
+              <p className="muted">{unavailable.meaning}</p>
+            </>
+          )}
         </details>
       </div>
     </>

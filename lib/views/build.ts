@@ -24,7 +24,6 @@
 import { deriveConnectionRequirements } from "../connections";
 import { dataDir } from "../db";
 import {
-  ROLLUP_RUN_COUNT,
   analysisForRun,
   complianceForAgent,
   eventsForRun,
@@ -45,8 +44,6 @@ import type {
   RunView,
   RunsView,
 } from "./types";
-
-export { ROLLUP_RUN_COUNT };
 
 /**
  * Where an agent came from, narrowed to what the origin column renders.

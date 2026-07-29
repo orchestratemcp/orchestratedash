@@ -1,12 +1,21 @@
+"use client";
+
 import type { ReactNode } from "react";
 import { AgentComplianceChips } from "./_components/verdict";
 import { AgentOrigin } from "./_components/agent-origin";
-import { ROLLUP_RUN_COUNT, agentsView } from "../lib/views/build";
+import { HostNotice, ViewFailed, ViewLoading } from "./_components/view-state";
+import { useHost, useView } from "./_data/use-view";
+import { ROLLUP_RUN_COUNT } from "../lib/views/rollup";
 
-export const dynamic = "force-dynamic";
-
+/**
+ * The agents list.
+ *
+ * A client component since MAR-432, like every page here. What it renders is
+ * unchanged; where the data comes from is not. See `app/_data/source.ts`.
+ */
 export default function AgentsPage(): ReactNode {
-  const { agents } = agentsView();
+  const state = useView((source) => source.agents());
+  const host = useHost();
 
   return (
     <>
@@ -14,8 +23,13 @@ export default function AgentsPage(): ReactNode {
       <p className="lede">
         Every agent this DASH knows about, and where each one came from.
       </p>
+      <HostNotice host={host} />
 
-      {agents.length === 0 ? (
+      {state.status === "loading" ? (
+        <ViewLoading what="your agents" />
+      ) : state.status === "failed" ? (
+        <ViewFailed recovery={state.recovery} />
+      ) : state.data.agents.length === 0 ? (
         <div className="empty">
           <p>
             No agents yet. <a href="/agents/add">Add one</a> — it takes two
@@ -39,7 +53,7 @@ export default function AgentsPage(): ReactNode {
               </tr>
             </thead>
             <tbody>
-              {agents.map((agent) => (
+              {state.data.agents.map((agent) => (
                 <tr key={agent.name}>
                   <td>
                     <code>{agent.name}</code>
