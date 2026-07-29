@@ -72,6 +72,62 @@ export interface AgentRegistration {
   env?: Record<string, string>;
 }
 
+/* ---------------------------------------------------------------------- *
+ * The bundled interpreter
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The one command name that is not a program on this machine.
+ *
+ * **Why a sentinel and not a path (MAR-423).** An agent the Agent Kit produces
+ * is registered with `command: "node"`, resolved against `PATH` at spawn time,
+ * and that is right for somebody who typed `npx create-dash-agent` — they
+ * demonstrably have Node. It is fatal for the person MAR-423 serves, who
+ * installed DASH from the Store and has never installed anything else: the
+ * spawn fails and first run ends in a setup.
+ *
+ * DASH already carries a Node runtime. `electron/runner-process.ts` launches the
+ * runner as `process.execPath` with `ELECTRON_RUN_AS_NODE=1`, because the
+ * Electron binary *is* Node when asked. So the interpreter exists; the problem is
+ * only how to name it in a file that outlives the process that wrote it.
+ *
+ * It cannot be named by path. `docs/msix-lifecycle-evidence.md` measured the
+ * install root as version-stamped — `WindowsApps\OrchestrateDASH_0.1.0.0_x64__…`
+ * became `…_0.1.1.0_…` across an update — so a registration holding a real
+ * `execPath` is a registration that stops working at the first update. That is
+ * the same failure `agent-kit/open-in-dash.ts` avoids by not pinning to a Node
+ * install, arriving by a different door.
+ *
+ * A sentinel is resolved at spawn, by the process doing the spawning, against
+ * its own `execPath`. Nothing version-stamped is ever written down.
+ *
+ * **It grants nothing.** A registration may already name any command; this names
+ * strictly one, and it is DASH's own binary rather than anything on disk. The
+ * decision about whether an agent may be registered at all is still consent, and
+ * still happens before any of this is written.
+ */
+export const BUNDLED_NODE_COMMAND = "dash:node";
+
+/**
+ * What to actually spawn, and what the child needs in its environment for it to
+ * mean anything.
+ *
+ * Pure, and takes `execPath` as an argument rather than reading
+ * `process.execPath`, so the resolution is testable without being inside the
+ * runner and so it is obvious that the *spawning* process supplies it — a value
+ * resolved by DASH and handed to the runner would be the version-stamped path
+ * again, one hop further away from where it goes stale.
+ */
+export function resolveSpawnCommand(
+  command: string,
+  execPath: string,
+): { command: string; env: Record<string, string> } {
+  if (command !== BUNDLED_NODE_COMMAND) {
+    return { command, env: {} };
+  }
+  return { command: execPath, env: { ELECTRON_RUN_AS_NODE: "1" } };
+}
+
 export type RegistrationOwner =
   /** DASH wrote this from a handoff the user approved. DASH may remove it. */
   | "dash_handoff"

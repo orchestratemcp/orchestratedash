@@ -119,6 +119,30 @@ a handoff the user approved carries an extra `dash` block naming its owner; this
 runner reads the fields it knows and carries the rest through untouched, so
 ownership costs it nothing. See [`docs/agent-handoff.md`](../docs/agent-handoff.md).
 
+### One command name that is not a program (MAR-423)
+
+`"command": "dash:node"` is a sentinel. The runner resolves it, at the moment of
+spawning, to its own `process.execPath` with `ELECTRON_RUN_AS_NODE=1` — the pair
+that makes the Electron binary a Node runtime, and the same one that launched
+this runner.
+
+It exists so DASH's sample agent runs on a machine with no Node installed, which
+is the machine the person DASH is for actually has. It cannot be a *path*
+because the MSIX install root is version-stamped: a registration holding a real
+`execPath` would stop working at the first update. Resolving at spawn means
+nothing version-stamped is ever written to a file.
+
+It grants nothing new — a registration may already name any command, and this
+names strictly one, which is DASH's own binary rather than anything on disk. The
+`ELECTRON_RUN_AS_NODE=1` is applied *after* the registration's own `env` block,
+so a registration cannot ask for this interpreter and then unset the flag that
+makes it one; the child would otherwise be the DASH shell, windows and all, with
+an agent's script as its argument.
+
+The rule above is untouched: the API still chooses which registration to start
+and never what to run. This changes only how the interpreter DASH ships is
+reached.
+
 ### Taking up a fresh reading (MAR-428)
 
 ```

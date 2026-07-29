@@ -109,6 +109,46 @@ Every refusal produces a sentence a person can act on, and a ledger row so that
 | Already added, unchanged | "*Name* is already in DASH. Nothing was added twice." |
 | No runner on this machine | "It is saved. DASH could not start it, because agents cannot be hosted on this computer." |
 
+## DASH can be the one who runs the command (MAR-423)
+
+There is a second producer of handoffs, and it is DASH. **DASH › Try a sample
+agent** scaffolds a project into the user's documents folder, writes a real
+`dash-handoff.json` with a real single-use nonce, and hands the resulting
+`dash://` URL to the same `openHandoff` a terminal link goes through.
+
+Writing a registration directly would have been shorter. It would also have been
+a second way to register an agent, and the second way is always the one that
+quietly skips the nonce, the ledger row, or the consent — so there is no branch
+anywhere that does it. The user sees the same dialog and DASH takes the same
+seven ordered checks.
+
+One thing differs, and only for this producer: the sample is registered against
+**`dash:node`**, a sentinel rather than a program.
+
+| | Agent Kit | DASH's own sample |
+| --- | --- | --- |
+| `command` | `node`, resolved against `PATH` | `dash:node`, resolved at spawn |
+| Needs Node installed | Yes, and the author demonstrably has it | No |
+| Survives an MSIX update | Yes | Yes — nothing version-stamped is written down |
+
+`lib/registration.ts::resolveSpawnCommand` turns the sentinel into the spawning
+process's own `execPath` plus `ELECTRON_RUN_AS_NODE=1` — the same pair
+`electron/runner-process.ts` already uses to launch the runner. It is resolved
+at the moment of spawning and **never written to a file**, because
+`docs/msix-lifecycle-evidence.md` measured the install root as version-stamped:
+a registration holding a real path stops working at the first update.
+
+It grants nothing. A registration may already name any command; this names
+strictly one, and it is DASH's own binary rather than anything on disk. The
+resolution is applied *after* the registration's own environment block, so a
+registration cannot ask for DASH's interpreter and then unset the flag that
+makes it one — which would spawn the shell itself, windows and all, with an
+agent's script as its argument.
+
+The consent dialog does not print `dash:node`. It is not a program on this
+machine, and it would be DASH's own vocabulary in front of the reader least able
+to parse it. The script is still named, because that is what is being approved.
+
 ## Ownership and cleanup
 
 A registration written by DASH carries a `dash` block naming its owner, the
@@ -204,8 +244,13 @@ front of one confused user.
 - **The consent dialog is a native modal, not a DASH page.** DASH's packaged
   renderer is still a placeholder, so a consent question that lived only in the
   Next app would not exist in the installed product — which is the only place a
-  novice sees it. MAR-423 (DASH-19) owns the rest of the onboarding; this part
+  novice sees it. That placeholder is MAR-432 (DASH-20)'s to replace; this part
   had to be unspoofable more than it had to be pretty.
+- **A sample agent's run is not visible yet.** It registers, it starts, and it
+  keeps running — but MAR-433 (DASH-21) found that a runner-hosted agent's
+  telemetry never reaches DASH at all, so its runs do not appear under Runs and
+  plan-vs-actual never executes for it. Named here rather than left to be
+  discovered as a bug in this feature.
 - **No remote runner enrollment, no in-DASH agent builder, no hosted
   multi-tenant runtime, no multi-language Kit.** All four are MAR-428's explicit
   non-goals.

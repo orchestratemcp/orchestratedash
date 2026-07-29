@@ -34,6 +34,7 @@ import {
   type RunnerPort,
 } from "../lib/handoff-flow";
 import { listRegistrations, readRegistration, registrationPath } from "../lib/registration";
+import { expectPlainLanguage } from "./helpers/plain-language";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const roots: string[] = [];
@@ -245,10 +246,15 @@ describe("adding an agent", () => {
     const prompt = context.prompts[0] as HandoffPrompt;
     const words = `${prompt.title} ${prompt.message} ${prompt.detail}`;
 
-    // The acceptance criterion, asserted.
-    expect(words).not.toMatch(/manifest_path|agent_dom|component_id|manifest_version/);
-    expect(words).not.toMatch(/\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b/); // env-var shaped names
-    expect(words).not.toMatch(/https:\/\/www\.googleapis\.com|\.readonly|scope/i);
+    // The acceptance criterion, asserted — against MAR-423's single definition
+    // of the rule rather than against the three regexes this test used to carry.
+    // The two exemptions are named here, at the call site, because the design
+    // brief makes them deliberately: a dialog that asks permission to run
+    // something while declining to say what, or from where, would be worse than
+    // the jargon it was avoiding.
+    expectPlainLanguage([prompt.title, prompt.message, prompt.detail, prompt.confirm_label, prompt.cancel_label], {
+      allow: [project.dir, "node dist/agent.mjs"],
+    });
 
     // And it does say what is about to happen, which is not jargon.
     expect(words).toContain("Folder digest");

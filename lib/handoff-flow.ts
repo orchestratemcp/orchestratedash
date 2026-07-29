@@ -49,6 +49,7 @@ import {
   type AgentHandoff,
 } from "./handoff";
 import {
+  BUNDLED_NODE_COMMAND,
   describeRegistrationChange,
   manifestDigest,
   readRegistration,
@@ -487,7 +488,7 @@ export function describeNewAgent(handoff: AgentHandoff, manifest: AnyAgentManife
       handoff.summary,
       "",
       `It runs on this computer, from the folder you just created: ${handoff.project_dir}`,
-      `DASH will start it by running: ${[handoff.command, ...handoff.args].join(" ")}`,
+      startSentence(handoff),
       connectionSentence(manifest),
       "It keeps running when you close DASH, and you can stop or remove it at any time.",
     ].join("\n"),
@@ -505,12 +506,36 @@ export function describeChangedAgent(handoff: AgentHandoff, changes: string[]): 
       `Since you added it, ${joinPlainly(changes)}.`,
       "",
       `It runs from: ${handoff.project_dir}`,
-      `DASH will start it by running: ${[handoff.command, ...handoff.args].join(" ")}`,
+      startSentence(handoff),
       "Updating replaces what DASH knows about this agent. Nothing in its own folder is changed.",
     ].join("\n"),
     confirm_label: "Update",
     cancel_label: "Keep what I have",
   };
+}
+
+/**
+ * What DASH will run, said in a way that stays true for both interpreters.
+ *
+ * The command a handoff carries is normally a program name — `node` — and
+ * naming it is right: a dialog that asks permission to execute something while
+ * declining to say what would be worse than the jargon it was avoiding.
+ *
+ * `BUNDLED_NODE_COMMAND` is the exception, because it is not a program on this
+ * machine and printing it would put DASH's own vocabulary in front of the person
+ * least able to read it. The script and its arguments are still named — that is
+ * the part the user is actually approving — and the interpreter is described
+ * rather than spelled. The clause about installing nothing is there because for
+ * this reader it is the single most reassuring fact available.
+ */
+function startSentence(handoff: AgentHandoff): string {
+  if (handoff.command !== BUNDLED_NODE_COMMAND) {
+    return `DASH will start it by running: ${[handoff.command, ...handoff.args].join(" ")}`;
+  }
+  return (
+    `DASH will start it by running: ${handoff.args.join(" ")} — ` +
+    "using the copy of Node that comes with DASH, so you do not need to install anything."
+  );
 }
 
 /**
