@@ -11,6 +11,12 @@
  * 3. one Agent DOM command reaches `noAdapter`, and its refusal lands in
  *    `command_audit` in the real user-data directory.
  *
+ * MAR-432 adds one more proof to the same harness: with
+ * `DASH_SHELL_URL=dash-app://ui/`, the real static export loads through the
+ * packaged origin and its separate `dashData` preload bridge completes a read.
+ * That is the closest exercise of the installed renderer available without
+ * signing and sideloading an MSIX.
+ *
  * Driving it from here rather than from devtools by hand is a deliberate choice:
  * a proof you can re-run is worth more than a screenshot, and the next person to
  * touch the shell can check it still works in one command.
@@ -157,6 +163,14 @@ const rendered = (await window.webContents.executeJavaScript(
 )) as { title: string; url: string; headings: number };
 check("1. the UI renders", rendered.headings > 0, rendered);
 
+if (process.env.DASH_SHELL_URL?.startsWith("dash-app://") === true) {
+  check(
+    "1b. the UI renders from the packaged origin",
+    rendered.url.startsWith("dash-app://ui/"),
+    rendered.url,
+  );
+}
+
 /* -- Proof 2: shell.ping round trip ------------------------------------ */
 
 const bridge = (await window.webContents.executeJavaScript(
@@ -169,6 +183,33 @@ const pong = (await window.webContents.executeJavaScript(`window.dashShell.ping(
   data?: { pong?: boolean };
 };
 check("2b. shell.ping completes a round trip", pong.ok === true && pong.data?.pong === true, pong);
+
+/* -- Proof 2 continued: the read-only document bridge ------------------ */
+
+const dataBridge = (await window.webContents.executeJavaScript(
+  `({
+    present: typeof window.dashData === "object",
+    methods: Object.keys(window.dashData ?? {}).sort(),
+    leaks: [ "ipcRenderer", "invoke", "read" ].filter((k) => k in (window.dashData ?? {}))
+  })`,
+)) as { present: boolean; methods: string[]; leaks: string[] };
+check(
+  "2c. the preload exposes only the named read methods",
+  dataBridge.present &&
+    JSON.stringify(dataBridge.methods) ===
+      JSON.stringify(["agents", "connections", "run", "runs"]) &&
+    dataBridge.leaks.length === 0,
+  dataBridge,
+);
+
+const agentsRead = (await window.webContents.executeJavaScript(
+  `window.dashData.agents()`,
+)) as { ok?: boolean; data?: { agents?: unknown[] } };
+check(
+  "2d. dashData.agents completes a document round trip",
+  agentsRead.ok === true && Array.isArray(agentsRead.data?.agents),
+  { ok: agentsRead.ok, agents: agentsRead.data?.agents?.length },
+);
 
 /* -- Proof 3: an Agent DOM command reaches noAdapter -------------------- */
 
