@@ -362,6 +362,66 @@ describe("the child environment", () => {
   });
 });
 
+/**
+ * Vault-held credentials reaching the agent (MAR-383).
+ *
+ * The delivery half of the Connection Center: DASH reads the OS vault at spawn
+ * and passes the values for that spawn only. These assert the boundary rules,
+ * not the plumbing — that a credential arrives, that it cannot arrive under a
+ * name the runner reserves, and that it never lands in the registration.
+ */
+describe("delivering a DASH-held credential", () => {
+  it("delivers a declared credential to the child", () => {
+    const environment = childEnvironment(
+      registration(),
+      { PATH: "/usr/bin" },
+      process.execPath,
+      { LEDGER_API_KEY: "sk-live-abcd1234" },
+    );
+    expect(environment["LEDGER_API_KEY"]).toBe("sk-live-abcd1234");
+  });
+
+  it("refuses to deliver one into the DASH namespace", () => {
+    expect(() =>
+      childEnvironment(registration(), { PATH: "/usr/bin" }, process.execPath, {
+        DASH_INGEST_TOKEN: "no",
+      }),
+    ).toThrow(/Refusing to deliver a credential/);
+  });
+
+  it.each(["PATH", "NODE_OPTIONS"])(
+    "refuses to deliver one as %s, which would change what the child executes",
+    (name) => {
+      expect(() =>
+        childEnvironment(registration(), { PATH: "/usr/bin" }, process.execPath, {
+          [name]: "/tmp/evil",
+        }),
+      ).toThrow(/Refusing to deliver a credential/);
+    },
+  );
+
+  /**
+   * DASH is authoritative for a connection it holds. A registration file that
+   * declared the same name must not be able to pin a stale plaintext value in
+   * place of the vault's.
+   */
+  it("wins over a registration that declares the same name", () => {
+    const environment = childEnvironment(
+      registration({ env: { LEDGER_API_KEY: "stale-plaintext" } }),
+      { PATH: "/usr/bin" },
+      process.execPath,
+      { LEDGER_API_KEY: "from-the-vault" },
+    );
+    expect(environment["LEDGER_API_KEY"]).toBe("from-the-vault");
+  });
+
+  it("changes nothing when there are no credentials to deliver", () => {
+    const without = childEnvironment(registration(), { PATH: "/usr/bin" });
+    const withEmpty = childEnvironment(registration(), { PATH: "/usr/bin" }, process.execPath, {});
+    expect(withEmpty).toEqual(without);
+  });
+});
+
 describe("loading registrations", () => {
   it("returns nothing when the directory does not exist", () => {
     // The normal first-run state, not a fault.

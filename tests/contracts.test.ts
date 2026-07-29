@@ -218,6 +218,7 @@ describe("Agent DOM v2 schemas", () => {
   it.each([
     "examples/agent-managed.manifest.v2.example.json",
     "examples/dash-managed.manifest.v2.example.json",
+    "examples/dash-managed-secret.manifest.v2.example.json",
     "examples/gmail-meeting-assistant.manifest.v2.example.json",
   ])("validates v2 manifest %s", (file) => {
     expect(manifestValidator(loadJson(file)), JSON.stringify(manifestValidator.errors)).toBe(true);

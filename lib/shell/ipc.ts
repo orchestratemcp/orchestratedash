@@ -37,6 +37,8 @@ import type {
   AgentCommandInput,
   AgentCommandResult,
 } from "../agent-dom/runner";
+import type { ConnectionActionResult } from "../connection-actions";
+import type { Recovery } from "../copy/recovery";
 import type { AgentCommand } from "../workspace";
 
 /** The single IPC channel. Everything audited goes through it. */
@@ -151,6 +153,48 @@ export const COMMANDS = {
     irreversible: false,
   },
 
+  // MAR-383. Three commands that name a connection and carry no credential.
+  //
+  // The secret is deliberately absent from every payload below, and there is no
+  // fourth command that would carry one. A user types a credential into a
+  // separate window main owns (`electron/credential-prompt.ts`), which reaches
+  // the vault without passing through this channel or the app's renderer. So
+  // "no secrets cross this boundary" survives a feature whose whole subject is
+  // secrets: `connection.connect` asks main to *ask* for one, and is the same
+  // shape as a command that asks it to forget one.
+  "connection.connect": {
+    effect:
+      "Ask for a credential for one declared connection and store it in this computer's vault.",
+    payload_keys: ["agent_id", "connection_id", "field_id"],
+    required_keys: ["agent_id", "connection_id", "field_id"],
+    mutates: true,
+    // Replacing a credential loses the old value, which cannot be recovered
+    // from DASH — but nothing happens in the world, and the user still holds
+    // whatever they pasted. `irreversible` is about the second invitation and
+    // the second payment.
+    irreversible: false,
+  },
+  "connection.test": {
+    effect:
+      "Check that this computer's vault still holds the credential for one connection. Contacts no provider.",
+    payload_keys: ["agent_id", "connection_id", "field_id"],
+    required_keys: ["agent_id", "connection_id", "field_id"],
+    // Reads the vault and writes the result of that read to the connection's
+    // row, which is state. Marked honestly rather than conveniently.
+    mutates: true,
+    irreversible: false,
+  },
+  "connection.disconnect": {
+    effect: "Delete the credential for one connection from this computer's vault.",
+    payload_keys: ["agent_id", "connection_id", "field_id"],
+    required_keys: ["agent_id", "connection_id", "field_id"],
+    mutates: true,
+    // The credential is gone from DASH and cannot be recovered by DASH. That is
+    // the point of the command, and the user re-enters it to undo — no external
+    // effect happens either way.
+    irreversible: false,
+  },
+
   "agent.approve": {
     effect: "Approve a guarded action the agent is waiting on. The runner performs it.",
     payload_keys: ["agent_id", "task_id", "approval_id", "action_id", "observed_at", "reason"],
@@ -259,6 +303,28 @@ export function isRunnerCommandName(value: CommandName): value is RunnerCommandN
 }
 
 /**
+ * The connection commands, and what each one asks main to do (MAR-383).
+ *
+ * A third family rather than more `runner.*` entries, for the reason the second
+ * one exists: these are not process lifecycle and they are not Agent DOM verbs.
+ * They touch the OS vault, which nothing else in this catalogue does, and
+ * keeping that a separate route means the one place a credential is reachable
+ * is a place a reviewer can find by name.
+ */
+export const CONNECTION_ACTIONS = {
+  "connection.connect": "connect",
+  "connection.test": "test",
+  "connection.disconnect": "disconnect",
+} as const;
+
+export type ConnectionCommandName = keyof typeof CONNECTION_ACTIONS;
+export type ConnectionAction = (typeof CONNECTION_ACTIONS)[ConnectionCommandName];
+
+export function isConnectionCommandName(value: CommandName): value is ConnectionCommandName {
+  return Object.hasOwn(CONNECTION_ACTIONS, value);
+}
+
+/**
  * Every command is local, an Agent DOM command, or runner lifecycle.
  *
  * This is a compile-time assertion, not a runtime one: adding an entry to
@@ -268,7 +334,7 @@ export function isRunnerCommandName(value: CommandName): value is RunnerCommandN
  */
 type UnroutedCommand = Exclude<
   CommandName,
-  AgentCommandChannelName | RunnerCommandName | "shell.ping"
+  AgentCommandChannelName | RunnerCommandName | ConnectionCommandName | "shell.ping"
 >;
 const _allCommandsAreRouted: UnroutedCommand extends never ? true : never = true;
 void _allCommandsAreRouted;
@@ -462,6 +528,16 @@ export interface CommandResult {
   duplicate?: boolean;
   /** Agent commands only: plain-language detail, safe to render. */
   detail?: string;
+  /**
+   * Connection commands only (MAR-383): what the user can do about a failure.
+   *
+   * A structured `Recovery` rather than a code, because the page renders a
+   * headline, a meaning and a next action, and reducing it to a string here
+   * would put the job of turning "vault_locked" into three sentences in the
+   * renderer — the layer furthest from knowing which vault it was. Contains no
+   * secret: `lib/copy/recovery.ts` is given a service name and a vault label.
+   */
+  recovery?: Recovery;
 }
 
 /**
@@ -479,7 +555,11 @@ export function executeCommand(review: CommandReview): CommandResult {
     return { ok: false, request_id: review.audit.request_id, reason: review.reason };
   }
 
-  if (isAgentCommandName(review.command) || isRunnerCommandName(review.command)) {
+  if (
+    isAgentCommandName(review.command) ||
+    isRunnerCommandName(review.command) ||
+    isConnectionCommandName(review.command)
+  ) {
     // Not a denial and not a result: a caller that reached here bypassed the
     // trusted side entirely. Throwing is the only honest answer — returning a
     // failure would let a miswired call site look like a refused command, and
@@ -539,6 +619,22 @@ export interface DispatchContext {
    */
   runnerLifecycle(action: string, agentId: string | undefined): Promise<RunnerLifecycleResult>;
   /**
+   * Connect, test or forget a credential for one declared connection (MAR-383).
+   *
+   * Injected like the two above, and for a sharper version of the same reason:
+   * the real implementation opens a window and touches the OS vault, and this
+   * module must stay importable from a sandboxed preload. It also means the
+   * command allowlist can be tested against a fake that never holds a secret.
+   *
+   * Note the return type. Nothing a credential could be assigned to crosses
+   * back — a state, a masked hint and a sentence, all of which are already safe
+   * to render and to log.
+   */
+  connectionAction(
+    action: ConnectionAction,
+    target: { agent_id: string; connection_id: string; field_id: string },
+  ): Promise<ConnectionActionResult>;
+  /**
    * Where the IPC-level audit record goes.
    *
    * Injected rather than written to `console` here for the same reason as
@@ -588,6 +684,25 @@ export async function dispatchCommand(
       correlation_id: result.correlation_id,
       duplicate: result.duplicate,
       detail: result.detail,
+    };
+  }
+
+  if (isConnectionCommandName(review.command)) {
+    // Required keys guarantee all three are non-empty strings, so the target is
+    // whole by the time it leaves this function. Main resolves it against the
+    // validated manifest before touching the vault — naming a connection here
+    // is not the same as being allowed to hold a credential for it.
+    const result = await context.connectionAction(CONNECTION_ACTIONS[review.command], {
+      agent_id: String(review.payload["agent_id"]),
+      connection_id: String(review.payload["connection_id"]),
+      field_id: String(review.payload["field_id"]),
+    });
+    return {
+      ok: result.ok,
+      request_id: review.audit.request_id,
+      detail: result.detail,
+      recovery: result.recovery,
+      data: { state: result.state, masked_hint: result.masked_hint ?? "" },
     };
   }
 

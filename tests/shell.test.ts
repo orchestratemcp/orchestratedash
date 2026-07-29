@@ -8,7 +8,7 @@ import {
   isCommandName,
   reviewCommand,
 } from "../lib/shell/ipc";
-import type { CommandAuditRecord } from "../lib/shell/ipc";
+import type { CommandAuditRecord, ConnectionAction } from "../lib/shell/ipc";
 import type { AgentCommandInput } from "../lib/agent-dom/runner";
 import {
   SHELL_WEB_PREFERENCES,
@@ -129,6 +129,13 @@ describe("the audited command chokepoint", () => {
       // because removing an agent is a sequence of file, store and process
       // operations only the shell can order correctly.
       "runner.remove",
+      // MAR-383. A third family, and the only one that reaches the OS vault.
+      // Note what is *not* in any of their payloads: no key here could carry a
+      // credential, which is what keeps "no secrets cross this boundary" true
+      // of the feature whose whole subject is secrets.
+      "connection.connect",
+      "connection.test",
+      "connection.disconnect",
       "agent.approve",
       "agent.reject",
       "agent.choose",
@@ -336,10 +343,27 @@ describe("dispatch", () => {
     const audited: CommandAuditRecord[] = [];
     const inputs: AgentCommandInput[] = [];
     const lifecycle: Array<{ action: string; agent_id: string | undefined }> = [];
+    const connections: Array<{ action: string; target: Record<string, string> }> = [];
     return {
       audited,
       inputs,
       lifecycle,
+      connections,
+      // MAR-383. Recorded, not performed — and note the fake holds no secret,
+      // which it could not do usefully anyway: no credential is an argument to
+      // or a result of this call.
+      connectionAction: (
+        action: ConnectionAction,
+        target: { agent_id: string; connection_id: string; field_id: string },
+      ) => {
+        connections.push({ action, target });
+        return Promise.resolve({
+          ok: true,
+          state: "connected" as const,
+          masked_hint: "••••4f2a",
+          detail: `${action} ok`,
+        });
+      },
       audit: (record: CommandAuditRecord) => audited.push(record),
       runAgentCommand: (input: AgentCommandInput) => {
         inputs.push(input);
@@ -476,6 +500,89 @@ describe("dispatch", () => {
       ctx,
     );
     expect(ctx.inputs).toHaveLength(0);
+  });
+
+  /**
+   * The connection commands (MAR-383).
+   *
+   * The property under test in every case is the same one: a command about a
+   * credential is routed to the credential side, carries no credential, and
+   * cannot be redirected into the envelope machinery by naming an agent.
+   */
+  describe("connection commands", () => {
+    const connect = {
+      command: "connection.connect",
+      request_id: "req-conn",
+      payload: { agent_id: "ledger-reporter", connection_id: "ledger", field_id: "api-key" },
+    };
+
+    it("routes to the connection side and not to the agent or the runner", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(connect, ctx);
+
+      expect(result).toMatchObject({ ok: true, detail: "connect ok" });
+      expect(ctx.connections).toEqual([
+        {
+          action: "connect",
+          target: { agent_id: "ledger-reporter", connection_id: "ledger", field_id: "api-key" },
+        },
+      ]);
+      expect(ctx.inputs).toHaveLength(0);
+      expect(ctx.lifecycle).toHaveLength(0);
+    });
+
+    /**
+     * The rule `lib/shell/ipc.ts` opens with, applied to the one feature whose
+     * subject is secrets: no command declares a key a credential could arrive
+     * in, so the boundary refuses the whole request rather than dropping the
+     * field.
+     */
+    it.each(["secret", "value", "api_key", "password", "token"])(
+      "refuses a connect carrying a %s field",
+      async (key) => {
+        const ctx = context();
+        const result = await dispatchCommand(
+          { ...connect, payload: { ...connect.payload, [key]: "sk-live-abcd1234" } },
+          ctx,
+        );
+
+        expect(result).toMatchObject({ ok: false, reason: "unexpected_payload_field" });
+        expect(ctx.connections).toHaveLength(0);
+      },
+    );
+
+    it("refuses a connect that does not name all three parts of its target", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(
+        {
+          command: "connection.disconnect",
+          request_id: "req-conn-2",
+          payload: { agent_id: "ledger-reporter", connection_id: "ledger" },
+        },
+        ctx,
+      );
+
+      expect(result).toMatchObject({ ok: false, reason: "missing_payload_field" });
+      expect(ctx.connections).toHaveLength(0);
+    });
+
+    it("audits the connection command with keys only", async () => {
+      const ctx = context();
+      await dispatchCommand(connect, ctx);
+
+      expect(ctx.audited[0]).toMatchObject({
+        command: "connection.connect",
+        decision: "allowed",
+        payload_keys: ["agent_id", "connection_id", "field_id"],
+        mutates: true,
+      });
+    });
+
+    it("refuses to execute one without the trusted side", () => {
+      expect(() => executeCommand(reviewCommand(connect))).toThrowError(
+        /must go through dispatchCommand/,
+      );
+    });
   });
 });
 

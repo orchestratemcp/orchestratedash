@@ -30,6 +30,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
+import { checkEnvironmentName } from "../lib/connection-credentials";
 import { isManifestV2, validateManifest } from "../lib/contracts";
 import { resolveSpawnCommand, sameRegistration, type AgentRegistration } from "../lib/registration";
 import type { AgentCommand } from "../lib/workspace";
@@ -136,10 +137,22 @@ const INHERITED_ENVIRONMENT = [
 /** Prefixes an agent must never receive, whatever a registration asks for. */
 const FORBIDDEN_ENVIRONMENT = ["DASH_RUNNER_TOKEN", "DASH_SHELL_", "DASH_CONTRACTS_DIR"];
 
+/**
+ * Credentials DASH read from the OS vault for this one spawn (MAR-383).
+ *
+ * A map of environment name to value, held in memory for the length of a
+ * `start` call and never written anywhere. Deliberately *not* merged into
+ * `registration.env`: a registration is a file on disk, and putting a
+ * credential there would move it out of the OS vault into plaintext — the
+ * opposite of what holding it in the vault was for.
+ */
+export type SpawnCredentials = Readonly<Record<string, string>>;
+
 export function childEnvironment(
   registration: AgentRegistration,
   source: Record<string, string | undefined> = process.env,
   execPath: string = process.execPath,
+  credentials: SpawnCredentials = {},
 ): Record<string, string> {
   const environment: Record<string, string> = {};
   for (const key of INHERITED_ENVIRONMENT) {
@@ -157,6 +170,25 @@ export function childEnvironment(
     if (key.toUpperCase().startsWith("DASH_")) {
       throw new Error(
         `Refusing to start an agent with a DASH-owned environment variable: that namespace is reserved for the runner/DASH boundary.`,
+      );
+    }
+    environment[key] = value;
+  }
+  // After the registration block, so a registration cannot pre-empt a
+  // DASH-managed credential by declaring the same name and having its plaintext
+  // value win. DASH is authoritative for the connections it holds.
+  //
+  // The name rules are `lib/connection-credentials.ts`'s, imported rather than
+  // restated: DASH already refused a reserved or unsafe name when the user
+  // connected, and this is the same check at the boundary that enforces it. A
+  // caller reaching here with a bad name is a bug on the DASH side, so it
+  // throws rather than skipping the entry — a credential silently not delivered
+  // is an agent that fails for a reason nobody can see.
+  for (const [key, value] of Object.entries(credentials)) {
+    const refusal = checkEnvironmentName(key);
+    if (refusal !== null) {
+      throw new Error(
+        `Refusing to deliver a credential as "${key}": ${refusal.replace(/_/g, " ")}.`,
       );
     }
     environment[key] = value;
@@ -416,7 +448,12 @@ export class Supervisor {
    * Validating after spawning would mean the refusal happened after the agent
    * had already run, which is not a refusal.
    */
-  start(agentId: string): StartResult {
+  /**
+   * @param credentials Vault-held values for this spawn only (MAR-383). Held in
+   * memory for the length of this call, never stored on the entry and never
+   * logged, so a later `list` or `status` cannot read back what was delivered.
+   */
+  start(agentId: string, credentials: SpawnCredentials = {}): StartResult {
     const entry = this.agents.get(agentId);
     if (entry === undefined) {
       return {
@@ -454,7 +491,12 @@ export class Supervisor {
         // require NODE_ENV. A child environment built from an allowlist
         // legitimately may not carry it, and inventing one to satisfy the type
         // would be handing every agent a value DASH made up.
-        env: childEnvironment(entry.registration) as NodeJS.ProcessEnv,
+        env: childEnvironment(
+          entry.registration,
+          process.env,
+          process.execPath,
+          credentials,
+        ) as NodeJS.ProcessEnv,
         stdio: ["pipe", "pipe", "pipe"],
         // The agent is a child of the runner, not of a shell. `shell: true`
         // would make every registration a command-injection surface for the

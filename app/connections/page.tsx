@@ -1,24 +1,35 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { ConnectionChecklist } from "../_components/connection-checklist";
 import { HostNotice, ViewFailed, ViewLoading } from "../_components/view-state";
+import { submitConnectionCommand } from "../_data/source";
 import { useHost, useView } from "../_data/use-view";
 
 /**
- * The Connection Center, read-only for now.
+ * The Connection Center.
  *
- * This slice answers "what does this agent need to be connected to, and who
- * holds each one?" — the checklist MAR-383 puts at the end of the first-install
- * journey. Connecting, testing and reconnecting are later phases; nothing here
- * accepts a credential, and the page has no inputs at all.
+ * This answers "what does this agent need to be connected to, who holds each
+ * one, and what has DASH got?" — the checklist MAR-383 puts at the end of the
+ * first-install journey, and, since MAR-383's credential slice, the place a
+ * user connects one.
+ *
+ * **This page still has no credential input.** Connect opens a window main owns
+ * with its own preload; the value goes from that window to the OS vault without
+ * passing through here. What this page sends is three ids, and what it gets
+ * back is a state, a masked hint and a sentence.
  *
  * It is deliberately honest about its own gaps: v1 agents get an explanation
  * rather than an empty checklist, because "declares no connections" and "is too
  * old to declare any" are different facts.
  */
 export default function ConnectionsPage(): ReactNode {
-  const state = useView((source) => source.connections());
+  // Bumped after any command that changed something, so the page re-reads the
+  // view rather than trusting its own optimistic idea of what happened. The
+  // rows carry masked hints from the store, and the store is the thing that
+  // just changed.
+  const [revision, setRevision] = useState(0);
+  const state = useView((source) => source.connections(), revision);
   const host = useHost();
 
   return (
@@ -26,7 +37,8 @@ export default function ConnectionsPage(): ReactNode {
       <h1>Connections</h1>
       <p className="lede">
         What each imported agent needs to be connected to, taken from its
-        manifest. DASH does not hold any of these credentials yet.
+        manifest. Anything DASH holds is kept in this computer&rsquo;s credential
+        vault.
       </p>
       <HostNotice host={host} />
 
@@ -53,7 +65,23 @@ export default function ConnectionsPage(): ReactNode {
                 <h2>
                   <code>{name}</code>
                 </h2>
-                <ConnectionChecklist rows={rows} />
+                <ConnectionChecklist
+                  rows={rows}
+                  act={async (action, target) => {
+                    const result = await submitConnectionCommand(action, {
+                      agent_id: name,
+                      ...target,
+                    });
+                    if (result.ok) {
+                      setRevision((current) => current + 1);
+                    }
+                    return {
+                      ok: result.ok,
+                      detail: result.detail,
+                      recovery: result.recovery,
+                    };
+                  }}
+                />
               </section>
             ))
           )}

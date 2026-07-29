@@ -121,6 +121,18 @@ await Promise.all([
     format: "cjs",
   }),
 
+  // The credential prompt's preload (MAR-383). A second CommonJS bundle for the
+  // same reasons as the first, and a separate file rather than a branch inside
+  // it: the two bridges must not be reachable from one another's window, and
+  // building them separately is what makes that true of the bytes rather than
+  // just of the source.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "credential-preload.ts")],
+    outfile: path.join(outDir, "credential-preload.js"),
+    format: "cjs",
+  }),
+
   // The bundled runner (MAR-415). A separate process, launched by main with
   // `ELECTRON_RUN_AS_NODE=1`, so it is plain Node and needs no Electron API —
   // but it is bundled here rather than run from source for the same reason main

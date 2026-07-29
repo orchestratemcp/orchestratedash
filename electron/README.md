@@ -88,13 +88,34 @@ credential store that renderer code can reach by following an import is what
 that a property of the tree rather than a convention. Nothing under `app/` may
 import it, and `tests/redaction.test.ts` enforces that.
 
+## The two preloads (MAR-383)
+
+`electron/preload.ts` exposes `dashShell` and `dashData` to the app window, and
+still carries no credential: its three connection methods send three ids and get
+back a state, a masked hint and a sentence.
+
+`electron/credential-preload.ts` exposes `dashCredential` to a *different*
+window, opened by `electron/credential-prompt.ts` for the length of one connect.
+That is the only bridge in DASH a secret crosses, and the separation is what
+makes the app window's rule survive a feature about secrets:
+
+- the prompt window renders one page and never renders manifest strings, agent
+  audit prose, run output or anything else an agent influenced;
+- `dashShell` and `dashData` are not exposed to it, and `dashCredential` is not
+  exposed to the app window, so no renderer can both read a document and submit
+  a secret;
+- `submit` resolves with nothing. A value that crosses cannot be read back.
+
+Main verifies every credential channel message came from the prompt window's own
+`webContents`, so the channels answer exactly one renderer — one main created.
+
 ## Not in this slice
 
-No OAuth, no credential UI, no secret of any kind through IPC, no local bridge
-or ingest server, no packaging, no electron-builder, no code signing. See
-ADR 0001 → "Not decided here".
+No OAuth, no local bridge or ingest server, no electron-builder, no code
+signing. See ADR 0001 → "Not decided here".
 
-Secret *storage* is now implemented (MAR-416) — see
+Secret *storage* is implemented (MAR-416) and the *connect / check / disconnect*
+flow that fills it is implemented (MAR-383) — see
 [local store and vault](../docs/local-store-and-vault.md).
 
 The Agent DOM command channel is implemented (MAR-417) — see

@@ -234,15 +234,30 @@ async function handle(
       return;
     }
     let action: unknown;
+    let credentials: unknown;
     try {
-      action = (JSON.parse(body) as { action?: unknown }).action;
+      const parsed = JSON.parse(body) as { action?: unknown; credentials?: unknown };
+      action = parsed.action;
+      credentials = parsed.credentials;
     } catch {
       send(response, 400, { ok: false, detail: "The request body was not JSON." });
       return;
     }
 
     if (action === "start") {
-      const started = options.supervisor.start(agentId);
+      // MAR-383. DASH reads the OS vault and sends the values for this spawn
+      // only; the runner holds them no longer than the `start` call. Nothing
+      // about them is logged — the line below reports the outcome and the
+      // agent id, and `readBody` never logs a body.
+      const parsedCredentials = parseSpawnCredentials(credentials);
+      if (parsedCredentials === null) {
+        send(response, 400, {
+          ok: false,
+          detail: "credentials must be an object of environment names to string values.",
+        });
+        return;
+      }
+      const started = options.supervisor.start(agentId, parsedCredentials);
       send(response, 200, {
         ok: started.ok,
         detail: started.ok ? `Started as pid ${String(started.pid)}.` : started.detail,
@@ -262,7 +277,39 @@ async function handle(
     return;
   }
 
+
   send(response, 404, { ok: false, detail: "No such route." });
+}
+
+/**
+ * Narrow the `credentials` block of a start request (MAR-383).
+ *
+ * Absent is the ordinary case and means an empty map, not a refusal: most
+ * agents declare no DASH-managed connection, and requiring the key would make
+ * every existing caller malformed.
+ *
+ * Values must be strings. An object or array here would be a caller trying to
+ * put structure into an environment variable, and `null` would become the
+ * literal `"null"` in the child — both are more likely a bug than an intent,
+ * and neither is something to guess at. What this does *not* do is check the
+ * names: that is `checkEnvironmentName`, applied in `childEnvironment`, so
+ * there is one place the rule lives rather than two that can disagree.
+ */
+export function parseSpawnCredentials(value: unknown): Record<string, string> | null {
+  if (value === undefined || value === null) {
+    return {};
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const credentials: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof entry !== "string") {
+      return null;
+    }
+    credentials[key] = entry;
+  }
+  return credentials;
 }
 
 /**

@@ -1,9 +1,13 @@
-import type { ReactNode } from "react";
-import type { ConnectionRequirementRow } from "../../lib/connections";
+"use client";
+
+import { useState, type ReactNode } from "react";
 import { groupByOwnership } from "../../lib/connections";
+import type { Recovery } from "../../lib/copy/recovery";
+import type { ConnectionRowWithCredential } from "../../lib/views/types";
+import { useCanAct } from "../_data/use-view";
 
 /**
- * The Connection Center checklist, read-only.
+ * The Connection Center checklist.
  *
  * MAR-383's acceptance criterion is that a fresh user reaches a connection
  * checklist "without terminal, `.env`, component IDs or raw scopes". So this
@@ -11,17 +15,23 @@ import { groupByOwnership } from "../../lib/connections";
  * capability's `label`, never its `id`; a connection's `service`, never its
  * `provider` as the headline.
  *
- * Two honesty rules from MAR-383 are load-bearing here, and both are about not
- * overclaiming:
+ * Three honesty rules from MAR-383 are load-bearing here, and all three are
+ * about not overclaiming:
  *
  * - A **derived** row must never look like a declared one. The model-provider
  *   row is inferred from the plan's model tiers; it is labelled as inferred.
  * - **Unconfirmed ownership must read as a question, not a statement.** DASH
  *   does not know who holds the model-provider credential, so the row says so
  *   rather than asserting "the agent has this".
+ * - **A row DASH cannot connect gets no button.** An OAuth connection is not
+ *   offered a text box that would take a token DASH could never refresh, and an
+ *   agent-managed one is not offered a Connect that would imply DASH was taking
+ *   it over. The button's absence is the honest answer, and the row says why.
  *
- * No secret, and no field that could contain one, is rendered — there is
- * nothing here to redact because nothing secret reaches this layer.
+ * No secret is rendered. The strongest thing on this page is a masked hint —
+ * four trailing characters behind bullets, produced by `maskSecret` at the
+ * moment the value was stored and read here from a table that cannot hold a raw
+ * value. Nothing on this page ever reads the vault.
  */
 
 const OWNERSHIP_SECTIONS: Array<{
@@ -32,7 +42,7 @@ const OWNERSHIP_SECTIONS: Array<{
   {
     ownership: "dash",
     heading: "Connect through DASH",
-    lede: "DASH will hold these credentials for the agent.",
+    lede: "DASH holds these in this computer's credential vault and passes them to the agent when it runs.",
   },
   {
     ownership: "agent",
@@ -46,7 +56,7 @@ const OWNERSHIP_SECTIONS: Array<{
   },
 ];
 
-function SourceChip({ row }: { row: ConnectionRequirementRow }): ReactNode {
+function SourceChip({ row }: { row: ConnectionRowWithCredential }): ReactNode {
   if (row.source === "declared_connection") {
     return (
       <span className="chip chip-ok" title="The agent's manifest declares this connection">
@@ -64,7 +74,58 @@ function SourceChip({ row }: { row: ConnectionRequirementRow }): ReactNode {
   );
 }
 
-function ConnectionRow({ row }: { row: ConnectionRequirementRow }): ReactNode {
+/** What one command left behind, shown under the row that caused it. */
+interface RowOutcome {
+  ok: boolean;
+  detail?: string;
+  recovery?: Recovery;
+}
+
+export interface ConnectionAct {
+  (
+    action: "connect" | "test" | "disconnect",
+    target: { connection_id: string; field_id: string },
+  ): Promise<RowOutcome>;
+}
+
+function ConnectionRow({
+  row,
+  act,
+  canAct,
+}: {
+  row: ConnectionRowWithCredential;
+  act: ConnectionAct | null;
+  canAct: boolean;
+}): ReactNode {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<RowOutcome | null>(null);
+  const [hint, setHint] = useState<string | null>(row.masked_hint);
+
+  const connected = hint !== null;
+  // A row is actionable only when the manifest says DASH may hold it, the
+  // manifest named which field, and this window can cause an effect at all. The
+  // browser development path fails the last one, which is what keeps it
+  // read-only without the page having to know why.
+  const actionable = row.dash_can_hold && row.field_id !== null && canAct && act !== null;
+
+  async function run(action: "connect" | "test" | "disconnect"): Promise<void> {
+    if (act === null || row.field_id === null) {
+      return;
+    }
+    setBusy(action);
+    setOutcome(null);
+    const result = await act(action, { connection_id: row.connection_id, field_id: row.field_id });
+    setBusy(null);
+    setOutcome(result);
+    // Only a definite outcome moves the hint. A failed test leaves the row
+    // saying what it said before, because a locked vault is not evidence the
+    // credential is gone — telling the user it disappeared would send them to
+    // find a key they never lost.
+    if (result.ok && action === "disconnect") {
+      setHint(null);
+    }
+  }
+
   return (
     <tr>
       <td>
@@ -72,6 +133,27 @@ function ConnectionRow({ row }: { row: ConnectionRequirementRow }): ReactNode {
         {/* The user asked for a checklist, not an inventory: why it is needed
             comes before what it is called. */}
         <div className="wrap muted">{row.purpose}</div>
+        {/* The same three-part shape `ViewFailed` uses, and for the reason it
+            states: a surface that shows two of headline/meaning/next action
+            always drops the third, and the third is the one that helps. */}
+        {outcome !== null ? (
+          <div
+            className={outcome.ok ? "notice notice-ok" : "notice notice-err"}
+            role={outcome.ok ? undefined : "alert"}
+          >
+            {outcome.recovery !== undefined ? (
+              <>
+                <p>
+                  <strong>{outcome.recovery.headline}</strong>
+                </p>
+                <p>{outcome.recovery.meaning}</p>
+                <p>{outcome.recovery.next_action}</p>
+              </>
+            ) : (
+              <p>{outcome.detail}</p>
+            )}
+          </div>
+        ) : null}
       </td>
       <td className="wrap">
         <ul className="capability-list">
@@ -93,10 +175,64 @@ function ConnectionRow({ row }: { row: ConnectionRequirementRow }): ReactNode {
               owner unknown — DASH will ask
             </span>
           )}
-          {row.requires_secret_input ? (
+          {connected ? (
+            <span className="chip chip-ok" title="DASH holds a credential for this connection">
+              connected {hint}
+            </span>
+          ) : row.dash_can_hold ? (
+            <span className="chip chip-muted">not connected yet</span>
+          ) : row.requires_secret_input ? (
             <span className="chip chip-muted">needs a secret you enter</span>
           ) : null}
         </div>
+
+        {actionable ? (
+          <div className="button-row">
+            <button
+              type="button"
+              className={connected ? "button-secondary" : "button-primary"}
+              disabled={busy !== null}
+              onClick={() => void run("connect")}
+            >
+              {busy === "connect" ? "Waiting…" : connected ? "Replace" : "Connect"}
+            </button>
+            {connected ? (
+              <>
+                <button
+                  type="button"
+                  className="button-secondary"
+                  disabled={busy !== null}
+                  onClick={() => void run("test")}
+                >
+                  {busy === "test" ? "Checking…" : "Check"}
+                </button>
+                <button
+                  type="button"
+                  className="button-danger"
+                  disabled={busy !== null}
+                  onClick={() => void run("disconnect")}
+                >
+                  {busy === "disconnect" ? "Removing…" : "Disconnect"}
+                </button>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* Said once, on the row it is true of, rather than as a footnote
+            nobody reads. An OAuth row and an agent-managed row both have no
+            button, and they have no button for different reasons. */}
+        {row.dash_can_hold && row.delivered_to_agent ? null : row.dash_can_hold ? (
+          <p className="muted wrap">
+            DASH keeps this for you. The agent&rsquo;s manifest does not say where
+            to pass it, so the agent must fetch it another way.
+          </p>
+        ) : row.ownership === "dash" && row.source === "declared_connection" ? (
+          <p className="muted wrap">
+            {row.service} signs in through its own provider. DASH cannot do that
+            for you yet, so the agent handles this sign-in.
+          </p>
+        ) : null}
       </td>
     </tr>
   );
@@ -104,9 +240,13 @@ function ConnectionRow({ row }: { row: ConnectionRequirementRow }): ReactNode {
 
 export function ConnectionChecklist({
   rows,
+  act = null,
 }: {
-  rows: ConnectionRequirementRow[];
+  rows: ConnectionRowWithCredential[];
+  act?: ConnectionAct | null;
 }): ReactNode {
+  const canAct = useCanAct();
+
   if (rows.length === 0) {
     return (
       <p className="muted">
@@ -121,7 +261,7 @@ export function ConnectionChecklist({
   return (
     <>
       {OWNERSHIP_SECTIONS.map((section) => {
-        const sectionRows = grouped[section.ownership];
+        const sectionRows = grouped[section.ownership] as ConnectionRowWithCredential[];
         // Empty sections are omitted rather than shown empty: a heading with
         // nothing under it reads as "nothing to do here yet", which is a
         // different claim from "this does not apply".
@@ -143,7 +283,12 @@ export function ConnectionChecklist({
                 </thead>
                 <tbody>
                   {sectionRows.map((row) => (
-                    <ConnectionRow key={row.connection_id} row={row} />
+                    <ConnectionRow
+                      key={row.connection_id}
+                      row={row}
+                      act={act}
+                      canAct={canAct}
+                    />
                   ))}
                 </tbody>
               </table>

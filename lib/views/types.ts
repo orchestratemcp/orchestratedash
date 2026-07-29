@@ -136,9 +136,28 @@ export type RunView =
  * Connections
  * ---------------------------------------------------------------------- */
 
+/**
+ * A checklist row, plus what DASH holds for it (MAR-383).
+ *
+ * Kept as an extension of `ConnectionRequirementRow` rather than folded into it:
+ * that type is a pure function of the manifest and is used where no store
+ * exists, and giving it fields that only a database can fill would make it lie
+ * in those places.
+ */
+export interface ConnectionRowWithCredential extends ConnectionRequirementRow {
+  /** Whether DASH may take a credential for this row at all. */
+  dash_can_hold: boolean;
+  /** Which declared field a Connect acts on, or null when there is none. */
+  field_id: string | null;
+  /** What `maskSecret` produced when the value was stored. Never the value. */
+  masked_hint: string | null;
+  /** Whether the manifest names somewhere for DASH to deliver it. */
+  delivered_to_agent: boolean;
+}
+
 export interface AgentConnections {
   name: string;
-  rows: ConnectionRequirementRow[];
+  rows: ConnectionRowWithCredential[];
 }
 
 export interface ConnectionsView {
