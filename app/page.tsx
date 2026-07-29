@@ -1,22 +1,12 @@
 import type { ReactNode } from "react";
 import { AgentComplianceChips } from "./_components/verdict";
 import { AgentOrigin } from "./_components/agent-origin";
-import { dataDir } from "../lib/db";
-import { complianceForAgent, ROLLUP_RUN_COUNT } from "../lib/insights";
-import { listRegistrations } from "../lib/registration";
-import { listAgents, readStore } from "../lib/store";
+import { ROLLUP_RUN_COUNT, agentsView } from "../lib/views/build";
 
 export const dynamic = "force-dynamic";
 
 export default function AgentsPage(): ReactNode {
-  const store = readStore();
-  const agents = listAgents(store);
-  // MAR-428. Read from the registration directory rather than from the store,
-  // because ownership is a fact about a file the runner reads, and a second copy
-  // of it in the database would be free to disagree with the thing that matters.
-  const registrations = new Map(
-    listRegistrations(dataDir).map((registration) => [registration.agent_id, registration]),
-  );
+  const { agents } = agentsView();
 
   return (
     <>
@@ -56,7 +46,7 @@ export default function AgentsPage(): ReactNode {
                   </td>
                   <td className="wrap">{agent.goal}</td>
                   <td>
-                    <AgentOrigin registration={registrations.get(agent.name)} />
+                    <AgentOrigin origin={agent.origin} />
                   </td>
                   <td>{agent.plan_source}</td>
                   <td>{agent.build_target}</td>
@@ -64,9 +54,7 @@ export default function AgentsPage(): ReactNode {
                   <td>{agent.automation_clearance}</td>
                   <td>{agent.run_count}</td>
                   <td>
-                    <AgentComplianceChips
-                      compliance={complianceForAgent(agent.name, store)}
-                    />
+                    <AgentComplianceChips compliance={agent.compliance} />
                   </td>
                 </tr>
               ))}

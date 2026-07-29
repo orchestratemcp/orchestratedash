@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { ConnectionChecklist } from "../_components/connection-checklist";
-import { deriveConnectionRequirements } from "../../lib/connections";
-import { listAgents, listConnectionCapableAgents, readStore } from "../../lib/store";
+import { connectionsView } from "../../lib/views/build";
 
 export const dynamic = "force-dynamic";
 
@@ -18,9 +17,7 @@ export const dynamic = "force-dynamic";
  * old to declare any" are different facts.
  */
 export default function ConnectionsPage(): ReactNode {
-  const store = readStore();
-  const agents = listConnectionCapableAgents(store);
-  const olderAgents = listAgents(store).filter((agent) => agent.manifest_version === 1);
+  const { agents, older_agent_names: olderAgents } = connectionsView();
 
   return (
     <>
@@ -42,12 +39,12 @@ export default function ConnectionsPage(): ReactNode {
           </p>
         </div>
       ) : (
-        agents.map(({ name, manifest }) => (
+        agents.map(({ name, rows }) => (
           <section key={name} className="agent-connections">
             <h2>
               <code>{name}</code>
             </h2>
-            <ConnectionChecklist rows={deriveConnectionRequirements(manifest)} />
+            <ConnectionChecklist rows={rows} />
           </section>
         ))
       )}
@@ -58,7 +55,7 @@ export default function ConnectionsPage(): ReactNode {
             ? "1 imported agent uses"
             : `${olderAgents.length} imported agents use`}{" "}
           a v1 manifest, which cannot declare connections:{" "}
-          {olderAgents.map((agent) => agent.name).join(", ")}. DASH does not
+          {olderAgents.join(", ")}. DASH does not
           guess what they need.
         </p>
       ) : null}

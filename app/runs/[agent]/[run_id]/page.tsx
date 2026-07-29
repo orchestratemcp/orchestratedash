@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { RunVerdictChips } from "../../../_components/verdict";
-import { analysisForRun, eventsForRun } from "../../../../lib/insights";
-import { readStore } from "../../../../lib/store";
+import { runView } from "../../../../lib/views/build";
 
 export const dynamic = "force-dynamic";
 
@@ -21,19 +20,13 @@ export default async function RunDetailPage({
   const agent = decodeURIComponent(agentParam);
   const runId = decodeURIComponent(runParam);
 
-  const store = readStore();
-  const events = eventsForRun(agent, runId, store);
-  if (events.length === 0) {
+  const view = runView(agent, runId);
+  if (!view.found) {
     notFound();
   }
 
-  const analysis = analysisForRun(agent, runId, store);
-  const manifest = store.agents[agent]?.manifest;
-  const plannedRoute = [...(manifest?.planned_route ?? [])].sort(
-    (a, b) => a.step - b.step,
-  );
-  const executedSet = new Set(analysis?.executed_route ?? []);
-  const plannedSet = new Set(plannedRoute.map((entry) => entry.component_id));
+  const { events, analysis, planned_route: plannedRoute } = view;
+  const unplannedSet = new Set(view.unplanned_component_ids);
 
   const clean =
     analysis !== null &&
@@ -117,7 +110,7 @@ export default async function RunDetailPage({
                     <td>{entry.risk_level}</td>
                     <td>{entry.model_tier}</td>
                     <td>
-                      {executedSet.has(entry.component_id) ? (
+                      {entry.executed ? (
                         <span className="chip chip-ok">ran</span>
                       ) : (
                         <span className="chip chip-warn">never ran</span>
@@ -150,8 +143,7 @@ export default async function RunDetailPage({
                 const unplanned =
                   event.type === "step_started" &&
                   event.component_id !== undefined &&
-                  manifest !== undefined &&
-                  !plannedSet.has(event.component_id);
+                  unplannedSet.has(event.component_id);
                 return (
                   <tr key={event.seq}>
                     <td>{event.seq}</td>

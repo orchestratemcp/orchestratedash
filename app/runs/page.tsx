@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
 import { RunVerdictChips } from "../_components/verdict";
-import { listAnalyzedRuns } from "../../lib/insights";
+import { runsView } from "../../lib/views/build";
 
 export const dynamic = "force-dynamic";
 
 export default function RunsPage(): ReactNode {
-  const runs = listAnalyzedRuns();
+  const { runs } = runsView();
 
   return (
     <>

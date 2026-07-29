@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ManagedRegistration } from "../../lib/registration";
+import type { AgentOriginView } from "../../lib/views/types";
 
 /**
  * Where an agent came from, said in one short phrase (MAR-428).
@@ -18,27 +18,28 @@ import type { ManagedRegistration } from "../../lib/registration";
  * - **Watched only.** A manifest was imported but nothing on this computer runs
  *   it. Saying "watched only" rather than showing an empty cell is the
  *   difference between a fact and a gap.
+ *
+ * MAR-432 changed what this is given, not what it renders. It used to take a
+ * whole `ManagedRegistration`, which was free when the page and the registration
+ * shared a process and is not free now that the page is a renderer on the other
+ * side of a boundary — see `AgentOriginView` for what stopped crossing it.
  */
-export function AgentOrigin({
-  registration,
-}: {
-  registration: ManagedRegistration | undefined;
-}): ReactNode {
-  if (registration === undefined) {
+export function AgentOrigin({ origin }: { origin: AgentOriginView }): ReactNode {
+  if (origin.kind === "watched_only") {
     return <span className="muted">Watched only</span>;
   }
 
-  if (registration.dash.owner !== "dash_handoff") {
+  if (origin.kind === "set_up_by_hand") {
     return <span title="DASH will not remove a registration it did not create.">Set up by hand</span>;
   }
 
   return (
-    <span title={registration.dash.source_project ?? undefined}>
+    <span title={origin.source_project}>
       Added through DASH
-      {registration.dash.source_project === undefined ? null : (
+      {origin.source_project === undefined ? null : (
         <>
           {" "}
-          <span className="muted">from {folderName(registration.dash.source_project)}</span>
+          <span className="muted">from {folderName(origin.source_project)}</span>
         </>
       )}
     </span>
