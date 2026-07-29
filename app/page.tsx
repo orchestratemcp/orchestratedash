@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 import { AgentComplianceChips } from "./_components/verdict";
+import { AgentOrigin } from "./_components/agent-origin";
+import { dataDir } from "../lib/db";
 import { complianceForAgent, ROLLUP_RUN_COUNT } from "../lib/insights";
+import { listRegistrations } from "../lib/registration";
 import { listAgents, readStore } from "../lib/store";
 
 export const dynamic = "force-dynamic";
@@ -8,22 +11,25 @@ export const dynamic = "force-dynamic";
 export default function AgentsPage(): ReactNode {
   const store = readStore();
   const agents = listAgents(store);
+  // MAR-428. Read from the registration directory rather than from the store,
+  // because ownership is a fact about a file the runner reads, and a second copy
+  // of it in the database would be free to disagree with the thing that matters.
+  const registrations = new Map(
+    listRegistrations(dataDir).map((registration) => [registration.agent_id, registration]),
+  );
 
   return (
     <>
       <h1>Agents</h1>
       <p className="lede">
-        Agents whose <code>agent.manifest.json</code> has been imported into this
-        local DASH.
+        Every agent this DASH knows about, and where each one came from.
       </p>
 
       {agents.length === 0 ? (
         <div className="empty">
           <p>
-            No agents imported yet. <a href="/agents/add">Add an agent</a> by
-            importing the <code>agent.manifest.json</code> OrchestrateKit
-            exported — the bundled examples under <code>examples/</code> work
-            too.
+            No agents yet. <a href="/agents/add">Add one</a> — it takes two
+            commands and needs no accounts or passwords.
           </p>
         </div>
       ) : (
@@ -33,6 +39,7 @@ export default function AgentsPage(): ReactNode {
               <tr>
                 <th>Agent</th>
                 <th>Goal</th>
+                <th>Where it came from</th>
                 <th>Plan source</th>
                 <th>Build target</th>
                 <th>Planned steps</th>
@@ -48,6 +55,9 @@ export default function AgentsPage(): ReactNode {
                     <code>{agent.name}</code>
                   </td>
                   <td className="wrap">{agent.goal}</td>
+                  <td>
+                    <AgentOrigin registration={registrations.get(agent.name)} />
+                  </td>
                   <td>{agent.plan_source}</td>
                   <td>{agent.build_target}</td>
                   <td>{agent.planned_steps}</td>

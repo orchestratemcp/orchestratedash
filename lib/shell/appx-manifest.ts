@@ -10,6 +10,8 @@
  * is exactly why they live here instead of in the template.
  */
 
+import { HANDOFF_SCHEME } from "../handoff";
+
 const MSIX_VERSION_PART = /^\d{1,5}$/;
 const MAX_MSIX_VERSION_PART = 65535;
 
@@ -82,6 +84,48 @@ export function assertOnlyRunFullTrustCapability(manifestXml: string): void {
         `found ${tag} Name="${name}". A packaged Win32 app runs full trust unless ` +
         `explicitly sandboxed as an AppContainer; declaring anything else here is ` +
         `either a mistake or an undecided change of trust level.`,
+    );
+  }
+}
+
+/**
+ * MAR-428's other manifest computation: the handoff scheme is declared, and it
+ * is the scheme the code actually listens for.
+ *
+ * The failure this prevents is silent in exactly the wrong way. An installed
+ * DASH whose manifest declares no protocol, or declares a differently-spelled
+ * one, still launches, still runs agents, still passes every other check — and
+ * "Open in DASH" simply does nothing, on the machine of the person for whom this
+ * whole feature exists. There is no error to see, because Windows has nothing to
+ * launch and the agent's terminal has already printed a link that looks fine.
+ *
+ * So the scheme is read from `lib/handoff.ts` rather than written here as a
+ * literal. Renaming it in the code and forgetting the manifest becomes a failed
+ * build instead of a feature that quietly stops existing in the installed
+ * product while continuing to work on every developer's machine.
+ *
+ * The rest of the extension — the display name, the element's placement inside
+ * `<Application>` — is committed text in `build/appx/AppxManifest.xml`, on the
+ * same reasoning as the capability block: hand-written and reviewable in a diff.
+ */
+export function assertDeclaresHandoffProtocol(manifestXml: string): void {
+  const extensions = manifestXml.match(/<Extensions>([\s\S]*?)<\/Extensions>/);
+  if (extensions === null) {
+    throw new Error(
+      "The manifest declares no <Extensions>, so an installed DASH would not " +
+        `claim the ${HANDOFF_SCHEME}:// scheme and "Open in DASH" would silently do nothing.`,
+    );
+  }
+
+  const protocols = [...extensions[1].matchAll(/<uap:Protocol\b[^>]*?\bName="([^"]*)"/g)].map(
+    (match) => match[1],
+  );
+
+  if (!protocols.includes(HANDOFF_SCHEME)) {
+    throw new Error(
+      `The manifest declares ${protocols.length === 0 ? "no protocol" : `[${protocols.join(", ")}]`}, ` +
+        `but the code listens for "${HANDOFF_SCHEME}://". An installed DASH would never ` +
+        `receive a handoff link.`,
     );
   }
 }

@@ -41,7 +41,31 @@ The shell is where secrets and audited commands live — see
 [`electron/`](electron/README.md). It is not packaged yet: no installer, no
 signing, no auto-update.
 
-Import the example agent and send it an example run event:
+### Make an agent and add it (MAR-428)
+
+The path a person actually takes. No manifest to find, no JSON to transcribe,
+no file picker:
+
+```sh
+pnpm build:agent-kit
+node agent-kit/dist/cli.mjs my-first-agent
+cd my-first-agent
+npm run open-in-dash
+```
+
+DASH comes to the front and asks whether to add it. Say yes and it is
+registered, started, and still running after you close the window. The agent it
+creates needs no accounts and no passwords.
+
+`node agent-kit/dist/cli.mjs` rather than `npx create-dash-agent` because the
+package is not published yet — see [`agent-kit/`](agent-kit/README.md) and
+[`docs/agent-handoff.md`](docs/agent-handoff.md), which covers the handoff
+contract, what stops a web page from using it, and what removing an agent does
+and does not delete.
+
+### The developer path
+
+Import an example agent and send it an example run event:
 
 ```sh
 curl -X POST http://localhost:3000/api/agents \

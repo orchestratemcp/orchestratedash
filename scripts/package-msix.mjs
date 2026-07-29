@@ -26,7 +26,11 @@ import { fileURLToPath } from "node:url";
 
 import { packager } from "@electron/packager";
 
-import { assertOnlyRunFullTrustCapability, toMsixVersion } from "../lib/shell/appx-manifest.ts";
+import {
+  assertDeclaresHandoffProtocol,
+  assertOnlyRunFullTrustCapability,
+  toMsixVersion,
+} from "../lib/shell/appx-manifest.ts";
 import { generatePlaceholderPng } from "../lib/shell/placeholder-icon.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -101,8 +105,15 @@ writeFileSync(stagedManifestPath, renderedManifest, "utf8");
 
 // Read back from disk rather than checking the string still in memory — the
 // point of this call is to verify the bytes MakeAppx will actually pack.
-assertOnlyRunFullTrustCapability(readFileSync(stagedManifestPath, "utf8"));
-console.log(`[package-msix] manifest verified: runFullTrust only, version ${msixVersion}`);
+const stagedManifest = readFileSync(stagedManifestPath, "utf8");
+assertOnlyRunFullTrustCapability(stagedManifest);
+// MAR-428. Without this, a manifest that lost its protocol declaration would
+// produce a package that installs, runs and hosts agents perfectly, and in
+// which "Open in DASH" silently does nothing.
+assertDeclaresHandoffProtocol(stagedManifest);
+console.log(
+  `[package-msix] manifest verified: runFullTrust only, dash:// declared, version ${msixVersion}`,
+);
 
 console.log("[package-msix] generating placeholder tile assets (no DASH icon exists yet)");
 const assetsDir = path.join(outputDir, "Assets");

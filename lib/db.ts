@@ -240,6 +240,40 @@ const MIGRATIONS: readonly string[] = [
   CREATE INDEX command_audit_by_correlation ON command_audit (correlation_id);
   CREATE INDEX command_audit_by_agent ON command_audit (agent, decided_at);
   `,
+
+  // ---------------------------------------------------------------------
+  // MAR-428 (DASH-11b): the handoff ledger.
+  //
+  // Every `dash://handoff` link DASH has decided about, and what it decided.
+  // ---------------------------------------------------------------------
+  `
+  -- One row per handoff DASH reached a decision about, including the ones it
+  -- refused. A ledger that recorded only successes could not answer "why did
+  -- nothing happen when I clicked that", which is the question a user actually
+  -- asks — and an expired or mismatched link is exactly the event worth having
+  -- written down.
+  --
+  -- **The nonce is not here, and must never be.** It is proof of possession of
+  -- the handoff file, it is single-use, and it has no purpose after the decision
+  -- is made. Storing it would turn a value that evaporates into one DASH keeps.
+  --
+  -- source is the agent's project directory: a path the user chose and can
+  -- recognise. It is not a secret, and it is the one piece of context that makes
+  -- a row in here mean something to a person six weeks later.
+  CREATE TABLE agent_handoffs (
+    handoff_id TEXT PRIMARY KEY,
+    agent      TEXT NOT NULL,
+    outcome    TEXT NOT NULL,
+    source     TEXT NOT NULL,
+    -- Plain language, never a credential and never a command line. The command
+    -- line lives in the registration file, which is the artifact that actually
+    -- needs it; repeating it in a durable ledger would spread it for nothing.
+    detail     TEXT,
+    decided_at TEXT NOT NULL
+  );
+
+  CREATE INDEX agent_handoffs_by_agent ON agent_handoffs (agent, decided_at);
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

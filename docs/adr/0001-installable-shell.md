@@ -392,3 +392,85 @@ produce.
   against it yet because no such UX exists.
 - MAR-428 (Agent Kit, auto-registration) is unrelated to this amendment and
   was not started here.
+
+---
+
+## Amendment 3 — DASH accepts an instruction from outside itself (MAR-428, DASH-11b)
+
+- **Status:** Accepted, 2026-07-28
+- **Amends:** the Decision's renderer/main/`SecureStore` structure by adding a
+  third way in, and Amendment 1's "Still not decided" list, which named Agent
+  Kit distribution and agent auto-registration.
+
+### What changed
+
+Until now every instruction DASH acted on originated inside DASH: a click in
+the renderer, crossing one IPC boundary into main. The URL allowlist and the
+narrow preload were sufficient because there was no other door.
+
+MAR-428 adds one. DASH registers the `dash://` scheme and accepts a handoff
+link from the operating system — from a terminal the user is looking at, and
+therefore also, in principle, from any web page they visit. That is a new
+entry surface into the process that owns the vault and the command channel, and
+it is worth stating plainly rather than filing under "a feature".
+
+### Why the existing posture does not cover it
+
+`contextIsolation`, `sandbox` and the preload allowlist defend the *renderer*.
+A deep link does not go through the renderer. It arrives in main, as a string,
+from an untrusted source, and what it is asking for is that DASH hand its
+runner a command line to spawn — the single most consequential thing DASH can
+be asked to do.
+
+So the answer is not a wider allowlist. It is three properties, in
+`lib/handoff.ts` and `lib/handoff-flow.ts`:
+
+1. **The URL cannot carry a command line.** It names a file and nothing else.
+   A URL is attacker-authored by construction; a file at an absolute path
+   requires the ability to write to that user's disk.
+2. **The link must prove the opener read that file.** A single-use nonce, held
+   inside the handoff, compared in constant time. This is what a page that
+   guessed a project path cannot produce.
+3. **The user decides, every time, in a native modal.** Not a page: DASH's
+   packaged renderer is a placeholder, so a consent question living only in the
+   Next app would not exist in the installed product. A native modal is also
+   unspoofable by page content and cannot be dismissed by a renderer bug.
+
+The first two narrow *who may ask*. The third decides *whether it happens*.
+Neither substitutes for the other.
+
+### What is preserved
+
+- **The audited chokepoint.** Removing an agent is a `runner.*` command and
+  goes through `lib/shell/ipc.ts` like everything else. Adding one does not:
+  it originates outside the renderer, so it has its own record — the
+  `agent_handoffs` ledger — which records refusals as well as successes,
+  because "nothing happened when I clicked that" is the question a user
+  actually asks.
+- **The renderer posture.** Untouched. Nothing about this reaches the renderer.
+- **The runner as a separate trust domain.** The reload route re-reads the
+  registration directory itself and ignores its request body, so DASH still
+  chooses *which* registration the runner acts on and never *what* it runs.
+
+### Newly accepted costs
+
+- **DASH is now reachable from a link.** Every consequence of that is bounded
+  by the three properties above, and by the fact that the most a valid,
+  unexpired, correctly-nonced link can achieve without the user is a dialog.
+- **A second registration writer.** The registration directory used to have
+  exactly one author — a human with an editor. It now has two, so ownership is
+  recorded in the file itself and DASH refuses to delete a registration it did
+  not create.
+- **One more thing that must be true in the packaged manifest.** A package
+  whose `windows.protocol` extension is missing installs, runs and hosts agents
+  perfectly, and "Open in DASH" silently does nothing.
+  `assertDeclaresHandoffProtocol` turns that into a failed build.
+
+### Still not decided
+
+- **Publishing `create-dash-agent`.** The package is `private: true`. Choosing
+  a registry name is Henrik's, not this issue's.
+- **Whether the DASH UI should offer removal.** The command exists and is
+  audited; the button belongs with MAR-423's UX pass.
+- **The packaged deep link has not been exercised on a real install.**
+  Sideloading touches the certificate store and is Henrik's step.

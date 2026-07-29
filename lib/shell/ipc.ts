@@ -137,6 +137,19 @@ export const COMMANDS = {
     mutates: false,
     irreversible: false,
   },
+  "runner.remove": {
+    effect:
+      "Stop an agent DASH added and delete DASH's registration for it. The agent's own folder is untouched.",
+    payload_keys: ["agent_id"],
+    required_keys: ["agent_id"],
+    mutates: true,
+    // Not irreversible in the sense this flag means — nothing happens in the
+    // world that cannot be undone by adding the agent again from its folder,
+    // which is one command. What *is* deleted is DASH's own record, and
+    // `removeRegistration` refuses to touch a registration DASH did not create,
+    // so the blast radius is bounded by ownership rather than by this flag.
+    irreversible: false,
+  },
 
   "agent.approve": {
     effect: "Approve a guarded action the agent is waiting on. The runner performs it.",
@@ -229,6 +242,14 @@ export const RUNNER_LIFECYCLE = {
   "runner.start": "start",
   "runner.stop": "stop",
   "runner.status": "status",
+  // MAR-428. Not forwarded to the runner's `/lifecycle` route: removing an
+  // agent stops a process *and* deletes files DASH owns *and* forgets a store
+  // row, which is a sequence only the shell can perform in the right order.
+  // `electron/main.ts` handles this action itself. It lives in this map anyway
+  // because it is the same *kind* of thing — DASH acting on something it
+  // launched — and giving it a fourth command family would buy nothing but a
+  // fourth place to forget the audit record.
+  "runner.remove": "remove",
 } as const;
 
 export type RunnerCommandName = keyof typeof RUNNER_LIFECYCLE;

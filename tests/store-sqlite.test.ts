@@ -70,10 +70,11 @@ describe("schema", () => {
     const handle = db.db();
 
     // One per shipped migration: 0 is the MAR-416 store, 1 is MAR-417's
-    // command channel. Asserted as a number rather than as MIGRATIONS.length so
-    // that appending a migration is a deliberate edit here too.
+    // command channel, 2 is MAR-428's handoff ledger. Asserted as a number
+    // rather than as MIGRATIONS.length so that appending a migration is a
+    // deliberate edit here too.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(2);
+    expect(version.user_version).toBe(3);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -88,6 +89,7 @@ describe("schema", () => {
     expect(tables).toContain("command_nonces");
     expect(tables).toContain("command_results");
     expect(tables).toContain("command_audit");
+    expect(tables).toContain("agent_handoffs");
   });
 
   it("uses WAL journalling, which is what replaces write-then-rename", async () => {
@@ -111,7 +113,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(2);
+    ).toBe(3);
   });
 
   /**
