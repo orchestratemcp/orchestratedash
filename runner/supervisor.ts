@@ -31,7 +31,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 import { isManifestV2, validateManifest } from "../lib/contracts";
-import { sameRegistration, type AgentRegistration } from "../lib/registration";
+import { resolveSpawnCommand, sameRegistration, type AgentRegistration } from "../lib/registration";
 import type { AgentCommand } from "../lib/workspace";
 import { createLineReader, encodeCommand, parseAgentMessage } from "./protocol";
 import type { ProcessFacts } from "./state";
@@ -139,6 +139,7 @@ const FORBIDDEN_ENVIRONMENT = ["DASH_RUNNER_TOKEN", "DASH_SHELL_", "DASH_CONTRAC
 export function childEnvironment(
   registration: AgentRegistration,
   source: Record<string, string | undefined> = process.env,
+  execPath: string = process.execPath,
 ): Record<string, string> {
   const environment: Record<string, string> = {};
   for (const key of INHERITED_ENVIRONMENT) {
@@ -150,6 +151,11 @@ export function childEnvironment(
   for (const [key, value] of Object.entries(registration.env ?? {})) {
     environment[key] = value;
   }
+  // Applied *after* the registration's own block, so a registration cannot ask
+  // for DASH's interpreter and then unset the one variable that makes it an
+  // interpreter — which would spawn the DASH shell itself, windows and all,
+  // with an agent's script as its argument.
+  Object.assign(environment, resolveSpawnCommand(registration.command, execPath).env);
   assertNoRunnerSecrets(environment);
   return environment;
 }
@@ -377,9 +383,15 @@ export class Supervisor {
     }
     entry.commands = manifest.commands;
 
+    // Resolved here, at the moment of spawning, and never written down: see
+    // `BUNDLED_NODE_COMMAND`. The runner still chooses nothing about *what*
+    // runs — the registration names the script and the arguments — only how to
+    // reach the interpreter DASH ships.
+    const spawning = resolveSpawnCommand(entry.registration.command, process.execPath);
+
     let child: ChildProcess;
     try {
-      child = spawn(entry.registration.command, entry.registration.args, {
+      child = spawn(spawning.command, entry.registration.args, {
         cwd: entry.registration.cwd,
         // `NodeJS.ProcessEnv` is augmented in this repo (via Next's types) to
         // require NODE_ENV. A child environment built from an allowlist
