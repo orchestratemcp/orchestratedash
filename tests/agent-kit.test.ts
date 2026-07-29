@@ -39,10 +39,17 @@ const TEMPLATE_AGENT = readFileSync(path.join(KIT_ROOT, "template", "agent.mjs")
 
 const roots: string[] = [];
 const supervisors: Supervisor[] = [];
-afterAll(() => {
+afterAll(async () => {
   for (const supervisor of supervisors) {
     supervisor.stopAll();
   }
+  await waitFor(
+    () =>
+      supervisors.every((supervisor) =>
+        supervisor.list().every((agentId) => supervisor.facts(agentId)?.pid === null),
+      ),
+    "generated agent processes to stop",
+  );
   for (const root of roots) {
     rmSync(root, { recursive: true, force: true });
   }

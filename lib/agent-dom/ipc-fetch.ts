@@ -113,11 +113,20 @@ export function ipcFetch(socketPath: string): typeof globalThis.fetch {
       // and an `error` event with no listener at all is an uncaught exception.
       // Merely having this listener is most of the point; when the response is
       // already in hand the socket is also finished with, so it is released.
+      //
+      // Remove the listener with the request. The HTTP agent may reuse one
+      // named-pipe socket, and a state poll plus telemetry drain otherwise adds
+      // two permanent listeners every five seconds until Node warns about a
+      // leak.
       request.on("socket", (socket) => {
-        socket.on("error", () => {
+        const onSocketError = (): void => {
           if (settled) {
             socket.destroy();
           }
+        };
+        socket.on("error", onSocketError);
+        request.once("close", () => {
+          socket.off("error", onSocketError);
         });
       });
 

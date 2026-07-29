@@ -71,6 +71,11 @@ Enforced, not intended:
   those names belong to DASH and the runner. Refusing to *record* one means the
   failure lands where a person can act on it, rather than at the point the
   runner's `assertNoRunnerSecrets` declines to start the agent.
+- Runner-hosted telemetry does not create an exception. The agent emits each
+  telemetry v1 candidate over its existing stdout NDJSON pipe; the runner
+  buffers it, and DASH main drains it over the authenticated runner channel.
+  `DASH_INGEST_URL` and `DASH_INGEST_TOKEN` therefore remain absent from the
+  handoff, registration and child environment.
 - The ledger in `agent_handoffs` has no column for the nonce and none for a
   command line.
 - The manifest schema already forbids credential values, and `agent.manifest.v2`

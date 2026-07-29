@@ -10,8 +10,9 @@
  *    unacknowledged rather than assumed to have worked, so the acknowledgement
  *    below is not a formality.
  * 3. **It records what it did.** Every run appends events to `runs/events.jsonl`
- *    in the telemetry v1 format, and posts them to DASH if this process was
- *    given somewhere to post them.
+ *    in the telemetry v1 format and emits them on the runner pipe. An agent run
+ *    outside the bundled runner can still post to DASH when explicitly given a
+ *    remote ingest URL.
  *
  * The part that is yours is `runOnce`. Everything else is plumbing you should
  * be able to ignore.
@@ -127,13 +128,18 @@ const ingestToken = process.env.DASH_INGEST_TOKEN;
  * `seq` is monotonic within a run, which is what lets a monitor spot a gap.
  */
 function emit(event) {
-  const line = JSON.stringify({ event_version: 1, agent: AGENT_NAME, ...event });
+  const emitted = { event_version: 1, agent: AGENT_NAME, ...event };
+  const line = JSON.stringify(emitted);
   try {
     mkdirSync(runsDir, { recursive: true });
     appendFileSync(path.join(runsDir, "events.jsonl"), `${line}\n`, "utf8");
   } catch (error) {
     log(`could not record an event: ${String(error)}`);
   }
+
+  // The runner frames and buffers this candidate. Electron main applies the
+  // canonical telemetry schema at ingest, exactly as POST /api/events does.
+  send({ type: "telemetry", event: emitted });
 
   if (ingestUrl === undefined) {
     return;

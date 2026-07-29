@@ -5,7 +5,9 @@
  * This is the seam that makes an accepted command have an effect. DASH decides
  * whether a command may run, the runner decides it again independently, and
  * then *something has to actually tell the agent*. That something is a line of
- * JSON written to a process the runner started.
+ * JSON written to a process the runner started. The same pipe carries state and
+ * telemetry in the other direction, so a hosted agent never needs a listening
+ * port or an ingest credential in its environment.
  *
  * ## Why stdin/stdout and not another HTTP hop
  *
@@ -103,7 +105,21 @@ export interface AgentStateMessage {
   state: Record<string, unknown>;
 }
 
-export type AgentMessage = AgentAckMessage | AgentStateMessage;
+/**
+ * One telemetry v1 candidate.
+ *
+ * `event` deliberately stays `unknown` here. This parser owns the NDJSON
+ * envelope, not the telemetry contract: Electron main drains the runner and
+ * hands every candidate to `ingestEvents`, the same validation boundary used by
+ * `POST /api/events`. Keeping a malformed candidate recognizable is what lets
+ * that boundary reject and record it without discarding valid neighbours.
+ */
+export interface AgentTelemetryMessage {
+  type: "telemetry";
+  event: unknown;
+}
+
+export type AgentMessage = AgentAckMessage | AgentStateMessage | AgentTelemetryMessage;
 
 /**
  * Parse one line of agent output.
@@ -156,6 +172,10 @@ export function parseAgentMessage(line: string): AgentMessage | null {
       return null;
     }
     return { type: "state", state: state as Record<string, unknown> };
+  }
+
+  if (message["type"] === "telemetry" && Object.hasOwn(message, "event")) {
+    return { type: "telemetry", event: message["event"] };
   }
 
   return null;

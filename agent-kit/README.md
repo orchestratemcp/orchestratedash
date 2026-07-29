@@ -38,10 +38,12 @@ Three things, because they are the three the runner and the contracts require:
   one MAR-426's `export_build_brief` emits for a runner-hosted agent — same
   runtime class, same control location id, same four commands — so a scaffold and
   a build brief are the same kind of document rather than two dialects.
-- **Telemetry v1.** Every run appends events to `runs/events.jsonl` and posts
-  them to DASH when this process was given somewhere to post them. The file is
-  the primary record on purpose: an agent whose history exists only in whatever
-  happened to be listening has no history.
+- **Telemetry v1.** Every run appends events to `runs/events.jsonl` and emits
+  them on the runner protocol. The runner buffers them and DASH drains them on
+  its existing state poll, with no port, ingest secret or `DASH_*` child
+  environment. A remotely hosted process can still post when explicitly given
+  the HTTP ingest URL. The file is the primary record on purpose: an agent whose
+  history exists only in whatever happened to be listening has no history.
 - **The runner protocol.** Newline-delimited JSON over the child's own stdin and
   stdout, answered from the first line. Acknowledgement is not a formality — the
   runner settles an unacknowledged command as *unacknowledged*, so an agent that

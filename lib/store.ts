@@ -186,6 +186,17 @@ export interface IngestResult {
   rejected: Array<{ index: number; errors: string[] }>;
 }
 
+export interface IngestOptions {
+  /**
+   * Optional transport provenance, one entry per candidate.
+   *
+   * The HTTP ingest path omits this and is unchanged. The runner path supplies
+   * it so one hosted child cannot publish a schema-valid event under another
+   * agent's name.
+   */
+  sourceAgents?: readonly string[];
+}
+
 /**
  * Accepts one event or a batch. Each item is validated independently so a
  * single malformed event cannot discard the rest of a batch.
@@ -193,7 +204,7 @@ export interface IngestResult {
  * The accepted items go in as one transaction: a batch is now atomic, where the
  * JSON store rewrote the whole document and a crash mid-write risked the lot.
  */
-export function ingestEvents(input: unknown): IngestResult {
+export function ingestEvents(input: unknown, options: IngestOptions = {}): IngestResult {
   const items = Array.isArray(input) ? input : [input];
   const accepted: RunEvent[] = [];
   const rejected: IngestResult["rejected"] = [];
@@ -201,7 +212,15 @@ export function ingestEvents(input: unknown): IngestResult {
   items.forEach((item, index) => {
     const result = validateEvent(item);
     if (result.ok) {
-      accepted.push(result.value);
+      const sourceAgent = options.sourceAgents?.[index];
+      if (sourceAgent !== undefined && result.value.agent !== sourceAgent) {
+        rejected.push({
+          index,
+          errors: ["/agent must match the runner-hosted source"],
+        });
+      } else {
+        accepted.push(result.value);
+      }
     } else {
       rejected.push({ index, errors: result.errors });
     }
