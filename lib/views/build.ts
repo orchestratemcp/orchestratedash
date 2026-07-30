@@ -23,6 +23,7 @@
 
 import { heldCredentials } from "../connection-actions";
 import { connectableFields } from "../connection-credentials";
+import { describeStoreDamage } from "../copy/recovery";
 import { deriveConnectionRequirements, type ConnectionSourceManifest } from "../connections";
 import {
   readAgentDomState,
@@ -108,6 +109,9 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
       origin: agentOrigin(registrations.get(agent.name)),
       compliance: complianceForAgent(agent.name, store),
     })),
+    // Composed here rather than in the page, so both hosts hand the renderer the
+    // same sentence — the property this module exists to keep.
+    damage: describeStoreDamage(store.unreadable),
   };
 }
 

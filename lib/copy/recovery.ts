@@ -347,6 +347,61 @@ export function describeAuthorizationFailure(
  * document this build does not offer, which is a wiring mistake — and says so
  * rather than inventing a plausible-sounding cause.
  */
+/**
+ * What to say when DASH read its records and some of them were not there any
+ * more.
+ *
+ * A fourth kind of store failure, and the distinction worth keeping is against
+ * `describeViewFailure("unreachable")` directly above. That one means *nothing*
+ * arrived and says "nothing is lost" — which is true when a read did not
+ * complete, and would be a lie here. This one means the read succeeded and came
+ * back short. Collapsing the two would let a page tell a user nothing is lost
+ * while showing them a list with an agent missing from it.
+ *
+ * `actor` is `"dash"`, and that is the honest assignment even though the usual
+ * cause is a machine losing power or a process being killed. The user cannot
+ * repair a database and must not be asked to try, and the next action is
+ * deliberately not "try again": a re-read returns the same damage, so offering a
+ * retry would be sending them round a loop DASH already knows the end of.
+ *
+ * The counts are rendered, the names are not. `agents` is a list of agent names
+ * — the user's own words, and the only way "which one is missing?" gets an
+ * answer — but nothing derived from the damaged bytes appears anywhere: not the
+ * parser's message, not the surviving fragment, not its length.
+ */
+export function describeStoreDamage(unreadable: {
+  agents: readonly string[];
+  events: number;
+}): Recovery | null {
+  const agentCount = unreadable.agents.length;
+  if (agentCount === 0 && unreadable.events === 0) {
+    // Null for the same reason `describeConnectionCondition` returns null for a
+    // healthy connection: an intact store is not a failure state, and a surface
+    // that rendered a recovery for one would be teaching people to ignore them.
+    return null;
+  }
+
+  const headline =
+    agentCount === 0
+      ? "Some of DASH's own records are damaged and could not be read."
+      : agentCount === 1
+        ? `DASH could not read what it stored about ${String(unreadable.agents[0])}.`
+        : `DASH could not read what it stored about ${String(agentCount)} of your agents: ${unreadable.agents.join(", ")}.`;
+
+  return {
+    headline,
+    // Says both halves plainly: what is still here, and what is not coming back
+    // by waiting. A user who is told only the first will assume the second.
+    meaning:
+      "Everything else on this page is complete and correct. The damaged records cannot be repaired by reopening DASH, and they were damaged on this computer rather than lost in transit — so nothing was sent anywhere and no sign-in was affected.",
+    next_action:
+      agentCount === 0
+        ? "Report this. DASH will keep working without the damaged records."
+        : "Add the agent again to replace what was lost. Its sign-ins are in your system's keyring and are untouched.",
+    actor: "dash",
+  };
+}
+
 export function describeViewFailure(reason: "unreachable" | "refused"): Recovery {
   switch (reason) {
     case "unreachable":

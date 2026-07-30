@@ -31,14 +31,30 @@ export default function AgentsPage(): ReactNode {
         <ViewLoading what="your agents" />
       ) : state.status === "failed" ? (
         <ViewFailed recovery={state.recovery} />
-      ) : state.data.agents.length === 0 ? (
-        <div className="empty">
-          <p>
-            No agents yet. <a href="/agents/add">Add one</a> — it takes two
-            commands and needs no accounts or passwords.
-          </p>
-        </div>
       ) : (
+        <>
+          {/*
+            Above the list, not instead of it. Damage to one agent's record says
+            nothing about the others, and hiding a working list behind a notice
+            about a row that is gone would turn a partial loss into a total one
+            on screen — which is the failure this whole change exists to undo.
+          */}
+          {state.data.damage !== null ? <ViewFailed recovery={state.data.damage} /> : null}
+          {state.data.agents.length === 0 ? (
+            /*
+             * "No agents yet" is a claim about history, and it is false when the
+             * agents are in the store and unreadable. The recovery above already
+             * says what happened, so this says only what is true either way.
+             */
+            state.data.damage !== null ? null : (
+              <div className="empty">
+                <p>
+                  No agents yet. <a href="/agents/add">Add one</a> — it takes two
+                  commands and needs no accounts or passwords.
+                </p>
+              </div>
+            )
+          ) : (
         <div className="table-wrap">
           <table>
             <thead>
@@ -79,6 +95,8 @@ export default function AgentsPage(): ReactNode {
             </tbody>
           </table>
         </div>
+          )}
+        </>
       )}
     </>
   );

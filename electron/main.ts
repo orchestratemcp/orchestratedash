@@ -47,7 +47,7 @@ import { heldCredentials, performConnectionAction } from "../lib/connection-acti
 import { deliverableFields, type CredentialTarget } from "../lib/connection-credentials";
 import type { ConnectionSourceManifest } from "../lib/connections";
 import { parseOAuthCredential } from "../lib/oauth/credential";
-import { dataDir } from "../lib/db";
+import { closeDb, dataDir } from "../lib/db";
 import type { HandoffPorts } from "../lib/handoff-flow";
 import { findDeepLink } from "../lib/shell/deep-link";
 import { applicationMenu, type MenuAction, type MenuItemSpec } from "../lib/shell/menu";
@@ -772,5 +772,28 @@ if (typeof app !== "undefined") {
     // is deliberately left alone.
     stopPolling?.();
     stopPolling = null;
+  });
+
+  app.on("will-quit", () => {
+    /**
+     * Close the database, which nothing outside the tests had ever done.
+     *
+     * `lib/db.ts` opens in WAL mode, so committed data is durable whether or not
+     * this runs — that part was never in doubt and is not what this is for. What
+     * it buys is the *checkpoint*: closing the last connection folds the
+     * write-ahead log back into `dash.sqlite` and removes it, so the file DASH
+     * leaves behind between sessions is a single self-contained one.
+     *
+     * That matters because of what the file is subjected to here. A store that
+     * is only ever left mid-WAL is a store where every backup, every copy and
+     * every abrupt termination lands on a two-file structure that has to be
+     * recovered rather than simply read. Checkpointing on the way out means the
+     * quiet exit — the overwhelmingly common one — leaves nothing to recover.
+     *
+     * `will-quit` rather than `before-quit` because `before-quit` can be
+     * cancelled, and closing the handle out from under a quit that then does not
+     * happen would leave the app running with a store it has to reopen.
+     */
+    closeDb();
   });
 }

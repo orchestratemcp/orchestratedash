@@ -112,7 +112,9 @@ function addRegistration(agentId: string, owner: "dash_handoff" | "external"): v
 
 describe("agentsView", () => {
   it("is empty, not absent, when nothing has been imported", () => {
-    expect(agentsView()).toEqual({ agents: [] });
+    // `damage: null` rather than an absent key: an intact store states that it
+    // is intact. See `tests/store-damage.test.ts` for the other branch.
+    expect(agentsView()).toEqual({ agents: [], damage: null });
   });
 
   it("carries what the agents list renders", () => {

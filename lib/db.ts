@@ -472,7 +472,7 @@ function importLegacyJson(database: DatabaseSync): void {
           manifest.agent.name,
           manifest.manifest_version,
           JSON.stringify(manifest),
-          typeof stored?.imported_at === "string" ? stored.imported_at : now,
+          importedAt(stored?.imported_at, now),
         );
       result.agents += 1;
     }
@@ -492,6 +492,32 @@ function importLegacyJson(database: DatabaseSync): void {
 
     setMeta(database, LEGACY_IMPORT_KEY, JSON.stringify(result));
   });
+}
+
+/**
+ * A timestamp from the legacy file, or now.
+ *
+ * The old check was `typeof === "string"`, which accepted `""` — and `""` passes
+ * the column's `NOT NULL` while being no more a timestamp than `null` is. Every
+ * other field in a migrated row is re-validated on the way in (that is what
+ * `validateManifest` is doing three lines up); this one was trusted because it
+ * came from a file DASH wrote, which is the same reasoning the manifest is
+ * deliberately *not* given.
+ *
+ * `dash.json` is an ordinary file in the user's data directory. It can be edited,
+ * truncated, restored from a partial backup or written by a build that had a bug.
+ * The falsehood a bad value produces is small but permanent — an agent listed as
+ * imported at a time it was not — so an unusable value is replaced with the
+ * honest one: DASH first saw this row now.
+ */
+function importedAt(value: unknown, now: string): string {
+  if (typeof value !== "string") {
+    return now;
+  }
+  // Parseable as a date, and round-trips — which `new Date("")` does not, and
+  // neither does anything else the column would otherwise have accepted whole.
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? now : value;
 }
 
 /** What we expect to find in a `dash.json`. Everything is checked before use. */
