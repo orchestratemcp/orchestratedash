@@ -65,7 +65,7 @@
           { "id": "gmail.drafts.create", "label": "Create Gmail drafts", "access": "write" }
         ],
         "fields": [
-          { "id": "gmail-account", "label": "Gmail account", "purpose": "Authorize meeting-request reading and draft creation", "kind": "oauth_reauthorization", "required": true, "help": "Reconnect and test this account. Existing OAuth credentials are not copied." }
+          { "id": "gmail-account", "label": "Gmail account", "purpose": "Authorize meeting-request reading and draft creation", "kind": "oauth_reauthorization", "required": true, "help": "Reconnect and test this account. Existing OAuth credentials are not copied.", "technical": { "provider_scopes": ["https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/gmail.compose"] } }
         ],
         "validation_action": { "id": "connect-gmail", "label": "Reconnect and test Gmail", "behavior": "reconnect_test_switch" }
       },
@@ -80,7 +80,7 @@
           { "id": "calendar.events.create_after_approval", "label": "Create an approved calendar event", "access": "write" }
         ],
         "fields": [
-          { "id": "calendar-account", "label": "Calendar account", "purpose": "Authorize availability checks and approved event creation", "kind": "oauth_reauthorization", "required": true, "help": "Reconnect and test this account. Existing OAuth credentials are not copied." }
+          { "id": "calendar-account", "label": "Calendar account", "purpose": "Authorize availability checks and approved event creation", "kind": "oauth_reauthorization", "required": true, "help": "Reconnect and test this account. Existing OAuth credentials are not copied.", "technical": { "provider_scopes": ["https://www.googleapis.com/auth/calendar.readonly", "https://www.googleapis.com/auth/calendar.events"] } }
         ],
         "validation_action": { "id": "connect-calendar", "label": "Reconnect and test Calendar", "behavior": "reconnect_test_switch" }
       }

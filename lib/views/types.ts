@@ -149,10 +149,24 @@ export interface ConnectionRowWithCredential extends ConnectionRequirementRow {
   dash_can_hold: boolean;
   /** Which declared field a Connect acts on, or null when there is none. */
   field_id: string | null;
-  /** What `maskSecret` produced when the value was stored. Never the value. */
+  /**
+   * The masked hint stored when the credential was — four trailing characters
+   * of a typed secret, or a masked account for a sign-in (MAR-446). Never a
+   * value either way.
+   */
   masked_hint: string | null;
   /** Whether the manifest names somewhere for DASH to deliver it. */
   delivered_to_agent: boolean;
+  /**
+   * Whether Connect opens a text box or a provider sign-in (MAR-446).
+   *
+   * Null when DASH cannot hold this row at all. The page needs it because the
+   * two produce different sentences for the same situation: an API key DASH
+   * holds but cannot deliver has to be fetched by the agent some other way,
+   * while a sign-in DASH holds but cannot deliver is one DASH will keep renewing
+   * and the agent will reach through its own means.
+   */
+  credential_kind: "secret" | "oauth" | null;
 }
 
 export interface AgentConnections {

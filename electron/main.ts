@@ -44,8 +44,9 @@ import {
   type AgentCommandInput,
 } from "../lib/agent-dom/runner";
 import { heldCredentials, performConnectionAction } from "../lib/connection-actions";
-import { deliverableFields } from "../lib/connection-credentials";
+import { deliverableFields, type CredentialTarget } from "../lib/connection-credentials";
 import type { ConnectionSourceManifest } from "../lib/connections";
+import { parseOAuthCredential } from "../lib/oauth/credential";
 import { dataDir } from "../lib/db";
 import type { HandoffPorts } from "../lib/handoff-flow";
 import { findDeepLink } from "../lib/shell/deep-link";
@@ -85,7 +86,12 @@ import {
 } from "./renderer-host";
 import { RENDERER_ENTRY_URL, RENDERER_ORIGIN } from "../lib/shell/renderer-scheme";
 import { readAgentManifest } from "../lib/store";
-import { promptForSecret, registerCredentialChannels } from "./credential-prompt";
+import {
+  promptForAuthorization,
+  promptForSecret,
+  registerCredentialChannels,
+} from "./credential-prompt";
+import { mintAccessToken, providerOperations } from "./oauth-session";
 import { ensureRunner, runnerFetch, stopRunner, type RunnerHandle } from "./runner-process";
 import { assertSampleTemplatesPresent, offerSampleAgent } from "./sample-agent";
 import {
@@ -300,6 +306,30 @@ export function createWindow(): BrowserWindow {
  * parameter. The request that arrived over IPC is never consulted for it — and
  * cannot be, since no command declares a payload key that could carry one.
  */
+/**
+ * Does DASH already hold something for this field?
+ *
+ * Reads the reference table, never the vault — the same argument
+ * `heldCredentials` makes for itself. Used to word the prompt: "Replace" rather
+ * than "Connect", and for OAuth to offer the account already connected.
+ */
+function alreadyHeld(credential: CredentialTarget): boolean {
+  return heldCredentials(credential.agent_id).some(
+    (held) =>
+      held.connection_id === credential.connection_id && held.field_id === credential.field_id,
+  );
+}
+
+/** The masked hint on the row, for the prompt to show which account it means. */
+function heldHintFor(credential: CredentialTarget): string | null {
+  return (
+    heldCredentials(credential.agent_id).find(
+      (held) =>
+        held.connection_id === credential.connection_id && held.field_id === credential.field_id,
+    )?.masked_hint ?? null
+  );
+}
+
 export function registerCommandChannel(
   channels: AgentChannels | null,
   runner: RunnerHandle | null,
@@ -332,14 +362,26 @@ export function registerCommandChannel(
             promptForSecret(
               credential,
               vaultLabel,
-              heldCredentials(credential.agent_id).some(
-                (held) =>
-                  held.connection_id === credential.connection_id &&
-                  held.field_id === credential.field_id,
-              ),
+              alreadyHeld(credential),
               BrowserWindow.getAllWindows()[0] ?? null,
               RENDERER_ORIGIN,
             ),
+          // MAR-446. `check` and `revoke` are pure provider calls and come from
+          // `oauth-session.ts`; `authorize` needs a window to show what is about
+          // to be granted, so it comes from the module that owns one.
+          oauth: {
+            ...providerOperations(),
+            authorize: (credential, options) =>
+              promptForAuthorization(
+                credential,
+                secureStore().describeBacking().label,
+                alreadyHeld(credential),
+                heldHintFor(credential),
+                options.login_hint,
+                BrowserWindow.getAllWindows()[0] ?? null,
+                RENDERER_ORIGIN,
+              ),
+          },
         }),
     });
   });
@@ -441,10 +483,29 @@ async function collectSpawnCredentials(agentId: string): Promise<Record<string, 
 
   for (const field of deliverableFields(agentId, manifest)) {
     try {
-      credentials[field.environment_name] = await store.get(field.secret_name);
+      const stored = await store.get(field.secret_name);
+
+      if (field.kind === "oauth") {
+        // MAR-446. What is in the vault is a refresh token, and it does not go
+        // anywhere near a child process: it is DASH's durable grant on the
+        // user's account, and an agent that had it could keep minting access
+        // long after DASH stopped holding it. What the agent gets is a fresh
+        // access token, minted here, good for about an hour, and dead when the
+        // provider says so.
+        const credential = parseOAuthCredential(stored);
+        if (credential === null) {
+          continue;
+        }
+        const access = await mintAccessToken(credential);
+        credentials[field.environment_name] = access.access_token;
+        continue;
+      }
+
+      credentials[field.environment_name] = stored;
     } catch {
       // `not_found` on first run, `vault_locked` on a machine whose keychain is
-      // shut. Both mean "DASH has nothing to hand over right now", and both are
+      // shut, and for OAuth a grant the provider has stopped honouring. All of
+      // them mean "DASH has nothing to hand over right now", and all of them are
       // already reported on the Connection Center, where the user asked.
     }
   }

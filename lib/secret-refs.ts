@@ -49,6 +49,53 @@ export function isMaskedHint(hint: string): boolean {
   return new RegExp(`^${MASK}.{0,${REVEALED}}$`, "u").test(hint);
 }
 
+/** How much of an account's local part is shown before the mask. */
+const ACCOUNT_REVEALED = 2;
+
+/**
+ * Turn an account address into a display hint (MAR-446).
+ *
+ * A second hint shape, because `maskSecret` applied to an OAuth connection would
+ * mask the *refresh token* — four trailing characters of a value no human has
+ * ever seen, in a row whose actual question is "which of my two Gmail accounts
+ * is this?". `he••••@gmail.com` answers that; `••••4f2a` does not.
+ *
+ * The domain is kept whole and the local part is nearly all masked. That split
+ * is the useful one: a person recognises their own account from two leading
+ * characters and the domain, while the string on its own is not an address
+ * anyone could send to or attempt to sign in as.
+ */
+export function maskAccount(account: string): string {
+  const at = account.lastIndexOf("@");
+  if (at <= 0) {
+    // Not an address shape. Fall back to the value mask rather than inventing a
+    // split — revealing "the first two characters of whatever this is" would be
+    // a guess about a string DASH did not parse.
+    return maskSecret(account);
+  }
+  const local = account.slice(0, at);
+  const domain = account.slice(at);
+  return `${local.slice(0, Math.min(ACCOUNT_REVEALED, local.length - 1))}${MASK}${domain}`;
+}
+
+/**
+ * Does this look like something `maskAccount` produced?
+ *
+ * The structural guarantee is unchanged and is the reason a second shape is safe
+ * to accept: both require the literal four-bullet run, and no credential
+ * contains one. A pasted refresh token cannot satisfy this any more than it
+ * could satisfy `isMaskedHint` — it would have to carry `••••` and an `@` and
+ * begin with at most two characters before the bullets.
+ */
+export function isMaskedAccountHint(hint: string): boolean {
+  return new RegExp(`^.{0,${ACCOUNT_REVEALED}}${MASK}@.{1,80}$`, "u").test(hint);
+}
+
+/** Either masked shape. The gate `recordSecretReference` actually applies. */
+export function isDisplayableHint(hint: string): boolean {
+  return isMaskedHint(hint) || isMaskedAccountHint(hint);
+}
+
 export interface SecretReference {
   /** Null when the connection belongs to DASH itself rather than to an agent. */
   agent: string | null;
@@ -74,7 +121,7 @@ export interface SecretReference {
 export function recordSecretReference(reference: SecretReference): void {
   assertValidSecretName(reference.secret_name);
 
-  if (reference.masked_hint !== null && !isMaskedHint(reference.masked_hint)) {
+  if (reference.masked_hint !== null && !isDisplayableHint(reference.masked_hint)) {
     // Not echoed into the message: if a caller passed the raw secret, saying so
     // with the value attached would put it in a log — the failure this check
     // exists to prevent.

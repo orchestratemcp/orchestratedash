@@ -29,12 +29,16 @@
 
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
-import type { CredentialPromptDescription } from "../../lib/shell/credential-prompt";
+import type {
+  CredentialPromptDescription,
+  OAuthPromptDescription,
+} from "../../lib/shell/credential-prompt";
 
 interface CredentialBridge {
   describe(): Promise<CredentialPromptDescription | null>;
   submit(value: string): Promise<void>;
   cancel(): Promise<void>;
+  authorize(): Promise<void>;
 }
 
 function bridge(): CredentialBridge | null {
@@ -42,6 +46,99 @@ function bridge(): CredentialBridge | null {
     return null;
   }
   return (window as unknown as { dashCredential?: CredentialBridge }).dashCredential ?? null;
+}
+
+/**
+ * The sign-in mode (MAR-446).
+ *
+ * There is no input on this page and no `submit`. Everything it can do is press
+ * one button that asks main to open a browser, or cancel — which is the whole
+ * capability difference between this mode and the typed-secret one, and the
+ * reason reusing the window costs nothing in surface.
+ *
+ * What it renders that the provider's own consent screen will not: which agent
+ * wants this, why, and the permissions in DASH's plain-language words. Google's
+ * screen says what Google is granting; only this can say what it is for.
+ */
+function AuthorizationPrompt({
+  description,
+  busy,
+  onBusy,
+}: {
+  description: OAuthPromptDescription;
+  busy: boolean;
+  onBusy: (busy: boolean) => void;
+}): ReactNode {
+  // `waiting` comes back from main once the browser has been opened; `busy`
+  // covers the moment between the click and that being true.
+  const waiting = busy || description.waiting;
+
+  return (
+    <div className="credential-prompt">
+      <h1>Connect {description.service}</h1>
+      <p className="lede">{description.purpose}</p>
+
+      {description.permissions.length > 0 ? (
+        <>
+          <p>
+            DASH will ask {description.provider_label} to let this agent:
+          </p>
+          <ul className="permission-list">
+            {description.permissions.map((permission) => (
+              <li key={permission}>{permission}</li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+
+      {description.account_hint !== null ? (
+        <p className="muted">
+          DASH currently has {description.account_hint} connected. Signing in
+          again replaces it.
+        </p>
+      ) : null}
+
+      {description.help !== null ? <p className="muted">{description.help}</p> : null}
+
+      <p className="muted">
+        {/* Said before the browser opens, not after. A user who has already left
+            for a consent screen has passed the point where this was useful. */}
+        Your browser will open so you can sign in to{" "}
+        {description.provider_label} directly. DASH never sees your password.
+        What comes back is kept in <strong>{description.vault_label}</strong>.
+      </p>
+
+      {waiting ? (
+        <p className="notice notice-ok" role="status">
+          Waiting for you to finish signing in in your browser. You can come back
+          here when you are done.
+        </p>
+      ) : null}
+
+      <div className="button-row">
+        <button
+          type="button"
+          className="button-secondary"
+          onClick={() => {
+            void bridge()?.cancel();
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="button-primary"
+          disabled={waiting}
+          onClick={() => {
+            onBusy(true);
+            void bridge()?.authorize();
+          }}
+        >
+          {waiting ? "Waiting…" : `Continue to ${description.provider_label}`}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function CredentialPromptPage(): ReactNode {
@@ -88,6 +185,10 @@ export default function CredentialPromptPage(): ReactNode {
         <p className="muted">You can close this window.</p>
       </>
     );
+  }
+
+  if (description.mode === "oauth") {
+    return <AuthorizationPrompt description={description} busy={busy} onBusy={setBusy} />;
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {

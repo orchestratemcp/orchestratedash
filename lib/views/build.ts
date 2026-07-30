@@ -192,7 +192,10 @@ export function runView(
 function credentialStatus(
   agentName: string,
   manifest: ConnectionSourceManifest,
-): Map<string, { field_id: string; masked_hint: string | null; deliverable: boolean }> {
+): Map<
+  string,
+  { field_id: string; masked_hint: string | null; deliverable: boolean; kind: "secret" | "oauth" }
+> {
   const held = new Map<string, string | null>(
     heldCredentials(agentName).map((entry): [string, string | null] => [
       `${entry.connection_id} ${entry.field_id}`,
@@ -202,7 +205,12 @@ function credentialStatus(
 
   const status = new Map<
     string,
-    { field_id: string; masked_hint: string | null; deliverable: boolean }
+    {
+      field_id: string;
+      masked_hint: string | null;
+      deliverable: boolean;
+      kind: "secret" | "oauth";
+    }
   >();
 
   for (const target of connectableFields(agentName, manifest)) {
@@ -217,6 +225,7 @@ function credentialStatus(
       field_id: target.field_id,
       masked_hint: held.get(`${target.connection_id} ${target.field_id}`) ?? null,
       deliverable: target.environment_name !== null,
+      kind: target.kind,
     });
   }
 
@@ -237,6 +246,7 @@ export function connectionsView(store: StoreShape = readStore()): ConnectionsVie
             field_id: credential?.field_id ?? null,
             masked_hint: credential?.masked_hint ?? null,
             delivered_to_agent: credential?.deliverable ?? false,
+            credential_kind: credential?.kind ?? null,
           };
         }),
       };

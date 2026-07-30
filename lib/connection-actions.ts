@@ -37,8 +37,26 @@
 import type { CredentialTarget, CredentialTargetRefusal } from "./connection-credentials";
 import { resolveCredentialTarget } from "./connection-credentials";
 import type { ConnectionSourceManifest, ManifestConnection } from "./connections";
-import { describeSecureStoreFailure, type Recovery } from "./copy/recovery";
-import { forgetSecretReference, listSecretReferences, maskSecret, recordSecretReference } from "./secret-refs";
+import {
+  describeAuthorizationFailure,
+  describeSecureStoreFailure,
+  type AuthorizationFailureCode,
+  type Recovery,
+} from "./copy/recovery";
+import {
+  missingScopes,
+  parseOAuthCredential,
+  serializeOAuthCredential,
+  type OAuthCredential,
+} from "./oauth/credential";
+import { describePermissions, oauthProviderById } from "./oauth/providers";
+import {
+  forgetSecretReference,
+  listSecretReferences,
+  maskAccount,
+  maskSecret,
+  recordSecretReference,
+} from "./secret-refs";
 import {
   assertCanHoldSecret,
   isSecureStoreError,
@@ -62,7 +80,17 @@ export type CredentialState =
   | "locked"
   /** There is no usable vault on this machine, so DASH refuses to hold one. */
   | "unavailable"
-  /** DASH may not hold this one — OAuth, agent-managed, or not declared. */
+  /**
+   * The vault holds a sign-in the provider no longer honours (MAR-446).
+   *
+   * Separate from `not_connected` because the recoveries differ in a way that
+   * matters: a credential that was never there invites a connection, and one
+   * that was taken away invites a *decision*. Somebody withdrew this access, and
+   * that somebody may have been the user on purpose — quietly re-offering
+   * Connect as if nothing had happened would undo it without saying so.
+   */
+  | "revoked"
+  /** DASH may not hold this one — agent-managed, external, or not declared. */
   | "not_held_by_dash";
 
 export type ConnectionActionName = "connect" | "test" | "disconnect";
@@ -95,6 +123,54 @@ export interface ConnectionActionDeps {
    * an ordinary outcome and must not be reported as a failure.
    */
   promptForSecret(target: CredentialTarget, vaultLabel: string): Promise<string | null>;
+  /**
+   * The provider sign-in, for `oauth` targets only (MAR-446).
+   *
+   * Injected for the reason `promptForSecret` is: the real one opens a system
+   * browser, binds a loopback port and talks to Google, and none of that can be
+   * in the loop of a unit test asserting that a revoked grant produces the
+   * revoked sentence. The fake returns an envelope; neither this module nor
+   * anything it calls can tell the difference.
+   */
+  oauth: OAuthOperations;
+}
+
+/**
+ * What a sign-in produced.
+ *
+ * A code rather than an error, so every path out of a provider flow is one the
+ * caller must name — `lib/copy/recovery.ts` turns each into three sentences and
+ * will not compile if a new one appears without them.
+ */
+export type AuthorizationOutcome =
+  | { ok: true; credential: OAuthCredential }
+  | { ok: false; code: AuthorizationFailureCode };
+
+export interface OAuthOperations {
+  /**
+   * Run the sign-in and come back with something storable.
+   *
+   * `login_hint` is the account DASH already holds, when reconnecting. A
+   * suggestion the user may override, and DASH records whichever account
+   * actually came back rather than the one it proposed.
+   */
+  authorize(
+    target: CredentialTarget,
+    options: { login_hint: string | null },
+  ): Promise<AuthorizationOutcome>;
+  /**
+   * Ask the provider whether a stored grant still works.
+   *
+   * This is the one place OAuth diverges from the API-key case on purpose. The
+   * file header argues that `test` cannot honestly contact a provider DASH has
+   * no client for — but for an OAuth connection DASH *is* a client, holds a
+   * grant in its own name, and a token refresh is a real, cheap, side-effect-free
+   * question with an unambiguous answer. Refusing to ask it here would mean
+   * MAR-446's revoked-versus-expired requirement could never be met.
+   */
+  check(credential: OAuthCredential): Promise<{ ok: true } | { ok: false; code: AuthorizationFailureCode }>;
+  /** Withdraw the grant at the provider. Best effort; returns whether it took. */
+  revoke(credential: OAuthCredential): Promise<boolean>;
 }
 
 export interface ConnectionActionTarget {
@@ -127,12 +203,44 @@ function refusalCopy(
             : `${service} is looked after by the agent itself, so DASH does not keep a copy.`,
       };
 
-    case "not_a_secret_field":
-      // The OAuth deferral, in front of a user. It says what DASH cannot do and
-      // who can do it instead, and it does not offer a text box that would take
-      // a token DASH could never refresh.
+    case "no_oauth_flow":
+      // MAR-383's OAuth deferral, now narrowed to the providers DASH genuinely
+      // has no sign-in for. The words are unchanged from when it covered every
+      // OAuth field, because for these connections the situation is unchanged.
       return {
         detail: `${service} signs in through its own provider, which DASH cannot do for you yet. The agent handles this sign-in.`,
+      };
+
+    case "not_a_secret_field":
+      // A `non_secret` field. Nothing to hold, so nothing to offer.
+      return {
+        detail: `${service} needs no credential from you for this, so DASH stores nothing for it.`,
+      };
+
+    case "oauth_scopes_not_declared":
+      return {
+        detail: `DASH cannot sign you in to ${service} because the agent did not say what access it needs.`,
+        recovery: {
+          headline: `DASH will not ask ${service} for unspecified access.`,
+          meaning:
+            "The agent asks for a sign-in without saying what it wants to be able to do. DASH will not guess, because the guess would be what you were agreeing to.",
+          next_action:
+            "This needs a fix from whoever built the agent. Nothing was stored and nothing is at risk.",
+          actor: "dash",
+        },
+      };
+
+    case "oauth_scope_not_allowed":
+      return {
+        detail: `DASH will not ask ${service} for the access this agent wants.`,
+        recovery: {
+          headline: `The agent asks for more ${service} access than DASH offers.`,
+          meaning:
+            "DASH only asks for access it can describe to you in plain language on the sign-in screen. This agent wants something outside that list.",
+          next_action:
+            "This needs a fix from whoever built the agent. Nothing was stored and nothing is at risk.",
+          actor: "dash",
+        },
       };
 
     case "unknown_connection":
@@ -231,6 +339,10 @@ export async function performConnectionAction(
 
   const credential = resolved.target;
   const backing = deps.store.describeBacking();
+
+  if (credential.kind === "oauth") {
+    return performOAuthAction(action, credential, backing.label, deps);
+  }
 
   if (action === "disconnect") {
     // Vault first, then the row. The other order would leave a credential in
@@ -332,6 +444,278 @@ export async function performConnectionAction(
     state: "connected",
     masked_hint: maskSecret(secret),
     detail: `${credential.service} is connected. DASH keeps the ${credential.field_label.toLowerCase()} in ${backing.label}.`,
+  };
+}
+
+/* ---------------------------------------------------------------------- *
+ * The OAuth action (MAR-446)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Read and parse the stored envelope, distinguishing the three ways there is
+ * nothing usable.
+ *
+ * `absent` is first-run. `unusable` is a value that is in the vault but is not
+ * an envelope this version can read — an API key left behind by a manifest whose
+ * field changed kind, or a credential written by a newer DASH. `error` is the
+ * vault itself refusing. All three end in the user reconnecting, but only the
+ * third is a failure worth showing vault recovery copy for.
+ */
+type StoredGrant =
+  | { kind: "found"; credential: OAuthCredential }
+  | { kind: "absent" }
+  | { kind: "unusable" }
+  | { kind: "error"; error: SecureStoreError };
+
+async function readGrant(store: SecureStore, secretName: string): Promise<StoredGrant> {
+  let raw: string;
+  try {
+    raw = await store.get(secretName);
+  } catch (error: unknown) {
+    if (isSecureStoreError(error)) {
+      return error.code === "not_found" ? { kind: "absent" } : { kind: "error", error };
+    }
+    throw error;
+  }
+  const credential = parseOAuthCredential(raw);
+  return credential === null ? { kind: "unusable" } : { kind: "found", credential };
+}
+
+/**
+ * Connect, check or disconnect a provider sign-in.
+ *
+ * Split from `performConnectionAction` rather than folded into it as three more
+ * branches. The two kinds share the resolution, the refusals and the result
+ * shape, and they share almost nothing after that — the API-key path stores a
+ * string the user typed, and this one runs a browser flow, negotiates with an
+ * authorization server and holds an envelope. Interleaving them would produce
+ * three functions each doing two unrelated things.
+ *
+ * What is *not* different: nothing here returns a token, a refresh token or
+ * anything derived from one. The strongest thing that leaves is a masked
+ * account, and the granted-permission sentences, which are DASH's own words from
+ * `lib/oauth/providers.ts`.
+ */
+async function performOAuthAction(
+  action: ConnectionActionName,
+  credential: CredentialTarget,
+  vaultLabel: string,
+  deps: ConnectionActionDeps,
+): Promise<ConnectionActionResult> {
+  const target: ConnectionActionTarget = {
+    agent_id: credential.agent_id,
+    connection_id: credential.connection_id,
+    field_id: credential.field_id,
+  };
+  const service = credential.service;
+  // Non-null by construction: `resolveCredentialTarget` sets `kind: "oauth"`
+  // and `oauth` together or neither.
+  const required = credential.oauth?.scopes ?? [];
+  const provider = oauthProviderById(credential.oauth?.provider_id ?? "");
+
+  if (provider === null) {
+    // A stored credential naming a flow this build no longer has. Not reachable
+    // from a manifest — `resolveCredentialTarget` would have refused — so it
+    // means DASH dropped a provider between releases, which is DASH's problem
+    // and is said as such.
+    return {
+      ok: false,
+      state: "not_held_by_dash",
+      masked_hint: null,
+      detail: `This version of DASH no longer knows how to sign in to ${service}.`,
+    };
+  }
+
+  /**
+   * The permissions a partial grant is missing, in plain language.
+   *
+   * Turned into sentences here rather than passed as scopes, because the only
+   * consumer is copy and `lib/copy/identifiers.ts` forbids a raw scope reaching
+   * any guided surface.
+   */
+  const missingPermissions = (stored: OAuthCredential): string[] =>
+    describePermissions(provider, missingScopes(stored, required));
+
+  if (action === "disconnect") {
+    const grant = await readGrant(deps.store, credential.secret_name);
+    if (grant.kind === "error") {
+      return fromStoreError(grant.error, service, vaultLabel, hintFor(target));
+    }
+
+    // Revoked at the provider *before* the local delete, because after the
+    // delete DASH no longer holds the token that would authorise the
+    // revocation. Best effort: disconnect's promise is that DASH stops holding
+    // the credential, and DASH can keep that promise with no network at all.
+    const withdrawn =
+      grant.kind === "found" ? await deps.oauth.revoke(grant.credential) : false;
+
+    try {
+      await deps.store.delete(credential.secret_name);
+    } catch (error: unknown) {
+      if (isSecureStoreError(error) && error.code !== "not_found") {
+        return fromStoreError(error, service, vaultLabel, hintFor(target));
+      }
+    }
+    forgetSecretReference(target.agent_id, target.connection_id, target.field_id);
+
+    return {
+      ok: true,
+      state: "not_connected",
+      masked_hint: null,
+      detail: withdrawn
+        ? `${service} is disconnected. DASH deleted its sign-in from ${vaultLabel} and told ${provider.label} to withdraw the agent's access.`
+        : // Says the smaller true thing rather than the larger convenient one.
+          // A user who believes access was withdrawn and finds DASH still listed
+          // in their account later has been misled by this sentence.
+          `${service} is disconnected and DASH deleted its sign-in from ${vaultLabel}. DASH could not reach ${provider.label} to withdraw the agent's access, so you may want to remove it in your ${provider.label} account settings.`,
+    };
+  }
+
+  if (action === "test") {
+    const grant = await readGrant(deps.store, credential.secret_name);
+
+    if (grant.kind === "error") {
+      return fromStoreError(grant.error, service, vaultLabel, hintFor(target));
+    }
+    if (grant.kind === "absent" || grant.kind === "unusable") {
+      return {
+        ok: false,
+        state: "not_connected",
+        masked_hint: null,
+        detail: `DASH has no working sign-in for ${service}.`,
+        recovery: {
+          headline: `${service} is not connected.`,
+          meaning: "DASH has nothing it can use to reach it on the agent's behalf.",
+          next_action: `Connect ${service}.`,
+          actor: "user",
+        },
+      };
+    }
+
+    const checked = await deps.oauth.check(grant.credential);
+    if (!checked.ok) {
+      return {
+        ok: false,
+        // The distinction MAR-446 asks for. Only a grant the provider actively
+        // rejected is `revoked`; a network failure leaves the state alone rather
+        // than telling a user offline on a train that their access was taken
+        // away.
+        state: checked.code === "revoked" ? "revoked" : "connected",
+        masked_hint: hintFor(target),
+        detail: describeAuthorizationFailure(checked.code, { service }).headline,
+        recovery: describeAuthorizationFailure(checked.code, { service }),
+      };
+    }
+
+    const missing = missingPermissions(grant.credential);
+    if (missing.length > 0) {
+      return {
+        ok: false,
+        state: "connected",
+        masked_hint: hintFor(target),
+        detail: `${service} is connected, but not with everything the agent needs.`,
+        recovery: describeAuthorizationFailure("missing_permissions", { service, missing }),
+      };
+    }
+
+    return {
+      ok: true,
+      state: "connected",
+      masked_hint: hintFor(target),
+      // Stronger than the API-key equivalent can claim, and it is earned:
+      // `check` exchanged the stored grant for a fresh token, so the provider
+      // itself has just said yes. It still says nothing about whether the agent
+      // will succeed, only that the sign-in is live.
+      detail: `${provider.label} still accepts the sign-in DASH holds for ${service}.`,
+    };
+  }
+
+  /* connect */
+
+  try {
+    // Before the browser opens, for the reason the API-key path checks before
+    // the prompt: sending someone through a consent screen and then telling them
+    // there was nowhere to put the result wastes the part that took effort.
+    assertCanHoldSecret(deps.store.describeBacking());
+  } catch (error: unknown) {
+    if (isSecureStoreError(error)) {
+      return fromStoreError(error, service, vaultLabel, null);
+    }
+    throw error;
+  }
+
+  // Best effort, and a nicety rather than a requirement: signing in again to the
+  // account already connected should not mean picking it out of a list. A vault
+  // that will not open here is not worth failing over — the sign-in below works
+  // without a hint.
+  let loginHint: string | null = null;
+  const existing = await readGrant(deps.store, credential.secret_name);
+  if (existing.kind === "found") {
+    loginHint = existing.credential.account;
+  }
+
+  const outcome = await deps.oauth.authorize(credential, { login_hint: loginHint });
+  if (!outcome.ok) {
+    const hint = hintFor(target);
+    const recovery = describeAuthorizationFailure(outcome.code, { service });
+    return {
+      ok: false,
+      // A failed sign-in says nothing about what DASH already held. Reporting
+      // `not_connected` after a cancelled reconnect would tell a user their
+      // working connection had gone.
+      state: hint === null ? "not_connected" : "connected",
+      masked_hint: hint,
+      detail: recovery.headline,
+      recovery,
+    };
+  }
+
+  const stored = outcome.credential;
+
+  try {
+    await deps.store.set(credential.secret_name, serializeOAuthCredential(stored));
+  } catch (error: unknown) {
+    if (isSecureStoreError(error)) {
+      return fromStoreError(error, service, vaultLabel, hintFor(target));
+    }
+    throw error;
+  }
+
+  // The account, masked, rather than four characters of a refresh token. See
+  // `maskAccount` — the question this row answers is "which of my accounts is
+  // this", and the token's tail answers nothing.
+  const hint =
+    stored.account === null ? maskSecret(stored.refresh_token) : maskAccount(stored.account);
+
+  recordSecretReference({
+    agent: target.agent_id,
+    connection_id: target.connection_id,
+    field_id: target.field_id,
+    secret_name: credential.secret_name,
+    masked_hint: hint,
+    backend: deps.store.describeBacking().backend,
+  });
+
+  const missing = missingPermissions(stored);
+  if (missing.length > 0) {
+    // Stored anyway. The user did grant something, it is real, and the agent can
+    // do the part of its job it covers — throwing it away would waste a consent
+    // they gave. The result is `ok: false` because there is something left to
+    // do, and the recovery says exactly what.
+    return {
+      ok: false,
+      state: "connected",
+      masked_hint: hint,
+      detail: `${service} is connected, but not with everything the agent needs.`,
+      recovery: describeAuthorizationFailure("missing_permissions", { service, missing }),
+    };
+  }
+
+  return {
+    ok: true,
+    state: "connected",
+    masked_hint: hint,
+    detail: `${service} is connected. DASH keeps the sign-in in ${vaultLabel} and never writes it to its own files.`,
   };
 }
 

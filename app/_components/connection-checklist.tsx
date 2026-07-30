@@ -194,7 +194,19 @@ function ConnectionRow({
               disabled={busy !== null}
               onClick={() => void run("connect")}
             >
-              {busy === "connect" ? "Waiting…" : connected ? "Replace" : "Connect"}
+              {/* A sign-in and a typed key are different acts, and the button
+                  should say which one is about to happen — "Connect" on a row
+                  that opens a browser gives no warning that the user is about
+                  to leave DASH (MAR-446). */}
+              {busy === "connect"
+                ? "Waiting…"
+                : row.credential_kind === "oauth"
+                  ? connected
+                    ? "Sign in again"
+                    : "Sign in"
+                  : connected
+                    ? "Replace"
+                    : "Connect"}
             </button>
             {connected ? (
               <>
@@ -223,10 +235,18 @@ function ConnectionRow({
             nobody reads. An OAuth row and an agent-managed row both have no
             button, and they have no button for different reasons. */}
         {row.dash_can_hold && row.delivered_to_agent ? null : row.dash_can_hold ? (
-          <p className="muted wrap">
-            DASH keeps this for you. The agent&rsquo;s manifest does not say where
-            to pass it, so the agent must fetch it another way.
-          </p>
+          row.credential_kind === "oauth" ? (
+            <p className="muted wrap">
+              DASH holds this sign-in and keeps it current. The agent&rsquo;s
+              manifest does not say where to pass it, so the agent reaches it
+              another way.
+            </p>
+          ) : (
+            <p className="muted wrap">
+              DASH keeps this for you. The agent&rsquo;s manifest does not say where
+              to pass it, so the agent must fetch it another way.
+            </p>
+          )
         ) : row.ownership === "dash" && row.source === "declared_connection" ? (
           <p className="muted wrap">
             {row.service} signs in through its own provider. DASH cannot do that
