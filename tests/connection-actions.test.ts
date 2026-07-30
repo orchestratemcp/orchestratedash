@@ -20,6 +20,7 @@ import type { ConnectionSourceManifest } from "../lib/connections";
 import { Vault } from "../lib/vault";
 import { FakeSafeStorage } from "./fakes/fake-safe-storage";
 import { MemorySecureStore } from "./fakes/memory-secure-store";
+import { refusingOAuth } from "./fakes/oauth-operations";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -77,6 +78,10 @@ function deps(
     store,
     readManifest: () => manifest,
     promptForSecret: promptFor.promptForSecret,
+    // Throws on contact. Every test in this file drives a typed-secret field,
+    // so the OAuth path being unreachable from it is a thing the suite proves
+    // rather than a thing a reader checks (MAR-446).
+    oauth: refusingOAuth(),
   };
 }
 

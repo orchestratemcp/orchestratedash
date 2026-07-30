@@ -23,6 +23,21 @@ export const CREDENTIAL_SUBMIT_CHANNEL = "dash:credential-submit";
 export const CREDENTIAL_CANCEL_CHANNEL = "dash:credential-cancel";
 
 /**
+ * Begin a provider sign-in (MAR-446). Carries nothing in, nothing out.
+ *
+ * A fourth channel rather than a flag on `submit`, for the reason there are
+ * three rather than one: `submit` carries a value and this carries none, and the
+ * difference between "the renderer sent a secret" and "the renderer asked main
+ * to open a browser" should be visible in the channel name at the point somebody
+ * is auditing what crosses this bridge.
+ *
+ * It resolves when the sign-in has finished, one way or another. The outcome is
+ * not in the reply — main settles the prompt and the Connection Center reports
+ * it, exactly as for a typed secret.
+ */
+export const CREDENTIAL_AUTHORIZE_CHANNEL = "dash:credential-authorize";
+
+/**
  * The route the prompt window loads, inside the packaged renderer.
  *
  * A route in the same static export rather than a separate HTML file, so it
@@ -34,14 +49,14 @@ export const CREDENTIAL_CANCEL_CHANNEL = "dash:credential-cancel";
 export const CREDENTIAL_PROMPT_ROUTE = "/credential-prompt";
 
 /**
- * Everything the prompt renders.
+ * Everything the prompt renders, whichever kind of credential it is for.
  *
  * Every field is either DASH's own words or a manifest string that has already
  * been through v2 schema validation and is rendered as text by React. There is
  * no field here for a current value, because the prompt never shows one: a
  * credential DASH holds cannot be read back into a form, only replaced.
  */
-export interface CredentialPromptDescription {
+interface CredentialPromptCommon {
   /** Friendly connection name, e.g. "Ledger". */
   service: string;
   /** Friendly field name, e.g. "Ledger API key". */
@@ -52,6 +67,42 @@ export interface CredentialPromptDescription {
   help: string | null;
   /** Which vault this is going into, e.g. "Windows Credential Manager". */
   vault_label: string;
-  /** True when DASH already holds a value that submitting would replace. */
+  /** True when DASH already holds a value that connecting would replace. */
   replacing: boolean;
 }
+
+/** A credential the user types. The MAR-383 case, unchanged. */
+export interface SecretPromptDescription extends CredentialPromptCommon {
+  mode: "secret";
+}
+
+/**
+ * A sign-in the user approves at the provider (MAR-446).
+ *
+ * The same window and the same preload, because the alternative — a third
+ * surface — would mean a third preload to review for the sake of a page with
+ * *fewer* capabilities than the one that already exists. This mode has no input
+ * at all: nothing is typed here, and `submit` is never called from it.
+ *
+ * `permissions` is what makes the window worth showing before the browser opens.
+ * A consent screen is the provider's, written in the provider's words, and it
+ * does not say which agent asked or why. This does, in plain language, on a page
+ * with no agent-authored content on it beyond the manifest strings the checklist
+ * already renders.
+ */
+export interface OAuthPromptDescription extends CredentialPromptCommon {
+  mode: "oauth";
+  /** Friendly provider name, e.g. "Google". */
+  provider_label: string;
+  /**
+   * One sentence per permission, from `lib/oauth/providers.ts`, write access
+   * first. Never a scope — `lib/copy/identifiers.ts` forbids one here.
+   */
+  permissions: string[];
+  /** The account DASH already holds, masked, or null. */
+  account_hint: string | null;
+  /** True once the browser has been opened and DASH is waiting. */
+  waiting: boolean;
+}
+
+export type CredentialPromptDescription = SecretPromptDescription | OAuthPromptDescription;

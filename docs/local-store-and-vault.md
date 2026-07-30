@@ -178,9 +178,12 @@ takes is deliberately short and one-way.
 1. The user presses **Connect** on a row. The renderer sends three ids —
    agent, connection, field — through the audited command channel. No value.
 2. Main resolves those ids against the agent's **validated manifest**. DASH
-   takes a credential only for a field declared `kind: "secret"` on a connection
-   declared `ownership: "dash_managed"`. An OAuth field, an agent-managed
-   connection and the inferred model-provider row are all refused, each with its
+   takes a credential only for a connection declared `ownership: "dash_managed"`,
+   and only for a field declared either `kind: "secret"` or —  since MAR-446 —
+   `kind: "oauth_reauthorization"` for a provider DASH has a sign-in flow for.
+   An agent-managed connection, the inferred model-provider row, an OAuth field
+   for an unknown provider, and one whose manifest declared no permissions (or
+   permissions outside the provider's allowlist) are all refused, each with its
    own sentence.
 3. Main opens a **separate modal window** with its own preload
    (`electron/credential-preload.ts`). This is the only bridge in DASH a secret
@@ -198,19 +201,34 @@ process, which is the opposite of what the vault is for. A name in the `DASH_`
 namespace, or one like `PATH` or `NODE_OPTIONS`, is refused when the user
 connects rather than at spawn, so the message can explain it.
 
-**Check** reads the vault and drops the value. It answers whether DASH can still
-*read* the credential — gone, locked, or present — and contacts no provider.
-Whether the provider accepts it is a separate fact, reported by the agent in its
-Agent DOM state and rendered through `describeConnectionCondition`.
+**Check** reads the vault and drops the value. For a typed secret it answers
+whether DASH can still *read* the credential — gone, locked, or present — and
+contacts no provider, because DASH holds an opaque string for a service it has
+no client for. Whether that provider accepts it is a separate fact, reported by
+the agent in its Agent DOM state and rendered through
+`describeConnectionCondition`.
+
+For an OAuth connection it does contact the provider, because there the argument
+above does not hold: DASH *is* a client and holds a grant in its own name, so a
+token refresh is a real question with an unambiguous answer. It is also the only
+way a withdrawn grant can surface as `revoked` rather than as a generic failure
+(MAR-446). A network failure is deliberately not reported as revocation.
 
 **Disconnect** deletes from the vault first and forgets the row second. The
 other order would leave a credential nothing in DASH remembers or can delete.
 
 ## What is deliberately not here yet
 
-- **OAuth.** DASH has no authorization flow, so an `oauth_reauthorization` field
-  is refused rather than offered a text box that would take a token DASH could
-  never refresh. The Gmail example's connections are all of this kind.
+- **OAuth beyond Google.** MAR-446 added a loopback + PKCE flow, and
+  `lib/oauth/providers.ts` lists exactly one provider. An `oauth_reauthorization`
+  field for anything else is still refused rather than offered a text box that
+  would take a token DASH could never refresh.
+- **Long runs.** A delivered OAuth credential is an access token minted at
+  spawn, good for about an hour. A run that outlives one sees it expire; a
+  DASH-side token endpoint is its own issue.
+- **Google verification.** The Gmail scopes are restricted, so the flow works
+  today for accounts added as test users on the Cloud project and for nobody
+  else.
 - **Transcripts.** DASH-15. The schema has a versioned migration list; its
   columns get designed by the issue that owns it, not guessed here.
 - **Event retention.** Nothing prunes `events` yet — and, since MAR-417, nothing

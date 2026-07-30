@@ -81,22 +81,75 @@ describe("resolveCredentialTarget — what DASH will hold a credential for", () 
   });
 
   /**
-   * MAR-383's OAuth deferral, enforced rather than described. A masked text box
-   * that accepted a pasted OAuth token would expire without DASH being able to
-   * refresh it.
+   * MAR-383 refused every OAuth field. MAR-446 narrows that to the providers
+   * DASH genuinely has no sign-in for, and this manifest names one — so the
+   * refusal survives, with a code that says *why* rather than the old blanket
+   * "not a secret field".
+   *
+   * Keeping this test is the point. The interesting risk in adding a flow is
+   * that "DASH does OAuth now" quietly becomes "DASH will try to sign in to
+   * anything", and this is what stops it.
    */
-  it("refuses an oauth_reauthorization field", () => {
+  it("refuses an OAuth field for a provider DASH has no sign-in for", () => {
     const resolved = resolveCredentialTarget(
       "project-reporter",
       oauthExample,
       "project-service",
       "account-authorization",
     );
-    expect(resolved).toEqual({ ok: false, refusal: "not_a_secret_field" });
+    expect(resolved).toEqual({ ok: false, refusal: "no_oauth_flow" });
   });
 
-  it("refuses every Gmail field, because they are all OAuth", () => {
-    expect(connectableFields("gmail-assistant", gmailExample)).toEqual([]);
+  /**
+   * The MAR-383 acceptance criterion that could not be met, met (MAR-446).
+   *
+   * Both Gmail example connections are `oauth_reauthorization`, which is why
+   * MAR-383's "the DASH-managed path passes" was unreachable. They now resolve
+   * to real targets carrying the provider and the scopes the manifest declared.
+   */
+  it("resolves both Gmail example connections now that Google has a flow", () => {
+    const fields = connectableFields("gmail-assistant", gmailExample);
+
+    expect(fields.map((field) => field.connection_id)).toEqual(["gmail", "calendar"]);
+    expect(fields.every((field) => field.kind === "oauth")).toBe(true);
+    expect(fields[0]?.oauth).toEqual({
+      provider_id: "google",
+      scopes: [
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.compose",
+      ],
+    });
+    // Neither declares an `environment_name`, so DASH holds both and delivers
+    // neither — the honest state the checklist has copy for.
+    expect(deliverableFields("gmail-assistant", gmailExample)).toEqual([]);
+  });
+
+  it("refuses an OAuth field whose manifest declared no permissions", () => {
+    const stripped = JSON.parse(JSON.stringify(gmailExample)) as ConnectionSourceManifest;
+    delete stripped.agent_dom?.connections?.[0]?.fields[0]?.technical;
+
+    expect(
+      resolveCredentialTarget("gmail-assistant", stripped, "gmail", "gmail-account"),
+    ).toEqual({ ok: false, refusal: "oauth_scopes_not_declared" });
+  });
+
+  /**
+   * Scope escalation through a manifest. Without the allowlist an agent author
+   * could ask for full mailbox control — including delete — while the checklist
+   * above went on rendering whatever friendly capability labels the same
+   * manifest supplied.
+   */
+  it("refuses an OAuth field asking for access outside the provider allowlist", () => {
+    const greedy = JSON.parse(JSON.stringify(gmailExample)) as ConnectionSourceManifest;
+    const field = greedy.agent_dom?.connections?.[0]?.fields[0];
+    if (field?.technical !== undefined) {
+      field.technical.provider_scopes = ["https://mail.google.com/"];
+    }
+
+    expect(resolveCredentialTarget("gmail-assistant", greedy, "gmail", "gmail-account")).toEqual({
+      ok: false,
+      refusal: "oauth_scope_not_allowed",
+    });
   });
 });
 

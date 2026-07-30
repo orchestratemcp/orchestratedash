@@ -887,3 +887,178 @@ they fail separately.
 - Adoption of an agent-managed credential into DASH ("reconnect, test, switch")
   remains unimplemented; the ownership modes render honestly in the meantime.
 - Installed-MSIX verification remains human-gated for the reasons in Amendment 6.
+
+---
+
+## Amendment 8 — DASH signs in to Google (MAR-446, DASH-29)
+
+**Status:** Accepted, 2026-07-30.
+
+### What changed
+
+Amendment 7 built the credential seam and refused OAuth outright: an
+`oauth_reauthorization` field got an honest "the agent handles this sign-in"
+rather than a text box for a token DASH could never refresh. Every connection in
+the Gmail example is that kind, so MAR-383's *"importing the Gmail example …
+DASH-managed path passes"* criterion was unreachable.
+
+DASH now runs a loopback + PKCE authorization flow against a public Desktop
+client, stores the resulting refresh token through the **same** vault entry and
+the same `connection_secrets` row Amendment 7 introduced, and hands a spawned
+agent a short-lived access token minted at start time.
+
+The blanket refusal is not deleted — it is narrowed. A provider with no entry in
+`lib/oauth/providers.ts` is refused in exactly the words it was before.
+
+### The boundary this amends
+
+Amendment 7 listed **"no new TCP listener"** among the boundaries MAR-383
+preserved. This amendment breaks that line, and says so rather than
+reinterpreting it.
+
+RFC 8252 gives an installed app two ways to receive an authorization code: a
+private URI scheme, or a loopback redirect. The scheme was rejected because it
+needs MSIX protocol registration in the appxmanifest to work in the shipped app —
+which puts a Wave-0 feature behind the human-gated packaging work of Amendment 6,
+and a flow that worked only under `pnpm dev` would be worse than no flow.
+
+What makes the listener a much smaller thing than the runner's, and each of these
+is asserted in `tests/oauth-loopback.test.ts` rather than promised here:
+
+- Bound to `127.0.0.1` explicitly, never `0.0.0.0`.
+- An OS-assigned ephemeral port, different every time. No port in a config file.
+- One route, `/callback`. Everything else is a 404 that settles nothing.
+- Closed on the first matching callback, on cancel, on window close, and on a
+  five-minute deadline. It cannot outlive one sign-in.
+- `state` is checked before anything is believed. A request that does not carry
+  the value DASH generated is answered and *ignored* — not treated as a failed
+  sign-in, because it is not this sign-in.
+- The page it returns is a fixed string. Nothing from the query is echoed, so no
+  authorization code reaches browser history or the DOM.
+
+### Why the system browser, not a window
+
+RFC 8252 §8.12 requires an external user-agent, and Google enforces it — an
+embedded webview gets `disallowed_useragent` and never reaches consent. Both are
+right, and MAR-446's own warning points the same way from the other side: a
+sign-in rendered inside DASH is a DASH window asking for a Google password, which
+is indistinguishable from the thing users are taught never to trust.
+
+So there is no OAuth window inside DASH at all. The consent screen is the
+provider's page in the user's browser, where their existing session, password
+manager and second factor already are.
+
+### Why no second preload
+
+Amendment 7's cost was a second `contextBridge` surface. This adds no third one.
+The prompt window gains an `oauth` mode that renders *less* than the secret mode:
+no input, no `submit`, and a permission list written by DASH rather than by
+anyone else. The preload gains one channel, `dash:credential-authorize`, which
+carries nothing in and nothing out — it asks main to open a browser, and the
+outcome is reported on the Connection Center where the user was.
+
+The renderer is never told the provider id, the scopes or the login hint. Those
+are resolved in main from the validated manifest and kept there, so a page that
+could name a scope does not exist.
+
+### Why a manifest must declare its scopes, from an allowlist
+
+`fields[].technical.provider_scopes` has been in the v2 schema since MAR-383 and
+was never read. It is now required for an OAuth field, and checked against a
+per-provider allowlist in which every entry carries the plain-language sentence
+shown on the prompt.
+
+Two refusals, for two different failures:
+
+- **No scopes declared.** DASH could pick a sensible set for Gmail, and picking
+  it would be DASH deciding what an agent may read. The guess would be the thing
+  the user was agreeing to.
+- **A scope outside the allowlist.** A manifest is the agent author's file.
+  Without this check one could name `https://mail.google.com/` — full mailbox
+  control, including delete — DASH would faithfully request it, and the checklist
+  above would go on rendering whatever friendly capability labels the same
+  manifest supplied. A consent screen and a checklist that disagree, with DASH
+  vouching for both.
+
+A scope DASH has no sentence for is a scope DASH will not ask for. Adding one
+means writing the sentence, which is the point.
+
+### Why `check` contacts the provider here, and did not before
+
+Amendment 7 argued that `check` cannot honestly contact a provider, because DASH
+held an opaque string for a service it had no client for. For an OAuth connection
+that argument does not hold: DASH *is* a client, holds a grant in its own name,
+and a token refresh is a cheap, side-effect-free question with an unambiguous
+answer.
+
+It is also the only way to meet MAR-446's requirement that revocation surfaces as
+`revoked` rather than as a generic failure. `describeConnectionCondition` has
+carried the revoked sentence since MAR-423 and nothing had ever been able to
+produce the condition — an agent could *report* revoked access, but DASH held no
+grant of its own to have revoked. The two paths now reach one sentence, which is
+the point: "someone withdrew this" should read identically whether the agent
+noticed or DASH did.
+
+A network failure is deliberately **not** revocation. Being offline is not
+evidence that access was taken away, and saying so would send someone to their
+account settings looking for something that never happened.
+
+### What a spawned agent receives
+
+A **fresh access token**, minted from the refresh token at `runner.start`, and
+only when the manifest declares an `environment_name` for the field. The refresh
+token never leaves DASH: an agent holding it could keep minting access long after
+DASH stopped holding anything, which is the opposite of DASH managing the
+connection.
+
+Neither Gmail example connection declares an `environment_name`, so both are held
+and neither is delivered — the honest state the checklist already has copy for.
+
+The accepted limitation: an access token is good for about an hour, so a run that
+outlives one sees it expire mid-flight. The fix is a DASH-side token endpoint an
+agent can ask for a fresh token, which is its own issue rather than something to
+smuggle in here.
+
+### What is preserved
+
+- One credential store. `SecureStore`, one vault entry per field under the same
+  `dash.connection.*` name, one `connection_secrets` row. No second store, no new
+  table, no new schema.
+- No secret crosses `dashShell`, `dashData`, the audited command channel or the
+  read channel. The three connection commands still declare three id payload keys
+  and the boundary still refuses any other field.
+- No token value reaches SQLite, an audit record, a URL, or either renderer.
+  Asserted over the database file's raw bytes, not over a query.
+- The IPC audit still records keys and never values.
+- `assertNoRunnerSecrets`, the registration `DASH_` guard and
+  `checkEnvironmentName` are unchanged and still enforcing.
+- The browser development path stays read-only: no bridge, so no sign-in.
+
+### Newly accepted costs
+
+- **A transient loopback listener**, as above. Small, but a listener.
+- **A second accepted `masked_hint` shape.** `maskAccount` produces
+  `he••••@example.com`, because `maskSecret` applied to an OAuth connection would
+  mask a refresh token no human has ever seen — four characters that answer
+  nothing, in a row whose real question is "which of my accounts is this?". The
+  structural guarantee is unchanged: both shapes require the literal four-bullet
+  run, which no credential contains.
+- **A public client id in the source.** A Desktop client has no secret and its id
+  is not a credential; PKCE is what makes the flow safe. Recorded because it
+  looks like a secret to anyone skimming, and is not.
+- **DASH holds a durable grant on a user's Google account.** Amendment 7 held
+  strings users had already obtained elsewhere. This is DASH asking for access in
+  its own name, and `disconnect` therefore revokes at the provider before
+  deleting locally — best effort, and the copy says which of the two happened.
+
+### Still not decided
+
+- **Google verification.** `gmail.readonly` and `gmail.compose` are restricted
+  scopes. Test users work immediately; anyone else needs Google's review —
+  privacy policy URL, homepage on a verified domain, demo video, possibly a
+  security assessment, and weeks of lead time. Until then this works for accounts
+  added as test users and for nobody else.
+- **Long runs.** The access-token expiry above.
+- **Adoption of an agent-managed credential into DASH** ("reconnect, test,
+  switch") remains unimplemented, as in Amendment 7.
+- Installed-MSIX verification remains human-gated for the reasons in Amendment 6.

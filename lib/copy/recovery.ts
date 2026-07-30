@@ -33,6 +33,8 @@
  * imply the user did anything.
  */
 
+import type { OAuthFailureCode } from "../oauth/flow";
+import type { LoopbackFailureCode } from "../oauth/loopback";
 import type { SecureStoreErrorCode } from "../secure-store";
 
 /** Who can do something about it. Surfaces use this to decide whether to offer a button. */
@@ -209,6 +211,120 @@ export function describeConnectionCondition(
           "The agent has not said, and DASH does not guess. It may be fine.",
         next_action: `Test the connection to ${service}.`,
         actor: "user",
+      };
+  }
+}
+
+/* ---------------------------------------------------------------------- *
+ * Signing in to a provider
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Every way a sign-in can end without a usable credential (MAR-446).
+ *
+ * The union is imported from the two modules that actually produce these codes
+ * rather than retyped, so adding a failure mode there is a compile error here
+ * until somebody writes the sentence for it. That is the intended pressure: a
+ * new failure with no copy would otherwise reach a user as a blank notice.
+ */
+export type AuthorizationFailureCode =
+  | OAuthFailureCode
+  | LoopbackFailureCode
+  /** The sign-in worked, but the user did not grant everything the agent needs. */
+  | "missing_permissions";
+
+/**
+ * What to say when a sign-in did not produce a credential DASH can keep.
+ *
+ * `revoked` is deliberately delegated to `describeConnectionCondition` rather
+ * than given its own words here. That function has carried the revoked sentence
+ * since MAR-423 and nothing had ever been able to produce the condition — an
+ * agent could *report* revoked access, but DASH held no grant of its own to have
+ * revoked. It does now, and the two paths reaching one sentence is the point:
+ * "someone withdrew this" should read identically whether the agent noticed or
+ * DASH did.
+ *
+ * `denied` and `cancelled` are not failures and do not read as any. A user who
+ * pressed Cancel on a consent screen got the outcome they asked for, and copy
+ * that treated it as an error would be arguing with them.
+ */
+export function describeAuthorizationFailure(
+  code: AuthorizationFailureCode,
+  context: { service: string; missing?: readonly string[] },
+): Recovery {
+  const { service } = context;
+
+  switch (code) {
+    case "revoked":
+      // The one condition MAR-446 names explicitly. Non-null because `revoked`
+      // is a state `describeConnectionCondition` always answers for — only
+      // `connected` returns null, and that is not reachable from here.
+      return describeConnectionCondition(service, { state: "revoked" }) as Recovery;
+
+    case "denied":
+      return {
+        headline: `${service} was not connected.`,
+        meaning: `You chose not to give the agent access, so nothing was stored and nothing changed.`,
+        next_action: `Connect ${service} again whenever you want to.`,
+        actor: "user",
+      };
+
+    case "cancelled":
+      return {
+        headline: `The ${service} sign-in was cancelled.`,
+        meaning: "Nothing was stored and nothing changed.",
+        next_action: `Connect ${service} again when you are ready.`,
+        actor: "user",
+      };
+
+    case "timeout":
+      return {
+        headline: `The ${service} sign-in took too long.`,
+        meaning:
+          "DASH stopped waiting for the browser to come back. This usually means the sign-in tab was left open or closed partway through.",
+        next_action: `Connect ${service} again, and finish signing in when the browser opens.`,
+        actor: "user",
+      };
+
+    case "network":
+      return {
+        headline: `DASH could not reach ${service}.`,
+        meaning:
+          "Nothing was stored. This is usually a connection problem on this computer rather than anything wrong with your account.",
+        next_action: "Check this computer is online, then try again.",
+        actor: "user",
+      };
+
+    case "missing_permissions": {
+      const missing = context.missing ?? [];
+      return {
+        headline: `${service} is connected, but not with everything the agent needs.`,
+        meaning:
+          missing.length > 0
+            ? `The agent also needs to: ${missing.join("; ")}. Without that it will skip the parts of its job that need it.`
+            : "Some of the access the agent asked for was not granted, so it will skip the parts of its job that need it.",
+        next_action: `Connect ${service} again and leave every permission ticked.`,
+        actor: "user",
+      };
+    }
+
+    case "provider_error":
+    case "provider_refused":
+      return {
+        headline: `${service} refused the sign-in.`,
+        meaning:
+          "Nothing was stored. This can happen when an account is managed by a workplace or school that restricts which apps may connect.",
+        next_action: `Try again, and if it keeps happening check whether ${service} allows this account to connect other apps.`,
+        actor: "user",
+      };
+
+    case "malformed_response":
+      return {
+        headline: `DASH could not understand ${service}'s reply.`,
+        meaning:
+          "Nothing was stored. This is a fault in DASH or a change at the provider's end, not something you did.",
+        next_action: "Try again. If it keeps happening, this needs reporting.",
+        actor: "dash",
       };
   }
 }

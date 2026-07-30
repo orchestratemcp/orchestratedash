@@ -34,6 +34,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 import {
+  CREDENTIAL_AUTHORIZE_CHANNEL,
   CREDENTIAL_CANCEL_CHANNEL,
   CREDENTIAL_DESCRIBE_CHANNEL,
   CREDENTIAL_SUBMIT_CHANNEL,
@@ -59,6 +60,23 @@ const dashCredential = {
 
   cancel: async (): Promise<void> => {
     await ipcRenderer.invoke(CREDENTIAL_CANCEL_CHANNEL);
+  },
+
+  /**
+   * Ask main to run a provider sign-in (MAR-446).
+   *
+   * Write-only in the same sense as `submit`, and emptier: it sends nothing and
+   * resolves with nothing. Everything that happens — the loopback port, the
+   * browser, the token exchange — happens in main, and the only thing this
+   * renderer learns is that it is over, because main closes the window.
+   *
+   * There is deliberately no way to influence what is authorized. The provider,
+   * the scopes and the account are resolved in main from the validated manifest
+   * before this window opens; a page that could name them would be a page that
+   * could ask Google for more than the agent declared.
+   */
+  authorize: async (): Promise<void> => {
+    await ipcRenderer.invoke(CREDENTIAL_AUTHORIZE_CHANNEL);
   },
 };
 

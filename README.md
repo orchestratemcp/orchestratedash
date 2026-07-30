@@ -7,8 +7,9 @@
 > Runner.** This repository defines frozen telemetry v1 and the additive Agent
 > DOM v2 contract, and ships a local app that imports manifests, receives run
 > events, stores credentials in the OS vault (MAR-416), and sends audited Agent
-> DOM commands (MAR-417) from a shell that runs (MAR-424). It still contains no
-> OAuth flows and no connection broker.
+> DOM commands (MAR-417) from a shell that runs (MAR-424). As of MAR-446 it
+> signs in to Google through a loopback + PKCE flow in the user's own browser,
+> storing the result in the same vault. It still contains no connection broker.
 >
 > **DASH never hosts or executes agents.** That sentence is still exactly true
 > of DASH, and as of MAR-415 it is no longer the whole story for the product:
@@ -220,9 +221,12 @@ values:
 - **DASH-managed:** DASH holds the credential in the OS vault and passes it to
   the agent at spawn, as the environment variable the manifest's
   `technical.environment_name` names (MAR-383). This covers fields declared
-  `kind: "secret"`. Fields declared `oauth_reauthorization` are **not** covered:
-  DASH has no authorization flow, and says so on the row rather than offering a
-  box for a token it could never refresh.
+  `kind: "secret"`. Fields declared `oauth_reauthorization` are covered for
+  providers DASH has a sign-in flow for — Google, as of MAR-446 — where the
+  refresh token stays in the vault and the agent receives a short-lived access
+  token minted at spawn. For any other provider the field is still refused, and
+  the row says so rather than offering a box for a token DASH could never
+  refresh.
 - **External:** credentials remain in a provider or secret manager outside DASH.
 
 Moving an existing OAuth connection to DASH is represented as reconnect, test,

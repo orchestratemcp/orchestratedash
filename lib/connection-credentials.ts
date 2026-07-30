@@ -37,6 +37,7 @@
  */
 
 import type { ConnectionSourceManifest, ManifestConnection, ManifestConnectionField } from "./connections";
+import { checkRequestedScopes, oauthProviderFor } from "./oauth/providers";
 
 /* ---------------------------------------------------------------------- *
  * Environment names
@@ -161,9 +162,42 @@ export type CredentialTargetRefusal =
   | "unknown_field"
   | "not_a_secret_field"
   | "not_dash_managed"
+  /** MAR-446: an OAuth field for a provider DASH has no sign-in flow for. */
+  | "no_oauth_flow"
+  /** MAR-446: an OAuth field whose manifest named no permissions to request. */
+  | "oauth_scopes_not_declared"
+  /** MAR-446: an OAuth field asking for access DASH will not request. */
+  | "oauth_scope_not_allowed"
   | EnvironmentNameRefusal;
 
+/**
+ * What kind of credential a target holds (MAR-446).
+ *
+ * The two differ in every direction: how DASH obtains one (a text box versus a
+ * browser sign-in), what it stores (an opaque string versus an envelope), what
+ * it can honestly check (that the vault still opens versus whether the provider
+ * still accepts the grant), and what it hands an agent (the value itself versus
+ * a token minted at spawn). Carrying the distinction on the target means each of
+ * those four places branches on a declared field rather than re-deriving it from
+ * the manifest.
+ */
+export type CredentialKind = "secret" | "oauth";
+
+/** The sign-in DASH would run for an OAuth target. */
+export interface OAuthTarget {
+  /** `OAuthProvider.id`, e.g. `google`. */
+  provider_id: string;
+  /**
+   * The scopes the manifest declared, already checked against the provider's
+   * allowlist. Never rendered — `describePermissions` turns them into sentences.
+   */
+  scopes: string[];
+}
+
 export interface CredentialTarget {
+  kind: CredentialKind;
+  /** Present exactly when `kind` is `oauth`. */
+  oauth: OAuthTarget | null;
   agent_id: string;
   connection_id: string;
   field_id: string;
@@ -240,11 +274,41 @@ export function resolveCredentialTarget(
     return { ok: false, refusal: "unknown_field" };
   }
 
-  if (field.kind !== "secret") {
-    // `oauth_reauthorization` lands here. DASH has no authorization flow yet,
-    // and a masked text box that accepted a pasted OAuth token would be a worse
-    // answer than an honest refusal: the user would have had to obtain the
-    // token by hand, and it would expire without DASH being able to refresh it.
+  // MAR-446. An `oauth_reauthorization` field used to land in the refusal below
+  // unconditionally, because DASH had no authorization flow and a masked text
+  // box taking a pasted token DASH could never refresh would have been a worse
+  // answer than an honest no. It now asks three questions first, and the honest
+  // no survives all three as the default: a provider with no flow is refused in
+  // exactly the words it was before.
+  let oauth: OAuthTarget | null = null;
+  if (field.kind === "oauth_reauthorization") {
+    const provider = oauthProviderFor(connection.provider);
+    if (provider === null) {
+      return { ok: false, refusal: "no_oauth_flow" };
+    }
+
+    const scopes = field.technical?.provider_scopes ?? [];
+    if (scopes.length === 0) {
+      // Refused rather than defaulted. DASH could pick a reasonable set for
+      // Gmail, and picking it would be DASH deciding what an agent may read —
+      // the same guessing `lib/connections.ts` refuses when it declines to
+      // infer a connection from a value. An empty list is a manifest that has
+      // not said, and a consent screen for access nobody declared is the one
+      // outcome worth making impossible.
+      return { ok: false, refusal: "oauth_scopes_not_declared" };
+    }
+
+    if (checkRequestedScopes(provider, scopes).length > 0) {
+      // A manifest is the agent author's file. Without this, one could name
+      // full mailbox access, DASH would request it, and the checklist above
+      // would go on describing whatever the connection's friendly capability
+      // labels said — a consent screen and a checklist that disagree, with DASH
+      // vouching for both.
+      return { ok: false, refusal: "oauth_scope_not_allowed" };
+    }
+
+    oauth = { provider_id: provider.id, scopes: [...scopes] };
+  } else if (field.kind !== "secret") {
     return { ok: false, refusal: "not_a_secret_field" };
   }
 
@@ -259,6 +323,8 @@ export function resolveCredentialTarget(
   return {
     ok: true,
     target: {
+      kind: oauth === null ? "secret" : "oauth",
+      oauth,
       agent_id: agentId,
       connection_id: connection.id,
       field_id: field.id,
@@ -304,6 +370,12 @@ export function connectableFields(
  * iterate the wider set: a target with a null `environment_name` is one DASH
  * holds and does not hand over, and the difference should be a filter someone
  * wrote rather than a null check someone forgot.
+ *
+ * Both kinds appear here, and the caller must still branch: an API-key target
+ * delivers the stored value, an OAuth target delivers a short-lived access token
+ * minted at spawn from a refresh token that never leaves DASH (MAR-446). What
+ * they share is that the manifest named somewhere to put it, which is what this
+ * filter is about.
  */
 export function deliverableFields(
   agentId: string,

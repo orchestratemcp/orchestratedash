@@ -111,12 +111,20 @@ Main verifies every credential channel message came from the prompt window's own
 
 ## Not in this slice
 
-No OAuth, no local bridge or ingest server, no electron-builder, no code
-signing. See ADR 0001 → "Not decided here".
+No local bridge or ingest server, no electron-builder, no code signing. See
+ADR 0001 → "Not decided here".
 
-Secret *storage* is implemented (MAR-416) and the *connect / check / disconnect*
-flow that fills it is implemented (MAR-383) — see
+Secret *storage* is implemented (MAR-416), the *connect / check / disconnect*
+flow that fills it is implemented (MAR-383), and Google sign-in through a
+loopback + PKCE flow in the user's own browser is implemented (MAR-446) — see
 [local store and vault](../docs/local-store-and-vault.md).
+
+The sign-in reuses this window rather than adding a third bridge: the prompt
+gains an `oauth` mode that renders *less* than the secret mode — no input, no
+`submit` — and the preload gains one channel that carries nothing in either
+direction. The consent screen itself is never inside DASH; `shell.openExternal`
+sends the user to their own browser, which is what RFC 8252 requires and what
+Google enforces.
 
 The Agent DOM command channel is implemented (MAR-417) — see
 [the command channel](../docs/agent-command-channel.md). MAR-424 proved it
