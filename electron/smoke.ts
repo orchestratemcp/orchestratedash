@@ -47,15 +47,18 @@
 import "./smoke-identity.js";
 import "./main.js";
 
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, shell } from "electron";
 
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { IPC_ORIGIN, ipcFetch } from "../lib/agent-dom/ipc-fetch";
 import { putAgentDomState, readCommandAudit } from "../lib/agent-dom/store";
-import { dataDir } from "../lib/db";
-import { importManifest } from "../lib/store";
+import { connectableFields } from "../lib/connection-credentials";
+import { closeDb, dataDir } from "../lib/db";
+import { RENDERER_ORIGIN } from "../lib/shell/renderer-scheme";
+import { readAgentManifest, importManifest } from "../lib/store";
+import { promptForAuthorization } from "./credential-prompt";
 
 /** Read from the repo, like `lib/contracts.ts` does. Run from the repo root. */
 function example<T>(name: string): T {
@@ -288,6 +291,228 @@ check(
   { payload_keys: written.at(-1)?.payload_keys, marker_absent: true },
 );
 
+/* -- Proof 3f: the credential bridge is not on the app window ----------- */
+
+/**
+ * Amendment 7's central claim, checked from the side that can disprove it.
+ *
+ * *"`dashCredential` is not exposed in the app window. The two capabilities
+ * never coexist in one renderer."* Every other proof about the credential seam
+ * is written from inside the prompt, where the bridge is supposed to be. This is
+ * the one that fails if a future preload edit exposes it somewhere it is not —
+ * which is exactly the regression a reviewer reading `credential-preload.ts`
+ * alone would not see, because that file would still be correct.
+ */
+const appWindowBridges = (await window.webContents.executeJavaScript(
+  `({ credential: typeof window.dashCredential, shell: typeof window.dashShell })`,
+)) as { credential: string; shell: string };
+check(
+  "3f. the app window has no credential bridge",
+  appWindowBridges.credential === "undefined" && appWindowBridges.shell === "object",
+  appWindowBridges,
+);
+
+/* -- Proof 5: the OAuth prompt, end to end in main (MAR-446) ------------ */
+
+/**
+ * MAR-446 shipped with its Electron half unexecuted.
+ *
+ * `tests/oauth-*.test.ts` cover the four pure modules thoroughly, and MAR-432's
+ * bundle inspection proves `credential-preload.js` is *in* the build. Neither
+ * says the pieces are wired: that pressing the prompt's button reaches
+ * `CREDENTIAL_AUTHORIZE_CHANNEL`, that main resolves the provider, that
+ * `startAuthorization` binds a loopback port, and that the URL handed to the
+ * browser is the one the manifest's scopes describe. That is main-process
+ * sequencing across a real preload and a real window, which is the category this
+ * harness exists for.
+ *
+ * ## Why the browser is intercepted rather than opened
+ *
+ * `shell.openExternal` is swapped for a capture function before the flow starts.
+ * The alternative is a real Google consent screen in the user's own browser,
+ * which would make this run interactive, dependent on whoever is signed in, and
+ * impossible to repeat unattended — and it would send a live authorization
+ * request from a proof run.
+ *
+ * Capturing the URL asserts strictly more than watching a tab appear: the
+ * redirect really is the loopback address the listener really bound, the
+ * challenge method really is S256, and the scopes really are the manifest's.
+ * What stays unproven is the handoff itself — that the OS opens that URL — and
+ * that is the one link in this chain a machine cannot check for a human.
+ */
+const oauthTarget = (() => {
+  const seededManifest = readAgentManifest(AGENT);
+  if (seededManifest === null) {
+    return null;
+  }
+  return (
+    connectableFields(AGENT, seededManifest).find((field) => field.kind === "oauth") ?? null
+  );
+})();
+
+check("5a. the Gmail example declares a sign-in DASH can run", oauthTarget !== null, {
+  connection: oauthTarget?.connection_id,
+  field: oauthTarget?.field_id,
+  provider: oauthTarget?.oauth?.provider_id,
+});
+
+if (oauthTarget !== null) {
+  const opened: string[] = [];
+  const realOpenExternal = shell.openExternal.bind(shell);
+  shell.openExternal = async (url: string): Promise<void> => {
+    opened.push(url);
+  };
+
+  // The prompt is a *modal child* of the app window, so it is the window that
+  // is not the one we already have. Resolved by waiting for it to appear rather
+  // than by index, because `getAllWindows` order is not contractual.
+  const promptWindow = new Promise<BrowserWindow>((resolve, reject) => {
+    const deadline = setTimeout(() => reject(new Error("no prompt window after 30s")), 30_000);
+    const look = (): void => {
+      const found = BrowserWindow.getAllWindows().find((candidate) => candidate !== window);
+      if (found === undefined) {
+        setTimeout(look, 50);
+        return;
+      }
+      found.webContents.once("did-finish-load", () => {
+        clearTimeout(deadline);
+        resolve(found);
+      });
+    };
+    look();
+  });
+
+  // Not awaited yet. It settles when the prompt is cancelled below, and awaiting
+  // it here would deadlock on a window that has not opened.
+  const authorization = promptForAuthorization(
+    oauthTarget,
+    "Windows Credential Manager",
+    false,
+    null,
+    null,
+    window,
+    RENDERER_ORIGIN,
+  );
+
+  const prompt = await promptWindow;
+
+  const promptBridge = (await prompt.webContents.executeJavaScript(
+    `({
+      methods: Object.keys(window.dashCredential ?? {}).sort(),
+      leaks: [ "dashShell", "dashData", "ipcRenderer", "require" ].filter((k) => k in window)
+    })`,
+  )) as { methods: string[]; leaks: string[] };
+  check(
+    "5b. the prompt exposes only the credential bridge",
+    JSON.stringify(promptBridge.methods) ===
+      JSON.stringify(["authorize", "cancel", "describe", "submit"]) &&
+      promptBridge.leaks.length === 0,
+    promptBridge,
+  );
+
+  const described = (await prompt.webContents.executeJavaScript(
+    `window.dashCredential.describe()`,
+  )) as {
+    mode?: string;
+    provider_label?: string;
+    permissions?: string[];
+    waiting?: boolean;
+  } | null;
+  check(
+    "5c. describe answers in oauth mode, in permissions and not scopes",
+    described?.mode === "oauth" &&
+      described.provider_label === "Google" &&
+      Array.isArray(described.permissions) &&
+      described.permissions.length > 0 &&
+      // `lib/copy/identifiers.ts` forbids a scope here. A permission list that
+      // leaked one would render a googleapis URL at a user as an explanation.
+      !JSON.stringify(described.permissions).includes("googleapis.com"),
+    described,
+  );
+
+  /**
+   * The press. Deliberately not awaited: `authorize` resolves only when the
+   * whole sign-in settles, and this one settles when we cancel it below.
+   */
+  void prompt.webContents.executeJavaScript(`window.dashCredential.authorize()`);
+
+  // Poll for the capture rather than sleeping a fixed time: binding a port and
+  // building a URL is fast, but a fixed wait is either flaky or slow.
+  const captured = await (async (): Promise<string | null> => {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (opened.length > 0) {
+        return opened[0] ?? null;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return null;
+  })();
+
+  check("5d. authorize reached shell.openExternal", captured !== null, {
+    captured: captured === null ? null : new URL(captured).origin,
+  });
+
+  if (captured !== null) {
+    const url = new URL(captured);
+    const redirect = url.searchParams.get("redirect_uri") ?? "";
+    const scopes = (url.searchParams.get("scope") ?? "").split(" ").filter(Boolean);
+    const declared = [...(oauthTarget.oauth?.scopes ?? [])].sort();
+
+    check(
+      "5e. the browser URL is Google's consent endpoint",
+      url.origin === "https://accounts.google.com",
+      url.origin + url.pathname,
+    );
+
+    check(
+      "5f. the redirect is a bound loopback port, per RFC 8252",
+      // Amendment 8's amendment of Amendment 7: this listener is the new TCP
+      // socket, and it is on 127.0.0.1 with an OS-assigned port.
+      /^http:\/\/127\.0\.0\.1:\d+\//.test(redirect),
+      redirect,
+    );
+
+    check(
+      "5g. the request is PKCE S256 with a challenge and a state",
+      url.searchParams.get("code_challenge_method") === "S256" &&
+        (url.searchParams.get("code_challenge") ?? "").length > 0 &&
+        (url.searchParams.get("state") ?? "").length > 0,
+      {
+        method: url.searchParams.get("code_challenge_method"),
+        challenge_length: (url.searchParams.get("code_challenge") ?? "").length,
+      },
+    );
+
+    check(
+      "5h. it asks for exactly the scopes the manifest declared",
+      JSON.stringify([...scopes].sort()) === JSON.stringify(declared),
+      { asked: scopes, declared },
+    );
+
+    // The verifier is what makes the exchange safe and must never be in
+    // anything openable. `lib/oauth/flow.ts` says so; this checks the built URL.
+    check(
+      "5i. the URL carries no verifier and no secret",
+      !captured.includes("code_verifier") && !captured.includes("client_secret"),
+      { params: [...url.searchParams.keys()] },
+    );
+  }
+
+  // Cancel through the bridge, which is also the proof that `cancel` releases
+  // the loopback port rather than leaving it bound until the five-minute
+  // timeout — the behaviour `electron/oauth-session.ts` claims for it.
+  void prompt.webContents.executeJavaScript(`window.dashCredential.cancel()`).catch(() => undefined);
+
+  const outcome = await authorization;
+  check(
+    "5j. cancelling settles the prompt as cancelled, storing nothing",
+    outcome.ok === false && outcome.code === "cancelled",
+    outcome,
+  );
+
+  shell.openExternal = realOpenExternal;
+}
+
 /* -- Proof 4: the bundled runner started, from a real shell ------------- */
 
 /**
@@ -362,10 +587,34 @@ console.log(
 );
 }
 
+/**
+ * Close the store before `app.exit`.
+ *
+ * `app.exit` terminates without running `will-quit`, so the checkpoint
+ * `electron/main.ts` now performs there does not happen for a smoke run — and
+ * this harness is the single most frequent way this store is opened and killed.
+ * Leaving it mid-WAL after every proof run is how a store ends up being copied,
+ * backed up or terminated in the state that has to be recovered rather than
+ * simply read.
+ *
+ * Both paths, including the failure path: a run that ended badly is exactly the
+ * one whose store should be left tidy.
+ */
+function exitAfterClosing(code: number): void {
+  try {
+    closeDb();
+  } catch (error: unknown) {
+    // Never let cleanup change the verdict. A store that would not close is
+    // worth printing and is not worth turning a passing run into a failure.
+    console.error(`[smoke] closing the store failed: ${String(error)}`);
+  }
+  app.exit(code);
+}
+
 void run().then(
-  () => app.exit(failures.length === 0 ? 0 : 1),
+  () => exitAfterClosing(failures.length === 0 ? 0 : 1),
   (error: unknown) => {
     console.error(`[smoke] ${error instanceof Error ? error.stack : String(error)}`);
-    app.exit(1);
+    exitAfterClosing(1);
   },
 );

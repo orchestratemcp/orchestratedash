@@ -6,7 +6,7 @@ import {
   type AnyAgentManifest,
   type RunEvent,
 } from "./contracts";
-import { db, insertEventRow, transact } from "./db";
+import { db, insertEventRow, readRowsTolerantly, transact } from "./db";
 
 /**
  * The store's query layer.
@@ -32,13 +32,62 @@ export interface StoredAgent {
   imported_at: string;
 }
 
+/**
+ * Rows that are in the database and could not be read back out of it.
+ *
+ * Not an error and not a silence. A store that throws on one damaged row takes
+ * down every page at once (see `readStore`); a store that drops it quietly tells
+ * the user their agent was never imported, which is a lie about their data. This
+ * is the third option: the rest of the store is returned, and what was lost is
+ * named so a surface can say so.
+ *
+ * Agent names are carried and event bodies are only counted, because that is the
+ * difference in what can honestly be said. An agent's `name` is its own column
+ * and survives damage to `manifest_json`, so "DASH cannot read *this* agent" is
+ * checkable. A damaged `event_json` has no readable identity left worth
+ * rendering, so it is a number.
+ */
+export interface UnreadableRows {
+  agents: string[];
+  events: number;
+  /**
+   * Agent rows a damaged page put out of reach entirely, so not even their name
+   * survived to be listed in `agents` above.
+   *
+   * A separate number rather than a placeholder pushed into the name list: an
+   * invented name would be rendered to a user as if it were their agent's.
+   */
+  unnamed_agents: number;
+}
+
 export interface StoreShape {
   agents: Record<string, StoredAgent>;
   events: RunEvent[];
+  /** What this read could not parse. Both empty on a healthy store. */
+  unreadable: UnreadableRows;
 }
 
 function text(row: Record<string, unknown>, column: string): string {
   return String(row[column]);
+}
+
+/**
+ * `JSON.parse`, or null.
+ *
+ * The parser's own message is deliberately discarded rather than propagated.
+ * Node quotes the offending input back at you — that is how the truncated
+ * manifest that prompted this was identified — and these rows reach a renderer
+ * and a log. `lib/db.ts` makes the same argument about the legacy import's
+ * failure record, and it holds harder here: the store is where the connection
+ * checklist's names and hints live, so a value we by definition could not
+ * inspect must never be quoted out of it.
+ */
+function parseOrNull<T>(raw: string): T | null {
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -53,25 +102,74 @@ function text(row: Record<string, unknown>, column: string): string {
  *
  * Targeted queries are deliberately not added here in advance of a caller. The
  * schema keeps the headroom; the read API can grow when something needs it.
+ *
+ * ## Why every row is parsed defensively
+ *
+ * This function used to `JSON.parse` each row unguarded, which was correct about
+ * the writers and wrong about the file. Nothing in DASH can *write* an invalid
+ * manifest — `importManifest` and the legacy import both stringify an
+ * already-validated object, and there is no third writer — so the only way a row
+ * gets here unparseable is that the bytes changed underneath us. A manifest
+ * larger than a page lives partly in SQLite overflow pages, and a store damaged
+ * by an abrupt kill can return a manifest truncated mid-string.
+ *
+ * That is exactly the case an unguarded parse handles worst. One damaged row
+ * threw out of `readStore`, and because all four views call `readStore`, a single
+ * bad agent took down the agents list, the runs list, the Connection Center and
+ * the work inbox together — including the pages that would have rendered
+ * perfectly from rows that were fine. The blast radius was the whole app for one
+ * row's worth of damage.
  */
 export function readStore(): StoreShape {
   const database = db();
   const agents: Record<string, StoredAgent> = {};
+  const unreadable: UnreadableRows = { agents: [], events: 0, unnamed_agents: 0 };
 
-  for (const row of database.prepare("SELECT name, manifest_json, imported_at FROM agents").all()) {
-    agents[text(row, "name")] = {
-      manifest: JSON.parse(text(row, "manifest_json")) as AnyAgentManifest,
-      imported_at: text(row, "imported_at"),
-    };
+  // Both tables are read tolerantly, because damage arrives in two shapes and
+  // the store that prompted this had one of each: a row that comes back
+  // truncated, and a page that will not be read at all. The JSON guard below
+  // handles the first; `readRowsTolerantly` handles the second.
+  const agentRows = readRowsTolerantly(database, {
+    table: "agents",
+    bulk: "SELECT rowid, name, manifest_json, imported_at FROM agents",
+    byRowid: "SELECT rowid, name, manifest_json, imported_at FROM agents WHERE rowid = ?",
+  });
+  for (const row of agentRows.rows) {
+    const name = text(row, "name");
+    const manifest = parseOrNull<AnyAgentManifest>(text(row, "manifest_json"));
+    if (manifest === null) {
+      unreadable.agents.push(name);
+      continue;
+    }
+    agents[name] = { manifest, imported_at: text(row, "imported_at") };
   }
 
-  // Ordered by arrival, which is what the JSON store's array order meant.
-  const events = database
-    .prepare("SELECT event_json FROM events ORDER BY id")
-    .all()
-    .map((row) => JSON.parse(text(row, "event_json")) as RunEvent);
+  // Ordered by arrival, which is what the JSON store's array order meant. The
+  // rowid walk produces that order too — `events.id` is an alias for the rowid —
+  // so the fallback does not quietly reorder a run's events.
+  const eventRows = readRowsTolerantly(database, {
+    table: "events",
+    bulk: "SELECT event_json FROM events ORDER BY id",
+    byRowid: "SELECT event_json FROM events WHERE rowid = ?",
+  });
+  const events: RunEvent[] = [];
+  for (const row of eventRows.rows) {
+    const event = parseOrNull<RunEvent>(text(row, "event_json"));
+    if (event === null) {
+      unreadable.events += 1;
+      continue;
+    }
+    events.push(event);
+  }
 
-  return { agents, events };
+  // A row lost to a damaged page and a row lost to damaged JSON are the same
+  // loss to a reader, and are counted together. The agent names cannot be
+  // recovered for the first kind — the name column is on the page that would
+  // not read — so those are counted as events are: as a number, honestly.
+  unreadable.events += eventRows.lost;
+  unreadable.unnamed_agents = agentRows.lost;
+
+  return { agents, events, unreadable };
 }
 
 /**
@@ -131,10 +229,18 @@ export function forgetAgent(name: string): { existed: boolean } {
  * everything for the pages, but the command channel asks about one agent per
  * command and answering that by loading every manifest and every event would
  * make the cost of a command scale with the size of the store.
+ *
+ * An unreadable row returns null, which the callers already handle as "DASH does
+ * not know this agent" — and here that is the *safe* reading rather than merely a
+ * convenient one. This function's caller is the command channel, which uses the
+ * manifest to decide whether a command is within what the agent declared. A
+ * manifest DASH cannot read is not a manifest it may act on, so refusing at
+ * `unknown_target` is the correct outcome; throwing would have failed closed too,
+ * but as an unhandled error rather than an audited refusal.
  */
 export function readAgentManifest(name: string): AnyAgentManifest | null {
   const row = db().prepare("SELECT manifest_json FROM agents WHERE name = ?").get(name);
-  return row === undefined ? null : (JSON.parse(text(row, "manifest_json")) as AnyAgentManifest);
+  return row === undefined ? null : parseOrNull<AnyAgentManifest>(text(row, "manifest_json"));
 }
 
 /**

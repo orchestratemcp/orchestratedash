@@ -338,6 +338,117 @@ export function transact<T>(database: DatabaseSync, work: () => T): T {
   }
 }
 
+/* ---------------------------------------------------------------------- *
+ * Reading a table whose pages may be damaged
+ * ---------------------------------------------------------------------- */
+
+export interface TolerantRead {
+  rows: Array<Record<string, unknown>>;
+  /**
+   * How many rows a damaged page put out of reach. Zero on a healthy table, and
+   * zero on a table this could not size — see below for why those are the same
+   * number and why that is the honest choice.
+   */
+  lost: number;
+}
+
+/**
+ * Every row of a table, falling back to one row at a time when a page is bad.
+ *
+ * `lib/store.ts` guards each row's JSON because a damaged store returned a
+ * *truncated* manifest. That is only one of the two ways damage arrives, and the
+ * store that prompted this exhibited both at once: `agents` read short, while
+ * `SELECT * FROM command_audit` threw `SQLITE_CORRUPT` outright — even though
+ * `SELECT count(*)` still answered 12, because a count is served from an index
+ * that never touches the damaged leaf.
+ *
+ * A bulk `SELECT *` walks every leaf page, so one bad page loses the whole
+ * table. Reading by rowid touches only the page a row is on, so the loss is
+ * confined to the rows actually sitting on the damaged page. That is the same
+ * argument the per-row JSON guard makes one level up: a partial loss must never
+ * be rounded up to a total one.
+ *
+ * The fast path is unchanged and unconditional — an intact table costs exactly
+ * one prepared statement, as before. The row-by-row walk happens only after a
+ * throw, which on a healthy store never happens.
+ *
+ * ## Sizing the walk
+ *
+ * It has to know how far to count. `max(rowid)` is asked first and reads the
+ * rightmost leaf, so on a badly damaged table it throws too — which is not
+ * hypothetical: on the store that prompted this, `max(rowid)`, `min(rowid)` and
+ * `SELECT *` on `command_audit` all threw while `count(*)` and `SELECT id`
+ * answered, because that table's *data pages* were unreachable and only its
+ * indexes had survived.
+ *
+ * So `sqlite_sequence` is the second source. It records the highest rowid ever
+ * issued for an AUTOINCREMENT table and lives in its own table, which a damaged
+ * page in the subject table does not touch. It over-estimates after deletions —
+ * harmless, because a rowid with no row simply yields nothing.
+ *
+ * When neither answers there is no range to walk, and this returns nothing with
+ * `lost` at zero rather than a guess. Reporting a fabricated count would be
+ * worse than reporting none: callers render these numbers to a user.
+ */
+export function readRowsTolerantly(
+  database: DatabaseSync,
+  options: {
+    table: string;
+    /** The ordinary query. Tried first and used whole whenever it succeeds. */
+    bulk: string;
+    /**
+     * The same query narrowed to one row. Its first `?` is the rowid; any
+     * further ones take `parameters` in order, so a filtered read stays filtered
+     * on the slow path and does not quietly widen to the whole table.
+     */
+    byRowid: string;
+    parameters?: readonly string[];
+  },
+): TolerantRead {
+  const parameters = options.parameters ?? [];
+
+  try {
+    return { rows: database.prepare(options.bulk).all(...parameters), lost: 0 };
+  } catch {
+    // Deliberately not inspected. SQLITE_CORRUPT is the case this exists for,
+    // and any other failure of a plain SELECT is equally not something a caller
+    // can act on — both mean "these rows are not available", which is what the
+    // walk below establishes precisely rather than assuming.
+  }
+
+  let highest = 0;
+  try {
+    const row = database.prepare(`SELECT max(rowid) AS high FROM ${options.table}`).get();
+    highest = Number(row?.["high"] ?? 0);
+  } catch {
+    try {
+      const row = database
+        .prepare("SELECT seq FROM sqlite_sequence WHERE name = ?")
+        .get(options.table);
+      highest = Number(row?.["seq"] ?? 0);
+    } catch {
+      highest = 0;
+    }
+  }
+  if (highest === 0) {
+    return { rows: [], lost: 0 };
+  }
+
+  const rows: Array<Record<string, unknown>> = [];
+  let lost = 0;
+  for (let rowid = 1; rowid <= highest; rowid += 1) {
+    try {
+      const row = database.prepare(options.byRowid).get(rowid, ...parameters);
+      if (row !== undefined) {
+        rows.push(row);
+      }
+    } catch {
+      lost += 1;
+    }
+  }
+  return { rows, lost };
+}
+
 function migrate(database: DatabaseSync): void {
   const row = database.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined;
   const applied = Number(row?.user_version ?? 0);
@@ -472,7 +583,7 @@ function importLegacyJson(database: DatabaseSync): void {
           manifest.agent.name,
           manifest.manifest_version,
           JSON.stringify(manifest),
-          typeof stored?.imported_at === "string" ? stored.imported_at : now,
+          importedAt(stored?.imported_at, now),
         );
       result.agents += 1;
     }
@@ -492,6 +603,32 @@ function importLegacyJson(database: DatabaseSync): void {
 
     setMeta(database, LEGACY_IMPORT_KEY, JSON.stringify(result));
   });
+}
+
+/**
+ * A timestamp from the legacy file, or now.
+ *
+ * The old check was `typeof === "string"`, which accepted `""` — and `""` passes
+ * the column's `NOT NULL` while being no more a timestamp than `null` is. Every
+ * other field in a migrated row is re-validated on the way in (that is what
+ * `validateManifest` is doing three lines up); this one was trusted because it
+ * came from a file DASH wrote, which is the same reasoning the manifest is
+ * deliberately *not* given.
+ *
+ * `dash.json` is an ordinary file in the user's data directory. It can be edited,
+ * truncated, restored from a partial backup or written by a build that had a bug.
+ * The falsehood a bad value produces is small but permanent — an agent listed as
+ * imported at a time it was not — so an unusable value is replaced with the
+ * honest one: DASH first saw this row now.
+ */
+function importedAt(value: unknown, now: string): string {
+  if (typeof value !== "string") {
+    return now;
+  }
+  // Parseable as a date, and round-trips — which `new Date("")` does not, and
+  // neither does anything else the column would otherwise have accepted whole.
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? now : value;
 }
 
 /** What we expect to find in a `dash.json`. Everything is checked before use. */

@@ -28,6 +28,7 @@
  */
 
 import type { RunAnalysis } from "../analyze";
+import type { Recovery } from "../copy/recovery";
 import type { ConnectionRequirementRow } from "../connections";
 import type { RunEvent } from "../contracts";
 import type { AgentCompliance } from "../insights";
@@ -78,6 +79,22 @@ export interface AgentRow {
 
 export interface AgentsView {
   agents: AgentRow[];
+  /**
+   * Rows the store holds and could not read back, worded as a recovery, or null
+   * when there are none.
+   *
+   * On the agents view rather than on every view, because this is the page the
+   * loss is *about*: a damaged manifest is a missing agent, and the agents list
+   * is where a user would notice one had gone. Repeating the same notice on the
+   * runs list and the Connection Center would report one fault four times and
+   * still not be the page that could act on it.
+   *
+   * A `Recovery` rather than the raw names, so the boundary carries the sentence
+   * the page renders instead of asking each host to compose one — the same
+   * argument `AgentOriginView` makes about projecting rather than passing
+   * through.
+   */
+  damage: Recovery | null;
 }
 
 /* ---------------------------------------------------------------------- *
