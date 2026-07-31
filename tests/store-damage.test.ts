@@ -176,7 +176,117 @@ describe("readStore, against a damaged row", () => {
     store.importManifest(manifest);
     store.ingestEvents(runEvent);
 
-    expect(store.readStore().unreadable).toEqual({ agents: [], events: 0 });
+    expect(store.readStore().unreadable).toEqual({ agents: [], events: 0, unnamed_agents: 0 });
+  });
+});
+
+/**
+ * The second shape of damage, and the one the real store's `command_audit`
+ * actually had: the bulk `SELECT *` does not come back short, it throws.
+ *
+ * Simulated by making the *statement* fail rather than the file, for the reason
+ * given at the top of this file — the behaviour under test is what DASH does
+ * when a bulk read throws, and reproducing SQLITE_CORRUPT portably would mean
+ * writing malformed SQLite internals from a test.
+ */
+describe("readRowsTolerantly", () => {
+  it("uses the bulk read when the table is intact", async () => {
+    const { db, store } = await freshStore();
+    store.importManifest(manifest);
+
+    const read = db.readRowsTolerantly(db.db(), {
+      table: "agents",
+      bulk: "SELECT name FROM agents",
+      byRowid: "SELECT name FROM agents WHERE rowid = ?",
+    });
+    expect(read.rows.map((row) => String(row["name"]))).toEqual([agentName(manifest)]);
+    expect(read.lost).toBe(0);
+  });
+
+  it("falls back to one row at a time when the bulk read throws", async () => {
+    const { db, store } = await freshStore();
+    store.importManifest(manifest);
+    store.importManifest(otherManifest);
+
+    const read = db.readRowsTolerantly(db.db(), {
+      table: "agents",
+      // A statement that cannot prepare stands in for a leaf page that cannot
+      // be read: both fail the bulk path and leave the rowid walk to recover.
+      bulk: "SELECT name FROM agents WHERE no_such_column = 1",
+      byRowid: "SELECT name FROM agents WHERE rowid = ?",
+    });
+
+    expect(read.rows).toHaveLength(2);
+    expect(read.lost).toBe(0);
+  });
+
+  it("keeps a filtered read filtered on the slow path", async () => {
+    const { db, store } = await freshStore();
+    store.importManifest(manifest);
+    store.importManifest(otherManifest);
+
+    const read = db.readRowsTolerantly(db.db(), {
+      table: "agents",
+      bulk: "SELECT name FROM agents WHERE no_such_column = 1",
+      byRowid: "SELECT name FROM agents WHERE rowid = ? AND name = ?",
+      parameters: [agentName(otherManifest)],
+    });
+
+    // The fallback must not quietly widen to the whole table — a caller that
+    // asked about one agent would otherwise be handed every agent's rows.
+    expect(read.rows.map((row) => String(row["name"]))).toEqual([agentName(otherManifest)]);
+  });
+
+  it("reports nothing rather than guessing when it cannot size the table", async () => {
+    const { db } = await freshStore();
+
+    const read = db.readRowsTolerantly(db.db(), {
+      table: "no_such_table",
+      bulk: "SELECT * FROM no_such_table",
+      byRowid: "SELECT * FROM no_such_table WHERE rowid = ?",
+    });
+
+    // `lost: 0` is deliberate. A fabricated count would be rendered to a user.
+    expect(read).toEqual({ rows: [], lost: 0 });
+  });
+});
+
+describe("the command audit, against a table that will not bulk-read", () => {
+  it("survives, because an audit trail is the last thing that should vanish", async () => {
+    const { db } = await freshStore();
+    const { writeCommandAudit, readCommandAudit } = await import("../lib/agent-dom/store");
+
+    // Two rows through the ordinary writer, so the shapes are real.
+    for (const decision of ["allowed", "denied"] as const) {
+      writeCommandAudit(db.db(), {
+        command_id: `cmd-${decision}`,
+        request_id: `req-${decision}`,
+        correlation_id: "corr-1",
+        agent: "billing-watch",
+        run_id: null,
+        command: "agent.start",
+        actor_id: "local",
+        actor_type: "user",
+        authenticated_by: "shell",
+        decision,
+        payload_keys: ["agent_id"],
+        mutates: true,
+        irreversible: false,
+        issued_at: null,
+        expires_at: null,
+        decided_at: new Date().toISOString(),
+      });
+    }
+    expect(readCommandAudit()).toHaveLength(2);
+
+    // The bulk path is what broke on the real store; the rowid walk is what
+    // this asserts still answers.
+    const read = db.readRowsTolerantly(db.db(), {
+      table: "command_audit",
+      bulk: "SELECT * FROM command_audit WHERE no_such_column = 1",
+      byRowid: "SELECT * FROM command_audit WHERE rowid = ?",
+    });
+    expect(read.rows).toHaveLength(2);
   });
 });
 
@@ -253,6 +363,24 @@ describe("describeStoreDamage", () => {
     // A damaged event body has no readable identity left. Copy that named one
     // would be inventing it.
     expect(recovery?.next_action).toContain("Report this");
+  });
+
+  it("counts agents whose name did not survive, and never invents one", () => {
+    const recovery = describeStoreDamage({ agents: [], events: 0, unnamed_agents: 2 });
+    expect(recovery?.headline).toContain("2 of your agents");
+    // No placeholder in the position a real agent name would occupy.
+    expect(recovery?.headline).not.toMatch(/unknown|unnamed|undefined|null/i);
+  });
+
+  it("counts named and unnamed losses together", () => {
+    const recovery = describeStoreDamage({
+      agents: ["billing-watch"],
+      events: 0,
+      unnamed_agents: 1,
+    });
+    expect(recovery?.headline).toContain("2 of your agents");
+    expect(recovery?.headline).toContain("billing-watch");
+    expect(recovery?.headline).toContain("one more it could not name");
   });
 
   it("says the sign-ins are unaffected, because they are", () => {

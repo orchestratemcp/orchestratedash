@@ -372,8 +372,13 @@ export function describeAuthorizationFailure(
 export function describeStoreDamage(unreadable: {
   agents: readonly string[];
   events: number;
+  /** Agent rows so damaged that not even the name came back. */
+  unnamed_agents?: number;
 }): Recovery | null {
-  const agentCount = unreadable.agents.length;
+  const named = unreadable.agents;
+  const unnamed = unreadable.unnamed_agents ?? 0;
+  const agentCount = named.length + unnamed;
+
   if (agentCount === 0 && unreadable.events === 0) {
     // Null for the same reason `describeConnectionCondition` returns null for a
     // healthy connection: an intact store is not a failure state, and a surface
@@ -381,12 +386,31 @@ export function describeStoreDamage(unreadable: {
     return null;
   }
 
-  const headline =
-    agentCount === 0
-      ? "Some of DASH's own records are damaged and could not be read."
-      : agentCount === 1
-        ? `DASH could not read what it stored about ${String(unreadable.agents[0])}.`
-        : `DASH could not read what it stored about ${String(agentCount)} of your agents: ${unreadable.agents.join(", ")}.`;
+  /**
+   * The unnamed ones are counted, never invented. An agent whose row would not
+   * read has no name left to render, and a placeholder in that position would be
+   * shown to a user in the place their own agent's name goes.
+   */
+  const headline = ((): string => {
+    if (agentCount === 0) {
+      return "Some of DASH's own records are damaged and could not be read.";
+    }
+    if (named.length === 0) {
+      return agentCount === 1
+        ? "DASH could not read what it stored about one of your agents."
+        : `DASH could not read what it stored about ${String(agentCount)} of your agents.`;
+    }
+    if (agentCount === 1) {
+      return `DASH could not read what it stored about ${String(named[0])}.`;
+    }
+    const rest =
+      unnamed === 0
+        ? ""
+        : unnamed === 1
+          ? ", and one more it could not name"
+          : `, and ${String(unnamed)} more it could not name`;
+    return `DASH could not read what it stored about ${String(agentCount)} of your agents: ${named.join(", ")}${rest}.`;
+  })();
 
   return {
     headline,
@@ -397,7 +421,9 @@ export function describeStoreDamage(unreadable: {
     next_action:
       agentCount === 0
         ? "Report this. DASH will keep working without the damaged records."
-        : "Add the agent again to replace what was lost. Its sign-ins are in your system's keyring and are untouched.",
+        : agentCount === 1
+          ? "Add the agent again to replace what was lost. Its sign-ins are in your system's keyring and are untouched."
+          : "Add those agents again to replace what was lost. Their sign-ins are in your system's keyring and are untouched.",
     actor: "dash",
   };
 }

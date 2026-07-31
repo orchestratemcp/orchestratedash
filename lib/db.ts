@@ -338,6 +338,97 @@ export function transact<T>(database: DatabaseSync, work: () => T): T {
   }
 }
 
+/* ---------------------------------------------------------------------- *
+ * Reading a table whose pages may be damaged
+ * ---------------------------------------------------------------------- */
+
+export interface TolerantRead {
+  rows: Array<Record<string, unknown>>;
+  /**
+   * How many rows a damaged page put out of reach. Zero on a healthy table, and
+   * zero on a table this could not size — see below for why those are the same
+   * number and why that is the honest choice.
+   */
+  lost: number;
+}
+
+/**
+ * Every row of a table, falling back to one row at a time when a page is bad.
+ *
+ * `lib/store.ts` guards each row's JSON because a damaged store returned a
+ * *truncated* manifest. That is only one of the two ways damage arrives, and the
+ * store that prompted this exhibited both at once: `agents` read short, while
+ * `SELECT * FROM command_audit` threw `SQLITE_CORRUPT` outright — even though
+ * `SELECT count(*)` still answered 12, because a count is served from an index
+ * that never touches the damaged leaf.
+ *
+ * A bulk `SELECT *` walks every leaf page, so one bad page loses the whole
+ * table. Reading by rowid touches only the page a row is on, so the loss is
+ * confined to the rows actually sitting on the damaged page. That is the same
+ * argument the per-row JSON guard makes one level up: a partial loss must never
+ * be rounded up to a total one.
+ *
+ * The fast path is unchanged and unconditional — an intact table costs exactly
+ * one prepared statement, as before. The row-by-row walk happens only after a
+ * throw, which on a healthy store never happens.
+ *
+ * ## What it cannot do
+ *
+ * It has to know how far to count, and it asks `max(rowid)` — which reads the
+ * rightmost leaf and can itself throw on a badly damaged table. When that
+ * happens there is no range to walk and this returns nothing, with `lost` at
+ * zero rather than a guess. Reporting a fabricated count would be worse than
+ * reporting none: the caller renders these numbers to a user.
+ */
+export function readRowsTolerantly(
+  database: DatabaseSync,
+  options: {
+    table: string;
+    /** The ordinary query. Tried first and used whole whenever it succeeds. */
+    bulk: string;
+    /**
+     * The same query narrowed to one row. Its first `?` is the rowid; any
+     * further ones take `parameters` in order, so a filtered read stays filtered
+     * on the slow path and does not quietly widen to the whole table.
+     */
+    byRowid: string;
+    parameters?: readonly string[];
+  },
+): TolerantRead {
+  const parameters = options.parameters ?? [];
+
+  try {
+    return { rows: database.prepare(options.bulk).all(...parameters), lost: 0 };
+  } catch {
+    // Deliberately not inspected. SQLITE_CORRUPT is the case this exists for,
+    // and any other failure of a plain SELECT is equally not something a caller
+    // can act on — both mean "these rows are not available", which is what the
+    // walk below establishes precisely rather than assuming.
+  }
+
+  let highest = 0;
+  try {
+    const row = database.prepare(`SELECT max(rowid) AS high FROM ${options.table}`).get();
+    highest = Number(row?.["high"] ?? 0);
+  } catch {
+    return { rows: [], lost: 0 };
+  }
+
+  const rows: Array<Record<string, unknown>> = [];
+  let lost = 0;
+  for (let rowid = 1; rowid <= highest; rowid += 1) {
+    try {
+      const row = database.prepare(options.byRowid).get(rowid, ...parameters);
+      if (row !== undefined) {
+        rows.push(row);
+      }
+    } catch {
+      lost += 1;
+    }
+  }
+  return { rows, lost };
+}
+
 function migrate(database: DatabaseSync): void {
   const row = database.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined;
   const applied = Number(row?.user_version ?? 0);

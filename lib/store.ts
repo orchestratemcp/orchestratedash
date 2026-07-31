@@ -6,7 +6,7 @@ import {
   type AnyAgentManifest,
   type RunEvent,
 } from "./contracts";
-import { db, insertEventRow, transact } from "./db";
+import { db, insertEventRow, readRowsTolerantly, transact } from "./db";
 
 /**
  * The store's query layer.
@@ -50,6 +50,14 @@ export interface StoredAgent {
 export interface UnreadableRows {
   agents: string[];
   events: number;
+  /**
+   * Agent rows a damaged page put out of reach entirely, so not even their name
+   * survived to be listed in `agents` above.
+   *
+   * A separate number rather than a placeholder pushed into the name list: an
+   * invented name would be rendered to a user as if it were their agent's.
+   */
+  unnamed_agents: number;
 }
 
 export interface StoreShape {
@@ -115,9 +123,18 @@ function parseOrNull<T>(raw: string): T | null {
 export function readStore(): StoreShape {
   const database = db();
   const agents: Record<string, StoredAgent> = {};
-  const unreadable: UnreadableRows = { agents: [], events: 0 };
+  const unreadable: UnreadableRows = { agents: [], events: 0, unnamed_agents: 0 };
 
-  for (const row of database.prepare("SELECT name, manifest_json, imported_at FROM agents").all()) {
+  // Both tables are read tolerantly, because damage arrives in two shapes and
+  // the store that prompted this had one of each: a row that comes back
+  // truncated, and a page that will not be read at all. The JSON guard below
+  // handles the first; `readRowsTolerantly` handles the second.
+  const agentRows = readRowsTolerantly(database, {
+    table: "agents",
+    bulk: "SELECT rowid, name, manifest_json, imported_at FROM agents",
+    byRowid: "SELECT rowid, name, manifest_json, imported_at FROM agents WHERE rowid = ?",
+  });
+  for (const row of agentRows.rows) {
     const name = text(row, "name");
     const manifest = parseOrNull<AnyAgentManifest>(text(row, "manifest_json"));
     if (manifest === null) {
@@ -127,9 +144,16 @@ export function readStore(): StoreShape {
     agents[name] = { manifest, imported_at: text(row, "imported_at") };
   }
 
-  // Ordered by arrival, which is what the JSON store's array order meant.
+  // Ordered by arrival, which is what the JSON store's array order meant. The
+  // rowid walk produces that order too — `events.id` is an alias for the rowid —
+  // so the fallback does not quietly reorder a run's events.
+  const eventRows = readRowsTolerantly(database, {
+    table: "events",
+    bulk: "SELECT event_json FROM events ORDER BY id",
+    byRowid: "SELECT event_json FROM events WHERE rowid = ?",
+  });
   const events: RunEvent[] = [];
-  for (const row of database.prepare("SELECT event_json FROM events ORDER BY id").all()) {
+  for (const row of eventRows.rows) {
     const event = parseOrNull<RunEvent>(text(row, "event_json"));
     if (event === null) {
       unreadable.events += 1;
@@ -137,6 +161,13 @@ export function readStore(): StoreShape {
     }
     events.push(event);
   }
+
+  // A row lost to a damaged page and a row lost to damaged JSON are the same
+  // loss to a reader, and are counted together. The agent names cannot be
+  // recovered for the first kind — the name column is on the page that would
+  // not read — so those are counted as events are: as a number, honestly.
+  unreadable.events += eventRows.lost;
+  unreadable.unnamed_agents = agentRows.lost;
 
   return { agents, events, unreadable };
 }

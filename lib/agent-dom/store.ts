@@ -16,7 +16,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { validateState } from "../contracts";
-import { db, transact } from "../db";
+import { db, readRowsTolerantly, transact } from "../db";
 import type { AgentDomState } from "../workspace";
 import type { CommandRejection } from "./enforce";
 import type { AgentCommandEnvelope } from "./envelope";
@@ -326,11 +326,28 @@ export function readCommandAudit(query: AuditQuery = {}): AgentCommandAuditRecor
     parameters.push(query.correlation_id);
   }
   const where = clauses.length === 0 ? "" : ` WHERE ${clauses.join(" AND ")}`;
+  const narrowed = clauses.length === 0 ? "" : ` AND ${clauses.join(" AND ")}`;
 
-  return db()
-    .prepare(`SELECT * FROM command_audit${where} ORDER BY id`)
-    .all(...parameters)
-    .map((row) => ({
+  /**
+   * Read tolerantly, because this is the table that actually failed.
+   *
+   * On the store that prompted this change, `SELECT * FROM command_audit` threw
+   * `SQLITE_CORRUPT` while `count(*)` still answered 12 from an index. An audit
+   * trail is the last thing that should become unreadable in bulk because one
+   * page went bad — `lib/store.ts` argues that DASH must not erase its own
+   * record of what happened, and losing it to a failed read would be the same
+   * outcome by accident.
+   *
+   * Rows on the damaged page are absent rather than substituted. A gap in an
+   * audit trail is a fact; a placeholder row in one would be a fabrication.
+   */
+  return readRowsTolerantly(db(), {
+    table: "command_audit",
+    bulk: `SELECT * FROM command_audit${where} ORDER BY id`,
+    byRowid: `SELECT * FROM command_audit WHERE rowid = ?${narrowed}`,
+    parameters,
+  })
+    .rows.map((row) => ({
       command_id: String(row["command_id"]),
       request_id: String(row["request_id"]),
       correlation_id: String(row["correlation_id"]),
