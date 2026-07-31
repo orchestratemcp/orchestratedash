@@ -372,13 +372,23 @@ export interface TolerantRead {
  * one prepared statement, as before. The row-by-row walk happens only after a
  * throw, which on a healthy store never happens.
  *
- * ## What it cannot do
+ * ## Sizing the walk
  *
- * It has to know how far to count, and it asks `max(rowid)` — which reads the
- * rightmost leaf and can itself throw on a badly damaged table. When that
- * happens there is no range to walk and this returns nothing, with `lost` at
- * zero rather than a guess. Reporting a fabricated count would be worse than
- * reporting none: the caller renders these numbers to a user.
+ * It has to know how far to count. `max(rowid)` is asked first and reads the
+ * rightmost leaf, so on a badly damaged table it throws too — which is not
+ * hypothetical: on the store that prompted this, `max(rowid)`, `min(rowid)` and
+ * `SELECT *` on `command_audit` all threw while `count(*)` and `SELECT id`
+ * answered, because that table's *data pages* were unreachable and only its
+ * indexes had survived.
+ *
+ * So `sqlite_sequence` is the second source. It records the highest rowid ever
+ * issued for an AUTOINCREMENT table and lives in its own table, which a damaged
+ * page in the subject table does not touch. It over-estimates after deletions —
+ * harmless, because a rowid with no row simply yields nothing.
+ *
+ * When neither answers there is no range to walk, and this returns nothing with
+ * `lost` at zero rather than a guess. Reporting a fabricated count would be
+ * worse than reporting none: callers render these numbers to a user.
  */
 export function readRowsTolerantly(
   database: DatabaseSync,
@@ -411,6 +421,16 @@ export function readRowsTolerantly(
     const row = database.prepare(`SELECT max(rowid) AS high FROM ${options.table}`).get();
     highest = Number(row?.["high"] ?? 0);
   } catch {
+    try {
+      const row = database
+        .prepare("SELECT seq FROM sqlite_sequence WHERE name = ?")
+        .get(options.table);
+      highest = Number(row?.["seq"] ?? 0);
+    } catch {
+      highest = 0;
+    }
+  }
+  if (highest === 0) {
     return { rows: [], lost: 0 };
   }
 

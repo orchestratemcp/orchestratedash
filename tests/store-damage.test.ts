@@ -189,6 +189,29 @@ describe("readStore, against a damaged row", () => {
  * when a bulk read throws, and reproducing SQLITE_CORRUPT portably would mean
  * writing malformed SQLite internals from a test.
  */
+function auditRecord(decision: "allowed" | "denied"): Parameters<
+  typeof import("../lib/agent-dom/store").writeCommandAudit
+>[1] {
+  return {
+    command_id: `cmd-${decision}`,
+    request_id: `req-${decision}`,
+    correlation_id: "corr-1",
+    agent: "billing-watch",
+    run_id: null,
+    command: "agent.start",
+    actor_id: "local",
+    actor_type: "user",
+    authenticated_by: "shell",
+    decision,
+    payload_keys: ["agent_id"],
+    mutates: true,
+    irreversible: false,
+    issued_at: null,
+    expires_at: null,
+    decided_at: new Date().toISOString(),
+  };
+}
+
 describe("readRowsTolerantly", () => {
   it("uses the bulk read when the table is intact", async () => {
     const { db, store } = await freshStore();
@@ -249,6 +272,32 @@ describe("readRowsTolerantly", () => {
     // `lost: 0` is deliberate. A fabricated count would be rendered to a user.
     expect(read).toEqual({ rows: [], lost: 0 });
   });
+
+  it("reports the loss when the walk recovers nothing, rather than an empty success", async () => {
+    const { db } = await freshStore();
+    const { writeCommandAudit } = await import("../lib/agent-dom/store");
+    writeCommandAudit(db.db(), auditRecord("allowed"));
+    writeCommandAudit(db.db(), auditRecord("denied"));
+
+    const read = db.readRowsTolerantly(db.db(), {
+      table: "command_audit",
+      bulk: "SELECT * FROM command_audit WHERE no_such_column = 1",
+      byRowid: "SELECT * FROM command_audit WHERE rowid = ? AND no_such_column = 1",
+    });
+
+    // "Nothing came back" and "there was nothing" must not look the same to a
+    // caller, least of all this table's caller.
+    expect(read.rows).toEqual([]);
+    expect(read.lost).toBe(2);
+
+    /*
+     * NOT covered here: the `sqlite_sequence` sizing fallback. It runs only when
+     * `max(rowid)` itself throws, which needs a table whose data pages are gone
+     * while its indexes survive — the real store's `command_audit` exactly, and
+     * not something this suite can manufacture. The fallback is exercised
+     * against a copy of that file rather than from here.
+     */
+  });
 });
 
 describe("the command audit, against a table that will not bulk-read", () => {
@@ -258,24 +307,7 @@ describe("the command audit, against a table that will not bulk-read", () => {
 
     // Two rows through the ordinary writer, so the shapes are real.
     for (const decision of ["allowed", "denied"] as const) {
-      writeCommandAudit(db.db(), {
-        command_id: `cmd-${decision}`,
-        request_id: `req-${decision}`,
-        correlation_id: "corr-1",
-        agent: "billing-watch",
-        run_id: null,
-        command: "agent.start",
-        actor_id: "local",
-        actor_type: "user",
-        authenticated_by: "shell",
-        decision,
-        payload_keys: ["agent_id"],
-        mutates: true,
-        irreversible: false,
-        issued_at: null,
-        expires_at: null,
-        decided_at: new Date().toISOString(),
-      });
+      writeCommandAudit(db.db(), auditRecord(decision));
     }
     expect(readCommandAudit()).toHaveLength(2);
 

@@ -341,13 +341,30 @@ export function readCommandAudit(query: AuditQuery = {}): AgentCommandAuditRecor
    * Rows on the damaged page are absent rather than substituted. A gap in an
    * audit trail is a fact; a placeholder row in one would be a fabrication.
    */
-  return readRowsTolerantly(db(), {
+  const read = readRowsTolerantly(db(), {
     table: "command_audit",
     bulk: `SELECT * FROM command_audit${where} ORDER BY id`,
     byRowid: `SELECT * FROM command_audit WHERE rowid = ?${narrowed}`,
     parameters,
-  })
-    .rows.map((row) => ({
+  });
+
+  if (read.lost > 0) {
+    /**
+     * Said out loud, because this is an audit trail.
+     *
+     * Everywhere else a tolerant read can quietly return what survived; here,
+     * silently handing back a shorter trail than exists would be the log
+     * misrepresenting itself — the one failure mode a record of what happened
+     * must not have. The count is the whole message: no row content, because
+     * these rows are unreadable by definition, and `formatCommandAuditLine`
+     * exists precisely so audit output is never improvised.
+     */
+    console.warn(
+      `[dash-command] ${String(read.lost)} audit row(s) are unreadable; this trail is incomplete`,
+    );
+  }
+
+  return read.rows.map((row) => ({
       command_id: String(row["command_id"]),
       request_id: String(row["request_id"]),
       correlation_id: String(row["correlation_id"]),
