@@ -36,6 +36,7 @@ import {
   type RunnerEndpoint,
 } from "../runner/endpoint";
 import { DASH_LOCAL_PRINCIPAL } from "../runner/execute";
+import { RUNNER_BUILD_ID, RUNNER_PROTOCOL_VERSION } from "../runner/identity";
 import { createRunnerServer } from "../runner/server";
 import { openRunnerStore, readRunnerAudit, type RunnerStore } from "../runner/store";
 import { Supervisor, type AgentRegistration } from "../runner/supervisor";
@@ -112,6 +113,7 @@ interface Harness {
   endpoint: RunnerEndpoint;
   supervisor: Supervisor;
   store: RunnerStore;
+  shutdowns(): number;
   close(): Promise<void>;
 }
 
@@ -133,11 +135,15 @@ async function startRunner(
   const supervisor = new Supervisor([registration(env, manifestPath)], () => {
     // Quiet: assertions are on state and on the audit table.
   });
+  let shutdownCount = 0;
   const server: Server = createRunnerServer({
     supervisor,
     database: store.database,
     token: TOKEN,
     principal: DASH_LOCAL_PRINCIPAL,
+    shutdown: () => {
+      shutdownCount += 1;
+    },
     log: () => {},
   });
 
@@ -151,6 +157,7 @@ async function startRunner(
     endpoint,
     supervisor,
     store,
+    shutdowns: () => shutdownCount,
     close(): Promise<void> {
       supervisor.stopAll();
       return new Promise<void>((resolve) => {
@@ -249,7 +256,25 @@ describe("authentication", () => {
   it("serves /health without a token", async () => {
     const response = await harness.call(`${harness.base}/health`);
     expect(response.status).toBe(200);
-    expect(((await response.json()) as { ok: boolean }).ok).toBe(true);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      runner_protocol: RUNNER_PROTOCOL_VERSION,
+      runner_build: RUNNER_BUILD_ID,
+    });
+  });
+
+  it("requires authentication and then requests graceful shutdown", async () => {
+    expect(
+      (await harness.call(`${harness.base}/shutdown`, { method: "POST" })).status,
+    ).toBe(401);
+
+    const response = await harness.call(`${harness.base}/shutdown`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(response.status).toBe(202);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(harness.shutdowns()).toBe(1);
   });
 
   it("refuses a state read with no token", async () => {

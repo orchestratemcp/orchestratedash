@@ -20,7 +20,7 @@ that had never executed.
 ```
 pnpm dev          # the renderer, in another terminal
 pnpm shell        # build the bundles, then launch
-pnpm shell:smoke  # build, then run the three proofs and exit non-zero on failure
+pnpm shell:smoke  # build, then run the real-shell proofs and exit non-zero on failure
 ```
 
 `pnpm build:shell` produces three bundles in `dist/electron/` via esbuild, and
@@ -174,7 +174,7 @@ left is genuinely packaging work:
 2. **No electron-builder, signing, notarisation or auto-update.** Out of scope
    for MAR-424 by its own terms. ADR 0001 records that signing certificates are
    not yet arranged.
-3. **CI cannot run the shell.** `ELECTRON_SKIP_BINARY_DOWNLOAD=1` keeps the
-   ~138 MB platform zip out of CI, which means the proofs are a local
-   `pnpm shell:smoke` rather than a job. Worth revisiting if the shell grows
-   logic that unit tests cannot reach.
+3. ~~**CI cannot run the shell.**~~ **Fixed in MAR-454.** Linux CI still skips
+   the ~138 MB Electron binary and covers types, tests and bundling. A separate
+   Windows job downloads Electron and runs `pnpm verify:shell`, and local
+   `pnpm verify` invokes the same mandatory proof on Windows.

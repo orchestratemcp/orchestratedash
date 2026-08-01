@@ -28,6 +28,8 @@
 import { db } from "./db";
 
 export type HandoffOutcome =
+  /** The consent question was shown and has not reached a final answer yet. */
+  | "pending"
   /** A new agent was registered. */
   | "registered"
   /** The same agent, the same facts. Nothing was written. */
@@ -51,17 +53,22 @@ export interface HandoffRecord {
 }
 
 /**
- * Record a decision, keeping the first one for a given handoff.
+ * Record a handoff state, keeping the first *final* outcome for a given handoff.
  *
- * `DO NOTHING` rather than an upsert: the interesting fact about a replayed
- * handoff is what happened the *first* time, and letting a later replay
- * overwrite it would erase the registration event behind an "unchanged".
+ * A pending row is deliberately replaceable exactly once. It proves the
+ * question reached the person even if DASH exits while the native dialog is
+ * open. Once that question reaches a final outcome, later replays cannot erase
+ * it behind `unchanged` or another answer.
  */
 export function recordHandoff(record: HandoffRecord): void {
   db()
     .prepare(
       "INSERT INTO agent_handoffs (handoff_id, agent, outcome, source, detail, decided_at) " +
-        "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (handoff_id) DO NOTHING",
+        "VALUES (?, ?, ?, ?, ?, ?) " +
+        "ON CONFLICT (handoff_id) DO UPDATE SET " +
+        "agent = excluded.agent, outcome = excluded.outcome, source = excluded.source, " +
+        "detail = excluded.detail, decided_at = excluded.decided_at " +
+        "WHERE agent_handoffs.outcome = 'pending' AND excluded.outcome <> 'pending'",
     )
     .run(
       record.handoff_id,

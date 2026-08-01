@@ -248,12 +248,18 @@ environment was the only channel to a detached child that did not touch disk;
 block is readable on Linux by any process of the same user via
 `/proc/{pid}/environ`.
 
-It writes `runner.json` — pid, endpoint path and transport, never the
-credential — once it is listening. That file is how a restarted DASH finds and
-re-adopts a runner instead of choosing between killing the fleet and being
-unable to talk to it. The endpoint path in it is not a secret: a Windows pipe
-name is enumerable by any local process anyway, and its value is that it could
-not be guessed *beforehand*.
+It writes `runner.json` — pid, endpoint path, transport, runner protocol and a
+build-derived runner identity, never the credential — once it is listening.
+That file and the live `/health` response must both match the shell before DASH
+re-adopts a runner. A compatible process preserves the fleet across UI restarts;
+an incompatible one receives an authenticated `/shutdown` request and is
+replaced only after it checkpoints and exits. A Windows runner from before that
+route existed is left alone and requires one OS restart; DASH never maps a
+"graceful" stop to `TerminateProcess`.
+
+The endpoint path is not a secret: a Windows pipe name is enumerable by any
+local process anyway, and its value is that it could not be guessed
+*beforehand*.
 
 A crash leaves nothing wedged. A named pipe dies with the process holding it; a
 Unix socket can outlive one, so `prepareEndpoint` probes it first and unlinks it
@@ -263,15 +269,17 @@ process deleting another user's socket.
 
 ## What CI covers, and why that is new
 
-`electron/README.md` records that no CI job can launch the shell:
-`ELECTRON_SKIP_BINARY_DOWNLOAD=1` keeps the platform binary out of CI, so the
-shell's proofs are a local `pnpm shell:smoke`.
+The Linux CI job skips the Electron binary and covers typechecking, tests and
+bundling. A separate Windows `shell-smoke` job downloads Electron and runs
+`pnpm verify:shell` against the packaged `dash-app://` renderer. That gate now
+includes the real sample handoff, runner-hosted telemetry reaching Runs and the
+sample's digest artifact.
 
 The runner has no such constraint. It is Node spawning Node over an OS-local
 socket, so `tests/runner-*.test.ts` run on every push against real processes and
-a real server — including "SIGTERM actually stops it" and "an invalid manifest
-is refused before anything spawns". Only *Electron spawning the runner* stays in
-the local smoke.
+a real server — including graceful shutdown and "an invalid manifest is refused
+before anything spawns". *Electron spawning the runner* is covered by the
+Windows shell job.
 
 MAR-430's proofs are split by what each platform can actually demonstrate.
 `tests/runner-endpoint.test.ts` binds real endpoints: that `address()` returns a

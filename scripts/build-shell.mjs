@@ -21,13 +21,45 @@
  */
 
 import { build } from "esbuild";
-import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = path.join(repoRoot, "dist", "electron");
 const rootPackage = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+
+function sourceFiles(directory) {
+  return readdirSync(directory)
+    .flatMap((name) => {
+      const file = path.join(directory, name);
+      return statSync(file).isDirectory() ? sourceFiles(file) : [file];
+    })
+    .filter((file) => /\.(?:ts|json)$/.test(file))
+    .sort();
+}
+
+/** Exact identity of the runner bundle's source and contract inputs. */
+const runnerBuildHash = createHash("sha256");
+runnerBuildHash.update(String(rootPackage.version));
+for (const directory of ["runner", "lib", "contracts"]) {
+  for (const file of sourceFiles(path.join(repoRoot, directory))) {
+    runnerBuildHash.update(path.relative(repoRoot, file));
+    runnerBuildHash.update(readFileSync(file));
+  }
+}
+const runnerBuildId = runnerBuildHash.digest("hex").slice(0, 20);
 
 /**
  * The two Agent Kit files "Try a sample agent" needs (MAR-423).
@@ -57,6 +89,7 @@ const shared = {
   external: ["electron"],
   sourcemap: true,
   logLevel: "info",
+  define: { __DASH_RUNNER_BUILD_ID__: JSON.stringify(runnerBuildId) },
 };
 
 mkdirSync(outDir, { recursive: true });
@@ -225,4 +258,6 @@ if (existsSync(exportDir)) {
   );
 }
 
-console.log(`[build-shell] wrote ${path.relative(repoRoot, outDir)}`);
+console.log(
+  `[build-shell] wrote ${path.relative(repoRoot, outDir)} runner_build=${runnerBuildId}`,
+);

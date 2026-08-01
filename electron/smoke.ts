@@ -49,7 +49,9 @@ import "./main.js";
 
 import { app, BrowserWindow, shell } from "electron";
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { IPC_ORIGIN, ipcFetch } from "../lib/agent-dom/ipc-fetch";
@@ -59,7 +61,16 @@ import { oauthProviderById } from "../lib/oauth/providers";
 import { closeDb, dataDir } from "../lib/db";
 import { RENDERER_ORIGIN } from "../lib/shell/renderer-scheme";
 import { readAgentManifest, importManifest } from "../lib/store";
+import { createSampleAgent, SAMPLE_AGENT_ID } from "../lib/sample-agent";
+import { openHandoff, removeAgent } from "../lib/handoff-flow";
+import { readHandoffRecord } from "../lib/handoff-ledger";
+import { readRegistration } from "../lib/registration";
+import { ensureChannelSecret } from "../runner/channel-secret";
+import { RUNNER_BUILD_ID, RUNNER_PROTOCOL_VERSION } from "../runner/identity";
 import { promptForAuthorization } from "./credential-prompt";
+import { handoffPorts } from "./handoff-host";
+import type { RunnerHandle } from "./runner-process";
+import { readTemplateSources } from "./sample-agent";
 
 /** Read from the repo, like `lib/contracts.ts` does. Run from the repo root. */
 function example<T>(name: string): T {
@@ -78,6 +89,21 @@ function check(label: string, passed: boolean, detail: unknown): void {
   if (!passed) {
     failures.push(label);
   }
+}
+
+async function waitForValue<T>(
+  read: () => Promise<T | null>,
+  label: string,
+  timeoutMs = 20_000,
+): Promise<T | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const value = await read();
+    if (value !== null) return value;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  console.warn(`[smoke] timed out waiting for ${label}`);
+  return null;
 }
 
 /**
@@ -590,11 +616,13 @@ if (oauthTarget !== null) {
  * `runner/endpoint.ts` binding successfully inside a packaged layout.
  */
 const endpointFile = path.join(dataDir, "runner.json");
-const recorded = existsSync(endpointFile)
+  const recorded = existsSync(endpointFile)
   ? (JSON.parse(readFileSync(endpointFile, "utf8")) as {
       pid: number;
       endpoint: string;
       transport: string;
+      runner_protocol?: number;
+      runner_build?: string;
     })
   : null;
 check("4a. the runner wrote an endpoint file", recorded !== null, recorded);
@@ -636,6 +664,150 @@ if (recorded !== null) {
     recorded.transport === "pipe" || recorded.transport === "unix",
     { transport: recorded.transport, endpoint: recorded.endpoint },
   );
+
+  check(
+    "4e. the installed runner matches this shell build and protocol",
+    recorded.runner_protocol === RUNNER_PROTOCOL_VERSION &&
+      recorded.runner_build === RUNNER_BUILD_ID &&
+      (health as { runner_protocol?: number } | null)?.runner_protocol === RUNNER_PROTOCOL_VERSION &&
+      (health as { runner_build?: string } | null)?.runner_build === RUNNER_BUILD_ID,
+    {
+      expected: { protocol: RUNNER_PROTOCOL_VERSION, build: RUNNER_BUILD_ID },
+      recorded: { protocol: recorded.runner_protocol, build: recorded.runner_build },
+      health,
+    },
+  );
+
+  /* -- Proof 6: existing sample -> handoff -> runner -> Runs ------------ */
+
+  const templates = readTemplateSources();
+  check("6a. the shipped sample templates can be read", templates.ok, templates.ok ? "present" : templates);
+
+  if (templates.ok && (recorded.transport === "pipe" || recorded.transport === "unix")) {
+    const parentDir = mkdtempSync(path.join(tmpdir(), "dash-installed-sample-"));
+    let agentId = "";
+    try {
+      // Avoid touching an existing user's sample registration. The sample
+      // names itself from the first free folder, so reserve every identity
+      // already owned by this installation inside the temporary parent.
+      for (let suffix = 1; suffix < 1_000; suffix += 1) {
+        const candidate = suffix === 1 ? SAMPLE_AGENT_ID : `${SAMPLE_AGENT_ID}-${String(suffix)}`;
+        if (readRegistration(dataDir, candidate) === null) break;
+        mkdirSync(path.join(parentDir, candidate), { recursive: true });
+      }
+
+      const created = createSampleAgent({
+        parentDir,
+        sources: templates.value,
+        kitVersion: app.getVersion(),
+        now: new Date(),
+        ids: {
+          handoff_id: randomBytes(16).toString("hex"),
+          nonce: randomBytes(32).toString("hex"),
+        },
+      });
+      check("6b. Try a sample agent creates a real handoff", created.ok, created);
+
+      if (created.ok) {
+        agentId = created.value.handoff.agent_id;
+        // An agent id is a durable identity, so removing and re-adding the
+        // sample deliberately preserves its earlier run history. Record that
+        // history before this proof starts; otherwise a completed run from an
+        // earlier smoke can satisfy the wait before this process has produced
+        // its own artifact.
+        const previousRuns = (await window.webContents.executeJavaScript(
+          `window.dashData.runs()`,
+        )) as {
+          data?: { runs?: Array<{ agent?: string; run_id?: string }> };
+        };
+        const previousRunIds = new Set(
+          (previousRuns.data?.runs ?? [])
+            .filter((run) => run.agent === agentId)
+            .map((run) => run.run_id)
+            .filter((runId): runId is string => typeof runId === "string"),
+        );
+        const handle: RunnerHandle = {
+          origin: IPC_ORIGIN,
+          endpoint: recorded.endpoint,
+          transport: recorded.transport,
+          pid: recorded.pid,
+          token: ensureChannelSecret(dataDir),
+          adopted: true,
+        };
+        let observedPending = false;
+        const ports = handoffPorts(dataDir, handle);
+        const report = await openHandoff(created.value.url, {
+          ...ports,
+          confirm: async () => {
+            observedPending =
+              readHandoffRecord(created.value.handoff.handoff_id)?.outcome === "pending";
+            return true;
+          },
+        });
+        check(
+          "6c. consent sees pending first, then registers and starts the sample",
+          observedPending && report.ok && report.running === true,
+          { observedPending, report },
+        );
+
+        const completed = await waitForValue(async () => {
+          const view = (await window.webContents.executeJavaScript(
+            `window.dashData.runs()`,
+          )) as {
+            ok?: boolean;
+            data?: { runs?: Array<{ agent?: string; run_id?: string; status?: string }> };
+          };
+          return (
+            view.data?.runs?.find(
+              (run) =>
+                run.agent === agentId &&
+                run.status === "completed" &&
+                typeof run.run_id === "string" &&
+                !previousRunIds.has(run.run_id),
+            ) ?? null
+          );
+        }, "runner-hosted sample telemetry to reach Runs");
+        check("6d. runner-hosted telemetry renders through the Runs bridge", completed !== null, completed);
+
+        const reportsDir = path.join(created.value.directory, "reports");
+        const artifacts =
+          (await waitForValue(async () => {
+            const files = existsSync(reportsDir)
+              ? readdirSync(reportsDir).filter((name) => name.endsWith(".json"))
+              : [];
+            return files.length > 0 ? files : null;
+          }, "the runner-hosted sample digest artifact")) ?? [];
+        check("6e. the sample leaves an inspectable digest artifact", artifacts.length > 0, artifacts);
+
+        const finalLedger = readHandoffRecord(created.value.handoff.handoff_id);
+        check(
+          "6f. the handoff ledger keeps the first final outcome",
+          finalLedger?.outcome === "registered",
+          finalLedger,
+        );
+
+        await removeAgent(agentId, ports);
+        agentId = "";
+      }
+    } finally {
+      if (agentId !== "") {
+        const handle: RunnerHandle = {
+          origin: IPC_ORIGIN,
+          endpoint: recorded.endpoint,
+          transport: recorded.transport,
+          pid: recorded.pid,
+          token: ensureChannelSecret(dataDir),
+          adopted: true,
+        };
+        await removeAgent(agentId, handoffPorts(dataDir, handle)).catch(() => undefined);
+      }
+      // Windows can keep a just-exited child's directory handle briefly after
+      // lifecycle has reached `exited`. Node's bounded retry is specifically
+      // for this EPERM/EBUSY cleanup window; the functional proof above has
+      // already required the runner to confirm the process stopped.
+      rmSync(parentDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  }
 }
 
 console.log(`\n[smoke] ${failures.length === 0 ? "all proofs passed" : `FAILED: ${failures.join(", ")}`}\n`);

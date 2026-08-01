@@ -17,8 +17,10 @@
     "package:msix": "node scripts/package-msix.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "verify:shell": "node scripts/verify-shell.mjs",
+    "state:check": "node scripts/check-project-state.mjs",
     "demo:violation": "node scripts/demo-violation.mjs",
-    "verify": "pnpm typecheck && pnpm test"
+    "verify": "pnpm state:check && pnpm typecheck && pnpm test && pnpm verify:shell"
   },
   "devDependencies": {
     "@electron/packager": "^20.0.4",

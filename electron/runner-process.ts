@@ -47,6 +47,7 @@ import { fileURLToPath } from "node:url";
 import { IPC_ORIGIN, ipcFetch } from "../lib/agent-dom/ipc-fetch";
 import { ChannelSecretError, ensureChannelSecret } from "../runner/channel-secret";
 import { EndpointError } from "../runner/endpoint";
+import { RUNNER_BUILD_ID, RUNNER_PROTOCOL_VERSION } from "../runner/identity";
 import type { RunnerEndpointFile } from "../runner/main";
 
 export interface RunnerHandle {
@@ -70,9 +71,28 @@ export type EnsureRunnerResult =
   | { ok: true; handle: RunnerHandle }
   | {
       ok: false;
-      reason: "endpoint_refused" | "spawn_failed" | "never_listened";
+      reason: "endpoint_refused" | "spawn_failed" | "never_listened" | "stale_runner";
       detail: string;
     };
+
+interface RunnerCandidate {
+  handle: RunnerHandle;
+  compatible: boolean;
+  observed_build?: string;
+  observed_protocol?: number;
+}
+
+export function runnerIdentityMatches(
+  recorded: { runner_build?: unknown; runner_protocol?: unknown },
+  health: { runner_build?: unknown; runner_protocol?: unknown },
+): boolean {
+  return (
+    recorded.runner_build === RUNNER_BUILD_ID &&
+    recorded.runner_protocol === RUNNER_PROTOCOL_VERSION &&
+    health.runner_build === RUNNER_BUILD_ID &&
+    health.runner_protocol === RUNNER_PROTOCOL_VERSION
+  );
+}
 
 function endpointFilePath(dataDir: string): string {
   return path.join(dataDir, "runner.json");
@@ -94,7 +114,7 @@ export function runnerFetch(handle: RunnerHandle): typeof globalThis.fetch {
  * does not answer. The authenticated probe is kept anyway — a path under the
  * user's own control could still be occupied by something the user ran.
  */
-async function adopt(dataDir: string, token: string): Promise<RunnerHandle | null> {
+async function adopt(dataDir: string, token: string): Promise<RunnerCandidate | null> {
   const file = endpointFilePath(dataDir);
   if (!existsSync(file)) {
     return null;
@@ -111,11 +131,16 @@ async function adopt(dataDir: string, token: string): Promise<RunnerHandle | nul
   }
 
   const call = ipcFetch(recorded.endpoint);
+  let healthBody: {
+    runner_build?: unknown;
+    runner_protocol?: unknown;
+  } = {};
   try {
     const health = await call(`${IPC_ORIGIN}/health`, { signal: AbortSignal.timeout(2_000) });
     if (!health.ok) {
       return null;
     }
+    healthBody = (await health.json()) as typeof healthBody;
     // Authenticated probe. A 401 means something is listening that does not
     // share our secret, which is not a runner we may adopt.
     const probe = await call(`${IPC_ORIGIN}/agents/__probe__`, {
@@ -129,13 +154,22 @@ async function adopt(dataDir: string, token: string): Promise<RunnerHandle | nul
     return null;
   }
 
+  const observedBuild =
+    typeof healthBody.runner_build === "string" ? healthBody.runner_build : undefined;
+  const observedProtocol =
+    typeof healthBody.runner_protocol === "number" ? healthBody.runner_protocol : undefined;
   return {
-    origin: IPC_ORIGIN,
-    endpoint: recorded.endpoint,
-    transport: recorded.transport === "pipe" ? "pipe" : "unix",
-    pid: recorded.pid,
-    token,
-    adopted: true,
+    handle: {
+      origin: IPC_ORIGIN,
+      endpoint: recorded.endpoint,
+      transport: recorded.transport === "pipe" ? "pipe" : "unix",
+      pid: recorded.pid,
+      token,
+      adopted: true,
+    },
+    compatible: runnerIdentityMatches(recorded, healthBody),
+    observed_build: observedBuild,
+    observed_protocol: observedProtocol,
   };
 }
 
@@ -167,10 +201,27 @@ export async function ensureRunner(dataDir: string): Promise<EnsureRunnerResult>
 
   const existing = await adopt(dataDir, token);
   if (existing !== null) {
-    return { ok: true, handle: existing };
+    if (existing.compatible) {
+      return { ok: true, handle: existing.handle };
+    }
+
+    const stopped = await stopRunner(existing.handle);
+    if (!stopped.ok) {
+      return {
+        ok: false,
+        reason: "stale_runner",
+        detail:
+          `DASH found runner pid ${String(existing.handle.pid)} from a different build ` +
+          `(${existing.observed_build ?? "identity unavailable"}) and did not adopt it. ` +
+          `${stopped.detail} Restart Windows once to retire a runner built before graceful shutdown.`,
+      };
+    }
   }
 
-  retireLegacyRunner(dataDir);
+  const retired = await retireLegacyRunner(dataDir);
+  if (!retired.ok) {
+    return { ok: false, reason: "stale_runner", detail: retired.detail };
+  }
 
   // An endpoint file that survived a crash points nowhere useful and would
   // otherwise be adopted again on the next launch.
@@ -254,22 +305,36 @@ export async function ensureRunner(dataDir: string): Promise<EnsureRunnerResult>
  * Signalled rather than adopted: the old runner speaks a transport this build
  * no longer dials, so there is nothing to say to it but "stop".
  */
-function retireLegacyRunner(dataDir: string): void {
+async function retireLegacyRunner(
+  dataDir: string,
+): Promise<{ ok: true } | { ok: false; detail: string }> {
   const file = endpointFilePath(dataDir);
   if (!existsSync(file)) {
-    return;
+    return { ok: true };
   }
   let recorded: { pid?: unknown; port?: unknown; endpoint?: unknown };
   try {
     recorded = JSON.parse(readFileSync(file, "utf8")) as typeof recorded;
   } catch {
-    return;
+    return { ok: true };
   }
   if (typeof recorded.port !== "number" || typeof recorded.endpoint === "string") {
-    return;
+    return { ok: true };
   }
   if (typeof recorded.pid !== "number") {
-    return;
+    return { ok: true };
+  }
+  if (!processExists(recorded.pid)) {
+    return { ok: true };
+  }
+  if (process.platform === "win32") {
+    return {
+      ok: false,
+      detail:
+        `DASH found a pre-upgrade runner (pid ${String(recorded.pid)}) that cannot checkpoint ` +
+        "its store through a graceful Windows shutdown. Restart Windows once; DASH will not " +
+        "hard-terminate the process holding your agent history.",
+    };
   }
 
   try {
@@ -277,9 +342,20 @@ function retireLegacyRunner(dataDir: string): void {
     console.warn(
       `[dash-shell] stopped a pre-MAR-430 runner (pid ${String(recorded.pid)}) that listened on a port.`,
     );
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline && processExists(recorded.pid)) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return processExists(recorded.pid)
+      ? {
+          ok: false,
+          detail: `The pre-upgrade runner (pid ${String(recorded.pid)}) did not stop after SIGTERM.`,
+        }
+      : { ok: true };
   } catch {
-    // Already gone, or not ours to signal. Either way there is nothing left to
-    // retire and the new runner's endpoint cannot collide with a TCP port.
+    return processExists(recorded.pid)
+      ? { ok: false, detail: `The pre-upgrade runner (pid ${String(recorded.pid)}) could not be stopped.` }
+      : { ok: true };
   }
 }
 
@@ -318,26 +394,61 @@ async function waitForEndpointFile(
 }
 
 /**
- * Ask the runner to shut down.
+ * Ask the runner to shut down over its protected local control channel.
  *
- * A signal rather than an HTTP route: stopping the runner is not something an
- * authenticated caller does to a resource, it is something the machine's owner
- * does to a process, and giving it an endpoint would make "shut down the thing
- * holding every agent" reachable by anything that ever learns the credential.
+ * Node maps SIGTERM to TerminateProcess on Windows, which gives neither agents
+ * nor SQLite a shutdown callback. The runner owns the order, so only the runner
+ * can stop its children, close its server and checkpoint its store cleanly.
  */
-export function stopRunner(handle: RunnerHandle): { ok: boolean; detail: string } {
+export async function stopRunner(handle: RunnerHandle): Promise<{ ok: boolean; detail: string }> {
+  const call = runnerFetch(handle);
   try {
-    process.kill(handle.pid, "SIGTERM");
-    return { ok: true, detail: `Asked the runner (pid ${String(handle.pid)}) to stop.` };
+    const response = await call(`${handle.origin}/shutdown`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${handle.token}` },
+      signal: AbortSignal.timeout(3_000),
+    });
+    if (response.status !== 202) {
+      const body = (await response.json().catch(() => ({}))) as { detail?: unknown };
+      return {
+        ok: false,
+        detail:
+          typeof body.detail === "string"
+            ? body.detail
+            : `The runner refused graceful shutdown (${String(response.status)}).`,
+      };
+    }
+
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+      if (!processExists(handle.pid)) {
+        return { ok: true, detail: `Runner pid ${String(handle.pid)} stopped gracefully.` };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return {
+      ok: false,
+      detail: `Runner pid ${String(handle.pid)} did not exit after its graceful shutdown request.`,
+    };
   } catch (error: unknown) {
-    // ESRCH means it is already gone, which is the state we wanted.
-    const code = (error as { code?: string } | null)?.code;
-    if (code === "ESRCH") {
+    if (!processExists(handle.pid)) {
       return { ok: true, detail: "The runner was not running." };
     }
     return {
       ok: false,
-      detail: error instanceof Error ? error.message : "The runner could not be stopped.",
+      detail:
+        error instanceof Error
+          ? `The runner could not be stopped gracefully: ${error.message}`
+          : "The runner could not be stopped gracefully.",
     };
+  }
+}
+
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error: unknown) {
+    return (error as { code?: string } | null)?.code !== "ESRCH";
   }
 }

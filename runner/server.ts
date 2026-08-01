@@ -43,6 +43,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { validateState } from "../lib/contracts";
 import { executeCommand, type ChannelPrincipal } from "./execute";
+import { RUNNER_BUILD_ID, RUNNER_PROTOCOL_VERSION } from "./identity";
 import { buildAgentDomState, type ProcessReport } from "./state";
 import type { AdoptionResult, Supervisor } from "./supervisor";
 
@@ -69,6 +70,8 @@ export interface RunnerServerOptions {
    * which keeps a runner built without it honest instead of silently useless.
    */
   reload?: () => ReloadSummary;
+  /** Graceful process shutdown, supplied only by the standalone runner. */
+  shutdown?: () => void;
   now?: () => Date;
   log?: (line: string) => void;
 }
@@ -106,7 +109,12 @@ async function handle(
   // `/health` is the only unauthenticated route, and it says nothing an
   // unauthenticated caller could not learn by looking at the process list.
   if (request.method === "GET" && segments.length === 1 && segments[0] === "health") {
-    send(response, 200, { ok: true, supervising: options.supervisor.list().length });
+    send(response, 200, {
+      ok: true,
+      supervising: options.supervisor.list().length,
+      runner_protocol: RUNNER_PROTOCOL_VERSION,
+      runner_build: RUNNER_BUILD_ID,
+    });
     return;
   }
 
@@ -114,6 +122,24 @@ async function handle(
     // No detail about why. A caller learning "the token was the right length"
     // is a caller learning something.
     send(response, 401, { ok: false, detail: "Unauthorized." });
+    return;
+  }
+
+  // POST /shutdown — graceful owner-requested shutdown over the same protected
+  // local channel. On Windows `process.kill(pid, "SIGTERM")` is implemented as
+  // TerminateProcess and skips SQLite close/checkpoint entirely; this route is
+  // the portable way to let the runner stop agents, close its server and close
+  // its store in the order `runner/main.ts` owns.
+  if (request.method === "POST" && segments.length === 1 && segments[0] === "shutdown") {
+    if (options.shutdown === undefined) {
+      send(response, 501, {
+        ok: false,
+        detail: "This runner cannot shut down through its control channel.",
+      });
+      return;
+    }
+    send(response, 202, { ok: true, detail: "The runner is shutting down gracefully." });
+    setImmediate(options.shutdown);
     return;
   }
 

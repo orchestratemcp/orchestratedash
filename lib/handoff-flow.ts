@@ -19,11 +19,15 @@
  *    that is not v2. The runner would refuse it later anyway; refusing here
  *    means the user is never asked to approve something that cannot work.
  * 5. **Check the manifest agrees with the handoff** about which agent this is.
- * 6. **Ask the user**, in plain language, naming what will run.
- * 7. Only then write anything.
+ * 6. **Record that the question arrived**, without any command or credential.
+ * 7. **Ask the user**, in plain language, naming what will run. The question
+ *    expires with the handoff rather than waiting forever.
+ * 8. Only after consent write a registration or import a manifest.
  *
- * Nothing before step 7 changes any state. A malformed, stale or hostile link
- * costs a log line and a dialog.
+ * Nothing before step 6 changes any state. The pending ledger row is the one
+ * deliberate exception to "consent before writes": it grants no capability and
+ * records only that consent was requested, so a crash cannot make an arrived
+ * handoff indistinguishable from one DASH never saw.
  *
  * ## Why consent is not optional, ever
  *
@@ -117,8 +121,8 @@ export interface HandoffPorts {
   /** DASH's data directory — the resolved one, never a computed convention. */
   dataDir: string;
   now(): Date;
-  /** Ask the person. Resolves true when they agreed. */
-  confirm(prompt: HandoffPrompt): Promise<boolean>;
+  /** Ask the person. The native question must close when the handoff expires. */
+  confirm(prompt: HandoffPrompt, expiresAt: string): Promise<boolean | "expired">;
   /** Store the manifest so the rest of DASH can see the agent. */
   importManifest(manifest: unknown): { ok: boolean; errors?: string[] };
   /** Drop DASH's current picture of an agent. History is kept; see lib/store.ts. */
@@ -322,7 +326,33 @@ async function register(
       ? describeNewAgent(handoff, manifest)
       : describeChangedAgent(handoff, changes);
 
-  const agreed = await ports.confirm(prompt);
+  ports.recordHandoff({
+    handoff_id: handoff.handoff_id,
+    agent: handoff.agent_id,
+    outcome: "pending",
+    source: handoff.project_dir,
+    detail: "waiting for confirmation",
+    decided_at: ports.now().toISOString(),
+  });
+
+  const agreed = await ports.confirm(prompt, handoff.expires_at);
+  if (agreed === "expired" || Date.parse(handoff.expires_at) <= ports.now().getTime()) {
+    ports.recordHandoff({
+      handoff_id: handoff.handoff_id,
+      agent: handoff.agent_id,
+      outcome: "refused",
+      source: handoff.project_dir,
+      detail: "expired while waiting for confirmation",
+      decided_at: ports.now().toISOString(),
+    });
+    return {
+      ok: false,
+      outcome: "refused",
+      agent_id: handoff.agent_id,
+      headline: `The request to add “${handoff.display_name}” expired while it was waiting for you.`,
+      detail: "Nothing was changed. Open the agent in DASH again to make a fresh request.",
+    };
+  }
   if (!agreed) {
     ports.recordHandoff({
       handoff_id: handoff.handoff_id,
@@ -593,6 +623,17 @@ export async function removeAgent(agentId: string, ports: HandoffPorts): Promise
     const stopped = await ports.runner.stop(agentId);
     if (!stopped.ok) {
       ports.log(`[dash-shell] could not stop ${agentId} before removing it: ${stopped.detail ?? ""}`);
+      const refusal =
+        `DASH could not confirm that "${displayName}" stopped, so it removed nothing. ` +
+        (stopped.detail ?? "The runner did not confirm the stop.");
+      return {
+        ok: false,
+        agent_id: agentId,
+        removed: [],
+        left_alone: ["everything — DASH changed nothing"],
+        refusal,
+        headline: refusal,
+      };
     }
   }
 

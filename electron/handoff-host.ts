@@ -123,6 +123,35 @@ export function runnerPort(runner: RunnerHandle | null): RunnerPort | null {
   const call = runnerFetch(handle);
   const authorized = { authorization: `Bearer ${handle.token}` };
 
+  async function waitForStopped(agentId: string): Promise<boolean> {
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+      try {
+        const response = await call(`${handle.origin}/agents`, {
+          headers: authorized,
+          signal: AbortSignal.timeout(2_000),
+        });
+        if (!response.ok) return false;
+        const body = (await response.json()) as {
+          agents?: Array<{ agent_id?: string; lifecycle?: string }>;
+        };
+        const facts = body.agents?.find((agent) => agent.agent_id === agentId);
+        if (
+          facts === undefined ||
+          facts.lifecycle === "stopped" ||
+          facts.lifecycle === "exited" ||
+          facts.lifecycle === "failed_to_start"
+        ) {
+          return true;
+        }
+      } catch {
+        return false;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return false;
+  }
+
   async function lifecycle(
     agentId: string,
     action: "start" | "stop",
@@ -138,6 +167,12 @@ export function runnerPort(runner: RunnerHandle | null): RunnerPort | null {
         },
       );
       const body = (await response.json()) as { ok?: boolean; detail?: string };
+      if (action === "stop" && body.ok === true && !(await waitForStopped(agentId))) {
+        return {
+          ok: false,
+          detail: `The runner accepted the stop request for "${agentId}" but did not confirm that it stopped.`,
+        };
+      }
       return { ok: body.ok === true, detail: body.detail };
     } catch {
       return { ok: false, detail: "The runner could not be reached." };
@@ -199,7 +234,18 @@ export function handoffPorts(dataDir: string, runner: RunnerHandle | null): Hand
  * getting this wrong is asymmetric: declining costs one more click, agreeing by
  * accident starts a process.
  */
-async function askUser(prompt: HandoffPrompt): Promise<boolean> {
+async function askUser(prompt: HandoffPrompt, expiresAt: string): Promise<boolean | "expired"> {
+  const expiresAtMs = Date.parse(expiresAt);
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+    return "expired";
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, expiresAtMs - Date.now());
+  timeout.unref();
+
   const parent = BrowserWindow.getAllWindows()[0];
   const options = {
     type: "question" as const,
@@ -210,13 +256,26 @@ async function askUser(prompt: HandoffPrompt): Promise<boolean> {
     defaultId: 1,
     cancelId: 1,
     noLink: true,
+    signal: controller.signal,
   };
 
-  const answer =
-    parent === undefined
-      ? await dialog.showMessageBox(options)
-      : await dialog.showMessageBox(parent, options);
-  return answer.response === 0;
+  try {
+    const answer =
+      parent === undefined
+        ? await dialog.showMessageBox(options)
+        : await dialog.showMessageBox(parent, options);
+    if (controller.signal.aborted || Date.now() >= expiresAtMs) {
+      return "expired";
+    }
+    return answer.response === 0;
+  } catch (error: unknown) {
+    if (controller.signal.aborted) {
+      return "expired";
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /** Report an outcome that needs no decision. */

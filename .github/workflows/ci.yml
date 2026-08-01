@@ -27,11 +27,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
         env:
           # Electron ships a ~138 MB platform zip from a postinstall hook. CI
-          # typechecks the shell and bundles it, but never launches it — and the
+          # typechecks the shell and bundles it in this Linux job — and the
           # TypeScript definitions live in the npm package itself, not in the
           # binary. Skipping the download keeps the dependency's CI cost close to
-          # zero; the trade is that no CI job can run Electron, so the shell's
-          # proofs are a local `pnpm shell:smoke` (see electron/README.md).
+          # zero. The Windows `shell-smoke` job below downloads and launches the
+          # real binary, so a release cannot rely on bundling alone.
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
 
       - run: pnpm verify
@@ -43,3 +43,23 @@ jobs:
       - run: pnpm build:shell
 
       - run: pnpm build
+
+  shell-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      # Installed-shell evidence gate: real Electron, preload bridge, Windows
+      # data directory and detached runner.
+      - run: pnpm verify:shell

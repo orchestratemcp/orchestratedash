@@ -131,9 +131,12 @@ interface Harness {
   forgotten: string[];
   runnerCalls: string[];
   answer: boolean;
+  now: Date;
 }
 
-function harness(options: { answer?: boolean; runner?: boolean; startOk?: boolean } = {}): Harness {
+function harness(
+  options: { answer?: boolean; runner?: boolean; startOk?: boolean; stopOk?: boolean } = {},
+): Harness {
   const dataDir = mkdtempSync(path.join(tmpdir(), "dash-flow-data-"));
   roots.push(dataDir);
 
@@ -145,6 +148,7 @@ function harness(options: { answer?: boolean; runner?: boolean; startOk?: boolea
     forgotten: [],
     runnerCalls: [],
     answer: options.answer ?? true,
+    now: new Date("2026-07-28T12:00:00.000Z"),
     ports: undefined as unknown as HandoffPorts,
   };
 
@@ -161,13 +165,15 @@ function harness(options: { answer?: boolean; runner?: boolean; startOk?: boolea
     },
     stop: async (agentId) => {
       state.runnerCalls.push(`stop:${agentId}`);
-      return { ok: true };
+      return options.stopOk === false
+        ? { ok: false, detail: "The runner did not confirm the stop." }
+        : { ok: true };
     },
   };
 
   state.ports = {
     dataDir,
-    now: () => new Date("2026-07-28T12:00:00.000Z"),
+    now: () => state.now,
     confirm: async (prompt) => {
       state.prompts.push(prompt);
       return state.answer;
@@ -181,8 +187,11 @@ function harness(options: { answer?: boolean; runner?: boolean; startOk?: boolea
       return { existed: true };
     },
     recordHandoff: (record) => {
-      if (!state.ledger.some((entry) => entry.handoff_id === record.handoff_id)) {
+      const existing = state.ledger.findIndex((entry) => entry.handoff_id === record.handoff_id);
+      if (existing === -1) {
         state.ledger.push(record);
+      } else if (state.ledger[existing]?.outcome === "pending" && record.outcome !== "pending") {
+        state.ledger[existing] = record;
       }
     },
     readHandoffRecord: (handoffId) =>
@@ -294,6 +303,61 @@ describe("adding an agent", () => {
     expect(listRegistrations(context.dataDir)).toEqual([]);
     expect(context.runnerCalls).toEqual([]);
     expect(context.imported).toEqual([]);
+  });
+
+  it("records that the consent question arrived before waiting for an answer", async () => {
+    const project = makeProject();
+    let answer: ((value: boolean) => void) | undefined;
+    context.ports.confirm = async () =>
+      await new Promise<boolean>((resolve) => {
+        answer = resolve;
+      });
+
+    const opening = openHandoff(project.url, context.ports);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(context.ledger).toHaveLength(1);
+    expect(context.ledger[0]).toMatchObject({ outcome: "pending", detail: "waiting for confirmation" });
+    expect(listRegistrations(context.dataDir)).toEqual([]);
+
+    answer?.(true);
+    await expect(opening).resolves.toMatchObject({ ok: true, outcome: "registered" });
+    expect(context.ledger[0]?.outcome).toBe("registered");
+  });
+
+  it("expires an unanswered consent question and replaces pending with a refusal", async () => {
+    const project = makeProject({
+      now: new Date("2026-07-28T12:00:00.000Z"),
+      ttlMs: 60_000,
+    });
+    context.ports.confirm = async () => "expired";
+
+    const report = await openHandoff(project.url, context.ports);
+
+    expect(report).toMatchObject({ ok: false, outcome: "refused" });
+    expect(report.headline).toMatch(/expired while it was waiting/i);
+    expect(context.ledger).toHaveLength(1);
+    expect(context.ledger[0]).toMatchObject({
+      outcome: "refused",
+      detail: "expired while waiting for confirmation",
+    });
+    expect(listRegistrations(context.dataDir)).toEqual([]);
+  });
+
+  it("refuses consent that arrives after the handoff expiry", async () => {
+    const project = makeProject({
+      now: new Date("2026-07-28T12:00:00.000Z"),
+      ttlMs: 60_000,
+    });
+    context.ports.confirm = async () => {
+      context.now = new Date("2026-07-28T12:02:00.000Z");
+      return true;
+    };
+
+    const report = await openHandoff(project.url, context.ports);
+
+    expect(report).toMatchObject({ ok: false, outcome: "refused" });
+    expect(listRegistrations(context.dataDir)).toEqual([]);
   });
 });
 
@@ -536,6 +600,21 @@ describe("removing an agent", () => {
     expect(report.left_alone.join(" ")).toContain(project.dir);
     expect(report.left_alone.join(" ")).toMatch(/history of what it did/);
     expect(report.headline).toContain("Folder digest");
+  });
+
+  it("keeps the registration when the runner cannot confirm the stop", async () => {
+    const refusing = harness({ stopOk: false });
+    const project = makeProject();
+    await openHandoff(project.url, refusing.ports);
+    refusing.runnerCalls.length = 0;
+
+    const report = await removeAgent(AGENT_ID, refusing.ports);
+
+    expect(report.ok).toBe(false);
+    expect(report.refusal).toMatch(/removed nothing/i);
+    expect(refusing.runnerCalls).toEqual([`stop:${AGENT_ID}`]);
+    expect(existsSync(registrationPath(refusing.dataDir, AGENT_ID))).toBe(true);
+    expect(refusing.forgotten).toEqual([]);
   });
 
   it("refuses to remove one it did not add", async () => {

@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "project": "DASH",
+  "updated_at": "2026-08-01",
+  "current_wave": "Wave 0 - installed first-run reliability",
+  "authority": {
+    "implementation": "Git",
+    "intent": "Linear",
+    "decisions": "ADRs",
+    "evidence": "tests and installed runtime proofs",
+    "index": ".orchestrate/state.json"
+  },
+  "git": {
+    "evidence_base_commit": "c7ceddc"
+  },
+  "issues": [
+    {
+      "id": "MAR-423",
+      "lifecycle": "merged",
+      "linear_status": "Backlog",
+      "commit": "ad56874",
+      "note": "The no-terminal Try a sample agent journey already exists; extend and prove it."
+    },
+    {
+      "id": "MAR-428",
+      "lifecycle": "merged",
+      "linear_status": "Backlog",
+      "commit": "c54ce60",
+      "note": "The packaged shell path is implemented; installed promotion evidence remains owned by MAR-454."
+    },
+    {
+      "id": "MAR-429",
+      "lifecycle": "merged",
+      "linear_status": "Todo",
+      "commit": "32d3af9",
+      "note": "MSIX update, repair, uninstall, and WACK lifecycle work is implemented and documented; it must no longer be ranked as an unimplemented blocker."
+    },
+    {
+      "id": "MAR-432",
+      "lifecycle": "merged",
+      "linear_status": "Backlog",
+      "commit": "d965f03",
+      "note": "Packaged renderer startup fixes are implemented; the current installed journey is re-proven through MAR-454."
+    },
+    {
+      "id": "MAR-383",
+      "lifecycle": "merged",
+      "linear_status": "Backlog",
+      "commit": "33b879e",
+      "note": "DASH-managed connection credential holding and delivery is implemented. ADR 0002 now narrows the remaining OAuth work to brokered capabilities rather than reopening this foundation."
+    },
+    {
+      "id": "MAR-384",
+      "lifecycle": "merged",
+      "linear_status": "Backlog",
+      "commit": "e30921c",
+      "note": "The live Agent DOM workspace and capability-driven controls are implemented."
+    },
+    {
+      "id": "MAR-433",
+      "lifecycle": "merged",
+      "linear_status": "Backlog",
+      "commit": "a527585",
+      "note": "Runner-hosted telemetry has unit coverage but is not yet installed-app proven."
+    },
+    {
+      "id": "MAR-450",
+      "lifecycle": "merged",
+      "linear_status": "In Progress",
+      "commit": "71b28e5",
+      "note": "Single-instance dash:// ownership fix is merged; residual recovery belongs to the smoke gate."
+    },
+    {
+      "id": "MAR-451",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "working_tree": true,
+      "note": "Build-derived runner identity and stale-runner refusal are implemented locally, pending full proof."
+    },
+    {
+      "id": "MAR-452",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "working_tree": true,
+      "note": "Authenticated graceful runner shutdown is implemented locally, pending full proof."
+    },
+    {
+      "id": "MAR-453",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "working_tree": true,
+      "note": "Pending handoff audit plus real expiry handling is implemented locally and focused tests pass."
+    },
+    {
+      "id": "MAR-454",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "working_tree": true,
+      "note": "Windows shell smoke is now a mandatory self-contained CI job and covers the real sample journey. It intentionally fails runner identity and telemetry until one restart removes the pre-graceful live runner."
+    },
+    {
+      "id": "DASH-PERMISSION-BROKER",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "working_tree": true,
+      "note": "ADR 0002 is accepted. Current OAuth PKCE/vault plumbing is merged, but raw access-token delivery, technical send authority under gmail.compose, and the compiled DASH-owned client ID remain blockers to a proven draft-only connector."
+    }
+  ]
+}

@@ -47,6 +47,7 @@ import {
 } from "./endpoint";
 import { DASH_LOCAL_PRINCIPAL } from "./execute";
 import { createRunnerServer } from "./server";
+import { RUNNER_BUILD_ID, RUNNER_PROTOCOL_VERSION } from "./identity";
 import { openRunnerStore } from "./store";
 import { Supervisor, loadRegistrations } from "./supervisor";
 
@@ -66,6 +67,8 @@ export interface RunnerEndpointFile {
   endpoint: string;
   transport: "unix" | "pipe";
   started_at: string;
+  runner_protocol: number;
+  runner_build: string;
 }
 
 export function endpointFilePath(dataDir: string): string {
@@ -103,58 +106,7 @@ async function main(): Promise<void> {
   }
 
   const supervisor = new Supervisor(registrations);
-  const server = createRunnerServer({
-    supervisor,
-    database: store.database,
-    token: secret,
-    principal: DASH_LOCAL_PRINCIPAL,
-    /**
-     * MAR-428. The directory is read again, here, rather than the caller
-     * sending its contents: a reload that accepted registrations over the wire
-     * would be the remote shell `runner/README.md` refuses to build, wearing a
-     * different name. DASH asks the runner to look; the filesystem answers.
-     */
-    reload: () => {
-      const fresh = loadRegistrations(registrationsDir);
-      for (const failure of fresh.skipped) {
-        console.warn(`[runner] ignoring registration ${failure.file}: ${failure.problem}`);
-      }
-      return { ...supervisor.adopt(fresh.registrations), skipped: fresh.skipped };
-    },
-  });
-
-  await listenOnEndpoint(server, endpoint);
-
-  writeFileSync(
-    endpointFilePath(dataDir),
-    `${JSON.stringify(
-      {
-        pid: process.pid,
-        endpoint: endpoint.path,
-        transport: endpoint.transport,
-        started_at: new Date().toISOString(),
-      } satisfies RunnerEndpointFile,
-      null,
-      2,
-    )}\n`,
-    "utf8",
-  );
-
-  console.warn(`[runner] listening on ${endpoint.path} pid=${String(process.pid)}`);
-  console.warn(`[runner] store: ${dataDir}`);
-  console.warn(`[runner] contracts: ${contractsDirectory()}`);
-  console.warn(`[runner] supervising ${String(registrations.length)} registered agent(s)`);
-
-  /**
-   * Shut down once, whatever arrives.
-   *
-   * Agents are stopped before the endpoint closes, so a DASH that is still up
-   * sees "not running" rather than a connection refused it would have to guess
-   * about. The store is closed last: an agent exiting can still settle a
-   * command result on its way out. The socket is unlinked at the very end, so
-   * the only path that ever leaves one behind is a crash — which is exactly the
-   * case `prepareEndpoint` is written to recover from.
-   */
+  let server: ReturnType<typeof createRunnerServer>;
   let shuttingDown = false;
   const shutdown = (signal: string): void => {
     if (shuttingDown) {
@@ -174,6 +126,66 @@ async function main(): Promise<void> {
     setTimeout(finish, 8_000).unref();
   };
 
+  server = createRunnerServer({
+    supervisor,
+    database: store.database,
+    token: secret,
+    principal: DASH_LOCAL_PRINCIPAL,
+    /**
+     * MAR-428. The directory is read again, here, rather than the caller
+     * sending its contents: a reload that accepted registrations over the wire
+     * would be the remote shell `runner/README.md` refuses to build, wearing a
+     * different name. DASH asks the runner to look; the filesystem answers.
+     */
+    reload: () => {
+      const fresh = loadRegistrations(registrationsDir);
+      for (const failure of fresh.skipped) {
+        console.warn(`[runner] ignoring registration ${failure.file}: ${failure.problem}`);
+      }
+      return { ...supervisor.adopt(fresh.registrations), skipped: fresh.skipped };
+    },
+    shutdown: () => {
+      shutdown("control request");
+    },
+  });
+
+  await listenOnEndpoint(server, endpoint);
+
+  writeFileSync(
+    endpointFilePath(dataDir),
+    `${JSON.stringify(
+      {
+        pid: process.pid,
+        endpoint: endpoint.path,
+        transport: endpoint.transport,
+        started_at: new Date().toISOString(),
+        runner_protocol: RUNNER_PROTOCOL_VERSION,
+        runner_build: RUNNER_BUILD_ID,
+      } satisfies RunnerEndpointFile,
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+
+  console.warn(
+    `[runner] listening on ${endpoint.path} pid=${String(process.pid)} ` +
+      `protocol=${String(RUNNER_PROTOCOL_VERSION)} build=${RUNNER_BUILD_ID}`,
+  );
+  console.warn(`[runner] store: ${dataDir}`);
+  console.warn(`[runner] contracts: ${contractsDirectory()}`);
+  console.warn(`[runner] supervising ${String(registrations.length)} registered agent(s)`);
+
+  /**
+   * Shut down once, whatever arrives.
+   *
+   * Agents are stopped before the endpoint closes, so a DASH that is still up
+   * sees "not running" rather than a connection refused it would have to guess
+   * about. The store is closed last: an agent exiting can still settle a
+   * command result on its way out. The socket is unlinked at the very end, so
+   * the only path that ever leaves one behind is a crash — which is exactly the
+   * case `prepareEndpoint` is written to recover from.
+   */
   process.on("SIGTERM", () => { shutdown("SIGTERM"); });
   process.on("SIGINT", () => { shutdown("SIGINT"); });
 }

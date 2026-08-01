@@ -84,6 +84,18 @@ describe("the handoff ledger", () => {
     expect(ledger.readHandoffRecord("b".repeat(32))?.outcome).toBe("registered");
   });
 
+  it("replaces a pending arrival with its first final outcome", async () => {
+    const { ledger } = await freshStore();
+    ledger.recordHandoff(record({ outcome: "pending", detail: "waiting for confirmation" }));
+    ledger.recordHandoff(record({ outcome: "declined", detail: "not now" }));
+    ledger.recordHandoff(record({ outcome: "registered", detail: "late replay" }));
+
+    expect(ledger.readHandoffRecord("b".repeat(32))).toMatchObject({
+      outcome: "declined",
+      detail: "not now",
+    });
+  });
+
   it("records refusals too", async () => {
     const { ledger } = await freshStore();
     ledger.recordHandoff(record({ outcome: "refused", detail: "expired" }));
