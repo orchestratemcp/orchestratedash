@@ -18,6 +18,8 @@
  */
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,7 +28,13 @@ import { afterAll, describe, expect, it } from "vitest";
 import { run } from "../agent-kit/cli";
 import { writeHandoff } from "../agent-kit/open-in-dash";
 import { deriveAgentId, planScaffold, type TemplateSources } from "../agent-kit/scaffold";
-import { isManifestV2, validateEvent, validateManifest, validateState } from "../lib/contracts";
+import {
+  isManifestV2,
+  validateArtifact,
+  validateEvent,
+  validateManifest,
+  validateState,
+} from "../lib/contracts";
 import { HANDOFF_FILE_NAME, handoffUrl, readHandoff, verifyHandoff } from "../lib/handoff";
 import { openHandoff, type HandoffPorts, type HandoffPrompt } from "../lib/handoff-flow";
 import { readRegistration } from "../lib/registration";
@@ -39,9 +47,13 @@ const TEMPLATE_AGENT = readFileSync(path.join(KIT_ROOT, "template", "agent.mjs")
 
 const roots: string[] = [];
 const supervisors: Supervisor[] = [];
+const servers: Server[] = [];
 afterAll(async () => {
   for (const supervisor of supervisors) {
     supervisor.stopAll();
+  }
+  for (const server of servers) {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   }
   await waitFor(
     () =>
@@ -95,7 +107,54 @@ function scaffold(agentId = "folder-digest"): string {
     mkdirSync(path.dirname(target), { recursive: true });
     writeFileSync(target, file.contents, "utf8");
   }
+  // No sources, so a run in this suite reaches no network.
+  //
+  // The shipped default set is three real public feeds, which is right for a
+  // person's first agent and wrong for a unit test: it would make `pnpm verify`
+  // depend on Google, Hacker News and arXiv all being reachable from whatever
+  // machine or CI runner happens to be running it. An empty set exercises the
+  // same run path — steps, events, digest, artifact — and asserts nothing about
+  // anybody else's uptime. Parsing is covered separately, against fixtures.
+  writeFileSync(path.join(directory, "sources.json"), `{ "sources": [] }\n`, "utf8");
   return directory;
+}
+
+/** A supervisor with the generated agent already started. */
+function startedSupervisor(directory: string, agentId = "folder-digest"): Supervisor {
+  const supervisor = new Supervisor(
+    [
+      {
+        agent_id: agentId,
+        manifest_path: path.join(directory, "agent.manifest.json"),
+        command: process.execPath,
+        args: [path.join(directory, "agent.mjs")],
+        cwd: directory,
+      },
+    ],
+    () => {},
+  );
+  supervisors.push(supervisor);
+  supervisor.start(agentId);
+  return supervisor;
+}
+
+/**
+ * Ask the agent to run, the way DASH's Run now does.
+ *
+ * `retry` against the waiting task rather than against a run: a freshly added
+ * agent has no runs, and `contracts/agent-command.schema.json` requires the
+ * command to name one or the other. That is the whole reason the agent
+ * publishes a task it is not yet working on.
+ */
+async function runNow(
+  supervisor: Supervisor,
+  agentId = "folder-digest",
+): Promise<{ ok: boolean }> {
+  return supervisor.deliver(agentId, {
+    command_id: `cmd-run-${String(Date.now())}`,
+    command: "retry",
+    target: { agent_id: agentId, task_id: "waiting-to-be-run" },
+  });
 }
 
 async function waitFor(predicate: () => boolean, label: string, timeoutMs = 10_000): Promise<void> {
@@ -351,21 +410,8 @@ describe("create, build, open in DASH", () => {
 describe("the generated agent", () => {
   it("is startable by the runner and reports what it is doing", async () => {
     const directory = scaffold();
-    const supervisor = new Supervisor(
-      [
-        {
-          agent_id: "folder-digest",
-          manifest_path: path.join(directory, "agent.manifest.json"),
-          command: process.execPath,
-          args: [path.join(directory, "agent.mjs")],
-          cwd: directory,
-        },
-      ],
-      () => {},
-    );
-    supervisors.push(supervisor);
+    const supervisor = startedSupervisor(directory);
 
-    expect(supervisor.start("folder-digest")).toMatchObject({ ok: true });
     await waitFor(() => supervisor.report("folder-digest") !== null, "a state report");
 
     // And the state the runner builds from it is a contract-valid document,
@@ -384,20 +430,7 @@ describe("the generated agent", () => {
     // "The runner protocol wired by default", proven rather than asserted: an
     // unacknowledged command settles as unacknowledged, so an ack is evidence.
     const directory = scaffold();
-    const supervisor = new Supervisor(
-      [
-        {
-          agent_id: "folder-digest",
-          manifest_path: path.join(directory, "agent.manifest.json"),
-          command: process.execPath,
-          args: [path.join(directory, "agent.mjs")],
-          cwd: directory,
-        },
-      ],
-      () => {},
-    );
-    supervisors.push(supervisor);
-    supervisor.start("folder-digest");
+    const supervisor = startedSupervisor(directory);
     await waitFor(() => supervisor.report("folder-digest") !== null, "startup");
 
     const paused = await supervisor.deliver("folder-digest", {
@@ -417,22 +450,32 @@ describe("the generated agent", () => {
     expect(approved).toMatchObject({ ok: false, problem: "refused" });
   }, 20_000);
 
-  it("writes telemetry v1 events that pass the contract", async () => {
+  it("does not run until it is asked to", async () => {
+    // The behaviour MAR-457 inverted, and the one a regression would restore
+    // silently. The old template called startRun() at startup and again every
+    // thirty seconds, so an agent began reaching out to the network before the
+    // person who added it had seen what it does — while its own manifest
+    // declared a manual trigger. This is the negative proof that they now agree.
     const directory = scaffold();
-    const supervisor = new Supervisor(
-      [
-        {
-          agent_id: "folder-digest",
-          manifest_path: path.join(directory, "agent.manifest.json"),
-          command: process.execPath,
-          args: [path.join(directory, "agent.mjs")],
-          cwd: directory,
-        },
-      ],
-      () => {},
-    );
-    supervisors.push(supervisor);
-    supervisor.start("folder-digest");
+    const supervisor = startedSupervisor(directory);
+
+    await waitFor(() => supervisor.report("folder-digest") !== null, "startup");
+    // Generously longer than a run takes, and far shorter than the old timer.
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+
+    expect(existsSync(path.join(directory, "runs", "events.jsonl"))).toBe(false);
+    expect(existsSync(path.join(directory, "reports"))).toBe(false);
+
+    // And it published the task that gives DASH's control something to target.
+    const report = supervisor.report("folder-digest") as { tasks?: Array<{ id: string }> };
+    expect(report.tasks?.some((task) => task.id === "waiting-to-be-run")).toBe(true);
+  }, 20_000);
+
+  it("writes telemetry v1 events that pass the contract, once asked", async () => {
+    const directory = scaffold();
+    const supervisor = startedSupervisor(directory);
+    await waitFor(() => supervisor.report("folder-digest") !== null, "startup");
+    expect(await runNow(supervisor)).toMatchObject({ ok: true });
 
     const eventsFile = path.join(directory, "runs", "events.jsonl");
     await waitFor(() => existsSync(eventsFile), "an events file");
@@ -452,25 +495,142 @@ describe("the generated agent", () => {
     }
   }, 20_000);
 
-  it("writes its report into its own folder and nowhere else", async () => {
+  it("writes its digest into its own folder and hands DASH a valid copy", async () => {
     const directory = scaffold();
-    writeFileSync(path.join(directory, "inbox", "note.txt"), "hello", "utf8");
+    const supervisor = startedSupervisor(directory);
+    await waitFor(() => supervisor.report("folder-digest") !== null, "startup");
+    expect(await runNow(supervisor)).toMatchObject({ ok: true });
 
-    const supervisor = new Supervisor(
-      [
-        {
-          agent_id: "folder-digest",
-          manifest_path: path.join(directory, "agent.manifest.json"),
-          command: process.execPath,
-          args: [path.join(directory, "agent.mjs")],
-          cwd: directory,
-        },
-      ],
-      () => {},
-    );
-    supervisors.push(supervisor);
-    supervisor.start("folder-digest");
+    await waitFor(() => existsSync(path.join(directory, "reports")), "a digest on disk");
 
-    await waitFor(() => existsSync(path.join(directory, "reports")), "a report");
+    // The half Wave 0 could not prove: the digest also reaches DASH, as a
+    // document that passes the artifact contract rather than as a file path
+    // somebody has to go and find.
+    //
+    // Drained into a local list because draining empties the buffer — polling
+    // it directly inside the predicate would throw away the very artifact the
+    // next poll was waiting for.
+    const drained: unknown[] = [];
+    await waitFor(() => {
+      for (const entry of supervisor.drainArtifacts().artifacts) {
+        drained.push(entry.artifact);
+      }
+      return drained.length > 0;
+    }, "an artifact to reach the runner");
+
+    expect(validateArtifact(drained[0])).toMatchObject({ ok: true });
+    const digest = drained[0] as { agent: string; kind: string; sources_fetched?: unknown[] };
+    expect(digest.agent).toBe("folder-digest");
+    expect(digest.kind).toBe("digest");
+    expect(digest.sources_fetched).toEqual([]);
   }, 20_000);
+
+  it("reads each feed shape, and reports a bad source as a bad source", async () => {
+    // The fixtures are served from this machine rather than fetched from the
+    // real three. What is being proved is the parsing and the four source
+    // outcomes; borrowing Google's, Hacker News's and arXiv's uptime to prove it
+    // would make `pnpm verify` fail for reasons that have nothing to do with
+    // this repository.
+    const server = createServer((request, response) => {
+      const url = request.url ?? "";
+      if (url.startsWith("/rss")) {
+        response.writeHead(200, { "content-type": "application/rss+xml" });
+        response.end(
+          `<?xml version="1.0"?><rss><channel>` +
+            `<item><title>AT&amp;T ships an agent</title><link>https://example.com/a</link>` +
+            `<pubDate>Fri, 01 Aug 2026 09:00:00 GMT</pubDate></item>` +
+            `<item><title><![CDATA[A bracketed headline]]></title><link>https://example.com/b</link></item>` +
+            `</channel></rss>`,
+        );
+        return;
+      }
+      if (url.startsWith("/atom")) {
+        response.writeHead(200, { "content-type": "application/atom+xml" });
+        response.end(
+          `<?xml version="1.0"?><feed>` +
+            `<entry><title>A paper</title><link href="https://example.com/paper"/>` +
+            `<published>2026-08-01T08:00:00Z</published></entry>` +
+            `</feed>`,
+        );
+        return;
+      }
+      if (url.startsWith("/json")) {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            hits: [{ title: "A story", url: "https://example.com/story", created_at: "2026-08-01T07:00:00Z" }],
+          }),
+        );
+        return;
+      }
+      if (url.startsWith("/notafeed")) {
+        response.writeHead(200, { "content-type": "text/html" });
+        response.end("<html><body>An error page, not a feed.</body></html>");
+        return;
+      }
+      response.writeHead(500);
+      response.end("no");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    servers.push(server);
+    const port = (server.address() as AddressInfo).port;
+    const base = `http://127.0.0.1:${String(port)}`;
+
+    const directory = scaffold();
+    writeFileSync(
+      path.join(directory, "sources.json"),
+      JSON.stringify({
+        sources: [
+          { name: "A news feed", url: `${base}/rss`, format: "rss" },
+          { name: "A paper feed", url: `${base}/atom`, format: "atom" },
+          { name: "A story feed", url: `${base}/json`, format: "hn_algolia" },
+          { name: "Something else", url: `${base}/notafeed`, format: "rss" },
+          { name: "A broken one", url: `${base}/boom`, format: "rss" },
+        ],
+      }),
+      "utf8",
+    );
+
+    const supervisor = startedSupervisor(directory);
+    await waitFor(() => supervisor.report("folder-digest") !== null, "startup");
+    expect(await runNow(supervisor)).toMatchObject({ ok: true });
+
+    const drained: unknown[] = [];
+    await waitFor(() => {
+      for (const entry of supervisor.drainArtifacts().artifacts) {
+        drained.push(entry.artifact);
+      }
+      return drained.length > 0;
+    }, "the digest");
+
+    expect(validateArtifact(drained[0])).toMatchObject({ ok: true });
+    const digest = drained[0] as {
+      items: Array<{ headline: string; item_url?: string; source_name?: string }>;
+      sources_fetched: Array<{ source_name: string; status: string }>;
+    };
+
+    const headlines = digest.items.map((item) => item.headline);
+    // Entities decoded, CDATA unwrapped, and every shape read.
+    expect(headlines).toContain("AT&T ships an agent");
+    expect(headlines).toContain("A bracketed headline");
+    expect(headlines).toContain("A paper");
+    expect(headlines).toContain("A story");
+
+    // Every item carries where it came from, which is what a grounded verdict
+    // will later be checked against.
+    for (const item of digest.items) {
+      expect(item.source_name, item.headline).toBeTruthy();
+    }
+    // Atom puts its address in an attribute rather than in the element's text.
+    expect(digest.items.find((item) => item.headline === "A paper")?.item_url).toBe(
+      "https://example.com/paper",
+    );
+
+    // The two failures are kept apart, because they are two different things
+    // for a person to do about them.
+    const byName = new Map(digest.sources_fetched.map((s) => [s.source_name, s.status]));
+    expect(byName.get("Something else")).toBe("not_a_feed");
+    expect(byName.get("A broken one")).toBe("unreachable");
+    expect(byName.get("A news feed")).toBe("ok");
+  }, 25_000);
 });

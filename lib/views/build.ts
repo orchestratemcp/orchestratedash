@@ -295,7 +295,7 @@ function workspaceSnapshot(
     })),
     tasks: (state.tasks ?? []).map((task) => ({
       id: task.id,
-      run_id: task.run_id,
+      run_id: task.run_id ?? null,
       label: task.label,
       status: task.status,
       created_at: task.created_at ?? null,

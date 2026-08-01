@@ -193,7 +193,14 @@ function resolveRunId(envelope: AgentCommandEnvelope, state: AgentDomState): str
     if (task === undefined) {
       return null;
     }
-    return (state.runs ?? []).some((run) => run.id === task.run_id) ? task.run_id : null;
+    // A task with no run of its own resolves to no run, exactly as a task
+    // naming a run the agent has not published does. That is the correct answer
+    // for the agent that only acts when asked: its waiting task belongs to no
+    // run until one is started, and inventing a correlation would attach this
+    // command's audit trail to somebody else's run.
+    return task.run_id !== undefined && (state.runs ?? []).some((run) => run.id === task.run_id)
+      ? task.run_id
+      : null;
   }
 
   return null;

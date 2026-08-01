@@ -123,7 +123,7 @@ describe("creating the sample", () => {
     if (!created.ok) return;
 
     expect(path.basename(created.value.directory)).toBe(SAMPLE_AGENT_ID);
-    for (const file of ["agent.manifest.json", "agent.mjs", "dash-handoff.json", "inbox/README.md"]) {
+    for (const file of ["agent.manifest.json", "agent.mjs", "dash-handoff.json", "sources.json"]) {
       expect(existsSync(path.join(created.value.directory, file)), file).toBe(true);
     }
     expect(created.value.handoff.command).toBe(BUNDLED_NODE_COMMAND);

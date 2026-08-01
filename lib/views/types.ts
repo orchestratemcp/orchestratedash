@@ -224,7 +224,8 @@ export interface WorkspaceRunView {
 
 export interface WorkspaceTaskView {
   id: string;
-  run_id: string;
+  /** Null on a task that belongs to no run — see the Agent DOM state contract. */
+  run_id: string | null;
   label: string;
   status: string;
   created_at: string | null;

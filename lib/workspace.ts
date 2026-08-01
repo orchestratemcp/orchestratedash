@@ -95,7 +95,8 @@ export interface AgentDomState {
   }>;
   tasks?: Array<{
     id: string;
-    run_id: string;
+    /** Absent on a task that exists before any run — see the state schema. */
+    run_id?: string;
     label: string;
     status: string;
     created_at?: string;

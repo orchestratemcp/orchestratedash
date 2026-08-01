@@ -47,10 +47,19 @@ import {
 } from "./handoff";
 import { BUNDLED_NODE_COMMAND } from "./registration";
 
-/** The sample's identity. One agent, deliberately: this is an onboarding, not a gallery. */
-export const SAMPLE_AGENT_ID = "folder-digest";
-export const SAMPLE_DISPLAY_NAME = "Folder digest";
-export const SAMPLE_SUMMARY = "Counts what is in its inbox folder and writes a short report.";
+/**
+ * The sample's identity. One agent, deliberately: this is an onboarding, not a
+ * gallery.
+ *
+ * MAR-457 replaced the folder digest rather than shipping AI News Scout beside
+ * it. Two samples would mean two first journeys, two sets of copy and two smoke
+ * proofs — and the one nobody demonstrates is the one that quietly rots. The
+ * folder digest proved the loop; this one is a thing somebody would keep.
+ */
+export const SAMPLE_AGENT_ID = "ai-news-scout";
+export const SAMPLE_DISPLAY_NAME = "AI News Scout";
+export const SAMPLE_SUMMARY =
+  "Reads the news sources you choose and writes you a short summary of what is new, with a link to where each item came from.";
 
 /** The folder DASH offers to put it in, under the user's documents directory. */
 export const SAMPLE_PARENT_FOLDER = "DASH agents";
