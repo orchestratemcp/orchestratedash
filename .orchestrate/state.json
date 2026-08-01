@@ -17,49 +17,49 @@
     {
       "id": "MAR-423",
       "lifecycle": "merged",
-      "linear_status": "Backlog",
+      "linear_status": "Done",
       "commit": "ad56874",
       "note": "The no-terminal Try a sample agent journey already exists; extend and prove it."
     },
     {
       "id": "MAR-428",
       "lifecycle": "merged",
-      "linear_status": "Backlog",
+      "linear_status": "Done",
       "commit": "c54ce60",
       "note": "The packaged shell path is implemented; installed promotion evidence remains owned by MAR-454."
     },
     {
       "id": "MAR-429",
       "lifecycle": "merged",
-      "linear_status": "Todo",
+      "linear_status": "Done",
       "commit": "32d3af9",
       "note": "MSIX update, repair, uninstall, and WACK lifecycle work is implemented and documented; it must no longer be ranked as an unimplemented blocker."
     },
     {
       "id": "MAR-432",
       "lifecycle": "merged",
-      "linear_status": "Backlog",
+      "linear_status": "Done",
       "commit": "d965f03",
       "note": "Packaged renderer startup fixes are implemented; the current installed journey is re-proven through MAR-454."
     },
     {
       "id": "MAR-383",
       "lifecycle": "merged",
-      "linear_status": "Backlog",
+      "linear_status": "Done",
       "commit": "33b879e",
       "note": "DASH-managed connection credential holding and delivery is implemented. ADR 0002 now narrows the remaining OAuth work to brokered capabilities rather than reopening this foundation."
     },
     {
       "id": "MAR-384",
       "lifecycle": "merged",
-      "linear_status": "Backlog",
+      "linear_status": "Done",
       "commit": "e30921c",
       "note": "The live Agent DOM workspace and capability-driven controls are implemented."
     },
     {
       "id": "MAR-433",
       "lifecycle": "proven",
-      "linear_status": "Backlog",
+      "linear_status": "Done",
       "commit": "05201e7",
       "proof": {
         "command": "pnpm verify"
@@ -69,14 +69,14 @@
     {
       "id": "MAR-450",
       "lifecycle": "merged",
-      "linear_status": "In Progress",
+      "linear_status": "Done",
       "commit": "71b28e5",
       "note": "Single-instance dash:// ownership fix is merged; residual recovery belongs to the smoke gate."
     },
     {
       "id": "MAR-451",
       "lifecycle": "proven",
-      "linear_status": "Backlog",
+      "linear_status": "Done",
       "commit": "05201e7",
       "proof": {
         "command": "pnpm verify"
@@ -86,7 +86,7 @@
     {
       "id": "MAR-452",
       "lifecycle": "proven",
-      "linear_status": "Backlog",
+      "linear_status": "Done",
       "commit": "05201e7",
       "proof": {
         "command": "pnpm verify"
@@ -96,7 +96,7 @@
     {
       "id": "MAR-453",
       "lifecycle": "proven",
-      "linear_status": "Backlog",
+      "linear_status": "Done",
       "commit": "05201e7",
       "proof": {
         "command": "pnpm verify"
@@ -106,7 +106,7 @@
     {
       "id": "MAR-454",
       "lifecycle": "proven",
-      "linear_status": "Backlog",
+      "linear_status": "Done",
       "commit": "05201e7",
       "proof": {
         "command": "pnpm verify"
