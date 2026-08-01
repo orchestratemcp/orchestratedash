@@ -52,7 +52,40 @@ import { runnerFetch, type RunnerHandle } from "./runner-process";
  * app must tell Windows both which executable to launch and which arguments to
  * put before the URL, or the handler resolves to `electron.exe` with no project
  * and opens a blank app.
+ *
+ * ## Why the entry point is checked rather than trusted
+ *
+ * `process.argv[1]` is whichever script Electron was started with, and more than
+ * one script imports `main.ts`. `electron/smoke.ts` is the one that matters: a
+ * proof run would register *itself* as the machine's `dash://` handler, and the
+ * next handoff link a user clicked would launch the harness, run its proofs and
+ * call `app.exit()`. The link appears to do nothing at all.
+ *
+ * That is not hypothetical — it is what a smoke run had actually left on this
+ * developer's machine, and it silently broke MAR-428's whole zero-file-picker
+ * flow until somebody looked in the registry.
+ *
+ * So a script that is not the app's entry point does not touch the registration.
+ * Doing nothing is deliberately the failure mode: a correct registration from an
+ * earlier `pnpm shell` survives a smoke run, where overwriting-then-restoring
+ * would leave the machine broken for as long as the harness ran.
  */
+export function isAppEntryPoint(entry: string): boolean {
+  // `package.json`'s `main` is `dist/electron/main.mjs`, and `electron .`
+  // resolves argv[1] to exactly that. The basename is what distinguishes it from
+  // `smoke.mjs` beside it; the directory is the same for both.
+  //
+  // Split on both separators rather than using `path.basename`, which follows the
+  // platform it runs on: the bug this guards against is a Windows one, and on a
+  // posix CI runner `path.basename` does not split a backslash path at all, so
+  // the case that matters would go untested.
+  return ["main.mjs", "main.js"].includes(entryBasename(entry));
+}
+
+function entryBasename(entry: string): string {
+  return entry.split(/[\\/]/).pop() ?? "";
+}
+
 export function registerProtocolClient(): void {
   if (app.isPackaged) {
     app.setAsDefaultProtocolClient(HANDOFF_SCHEME);
@@ -61,6 +94,13 @@ export function registerProtocolClient(): void {
   const entry = process.argv[1];
   if (entry === undefined) {
     app.setAsDefaultProtocolClient(HANDOFF_SCHEME);
+    return;
+  }
+  if (!isAppEntryPoint(entry)) {
+    console.warn(
+      `[dash-shell] not claiming ${HANDOFF_SCHEME}:// from ${entryBasename(entry)} — ` +
+        "only the app's own entry point may be the handler",
+    );
     return;
   }
   app.setAsDefaultProtocolClient(HANDOFF_SCHEME, process.execPath, [path.resolve(entry)]);
