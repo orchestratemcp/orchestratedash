@@ -74,7 +74,16 @@ export function isAppEntryPoint(entry: string): boolean {
   // `package.json`'s `main` is `dist/electron/main.mjs`, and `electron .`
   // resolves argv[1] to exactly that. The basename is what distinguishes it from
   // `smoke.mjs` beside it; the directory is the same for both.
-  return path.basename(entry) === "main.mjs" || path.basename(entry) === "main.js";
+  //
+  // Split on both separators rather than using `path.basename`, which follows the
+  // platform it runs on: the bug this guards against is a Windows one, and on a
+  // posix CI runner `path.basename` does not split a backslash path at all, so
+  // the case that matters would go untested.
+  return ["main.mjs", "main.js"].includes(entryBasename(entry));
+}
+
+function entryBasename(entry: string): string {
+  return entry.split(/[\\/]/).pop() ?? "";
 }
 
 export function registerProtocolClient(): void {
@@ -89,7 +98,7 @@ export function registerProtocolClient(): void {
   }
   if (!isAppEntryPoint(entry)) {
     console.warn(
-      `[dash-shell] not claiming ${HANDOFF_SCHEME}:// from ${path.basename(entry)} — ` +
+      `[dash-shell] not claiming ${HANDOFF_SCHEME}:// from ${entryBasename(entry)} — ` +
         "only the app's own entry point may be the handler",
     );
     return;
