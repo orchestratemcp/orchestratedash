@@ -15,6 +15,7 @@ import { Digest } from "../../_components/digest";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import { AGENT_WORKSPACE_PARAMS, runDetailHref } from "../../_data/routes";
 import {
+  dataSource,
   submitAgentCommand,
   type AgentCommandArgs,
 } from "../../_data/source";
@@ -250,21 +251,54 @@ function RunNow({
     return null;
   }
 
+  /*
+   * Read the snapshot again, immediately before asking.
+   *
+   * `lib/agent-dom/enforce.ts` refuses a command whose `observed_at` is not the
+   * one DASH currently holds, which stops a *forged* value from minting a fresh
+   * idempotency key. But `runner/state.ts` mints `observed_at` on every build
+   * and `electron/agent-adapters.ts` rebuilds every five seconds, so the value
+   * churns whether or not anything changed — and this page deliberately does
+   * not re-read while the agent is idle. Using the rendered snapshot's value
+   * therefore fails for anybody who looked at the page for more than about five
+   * seconds, which is everybody.
+   *
+   * This does not weaken the check. The renderer still cannot invent the value:
+   * it asks DASH for the one DASH holds. What it stops doing is punishing a
+   * person for reading the screen before pressing the button.
+   *
+   * Narrow on purpose. Approvals keep the rendered snapshot's value, because
+   * "the world changed since you looked, look again" is a property worth having
+   * in front of an irreversible action. Starting a run of a manual-first agent
+   * is not one, and the agent refuses a second concurrent run itself.
+   */
+  // Captured after the guards above, so the closure below does not have to
+  // re-narrow what this function body already established.
+  const taskId = waiting.id;
+  const renderedObservedAt = snapshot.observed_at;
+
+  async function runNow(): Promise<void> {
+    const current = await dataSource().workspace(agent);
+    const observedAt =
+      current.ok && current.data.found && current.data.snapshot !== null
+        ? current.data.snapshot.observed_at
+        : renderedObservedAt;
+    await issue(`run:${taskId}`, "retry", {
+      agent_id: agent,
+      observed_at: observedAt,
+      task_id: taskId,
+    });
+  }
+
   return (
     <section className="section run-now">
       <button
         className="button-primary"
         disabled={pending !== null}
-        onClick={() =>
-          void issue(`run:${waiting.id}`, "retry", {
-            agent_id: agent,
-            observed_at: snapshot.observed_at,
-            task_id: waiting.id,
-          })
-        }
+        onClick={() => void runNow()}
         type="button"
       >
-        {pending === `run:${waiting.id}` ? "Starting…" : "Run now"}
+        {pending === `run:${taskId}` ? "Starting…" : "Run now"}
       </button>
       <p className="muted">
         It runs only when you ask. Nothing happens on a timer.

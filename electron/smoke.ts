@@ -768,15 +768,21 @@ if (recorded !== null) {
           const view = (await window.webContents.executeJavaScript(
             `window.dashData.workspace(${JSON.stringify(agentId)})`,
           )) as {
-            data?: { snapshot?: { tasks?: Array<{ id?: string; status?: string }> } | null };
+            data?: {
+              snapshot?: {
+                observed_at?: string;
+                tasks?: Array<{ id?: string; status?: string }>;
+              } | null;
+            };
           };
-          return (
-            view.data?.snapshot?.tasks?.find(
-              (task) => task.id === "waiting-to-be-run" && task.status === "pending",
-            ) ?? null
+          const task = view.data?.snapshot?.tasks?.find(
+            (candidate) => candidate.id === "waiting-to-be-run" && candidate.status === "pending",
           );
+          return task === undefined
+            ? null
+            : { task, observed_at: view.data?.snapshot?.observed_at ?? "" };
         }, "the sample to publish the task it is waiting on");
-        check("6d. the sample waits to be asked", waitingTask !== null, waitingTask);
+        check("6d. the sample waits to be asked", waitingTask !== null, waitingTask?.task);
 
         const ranUnbidden = (await window.webContents.executeJavaScript(
           `window.dashData.runs()`,
@@ -792,15 +798,31 @@ if (recorded !== null) {
           ranUnbidden.data?.runs,
         );
 
-        // Run now, through the audited command boundary the renderer uses —
-        // not by poking the runner. If this path works only in a test harness
-        // it does not work.
+        /*
+         * Run now, through the audited command boundary the renderer uses —
+         * not by poking the runner. If this path works only in a test harness
+         * it does not work.
+         *
+         * `observed_at` is re-read here rather than fabricated, and that detail
+         * is the whole reason this proof earned its keep. The first version of
+         * this check invented a timestamp, and enforcement refused it as
+         * `stale_snapshot` — which then exposed the real defect behind it:
+         * `runner/state.ts` mints `observed_at` on every build and the adapter
+         * rebuilds every five seconds, so the value churns whether or not
+         * anything changed. Any control bound to a rendered snapshot has about
+         * a five-second window. The page now re-reads for the same reason this
+         * does.
+         */
+        const fresh = (await window.webContents.executeJavaScript(
+          `window.dashData.workspace(${JSON.stringify(agentId)})`,
+        )) as { data?: { snapshot?: { observed_at?: string } | null } };
+        const runRequest = {
+          agent_id: agentId,
+          observed_at: fresh.data?.snapshot?.observed_at ?? "",
+          task_id: "waiting-to-be-run",
+        };
         const asked = (await window.webContents.executeJavaScript(
-          `window.dashShell.retry(${JSON.stringify({
-            agent_id: agentId,
-            observed_at: new Date().toISOString(),
-            task_id: "waiting-to-be-run",
-          })})`,
+          `window.dashShell.retry(${JSON.stringify(runRequest)})`,
         )) as { ok?: boolean; reason?: string };
         check("6f. Run now is accepted through the audited bridge", asked.ok === true, asked);
 
@@ -877,9 +899,19 @@ if (recorded !== null) {
         // proof reading data through a bridge can pass while the page above it
         // is broken — proofs 5a-5j were green in a suite of 1635 tests while
         // three shipped defects sat in the one path no unit test could reach.
-        const origin = new URL(rendered.url).origin;
+        /*
+         * Built from protocol and host rather than from `origin`.
+         *
+         * `dash-app:` is not one of the URL standard's "special" schemes, so
+         * `new URL("dash-app://ui/").origin` is the string "null" — an opaque
+         * origin, correctly per spec and useless here. The first version of this
+         * proof used it and produced `null/runs/detail?...`, which Electron
+         * refused with ERR_INVALID_URL. Found by running it.
+         */
+        const parsedRenderer = new URL(rendered.url);
         const detailUrl =
-          `${origin}/runs/detail?agent=${encodeURIComponent(agentId)}` +
+          `${parsedRenderer.protocol}//${parsedRenderer.host}` +
+          `/runs/detail?agent=${encodeURIComponent(agentId)}` +
           `&run_id=${encodeURIComponent(completed?.run_id ?? "")}`;
 
         let drawn: { text: string; sources: number } | null = null;

@@ -431,13 +431,36 @@ const CONTROL_LABEL: Record<AgentCommand, string> = {
 export function availableControls(
   manifest: WorkspaceManifest,
   state: AgentDomState,
-  runId: string,
+  runId: string | null,
 ): AvailableControl[] {
   const control = manifest.agent_dom?.control;
   if (control === undefined || !control.supported) {
     return [];
   }
   const declared = new Set(control.commands ?? []);
+
+  /*
+   * No run at all: an agent that only acts when asked, waiting to be asked
+   * (MAR-457).
+   *
+   * `retry` is the verb the command contract gives us for "run it" — there is
+   * no separate `run` — and it is meaningful here only while nothing is already
+   * in flight. The same three gates still apply: the manifest must support
+   * control, must declare the command, and the state must make it meaningful.
+   * What changes is that "meaningful" can now be true with no run to point at.
+   */
+  if (runId === null) {
+    const busy = (state.runs ?? []).some(
+      (candidate) => candidate.status === "running" || candidate.status === "queued",
+    );
+    if (busy || !retryIsSafe(manifest, state, null)) {
+      return [];
+    }
+    return [...declared]
+      .filter((command) => command === "retry")
+      .map((command) => ({ command, label: CONTROL_LABEL[command] }));
+  }
+
   const run = (state.runs ?? []).find((candidate) => candidate.id === runId);
   if (run === undefined) {
     return [];
@@ -495,11 +518,23 @@ export function availableControls(
 export function retryIsSafe(
   manifest: WorkspaceManifest,
   state: AgentDomState,
-  runId: string,
+  runId: string | null,
 ): boolean {
   const irreversible = new Set(manifest.safety_contract?.irreversible_components ?? []);
   if (irreversible.size === 0) {
     return true;
+  }
+  if (runId === null) {
+    // Starting a fresh run of an agent that declares irreversible components.
+    // DASH cannot see whether that run would perform one, so it withholds the
+    // control — the same conservative default it applies to a run with no
+    // execution record, and for the same reason: withholding costs a manual
+    // start, offering can cost a duplicated irreversible action.
+    //
+    // Deliberately strict. An agent with irreversible components that wants a
+    // start button needs a gate the runner enforces, which is a design question
+    // rather than a default DASH should quietly assume the answer to.
+    return false;
   }
   const planVsActual = state.plan_vs_actual;
   if (planVsActual === undefined || planVsActual.run_id !== runId) {

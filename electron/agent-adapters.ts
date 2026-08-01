@@ -36,7 +36,7 @@ import { putAgentDomState } from "../lib/agent-dom/store";
 import { fetchAgentDomState, httpAdapter, type ControlChannel } from "../lib/agent-dom/transport";
 import { isManifestV2 } from "../lib/contracts";
 import { isSecureStoreError, type SecureStore } from "../lib/secure-store";
-import { ingestEvents, listAgentNames, readAgentManifest } from "../lib/store";
+import { ingestArtifacts, ingestEvents, listAgentNames, readAgentManifest } from "../lib/store";
 import { runnerFetch, type RunnerHandle } from "./runner-process";
 
 /**
@@ -189,6 +189,81 @@ export function createAgentChannels(
     }
   }
 
+  /**
+   * Drain what hosted agents produced, on the same channel as their telemetry
+   * (MAR-457).
+   *
+   * Separate from `drainTelemetry` for the reason the runner keeps two routes:
+   * events and artifacts are validated against different schemas at different
+   * boundaries, and `ingestArtifacts` is the one for these. It binds each
+   * artifact to the supervisor identity carried beside it, so a hosted child
+   * cannot publish a digest under another agent's name.
+   *
+   * This function is the piece that was missing when the installed smoke first
+   * ran: the buffer existed, the ingest existed, the view existed, and nothing
+   * connected them. A unit test that called `drainArtifacts()` on the supervisor
+   * directly passed the whole time, because the gap was the absence of a caller
+   * rather than a fault in anything either side of it.
+   */
+  async function drainArtifacts(): Promise<void> {
+    if (runner === null) {
+      return;
+    }
+
+    try {
+      const response = await runnerFetch(runner)(`${runner.origin}/artifacts/drain`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${runner.token}` },
+        signal: AbortSignal.timeout(3_000),
+      });
+      if (!response.ok) {
+        return;
+      }
+
+      const body = (await response.json()) as { artifacts?: unknown; dropped?: unknown };
+      if (typeof body.dropped === "number" && body.dropped > 0) {
+        log(
+          `[dash-shell] runner artifact buffer dropped ${String(body.dropped)} ` +
+            `candidate${body.dropped === 1 ? "" : "s"} before this poll`,
+        );
+      }
+      if (!Array.isArray(body.artifacts) || body.artifacts.length === 0) {
+        return;
+      }
+
+      const batch: Array<{ agent_id: string; artifact: unknown }> = [];
+      body.artifacts.forEach((candidate, index) => {
+        if (
+          typeof candidate !== "object" ||
+          candidate === null ||
+          typeof (candidate as { agent_id?: unknown }).agent_id !== "string" ||
+          !Object.hasOwn(candidate, "artifact")
+        ) {
+          log(
+            `[dash-shell] rejected runner artifact envelope at index ${String(index)}: invalid provenance`,
+          );
+          return;
+        }
+        batch.push(candidate as { agent_id: string; artifact: unknown });
+      });
+
+      const result = ingestArtifacts(
+        batch.map((candidate) => candidate.artifact),
+        { sourceAgents: batch.map((candidate) => candidate.agent_id) },
+      );
+      for (const rejection of result.rejected) {
+        log(
+          `[dash-shell] rejected runner-hosted artifact at index ${String(rejection.index)}: ` +
+            rejection.errors.slice(0, 3).join("; "),
+        );
+      }
+    } catch {
+      // Fire-and-forget, exactly as telemetry is. The digest in the agent's own
+      // reports folder remains the primary record, so a failed drain costs a
+      // rendering and not the user's data.
+    }
+  }
+
   /** Synchronous channel resolution, for the command path. */
   function channelFor(agentId: string): ControlChannel | null {
     if (runner !== null && hosted.has(agentId)) {
@@ -230,6 +305,7 @@ export function createAgentChannels(
     async poll(): Promise<void> {
       await refresh();
       await drainTelemetry();
+      await drainArtifacts();
 
       for (const agentId of listAgentNames()) {
         // Warm the vault lookup so `channelFor` can stay synchronous on the
