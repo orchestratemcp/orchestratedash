@@ -520,6 +520,7 @@ export function describeNewAgent(handoff: AgentHandoff, manifest: AnyAgentManife
       `It runs on this computer, from the folder you just created: ${handoff.project_dir}`,
       startSentence(handoff),
       connectionSentence(manifest),
+      ...permissionLines(manifest),
       "It keeps running when you close DASH, and you can stop or remove it at any time.",
     ].join("\n"),
     confirm_label: "Add and start",
@@ -587,6 +588,45 @@ function connectionSentence(manifest: AnyAgentManifest): string {
     return "It needs no accounts and no passwords.";
   }
   return `Later, it will ask you to connect: ${joinPlainly(labels)}. Nothing is connected by adding it.`;
+}
+
+/**
+ * What the agent says it will do that needs no account (MAR-457).
+ *
+ * Attributed, deliberately: *"It says it will"*, not *"it will"* and certainly
+ * not *"DASH will only let it"*. The runner strips the environment but spawns an
+ * ordinary process with ordinary network access, so this block is a declaration
+ * DASH renders and not a boundary DASH enforces. ADR 0002 is explicit that a
+ * contract claim must not be dressed as a technical firewall, and the consent
+ * dialog is the exact place that lie would be most costly — it is where the user
+ * decides whether to trust the thing.
+ *
+ * Labels, never ids. The schema keeps the registry's `id` beside the readable
+ * `label` precisely so a guided surface can show one and not the other.
+ *
+ * Empty for an agent that declares nothing, rather than "it declares nothing":
+ * silence is honest, and a manifest with no permissions block has not promised
+ * anything DASH should paraphrase.
+ */
+function permissionLines(manifest: AnyAgentManifest): string[] {
+  if (!isManifestV2(manifest)) {
+    return [];
+  }
+  const permissions = manifest.agent_dom.permissions;
+  const labels = [
+    ...(permissions?.read ?? []),
+    ...(permissions?.write ?? []),
+  ]
+    .map((grant) => grant.label)
+    .filter((label): label is string => typeof label === "string" && label.length > 0);
+
+  if (labels.length === 0) {
+    return [];
+  }
+  // One per line rather than a joined sentence: this is a list the user is meant
+  // to read down and weigh, and three capabilities in one clause is a sentence
+  // people skip.
+  return ["", "It says this is what it will do:", ...labels.map((label) => `  ${label}`)];
 }
 
 function joinPlainly(items: readonly string[]): string {

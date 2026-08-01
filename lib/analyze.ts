@@ -1,4 +1,9 @@
-import type { AgentManifestBody, RunEvent } from "./contracts";
+import type {
+  AgentManifestBody,
+  ArtifactSourceStatus,
+  RunArtifact,
+  RunEvent,
+} from "./contracts";
 
 /**
  * Plan-vs-actual analysis: judge a run against the plan its manifest declared.
@@ -192,6 +197,104 @@ function analyzeClearance(
       detail: `ran unattended against an attended plan (clearance ${clearance}, no gate events in this run)`,
     },
   ];
+}
+
+/* ---------------------------------------------------------------------- *
+ * Grounding
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Whether a digest's claims are backed by sources the run says it read
+ * (MAR-457).
+ *
+ * ## Why this is a second axis and not part of `compliant`
+ *
+ * `RunAnalysis.compliant` means one thing: the run honoured its **safety
+ * contract** — no irreversible step ran without an approval gate, and an
+ * attended plan did not run unattended. Grounding is a property of the run's
+ * **output**. Folding the two together would render a missing citation in the
+ * same red as an unapproved irreversible action, which does not make citations
+ * matter more; it makes gate violations matter less. The chip that means
+ * "something acted without permission" has to keep meaning only that.
+ *
+ * So the two are computed separately, reported separately, and neither can move
+ * the other. Drift already sits outside `compliant` for the same reason.
+ *
+ * ## What this can and cannot prove
+ *
+ * It checks the artifact against **its own report of what it fetched**: every
+ * item must cite a source that appears in `sources_fetched`. That catches an
+ * item attributed to a feed this run never touched, which is the failure worth
+ * catching — a digest quietly attributing a claim to a source it did not read.
+ *
+ * It is **not** independent proof that a fetch happened. DASH does not see the
+ * network; it sees what the agent said. An agent that fabricates both halves
+ * consistently passes this check, and no copy built on it may imply otherwise.
+ * The honest sentence is "every item names a source this run reported reading",
+ * not "every item was verified against its source".
+ */
+export type GroundingVerdict = "grounded" | "ungrounded" | "unverifiable";
+
+export interface GroundingAnalysis {
+  verdict: GroundingVerdict;
+  items_total: number;
+  items_cited: number;
+  /** Headlines carrying no source at all. */
+  uncited: string[];
+  /** Headlines citing a source this run never reported reading. */
+  unsupported: Array<{ headline: string; source_url: string }>;
+  /** Sources the run tried and could not use, for the recovery copy. */
+  failed_sources: Array<{ source_name: string; status: ArtifactSourceStatus }>;
+}
+
+export function analyzeGrounding(artifact: RunArtifact): GroundingAnalysis {
+  const fetched = artifact.sources_fetched;
+  const failed = (fetched ?? [])
+    .filter((source) => source.status !== "ok")
+    .map((source) => ({ source_name: source.source_name, status: source.status }));
+
+  const uncited: string[] = [];
+  const unsupported: Array<{ headline: string; source_url: string }> = [];
+
+  // Compared as the agent wrote them, not normalised. A redirect or a trailing
+  // slash would make two spellings of one address look like two addresses — but
+  // guessing that two strings mean the same endpoint is exactly the leniency
+  // that would let a fabricated citation match a real source by resembling it.
+  const readable = new Set((fetched ?? []).map((source) => source.source_url));
+
+  for (const item of artifact.items) {
+    if (item.source_url === undefined || item.source_url.length === 0) {
+      uncited.push(item.headline);
+      continue;
+    }
+    if (fetched !== undefined && !readable.has(item.source_url)) {
+      unsupported.push({ headline: item.headline, source_url: item.source_url });
+    }
+  }
+
+  const cited = artifact.items.length - uncited.length;
+
+  const verdict = ((): GroundingVerdict => {
+    if (uncited.length > 0 || unsupported.length > 0) {
+      return "ungrounded";
+    }
+    if (fetched === undefined) {
+      // The artifact never said what it read, so there is nothing to check
+      // against. Reporting that as "grounded" would be DASH vouching for a
+      // claim it has not examined.
+      return "unverifiable";
+    }
+    return "grounded";
+  })();
+
+  return {
+    verdict,
+    items_total: artifact.items.length,
+    items_cited: cited,
+    uncited,
+    unsupported,
+    failed_sources: failed,
+  };
 }
 
 /**
