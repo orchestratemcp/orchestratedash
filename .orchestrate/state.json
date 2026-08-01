@@ -2,7 +2,7 @@
   "schema_version": 1,
   "project": "DASH",
   "updated_at": "2026-08-01",
-  "current_wave": "Wave 0 - installed first-run reliability",
+  "current_wave": "Wave 1 - the shortest real agent loop",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -11,7 +11,7 @@
     "index": ".orchestrate/state.json"
   },
   "git": {
-    "evidence_base_commit": "c7ceddc"
+    "evidence_base_commit": "05201e7"
   },
   "issues": [
     {
@@ -58,10 +58,13 @@
     },
     {
       "id": "MAR-433",
-      "lifecycle": "merged",
+      "lifecycle": "proven",
       "linear_status": "Backlog",
-      "commit": "a527585",
-      "note": "Runner-hosted telemetry has unit coverage but is not yet installed-app proven."
+      "commit": "05201e7",
+      "proof": {
+        "command": "pnpm verify"
+      },
+      "note": "Runner-hosted telemetry rendered through the installed Runs bridge with a fresh run id, compliant verdict, and digest artifact."
     },
     {
       "id": "MAR-450",
@@ -72,38 +75,49 @@
     },
     {
       "id": "MAR-451",
-      "lifecycle": "planned",
+      "lifecycle": "proven",
       "linear_status": "Backlog",
-      "working_tree": true,
-      "note": "Build-derived runner identity and stale-runner refusal are implemented locally, pending full proof."
+      "commit": "05201e7",
+      "proof": {
+        "command": "pnpm verify"
+      },
+      "note": "The installed runner reported and matched build 8dad71ddad0b89512f38 and protocol 1."
     },
     {
       "id": "MAR-452",
-      "lifecycle": "planned",
+      "lifecycle": "proven",
       "linear_status": "Backlog",
-      "working_tree": true,
-      "note": "Authenticated graceful runner shutdown is implemented locally, pending full proof."
+      "commit": "05201e7",
+      "proof": {
+        "command": "pnpm verify"
+      },
+      "note": "Authenticated POST /shutdown returned 202 and the real runner exited without hard termination; agent removal now also waits for confirmed process exit."
     },
     {
       "id": "MAR-453",
-      "lifecycle": "planned",
+      "lifecycle": "proven",
       "linear_status": "Backlog",
-      "working_tree": true,
-      "note": "Pending handoff audit plus real expiry handling is implemented locally and focused tests pass."
+      "commit": "05201e7",
+      "proof": {
+        "command": "pnpm verify"
+      },
+      "note": "The real sample handoff was durably pending before consent, then registered, while expiry and first-final-outcome rules passed the full suite."
     },
     {
       "id": "MAR-454",
-      "lifecycle": "planned",
+      "lifecycle": "proven",
       "linear_status": "Backlog",
-      "working_tree": true,
-      "note": "Windows shell smoke is now a mandatory self-contained CI job and covers the real sample journey. It intentionally fails runner identity and telemetry until one restart removes the pre-graceful live runner."
+      "commit": "05201e7",
+      "proof": {
+        "command": "pnpm verify"
+      },
+      "note": "Post-reboot mandatory Windows verification passed 51 test files and 843 tests plus renderer, preload, runner identity, handoff, telemetry, Runs, verdict, artifact, and cleanup proofs."
     },
     {
       "id": "DASH-PERMISSION-BROKER",
       "lifecycle": "planned",
       "linear_status": "Backlog",
-      "working_tree": true,
-      "note": "ADR 0002 is accepted. Current OAuth PKCE/vault plumbing is merged, but raw access-token delivery, technical send authority under gmail.compose, and the compiled DASH-owned client ID remain blockers to a proven draft-only connector."
+      "note": "ADR 0002 is committed in 05201e7. Current OAuth PKCE/vault plumbing is merged, but raw access-token delivery, technical send authority under gmail.compose, and the compiled DASH-owned client ID remain blockers to a proven draft-only connector."
     }
   ]
 }

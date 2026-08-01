@@ -66,4 +66,3 @@ if (failures.length > 0) {
   process.exit(1);
 }
 console.log(`[state] valid; ${warnings.length} recorded cross-system drift warning(s)`);
-
