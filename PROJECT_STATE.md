@@ -16,11 +16,11 @@ Implementation evidence: `05201e7`. Wave 0 is frozen; regressions belong in the 
 
 ## Wave 1 - the shortest real agent loop
 
-Extend the existing MAR-423 sample path into **AI News Scout** without OAuth: editable public RSS/HTTP sources, manual run first and cadence second, visible live steps, source citations, a stable digest artifact, grounded/completed/failed verdicts, recovery copy, and a narrow `network: read` permission receipt. Reuse the installed smoke so this stays a product journey rather than a showcase branch.
+Deliver MAR-457 by extending the existing MAR-423 sample path into **AI News Scout** without OAuth: editable public RSS/HTTP sources, manual run first and cadence second, visible live steps, source citations, a stable digest artifact, grounded/completed/failed verdicts, recovery copy, and a narrow `network: read` permission receipt. Reuse the installed smoke so this stays a product journey rather than a showcase branch. MAR-455 and MAR-456 own the two MCP recommendation fixes that must land first.
 
 ## Wave 2 - outside-app connections
 
-Build a permission broker, not a token pass-through. Google sign-in identifies the user; connector authorization separately grants Gmail/Calendar scopes. The broker owns refresh tokens and exposes narrow agent tools. Start Gmail read/search/draft-only: no send tool exists even if the provider scope could technically allow it. Support MCP connectors behind the same permission cards and audit trail.
+Build MAR-458's permission broker, not a token pass-through. Google sign-in identifies the user; connector authorization separately grants Gmail/Calendar scopes. The broker owns refresh tokens and exposes narrow agent tools. Start Gmail read/search/draft-only: no send tool exists even if the provider scope could technically allow it. Support MCP connectors behind the same permission cards and audit trail. Reuse MAR-446 for BYO Google client onboarding.
 
 ADR 0002 makes this a promotion boundary. MAR-446's browser/PKCE/vault flow is
 implemented, but the current spawn path still delivers a general short-lived

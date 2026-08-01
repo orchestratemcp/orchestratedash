@@ -114,7 +114,13 @@
       "note": "Post-reboot mandatory Windows verification passed 51 test files and 843 tests plus renderer, preload, runner identity, handoff, telemetry, Runs, verdict, artifact, and cleanup proofs."
     },
     {
-      "id": "DASH-PERMISSION-BROKER",
+      "id": "MAR-457",
+      "lifecycle": "planned",
+      "linear_status": "Todo",
+      "note": "AI News Scout extends the proven MAR-423 path and is blocked by honest anonymous-feed routing in MAR-455 and local-runner recommendation in MAR-456."
+    },
+    {
+      "id": "MAR-458",
       "lifecycle": "planned",
       "linear_status": "Backlog",
       "note": "ADR 0002 is committed in 05201e7. Current OAuth PKCE/vault plumbing is merged, but raw access-token delivery, technical send authority under gmail.compose, and the compiled DASH-owned client ID remain blockers to a proven draft-only connector."
