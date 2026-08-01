@@ -27,10 +27,10 @@
  *    `AgentOriginView`.
  */
 
-import type { RunAnalysis } from "../analyze";
+import type { GroundingAnalysis, RunAnalysis } from "../analyze";
 import type { Recovery } from "../copy/recovery";
 import type { ConnectionRequirementRow } from "../connections";
-import type { RunEvent } from "../contracts";
+import type { ManifestPermissions, PermissionGrant, RunArtifact, RunEvent } from "../contracts";
 import type { AgentCompliance } from "../insights";
 import type { RunSummary } from "../store";
 import type {
@@ -109,6 +109,19 @@ export interface RunsView {
   runs: RunRow[];
 }
 
+/**
+ * The two verdicts a run carries, side by side and never merged.
+ *
+ * `analysis` judges the run against its safety contract; `grounding` judges the
+ * digest against the sources the run said it read. See `lib/analyze.ts` for why
+ * a missing citation must never render in the same red as an unapproved
+ * irreversible action.
+ */
+export interface RunArtifactsView {
+  artifacts: RunArtifact[];
+  grounding: GroundingAnalysis | null;
+}
+
 /** One planned step, joined to whether the run executed it. */
 export interface PlannedStepView {
   step: number;
@@ -147,6 +160,16 @@ export type RunView =
        * be given anyway.
        */
       unplanned_component_ids: string[];
+      /** What the run produced, newest first. Empty for a run that produced nothing. */
+      artifacts: RunArtifact[];
+      /**
+       * The newest artifact's grounding, or null when the run produced none.
+       *
+       * The newest is judged because it is the one on screen: a run that revised
+       * its digest corrected it, and grading the superseded copy would report a
+       * finding against text the user cannot see.
+       */
+      grounding: GroundingAnalysis | null;
     };
 
 /* ---------------------------------------------------------------------- *
@@ -315,6 +338,19 @@ export type WorkspaceView =
       title: string;
       goal: string;
       snapshot: WorkspaceSnapshotView | null;
+      /**
+       * The most recent digest, across every run — and deliberately a sibling of
+       * `snapshot` rather than a field inside it.
+       *
+       * The snapshot is what the agent published about itself and is null until
+       * it has published anything. A digest is DASH's own record and outlives
+       * the process that made it. Nesting it would make the last thing the user
+       * cares about vanish whenever the agent was stopped or unreachable.
+       */
+      latest_digest: RunArtifact | null;
+      latest_digest_grounding: GroundingAnalysis | null;
+      /** What the manifest declares it may do without an account. */
+      permissions: PermissionGrant[];
     };
 
 export type WorkInboxRow = InboxItem & {

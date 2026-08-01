@@ -630,3 +630,82 @@ button:disabled {
     min-width: 0;
   }
 }
+
+/* The digest, its sources, and the first-run card (MAR-457). */
+
+.digest-items {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.digest-items li + li {
+  margin-top: 1.1rem;
+}
+
+.digest-items h3 {
+  margin: 0 0 0.2rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* The headline is the link text; the address is never printed. See the note in
+   app/_components/digest.tsx and the artifact_file/provider_scope rules in
+   lib/copy/identifiers.ts. */
+.digest-items a {
+  color: inherit;
+}
+
+.digest-sources {
+  margin-top: 1.25rem;
+}
+
+.digest-sources ul {
+  list-style: none;
+  padding-left: 0;
+  margin: 0.5rem 0 0;
+}
+
+.digest-sources li + li {
+  margin-top: 0.6rem;
+}
+
+.try-sample {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1.5rem;
+  background: var(--panel);
+}
+
+.try-sample h2 {
+  margin: 0.15rem 0 0.35rem;
+}
+
+.try-sample .capability-list {
+  margin: 0.75rem 0;
+  color: var(--muted);
+}
+
+.run-now {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.run-now p {
+  margin: 0;
+}
+
+/* A run in flight is the one moment DASH refreshes on its own. The design brief
+   rule is that nothing moves without saying it did, so the saying-so gets a
+   style rather than being left to a spinner nobody can read. */
+.live-note {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-note {
+    transition: none;
+  }
+}

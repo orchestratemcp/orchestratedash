@@ -21,6 +21,8 @@
  * separation from the other side by exercising these against a real store.
  */
 
+import { analyzeGrounding } from "../analyze";
+import type { ManifestPermissions, PermissionGrant } from "../contracts";
 import { heldCredentials } from "../connection-actions";
 import { connectableFields } from "../connection-credentials";
 import { describeStoreDamage } from "../copy/recovery";
@@ -38,6 +40,8 @@ import {
 } from "../insights";
 import { listRegistrations, type ManagedRegistration } from "../registration";
 import {
+  artifactsForRun,
+  latestArtifactForAgent,
   listAgents,
   listAgentNames,
   listConnectionCapableAgents,
@@ -167,6 +171,11 @@ export function runView(
           ),
         ];
 
+  // Newest first, and the newest is the one judged. A run that revised its
+  // digest corrected it; grading the superseded copy would report a finding the
+  // user cannot see on the page in front of them.
+  const artifacts = artifactsForRun(agent, runId);
+
   return {
     found: true,
     agent,
@@ -176,6 +185,8 @@ export function runView(
     planned_route: plannedRoute,
     manifest_imported: manifest !== undefined,
     unplanned_component_ids: unplanned,
+    artifacts,
+    grounding: artifacts[0] === undefined ? null : analyzeGrounding(artifacts[0]),
   };
 }
 
@@ -386,13 +397,36 @@ export function workspaceView(
 
   const workspaceManifest = manifest as WorkspaceManifest;
   const stored = readAgentDomState(agent);
+  const digest = latestArtifactForAgent(agent);
+
+  // Outside the snapshot, deliberately. The snapshot is what the *agent*
+  // published about itself and is null until it has published anything; a digest
+  // from a run last week is DASH's own record and survives the agent being
+  // stopped, restarted or temporarily unreachable. Nesting it would make the
+  // last thing the user cares about disappear whenever the process did.
   return {
     found: true,
     agent,
     title: workspaceManifest.agent.display_name ?? workspaceManifest.agent.name,
     goal: workspaceManifest.agent.goal,
     snapshot: stored === null ? null : workspaceSnapshot(workspaceManifest, stored, now),
+    latest_digest: digest,
+    latest_digest_grounding: digest === null ? null : analyzeGrounding(digest),
+    permissions: declaredPermissions(manifest),
   };
+}
+
+/**
+ * What the agent's manifest declares it may do without an account (MAR-457).
+ *
+ * Read straight from the manifest rather than from anything DASH derived: this
+ * is a receipt for what the user was shown at consent, and a receipt that
+ * disagreed with the dialog would be worse than no receipt. Empty for a manifest
+ * that declares nothing.
+ */
+function declaredPermissions(manifest: unknown): PermissionGrant[] {
+  const dom = (manifest as { agent_dom?: { permissions?: ManifestPermissions } }).agent_dom;
+  return [...(dom?.permissions?.read ?? []), ...(dom?.permissions?.write ?? [])];
 }
 
 /**

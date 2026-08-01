@@ -194,6 +194,7 @@ export function resetStore(): void {
     database.exec("DELETE FROM command_results");
     database.exec("DELETE FROM command_audit");
     database.exec("DELETE FROM agent_handoffs");
+    database.exec("DELETE FROM run_artifacts");
   });
 }
 
@@ -448,6 +449,27 @@ export function artifactsForRun(agent: string, runId: string): RunArtifact[] {
     }
   }
   return artifacts;
+}
+
+/**
+ * The most recent digest this agent produced, across every run.
+ *
+ * What the agent workspace opens on: a person who came back to see what their
+ * scout found wants the last answer, not a list of runs to pick from. The run
+ * it belongs to travels with it so the page can link to the full record.
+ *
+ * Null when the agent has never produced one, which is the ordinary state of a
+ * manual-first agent nobody has run yet — not a failure and not worded as one.
+ */
+export function latestArtifactForAgent(agent: string): RunArtifact | null {
+  const row = db()
+    .prepare(
+      "SELECT artifact_json FROM run_artifacts WHERE agent = ? " +
+        "ORDER BY generated_at DESC LIMIT 1",
+    )
+    .get(agent) as Record<string, unknown> | undefined;
+
+  return row === undefined ? null : parseOrNull<RunArtifact>(text(row, "artifact_json"));
 }
 
 export interface AgentSummary {
