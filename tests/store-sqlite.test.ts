@@ -71,11 +71,11 @@ describe("schema", () => {
     const handle = db.db();
 
     // One per shipped migration: 0 is the MAR-416 store, 1 is MAR-417's
-    // command channel, 2 is MAR-428's handoff ledger. Asserted as a number
-    // rather than as MIGRATIONS.length so that appending a migration is a
-    // deliberate edit here too.
+    // command channel, 2 is MAR-428's handoff ledger, 3 is MAR-457's run
+    // artifacts. Asserted as a number rather than as MIGRATIONS.length so that
+    // appending a migration is a deliberate edit here too.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(3);
+    expect(version.user_version).toBe(4);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -91,6 +91,33 @@ describe("schema", () => {
     expect(tables).toContain("command_results");
     expect(tables).toContain("command_audit");
     expect(tables).toContain("agent_handoffs");
+    expect(tables).toContain("run_artifacts");
+  });
+
+  it("adds the artifact table to a store that predates it", async () => {
+    // The case every user with an installed DASH is in. A migration that only
+    // ever runs against a fresh directory is a migration nobody has tested on
+    // the one store that matters, so this opens at the previous version, then
+    // reopens and expects the new table without the old rows moving.
+    const first = await freshStore();
+    first.store.importManifest(manifest);
+    first.db.db().exec("PRAGMA user_version = 3");
+    first.db.db().exec("DROP TABLE run_artifacts");
+    first.db.closeDb();
+
+    process.env.DASH_DATA_DIR = first.dataDir;
+    vi.resetModules();
+    const db = await import("../lib/db");
+    const store = await import("../lib/store");
+    opened.push({ dataDir: first.dataDir, closeDb: db.closeDb });
+
+    const tables = db
+      .db()
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+      .all()
+      .map((row) => String(row["name"]));
+    expect(tables).toContain("run_artifacts");
+    expect(store.listAgents()).toHaveLength(1);
   });
 
   it("uses WAL journalling, which is what replaces write-then-rename", async () => {
@@ -114,7 +141,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(3);
+    ).toBe(4);
   });
 
   it("preserves pending tasks and approvals across a DASH restart", async () => {

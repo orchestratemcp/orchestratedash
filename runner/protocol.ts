@@ -119,7 +119,31 @@ export interface AgentTelemetryMessage {
   event: unknown;
 }
 
-export type AgentMessage = AgentAckMessage | AgentStateMessage | AgentTelemetryMessage;
+/**
+ * One run artifact candidate (MAR-457).
+ *
+ * `artifact` stays `unknown` for exactly the reason `event` does one message up:
+ * this parser owns the NDJSON envelope, not the artifact contract. Electron main
+ * hands every candidate to `ingestArtifact`, which applies
+ * `run-artifact.schema.json` — so a malformed artifact is rejected and recorded
+ * at the same boundary a malformed event is, without taking its neighbours with
+ * it.
+ *
+ * It rides this pipe rather than the frozen telemetry channel because an
+ * artifact is a different population from an event: `listRuns` derives a run's
+ * status from its events, and a document that could arrive as an event would be
+ * a document that could change a run's status by existing.
+ */
+export interface AgentArtifactMessage {
+  type: "artifact";
+  artifact: unknown;
+}
+
+export type AgentMessage =
+  | AgentAckMessage
+  | AgentStateMessage
+  | AgentTelemetryMessage
+  | AgentArtifactMessage;
 
 /**
  * Parse one line of agent output.
@@ -176,6 +200,10 @@ export function parseAgentMessage(line: string): AgentMessage | null {
 
   if (message["type"] === "telemetry" && Object.hasOwn(message, "event")) {
     return { type: "telemetry", event: message["event"] };
+  }
+
+  if (message["type"] === "artifact" && Object.hasOwn(message, "artifact")) {
+    return { type: "artifact", artifact: message["artifact"] };
   }
 
   return null;

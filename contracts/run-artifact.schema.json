@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orchestratemcp.dev/orchestratedash/contracts/run-artifact.schema.json",
+  "title": "OrchestrateDASH run artifact v1",
+  "description": "What a run produced, as opposed to what it did. Carried to DASH on the runner's newline-delimited JSON channel as {\"type\":\"artifact\"} and validated at the same boundary telemetry is. A separate contract from run-event.schema.json on purpose: telemetry v1 is frozen and locked in contract.lock.json, an artifact is a different population from an event, and listRuns derives run status from events alone — an artifact must never be able to perturb that. additionalProperties is left open per the contract's additive-versioning rule.",
+  "type": "object",
+  "required": ["artifact_version", "agent", "run_id", "artifact_id", "kind", "title", "generated_at", "items"],
+  "properties": {
+    "artifact_version": { "const": 1 },
+    "agent": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Must match agent.name in the manifest DASH imported for this run, and is re-checked against the producing agent at ingest exactly as an event's is."
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The run that produced this. DASH joins on it; it does not have to exist yet when the artifact arrives."
+    },
+    "artifact_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Stable for the life of the artifact and unique within (agent, run_id). This is what makes 'open the digest again' resolve to the same document rather than to whatever is newest — the stable id MAR-457 asks for."
+    },
+    "kind": {
+      "enum": ["digest"],
+      "description": "Deliberately a one-value enum. A second kind is an additive change made when a second kind exists, not headroom invented in advance."
+    },
+    "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "sources_fetched": {
+      "type": "array",
+      "description": "The sources this run actually retrieved, as the agent reports them. This is what makes grounding checkable: an item citing a source that was never fetched is a finding DASH can state without trusting the item's own claim about itself. It is an internal-consistency check on the agent's own report, NOT independent proof that a fetch happened — DASH does not see the network. Copy must not describe it as more than that.",
+      "items": {
+        "type": "object",
+        "required": ["source_name", "source_url", "status"],
+        "properties": {
+          "source_name": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "source_url": { "type": "string", "format": "uri", "maxLength": 2048 },
+          "status": {
+            "enum": ["ok", "unreachable", "not_a_feed", "empty"],
+            "description": "Kept apart because they are four different recoveries. lib/copy/recovery.ts refuses to collapse failure modes that lead somewhere different, and 'that address answered but not with a news feed' is not 'this computer may be offline'."
+          },
+          "fetched_at": { "type": "string", "format": "date-time" },
+          "item_count": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "items": {
+      "type": "array",
+      "description": "The digest itself. An item with no source_url is kept and rendered as uncited rather than dropped — hiding it is how a grounded verdict becomes theatre.",
+      "items": {
+        "type": "object",
+        "required": ["headline"],
+        "properties": {
+          "headline": { "type": "string", "minLength": 1, "maxLength": 300 },
+          "summary": { "type": "string", "maxLength": 1000 },
+          "source_name": { "type": "string", "maxLength": 120 },
+          "source_url": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 2048,
+            "description": "The feed this item came from. Absent means uncited, which is a verdict input rather than an error."
+          },
+          "item_url": { "type": "string", "format": "uri", "maxLength": 2048 },
+          "published_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}
