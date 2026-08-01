@@ -17,7 +17,7 @@
  * scope, alongside the two other order-sensitive statements it already carries.
  */
 
-import { app, net, protocol } from "electron";
+import { app, net, protocol, type Session } from "electron";
 
 import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -87,31 +87,52 @@ export function registerRendererScheme(): void {
  * handler can be asked to write, and no code path in it that could.
  */
 export function serveRenderer(root: string = rendererRoot()): void {
-  protocol.handle(RENDERER_SCHEME, async (request) => {
-    if (request.method !== "GET") {
-      return new Response(null, { status: 405 });
-    }
+  protocol.handle(RENDERER_SCHEME, (request) => answer(root, request));
+}
 
-    const resolution = resolveRendererRequest(root, request.url);
-    if (!resolution.ok) {
-      console.warn(`[dash-shell] renderer refused ${request.url}: ${resolution.reason}`);
-      // One status for every refusal. Distinguishing "outside the root" from
-      // "no such page" would tell a probe which of its guesses landed inside.
-      return new Response(null, { status: 404 });
-    }
+/**
+ * Serve the same scheme inside one non-default session.
+ *
+ * `protocol.handle` registers on the default session and nowhere else. The
+ * credential prompt opens on a fresh `partition:` — deliberately, so nothing it
+ * displays can be cached beside the rest of the app — and in that partition
+ * `dash-app://` was a scheme nobody answered. `loadURL` failed immediately, its
+ * rejection was discarded by the `void` in front of it, and the window sat at
+ * about:blank with the credential bridge attached. No error reached the user:
+ * connecting an account opened an empty frame and waited.
+ *
+ * The isolation is the point and is kept. What was missing is that an isolated
+ * session still has to be told how to answer for the app's own origin.
+ */
+export function serveRendererIn(target: Session, root: string = rendererRoot()): void {
+  target.protocol.handle(RENDERER_SCHEME, (request) => answer(root, request));
+}
 
-    const file = resolution.candidates.find((candidate) => existsSync(candidate));
-    if (file === undefined) {
-      return new Response(null, { status: 404 });
-    }
+/** The one handler, so an isolated session cannot drift from the default one. */
+async function answer(root: string, request: GlobalRequest): Promise<GlobalResponse> {
+  if (request.method !== "GET") {
+    return new Response(null, { status: 405 });
+  }
 
-    const response = await net.fetch(pathToFileURL(file).href);
-    // `net.fetch` on a file URL guesses a type from the extension. Ours is an
-    // allowlist rather than a guess, so it wins.
-    const headers = new Headers(response.headers);
-    headers.set("content-type", resolution.contentType);
-    return new Response(response.body, { status: response.status, headers });
-  });
+  const resolution = resolveRendererRequest(root, request.url);
+  if (!resolution.ok) {
+    console.warn(`[dash-shell] renderer refused ${request.url}: ${resolution.reason}`);
+    // One status for every refusal. Distinguishing "outside the root" from
+    // "no such page" would tell a probe which of its guesses landed inside.
+    return new Response(null, { status: 404 });
+  }
+
+  const file = resolution.candidates.find((candidate) => existsSync(candidate));
+  if (file === undefined) {
+    return new Response(null, { status: 404 });
+  }
+
+  const response = await net.fetch(pathToFileURL(file).href);
+  // `net.fetch` on a file URL guesses a type from the extension. Ours is an
+  // allowlist rather than a guess, so it wins.
+  const headers = new Headers(response.headers);
+  headers.set("content-type", resolution.contentType);
+  return new Response(response.body, { status: response.status, headers });
 }
 
 /**

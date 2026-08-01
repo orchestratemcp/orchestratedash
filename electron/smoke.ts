@@ -55,6 +55,7 @@ import path from "node:path";
 import { IPC_ORIGIN, ipcFetch } from "../lib/agent-dom/ipc-fetch";
 import { putAgentDomState, readCommandAudit } from "../lib/agent-dom/store";
 import { connectableFields } from "../lib/connection-credentials";
+import { oauthProviderById } from "../lib/oauth/providers";
 import { closeDb, dataDir } from "../lib/db";
 import { RENDERER_ORIGIN } from "../lib/shell/renderer-scheme";
 import { readAgentManifest, importManifest } from "../lib/store";
@@ -367,13 +368,42 @@ if (oauthTarget !== null) {
   // is not the one we already have. Resolved by waiting for it to appear rather
   // than by index, because `getAllWindows` order is not contractual.
   const promptWindow = new Promise<BrowserWindow>((resolve, reject) => {
-    const deadline = setTimeout(() => reject(new Error("no prompt window after 30s")), 30_000);
+    // The timeout says what it saw. "No prompt window" was the only thing this
+    // ever reported, and it was wrong in both directions: a window that opened
+    // and failed to load looked identical to one that was never constructed.
+    const deadline = setTimeout(() => {
+      const seen = BrowserWindow.getAllWindows().map((candidate) => ({
+        app: candidate === window,
+        url: candidate.webContents.getURL(),
+        loading: candidate.webContents.isLoading(),
+      }));
+      reject(new Error(`no usable prompt window after 30s; windows: ${JSON.stringify(seen)}`));
+    }, 30_000);
     const look = (): void => {
       const found = BrowserWindow.getAllWindows().find((candidate) => candidate !== window);
       if (found === undefined) {
         setTimeout(look, 50);
         return;
       }
+      // The page is a local route in the exported renderer, so it can finish
+      // loading inside the 50ms this poll waits — and `did-finish-load` would
+      // then already have fired, leaving the listener below waiting for an event
+      // that is never coming.
+      //
+      // `getURL()` is the half that cannot be dropped: an empty URL means the
+      // window exists but its navigation has not started, and `isLoading()` is
+      // false then too. Treating that as loaded resolves this promise onto a
+      // blank window, and the `executeJavaScript` that follows hangs with no
+      // deadline left to catch it.
+      if (!found.webContents.isLoading() && found.webContents.getURL() !== "") {
+        clearTimeout(deadline);
+        resolve(found);
+        return;
+      }
+      found.webContents.once("did-fail-load", (_event, code, description, url) => {
+        clearTimeout(deadline);
+        reject(new Error(`the prompt window failed to load ${url}: ${description} (${code})`));
+      });
       found.webContents.once("did-finish-load", () => {
         clearTimeout(deadline);
         resolve(found);
@@ -394,7 +424,20 @@ if (oauthTarget !== null) {
     RENDERER_ORIGIN,
   );
 
-  const prompt = await promptWindow;
+  // `promptForAuthorization` has an early return — an unknown provider resolves
+  // to `provider_error` without ever constructing a window. Waiting only on the
+  // window turns that into a 30-second hang reported as "no prompt window",
+  // which names the symptom and hides the cause. Racing the two means the flow
+  // reports whichever happened, and an outcome arriving *before* a window is
+  // itself the finding.
+  const prompt = await Promise.race([
+    promptWindow,
+    authorization.then((outcome): never => {
+      throw new Error(
+        `the authorization resolved before any window opened: ${JSON.stringify(outcome)}`,
+      );
+    }),
+  ]);
 
   const promptBridge = (await prompt.webContents.executeJavaScript(
     `({
@@ -483,10 +526,25 @@ if (oauthTarget !== null) {
       },
     );
 
+    // The manifest's scopes plus the provider's identity scopes, and nothing
+    // else. `openid` and `email` are added by `authorizationScopes` on purpose —
+    // without an address DASH cannot tell the user *which* account they
+    // connected, and neither scope reaches any user data. See
+    // `lib/oauth/providers.ts`.
+    //
+    // This proof previously demanded the declared set exactly, which the design
+    // never produced. It had not been executed on a machine, so the wrong
+    // expectation sat here unchallenged: the first real run failed on the
+    // identity scopes rather than on anything wrong. What is worth asserting is
+    // that nothing *else* is asked for, which is the scope-creep this guards.
+    // Read from the provider rather than restated here: a copy would let the
+    // two drift, and this proof is the thing that would then be believed.
+    const identity = oauthProviderById(oauthTarget.oauth?.provider_id ?? "")?.identity_scopes ?? [];
+    const permitted = [...new Set([...identity, ...declared])].sort();
     check(
-      "5h. it asks for exactly the scopes the manifest declared",
-      JSON.stringify([...scopes].sort()) === JSON.stringify(declared),
-      { asked: scopes, declared },
+      "5h. it asks for the declared scopes plus identity, and nothing more",
+      JSON.stringify([...scopes].sort()) === JSON.stringify(permitted),
+      { asked: [...scopes].sort(), permitted },
     );
 
     // The verifier is what makes the exchange safe and must never be in
