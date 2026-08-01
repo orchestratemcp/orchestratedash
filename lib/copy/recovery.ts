@@ -231,7 +231,14 @@ export type AuthorizationFailureCode =
   | OAuthFailureCode
   | LoopbackFailureCode
   /** The sign-in worked, but the user did not grant everything the agent needs. */
-  | "missing_permissions";
+  | "missing_permissions"
+  /**
+   * DASH could not show the sign-in window, so there was never anything to sign
+   * in with. Distinct from every other code here because nothing was asked of
+   * the provider and nothing was asked of the user — the failure is entirely on
+   * this side, and the previous behaviour was to wait silently forever.
+   */
+  | "prompt_unavailable";
 
 /**
  * What to say when a sign-in did not produce a credential DASH can keep.
@@ -316,6 +323,15 @@ export function describeAuthorizationFailure(
           "Nothing was stored. This can happen when an account is managed by a workplace or school that restricts which apps may connect.",
         next_action: `Try again, and if it keeps happening check whether ${service} allows this account to connect other apps.`,
         actor: "user",
+      };
+
+    case "prompt_unavailable":
+      return {
+        headline: `DASH could not open the ${service} sign-in window.`,
+        meaning:
+          "Nothing was stored and nothing was sent to the provider. This is a fault in DASH, not something you did or anything wrong with your account.",
+        next_action: "Try again. If the window still does not appear, this needs reporting.",
+        actor: "dash",
       };
 
     case "malformed_response":

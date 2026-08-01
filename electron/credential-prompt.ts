@@ -37,8 +37,8 @@
  * credential channels answer exactly one renderer, and it is one main created.
  */
 
-import { BrowserWindow, ipcMain } from "electron";
-import path from "node:path";
+import { BrowserWindow, ipcMain, session } from "electron";
+import { fileURLToPath } from "node:url";
 
 import {
   CREDENTIAL_AUTHORIZE_CHANNEL,
@@ -52,6 +52,7 @@ import type { AuthorizationOutcome } from "../lib/connection-actions";
 import type { CredentialTarget } from "../lib/connection-credentials";
 import { describePermissions, oauthProviderById } from "../lib/oauth/providers";
 import { startAuthorization, type AuthorizationSession } from "./oauth-session";
+import { serveRendererIn } from "./renderer-host";
 
 /**
  * What a prompt produced. One of two shapes, because the two modes settle with
@@ -210,6 +211,11 @@ function openPrompt(
   rendererOrigin: string,
 ): Promise<PromptResolution> {
   return new Promise<PromptResolution>((resolve) => {
+    // One partition per prompt, named once so the session can be taught the
+    // app's scheme before the window is told to navigate to it.
+    const partition = `credential-prompt-${String(Date.now())}`;
+    serveRendererIn(session.fromPartition(partition));
+
     const window = new BrowserWindow({
       width: 520,
       height,
@@ -224,14 +230,21 @@ function openPrompt(
       autoHideMenuBar: true,
       title: `Connect ${description.service}`,
       webPreferences: {
-        preload: path.join(__dirname, "credential-preload.js"),
+        // `import.meta.url`, not `__dirname`: this file is bundled into
+        // `main.mjs`, which is ESM, where `__dirname` does not exist at all. It
+        // threw a `ReferenceError` the moment the prompt was opened, so the
+        // window was never constructed and the caller waited on a promise that
+        // could not settle — every connection attempt hung with nothing on
+        // screen. See `electron/README.md` and `main.ts`, which resolve the
+        // shell's own preload the same way and for the same reason.
+        preload: fileURLToPath(new URL("./credential-preload.js", import.meta.url)),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
         // Nothing on this page needs to remember anything between prompts, and a
         // session that persisted would be a place a typed value could be cached
         // by the form-history the platform provides for free.
-        partition: `credential-prompt-${String(Date.now())}`,
+        partition,
         spellcheck: false,
       },
     });
@@ -278,7 +291,19 @@ function openPrompt(
       window.show();
     });
 
-    void window.loadURL(`${rendererOrigin}${CREDENTIAL_PROMPT_ROUTE}`);
+    // Not `void`: a discarded rejection here is how this window came to sit
+    // blank and silent. If the page cannot load there is nothing to type into,
+    // so the prompt cancels rather than waiting for an answer it cannot collect.
+    window.loadURL(`${rendererOrigin}${CREDENTIAL_PROMPT_ROUTE}`).catch((error: unknown) => {
+      console.error(
+        `[dash-shell] the credential prompt could not load its page: ${String(error)}`,
+      );
+      settle(
+        description.mode === "oauth"
+          ? { kind: "oauth", outcome: { ok: false, code: "prompt_unavailable" } }
+          : { kind: "secret", value: null },
+      );
+    });
   });
 }
 
