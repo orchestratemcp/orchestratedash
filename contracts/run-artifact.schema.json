@@ -4,7 +4,22 @@
   "title": "OrchestrateDASH run artifact v1",
   "description": "What a run produced, as opposed to what it did. Carried to DASH on the runner's newline-delimited JSON channel as {\"type\":\"artifact\"} and validated at the same boundary telemetry is. A separate contract from run-event.schema.json on purpose: telemetry v1 is frozen and locked in contract.lock.json, an artifact is a different population from an event, and listRuns derives run status from events alone — an artifact must never be able to perturb that. additionalProperties is left open per the contract's additive-versioning rule.",
   "type": "object",
-  "required": ["artifact_version", "agent", "run_id", "artifact_id", "kind", "title", "generated_at", "items"],
+  "required": ["artifact_version", "agent", "run_id", "artifact_id", "kind", "title", "generated_at"],
+  "allOf": [
+    {
+      "description": "MAR-458 moved `items` from the top-level required list into this conditional. That is a relaxation of the outer object and not of a digest: a digest is required to carry items exactly as before, and the change exists so a second kind can require a different member instead. Adding a kind without a branch here would let it require nothing, so a new branch is part of adding a kind.",
+      "if": { "properties": { "kind": { "const": "digest" } }, "required": ["kind"] },
+      "then": {
+        "required": ["items"],
+        "$comment": "The `properties` entry below exists only to satisfy Ajv's strictRequired check, which will not let a subschema require a property the same subschema does not define. `true` adds no constraint — the real definition is the one under the top-level `properties`, and it still applies here because an allOf branch narrows rather than replaces.",
+        "properties": { "items": true }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "draft" } }, "required": ["kind"] },
+      "then": { "required": ["draft"], "properties": { "draft": true } }
+    }
+  ],
   "properties": {
     "artifact_version": { "const": 1 },
     "agent": {
@@ -24,8 +39,8 @@
       "description": "Stable for the life of the artifact and unique within (agent, run_id). This is what makes 'open the digest again' resolve to the same document rather than to whatever is newest — the stable id MAR-457 asks for."
     },
     "kind": {
-      "enum": ["digest"],
-      "description": "Deliberately a one-value enum. A second kind is an additive change made when a second kind exists, not headroom invented in advance."
+      "enum": ["digest", "draft"],
+      "description": "`draft` was added by MAR-458, when a second kind existed rather than in advance of one. It means a reply an agent composed and DASH is holding LOCALLY: nothing about this artifact has been sent, and nothing about it exists at the provider. ADR 0002's first slice has no operation that could create a provider-side draft and none that could send one, so an artifact of this kind is the only draft there is until a later slice says otherwise."
     },
     "title": { "type": "string", "minLength": 1, "maxLength": 200 },
     "generated_at": { "type": "string", "format": "date-time" },
@@ -44,6 +59,42 @@
           },
           "fetched_at": { "type": "string", "format": "date-time" },
           "item_count": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "draft": {
+      "type": "object",
+      "description": "A reply an agent wrote and DASH is holding. Required when kind is `draft`. It is a local document: DASH does not send it, the broker has no send operation, and MAR-458's slice has no provider-side draft creation either. Copy rendering this must not say 'saved to your drafts' or anything else implying the provider has it.",
+      "required": ["subject", "body"],
+      "properties": {
+        "to": {
+          "type": "array",
+          "description": "Who the agent proposes to reply to, as read from the source message. A proposal a person edits, never an address book DASH resolved.",
+          "items": { "type": "string", "maxLength": 320 },
+          "maxItems": 25
+        },
+        "subject": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "body": { "type": "string", "maxLength": 20000 },
+        "in_reply_to": {
+          "type": "object",
+          "description": "The message this replies to, by the provider's own ids. Ids and not content: this is what lets a person open the original themselves, and it is not a claim that DASH threaded anything.",
+          "properties": {
+            "message_id": { "type": "string", "maxLength": 128 },
+            "thread_id": { "type": "string", "maxLength": 128 }
+          }
+        },
+        "sources": {
+          "type": "array",
+          "description": "The messages the agent actually read to write this, as it reports them. The same internal-consistency check `sources_fetched` provides for a digest: a draft claiming to answer a message the run never read through the broker is a finding DASH can state, and the broker's own audit rows are the independent record to state it against.",
+          "items": {
+            "type": "object",
+            "required": ["message_id"],
+            "properties": {
+              "message_id": { "type": "string", "maxLength": 128 },
+              "subject": { "type": "string", "maxLength": 300 },
+              "from": { "type": "string", "maxLength": 320 }
+            }
+          }
         }
       }
     },

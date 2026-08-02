@@ -139,11 +139,34 @@ export interface AgentArtifactMessage {
   artifact: unknown;
 }
 
+/**
+ * One brokered-operation request (MAR-458, ADR 0002).
+ *
+ * `request` stays `unknown` for the same reason `event` and `artifact` do: this
+ * parser owns the newline-delimited envelope and not the broker's contract. The
+ * runner buffers the candidate and DASH applies `parseBrokerRequest`, which is
+ * the boundary that knows what an operation is — and knows to refuse everything
+ * it does not recognise.
+ *
+ * It rides this pipe because the pipe is already authenticated by construction:
+ * only the process holding the other end can write to it, so the runner can bind
+ * a request to the child that made it without the agent presenting a credential.
+ * That binding is load-bearing — it is what stops one agent asking for another
+ * agent's connection — and no credential in an agent environment could provide
+ * it, because a credential in an agent environment is the thing this whole issue
+ * exists to remove.
+ */
+export interface AgentBrokerRequestMessage {
+  type: "broker_request";
+  request: unknown;
+}
+
 export type AgentMessage =
   | AgentAckMessage
   | AgentStateMessage
   | AgentTelemetryMessage
-  | AgentArtifactMessage;
+  | AgentArtifactMessage
+  | AgentBrokerRequestMessage;
 
 /**
  * Parse one line of agent output.
@@ -204,6 +227,10 @@ export function parseAgentMessage(line: string): AgentMessage | null {
 
   if (message["type"] === "artifact" && Object.hasOwn(message, "artifact")) {
     return { type: "artifact", artifact: message["artifact"] };
+  }
+
+  if (message["type"] === "broker_request" && Object.hasOwn(message, "request")) {
+    return { type: "broker_request", request: message["request"] };
   }
 
   return null;

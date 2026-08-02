@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import type { GroundingAnalysis } from "../../lib/analyze";
 import { describeDigestGaps, describeSourceFailure } from "../../lib/copy/recovery";
-import type { RunArtifact } from "../../lib/contracts";
+import type { DigestArtifact, DraftArtifact } from "../../lib/contracts";
 
 /**
  * A digest, with where each item came from (MAR-457).
@@ -28,7 +28,7 @@ export function Digest({
   artifact,
   grounding,
 }: {
-  artifact: RunArtifact;
+  artifact: DigestArtifact;
   grounding: GroundingAnalysis | null;
 }): ReactNode {
   const uncited = new Set(grounding?.uncited ?? []);
@@ -108,7 +108,7 @@ export function Digest({
  * actually read" unanswered — and the second question is the one a person
  * checking a digest they are about to rely on is really asking.
  */
-function SourceList({ artifact }: { artifact: RunArtifact }): ReactNode {
+function SourceList({ artifact }: { artifact: DigestArtifact }): ReactNode {
   const sources = artifact.sources_fetched ?? [];
   if (sources.length === 0) {
     return null;
@@ -144,6 +144,124 @@ function SourceList({ artifact }: { artifact: RunArtifact }): ReactNode {
       </ul>
     </details>
   );
+}
+
+/**
+ * A reply an agent wrote, held locally (MAR-458).
+ *
+ * ## The sentence at the top is the whole component
+ *
+ * "DASH is holding this. Nothing has been sent and nothing has been saved to
+ * your mail." Everything else here is presentation; that line is the honesty
+ * requirement, and it is rendered before the draft rather than under it because
+ * a person scanning this needs to know what it is *not* before they read what it
+ * says.
+ *
+ * It is true by construction rather than by promise. ADR 0002's first slice
+ * gives the broker `gmail.search` and `gmail.message.read` and nothing else —
+ * no send operation and no provider-side draft creation — so there is no code
+ * path from this artifact to the user's Gmail account. `PROJECT_STATE.md` records
+ * the failure this avoids: `network: read` is "a declaration DASH renders, not a
+ * boundary DASH enforces", and every surface has to say which it is. This one is
+ * the enforced kind, and says so plainly rather than leaving the user to guess.
+ *
+ * ## Why the body is plain text in a `pre`
+ *
+ * The draft is composed from message content, which ADR 0002 invariant 7 calls
+ * untrusted data. React escapes it either way; a `pre` also stops a reply whose
+ * body is one 20,000-character line from stretching the page, and keeps the
+ * agent's own line breaks — which are part of what the user is reviewing.
+ */
+export function Draft({ artifact }: { artifact: DraftArtifact }): ReactNode {
+  const { draft } = artifact;
+  const recipients = draft.to ?? [];
+  const sources = draft.sources ?? [];
+
+  return (
+    <section className="section" aria-labelledby="draft-heading">
+      <div className="section-heading">
+        <h2 id="draft-heading">{artifact.title}</h2>
+        <span
+          className="chip chip-ok"
+          title="DASH has no operation that could send this or save it to your mail"
+        >
+          held here only
+        </span>
+      </div>
+
+      <div className="notice" role="status">
+        <p>
+          <strong>DASH is holding this reply. Nothing has been sent.</strong>
+        </p>
+        <p>
+          It has not been saved to your mail either. The agent can read the messages you
+          approved and write a reply here; it has no way to send one or to put one in your
+          drafts folder.
+        </p>
+      </div>
+
+      <dl className="draft-headers">
+        <dt>To</dt>
+        <dd>{recipients.length === 0 ? <span className="muted">Not addressed</span> : recipients.join(", ")}</dd>
+        <dt>Subject</dt>
+        <dd>{draft.subject}</dd>
+      </dl>
+
+      <pre className="draft-body wrap">{draft.body}</pre>
+
+      {sources.length === 0 ? null : (
+        <details className="digest-sources">
+          <summary>Messages it read to write this ({sources.length})</summary>
+          <ul>
+            {sources.map((source) => (
+              <li key={source.message_id}>
+                <strong>{source.subject ?? "No subject"}</strong>
+                {source.from === undefined ? null : <span className="muted"> · {source.from}</span>}
+              </li>
+            ))}
+          </ul>
+          {/* The agent's own account of what it read. The broker's audit trail
+              is the independent record, and it is on the Connections page
+              rather than duplicated here — one place to check a claim is worth
+              more than two that can disagree. */}
+          <p className="muted">
+            This is the agent&apos;s own account. What DASH actually let it read is on the
+            Connections page.
+          </p>
+        </details>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Render whatever a run produced, by kind (MAR-458).
+ *
+ * One component both pages call, rather than a `kind` ternary repeated at each
+ * call site. The reason is the same one that made `RunArtifact` a union: adding
+ * a third kind should be a compile error in exactly one place, and a page that
+ * forgot to handle it should not silently render nothing.
+ *
+ * `grounding` is only ever a digest's, which is why it is passed through rather
+ * than looked up here — `lib/views/build.ts` already refuses to grade a draft.
+ */
+export function RunOutput({
+  artifact,
+  grounding,
+}: {
+  artifact: DigestArtifact | DraftArtifact;
+  grounding: GroundingAnalysis | null;
+}): ReactNode {
+  switch (artifact.kind) {
+    case "digest":
+      return <Digest artifact={artifact} grounding={grounding} />;
+    case "draft":
+      return <Draft artifact={artifact} />;
+    default: {
+      const unreachable: never = artifact;
+      throw new Error(`Unhandled artifact kind: ${JSON.stringify(unreachable)}`);
+    }
+  }
 }
 
 /**

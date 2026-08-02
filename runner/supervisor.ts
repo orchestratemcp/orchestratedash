@@ -280,6 +280,26 @@ export interface ArtifactDrain {
   dropped: number;
 }
 
+/** One brokered-operation request waiting for DASH to adjudicate it (MAR-458). */
+export interface BufferedBrokerRequest {
+  /**
+   * The supervisor identity of the child that wrote the line.
+   *
+   * This is the single most load-bearing field in the broker's transport. DASH
+   * looks up *this* agent's manifest and *this* agent's credential, so an agent
+   * naming another agent's connection id gets its own manifest consulted and is
+   * refused. Nothing in the request body can change it, because it is not in the
+   * request body.
+   */
+  agent_id: string;
+  request: unknown;
+}
+
+export interface BrokerDrain {
+  requests: BufferedBrokerRequest[];
+  dropped: number;
+}
+
 interface Supervised {
   registration: AgentRegistration;
   child: ChildProcess | null;
@@ -326,11 +346,33 @@ export const MAX_TELEMETRY_BUFFER_EVENTS = 10_000;
 export const MAX_ARTIFACT_BUFFER_BYTES = 4 * 1024 * 1024;
 export const MAX_ARTIFACT_BUFFER_COUNT = 200;
 
+/**
+ * The broker's own bound (MAR-458).
+ *
+ * Much smaller than the other two, and smaller on purpose. Telemetry and
+ * artifacts are things an agent *produces*, so a generous buffer costs memory.
+ * A brokered request is a thing an agent *wants done to a user's account*, so a
+ * generous buffer costs a queue of pending reads against somebody's mailbox that
+ * DASH would work through after the fact — including after the user pressed
+ * Disconnect, if it were deep enough to outlive their attention.
+ *
+ * `lib/broker/execute.ts` re-resolves the grant per request, so a queued request
+ * against a revoked grant is refused rather than served; this bound is the
+ * second half of the same argument, which is that the queue should not be able
+ * to get deep in the first place.
+ */
+export const MAX_BROKER_BUFFER_BYTES = 256 * 1024;
+export const MAX_BROKER_BUFFER_COUNT = 64;
+
 interface BufferedTelemetryEntry extends BufferedTelemetryEvent {
   bytes: number;
 }
 
 interface BufferedArtifactEntry extends BufferedArtifact {
+  bytes: number;
+}
+
+interface BufferedBrokerEntry extends BufferedBrokerRequest {
   bytes: number;
 }
 
@@ -342,6 +384,9 @@ export class Supervisor {
   private readonly artifacts: BufferedArtifactEntry[] = [];
   private artifactBytes = 0;
   private droppedArtifacts = 0;
+  private readonly brokerRequests: BufferedBrokerEntry[] = [];
+  private brokerBytes = 0;
+  private droppedBrokerRequests = 0;
 
   constructor(
     registrations: readonly AgentRegistration[],
@@ -495,6 +540,48 @@ export class Supervisor {
     this.artifactBytes = 0;
     this.droppedArtifacts = 0;
     return { artifacts, dropped };
+  }
+
+  /**
+   * Take every brokered request waiting for an answer (MAR-458).
+   *
+   * Unlike telemetry and artifacts this is not fire-and-forget: the agent is
+   * blocked on an answer, so a drained request that DASH never responds to is an
+   * agent that waits until its own timeout. That is the correct failure — DASH
+   * being closed means the broker is closed, and there is no honest way for a
+   * request to succeed while the process that holds the vault is not running —
+   * but it is a failure, not a no-op, and the agent kit's client says so.
+   */
+  drainBrokerRequests(): BrokerDrain {
+    const requests = this.brokerRequests.map(({ agent_id, request }) => ({ agent_id, request }));
+    const dropped = this.droppedBrokerRequests;
+    this.brokerRequests.length = 0;
+    this.brokerBytes = 0;
+    this.droppedBrokerRequests = 0;
+    return { requests, dropped };
+  }
+
+  /**
+   * Deliver one broker answer to the agent that asked (MAR-458).
+   *
+   * Written to the child's stdin, exactly as a command is, so the answer arrives
+   * on the channel the request left by and cannot reach any other process. There
+   * is no acknowledgement and no retry: an agent that has exited is an agent
+   * with nothing to answer, and buffering a reply for a process that is gone
+   * would mean a future process with the same registration receiving an answer
+   * to a question it never asked.
+   *
+   * Returns whether the line was handed to a live pipe. False is not an error
+   * worth surfacing to a user — it means the agent stopped while DASH was
+   * deciding — but it is worth the caller being able to see.
+   */
+  respondToBroker(agentId: string, line: string): boolean {
+    const entry = this.agents.get(agentId);
+    if (entry === undefined || entry.child === null || entry.child.stdin === null) {
+      return false;
+    }
+    entry.child.stdin.write(line);
+    return true;
   }
 
   /**
@@ -804,6 +891,15 @@ export class Supervisor {
       return;
     }
 
+    if (message.type === "broker_request") {
+      this.bufferBrokerRequest(
+        entry.registration.agent_id,
+        message.request,
+        Buffer.byteLength(line, "utf8"),
+      );
+      return;
+    }
+
     const resolve = entry.pending.get(message.command_id);
     if (resolve === undefined) {
       // An ack for something we are not waiting for: a late answer after a
@@ -859,5 +955,24 @@ export class Supervisor {
 
     this.artifacts.push({ agent_id: agentId, artifact, bytes });
     this.artifactBytes += bytes;
+  }
+
+  private bufferBrokerRequest(agentId: string, request: unknown, bytes: number): void {
+    if (
+      this.brokerRequests.length >= MAX_BROKER_BUFFER_COUNT ||
+      this.brokerBytes + bytes > MAX_BROKER_BUFFER_BYTES
+    ) {
+      this.droppedBrokerRequests += 1;
+      // Logged, because a dropped brokered request is an agent left waiting for
+      // an answer that is never coming — a hang from the agent's side, and the
+      // reason has to be findable somewhere.
+      this.log(
+        `[runner] ${agentId} asked the broker for something while the bounded buffer was full; the request was dropped`,
+      );
+      return;
+    }
+
+    this.brokerRequests.push({ agent_id: agentId, request, bytes });
+    this.brokerBytes += bytes;
   }
 }

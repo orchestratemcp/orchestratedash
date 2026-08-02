@@ -218,6 +218,53 @@ async function handle(
     return;
   }
 
+  // POST /broker/drain — brokered-operation requests waiting for an answer
+  // (MAR-458). The runner does not interpret them: `lib/broker/protocol.ts`
+  // parses each candidate on the DASH side, which is where the operation
+  // allowlist and the vault are. What the runner contributes, and what nothing
+  // else could, is the identity of the child that wrote each line.
+  if (
+    request.method === "POST" &&
+    segments.length === 2 &&
+    segments[0] === "broker" &&
+    segments[1] === "drain"
+  ) {
+    send(response, 200, { ok: true, ...options.supervisor.drainBrokerRequests() });
+    return;
+  }
+
+  // POST /broker/responses — DASH's answers, on their way back to the children
+  // that asked (MAR-458).
+  //
+  // The body names an agent and carries one already-encoded response line. The
+  // runner writes it to that child's stdin and nothing else: it does not parse
+  // the line, does not re-address it, and cannot invent one, so the only
+  // responses that exist are the ones DASH decided. A caller on this channel is
+  // already DASH — it holds the bearer token — so the authority question is
+  // settled before this route is reached.
+  if (
+    request.method === "POST" &&
+    segments.length === 2 &&
+    segments[0] === "broker" &&
+    segments[1] === "responses"
+  ) {
+    const body = await readBody(request);
+    if (body === null) {
+      send(response, 413, { ok: false, detail: "The request body was too large." });
+      return;
+    }
+    let parsed: { responses?: unknown };
+    try {
+      parsed = JSON.parse(body) as { responses?: unknown };
+    } catch {
+      send(response, 400, { ok: false, detail: "The request body was not JSON." });
+      return;
+    }
+    const delivered = deliverBrokerResponses(options.supervisor, parsed.responses);
+    send(response, 200, { ok: true, ...delivered });
+    return;
+  }
+
   if (segments[0] !== "agents" || segments[1] === undefined) {
     send(response, 404, { ok: false, detail: "No such route." });
     return;
@@ -352,6 +399,55 @@ export function parseSpawnCredentials(value: unknown): Record<string, string> | 
     credentials[key] = entry;
   }
   return credentials;
+}
+
+/**
+ * Hand each answer to the child it belongs to (MAR-458).
+ *
+ * The whole function is a narrowing plus a loop, and the narrowing is the part
+ * worth reading. Two fields per entry: an agent id and a line. The line is
+ * required to be a single newline-terminated string, because this is written
+ * straight into a newline-delimited stream — a "line" containing an interior
+ * newline would frame a second message the agent would then act on, and the one
+ * place that could happen is a caller that built the string by concatenation.
+ *
+ * `undelivered` is reported rather than swallowed: an agent that exited while
+ * DASH was deciding is an ordinary race, and one whose answers are all going
+ * undelivered is a bug worth being able to see from the DASH side.
+ */
+function deliverBrokerResponses(
+  supervisor: Supervisor,
+  candidate: unknown,
+): { delivered: number; undelivered: number; malformed: number } {
+  const summary = { delivered: 0, undelivered: 0, malformed: 0 };
+  if (!Array.isArray(candidate)) {
+    return summary;
+  }
+
+  for (const entry of candidate) {
+    if (typeof entry !== "object" || entry === null) {
+      summary.malformed += 1;
+      continue;
+    }
+    const { agent_id: agentId, line } = entry as { agent_id?: unknown; line?: unknown };
+    if (
+      typeof agentId !== "string" ||
+      agentId.length === 0 ||
+      typeof line !== "string" ||
+      !line.endsWith("\n") ||
+      line.indexOf("\n") !== line.length - 1
+    ) {
+      summary.malformed += 1;
+      continue;
+    }
+    if (supervisor.respondToBroker(agentId, line)) {
+      summary.delivered += 1;
+    } else {
+      summary.undelivered += 1;
+    }
+  }
+
+  return summary;
 }
 
 /**

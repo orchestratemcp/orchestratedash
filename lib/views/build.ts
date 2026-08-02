@@ -22,6 +22,7 @@
  */
 
 import { analyzeGrounding } from "../analyze";
+import { isDigestArtifact } from "../contracts";
 import type { ManifestPermissions, PermissionGrant } from "../contracts";
 import { heldCredentials } from "../connection-actions";
 import { connectableFields } from "../connection-credentials";
@@ -186,7 +187,15 @@ export function runView(
     manifest_imported: manifest !== undefined,
     unplanned_component_ids: unplanned,
     artifacts,
-    grounding: artifacts[0] === undefined ? null : analyzeGrounding(artifacts[0]),
+    // Only a digest is graded (MAR-458). A draft has no items and no
+    // `sources_fetched`, so there is nothing to check its citations against —
+    // and a null verdict renders as no chip, which is the honest outcome. The
+    // independent record of what a draft's agent was actually allowed to read is
+    // the broker's audit trail, not a grounding score.
+    grounding:
+      artifacts[0] === undefined || !isDigestArtifact(artifacts[0])
+        ? null
+        : analyzeGrounding(artifacts[0]),
   };
 }
 
@@ -411,7 +420,8 @@ export function workspaceView(
     goal: workspaceManifest.agent.goal,
     snapshot: stored === null ? null : workspaceSnapshot(workspaceManifest, stored, now),
     latest_digest: digest,
-    latest_digest_grounding: digest === null ? null : analyzeGrounding(digest),
+    latest_digest_grounding:
+      digest === null || !isDigestArtifact(digest) ? null : analyzeGrounding(digest),
     permissions: declaredPermissions(manifest),
   };
 }

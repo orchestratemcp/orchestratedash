@@ -346,6 +346,80 @@ const MIGRATIONS: readonly string[] = [
   -- against a different notion of context — rather than a silent reinterpretation.
   ALTER TABLE agent_dom_state ADD COLUMN decision_identity TEXT;
   `,
+
+  // ---------------------------------------------------------------------
+  // MAR-458 (ADR 0002): the connection permission broker.
+  //
+  // The agent stopped receiving a provider token and started receiving answers
+  // to named operations. Two things follow that the store has to hold: a
+  // receipt the user can read, and a trail of what was actually done with the
+  // access they granted.
+  // ---------------------------------------------------------------------
+  `
+  -- One receipt per (agent, connection): ADR 0002 invariant 4.
+  --
+  -- "Every grant has a user-visible receipt: account, provider, capabilities,
+  -- requesting agent, grant time, last use, and revoke action." Six of those
+  -- seven are columns here; the seventh is a button, and it is the existing
+  -- disconnect action rather than a second way to revoke.
+  --
+  -- **This table is a record, never an authority.** What an agent may do is
+  -- recomputed from the manifest and the live credential on every single call
+  -- (see lib/broker/execute.ts on why). A row here that disagreed with that
+  -- computation would be stale display, not extra permission — which is the
+  -- property that makes it safe for a receipt to be a cached projection.
+  --
+  -- account_hint is masked at the point of writing and the column never holds a
+  -- full address: the question a receipt answers is "which of my accounts",
+  -- and lib/secret-refs.ts already owns the masking.
+  CREATE TABLE broker_grants (
+    agent         TEXT NOT NULL,
+    connection_id TEXT NOT NULL,
+    field_id      TEXT NOT NULL,
+    account_hint  TEXT,
+    -- The granted operation ids as a JSON array, for the receipt's capability
+    -- list. Ids and not labels: the label is DASH's own copy and may be
+    -- rewritten between releases, and a receipt that froze old wording would
+    -- describe an action in words the app no longer uses.
+    operations    TEXT NOT NULL,
+    granted_at    TEXT NOT NULL,
+    last_used_at  TEXT,
+    PRIMARY KEY (agent, connection_id)
+  );
+
+  -- Every brokered call, allowed or refused: ADR 0002 invariant 5.
+  --
+  -- **No token, and no message content.** input_keys holds the *names* of the
+  -- fields an agent supplied and never their values, which is the same rule
+  -- command_audit.payload_keys has held since MAR-417. A search query is the
+  -- user's own words about their own mail; a durable table of every phrase an
+  -- agent searched for is a record nobody asked DASH to keep, and it would be
+  -- the single most sensitive table in the store.
+  --
+  -- result_count is a number. It says a call returned eleven things and never
+  -- what any of them were.
+  --
+  -- No foreign key to broker_grants, for the reason command_audit has none to
+  -- runs: the rows most worth having are the refusals, and a refusal against a
+  -- connection with no grant row is exactly one of them.
+  CREATE TABLE broker_audit (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent         TEXT NOT NULL,
+    connection_id TEXT NOT NULL,
+    operation     TEXT NOT NULL,
+    request_id    TEXT NOT NULL,
+    decision      TEXT NOT NULL,
+    refusal       TEXT,
+    input_keys    TEXT NOT NULL,
+    result_count  INTEGER,
+    account_hint  TEXT,
+    duration_ms   INTEGER NOT NULL,
+    decided_at    TEXT NOT NULL
+  );
+
+  CREATE INDEX broker_audit_by_agent ON broker_audit (agent, decided_at);
+  CREATE INDEX broker_audit_by_connection ON broker_audit (agent, connection_id, decided_at);
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

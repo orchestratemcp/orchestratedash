@@ -371,11 +371,15 @@ export function connectableFields(
  * holds and does not hand over, and the difference should be a filter someone
  * wrote rather than a null check someone forgot.
  *
- * Both kinds appear here, and the caller must still branch: an API-key target
- * delivers the stored value, an OAuth target delivers a short-lived access token
- * minted at spawn from a refresh token that never leaves DASH (MAR-446). What
- * they share is that the manifest named somewhere to put it, which is what this
- * filter is about.
+ * Both kinds appear here, and **an OAuth target in this list is not something to
+ * deliver** (MAR-458). It was until ADR 0002: the spawn path minted a provider
+ * access token for one and wrote it into the child's environment. The list is
+ * still the honest answer to the question it asks — the manifest really did name
+ * a variable — and the question stopped being the one the spawn path should ask.
+ *
+ * `deliverableSecretFields` is that question. This one survives for the guard
+ * built on it: `electron/main.ts` reads the OAuth entries here precisely so it
+ * can assert that none of their names has a value.
  */
 export function deliverableFields(
   agentId: string,
@@ -385,4 +389,32 @@ export function deliverableFields(
     (target): target is CredentialTarget & { environment_name: string } =>
       target.environment_name !== null,
   );
+}
+
+/**
+ * The credentials DASH may actually put in a child process's environment
+ * (MAR-458).
+ *
+ * Typed secrets only. An API key is a value the user pasted for a service DASH
+ * has no client for and no ability to narrow — DASH holding it and not
+ * delivering it would mean holding it for nothing — so it goes to the agent, as
+ * it always did.
+ *
+ * An OAuth grant is the opposite case in every respect. DASH *is* a client for
+ * it, it can be exchanged for access at any time, and the access it buys is
+ * wider than anything a manifest declares: ADR 0002 records that a
+ * `gmail.compose` token can send mail no matter what the manifest says about
+ * drafts. So the grant stays on this side of the broker and the agent asks for
+ * named operations instead.
+ *
+ * A separate function rather than a parameter on the one above, so that the
+ * spawn path cannot re-acquire the old behaviour by passing a flag — and so a
+ * reader of `collectSpawnCredentials` sees the narrowing in the name of the
+ * thing it iterates.
+ */
+export function deliverableSecretFields(
+  agentId: string,
+  manifest: ConnectionSourceManifest,
+): Array<CredentialTarget & { environment_name: string }> {
+  return deliverableFields(agentId, manifest).filter((target) => target.kind === "secret");
 }

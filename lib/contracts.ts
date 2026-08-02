@@ -413,14 +413,60 @@ export interface ArtifactItem {
  * The stable pair is `(agent, run_id, artifact_id)`: re-opening a digest
  * resolves to the same document rather than to whatever is newest.
  */
-export interface RunArtifact {
+interface RunArtifactBase {
   artifact_version: 1;
   agent: string;
   run_id: string;
   artifact_id: string;
-  kind: "digest";
   title: string;
   generated_at: string;
+}
+
+export interface DigestArtifact extends RunArtifactBase {
+  kind: "digest";
   sources_fetched?: ArtifactSource[];
   items: ArtifactItem[];
+}
+
+/**
+ * A reply an agent composed and DASH is holding (MAR-458).
+ *
+ * **Local, and the word is load-bearing.** Nothing has been sent and nothing
+ * exists at the provider: ADR 0002's first slice gives the broker two read
+ * operations and no way to create a provider-side draft, let alone send one. Any
+ * copy that renders this must not imply otherwise — "saved to your drafts" would
+ * be a claim about Gmail that nothing in DASH performed.
+ */
+export interface ArtifactDraft {
+  to?: string[];
+  subject: string;
+  body: string;
+  in_reply_to?: { message_id?: string; thread_id?: string };
+  /** The messages the agent says it read to write this. */
+  sources?: Array<{ message_id: string; subject?: string; from?: string }>;
+}
+
+export interface DraftArtifact extends RunArtifactBase {
+  kind: "draft";
+  draft: ArtifactDraft;
+}
+
+/**
+ * A discriminated union rather than one interface with optional members
+ * (MAR-458).
+ *
+ * The alternative was `items?: ArtifactItem[]` and `draft?: ArtifactDraft`,
+ * which compiles and quietly breaks the one thing worth protecting:
+ * `analyzeGrounding` iterates `artifact.items`, and an optional `items` would
+ * make a draft artifact reaching it a runtime crash on a page a user is looking
+ * at — or worse, with a `?? []`, a draft silently graded as a perfectly grounded
+ * digest of nothing. A union makes that a compile error at every call site,
+ * which is where MAR-457's own lesson points: four defects reached the installed
+ * smoke because nothing forced a caller to exist.
+ */
+export type RunArtifact = DigestArtifact | DraftArtifact;
+
+/** Narrow to the kind the grounding verdict is about. */
+export function isDigestArtifact(artifact: RunArtifact): artifact is DigestArtifact {
+  return artifact.kind === "digest";
 }
