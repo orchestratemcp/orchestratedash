@@ -123,7 +123,7 @@ describe("creating the sample", () => {
     if (!created.ok) return;
 
     expect(path.basename(created.value.directory)).toBe(SAMPLE_AGENT_ID);
-    for (const file of ["agent.manifest.json", "agent.mjs", "dash-handoff.json", "inbox/README.md"]) {
+    for (const file of ["agent.manifest.json", "agent.mjs", "dash-handoff.json", "sources.json"]) {
       expect(existsSync(path.join(created.value.directory, file)), file).toBe(true);
     }
     expect(created.value.handoff.command).toBe(BUNDLED_NODE_COMMAND);
@@ -230,6 +230,30 @@ describe("adding the sample", () => {
     expectPlainLanguage([prompt.title, prompt.message, prompt.detail], {
       allow: [created.value.directory, "agent.mjs"],
     });
+  });
+
+  it("says what the agent will do before asking whether to add it", async () => {
+    // Asserted as presence, not only as plain language. A permission receipt
+    // that quietly disappeared would still pass the plain-language scan —
+    // silence contains no raw identifiers — so the rule that copy is verified
+    // over the rendered output needs the positive half too.
+    const parent = tempDir("dash-samples-");
+    const dataDir = tempDir("dash-sample-data-");
+    const created = createSampleAgent(request(parent));
+    if (!created.ok) throw new Error(created.problem);
+
+    const context = harness(dataDir);
+    await openHandoff(created.value.url, context.ports);
+    const prompt = context.prompts[0] as HandoffPrompt;
+
+    expect(prompt.detail).toContain("Read the news sources you choose");
+    // Attributed to the agent. DASH renders a declaration here; it does not
+    // enforce one, and the consent dialog is the worst possible place to imply
+    // otherwise — see ADR 0002 on contract claims dressed as firewalls.
+    expect(prompt.detail).toMatch(/It says this is what it will do/);
+    expect(prompt.detail).not.toMatch(/DASH (only )?(lets|allows|restricts|limits)/i);
+    // And it still says the thing a novice most needs to hear.
+    expect(prompt.detail).toContain("It needs no accounts and no passwords.");
   });
 
   it("still refuses a second identical sample handoff as already added", async () => {

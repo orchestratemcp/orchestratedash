@@ -4,19 +4,23 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   Suspense,
+  useEffect,
   useState,
   type Dispatch,
   type ReactNode,
   type SetStateAction,
 } from "react";
 
+import { Digest } from "../../_components/digest";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import { AGENT_WORKSPACE_PARAMS, runDetailHref } from "../../_data/routes";
 import {
+  dataSource,
   submitAgentCommand,
   type AgentCommandArgs,
 } from "../../_data/source";
-import { useCanAct, useHost, useView } from "../../_data/use-view";
+import { useCanAct, useHost, useLiveView } from "../../_data/use-view";
+import type { PermissionGrant } from "../../../lib/contracts";
 import type { InboxItem } from "../../../lib/workspace";
 import type {
   WorkspaceRunView,
@@ -40,12 +44,25 @@ function AgentWorkspace(): ReactNode {
   const [pending, setPending] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<CommandFeedback>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
-  const state = useView(
+  const [live, setLive] = useState(false);
+  const state = useLiveView(
     (source) => source.workspace(agent),
     `${agent}:${String(refreshKey)}`,
+    live,
   );
   const canAct = useCanAct();
   const host = useHost();
+
+  // Follow a run only while one is actually going. `useLiveView` stops the
+  // moment this turns false, so an idle agent's page is as still as every other
+  // page in DASH.
+  const running =
+    state.status === "ready" &&
+    state.data.found &&
+    (state.data.snapshot?.runs ?? []).some((run) => run.status === "running");
+  useEffect(() => {
+    setLive(running);
+  }, [running]);
 
   async function issue(
     key: string,
@@ -106,13 +123,27 @@ function AgentWorkspace(): ReactNode {
           <h1>{view.title}</h1>
           <p className="lede">{view.goal}</p>
         </div>
-        <button
-          className="button-secondary"
-          onClick={() => setRefreshKey((value) => value + 1)}
-          type="button"
-        >
-          Refresh state
-        </button>
+        <div>
+          {/*
+            The design brief's rule — "nothing moves or refreshes without saying
+            it did" — applied to the one place DASH now refreshes on its own.
+            A live region so it is announced rather than only seen, polite so it
+            waits its turn, and it disappears with the run rather than becoming
+            furniture.
+          */}
+          <p aria-live="polite" className="live-note">
+            {running
+              ? `Following this run. Last updated ${timeOnly(state.last_read_at)}.`
+              : ""}
+          </p>
+          <button
+            className="button-secondary"
+            onClick={() => setRefreshKey((value) => value + 1)}
+            type="button"
+          >
+            Refresh state
+          </button>
+        </div>
       </div>
       <HostNotice host={host} />
       {feedback === null ? null : (
@@ -122,6 +153,23 @@ function AgentWorkspace(): ReactNode {
         >
           {feedback.message}
         </div>
+      )}
+
+      <RunNow
+        agent={view.agent}
+        canAct={canAct}
+        issue={issue}
+        pending={pending}
+        snapshot={view.snapshot}
+      />
+
+      <PermissionReceipt permissions={view.permissions} />
+
+      {/* Outside the snapshot branch on purpose. The digest is DASH's own
+          record and outlives the process that made it, so a stopped or
+          unreachable agent still shows the last thing it found. */}
+      {view.latest_digest === null ? null : (
+        <Digest artifact={view.latest_digest} grounding={view.latest_digest_grounding} />
       )}
 
       {view.snapshot === null ? (
@@ -147,6 +195,151 @@ function AgentWorkspace(): ReactNode {
         />
       )}
     </>
+  );
+}
+
+/**
+ * A clock time, or nothing.
+ *
+ * Time only, not a date: this line exists to answer "is this still moving?",
+ * which is a question about the last few seconds. A full timestamp answers a
+ * question nobody asked and makes the line harder to read at a glance.
+ */
+function timeOnly(at: Date | null): string {
+  return at === null ? "just now" : at.toLocaleTimeString();
+}
+
+/**
+ * The primary action for an agent that only acts when asked (MAR-457).
+ *
+ * `retry` against the waiting task, not against a run. A freshly added agent has
+ * no runs, and `contracts/agent-command.schema.json` requires the command to
+ * name a run or a task — which is why the agent publishes a task it is not yet
+ * working on. Without this the manual-first agent could be added and never
+ * started.
+ *
+ * It goes through the same audited boundary every other control uses. A "Run
+ * now" that called the runner directly would be a second command path, and the
+ * second path is the one that skips the audit row.
+ *
+ * Absent rather than disabled when a run is already in flight: `lib/workspace.ts`
+ * calls dead controls out as a thing not to render, and the run card below
+ * already offers cancel while one is going.
+ */
+function RunNow({
+  agent,
+  canAct,
+  issue,
+  pending,
+  snapshot,
+}: {
+  agent: string;
+  canAct: boolean;
+  issue: (
+    key: string,
+    command: Parameters<typeof submitAgentCommand>[0],
+    args: AgentCommandArgs,
+  ) => Promise<void>;
+  pending: string | null;
+  snapshot: WorkspaceSnapshotView | null;
+}): ReactNode {
+  if (!canAct || snapshot === null) {
+    return null;
+  }
+  const waiting = snapshot.tasks.find((task) => task.status === "pending" && task.run_id === null);
+  if (waiting === undefined) {
+    return null;
+  }
+
+  /*
+   * Read the snapshot again, immediately before asking.
+   *
+   * `lib/agent-dom/enforce.ts` refuses a command whose `observed_at` is not the
+   * one DASH currently holds, which stops a *forged* value from minting a fresh
+   * idempotency key. But `runner/state.ts` mints `observed_at` on every build
+   * and `electron/agent-adapters.ts` rebuilds every five seconds, so the value
+   * churns whether or not anything changed — and this page deliberately does
+   * not re-read while the agent is idle. Using the rendered snapshot's value
+   * therefore fails for anybody who looked at the page for more than about five
+   * seconds, which is everybody.
+   *
+   * This does not weaken the check. The renderer still cannot invent the value:
+   * it asks DASH for the one DASH holds. What it stops doing is punishing a
+   * person for reading the screen before pressing the button.
+   *
+   * Narrow on purpose. Approvals keep the rendered snapshot's value, because
+   * "the world changed since you looked, look again" is a property worth having
+   * in front of an irreversible action. Starting a run of a manual-first agent
+   * is not one, and the agent refuses a second concurrent run itself.
+   */
+  // Captured after the guards above, so the closure below does not have to
+  // re-narrow what this function body already established.
+  const taskId = waiting.id;
+  const renderedObservedAt = snapshot.observed_at;
+
+  async function runNow(): Promise<void> {
+    const current = await dataSource().workspace(agent);
+    const observedAt =
+      current.ok && current.data.found && current.data.snapshot !== null
+        ? current.data.snapshot.observed_at
+        : renderedObservedAt;
+    await issue(`run:${taskId}`, "retry", {
+      agent_id: agent,
+      observed_at: observedAt,
+      task_id: taskId,
+    });
+  }
+
+  return (
+    <section className="section run-now">
+      <button
+        className="button-primary"
+        disabled={pending !== null}
+        onClick={() => void runNow()}
+        type="button"
+      >
+        {pending === `run:${taskId}` ? "Starting…" : "Run now"}
+      </button>
+      <p className="muted">
+        It runs only when you ask. Nothing happens on a timer.
+      </p>
+    </section>
+  );
+}
+
+/**
+ * What the agent said it would do, kept where the user can find it again.
+ *
+ * The consent dialog said this once, at the moment of decision. A receipt has to
+ * outlive that moment: "what did I agree to?" is a question people ask days
+ * later, and an answer that existed only in a dialog they dismissed is no answer.
+ *
+ * The closing sentence is the one ADR 0002 requires and is not optional. DASH
+ * renders what an agent declares; the runner strips the environment but spawns
+ * an ordinary process with ordinary network access, so nothing here is enforced.
+ * Saying so plainly is the difference between a receipt and a false assurance.
+ */
+function PermissionReceipt({ permissions }: { permissions: PermissionGrant[] }): ReactNode {
+  if (permissions.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="section" aria-labelledby="permission-receipt">
+      <h2 id="permission-receipt">What this agent said it would do</h2>
+      <ul className="capability-list">
+        {permissions.map((grant) => (
+          <li key={grant.id}>
+            <strong>{grant.label}</strong>
+            <div className="wrap muted">{grant.detail}</div>
+          </li>
+        ))}
+      </ul>
+      <p className="muted wrap">
+        This is what the agent declared when you added it. DASH shows you the
+        claim and keeps it here; it does not restrict what the agent can reach.
+      </p>
+    </section>
   );
 }
 

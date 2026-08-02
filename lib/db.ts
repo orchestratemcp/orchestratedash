@@ -274,6 +274,45 @@ const MIGRATIONS: readonly string[] = [
 
   CREATE INDEX agent_handoffs_by_agent ON agent_handoffs (agent, decided_at);
   `,
+
+  // ---------------------------------------------------------------------
+  // MAR-457: what a run produced.
+  //
+  // Wave 0 proved a "digest artifact" by looking for a file in the agent's own
+  // project folder (`electron/smoke.ts`, proof 6e). That proves the agent wrote
+  // something; it says nothing about whether DASH can show it. This table is
+  // what turns the second claim into one that can be made.
+  //
+  // The file in the agent's folder stays the primary record, exactly as
+  // `runs/events.jsonl` does for telemetry. This is a projection DASH can render
+  // and join on, never the original.
+  //
+  // **No foreign key to `runs`.** An artifact can arrive before the run row
+  // exists — the pipe delivers what the agent wrote, in the order it wrote it,
+  // and a fetch that finished before the first telemetry drain is ordinary. A
+  // foreign key would drop exactly the artifacts that arrived promptly.
+  `
+  CREATE TABLE run_artifacts (
+    agent        TEXT NOT NULL,
+    run_id       TEXT NOT NULL,
+    -- Stable within a run, which is what makes "open that digest again" resolve
+    -- to the same document rather than to whatever is newest. Re-sending the
+    -- same id replaces the body: an agent that revises a digest mid-run is
+    -- correcting it, not producing a second one.
+    artifact_id  TEXT NOT NULL,
+    kind         TEXT NOT NULL,
+    title        TEXT NOT NULL,
+    generated_at TEXT NOT NULL,
+    -- The validated artifact verbatim, for the reason the events table stores
+    -- its event JSON whole: exploding it into columns would make this schema a
+    -- second copy of run-artifact.schema.json, free to drift from it.
+    artifact_json TEXT NOT NULL,
+    received_at  TEXT NOT NULL,
+    PRIMARY KEY (agent, run_id, artifact_id)
+  );
+
+  CREATE INDEX run_artifacts_by_agent ON run_artifacts (agent, generated_at);
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

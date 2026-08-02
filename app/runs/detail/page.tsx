@@ -2,6 +2,7 @@
 
 import { Suspense, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
+import { Digest } from "../../_components/digest";
 import { RunVerdictChips } from "../../_components/verdict";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import { RUN_DETAIL_PARAMS } from "../../_data/routes";
@@ -124,6 +125,13 @@ function RunDetail(): ReactNode {
           </ul>
         )}
       </div>
+
+      {/* What the run produced, above what it did. Somebody opening a run is
+          usually asking "what did it find?" before "which steps ran?", and the
+          technical record below answers the second question either way. */}
+      {view.artifacts[0] === undefined ? null : (
+        <Digest artifact={view.artifacts[0]} grounding={view.grounding} />
+      )}
 
       {view.planned_route.length > 0 ? (
         <div className="section">

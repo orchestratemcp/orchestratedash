@@ -77,7 +77,7 @@ export function run(argv: readonly string[], options: CliOptions): CliResult {
       directory,
       agent_id: agentId,
       display_name: titleCase(folderName),
-      summary: `Counts what is in its inbox folder and writes a short report.`,
+      summary: `Reads the news sources you choose and writes you a short summary of what is new, with a link to where each item came from.`,
       kit_version: options.kitVersion,
       now: options.now,
     },

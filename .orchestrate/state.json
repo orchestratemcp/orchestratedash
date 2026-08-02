@@ -115,9 +115,19 @@
     },
     {
       "id": "MAR-457",
+      "lifecycle": "proven",
+      "linear_status": "Done",
+      "commit": "c658667",
+      "proof": {
+        "command": "pnpm verify"
+      },
+      "note": "AI News Scout replaced the folder digest as the sample. 53 test files, 878 tests, and 41 installed-shell proofs passed: the agent waits to be asked, Run now is accepted through the audited bridge, telemetry reaches Runs, and a live 30-item digest reached DASH with every item cited and a grounded verdict, drawn on the run detail page. ADR 0003 records the artifact contract, the runless task, and the deliberate omission of the registry's scheduled_trigger step."
+    },
+    {
+      "id": "MAR-456",
       "lifecycle": "planned",
-      "linear_status": "Todo",
-      "note": "AI News Scout extends the proven MAR-423 path and is blocked by honest anonymous-feed routing in MAR-455 and local-runner recommendation in MAR-456."
+      "linear_status": "Backlog",
+      "note": "No longer blocks MAR-457. Owned by the OrchestrateKit registry, so no DASH commit or lifecycle is claimed for it here. Open question it still owns: the registry route pairs public_feed_fetch with scheduled_trigger, which DASH deliberately omits while the agent is manual-only. See ADR 0003."
     },
     {
       "id": "MAR-458",

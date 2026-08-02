@@ -109,11 +109,11 @@ export function assertSampleTemplatesPresent(): void {
  * Where sample projects go.
  *
  * The user's documents directory, not DASH's data directory. The sample is the
- * user's project — they are meant to open its `inbox` folder and drop files in
- * it, which is the entire demonstration — and something buried in
- * `%LOCALAPPDATA%\Packages\…` is something they will never find. It also
- * survives DASH being uninstalled, which ADR 0001 Amendment 2 established that
- * nothing inside the package's own tree does.
+ * user's project — they are meant to open its sources file and change what it
+ * watches, and to read the digests it leaves in `reports` — and something
+ * buried in `%LOCALAPPDATA%\Packages\…` is something they will never find. It
+ * also survives DASH being uninstalled, which ADR 0001 Amendment 2 established
+ * that nothing inside the package's own tree does.
  */
 export function sampleParentDirectory(): string {
   return path.join(app.getPath("documents"), SAMPLE_PARENT_FOLDER);

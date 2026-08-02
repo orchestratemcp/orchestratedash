@@ -263,6 +263,23 @@ export interface TelemetryDrain {
   dropped: number;
 }
 
+/** One agent-emitted artifact candidate waiting for DASH to validate it. */
+export interface BufferedArtifact {
+  /**
+   * The supervisor identity, for the same reason telemetry carries it — and it
+   * matters more here. An artifact is the document a person reads and acts on,
+   * so binding it to the child that actually emitted it is what stops one agent
+   * publishing a digest under another agent's name.
+   */
+  agent_id: string;
+  artifact: unknown;
+}
+
+export interface ArtifactDrain {
+  artifacts: BufferedArtifact[];
+  dropped: number;
+}
+
 interface Supervised {
   registration: AgentRegistration;
   child: ChildProcess | null;
@@ -293,7 +310,27 @@ export const STOP_GRACE_MS = 5_000;
 export const MAX_TELEMETRY_BUFFER_BYTES = 4 * 1024 * 1024;
 export const MAX_TELEMETRY_BUFFER_EVENTS = 10_000;
 
+/**
+ * Artifacts get their own bound, not a share of telemetry's (MAR-457).
+ *
+ * One buffer would mean a chatty agent's events could starve the digest a user
+ * is waiting to read, and an agent emitting large digests could silently cost
+ * every agent on the machine its telemetry. They are different populations with
+ * different sizes and different consequences for being dropped, so they are
+ * bounded and drained separately.
+ *
+ * The count is low on purpose. A run produces one artifact, or a handful if it
+ * revises one; an agent producing thousands between two five-second polls is
+ * misbehaving, and the bound is where that gets noticed rather than absorbed.
+ */
+export const MAX_ARTIFACT_BUFFER_BYTES = 4 * 1024 * 1024;
+export const MAX_ARTIFACT_BUFFER_COUNT = 200;
+
 interface BufferedTelemetryEntry extends BufferedTelemetryEvent {
+  bytes: number;
+}
+
+interface BufferedArtifactEntry extends BufferedArtifact {
   bytes: number;
 }
 
@@ -302,6 +339,9 @@ export class Supervisor {
   private readonly telemetry: BufferedTelemetryEntry[] = [];
   private telemetryBytes = 0;
   private droppedTelemetry = 0;
+  private readonly artifacts: BufferedArtifactEntry[] = [];
+  private artifactBytes = 0;
+  private droppedArtifacts = 0;
 
   constructor(
     registrations: readonly AgentRegistration[],
@@ -437,6 +477,24 @@ export class Supervisor {
     this.telemetryBytes = 0;
     this.droppedTelemetry = 0;
     return { events, dropped };
+  }
+
+  /**
+   * The same bounded drain for artifacts (MAR-457).
+   *
+   * Separate from `drainTelemetry` rather than folded into it: the two are
+   * validated against different schemas at different ingest boundaries, and a
+   * single drain returning both would force the caller to sort them back out by
+   * inspecting untrusted bodies — which is the one thing the supervisor is
+   * supposed to have already answered.
+   */
+  drainArtifacts(): ArtifactDrain {
+    const artifacts = this.artifacts.map(({ agent_id, artifact }) => ({ agent_id, artifact }));
+    const dropped = this.droppedArtifacts;
+    this.artifacts.length = 0;
+    this.artifactBytes = 0;
+    this.droppedArtifacts = 0;
+    return { artifacts, dropped };
   }
 
   /**
@@ -737,6 +795,15 @@ export class Supervisor {
       return;
     }
 
+    if (message.type === "artifact") {
+      this.bufferArtifact(
+        entry.registration.agent_id,
+        message.artifact,
+        Buffer.byteLength(line, "utf8"),
+      );
+      return;
+    }
+
     const resolve = entry.pending.get(message.command_id);
     if (resolve === undefined) {
       // An ack for something we are not waiting for: a late answer after a
@@ -773,5 +840,24 @@ export class Supervisor {
 
     this.telemetry.push({ agent_id: agentId, event, bytes });
     this.telemetryBytes += bytes;
+  }
+
+  private bufferArtifact(agentId: string, artifact: unknown, bytes: number): void {
+    if (
+      this.artifacts.length >= MAX_ARTIFACT_BUFFER_COUNT ||
+      this.artifactBytes + bytes > MAX_ARTIFACT_BUFFER_BYTES
+    ) {
+      this.droppedArtifacts += 1;
+      // Logged rather than swallowed. A digest that never reached DASH is a
+      // blank space on a page the user is looking at, so the reason has to
+      // survive somewhere they or a support session can find it.
+      this.log(
+        `[runner] ${agentId} emitted an artifact while the bounded buffer was full; the candidate was dropped`,
+      );
+      return;
+    }
+
+    this.artifacts.push({ agent_id: agentId, artifact, bytes });
+    this.artifactBytes += bytes;
   }
 }

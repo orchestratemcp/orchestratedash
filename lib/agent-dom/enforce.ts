@@ -75,7 +75,13 @@ export type CommandRejection =
   | "adapter_failed";
 
 export type EnforcementDecision =
-  | { accepted: true; run_id: string }
+  /**
+   * `run_id` is null when the command targets something that belongs to no run
+   * — the waiting task of an agent that only acts when asked (MAR-457). The
+   * audit row then records no run rather than borrowing one, which is the point:
+   * a correlation invented to fill a column is worse than an empty column.
+   */
+  | { accepted: true; run_id: string | null }
   | { accepted: false; reason: CommandRejection };
 
 export interface EnforcementInputs {
@@ -126,10 +132,13 @@ export function enforceCommand(inputs: EnforcementInputs): EnforcementDecision {
     return reject("stale_snapshot");
   }
 
-  const runId = resolveRunId(envelope, state);
-  if (runId === null) {
+  const target = resolveTarget(envelope, state);
+  if (target.kind === "unknown") {
     return reject("unknown_target");
   }
+  // Null means "this target belongs to no run", which is a real answer and not
+  // a missing one. See `resolveTarget`.
+  const runId = target.kind === "run" ? target.run_id : null;
 
   // Checked before `availableControls`, which folds retry safety into its
   // answer. Asking `retryIsSafe` first is what makes "this would repeat a
@@ -161,20 +170,39 @@ export function enforceCommand(inputs: EnforcementInputs): EnforcementDecision {
 }
 
 /**
- * Which run this command acts on.
+ * Which run this command acts on — or the fact that it acts on none.
  *
  * The contract lets a run-scoped command name either a `run_id` or a `task_id`,
- * so both are resolved to the same thing here. A run named directly still has
- * to exist in the snapshot: accepting an id merely because it was well-formed
- * is how "unknown target" stops meaning anything.
+ * so both are resolved here. A run named directly still has to exist in the
+ * snapshot: accepting an id merely because it was well-formed is how "unknown
+ * target" stops meaning anything.
+ *
+ * ## Why three answers rather than two
+ *
+ * This returned `string | null` until MAR-457, and `null` meant "no such
+ * target". That conflated two different facts the moment a task could exist
+ * before any run did: a `task_id` nobody has heard of, and a task that is
+ * genuinely real and genuinely belongs to no run — which is exactly what an
+ * agent waiting to be started publishes.
+ *
+ * Collapsing them made "Run now" indistinguishable from a forged target and it
+ * was rejected as `unknown_target`. Reported by the installed smoke on its
+ * first honest run, which is the entire argument for MAR-454.
  */
-function resolveRunId(envelope: AgentCommandEnvelope, state: AgentDomState): string | null {
+type ResolvedTarget =
+  | { kind: "run"; run_id: string }
+  /** The target exists and belongs to no run. A real answer, not a missing one. */
+  | { kind: "no_run" }
+  /** Nothing in the snapshot matches. */
+  | { kind: "unknown" };
+
+function resolveTarget(envelope: AgentCommandEnvelope, state: AgentDomState): ResolvedTarget {
   const { run_id: runId, task_id: taskId } = envelope.target;
 
   if (runId !== undefined) {
     const known = (state.runs ?? []).some((run) => run.id === runId);
     if (!known) {
-      return null;
+      return { kind: "unknown" };
     }
     // When both are given they must agree. A command naming a task from one run
     // and a run id from another is either a bug or an attempt to aim an
@@ -182,21 +210,31 @@ function resolveRunId(envelope: AgentCommandEnvelope, state: AgentDomState): str
     if (taskId !== undefined) {
       const task = (state.tasks ?? []).find((candidate) => candidate.id === taskId);
       if (task === undefined || task.run_id !== runId) {
-        return null;
+        return { kind: "unknown" };
       }
     }
-    return runId;
+    return { kind: "run", run_id: runId };
   }
 
   if (taskId !== undefined) {
     const task = (state.tasks ?? []).find((candidate) => candidate.id === taskId);
     if (task === undefined) {
-      return null;
+      return { kind: "unknown" };
     }
-    return (state.runs ?? []).some((run) => run.id === task.run_id) ? task.run_id : null;
+    if (task.run_id === undefined) {
+      // The waiting task of an agent that only acts when asked. Inventing a
+      // correlation here would attach this command's audit trail to somebody
+      // else's run, so it is reported as belonging to none.
+      return { kind: "no_run" };
+    }
+    // A task naming a run the agent has not published is a target DASH cannot
+    // verify, which is a different thing from a task with no run at all.
+    return (state.runs ?? []).some((run) => run.id === task.run_id)
+      ? { kind: "run", run_id: task.run_id }
+      : { kind: "unknown" };
   }
 
-  return null;
+  return { kind: "unknown" };
 }
 
 /**

@@ -750,6 +750,82 @@ if (recorded !== null) {
           { observedPending, report },
         );
 
+        /*
+         * 6d is a *negative* proof, and it is the one that matters most here.
+         *
+         * The agent used to start running the instant the runner spawned it,
+         * and every proof below happened to pass because of that. MAR-457
+         * inverted it: the sample now waits to be asked. A regression back to a
+         * timer would restore the old behaviour and leave every other check in
+         * this block still green, so nothing except an assertion that *nothing
+         * happened* can catch it.
+         *
+         * It waits for the agent to publish its waiting task first, so this is
+         * "the agent is up and chose not to run", not "the agent has not
+         * started yet" — which would pass for the wrong reason.
+         */
+        const waitingTask = await waitForValue(async () => {
+          const view = (await window.webContents.executeJavaScript(
+            `window.dashData.workspace(${JSON.stringify(agentId)})`,
+          )) as {
+            data?: {
+              snapshot?: {
+                observed_at?: string;
+                tasks?: Array<{ id?: string; status?: string }>;
+              } | null;
+            };
+          };
+          const task = view.data?.snapshot?.tasks?.find(
+            (candidate) => candidate.id === "waiting-to-be-run" && candidate.status === "pending",
+          );
+          return task === undefined
+            ? null
+            : { task, observed_at: view.data?.snapshot?.observed_at ?? "" };
+        }, "the sample to publish the task it is waiting on");
+        check("6d. the sample waits to be asked", waitingTask !== null, waitingTask?.task);
+
+        const ranUnbidden = (await window.webContents.executeJavaScript(
+          `window.dashData.runs()`,
+        )) as { data?: { runs?: Array<{ agent?: string; run_id?: string }> } };
+        check(
+          "6e. nothing ran on its own",
+          !(ranUnbidden.data?.runs ?? []).some(
+            (run) =>
+              run.agent === agentId &&
+              typeof run.run_id === "string" &&
+              !previousRunIds.has(run.run_id),
+          ),
+          ranUnbidden.data?.runs,
+        );
+
+        /*
+         * Run now, through the audited command boundary the renderer uses —
+         * not by poking the runner. If this path works only in a test harness
+         * it does not work.
+         *
+         * `observed_at` is re-read here rather than fabricated, and that detail
+         * is the whole reason this proof earned its keep. The first version of
+         * this check invented a timestamp, and enforcement refused it as
+         * `stale_snapshot` — which then exposed the real defect behind it:
+         * `runner/state.ts` mints `observed_at` on every build and the adapter
+         * rebuilds every five seconds, so the value churns whether or not
+         * anything changed. Any control bound to a rendered snapshot has about
+         * a five-second window. The page now re-reads for the same reason this
+         * does.
+         */
+        const fresh = (await window.webContents.executeJavaScript(
+          `window.dashData.workspace(${JSON.stringify(agentId)})`,
+        )) as { data?: { snapshot?: { observed_at?: string } | null } };
+        const runRequest = {
+          agent_id: agentId,
+          observed_at: fresh.data?.snapshot?.observed_at ?? "",
+          task_id: "waiting-to-be-run",
+        };
+        const asked = (await window.webContents.executeJavaScript(
+          `window.dashShell.retry(${JSON.stringify(runRequest)})`,
+        )) as { ok?: boolean; reason?: string };
+        check("6f. Run now is accepted through the audited bridge", asked.ok === true, asked);
+
         const completed = await waitForValue(async () => {
           const view = (await window.webContents.executeJavaScript(
             `window.dashData.runs()`,
@@ -767,17 +843,96 @@ if (recorded !== null) {
             ) ?? null
           );
         }, "runner-hosted sample telemetry to reach Runs");
-        check("6d. runner-hosted telemetry renders through the Runs bridge", completed !== null, completed);
+        check("6g. runner-hosted telemetry renders through the Runs bridge", completed !== null, completed);
 
         const reportsDir = path.join(created.value.directory, "reports");
-        const artifacts =
+        const onDisk =
           (await waitForValue(async () => {
             const files = existsSync(reportsDir)
               ? readdirSync(reportsDir).filter((name) => name.endsWith(".json"))
               : [];
             return files.length > 0 ? files : null;
           }, "the runner-hosted sample digest artifact")) ?? [];
-        check("6e. the sample leaves an inspectable digest artifact", artifacts.length > 0, artifacts);
+        check("6h. the sample leaves a digest in its own folder", onDisk.length > 0, onDisk);
+
+        /*
+         * The half Wave 0 could not prove.
+         *
+         * 6h is the check this block used to end on: a file exists in the
+         * agent's folder. That is evidence the *agent* wrote something and no
+         * evidence whatsoever that DASH can show it — which was true, because
+         * until MAR-457 there was no artifact contract, table, view or surface
+         * for it to arrive in. This reads the digest back through the same
+         * bridge the renderer reads, with its citations and its verdict.
+         */
+        const digest = await waitForValue(async () => {
+          const view = (await window.webContents.executeJavaScript(
+            `window.dashData.run(${JSON.stringify(agentId)}, ${JSON.stringify(
+              completed?.run_id ?? "",
+            )})`,
+          )) as {
+            data?: {
+              artifacts?: Array<{ artifact_id?: string; title?: string; items?: unknown[] }>;
+              grounding?: { verdict?: string; items_total?: number } | null;
+            };
+          };
+          const first = view.data?.artifacts?.[0];
+          return first === undefined ? null : { artifact: first, grounding: view.data?.grounding };
+        }, "the digest to reach DASH through the read bridge");
+        check(
+          "6i. the digest reaches DASH, not just the agent's folder",
+          digest !== null && typeof digest.artifact.artifact_id === "string",
+          digest?.artifact,
+        );
+
+        // An empty source list is the honest offline case for a smoke run, and
+        // an empty digest is still grounded: there is no unsupported claim in
+        // it. What is being proved is that a verdict was computed and crossed
+        // the boundary at all.
+        check(
+          "6j. the digest carries a grounding verdict",
+          digest?.grounding?.verdict !== undefined,
+          digest?.grounding,
+        );
+
+        // And the renderer actually draws it. MAR-454's whole lesson is that a
+        // proof reading data through a bridge can pass while the page above it
+        // is broken — proofs 5a-5j were green in a suite of 1635 tests while
+        // three shipped defects sat in the one path no unit test could reach.
+        /*
+         * Built from protocol and host rather than from `origin`.
+         *
+         * `dash-app:` is not one of the URL standard's "special" schemes, so
+         * `new URL("dash-app://ui/").origin` is the string "null" — an opaque
+         * origin, correctly per spec and useless here. The first version of this
+         * proof used it and produced `null/runs/detail?...`, which Electron
+         * refused with ERR_INVALID_URL. Found by running it.
+         */
+        const parsedRenderer = new URL(rendered.url);
+        const detailUrl =
+          `${parsedRenderer.protocol}//${parsedRenderer.host}` +
+          `/runs/detail?agent=${encodeURIComponent(agentId)}` +
+          `&run_id=${encodeURIComponent(completed?.run_id ?? "")}`;
+
+        let drawn: { text: string; sources: number } | null = null;
+        try {
+          await window.loadURL(detailUrl);
+          drawn = await waitForValue(async () => {
+            const seen = (await window.webContents.executeJavaScript(
+              `({ text: document.body.innerText,
+                  sources: document.querySelectorAll(".digest-sources").length })`,
+            )) as { text: string; sources: number };
+            // The page reads its view in an effect, so an empty body is "not
+            // yet" rather than "not there". Waiting for the digest's own title
+            // is what makes this an assertion about content and not about
+            // whether a document object exists.
+            return seen.text.includes(digest?.artifact.title ?? " ") ? seen : null;
+          }, "the run detail page to draw the digest");
+        } catch (error: unknown) {
+          drawn = null;
+          console.warn(`[smoke] the run detail page did not load: ${String(error)}`);
+        }
+        check("6k. the run detail page draws the digest", drawn !== null, drawn?.text.slice(0, 400));
 
         const finalLedger = readHandoffRecord(created.value.handoff.handoff_id);
         check(

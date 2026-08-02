@@ -31,6 +31,12 @@
 
 import path from "node:path";
 
+import {
+  DEFAULT_SOURCES,
+  DIGEST_WRITE_COMPONENT,
+  FEED_FETCH_COMPONENT,
+  SOURCES_FILE_NAME,
+} from "../lib/agent-sources";
 import { isSafeAgentId } from "../lib/handoff";
 
 export interface ScaffoldRequest {
@@ -105,7 +111,10 @@ export function planScaffold(request: ScaffoldRequest, sources: TemplateSources)
       { path: "package.json", contents: `${JSON.stringify(projectPackage(request), null, 2)}\n` },
       { path: "agent.mjs", contents: sources.agent },
       { path: "scripts/open-in-dash.mjs", contents: sources.openInDash },
-      { path: "inbox/README.md", contents: inboxReadme(request) },
+      {
+        path: SOURCES_FILE_NAME,
+        contents: `${JSON.stringify({ sources: DEFAULT_SOURCES }, null, 2)}\n`,
+      },
       { path: "README.md", contents: readme(request) },
       { path: ".gitignore", contents: gitignore() },
     ],
@@ -144,9 +153,13 @@ function manifest(request: ScaffoldRequest): Record<string, unknown> {
       route_id: "",
       build_target: "code",
     },
+    // What this agent actually does, in the order it does it. See
+    // `lib/agent-sources.ts` on why these are constants rather than literals,
+    // and on why a scheduled-trigger step is deliberately absent while the
+    // agent is manual-run-only.
     planned_route: [
-      { step: 1, component_id: "local_folder_read", risk_level: "low", model_tier: "none" },
-      { step: 2, component_id: "local_file_write", risk_level: "low", model_tier: "none" },
+      { step: 1, component_id: FEED_FETCH_COMPONENT, risk_level: "low", model_tier: "none" },
+      { step: 2, component_id: DIGEST_WRITE_COMPONENT, risk_level: "low", model_tier: "none" },
     ],
     safety_contract: {
       // L1: it acts on its own folder and nothing else, and there is no
@@ -187,7 +200,7 @@ function manifest(request: ScaffoldRequest): Record<string, unknown> {
       },
       trigger: {
         type: "manual",
-        label: "Manual run request",
+        label: "Only when you ask it to run",
         technical: {
           what_wakes_it_up: "The runner starts this process when a person asks DASH to.",
           offline_behavior: "No run starts while the computer or the runner is off.",
@@ -222,6 +235,27 @@ function manifest(request: ScaffoldRequest): Record<string, unknown> {
       // Empty, and that is the template's most useful property: it can be added
       // to DASH and watched working without anybody having a credential to hand.
       connections: [],
+      // What it may do that needs no credential — the case `connections` cannot
+      // express, since every connection requirement carries an owner, fields and
+      // a validation action.
+      //
+      // A declaration, not a boundary. The runner strips the environment but
+      // spawns an ordinary process with ordinary network access, so this says
+      // what the agent claims and who to ask about it. No surface built on it
+      // may imply DASH enforces it — the same honesty ADR 0002 requires of the
+      // draft-only Gmail boundary.
+      permissions: {
+        read: [
+          {
+            id: "network",
+            label: "Read the news sources you choose",
+            detail:
+              "Fetches the addresses listed in this agent's own sources file. It sends nothing and changes nothing.",
+          },
+        ],
+        write: [],
+        approval_required_for: [],
+      },
       control: {
         supported: true,
         command_version: 1,
@@ -256,17 +290,6 @@ function projectPackage(request: ScaffoldRequest): Record<string, unknown> {
   };
 }
 
-function inboxReadme(request: ScaffoldRequest): string {
-  return `# inbox
-
-Put files here. Each time ${request.display_name} runs, it counts what is in
-this folder and writes a short report into \`reports/\`.
-
-This folder is the agent's whole world. It reads nothing else and writes
-nowhere else.
-`;
-}
-
 function gitignore(): string {
   return `node_modules/
 
@@ -294,26 +317,29 @@ function readme(request: ScaffoldRequest): string {
 
 ${request.summary}
 
-## Try it
-
-\`\`\`sh
-npm start
-\`\`\`
-
-It reads the \`inbox\` folder, writes a report into \`reports\`, and keeps
-running. Press Ctrl+C to stop it.
-
 ## Add it to DASH
 
 \`\`\`sh
 npm run open-in-dash
 \`\`\`
 
-DASH opens and asks whether to add this agent. Say yes and it starts running —
-and it keeps running when you close the DASH window.
+DASH opens and asks whether to add this agent. Say yes and it appears in DASH,
+waiting. **It does not run until you press Run now** — it reads nothing and
+reaches nowhere until you ask it to.
 
 If nothing happens, DASH is probably not installed yet. The command prints a
 link you can open by hand once it is.
+
+## Change what it watches
+
+Edit \`${SOURCES_FILE_NAME}\`. Each entry needs a name you will recognise, the
+address to read, and which kind of feed it is — \`rss\`, \`atom\`, or
+\`hn_algolia\`. The kind is declared rather than guessed, so a source that
+starts answering with an error page is reported as a problem instead of being
+read as an empty feed.
+
+Every run writes its digest into \`reports\` and hands DASH a copy with each
+item's source attached.
 
 ## Make it yours
 

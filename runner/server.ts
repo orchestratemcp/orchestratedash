@@ -6,6 +6,7 @@
  * POST /agents/{id}/commands   one command envelope
  * POST /agents/{id}/lifecycle  start or stop the agent's process
  * POST /telemetry/drain        hosted-agent event candidates since the last poll
+ * POST /artifacts/drain        hosted-agent artifact candidates since the last poll
  * GET  /health                 what this runner is supervising
  * ```
  *
@@ -199,6 +200,21 @@ async function handle(
     segments[1] === "drain"
   ) {
     send(response, 200, { ok: true, ...options.supervisor.drainTelemetry() });
+    return;
+  }
+
+  // POST /artifacts/drain — the same bounded fire-and-forget shape for what a
+  // run produced (MAR-457). A separate route rather than more fields on the
+  // telemetry drain: the two are validated against different schemas at
+  // different ingest boundaries, and one response carrying both would make main
+  // sort them apart again by inspecting untrusted bodies.
+  if (
+    request.method === "POST" &&
+    segments.length === 2 &&
+    segments[0] === "artifacts" &&
+    segments[1] === "drain"
+  ) {
+    send(response, 200, { ok: true, ...options.supervisor.drainArtifacts() });
     return;
   }
 

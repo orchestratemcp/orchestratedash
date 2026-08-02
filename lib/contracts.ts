@@ -23,6 +23,7 @@ const SCHEMA_FILES = [
   "agent.manifest.schema.json",
   "agent.manifest.v2.schema.json",
   "run-event.schema.json",
+  "run-artifact.schema.json",
   "agent-dom-state.schema.json",
   "agent-command.schema.json",
 ] as const;
@@ -117,6 +118,7 @@ function buildValidators(): {
   manifest: ValidateFunction;
   manifestV2: ValidateFunction;
   event: ValidateFunction;
+  artifact: ValidateFunction;
   state: ValidateFunction;
   command: ValidateFunction;
 } {
@@ -127,6 +129,11 @@ function buildValidators(): {
     manifest: ajv.compile(loadSchema(dir, "agent.manifest.schema.json")),
     manifestV2: ajv.compile(loadSchema(dir, "agent.manifest.v2.schema.json")),
     event: ajv.compile(loadSchema(dir, "run-event.schema.json")),
+    // MAR-457. A separate contract from the event above rather than a new event
+    // type: telemetry v1 is frozen, `contract.lock.json` holds its digest, and
+    // `listRuns` derives run status from events — so an artifact that were an
+    // event could change a run's status by existing.
+    artifact: ajv.compile(loadSchema(dir, "run-artifact.schema.json")),
     // MAR-417. Both schemas have existed since MAR-382 and neither had ever
     // been compiled by anything; the schema files themselves are untouched.
     state: ajv.compile(loadSchema(dir, "agent-dom-state.schema.json")),
@@ -229,6 +236,22 @@ export function validateEvent(input: unknown): ValidationResult<RunEvent> {
 }
 
 /**
+ * Validate one run artifact (MAR-457).
+ *
+ * Same boundary discipline as `validateEvent`: the producing agent is a separate
+ * program of unknown quality, so its output is checked rather than cast, and one
+ * malformed artifact is rejected on its own without discarding anything else
+ * that arrived with it.
+ */
+export function validateArtifact(input: unknown): ValidationResult<RunArtifact> {
+  const validate = validators().artifact;
+  if (validate(input)) {
+    return { ok: true, value: input as RunArtifact };
+  }
+  return { ok: false, errors: formatErrors(validate) };
+}
+
+/**
  * Validate an Agent DOM state snapshot (MAR-417).
  *
  * The returned type is `lib/workspace.ts`'s `AgentDomState` — the subset DASH
@@ -312,8 +335,28 @@ export interface AgentManifestV2 extends AgentManifestBody {
   manifest_version: 2;
   agent_dom: {
     connections?: ManifestConnection[];
+    permissions?: ManifestPermissions;
     [key: string]: unknown;
   };
+}
+
+/**
+ * One declared capability that needs no credential (MAR-457).
+ *
+ * `id` is the registry's vocabulary and never reaches a guided surface; `label`
+ * and `detail` are what a person reads. See the schema for why this is a
+ * declaration DASH renders rather than a boundary DASH enforces.
+ */
+export interface PermissionGrant {
+  id: string;
+  label: string;
+  detail: string;
+}
+
+export interface ManifestPermissions {
+  read?: PermissionGrant[];
+  write?: PermissionGrant[];
+  approval_required_for?: PermissionGrant[];
 }
 
 export type AnyAgentManifest = AgentManifest | AgentManifestV2;
@@ -341,4 +384,43 @@ export interface RunEvent {
   tokens_out?: number;
   cost_usd?: number;
   detail?: string;
+}
+
+/** How a run reported one source it tried to read. */
+export type ArtifactSourceStatus = "ok" | "unreachable" | "not_a_feed" | "empty";
+
+export interface ArtifactSource {
+  source_name: string;
+  source_url: string;
+  status: ArtifactSourceStatus;
+  fetched_at?: string;
+  item_count?: number;
+}
+
+export interface ArtifactItem {
+  headline: string;
+  summary?: string;
+  source_name?: string;
+  /** Absent means uncited. Kept and rendered as such, never dropped. */
+  source_url?: string;
+  item_url?: string;
+  published_at?: string;
+}
+
+/**
+ * What a run produced (MAR-457), as distinct from what it did.
+ *
+ * The stable pair is `(agent, run_id, artifact_id)`: re-opening a digest
+ * resolves to the same document rather than to whatever is newest.
+ */
+export interface RunArtifact {
+  artifact_version: 1;
+  agent: string;
+  run_id: string;
+  artifact_id: string;
+  kind: "digest";
+  title: string;
+  generated_at: string;
+  sources_fetched?: ArtifactSource[];
+  items: ArtifactItem[];
 }

@@ -17,8 +17,8 @@ The one-command path from nothing to an agent running inside DASH.
 ## What a person does
 
 ```sh
-npx create-dash-agent folder-digest
-cd folder-digest
+npx create-dash-agent news-scout
+cd news-scout
 npm run open-in-dash
 ```
 
@@ -114,7 +114,12 @@ node agent-kit/dist/cli.mjs my-first-agent
    multi-language matrix being out of scope.
 3. **No agent builder inside DASH.** Also an explicit non-goal. The Kit is how
    an agent comes into existence; DASH watches and controls it.
-4. **The generated agent does something deliberately small.** It counts files in
-   its own `inbox` and writes a report. It is a working, honest, hostable agent
-   with no credentials, which is what a first-run sample has to be — not a
-   demonstration of what agents are for.
+4. **The generated agent does something deliberately small, and useful.** It
+   reads the public feeds listed in its own `sources.json` and writes a digest
+   with a link beside each item. It is a working, honest, hostable agent with no
+   credentials — which is what a first-run sample has to be — and, since
+   MAR-457, one somebody might actually keep rather than a demonstration of what
+   agents are for.
+5. **It does not run until asked.** No run at startup and no timer. An agent
+   that reaches out to the network the moment it is added has acted before the
+   person who added it has seen what it does.

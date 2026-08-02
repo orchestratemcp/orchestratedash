@@ -95,6 +95,10 @@ function scaffold(): string {
     mkdirSync(path.dirname(target), { recursive: true });
     writeFileSync(target, file.contents, "utf8");
   }
+  // No sources, so this proof reaches no network. What it is proving is that a
+  // hosted agent's telemetry arrives in Runs with a verdict, which is true of a
+  // run over an empty source list exactly as it is of one over three feeds.
+  writeFileSync(path.join(directory, "sources.json"), `{ "sources": [] }\n`, "utf8");
   return directory;
 }
 
@@ -256,6 +260,22 @@ describe("runner-hosted Agent Kit telemetry", () => {
         }),
       ).filter((key) => key.startsWith("DASH_")),
     ).toEqual([]);
+    // Nothing has run yet, and nothing will until it is asked to (MAR-457). The
+    // agent publishes a task for exactly this: a freshly registered agent has no
+    // runs, and the command contract requires a run or a task to target.
+    await waitFor(
+      () => supervisor.report("folder-digest") !== null,
+      "the agent to publish its waiting task",
+    );
+    expect(runsView().runs.some((run) => run.agent === "folder-digest")).toBe(false);
+
+    const asked = await supervisor.deliver("folder-digest", {
+      command_id: "cmd-telemetry-run",
+      command: "retry",
+      target: { agent_id: "folder-digest", task_id: "waiting-to-be-run" },
+    });
+    expect(asked).toMatchObject({ ok: true });
+
     const channels = createAgentChannels(handle, new MemorySecureStore(), (line) => {
       logs.push(line);
     });
@@ -272,7 +292,7 @@ describe("runner-hosted Agent Kit telemetry", () => {
       known_agent: true,
       analysis: {
         agent: "folder-digest",
-        executed_route: ["local_folder_read", "local_file_write"],
+        executed_route: ["public_feed_fetch", "local_file_write"],
         compliant: true,
       },
     });

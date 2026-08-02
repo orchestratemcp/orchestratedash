@@ -320,3 +320,106 @@ describe("every view", () => {
     }
   });
 });
+
+/* ---------------------------------------------------------------------- *
+ * Artifacts and permissions in the views (MAR-457)
+ * ---------------------------------------------------------------------- */
+
+describe("what a run produced", () => {
+  const artifact = {
+    artifact_version: 1,
+    agent: "email-lead-to-crm",
+    run_id: "run-artifact-1",
+    artifact_id: "digest-1",
+    kind: "digest",
+    title: "Today",
+    generated_at: "2026-08-01T09:00:00.000Z",
+    sources_fetched: [
+      { source_name: "A feed", source_url: "https://example.com/feed", status: "ok" },
+    ],
+    items: [{ headline: "Something", source_url: "https://example.com/feed" }],
+  };
+
+  function seedRun(): void {
+    importManifest(manifest);
+    ingestEvents([
+      {
+        event_version: 1,
+        agent: "email-lead-to-crm",
+        run_id: "run-artifact-1",
+        seq: 0,
+        ts: "2026-08-01T09:00:00.000Z",
+        type: "run_started",
+      },
+    ]);
+  }
+
+  it("carries the digest and its grounding on the run view", async () => {
+    const { ingestArtifacts } = await import("../lib/store");
+    seedRun();
+    expect(ingestArtifacts(artifact).accepted).toBe(1);
+
+    const view = runView("email-lead-to-crm", "run-artifact-1");
+    expect(view.found).toBe(true);
+    if (!view.found) return;
+
+    expect(view.artifacts).toHaveLength(1);
+    expect(view.grounding?.verdict).toBe("grounded");
+    // The two verdicts travel together and stay separate. A page must be able
+    // to render one without the other having touched it.
+    expect(view.analysis).not.toHaveProperty("grounding");
+  });
+
+  it("gives a run that produced nothing an empty list and no verdict", async () => {
+    seedRun();
+    const view = runView("email-lead-to-crm", "run-artifact-1");
+    expect(view.found).toBe(true);
+    if (!view.found) return;
+
+    // Not null-and-a-verdict, and not a verdict over an absent digest: there is
+    // nothing to judge, so nothing is claimed about it.
+    expect(view.artifacts).toEqual([]);
+    expect(view.grounding).toBeNull();
+  });
+
+  it("keeps the newest digest on the workspace, outliving the agent's snapshot", async () => {
+    const { ingestArtifacts } = await import("../lib/store");
+    importManifest(manifest);
+    expect(ingestArtifacts(artifact).accepted).toBe(1);
+
+    // No Agent DOM state at all — the agent is stopped, or has not published
+    // yet. The digest is DASH's own record and must survive that.
+    const view = workspaceView("email-lead-to-crm");
+    expect(view.found).toBe(true);
+    if (!view.found) return;
+
+    expect(view.snapshot).toBeNull();
+    expect(view.latest_digest?.artifact_id).toBe("digest-1");
+    expect(view.latest_digest_grounding?.verdict).toBe("grounded");
+  });
+
+  it("stays structured-clone safe with a digest attached", async () => {
+    const { ingestArtifacts } = await import("../lib/store");
+    seedRun();
+    ingestArtifacts(artifact);
+
+    // The property this whole file exists to protect: these cross
+    // contextBridge, which clones. A Date reaching a view throws in the
+    // packaged app and nowhere else.
+    expect(() => structuredClone(runView("email-lead-to-crm", "run-artifact-1"))).not.toThrow();
+    expect(() => structuredClone(workspaceView("email-lead-to-crm"))).not.toThrow();
+  });
+});
+
+describe("declared permissions", () => {
+  it("reach the workspace view as the manifest wrote them", () => {
+    importManifest(manifest);
+    const view = workspaceView("email-lead-to-crm");
+    expect(view.found).toBe(true);
+    if (!view.found) return;
+
+    // The v1 example declares none, and the honest answer is an empty list
+    // rather than an invented one.
+    expect(view.permissions).toEqual([]);
+  });
+});

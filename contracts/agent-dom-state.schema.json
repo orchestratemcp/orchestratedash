@@ -84,7 +84,8 @@
     },
     "task": {
       "type": "object",
-      "required": ["id", "run_id", "label", "status", "created_at"],
+      "description": "A unit of work. `run_id` is optional because a task can exist before any run does — an agent that only acts when asked publishes the work it is waiting to be given, and that task belongs to no run by definition. Requiring it forced such an agent to either invent a run id pointing at nothing, or publish no task at all and so offer DASH's controls nothing to target.",
+      "required": ["id", "label", "status", "created_at"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "run_id": { "type": "string", "minLength": 1 },

@@ -71,6 +71,49 @@ export function useView<T>(
 }
 
 /**
+ * Re-read a view while something is actually happening (MAR-457).
+ *
+ * `useView` above is deliberately not a poller, and this does not make it one.
+ * The distinction is `active`: this re-reads only while the caller says a run is
+ * in flight, and stops the moment it is not. A page that polled forever would be
+ * the "nothing moves or refreshes without saying it did" rule broken by the
+ * module that quotes it — so callers are expected to render `last_read_at`, and
+ * the design of this hook makes that awkward to forget by returning it.
+ *
+ * Five seconds because that is already the cadence `electron/agent-adapters.ts`
+ * drains the runner on. Reading faster would show the same bytes twice and cost
+ * a database read to do it; the data does not arrive any sooner than the poll
+ * that fetches it.
+ */
+export const LIVE_REFRESH_MS = 5_000;
+
+export function useLiveView<T>(
+  read: (source: DashDataSource) => Promise<ViewResult<T>>,
+  key: string | number,
+  active: boolean,
+): ViewState<T> & { last_read_at: Date | null } {
+  const [tick, setTick] = useState(0);
+  const [lastReadAt, setLastReadAt] = useState<Date | null>(null);
+  const state = useView(read, `${String(key)}:${String(tick)}`);
+
+  useEffect(() => {
+    if (state.status !== "loading") {
+      setLastReadAt(new Date());
+    }
+  }, [state.status, tick]);
+
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    const timer = setInterval(() => setTick((value) => value + 1), LIVE_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [active]);
+
+  return { ...state, last_read_at: lastReadAt };
+}
+
+/**
  * Whether this window can cause an effect, for the pages that need to say so.
  *
  * Resolved in an effect rather than during render, because the answer depends on

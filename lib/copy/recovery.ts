@@ -216,6 +216,112 @@ export function describeConnectionCondition(
 }
 
 /* ---------------------------------------------------------------------- *
+ * Sources an agent reads
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What to say about one source a run could not use (MAR-457).
+ *
+ * Four outcomes, kept apart for the same reason the credential failures above
+ * are: they lead somewhere different. Telling someone to check their internet
+ * connection because an address had a typo in it wastes their afternoon, and
+ * telling them an address is wrong when their wifi is off makes them edit a
+ * setting that was never the problem.
+ *
+ * Every one of these is a *gap in a digest that still arrived*. None of them is
+ * a failed run, and the copy never suggests otherwise — a run that read three
+ * sources out of four did most of its job, and calling that a failure teaches
+ * people to ignore the word.
+ */
+export function describeSourceFailure(source: {
+  source_name: string;
+  status: "ok" | "unreachable" | "not_a_feed" | "empty";
+}): Recovery | null {
+  const { source_name: name } = source;
+
+  switch (source.status) {
+    case "ok":
+      // Null for the same reason a healthy connection returns null: a source
+      // that worked is not a failure state, and rendering a recovery for one
+      // would teach people to ignore recoveries.
+      return null;
+
+    case "empty":
+      // Not a fault at all, and deliberately not worded as one. A feed with
+      // nothing new in it today is a feed working exactly as intended.
+      return {
+        headline: `${name} had nothing new.`,
+        meaning: "The source answered normally. There was simply nothing published since the last look.",
+        next_action: "Nothing to do.",
+        actor: "elsewhere",
+      };
+
+    case "unreachable":
+      return {
+        headline: `DASH could not reach ${name}.`,
+        meaning: `Everything else in your digest arrived normally. Only what ${name} would have added is missing.`,
+        next_action: `Check the address for ${name}, or remove it from your sources.`,
+        actor: "user",
+      };
+
+    case "not_a_feed":
+      return {
+        headline: `${name} answered, but not with a news feed.`,
+        // The distinction that matters: this address is reachable. Sending the
+        // user to check their connection would send them to fix the one thing
+        // demonstrably working.
+        meaning:
+          "This usually means the address points at an ordinary web page rather than a feed, or the kind of feed it is was set wrongly.",
+        next_action: `Check the address and the kind of feed for ${name}.`,
+        actor: "user",
+      };
+  }
+}
+
+/**
+ * The one thing worth saying about the run as a whole, or nothing.
+ *
+ * Separate from the per-source copy because "every source failed the same way"
+ * is a different fact from "this source failed", and only the first one is about
+ * the machine rather than about a list. A user whose wifi is off should be told
+ * that once, not once per source.
+ *
+ * Returns null whenever the per-source recoveries already tell the story, which
+ * is the common case.
+ */
+export function describeDigestGaps(
+  sources: ReadonlyArray<{
+    source_name: string;
+    status: "ok" | "unreachable" | "not_a_feed" | "empty";
+  }>,
+): Recovery | null {
+  if (sources.length === 0) {
+    return {
+      headline: "This agent has no sources yet.",
+      meaning: "It ran and had nothing to read, so the digest is empty. Nothing went wrong.",
+      next_action: "Add a source for it to watch.",
+      actor: "user",
+    };
+  }
+
+  const unreachable = sources.filter((source) => source.status === "unreachable");
+  if (unreachable.length === sources.length) {
+    return {
+      headline: "None of your sources could be reached.",
+      // Said as the likely cause rather than as a diagnosis. DASH cannot tell a
+      // dropped connection from every feed being down at once, and pretending to
+      // know which would send half of the people who see this to the wrong place.
+      meaning:
+        "When every source fails at once it is usually this computer's internet connection rather than the sources themselves. Nothing is lost and nothing is broken.",
+      next_action: "Check this computer is online, then run it again.",
+      actor: "user",
+    };
+  }
+
+  return null;
+}
+
+/* ---------------------------------------------------------------------- *
  * Signing in to a provider
  * ---------------------------------------------------------------------- */
 

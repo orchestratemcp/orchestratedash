@@ -1,9 +1,11 @@
 import {
   isManifestV2,
+  validateArtifact,
   validateEvent,
   validateManifest,
   type AgentManifestV2,
   type AnyAgentManifest,
+  type RunArtifact,
   type RunEvent,
 } from "./contracts";
 import { db, insertEventRow, readRowsTolerantly, transact } from "./db";
@@ -192,6 +194,7 @@ export function resetStore(): void {
     database.exec("DELETE FROM command_results");
     database.exec("DELETE FROM command_audit");
     database.exec("DELETE FROM agent_handoffs");
+    database.exec("DELETE FROM run_artifacts");
   });
 }
 
@@ -343,6 +346,130 @@ export function ingestEvents(input: unknown, options: IngestOptions = {}): Inges
   }
 
   return { accepted: accepted.length, rejected };
+}
+
+/**
+ * Accept one run artifact, or a batch (MAR-457).
+ *
+ * The same boundary discipline as `ingestEvents`, and deliberately the same
+ * shape of answer: each candidate is validated on its own, one malformed
+ * artifact never discards its neighbours, and the accepted set lands in a single
+ * transaction.
+ *
+ * `sourceAgents` matters more here than it does for events, not less. An
+ * artifact is the thing a user reads and acts on, so a hosted child publishing a
+ * schema-valid digest under another agent's name would be putting words in
+ * another agent's mouth on a surface built to be trusted.
+ *
+ * Re-sending the same `artifact_id` replaces the body rather than inserting a
+ * second row. An agent that revises a digest mid-run is correcting it; keeping
+ * both and showing the newest would give the run two answers and no way to say
+ * which one the user saw.
+ */
+export function ingestArtifacts(input: unknown, options: IngestOptions = {}): IngestResult {
+  const items = Array.isArray(input) ? input : [input];
+  const accepted: RunArtifact[] = [];
+  const rejected: IngestResult["rejected"] = [];
+
+  items.forEach((item, index) => {
+    const result = validateArtifact(item);
+    if (result.ok) {
+      const sourceAgent = options.sourceAgents?.[index];
+      if (sourceAgent !== undefined && result.value.agent !== sourceAgent) {
+        rejected.push({
+          index,
+          errors: ["/agent must match the runner-hosted source"],
+        });
+      } else {
+        accepted.push(result.value);
+      }
+    } else {
+      rejected.push({ index, errors: result.errors });
+    }
+  });
+
+  if (accepted.length > 0) {
+    const database = db();
+    const receivedAt = new Date().toISOString();
+    transact(database, () => {
+      for (const artifact of accepted) {
+        database
+          .prepare(
+            "INSERT INTO run_artifacts " +
+              "(agent, run_id, artifact_id, kind, title, generated_at, artifact_json, received_at) " +
+              "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
+              "ON CONFLICT (agent, run_id, artifact_id) DO UPDATE SET " +
+              "kind = excluded.kind, title = excluded.title, " +
+              "generated_at = excluded.generated_at, " +
+              "artifact_json = excluded.artifact_json, " +
+              "received_at = excluded.received_at",
+          )
+          .run(
+            artifact.agent,
+            artifact.run_id,
+            artifact.artifact_id,
+            artifact.kind,
+            artifact.title,
+            artifact.generated_at,
+            JSON.stringify(artifact),
+            receivedAt,
+          );
+      }
+    });
+  }
+
+  return { accepted: accepted.length, rejected };
+}
+
+/**
+ * Every artifact a run produced, newest first.
+ *
+ * Read straight from the table rather than from `StoreShape`: artifacts are
+ * joined to a run on demand by the pages that show one, and loading every
+ * digest body a machine has ever produced into the store snapshot that every
+ * page reads would make the agents list pay for the digest viewer.
+ *
+ * A damaged row is skipped rather than thrown, exactly as `readStore` treats a
+ * damaged event — a store that takes down the run page because one digest will
+ * not parse is the failure mode MAR-449 already paid for once.
+ */
+export function artifactsForRun(agent: string, runId: string): RunArtifact[] {
+  const rows = db()
+    .prepare(
+      "SELECT artifact_json FROM run_artifacts WHERE agent = ? AND run_id = ? " +
+        "ORDER BY generated_at DESC",
+    )
+    .all(agent, runId) as Array<Record<string, unknown>>;
+
+  const artifacts: RunArtifact[] = [];
+  for (const row of rows) {
+    const artifact = parseOrNull<RunArtifact>(text(row, "artifact_json"));
+    if (artifact !== null) {
+      artifacts.push(artifact);
+    }
+  }
+  return artifacts;
+}
+
+/**
+ * The most recent digest this agent produced, across every run.
+ *
+ * What the agent workspace opens on: a person who came back to see what their
+ * scout found wants the last answer, not a list of runs to pick from. The run
+ * it belongs to travels with it so the page can link to the full record.
+ *
+ * Null when the agent has never produced one, which is the ordinary state of a
+ * manual-first agent nobody has run yet — not a failure and not worded as one.
+ */
+export function latestArtifactForAgent(agent: string): RunArtifact | null {
+  const row = db()
+    .prepare(
+      "SELECT artifact_json FROM run_artifacts WHERE agent = ? " +
+        "ORDER BY generated_at DESC LIMIT 1",
+    )
+    .get(agent) as Record<string, unknown> | undefined;
+
+  return row === undefined ? null : parseOrNull<RunArtifact>(text(row, "artifact_json"));
 }
 
 export interface AgentSummary {

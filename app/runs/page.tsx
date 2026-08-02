@@ -36,11 +36,17 @@ export default function RunsPage(): ReactNode {
          */
         <div className="empty">
           <p>Nothing has run yet.</p>
+          {/*
+            MAR-457 fixed two false claims in this paragraph. It named the Help
+            menu, and there is no Help menu — the item is the first entry in the
+            DASH menu — so anybody who followed it found nothing. And it said the
+            sample "runs it for you", which stopped being true when the sample
+            became manual-first: it is added ready and waits to be asked.
+          */}
           <p>
-            Agents report here on their own as they work. If you have not made
-            one, <a href="/agents/add">add an agent</a> — or use{" "}
-            <strong>Try a sample agent</strong> in the Help menu, which makes one
-            and runs it for you.
+            Agents report here as they work. If you have not made one,{" "}
+            <a href="/">start with AI News Scout</a> — or{" "}
+            <a href="/agents/add">add an agent</a> you built yourself.
           </p>
         </div>
       ) : (

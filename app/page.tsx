@@ -34,6 +34,20 @@ export default function AgentsPage(): ReactNode {
       ) : (
         <>
           {/*
+            The page-level entrance `lib/shell/menu.ts` anticipated: *"MAR-423's
+            page work may add a second entrance; this item is neither a
+            substitute for that button nor a reason to implement the operation
+            twice."* It is a second *entrance*, not a second implementation —
+            main owns the operation, and both this and the menu item reach it.
+
+            Shown only when there is nothing to look at. Once somebody has an
+            agent, the list is what they came for, and an onboarding card that
+            outstays its welcome is the thing every empty state gets wrong.
+          */}
+          {state.data.agents.length === 0 && state.data.damage === null ? (
+            <TryTheScout />
+          ) : null}
+          {/*
             Above the list, not instead of it. Damage to one agent's record says
             nothing about the others, and hiding a working list behind a notice
             about a row that is gone would turn a partial loss into a total one
@@ -49,8 +63,8 @@ export default function AgentsPage(): ReactNode {
             state.data.damage !== null ? null : (
               <div className="empty">
                 <p>
-                  No agents yet. <a href="/agents/add">Add one</a> — it takes two
-                  commands and needs no accounts or passwords.
+                  Nothing here yet. Start with AI News Scout above, or{" "}
+                  <a href="/agents/add">add an agent you built yourself</a>.
                 </p>
               </div>
             )
@@ -99,5 +113,41 @@ export default function AgentsPage(): ReactNode {
         </>
       )}
     </>
+  );
+}
+
+/**
+ * The first thing somebody with an empty DASH sees.
+ *
+ * It states what they will get and what it costs them, in that order, and the
+ * cost is the interesting half: no account, no password, and nothing runs until
+ * they ask. A first-run card that promised only the benefit would be the kind of
+ * onboarding that makes people close the window.
+ *
+ * The button is a link to Add agent rather than a handler. Creating the sample
+ * is main's operation — it writes a project, mints a real nonce and raises a
+ * native consent dialog — and a renderer that reached past that would be the
+ * second registration path `lib/sample-agent.ts` exists to argue against.
+ */
+function TryTheScout(): ReactNode {
+  return (
+    <section className="section try-sample" aria-labelledby="try-sample-heading">
+      <p className="eyebrow">Start here</p>
+      <h2 id="try-sample-heading">AI News Scout</h2>
+      <p className="lede">
+        It reads the news sources you choose and writes you a short summary of
+        what is new, with a link to where each item came from.
+      </p>
+      <ul className="capability-list">
+        <li>No account and no password.</li>
+        <li>It runs only when you ask it to.</li>
+        <li>You choose what it reads, and can change it at any time.</li>
+      </ul>
+      <p>
+        Open the <strong>DASH</strong> menu and choose{" "}
+        <strong>Try a sample agent</strong>. DASH makes it, shows you what it
+        will do, and asks before adding anything.
+      </p>
+    </section>
   );
 }
