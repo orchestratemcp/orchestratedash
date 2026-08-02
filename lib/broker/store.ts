@@ -17,6 +17,7 @@
  */
 
 import { db } from "../db";
+import { maskAccount } from "../secret-refs";
 import type { BrokerAuditRow } from "./execute";
 import type { BrokerGrant } from "./grant";
 
@@ -50,7 +51,16 @@ export interface BrokerReceipt {
  */
 export function recordReceipt(grant: BrokerGrant, at: string): void {
   const operations = JSON.stringify(grant.operations.map((operation) => operation.id));
-  const accountHint = grant.account;
+  // Masked here, at the one point the address is in hand, exactly as
+  // `lib/connection-actions.ts` masks before writing `connection_secrets`.
+  //
+  // This line was wrong when it was first written — it stored `grant.account`
+  // whole — and `tests/oauth-connection.test.ts`'s "puts no part of the token or
+  // the account in the database file" caught it on the first run. Worth leaving
+  // a note on: the grant carries the real address because the broker needs it to
+  // mask consistently, so every writer of it has to mask, and only this one and
+  // the audit ever write it anywhere.
+  const accountHint = grant.account === null ? null : maskAccount(grant.account);
   db()
     .prepare(
       "INSERT INTO broker_grants " +
