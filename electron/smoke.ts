@@ -926,7 +926,13 @@ if (recorded !== null) {
             // yet" rather than "not there". Waiting for the digest's own title
             // is what makes this an assertion about content and not about
             // whether a document object exists.
-            return seen.text.includes(digest?.artifact.title ?? " ") ? seen : null;
+            //
+            // The fallback is a sentinel that cannot appear in rendered text,
+            // so a missing digest times out rather than matching every page.
+            // Written as an escape since MAR-464: it was a raw NUL byte, which
+            // made ripgrep classify this whole file as binary and skip it, and
+            // a proof file nobody can search is one nobody will read.
+            return seen.text.includes(digest?.artifact.title ?? "\u0000") ? seen : null;
           }, "the run detail page to draw the digest");
         } catch (error: unknown) {
           drawn = null;
