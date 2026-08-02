@@ -18,7 +18,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { validateState } from "../contracts";
 import { db, readRowsTolerantly, transact } from "../db";
 import type { AgentDomState } from "../workspace";
-import type { CommandRejection } from "./enforce";
+import { decisionIdentity, type CommandRejection } from "./enforce";
 import type { AgentCommandEnvelope } from "./envelope";
 
 /* ---------------------------------------------------------------------- *
@@ -27,7 +27,15 @@ import type { AgentCommandEnvelope } from "./envelope";
 
 export interface StoredSnapshot {
   agent: string;
+  /**
+   * The freshness value the command layer binds to. Advances only when the
+   * decision context does — see `putAgentDomState`.
+   */
   observed_at: string;
+  /** What the runner last said, untouched. Orders snapshots; binds nothing. */
+  runner_observed_at: string;
+  /** `decisionIdentity` of the stored document; null on a pre-MAR-464 row. */
+  decision_identity: string | null;
   state: AgentDomState;
   received_at: string;
 }
@@ -48,6 +56,44 @@ export type SnapshotResult =
  * rather than applied. Out-of-order arrival would otherwise roll the world
  * backwards: an approval the runner has already resolved would look pending
  * again, and the command layer would happily act on it.
+ *
+ * ## Why `observed_at` is allowed to stand still (MAR-464)
+ *
+ * The runner mints `observed_at` on every build and `electron/agent-adapters.ts`
+ * rebuilds every five seconds, so the value moved whether or not anything had
+ * happened. Every control bound to a rendered snapshot was therefore refused as
+ * `stale_snapshot` about five seconds after it was drawn — including Approve and
+ * Reject on a runner-enforced approval.
+ *
+ * So the value carried forward here whenever `decisionIdentity` is unchanged.
+ * The stored document is rewritten to agree with it, because the command layer
+ * compares against the parsed document and two spellings of the same fact are
+ * how the two halves of a check drift apart.
+ *
+ * **This is not DASH editing a document it received.** The content is stored
+ * exactly as it arrived; what is declined is the *advance of an identity* for
+ * content that did not change. The value written is always one the runner
+ * itself minted for this same decision context, and it can only ever be older
+ * than the arriving one — DASH can make a snapshot look its age, never fresher.
+ * That direction matters: the invariant `runner/state.ts` protects is that an
+ * agent must not be able to make old state look current, and freezing moves the
+ * value the other way.
+ *
+ * Three properties come back at once, and the third is the one that would have
+ * been quietly lost by the tempting fix of re-reading the snapshot before every
+ * command:
+ *
+ * 1. **Approvals survive being read.** A person may look at the screen for as
+ *    long as they like, because looking is not an event.
+ * 2. **"The world changed, look again" starts meaning it.** The refusal now
+ *    fires when the decision context moved, which is the only time it was ever
+ *    worth firing.
+ * 3. **Idempotency works for the first time.** `idempotencyKey` hashes
+ *    `observed_at`, so under a churning value two clicks six seconds apart
+ *    derived *different* keys — the anti-duplication defence held for a fast
+ *    double click and quietly lapsed for a slow one. Re-reading before each
+ *    command would have made every click derive a fresh key and removed the
+ *    defence entirely.
  */
 export function putAgentDomState(input: unknown, receivedAt: string = new Date().toISOString()): SnapshotResult {
   const validation = validateState(input);
@@ -60,7 +106,11 @@ export function putAgentDomState(input: unknown, receivedAt: string = new Date()
 
   return transact(database, () => {
     const existing = readSnapshotRow(database, state.agent_id);
-    if (existing !== null && existing.observed_at > state.observed_at) {
+    // Ordered on the runner's own timestamps. Comparing frozen values would
+    // accept a snapshot older than the newest one seen, so long as it was newer
+    // than whenever the current context began — which is precisely the rollback
+    // this guard exists to refuse.
+    if (existing !== null && existing.runner_observed_at > state.observed_at) {
       return {
         ok: true as const,
         agent: state.agent_id,
@@ -69,34 +119,72 @@ export function putAgentDomState(input: unknown, receivedAt: string = new Date()
       };
     }
 
+    const identity = decisionIdentity(state);
+    const unchanged = existing !== null && existing.decision_identity === identity;
+    const observedAt = unchanged ? existing.observed_at : state.observed_at;
+    const stored: AgentDomState = { ...state, observed_at: observedAt };
+
     database
       .prepare(
-        "INSERT INTO agent_dom_state (agent, observed_at, state_json, received_at) " +
-          "VALUES (?, ?, ?, ?) ON CONFLICT (agent) DO UPDATE SET " +
-          "observed_at = excluded.observed_at, state_json = excluded.state_json, " +
+        "INSERT INTO agent_dom_state " +
+          "(agent, observed_at, runner_observed_at, decision_identity, state_json, received_at) " +
+          "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (agent) DO UPDATE SET " +
+          "observed_at = excluded.observed_at, runner_observed_at = excluded.runner_observed_at, " +
+          "decision_identity = excluded.decision_identity, state_json = excluded.state_json, " +
           "received_at = excluded.received_at",
       )
-      .run(state.agent_id, state.observed_at, JSON.stringify(state), receivedAt);
+      .run(
+        state.agent_id,
+        observedAt,
+        state.observed_at,
+        identity,
+        JSON.stringify(stored),
+        receivedAt,
+      );
 
     return {
       ok: true as const,
       agent: state.agent_id,
-      observed_at: state.observed_at,
+      observed_at: observedAt,
       superseded: false,
     };
   });
 }
 
+/**
+ * Read the row, tolerating one written before MAR-464's migration.
+ *
+ * Both new columns are nullable because `ALTER TABLE ... ADD COLUMN` fills
+ * existing rows with NULL, and every installed DASH has one. A null
+ * `runner_observed_at` falls back to `observed_at`, which is exactly what it
+ * held before the freeze existed. A null `decision_identity` is reported as
+ * such rather than being recomputed from the stored document: the next snapshot
+ * then counts as a change and advances `observed_at` once. Recomputing would
+ * look tidier and would be a guess that the stored bytes still hash to what
+ * they hashed to under whatever projection was current when they were written.
+ */
 function readSnapshotRow(database: DatabaseSync, agent: string): StoredSnapshot | null {
   const row = database
-    .prepare("SELECT agent, observed_at, state_json, received_at FROM agent_dom_state WHERE agent = ?")
+    .prepare(
+      "SELECT agent, observed_at, runner_observed_at, decision_identity, state_json, received_at " +
+        "FROM agent_dom_state WHERE agent = ?",
+    )
     .get(agent);
   if (row === undefined) {
     return null;
   }
+  const observedAt = String(row["observed_at"]);
+  const runnerObservedAt = row["runner_observed_at"];
+  const identity = row["decision_identity"];
   return {
     agent: String(row["agent"]),
-    observed_at: String(row["observed_at"]),
+    observed_at: observedAt,
+    runner_observed_at:
+      runnerObservedAt === null || runnerObservedAt === undefined
+        ? observedAt
+        : String(runnerObservedAt),
+    decision_identity:
+      identity === null || identity === undefined ? null : String(identity),
     state: JSON.parse(String(row["state_json"])) as AgentDomState,
     received_at: String(row["received_at"]),
   };

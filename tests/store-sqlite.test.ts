@@ -72,10 +72,11 @@ describe("schema", () => {
 
     // One per shipped migration: 0 is the MAR-416 store, 1 is MAR-417's
     // command channel, 2 is MAR-428's handoff ledger, 3 is MAR-457's run
-    // artifacts. Asserted as a number rather than as MIGRATIONS.length so that
-    // appending a migration is a deliberate edit here too.
+    // artifacts, 4 is MAR-464's decision-identity columns. Asserted as a number
+    // rather than as MIGRATIONS.length so that appending a migration is a
+    // deliberate edit here too.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(4);
+    expect(version.user_version).toBe(5);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -103,6 +104,11 @@ describe("schema", () => {
     first.store.importManifest(manifest);
     first.db.db().exec("PRAGMA user_version = 3");
     first.db.db().exec("DROP TABLE run_artifacts");
+    // Migration 4 ran when this store was created, so its columns have to go
+    // back too or re-running it fails on a duplicate column rather than on
+    // anything this test is about.
+    first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN runner_observed_at");
+    first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN decision_identity");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -118,6 +124,37 @@ describe("schema", () => {
       .map((row) => String(row["name"]));
     expect(tables).toContain("run_artifacts");
     expect(store.listAgents()).toHaveLength(1);
+  });
+
+  it("adds the decision-identity columns to a store that predates them", async () => {
+    /*
+     * The MAR-464 half of the case above, and the one every installed DASH is
+     * in: a store whose `agent_dom_state` row was written before `observed_at`
+     * was allowed to stand still. The row must survive, and it must keep
+     * answering commands — a null `decision_identity` means "unknown", so the
+     * next snapshot counts as a change rather than being silently treated as
+     * identical to whatever is already there.
+     */
+    const first = await freshStore();
+    const agentDom = await import("../lib/agent-dom/store");
+    expect(agentDom.putAgentDomState(workspaceState).ok).toBe(true);
+    first.db.db().exec("PRAGMA user_version = 4");
+    first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN runner_observed_at");
+    first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN decision_identity");
+    first.db.closeDb();
+
+    process.env.DASH_DATA_DIR = first.dataDir;
+    vi.resetModules();
+    const db = await import("../lib/db");
+    const migrated = await import("../lib/agent-dom/store");
+    opened.push({ dataDir: first.dataDir, closeDb: db.closeDb });
+
+    const snapshot = migrated.readAgentDomState(String(workspaceState["agent_id"]));
+    expect(snapshot).not.toBeNull();
+    // Backfilled from the value the row already held, which is exactly what it
+    // meant before the freeze existed.
+    expect(snapshot?.runner_observed_at).toBe(snapshot?.observed_at);
+    expect(snapshot?.decision_identity).toBeNull();
   });
 
   it("uses WAL journalling, which is what replaces write-then-rename", async () => {
@@ -141,7 +178,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(4);
+    ).toBe(5);
   });
 
   it("preserves pending tasks and approvals across a DASH restart", async () => {

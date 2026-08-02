@@ -55,7 +55,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { IPC_ORIGIN, ipcFetch } from "../lib/agent-dom/ipc-fetch";
-import { putAgentDomState, readCommandAudit } from "../lib/agent-dom/store";
+import { putAgentDomState, readAgentDomState, readCommandAudit } from "../lib/agent-dom/store";
 import { connectableFields } from "../lib/connection-credentials";
 import { oauthProviderById } from "../lib/oauth/providers";
 import { closeDb, dataDir } from "../lib/db";
@@ -316,6 +316,118 @@ check(
       !JSON.stringify(record).includes(REASON_MARKER),
   ),
   { payload_keys: written.at(-1)?.payload_keys, marker_absent: true },
+);
+
+/* -- Proofs 3g/3h: what `observed_at` binds to (MAR-464) ---------------- */
+
+/**
+ * The defect this pair exists for, and the reason it is proved *here*.
+ *
+ * `runner/state.ts` mints `observed_at` on every build and
+ * `electron/agent-adapters.ts` rebuilds every five seconds, so the value moved
+ * whether or not anything had happened — and `enforce.ts` required an exact
+ * match. Every control bound to a rendered snapshot therefore had roughly five
+ * seconds before it was refused as `stale_snapshot`, including Approve and
+ * Reject on a runner-enforced approval reached from the Work inbox.
+ *
+ * 878 unit tests were green through it. What found it was this harness, on its
+ * first honest run, which is the whole of MAR-454's argument — so the guard
+ * against its return belongs where the discovery happened rather than only in
+ * a test that would have been just as green the first time.
+ *
+ * `reject` rather than `approve` throughout: the approve above already claimed
+ * the idempotency key for this target at this snapshot, and a second one would
+ * come back as a stored duplicate — which looks like a pass and would prove
+ * nothing about enforcement. Each check below is issued against a distinct
+ * rendered snapshot for the same reason.
+ */
+
+/** One poll tick: identical content, a later runner clock, progress moved on. */
+function repolled(observedAtValue: string, patch: Record<string, unknown> = {}): Record<string, unknown> {
+  const base = liveSnapshot(observedAt, expiresAt);
+  const runs = base["runs"] as Array<Record<string, unknown>>;
+  return {
+    ...base,
+    observed_at: observedAtValue,
+    // The fields that genuinely churn while an agent works. If either of these
+    // counted as a changed decision, this fix would close the idle case and
+    // leave the busy one open — which is the version a user would still hit.
+    runs: runs.map((entry) => ({ ...entry, progress: 0.83, current_step: "a_later_step" })),
+    ...patch,
+  };
+}
+
+const afterOnePoll = new Date(Date.parse(observedAt) + 5_000).toISOString();
+const afterTwoPolls = new Date(Date.parse(observedAt) + 10_000).toISOString();
+check(
+  "3g. two poll intervals do not move the snapshot a control is bound to",
+  putAgentDomState(repolled(afterOnePoll)).ok &&
+    putAgentDomState(repolled(afterTwoPolls)).ok &&
+    readAgentDomState(AGENT)?.observed_at === observedAt &&
+    readAgentDomState(AGENT)?.runner_observed_at === afterTwoPolls,
+  {
+    rendered: observedAt,
+    held: readAgentDomState(AGENT)?.observed_at,
+    runner_said: readAgentDomState(AGENT)?.runner_observed_at,
+  },
+);
+
+const rejectedLate = (await window.webContents.executeJavaScript(
+  `window.dashShell.reject(${JSON.stringify({
+    agent_id: AGENT,
+    task_id: TASK,
+    approval_id: APPROVAL,
+    action_id: ACTION,
+    observed_at: observedAt,
+  })})`,
+)) as { ok?: boolean; reason?: string };
+
+check(
+  "3g. an approval survives being read for longer than a poll interval",
+  rejectedLate.reason === "adapter_unavailable",
+  rejectedLate,
+);
+
+/**
+ * The half worth keeping, and the reason the fix was not "re-read the snapshot
+ * before every command". *"The world changed since you looked, look again"* is
+ * a property worth having in front of an irreversible action; only its trigger
+ * was ever wrong.
+ *
+ * The task's `detail` is what moves — decision-relevant, and deliberately not
+ * something that changes whether `reject` is offered. Cancelling the approval
+ * instead would also be refused, but at `approval_not_open` if the freshness
+ * gate ever stopped firing, so it would keep passing after the regression it
+ * exists to catch.
+ */
+const reRendered = new Date(Date.parse(observedAt) + 60_000).toISOString();
+const movedOn = new Date(Date.parse(observedAt) + 120_000).toISOString();
+const detailed = (detail: string): Record<string, unknown> => ({
+  tasks: (liveSnapshot(observedAt, expiresAt)["tasks"] as Array<Record<string, unknown>>).map(
+    (task) => ({ ...task, detail }),
+  ),
+});
+
+const staleRefused =
+  putAgentDomState(repolled(reRendered, detailed("A proposed time is ready"))).ok &&
+  readAgentDomState(AGENT)?.observed_at === reRendered &&
+  putAgentDomState(repolled(movedOn, detailed("A different time is ready"))).ok &&
+  readAgentDomState(AGENT)?.observed_at === movedOn;
+
+const rejectedStale = (await window.webContents.executeJavaScript(
+  `window.dashShell.reject(${JSON.stringify({
+    agent_id: AGENT,
+    task_id: TASK,
+    approval_id: APPROVAL,
+    action_id: ACTION,
+    observed_at: reRendered,
+  })})`,
+)) as { ok?: boolean; reason?: string };
+
+check(
+  "3h. a decision taken against a context that has since moved is still refused",
+  staleRefused && rejectedStale.reason === "stale_snapshot",
+  { advanced: staleRefused, ...rejectedStale },
 );
 
 /* -- Proof 3f: the credential bridge is not on the app window ----------- */
@@ -926,7 +1038,13 @@ if (recorded !== null) {
             // yet" rather than "not there". Waiting for the digest's own title
             // is what makes this an assertion about content and not about
             // whether a document object exists.
-            return seen.text.includes(digest?.artifact.title ?? " ") ? seen : null;
+            //
+            // The fallback is a sentinel that cannot appear in rendered text,
+            // so a missing digest times out rather than matching every page.
+            // Written as an escape since MAR-464: it was a raw NUL byte, which
+            // made ripgrep classify this whole file as binary and skip it, and
+            // a proof file nobody can search is one nobody will read.
+            return seen.text.includes(digest?.artifact.title ?? "\u0000") ? seen : null;
           }, "the run detail page to draw the digest");
         } catch (error: unknown) {
           drawn = null;

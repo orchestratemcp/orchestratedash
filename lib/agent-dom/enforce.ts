@@ -23,6 +23,8 @@
  * `lib/agent-dom/store.ts`.
  */
 
+import { createHash } from "node:crypto";
+
 import {
   availableControls,
   buildWorkInbox,
@@ -97,6 +99,99 @@ function reject(reason: CommandRejection): EnforcementDecision {
   return { accepted: false, reason };
 }
 
+/* ---------------------------------------------------------------------- *
+ * Decision identity
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What a user's decision actually depended on, reduced to one comparable value.
+ *
+ * ## Why this exists
+ *
+ * The freshness check below binds a command to "the snapshot DASH holds". Until
+ * MAR-464 the thing it compared was `observed_at`, and `observed_at` is minted
+ * by `runner/state.ts` on **every build** while `electron/agent-adapters.ts`
+ * rebuilds every `POLL_INTERVAL_MS`. So the value moved on a timer whether or
+ * not anything about the world had changed, and every control bound to a
+ * rendered snapshot had roughly five seconds before it was refused as
+ * `stale_snapshot`.
+ *
+ * That was not a bug in the rule. The rule — *"refuse a decision taken against
+ * a world that has since moved"* — is the right rule, and it is worth most in
+ * front of exactly the irreversible actions where the churn hurt most. The bug
+ * was in what the rule was bound to: a **build timestamp is the identity of a
+ * poll, not the identity of a decision context**, and binding to it conflated
+ * "something changed" with "five seconds passed".
+ *
+ * This function is the honest binding. `lib/agent-dom/store.ts` holds
+ * `observed_at` still while this value is unchanged, so the timestamp advances
+ * when the decision context advances and not before.
+ *
+ * ## What is in, and why what is out is out
+ *
+ * In: everything any control decision reads. `availableControls` reads `status`
+ * and run *statuses*; `buildWorkInbox` reads `choices`, `actions` and
+ * `approval_requests`; `retryIsSafe` reads `plan_vs_actual.executed_components`;
+ * `resolveTarget` reads `runs` and `tasks`. `connections` and
+ * `approval_decisions` are in as well — no enforcement rule reads them today,
+ * and a field left out because nothing happens to read it yet is a field that
+ * silently stops invalidating decisions the day something does.
+ *
+ * Out, and each one deliberately:
+ *
+ * - `observed_at` itself, which is the whole point.
+ * - `memory` and `audit_events`, which **grow while an agent works**. An agent
+ *   writing an audit row must not invalidate a pending approval; if it did,
+ *   this change would fix the idle case and leave the busy one broken, which is
+ *   the failure mode most likely to reach a user.
+ * - A run's `progress`, `current_step`, `started_at` and `finished_at`. These
+ *   tick continuously during exactly the run an approval is usually blocking,
+ *   and none of them changes whether any control is valid. `status` carries
+ *   every transition that does, and it stays in.
+ *
+ * ## Canonical, not merely stringified
+ *
+ * Keys are sorted at every depth. A plain `JSON.stringify` would make the
+ * identity depend on the key order an agent happened to serialise with, so an
+ * agent that rebuilt a task from a `Map` between polls would churn the digest
+ * with identical content — reintroducing the defect through a back door that no
+ * test would obviously be about.
+ */
+export function decisionIdentity(state: AgentDomState): string {
+  const projection = {
+    agent_id: state.agent_id,
+    status: state.status,
+    connections: state.connections ?? [],
+    runs: (state.runs ?? []).map((run) => ({ id: run.id, status: run.status })),
+    tasks: state.tasks ?? [],
+    choices: state.choices ?? [],
+    actions: state.actions ?? [],
+    approval_requests: state.approval_requests ?? [],
+    approval_decisions: state.approval_decisions ?? [],
+    plan_vs_actual: state.plan_vs_actual ?? null,
+  };
+
+  return createHash("sha256").update(canonicalJson(projection), "utf8").digest("hex");
+}
+
+/** `JSON.stringify` with object keys sorted at every depth. Arrays keep order. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+  }
+  if (typeof value === "object" && value !== null) {
+    const entries = Object.entries(value as Record<string, unknown>)
+      // `undefined` is absent rather than null in a parsed document, but an
+      // in-memory state object can carry it; dropping it here keeps the two
+      // spellings of "this field is not set" from producing different digests.
+      .filter(([, item]) => item !== undefined)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`);
+    return `{${entries.join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
 /**
  * Decide, in the order that refuses the cheapest and most dangerous things
  * first.
@@ -128,6 +223,15 @@ export function enforceCommand(inputs: EnforcementInputs): EnforcementDecision {
   // untrusted. Requiring the value to match a snapshot DASH actually holds is
   // what stops a forged `observed_at` from minting a fresh idempotency key and
   // buying a second execution of an irreversible command.
+  //
+  // The comparison is still exact, and deliberately so. What changed in MAR-464
+  // is the value on both sides: `lib/agent-dom/store.ts` advances `observed_at`
+  // only when `decisionIdentity` changes, so this now reads "the decision
+  // context you acted on is the one DASH holds" rather than "you clicked within
+  // one poll interval". Widening the comparison instead would have been the
+  // tempting fix and the wrong one — a tolerance window is a window an attacker
+  // aims at, and it would not have restored idempotency, which needs the two
+  // clicks to derive the *same* key rather than merely both be accepted.
   if (envelope.payload?.observed_at !== state.observed_at) {
     return reject("stale_snapshot");
   }

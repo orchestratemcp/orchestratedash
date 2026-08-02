@@ -313,6 +313,39 @@ const MIGRATIONS: readonly string[] = [
 
   CREATE INDEX run_artifacts_by_agent ON run_artifacts (agent, generated_at);
   `,
+
+  // ---------------------------------------------------------------------
+  // MAR-464: what `observed_at` binds to.
+  //
+  // Migration 1's comment above says observed_at "gets its own column because
+  // the command layer binds to it". That stayed true and the binding was wrong:
+  // the runner mints observed_at per build and DASH rebuilds every five seconds,
+  // so the column tracked the poll rather than the world, and every control
+  // bound to a rendered snapshot expired on a timer.
+  //
+  // observed_at now advances only when the decision context does, which needs
+  // two facts the old row could not hold: what the runner last actually said,
+  // and what the decision context currently hashes to.
+  // ---------------------------------------------------------------------
+  `
+  -- The runner's own timestamp for the newest snapshot received, untouched.
+  --
+  -- Kept separately because it is the only value that can order two snapshots
+  -- honestly. The out-of-order guard in putAgentDomState compares against this,
+  -- not against observed_at: once observed_at is allowed to stand still, using
+  -- it to answer "is this one older than what I have?" would let a genuinely
+  -- stale snapshot in through the gap the freeze opened.
+  ALTER TABLE agent_dom_state ADD COLUMN runner_observed_at TEXT;
+
+  -- decisionIdentity() of the stored snapshot. See lib/agent-dom/enforce.ts.
+  --
+  -- Stored rather than recomputed on read so that the comparison is against the
+  -- digest of the document as it was accepted, not against a digest a later
+  -- version of the projection would produce for it. A projection change is then
+  -- a one-off advance of observed_at, which is honest — DASH really is deciding
+  -- against a different notion of context — rather than a silent reinterpretation.
+  ALTER TABLE agent_dom_state ADD COLUMN decision_identity TEXT;
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

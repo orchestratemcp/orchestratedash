@@ -124,6 +124,16 @@
       "note": "AI News Scout replaced the folder digest as the sample. 53 test files, 878 tests, and 41 installed-shell proofs passed: the agent waits to be asked, Run now is accepted through the audited bridge, telemetry reaches Runs, and a live 30-item digest reached DASH with every item cited and a grounded verdict, drawn on the run detail page. ADR 0003 records the artifact contract, the runless task, and the deliberate omission of the registry's scheduled_trigger step."
     },
     {
+      "id": "MAR-464",
+      "lifecycle": "proven",
+      "linear_status": "Done",
+      "commit": "b9f5f07",
+      "proof": {
+        "command": "pnpm verify"
+      },
+      "note": "observed_at now advances only when the decision context does, so a control is no longer refused as stale_snapshot because a poll ticked. The MAR-457 Run now re-read is deleted rather than generalised: it minted a fresh idempotency key per press, and the key is derived from observed_at. Installed smoke executed on the real Electron shell after PR #28 (MAR-457) merged to master and the two stale dev Electron processes were closed: pnpm typecheck clean, pnpm test 54 files/891 passed/8 skipped, pnpm verify:shell all proofs passed with zero failures. Proof 3g showed the held snapshot unmoved across two poll intervals despite the runner minting a later observed_at, and a read-only approval reaching adapter_unavailable rather than stale_snapshot; proof 3h showed a genuinely advanced context still refused as stale_snapshot. See ADR 0003 amendment 1."
+    },
+    {
       "id": "MAR-456",
       "lifecycle": "planned",
       "linear_status": "Backlog",

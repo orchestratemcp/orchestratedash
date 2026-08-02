@@ -49,3 +49,55 @@ Every surface attributes the claim to the agent — "it says this is what it wil
 An artifact is a first-class thing a run produces, which is what makes citations, a stable id and a grounding verdict expressible at all. Manual-first becomes a shape DASH supports rather than one it fights, and the conservative no-run default means an agent with irreversible components has to earn its start button.
 
 Four defects reached the installed smoke on its first honest run and none of them reached a unit test: no caller drained the artifact buffer, a runless task read as an unknown target, `observed_at` churned every five seconds against an exact-match check, and two of the proofs were themselves wrong. That is the second time MAR-454's argument has paid for itself, and it is the reason the smoke gates `pnpm verify` rather than sitting beside it.
+
+## Amendment 1 (MAR-464): what `observed_at` binds
+
+Status: Accepted
+
+Date: 2026-08-02
+
+MAR-457 fixed the third of those defects only for Run now, by re-reading the snapshot from DASH immediately before issuing, and deliberately left approve and reject alone — because *"the world changed since you looked, look again"* is a property worth having in front of an irreversible action. That was the right instinct and the wrong repair. This amendment answers the question it left open.
+
+### The question
+
+`observed_at` was doing two jobs at once. It was the **identity of a snapshot**, and it was the evidence that **the decision context has not changed**. Those are the same thing only if a snapshot's identity changes when and only when its content does — and it did not. `runner/state.ts` mints the value on every build, `electron/agent-adapters.ts` rebuilds every five seconds, so what the field actually identified was *the poll*.
+
+So the binding was wrong, and a timestamp that moves on a timer is the wrong shape for it. **The decision, and the thing now bound, is the decision context.**
+
+### Why not simply widen the re-read
+
+Because it removes a safety property nobody decided to remove, and it removes a second one quietly.
+
+The visible cost is the obvious one: a control that re-reads its own freshness token immediately before acting cannot detect that the world moved, because it has just adopted whatever the world now says. In front of an irreversible action that is the whole check.
+
+The invisible cost is worse. `idempotencyKey` hashes `observed_at`, deliberately — that is what lets a double click collapse into one command while a *deliberate* second attempt against a new snapshot is still allowed. Re-reading before every command mints a fresh value per press by construction, so every press derives a new key and the anti-duplication defence stops existing. The workaround was defensible on Run now only because starting a manual-first agent is not irreversible and the agent refuses a concurrent run itself. Generalised to approve and reject, it would have bought a duplicated irreversible action.
+
+That defence was already degrading, which is the part nobody had noticed. Under a value that moved every five seconds, two presses either side of a poll derived *different* keys — so the protection held for a fast double click and lapsed for a slow one. It was masked only because the staleness check refused the second press first, for the wrong reason.
+
+### The decision
+
+`observed_at` advances when the **decision context** advances, and not otherwise.
+
+`decisionIdentity` in `lib/agent-dom/enforce.ts` reduces a snapshot to the facts a control decision reads — status, connections, runs *by id and status*, tasks, choices, actions, approval requests and decisions, and `plan_vs_actual`. `lib/agent-dom/store.ts` carries the stored `observed_at` forward whenever that identity is unchanged. The enforcement comparison is untouched and still exact.
+
+Three exclusions are load-bearing rather than incidental:
+
+- **`memory` and `audit_events`** grow while an agent works. If they counted, this would fix the idle case and leave the busy one broken — an agent writing an audit row would invalidate a pending approval, which is the version a user would still meet.
+- **A run's `progress`, `current_step`, `started_at` and `finished_at`** tick continuously through exactly the run an approval is usually blocking, and none of them changes whether any control is valid. `status` carries every transition that does.
+- **Key order.** The digest is canonical at every depth, because an agent that rebuilt a task from a `Map` between polls would otherwise churn the identity with identical content — the original defect returning through a door no test would obviously be about.
+
+### This is not DASH editing a document it received
+
+The content is stored exactly as it arrived. What is declined is the *advance of an identity* for content that did not change, and the value written is always one the runner itself minted for this same context. It can only ever be **older** than the arriving one.
+
+That direction is the argument. The invariant `runner/state.ts` protects is that an agent must not be able to make old state look current; freezing moves the value the other way, so the invariant is preserved rather than traded away. The runner's own latest timestamp is kept beside it as `runner_observed_at` and is what orders two snapshots — using a frozen value to answer *"is this older than what I hold?"* would have let a genuinely stale document roll a resolved approval back to pending, which is the one thing the out-of-order guard exists to refuse.
+
+### Consequences
+
+The workaround is removed rather than generalised, so there is one freshness rule again instead of one rule and an exception. Approvals survive being read, because looking is not an event. `stale_snapshot` starts meaning what it says. Idempotency works for the first time, including across a poll.
+
+The detail page's `observed_at` row is relabelled **"State last changed"**: it no longer answers *"when did DASH last look"*, and left as "Last agent snapshot" it would read as *"DASH has stopped checking"* the moment an idle agent sat still. When DASH last looked is a separate question and `useLiveView` already answers it during a run.
+
+One honest cost: a change to the projection is a one-off advance of `observed_at` for every stored snapshot, so any control drawn across an upgrade is refused once. That is why `decision_identity` is stored rather than recomputed on read — recomputing would silently reinterpret old bytes under a new definition, and being refused once after an upgrade is the truthful outcome.
+
+Proved by smoke proofs **3g** and **3h** on the installed shell, paired deliberately: 3g that two poll intervals do not move what a control is bound to, 3h that a context which genuinely moved is still refused. `tests/decision-identity.test.ts` is the fast explanation of a failure, not the evidence — this defect passed 878 unit tests, and the harness is what found it.
