@@ -60,6 +60,30 @@ See ADR 0002 amendment 1, which also corrects this ADR's account of the defect �
 the raw-token path required a manifest to declare `technical.environment_name`
 on its OAuth field, and no shipped example does.
 
+Wave 2's remaining work: MAR-468 (the real-Google proof that would promote
+MAR-458 to `proven`), MAR-469 (provider-side draft creation), MAR-470 (MCP
+connectors through the same card), MAR-471 (bring-your-own Google client),
+MAR-467 (a brokered request DASH never received leaves no trace).
+
+## Both halves of the release signal are currently unreliable
+
+Nothing can honestly reach `proven` until these two are fixed, and they were
+found by MAR-458's session rather than by the gates themselves.
+
+**MAR-465 (Urgent).** The CI `verify` job has been red on master since
+2026-08-01, through three merges. It fails in `state:check` because
+`actions/checkout@v4` shallow-clones and no recorded commit is then an ancestor
+of HEAD — so `pnpm verify` never reaches typecheck or the suite. A real
+regression would have looked identical. The Windows `shell-smoke` job is
+unaffected and has been passing, so the installed proofs are real; it is the
+Linux gate that is blind.
+
+**MAR-466.** MAR-464's `observed_at` proofs (3c/3d/3g) fail on the installed
+smoke, intermittently, and reproduce on master with none of MAR-458's code. The
+held snapshot advances by exactly one poll interval — the defect MAR-464 fixed
+and recorded as proven at `b9f5f07`. So a proof recorded as proven can fail
+later on the same commit, which is worth more attention than the failure itself.
+
 ## UX principle
 
 The home view answers three questions: what can I run, what is happening now, and what needs my decision? Connections are capabilities with scopes and receipts, not a wall of OAuth settings. Every run should make inputs, actions, outputs, gates, and failures inspectable.

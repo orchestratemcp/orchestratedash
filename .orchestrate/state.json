@@ -11,7 +11,7 @@
     "index": ".orchestrate/state.json"
   },
   "git": {
-    "evidence_base_commit": "4cd2e8b"
+    "evidence_base_commit": "72120d1"
   },
   "issues": [
     {
@@ -140,10 +140,28 @@
       "note": "No longer blocks MAR-457. Owned by the OrchestrateKit registry, so no DASH commit or lifecycle is claimed for it here. Open question it still owns: the registry route pairs public_feed_fetch with scheduled_trigger, which DASH deliberately omits while the agent is manual-only. See ADR 0003."
     },
     {
+      "id": "MAR-465",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "note": "URGENT. The CI verify job has been red on master since 2026-08-01 17:21, through the merges of MAR-457, MAR-464 and MAR-458. It fails in state:check, not in code: actions/checkout@v4 shallow-clones, so no recorded commit is an ancestor of HEAD and every issue reports INVALID at once. pnpm verify never reaches typecheck or the suite. The Windows shell-smoke job is unaffected and has been passing, so the installed proofs are real; it is the Linux gate that is blind. Fix is fetch-depth: 0 on both jobs, plus a check that a genuinely broken packet still fails."
+    },
+    {
+      "id": "MAR-466",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "note": "MAR-464's observed_at proofs 3c/3d/3g fail on the installed smoke, intermittently: two of four local runs on the MAR-458 branch, and reproduced on master at 242d520 with none of MAR-458's code. held is rendered + 5s, one poll interval, which is the defect MAR-464 fixed and recorded proven at b9f5f07. Not caused by MAR-458. Until this is resolved pnpm verify cannot go green, so nothing can honestly reach proven."
+    },
+    {
+      "id": "MAR-468",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "note": "The remaining step to promote MAR-458 to proven: the same round trip against a real Google account rather than the loopback provider proof 7 binds. Needs a human at a consent screen, so it is a dated manual proof and must not be added to pnpm verify. Google Testing-mode data-scope grants expire after seven days, so record the date."
+    },
+    {
       "id": "MAR-458",
       "lifecycle": "merged",
-      "linear_status": "Backlog",
-      "commit": "4cd2e8b",
+      "linear_status": "In Progress",
+      "commit": "72120d1",
       "note": "The permission broker's first slice. Raw access-token delivery is closed: deliverableSecretFields cannot return an OAuth target and assertNoBrokeredCredentials refuses the spawn if one appears. An agent invokes gmail.search and gmail.message.read, whose provider URL DASH constructs and whose response DASH projects, and writes a LOCAL draft artifact; no send operation and no provider-side draft creation exist, so gmail.compose grants nothing. A grant is the intersection of what DASH implements, what the manifest declared and what the provider issued, re-resolved on every call so a disconnect binds at the agent's next request. Not proven: the installed proof runs against a loopback provider because Google needs an account, a human at a consent screen and a restricted-scope verification DASH does not have, so proof 7 establishes the boundary and not Gmail's API. Also not done: the compiled Google client id is disclosed on the capability card rather than removed, and BYO-client onboarding stays where ADR 0002's rollout puts it. See ADR 0002 amendment 1, which corrects this ADR's own account of the defect."
     }
   ]
