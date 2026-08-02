@@ -1316,6 +1316,11 @@ if (recorded !== null) {
                             artifact_id?: string;
                             title?: string;
                             items?: unknown[];
+                            sources_fetched?: Array<{
+                              source_name?: string;
+                              source_url?: string;
+                              status?: string;
+                            }>;
                           }>;
                           grounding?: {
                             verdict?: string;
@@ -1380,6 +1385,45 @@ if (recorded !== null) {
                 digest.grounding.items_total === LOCAL_TOTAL &&
                 digest.grounding.items_cited === LOCAL_TOTAL,
               { expected_items: LOCAL_TOTAL, grounding: digest?.grounding },
+            );
+          }
+
+          /*
+           * ADR 0004's rule, enforced rather than trusted.
+           *
+           * Everything above is only network-independent while the sources this
+           * run actually read are local, and "actually read" is the operative
+           * word: `sources.json` is written a hundred lines up and could be
+           * changed, defaulted around, or quietly ignored. This reads the
+           * addresses back out of the digest DASH received, which is the only
+           * place that records where the bytes really came from.
+           *
+           * Without it the fix is a convention, and a convention is what decays.
+           * MAR-473 cost a day of CI archaeology; the next person to point this
+           * gate at a live feed should be told so by a proof, not by an
+           * intermittent red X three weeks later.
+           */
+          const fetchedUrls = (digest?.artifact.sources_fetched ?? []).map(
+            (source) => source.source_url ?? "",
+          );
+          const offMachine = fetchedUrls.filter((url) => {
+            try {
+              const host = new URL(url).hostname;
+              return host !== "127.0.0.1" && host !== "localhost" && host !== "::1";
+            } catch {
+              return true;
+            }
+          });
+          if (completed === null) {
+            skip(
+              "6m. the mandatory gate reached no host outside this machine",
+              "6g produced no run whose sources could be read back",
+            );
+          } else {
+            check(
+              "6m. the mandatory gate reached no host outside this machine",
+              fetchedUrls.length === 3 && offMachine.length === 0,
+              { fetched: fetchedUrls, off_machine: offMachine },
             );
           }
 
