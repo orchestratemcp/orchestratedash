@@ -613,3 +613,155 @@ export function describeHostingFailure(
       };
   }
 }
+
+/* ---------------------------------------------------------------------- *
+ * The permission broker (MAR-458)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What to say when a brokered request was refused.
+ *
+ * The agent gets a code; the *person* gets this. Both halves matter and they are
+ * different audiences: an agent needs to know whether retrying is worth it, and a
+ * user needs to know whether something of theirs needs doing.
+ *
+ * `actor` is what the split turns on. A refusal the user can fix — a connection
+ * they have not made, a permission they declined, a sign-in that was withdrawn —
+ * is theirs. Everything else is DASH's or the provider's, and saying so is what
+ * stops the Connections page reading like a list of the user's mistakes.
+ *
+ * **`not_granted` and `unknown_operation` are deliberately the same words.** From
+ * a person's side there is no difference worth drawing: an agent asked to do
+ * something it is not allowed to do, DASH said no, and nothing about that is
+ * theirs to fix. Splitting them would mean explaining DASH's operation catalogue
+ * to somebody who did not ask about it, and one of the two sentences would have
+ * to name an operation id — which `lib/copy/identifiers.ts` forbids and which
+ * would tell them nothing anyway.
+ */
+export function describeBrokerRefusal(
+  refusal:
+    | "unknown_operation"
+    | "not_granted"
+    | "unknown_connection"
+    | "not_connected"
+    | "revoked"
+    | "permission_missing"
+    | "invalid_input"
+    | "duplicate_request"
+    | "rate_limited"
+    | "provider_unavailable"
+    | "provider_refused"
+    | "vault_unavailable"
+    | "broker_error",
+  context: { service: string; agent: string },
+): Recovery {
+  const { service, agent } = context;
+
+  switch (refusal) {
+    case "unknown_operation":
+    case "not_granted":
+      return {
+        headline: `${agent} asked to do something with ${service} that it is not allowed to do.`,
+        meaning: `DASH refused it. Nothing was read and nothing was changed, and the permissions you approved are unchanged.`,
+        next_action: `Nothing to do. If this keeps happening, whoever built ${agent} is asking for access it was not given.`,
+        actor: "dash",
+      };
+
+    case "unknown_connection":
+      return {
+        headline: `${agent} asked about an account it never said it would use.`,
+        meaning:
+          "DASH only lets an agent reach the connections its own description lists, so this was refused before anything was read.",
+        next_action: `Nothing to do. This needs a fix from whoever built ${agent}.`,
+        actor: "dash",
+      };
+
+    case "not_connected":
+      return {
+        headline: `${agent} needs ${service}, and it is not connected.`,
+        meaning: `DASH has no sign-in for ${service}, so there was nothing to work with.`,
+        next_action: `Connect ${service}.`,
+        actor: "user",
+      };
+
+    case "revoked":
+      // The one refusal that must never read as "try again". Somebody ended
+      // this access, and that somebody may have been the user on purpose —
+      // `CredentialState.revoked` makes the same argument at more length.
+      return {
+        headline: `The sign-in DASH holds for ${service} is no longer accepted.`,
+        meaning:
+          "It was withdrawn, or it expired. Retrying will not help, and until it is reconnected the agent cannot use this account at all.",
+        next_action: `Reconnect ${service} if you still want ${agent} to use it.`,
+        actor: "user",
+      };
+
+    case "permission_missing":
+      return {
+        headline: `${service} is connected, but not with everything ${agent} needs.`,
+        meaning:
+          "Something it was asked to do needs a permission that was not granted when you signed in.",
+        next_action: `Reconnect ${service} and approve everything on the sign-in screen.`,
+        actor: "user",
+      };
+
+    case "invalid_input":
+      return {
+        headline: `${agent} asked ${service} for something DASH could not make sense of.`,
+        meaning: "The request was refused before it was sent, so nothing was read.",
+        next_action: `Nothing to do. This needs a fix from whoever built ${agent}.`,
+        actor: "dash",
+      };
+
+    case "duplicate_request":
+      return {
+        headline: `${agent} sent the same request twice.`,
+        meaning: "DASH answered it once and refused the repeat, so nothing happened twice.",
+        next_action: "Nothing to do.",
+        actor: "dash",
+      };
+
+    case "rate_limited":
+      return {
+        headline: `${agent} is asking for ${service} faster than DASH will allow.`,
+        meaning:
+          "DASH limits how much of an account an agent can reach in a short time. The extra requests were refused, and they are in this connection's history below.",
+        next_action: `Look at what it has been doing. If it is not what you expected, disconnect ${service}.`,
+        actor: "user",
+      };
+
+    case "provider_unavailable":
+      return {
+        headline: `DASH could not reach ${service}.`,
+        meaning: "This computer may be offline, or the service may be having trouble.",
+        next_action: "Try again in a few minutes.",
+        actor: "user",
+      };
+
+    case "provider_refused":
+      return {
+        headline: `${service} refused the request.`,
+        meaning:
+          "The sign-in is still valid — the service said no to this particular request. DASH does not know why, and does not guess.",
+        next_action: "Try again later.",
+        actor: "user",
+      };
+
+    case "vault_unavailable":
+      return {
+        headline: `DASH could not open the place it keeps the ${service} sign-in.`,
+        meaning:
+          "The sign-in is not lost. This computer's secure storage would not open just now, so DASH could not read it.",
+        next_action: "Unlock your keyring, then let the agent try again.",
+        actor: "user",
+      };
+
+    case "broker_error":
+      return {
+        headline: `DASH could not complete a ${service} request for ${agent}.`,
+        meaning: "Something went wrong on DASH's side. Nothing was read and nothing was changed.",
+        next_action: "Try again. If it keeps happening, this is a fault in DASH.",
+        actor: "dash",
+      };
+  }
+}
