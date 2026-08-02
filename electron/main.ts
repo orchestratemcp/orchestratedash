@@ -44,9 +44,12 @@ import {
   type AgentCommandInput,
 } from "../lib/agent-dom/runner";
 import { heldCredentials, performConnectionAction } from "../lib/connection-actions";
-import { deliverableFields, type CredentialTarget } from "../lib/connection-credentials";
+import {
+  deliverableFields,
+  deliverableSecretFields,
+  type CredentialTarget,
+} from "../lib/connection-credentials";
 import type { ConnectionSourceManifest } from "../lib/connections";
-import { parseOAuthCredential } from "../lib/oauth/credential";
 import { closeDb, dataDir } from "../lib/db";
 import type { HandoffPorts } from "../lib/handoff-flow";
 import { findDeepLink } from "../lib/shell/deep-link";
@@ -91,7 +94,8 @@ import {
   promptForSecret,
   registerCredentialChannels,
 } from "./credential-prompt";
-import { mintAccessToken, providerOperations } from "./oauth-session";
+import { providerOperations } from "./oauth-session";
+import { startBroker } from "./broker-host";
 import { ensureRunner, runnerFetch, stopRunner, type RunnerHandle } from "./runner-process";
 import { assertSampleTemplatesPresent, offerSampleAgent } from "./sample-agent";
 import {
@@ -114,6 +118,9 @@ const DEFAULT_RENDERER_URL = "http://127.0.0.1:3000";
 
 /** Stops the Agent DOM state poller. Null when no runner was available. */
 let stopPolling: (() => void) | null = null;
+
+/** Stops the permission broker's loop (MAR-458). Null when there is no runner. */
+let stopBroker: (() => void) | null = null;
 
 /**
  * The handoff ports, once the runner's fate is known (MAR-428).
@@ -472,7 +479,16 @@ export function registerReadChannel(): void {
  * listing which connections resolved would be a map of this machine's
  * credentials sitting in a file.
  */
-async function collectSpawnCredentials(agentId: string): Promise<Record<string, string>> {
+/**
+ * Exported for `electron/smoke.ts` (MAR-458), and for one reason.
+ *
+ * Proof 7 asserts that no provider token reaches a spawned agent's environment.
+ * That assertion is worth nothing if the harness assembles the environment
+ * itself: it would be proving a copy of this function rather than this one. So
+ * the proof calls the real thing, and what it hands the runner is exactly what
+ * `runnerLifecycle` hands it.
+ */
+export async function collectSpawnCredentials(agentId: string): Promise<Record<string, string>> {
   const manifest = readAgentManifest(agentId) as ConnectionSourceManifest | null;
   if (manifest === null) {
     return {};
@@ -481,36 +497,67 @@ async function collectSpawnCredentials(agentId: string): Promise<Record<string, 
   const store = secureStore();
   const credentials: Record<string, string> = {};
 
-  for (const field of deliverableFields(agentId, manifest)) {
+  // MAR-458 changed what this iterates. It used to be `deliverableFields`, which
+  // includes OAuth targets, and the loop minted a provider access token for each
+  // one and put it in the child's environment.
+  //
+  // That is the defect ADR 0002 was written about. The token was short-lived and
+  // scoped, which sounds like a boundary and is not one: for `gmail.compose` it
+  // could send mail, while the manifest declared only draft creation and the
+  // Connection Center said so — "a contract claim, not a technical firewall", in
+  // the ADR's words. Every guard around it was a promise about what the agent
+  // would choose to do with a credential it held.
+  //
+  // `deliverableSecretFields` cannot return an OAuth target, so the only
+  // credentials that reach a child are the ones a user typed for a service DASH
+  // has no client for. Provider grants are reached through the broker instead:
+  // named operations, checked per call, audited, and revocable while the agent is
+  // running. See `lib/broker/` and `assertNoBrokeredCredentials` below.
+  for (const field of deliverableSecretFields(agentId, manifest)) {
     try {
-      const stored = await store.get(field.secret_name);
-
-      if (field.kind === "oauth") {
-        // MAR-446. What is in the vault is a refresh token, and it does not go
-        // anywhere near a child process: it is DASH's durable grant on the
-        // user's account, and an agent that had it could keep minting access
-        // long after DASH stopped holding it. What the agent gets is a fresh
-        // access token, minted here, good for about an hour, and dead when the
-        // provider says so.
-        const credential = parseOAuthCredential(stored);
-        if (credential === null) {
-          continue;
-        }
-        const access = await mintAccessToken(credential);
-        credentials[field.environment_name] = access.access_token;
-        continue;
-      }
-
-      credentials[field.environment_name] = stored;
+      credentials[field.environment_name] = await store.get(field.secret_name);
     } catch {
-      // `not_found` on first run, `vault_locked` on a machine whose keychain is
-      // shut, and for OAuth a grant the provider has stopped honouring. All of
-      // them mean "DASH has nothing to hand over right now", and all of them are
-      // already reported on the Connection Center, where the user asked.
+      // `not_found` on first run and `vault_locked` on a machine whose keychain
+      // is shut. Both mean "DASH has nothing to hand over right now", and both
+      // are already reported on the Connection Center, where the user asked.
     }
   }
 
+  // Belt and braces on DASH's own code. `deliverableSecretFields` is the filter;
+  // this is the assertion, in the shape `runner/supervisor.ts` uses for the
+  // runner's own token — the difference between an invariant a reviewer has to
+  // notice and one the process refuses to violate. A future change that widened
+  // the filter would fail here rather than shipping a token into an agent.
+  assertNoBrokeredCredentials(agentId, manifest, credentials);
+
   return credentials;
+}
+
+/**
+ * Fail loudly rather than start an agent holding a provider credential
+ * (MAR-458, ADR 0002 invariants 1 and 2).
+ *
+ * Checks the assembled map against the manifest's *own* declaration of where an
+ * OAuth credential would have been delivered. That is the check worth having: it
+ * does not try to recognise a token by looking at one — which is the guessing
+ * `lib/connections.ts` refuses to do, and which no pattern could do reliably
+ * anyway — it asks the manifest which environment names are OAuth delivery
+ * targets and refuses if any of them has a value.
+ */
+function assertNoBrokeredCredentials(
+  agentId: string,
+  manifest: ConnectionSourceManifest,
+  credentials: Record<string, string>,
+): void {
+  for (const field of deliverableFields(agentId, manifest)) {
+    if (field.kind === "oauth" && Object.hasOwn(credentials, field.environment_name)) {
+      throw new Error(
+        `Refusing to start "${agentId}" with a provider credential in its environment: ` +
+          `"${field.environment_name}" is a brokered connection, and a brokered connection is ` +
+          `reached through named operations rather than by holding a token.`,
+      );
+    }
+  }
 }
 
 async function runnerLifecycle(
@@ -720,6 +767,12 @@ if (typeof app !== "undefined") {
       stopPolling = startPolling(channels);
     }
 
+    // MAR-458. Its own loop rather than a step inside the poll above: an agent
+    // is *blocked* on a brokered answer, and five seconds is right for "is this
+    // agent still alive" and absurd for a request somebody is waiting on. See
+    // `electron/broker-host.ts`.
+    stopBroker = startBroker(runner);
+
     registerCommandChannel(channels, runner);
     registerReadChannel();
     // MAR-383. The third and last `ipcMain.handle` group. Registered here beside
@@ -772,6 +825,11 @@ if (typeof app !== "undefined") {
     // is deliberately left alone.
     stopPolling?.();
     stopPolling = null;
+    // The broker stops with DASH, which is the honest behaviour rather than a
+    // limitation: a process that could reach a user's mailbox after they closed
+    // the app they granted it through is exactly what ADR 0002 is about.
+    stopBroker?.();
+    stopBroker = null;
   });
 
   app.on("will-quit", () => {

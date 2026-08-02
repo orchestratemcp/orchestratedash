@@ -709,3 +709,94 @@ button:disabled {
     transition: none;
   }
 }
+
+/* The permission card (MAR-458, ADR 0002).
+   Set apart from the checklist row it sits in, because it answers a different
+   question: the row is "is this connected", the card is "what may it do, who
+   holds the sign-in, and what has it actually done". */
+.permission-card {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.permission-card h4 {
+  margin: 0.9rem 0 0.4rem;
+  font-size: 0.9rem;
+}
+
+.permission-card > p {
+  margin: 0 0 0.4rem;
+}
+
+.permission-list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.permission-list li + li {
+  margin-top: 0.3rem;
+}
+
+/* Two columns so account, approval date and last use read as a receipt rather
+   than as prose. */
+.permission-receipt {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0.9rem 0 0;
+  font-size: 0.9rem;
+}
+
+.permission-receipt dt {
+  color: var(--muted);
+}
+
+.permission-receipt dd {
+  margin: 0;
+}
+
+.permission-history {
+  margin-top: 0.9rem;
+  font-size: 0.9rem;
+}
+
+.permission-history ul {
+  list-style: none;
+  padding-left: 0;
+  margin: 0.5rem 0;
+}
+
+.permission-history li + li {
+  margin-top: 0.4rem;
+}
+
+/* A draft DASH is holding. The `pre` keeps the agent's own line breaks and stops
+   one very long line stretching the page; see app/_components/digest.tsx. */
+.draft-headers {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 1rem;
+  margin: 1rem 0;
+}
+
+.draft-headers dt {
+  color: var(--muted);
+}
+
+.draft-headers dd {
+  margin: 0;
+}
+
+.draft-body {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.9rem 1rem;
+  background: var(--panel);
+  white-space: pre-wrap;
+  overflow-x: auto;
+  font-family: inherit;
+}

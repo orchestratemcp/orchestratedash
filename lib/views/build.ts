@@ -22,7 +22,13 @@
  */
 
 import { analyzeGrounding } from "../analyze";
+import { isDigestArtifact } from "../contracts";
 import type { ManifestPermissions, PermissionGrant } from "../contracts";
+import { brokeredField, requestedOperations } from "../broker/grant";
+import { operationById } from "../broker/operations";
+import { describeClientOwner, describeCustody } from "../broker/providers";
+import { listReceipts, readBrokerAudit } from "../broker/store";
+import { describeBrokerRefusal } from "../copy/recovery";
 import { heldCredentials } from "../connection-actions";
 import { connectableFields } from "../connection-credentials";
 import { describeStoreDamage } from "../copy/recovery";
@@ -59,6 +65,8 @@ import {
 import type {
   AgentOriginView,
   AgentsView,
+  BrokerCapabilityView,
+  BrokerRowView,
   ConnectionsView,
   PlannedStepView,
   RunView,
@@ -186,7 +194,15 @@ export function runView(
     manifest_imported: manifest !== undefined,
     unplanned_component_ids: unplanned,
     artifacts,
-    grounding: artifacts[0] === undefined ? null : analyzeGrounding(artifacts[0]),
+    // Only a digest is graded (MAR-458). A draft has no items and no
+    // `sources_fetched`, so there is nothing to check its citations against —
+    // and a null verdict renders as no chip, which is the honest outcome. The
+    // independent record of what a draft's agent was actually allowed to read is
+    // the broker's audit trail, not a grounding score.
+    grounding:
+      artifacts[0] === undefined || !isDigestArtifact(artifacts[0])
+        ? null
+        : analyzeGrounding(artifacts[0]),
   };
 }
 
@@ -239,7 +255,11 @@ function credentialStatus(
     status.set(target.connection_id, {
       field_id: target.field_id,
       masked_hint: held.get(`${target.connection_id} ${target.field_id}`) ?? null,
-      deliverable: target.environment_name !== null,
+      // MAR-458: an OAuth target is never delivered, whatever its manifest
+      // named. This used to be `environment_name !== null` alone, which was the
+      // same answer until the broker existed and is now a claim about the agent's
+      // environment that would not be true.
+      deliverable: target.kind === "secret" && target.environment_name !== null,
       kind: target.kind,
     });
   }
@@ -247,10 +267,105 @@ function credentialStatus(
   return status;
 }
 
+/** How many brokered calls one connection row shows. A screen, not an export. */
+const BROKER_HISTORY_LIMIT = 20;
+
+/**
+ * The agent's own name for itself, for recovery copy that addresses it by name.
+ *
+ * Falls back to the id, which is the honest degradation: a sentence reading
+ * "ai-news-scout asked to do something it is not allowed to do" is worse than
+ * one naming a display name and much better than one naming nothing.
+ */
+function displayNameOf(manifest: ConnectionSourceManifest, fallback: string): string {
+  const agent = (manifest as { agent?: { display_name?: unknown; name?: unknown } }).agent;
+  const display = agent?.display_name ?? agent?.name;
+  return typeof display === "string" && display.length > 0 ? display : fallback;
+}
+
+/**
+ * The permission card for one connection row (MAR-458, ADR 0002 invariant 4).
+ *
+ * Null for anything DASH does not broker, which is the honest absence: a typed
+ * secret is handed to the agent, and a card describing narrow operations for one
+ * would be describing a boundary that is not there.
+ *
+ * Everything comes from the manifest or the store, and nothing from the vault —
+ * `heldCredentials` makes the same choice for the same reason, and the
+ * consequence is that this card shows the *receipt* of the grant rather than a
+ * live re-resolution of it. That is the right trade for a render: the live
+ * resolution happens per brokered call, in `lib/broker/execute.ts`, so a stale
+ * card can only ever show a user out-of-date wording and can never grant
+ * anything.
+ */
+function brokerCard(
+  agentName: string,
+  displayName: string,
+  manifest: ConnectionSourceManifest,
+  connectionId: string,
+  receipts: ReturnType<typeof listReceipts>,
+  audit: ReturnType<typeof readBrokerAudit>,
+): BrokerRowView | null {
+  const field = brokeredField(manifest, connectionId);
+  if (!field.ok) {
+    return null;
+  }
+  const { profile } = field.field;
+
+  const describe = (id: string): BrokerCapabilityView => {
+    const operation = operationById(id);
+    return operation === null
+      ? // A receipt naming an operation this build no longer has. Said plainly
+        // rather than dropped: an approval the user gave for something DASH has
+        // since removed is a fact about their account worth showing.
+        { id, label: "An action this version of DASH no longer offers", access: "read" }
+      : { id: operation.id, label: operation.label, access: operation.access };
+  };
+
+  const receipt = receipts.find((entry) => entry.connection_id === connectionId) ?? null;
+  const rows = audit.filter((entry) => entry.connection_id === connectionId);
+
+  return {
+    custody_sentence: describeCustody(profile),
+    client_sentence: describeClientOwner(profile),
+    requested: requestedOperations(manifest, connectionId).map((operation) => ({
+      id: operation.id,
+      label: operation.label,
+      access: operation.access,
+    })),
+    receipt:
+      receipt === null
+        ? null
+        : {
+            account_hint: receipt.account_hint,
+            granted_at: receipt.granted_at,
+            last_used_at: receipt.last_used_at,
+            capabilities: receipt.operations.map(describe),
+          },
+    recent: rows.slice(0, BROKER_HISTORY_LIMIT).map((entry) => ({
+      label: describe(entry.operation).label,
+      decision: entry.decision,
+      refusal_headline:
+        entry.refusal === null
+          ? null
+          : describeBrokerRefusal(entry.refusal, { service: profile.label, agent: displayName })
+              .headline,
+      result_count: entry.result_count,
+      decided_at: entry.decided_at,
+    })),
+  };
+}
+
 export function connectionsView(store: StoreShape = readStore()): ConnectionsView {
   return {
     agents: listConnectionCapableAgents(store).map(({ name, manifest }) => {
       const status = credentialStatus(name, manifest);
+      // Read once per agent rather than once per row: both are indexed by agent
+      // and a row-level read would be one query per connection on every render.
+      const receipts = listReceipts(name);
+      const audit = readBrokerAudit(name, BROKER_HISTORY_LIMIT * 4);
+      const displayName = displayNameOf(manifest, name);
+
       return {
         name,
         rows: deriveConnectionRequirements(manifest).map((row) => {
@@ -262,6 +377,7 @@ export function connectionsView(store: StoreShape = readStore()): ConnectionsVie
             masked_hint: credential?.masked_hint ?? null,
             delivered_to_agent: credential?.deliverable ?? false,
             credential_kind: credential?.kind ?? null,
+            broker: brokerCard(name, displayName, manifest, row.connection_id, receipts, audit),
           };
         }),
       };
@@ -411,7 +527,8 @@ export function workspaceView(
     goal: workspaceManifest.agent.goal,
     snapshot: stored === null ? null : workspaceSnapshot(workspaceManifest, stored, now),
     latest_digest: digest,
-    latest_digest_grounding: digest === null ? null : analyzeGrounding(digest),
+    latest_digest_grounding:
+      digest === null || !isDigestArtifact(digest) ? null : analyzeGrounding(digest),
     permissions: declaredPermissions(manifest),
   };
 }

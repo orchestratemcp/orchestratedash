@@ -36,6 +36,8 @@
 
 import type { CredentialTarget, CredentialTargetRefusal } from "./connection-credentials";
 import { resolveCredentialTarget } from "./connection-credentials";
+import { recordReceipt, forgetReceipt } from "./broker/store";
+import { resolveGrant } from "./broker/grant";
 import type { ConnectionSourceManifest, ManifestConnection } from "./connections";
 import {
   describeAuthorizationFailure,
@@ -341,7 +343,7 @@ export async function performConnectionAction(
   const backing = deps.store.describeBacking();
 
   if (credential.kind === "oauth") {
-    return performOAuthAction(action, credential, backing.label, deps);
+    return performOAuthAction(action, credential, backing.label, manifest, deps);
   }
 
   if (action === "disconnect") {
@@ -500,6 +502,8 @@ async function performOAuthAction(
   action: ConnectionActionName,
   credential: CredentialTarget,
   vaultLabel: string,
+  /** The agent's manifest, for resolving the grant a receipt describes (MAR-458). */
+  manifestForGrant: ConnectionSourceManifest,
   deps: ConnectionActionDeps,
 ): Promise<ConnectionActionResult> {
   const target: ConnectionActionTarget = {
@@ -557,6 +561,12 @@ async function performOAuthAction(
       }
     }
     forgetSecretReference(target.agent_id, target.connection_id, target.field_id);
+    // MAR-458. The receipt goes with the credential, and after it: a receipt
+    // describing access DASH no longer holds would outlive the thing it is a
+    // receipt for. The audit rows deliberately stay — they are the record of
+    // what was done while the access existed, and a disconnect that erased them
+    // would delete exactly the history a suspicious user disconnected to check.
+    forgetReceipt(target.agent_id, target.connection_id);
 
     return {
       ok: true,
@@ -695,6 +705,25 @@ async function performOAuthAction(
     masked_hint: hint,
     backend: deps.store.describeBacking().backend,
   });
+
+  // MAR-458, ADR 0002 invariant 4: the moment a grant exists is the moment a
+  // receipt for it should. Written from the grant the broker itself would
+  // resolve, so what the card lists is what a request would actually be allowed
+  // to do — rather than a second derivation that could disagree with it.
+  //
+  // A grant that resolves to nothing writes no receipt. The connection is real
+  // and the user did approve something; what they approved reaches no action, and
+  // `missingPermissions` below is already the sentence for that.
+  const resolvedGrant = resolveGrant(
+    target.agent_id,
+    manifestForGrant,
+    target.connection_id,
+    stored,
+    credential.secret_name,
+  );
+  if (resolvedGrant.ok) {
+    recordReceipt(resolvedGrant.grant, new Date().toISOString());
+  }
 
   const missing = missingPermissions(stored);
   if (missing.length > 0) {

@@ -138,6 +138,103 @@ const GOOGLE: OAuthProvider = {
 
 const PROVIDERS: readonly OAuthProvider[] = [GOOGLE];
 
+/* ---------------------------------------------------------------------- *
+ * The loopback proof provider (MAR-458)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The origin the installed proof harness serves a fake provider on, or null.
+ *
+ * **The single guard**, imported by `lib/broker/providers.ts` rather than
+ * restated there. A security check written twice is a security check that can be
+ * relaxed once, and this one decides whether DASH will send a token exchange
+ * somewhere other than Google.
+ *
+ * Three things must all hold, and the second is the one that does the work:
+ *
+ * 1. `DASH_BROKER_PROOF_ORIGIN` is set **in the DASH process**. The `DASH_`
+ *    namespace is refused into every child environment by
+ *    `runner/supervisor.ts`, twice over, so a hosted agent can neither set this
+ *    for itself nor read one that is set.
+ * 2. The value parses as a URL whose scheme is `http:` and whose host is
+ *    literally `127.0.0.1`. Not "resolves to loopback" — `localhost` is refused,
+ *    because what `localhost` resolves to is a property of a hosts file. A
+ *    partially-valid value yields null rather than being repaired.
+ * 3. Something asks for the proof provider by a name no real service uses.
+ *
+ * Anyone able to set an environment variable on the DASH process can already
+ * replace DASH outright; this is not a defence against that. It is what stops
+ * the profile existing by accident on a machine nobody is running a proof on,
+ * which is the failure that would actually occur.
+ *
+ * ## Why a fake provider exists at all
+ *
+ * MAR-458's required evidence is an installed proof of a real read → local-draft
+ * round trip. Every link in that chain is DASH's except the last, and the last
+ * cannot be in an unattended proof: it needs a Google account, a human at a
+ * consent screen, and a restricted-scope verification DASH does not have (ADR
+ * 0002, "Google release path"). A proof that stopped before the HTTP call would
+ * be the source-level claim `AGENTS.md` forbids. So the harness serves the
+ * provider and DASH really calls it. What is proven is the boundary; that
+ * Google's API behaves as modelled is not proven and is not claimed.
+ */
+export function loopbackProofOrigin(): string | null {
+  const configured = process.env.DASH_BROKER_PROOF_ORIGIN;
+  if (configured === undefined || configured.length === 0) {
+    return null;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(configured);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" || parsed.hostname !== "127.0.0.1") {
+    return null;
+  }
+  return parsed.origin;
+}
+
+/** The `OAuthProvider.id` of the proof flow. Not a service that exists. */
+export const LOOPBACK_PROOF_PROVIDER_ID = "dash-loopback";
+
+/** The manifest `provider` string the proof flow serves. Also not a service. */
+export const LOOPBACK_PROOF_MANIFEST_PROVIDER = "dash-loopback-mail";
+
+/**
+ * The proof flow, when the guard allows one.
+ *
+ * Built per call rather than held in a module constant, because its endpoints
+ * depend on a port the harness binds after this module is imported.
+ *
+ * Its permissions map is Gmail's read scope and nothing else. Deliberately
+ * *not* a copy of Gmail's whole map: the proof exercises the read path, and a
+ * proof provider that could be granted a write scope DASH has no operation for
+ * would be modelling a situation the real one is designed to make impossible.
+ */
+function proofProvider(): OAuthProvider | null {
+  const origin = loopbackProofOrigin();
+  if (origin === null) {
+    return null;
+  }
+  return {
+    id: LOOPBACK_PROOF_PROVIDER_ID,
+    label: "Loopback mail (proof harness)",
+    client_id: "dash-loopback-proof-client",
+    authorization_endpoint: `${origin}/authorize`,
+    token_endpoint: `${origin}/token`,
+    revocation_endpoint: `${origin}/revoke`,
+    permissions: {
+      "https://www.googleapis.com/auth/gmail.readonly": {
+        label: "Read the messages in your mailbox",
+        access: "read",
+      },
+    },
+    identity_scopes: ["openid", "email"],
+    authorization_params: { access_type: "offline", prompt: "consent" },
+  };
+}
+
 /**
  * Which flow serves a manifest's `provider` string.
  *
@@ -160,6 +257,9 @@ const FLOW_BY_MANIFEST_PROVIDER: Readonly<Record<string, string>> = {
  * refused and the row explains that the agent handles its own sign-in.
  */
 export function oauthProviderFor(manifestProvider: string): OAuthProvider | null {
+  if (manifestProvider === LOOPBACK_PROOF_MANIFEST_PROVIDER) {
+    return proofProvider();
+  }
   const flowId = FLOW_BY_MANIFEST_PROVIDER[manifestProvider];
   if (flowId === undefined) {
     return null;
@@ -169,6 +269,9 @@ export function oauthProviderFor(manifestProvider: string): OAuthProvider | null
 
 /** Look a flow up by its own id — used when reading a stored credential back. */
 export function oauthProviderById(id: string): OAuthProvider | null {
+  if (id === LOOPBACK_PROOF_PROVIDER_ID) {
+    return proofProvider();
+  }
   return PROVIDERS.find((provider) => provider.id === id) ?? null;
 }
 

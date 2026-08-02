@@ -13,9 +13,9 @@ import { describe, expect, it } from "vitest";
 
 import { analyzeGrounding, analyzeRun } from "../lib/analyze";
 import { describeDigestGaps, describeSourceFailure } from "../lib/copy/recovery";
-import type { AgentManifestBody, RunArtifact, RunEvent } from "../lib/contracts";
+import type { AgentManifestBody, DigestArtifact, RunEvent } from "../lib/contracts";
 
-function artifact(overrides: Partial<RunArtifact> = {}): RunArtifact {
+function artifact(overrides: Partial<DigestArtifact> = {}): DigestArtifact {
   return {
     artifact_version: 1,
     agent: "ai-news-scout",

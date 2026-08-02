@@ -195,7 +195,16 @@ export interface ConnectionRowWithCredential extends ConnectionRequirementRow {
    * value either way.
    */
   masked_hint: string | null;
-  /** Whether the manifest names somewhere for DASH to deliver it. */
+  /**
+   * Whether DASH will actually put this credential in the agent's environment.
+   *
+   * **False for every brokered connection, whatever the manifest asked for**
+   * (MAR-458). It used to mean "the manifest names somewhere to deliver it",
+   * which was the same thing until ADR 0002 and is now a different thing: a
+   * manifest can still name an environment variable for its OAuth field and
+   * DASH will not fill it. Reporting the manifest's wish here would tell a user
+   * their sign-in is handed to the agent when it is not.
+   */
   delivered_to_agent: boolean;
   /**
    * Whether Connect opens a text box or a provider sign-in (MAR-446).
@@ -207,6 +216,67 @@ export interface ConnectionRowWithCredential extends ConnectionRequirementRow {
    * and the agent will reach through its own means.
    */
   credential_kind: "secret" | "oauth" | null;
+  /** The permission card, for a connection DASH brokers. Null otherwise. */
+  broker: BrokerRowView | null;
+}
+
+/**
+ * One capability on a permission card (MAR-458).
+ *
+ * `label` is what a person reads. `id` travels for the code and is never
+ * rendered — `lib/copy/identifiers.ts` forbids an operation id appearing on a
+ * guided surface.
+ */
+export interface BrokerCapabilityView {
+  id: string;
+  label: string;
+  access: "read" | "write";
+}
+
+/**
+ * What the permission broker has to say about one connection row.
+ *
+ * Present only for a connection DASH brokers — a typed-secret row has none,
+ * because DASH holds a value for it and performs nothing on the user's behalf.
+ * That absence is the honest one: a card promising narrow operations for an API
+ * key DASH hands straight to an agent would be describing a boundary that is not
+ * there.
+ *
+ * **Nothing here opens the vault.** `requested` comes from the manifest,
+ * `receipt` and `recent` from the store. `lib/connection-actions.ts` explains
+ * why that matters: a vault read per row would pop an OS unlock prompt at the
+ * moment a user merely looked at this page.
+ */
+export interface BrokerRowView {
+  /** Who actually holds the credential, in a sentence. */
+  custody_sentence: string;
+  /** Whose consent screen this connection uses, or null when not OAuth. */
+  client_sentence: string | null;
+  /**
+   * What the agent is asking to be able to do, from its own manifest.
+   *
+   * Shown before a sign-in as well as after, because a user deciding whether to
+   * connect needs to know what is being asked for — which is a different
+   * question from what has been granted.
+   */
+  requested: BrokerCapabilityView[];
+  /** ADR 0002 invariant 4, once there is a grant to receipt. */
+  receipt: {
+    account_hint: string | null;
+    granted_at: string;
+    last_used_at: string | null;
+    capabilities: BrokerCapabilityView[];
+  } | null;
+  /** Recent brokered calls, newest first. Bounded. */
+  recent: Array<{
+    /** The operation's plain-language label, or a fallback for a retired one. */
+    label: string;
+    decision: "allowed" | "refused";
+    /** The refusal's headline sentence, when it was refused. */
+    refusal_headline: string | null;
+    result_count: number | null;
+    decided_at: string;
+  }>;
 }
 
 export interface AgentConnections {

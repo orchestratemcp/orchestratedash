@@ -11,7 +11,7 @@ import {
   type SetStateAction,
 } from "react";
 
-import { Digest } from "../../_components/digest";
+import { RunOutput } from "../../_components/digest";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import { AGENT_WORKSPACE_PARAMS, runDetailHref } from "../../_data/routes";
 import {
@@ -169,7 +169,7 @@ function AgentWorkspace(): ReactNode {
           record and outlives the process that made it, so a stopped or
           unreachable agent still shows the last thing it found. */}
       {view.latest_digest === null ? null : (
-        <Digest artifact={view.latest_digest} grounding={view.latest_digest_grounding} />
+        <RunOutput artifact={view.latest_digest} grounding={view.latest_digest_grounding} />
       )}
 
       {view.snapshot === null ? (

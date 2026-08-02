@@ -72,11 +72,11 @@ describe("schema", () => {
 
     // One per shipped migration: 0 is the MAR-416 store, 1 is MAR-417's
     // command channel, 2 is MAR-428's handoff ledger, 3 is MAR-457's run
-    // artifacts, 4 is MAR-464's decision-identity columns. Asserted as a number
-    // rather than as MIGRATIONS.length so that appending a migration is a
-    // deliberate edit here too.
+    // artifacts, 4 is MAR-464's decision-identity columns, 5 is MAR-458's
+    // permission broker. Asserted as a number rather than as MIGRATIONS.length
+    // so that appending a migration is a deliberate edit here too.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(5);
+    expect(version.user_version).toBe(6);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -93,6 +93,8 @@ describe("schema", () => {
     expect(tables).toContain("command_audit");
     expect(tables).toContain("agent_handoffs");
     expect(tables).toContain("run_artifacts");
+    expect(tables).toContain("broker_grants");
+    expect(tables).toContain("broker_audit");
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -109,6 +111,9 @@ describe("schema", () => {
     // anything this test is about.
     first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN runner_observed_at");
     first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN decision_identity");
+    // And migration 5 (MAR-458), for the same reason.
+    first.db.db().exec("DROP TABLE broker_audit");
+    first.db.db().exec("DROP TABLE broker_grants");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -141,6 +146,8 @@ describe("schema", () => {
     first.db.db().exec("PRAGMA user_version = 4");
     first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN runner_observed_at");
     first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN decision_identity");
+    first.db.db().exec("DROP TABLE broker_audit");
+    first.db.db().exec("DROP TABLE broker_grants");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -155,6 +162,39 @@ describe("schema", () => {
     // meant before the freeze existed.
     expect(snapshot?.runner_observed_at).toBe(snapshot?.observed_at);
     expect(snapshot?.decision_identity).toBeNull();
+  });
+
+  it("adds the broker tables to a store that predates them", async () => {
+    /*
+     * MAR-458, in the same shape as the two cases above and for the same
+     * reason: every installed DASH is a store that was created before the
+     * permission broker existed, and a migration only ever run against a fresh
+     * directory is one nobody has tested where it matters.
+     *
+     * The manifest row has to survive. A user who upgrades into the broker must
+     * not find their agents gone.
+     */
+    const first = await freshStore();
+    first.store.importManifest(manifest);
+    first.db.db().exec("PRAGMA user_version = 5");
+    first.db.db().exec("DROP TABLE broker_audit");
+    first.db.db().exec("DROP TABLE broker_grants");
+    first.db.closeDb();
+
+    process.env.DASH_DATA_DIR = first.dataDir;
+    vi.resetModules();
+    const db = await import("../lib/db");
+    const store = await import("../lib/store");
+    opened.push({ dataDir: first.dataDir, closeDb: db.closeDb });
+
+    const tables = db
+      .db()
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+      .all()
+      .map((row) => String(row["name"]));
+    expect(tables).toContain("broker_grants");
+    expect(tables).toContain("broker_audit");
+    expect(store.listAgents()).toHaveLength(1);
   });
 
   it("uses WAL journalling, which is what replaces write-then-rename", async () => {
@@ -178,7 +218,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(5);
+    ).toBe(6);
   });
 
   it("preserves pending tasks and approvals across a DASH restart", async () => {

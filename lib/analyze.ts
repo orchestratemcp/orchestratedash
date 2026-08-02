@@ -1,7 +1,7 @@
 import type {
   AgentManifestBody,
   ArtifactSourceStatus,
-  RunArtifact,
+  DigestArtifact,
   RunEvent,
 } from "./contracts";
 
@@ -247,7 +247,16 @@ export interface GroundingAnalysis {
   failed_sources: Array<{ source_name: string; status: ArtifactSourceStatus }>;
 }
 
-export function analyzeGrounding(artifact: RunArtifact): GroundingAnalysis {
+/**
+ * Grade a digest against what the run says it read.
+ *
+ * Takes a `DigestArtifact` and not a `RunArtifact` since MAR-458 added a second
+ * kind. A draft has no items and no `sources_fetched`, so grading one here would
+ * either crash or — with a defensive default — report a perfectly grounded
+ * digest containing nothing, which is the more dangerous of the two. The
+ * narrowing is the caller's job, and the type makes it one they cannot skip.
+ */
+export function analyzeGrounding(artifact: DigestArtifact): GroundingAnalysis {
   const fetched = artifact.sources_fetched;
   const failed = (fetched ?? [])
     .filter((source) => source.status !== "ok")

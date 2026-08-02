@@ -36,11 +36,29 @@ MAR-455 landed `public_feed_fetch` in the registry. MAR-456 remains open; it is 
 
 Build MAR-458's permission broker, not a token pass-through. Google sign-in identifies the user; connector authorization separately grants Gmail/Calendar scopes. The broker owns refresh tokens and exposes narrow agent tools. Start Gmail read/search/draft-only: no send tool exists even if the provider scope could technically allow it. Support MCP connectors behind the same permission cards and audit trail. Reuse MAR-446 for BYO Google client onboarding.
 
-ADR 0002 makes this a promotion boundary. MAR-446's browser/PKCE/vault flow is
-implemented, but the current spawn path still delivers a general short-lived
-OAuth token to the agent and the Google desktop client ID is compiled into DASH.
-Therefore draft-only enforcement, a permission broker, and BYO-client onboarding
-are not yet proven product capabilities.
+**MAR-458's first slice is built.** The spawn path no longer delivers a provider
+token: `deliverableSecretFields` cannot return an OAuth target, and
+`assertNoBrokeredCredentials` refuses the spawn if one ever appears. An agent
+reaches Gmail through `gmail.search` and `gmail.message.read` — two read
+operations whose provider URL DASH constructs and whose response DASH projects —
+and produces a **local** draft artifact. There is no send operation and no
+provider-side draft creation, so `gmail.compose` grants no operation at all.
+
+A grant is the intersection of three parties: DASH implements it, the manifest
+declared it, the provider issued it. It is re-resolved on every call, so
+disconnecting takes effect on an agent's next request rather than at its next
+restart.
+
+**Two things this slice does not claim.** The compiled Google client id is
+*disclosed* on the capability card, not removed — BYO-client onboarding stays
+after this slice, where ADR 0002's own rollout puts it. And the installed proof
+runs against a loopback provider, because Google needs an account, a human at a
+consent screen and a restricted-scope verification DASH does not have: proof 7
+establishes the boundary, not Gmail's API.
+
+See ADR 0002 amendment 1, which also corrects this ADR's account of the defect —
+the raw-token path required a manifest to declare `technical.environment_name`
+on its OAuth field, and no shipped example does.
 
 ## UX principle
 

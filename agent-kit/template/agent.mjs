@@ -71,6 +71,13 @@ const MAX_ITEMS_PER_SOURCE = 10;
  * `report` is how you say what happened; `step` marks a stage of the work so
  * DASH can show progress and so the run's events say more than "it started and
  * then it stopped". `artifact` is how you hand DASH what the run produced.
+ *
+ * To reach an account the user connected, call `ask(...)` — it is in scope here
+ * rather than passed in, because it is not part of one run's plumbing. This
+ * agent never calls it: reading public news feeds needs nobody's password. An
+ * agent that does need one writes
+ * `await ask("gmail", "gmail.search", { query: "is:unread" })` and gets an
+ * answer or a refusal. It never gets a token; see `ask`'s own comment for why.
  */
 async function runOnce({ step, artifact }) {
   step("public_feed_fetch", "Reading your news sources");
@@ -303,6 +310,83 @@ function send(message) {
 /** Ordinary logging. Goes to DASH's log; never mistaken for a protocol message. */
 function log(line) {
   process.stdout.write(`[agent] ${line}\n`);
+}
+
+/* ---------------------------------------------------------------------- *
+ * Reaching an account through DASH
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Ask DASH to do one named thing with an account you connected.
+ *
+ * ## There is no token here, and there is not meant to be
+ *
+ * Look at what this agent's environment contains: no API key for your mail, no
+ * OAuth token, nothing you could use to reach a provider directly. That is
+ * deliberate. DASH holds the sign-in and performs the operation itself, so the
+ * most a compromised agent — or a careless one, or one that read a hostile email
+ * and did what it said — can do is ask for an operation on the list, and be
+ * refused for anything else.
+ *
+ * ## What you can ask for
+ *
+ * Whatever DASH implements and you connected and the user approved: all three,
+ * intersected. Today that is `gmail.search` and `gmail.message.read`. There is
+ * no operation that sends anything, and asking for one is refused rather than
+ * queued — so an agent built on this cannot mail somebody by accident.
+ *
+ * ## Handle the refusal
+ *
+ * `{ ok: false, refusal }` is a normal outcome, not an exception. `revoked`
+ * means the person withdrew access and no amount of retrying will change it;
+ * `not_connected` means they never granted it; `rate_limited` means slow down.
+ * DASH shows the user a sentence for each of these on its Connections page, so
+ * your job is to stop cleanly rather than to explain.
+ *
+ * A request that DASH never answers — because DASH is closed, which is the
+ * ordinary case for an agent that outlives it — settles as `broker_unavailable`
+ * after the timeout below.
+ */
+const BROKER_TIMEOUT_MS = 30_000;
+
+const pendingBrokerRequests = new Map();
+let brokerSequence = 0;
+
+function ask(connectionId, operation, input = {}) {
+  const requestId = `${String(process.pid)}-${String((brokerSequence += 1))}`;
+
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingBrokerRequests.delete(requestId);
+      resolve({ ok: false, refusal: "broker_unavailable" });
+    }, BROKER_TIMEOUT_MS);
+    timer.unref?.();
+
+    pendingBrokerRequests.set(requestId, (response) => {
+      clearTimeout(timer);
+      resolve(response);
+    });
+
+    send({
+      type: "broker_request",
+      request: { request_id: requestId, connection_id: connectionId, operation, input },
+    });
+  });
+}
+
+function handleBrokerResponse(message) {
+  const settle = pendingBrokerRequests.get(message.request_id);
+  if (settle === undefined) {
+    // An answer to something already timed out, or one we never asked for.
+    // Dropped rather than acted on: the request it refers to is settled.
+    return;
+  }
+  pendingBrokerRequests.delete(message.request_id);
+  settle(
+    message.ok === true
+      ? { ok: true, result: message.result ?? {} }
+      : { ok: false, refusal: String(message.refusal ?? "broker_error") },
+  );
 }
 
 /* ---------------------------------------------------------------------- *
@@ -562,6 +646,12 @@ process.stdin.on("data", (chunk) => {
     } catch {
       continue;
     }
+
+    if (message?.type === "broker_response" && typeof message.request_id === "string") {
+      handleBrokerResponse(message);
+      continue;
+    }
+
     if (message?.type !== "command") {
       continue;
     }

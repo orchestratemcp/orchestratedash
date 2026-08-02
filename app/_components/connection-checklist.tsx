@@ -253,8 +253,132 @@ function ConnectionRow({
             for you yet, so the agent handles this sign-in.
           </p>
         ) : null}
+
+        {row.broker === null ? null : (
+          <PermissionCard broker={row.broker} service={row.service} connected={connected} />
+        )}
       </td>
     </tr>
+  );
+}
+
+/**
+ * What this agent may do with this account, who holds the sign-in, and what it
+ * has actually done (MAR-458, ADR 0002 invariant 4).
+ *
+ * ## Why the custody sentence leads
+ *
+ * Because it is the fact that changes what every line under it means. "DASH
+ * holds the sign-in and the agent never receives it" is the difference between a
+ * list of capabilities that is a boundary and one that is a promise — and ADR
+ * 0002 requires that native OAuth and, later, an authenticated MCP server render
+ * through the same card while saying which of the two they are. A card that
+ * looked identical for both would be the lie the ADR names: installing a Gmail
+ * MCP server "changes who owns token custody".
+ *
+ * ## Why "asked for" and "approved" are separate lists
+ *
+ * They answer different questions and can differ. Before a sign-in there is only
+ * the first. After a partial consent there are both, and they disagree — which
+ * is exactly when a user needs to see it, rather than being shown one merged
+ * list that quietly reports the smaller set as though it were what was asked.
+ *
+ * ## Why the history shows refusals
+ *
+ * A trail of successes is a trail nobody investigates. The rows worth having are
+ * the ones where an agent asked for something it was not allowed to do, and
+ * `describeBrokerRefusal` has already turned each into a sentence rather than a
+ * code.
+ */
+function PermissionCard({
+  broker,
+  service,
+  connected,
+}: {
+  broker: NonNullable<ConnectionRowWithCredential["broker"]>;
+  service: string;
+  connected: boolean;
+}): ReactNode {
+  const approved = broker.receipt?.capabilities ?? [];
+
+  return (
+    <div className="permission-card">
+      <p className="wrap">
+        <strong>{broker.custody_sentence}</strong>
+      </p>
+      {broker.client_sentence === null ? null : (
+        <p className="muted wrap">{broker.client_sentence}</p>
+      )}
+
+      {/* Signing in to DASH and authorizing this connection are separate acts,
+          and this is the sentence that says so. ADR 0002 opens on exactly this:
+          "Signing in to DASH with Google would establish identity only. It would
+          not grant Gmail or Calendar access." */}
+      <p className="muted wrap">
+        This is separate from signing in to DASH. Signing in identifies you;
+        this grants {service} access on its own.
+      </p>
+
+      <h4>
+        {connected && approved.length > 0
+          ? "What you approved it to do"
+          : `What it is asking to do with ${service}`}
+      </h4>
+      <ul className="permission-list">
+        {(connected && approved.length > 0 ? approved : broker.requested).map((capability) => (
+          <li key={capability.id}>
+            {capability.label}
+            {capability.access === "write" ? (
+              <span className="chip chip-warn"> changes something</span>
+            ) : null}
+          </li>
+        ))}
+        {(connected && approved.length > 0 ? approved : broker.requested).length === 0 ? (
+          <li className="muted">
+            Nothing. DASH has no action for the permissions this asks for, so the
+            agent cannot reach {service} through DASH at all.
+          </li>
+        ) : null}
+      </ul>
+
+      {broker.receipt === null ? null : (
+        <dl className="permission-receipt">
+          <dt>Account</dt>
+          <dd>{broker.receipt.account_hint ?? "Not named by the provider"}</dd>
+          <dt>Approved</dt>
+          <dd>{broker.receipt.granted_at}</dd>
+          <dt>Last used</dt>
+          <dd>{broker.receipt.last_used_at ?? "Never"}</dd>
+        </dl>
+      )}
+
+      {broker.recent.length === 0 ? null : (
+        <details className="permission-history">
+          <summary>What it has done ({broker.recent.length})</summary>
+          <ul>
+            {broker.recent.map((entry) => (
+              <li key={`${entry.decided_at}:${entry.label}`}>
+                <span className={entry.decision === "allowed" ? "chip chip-ok" : "chip chip-warn"}>
+                  {entry.decision === "allowed" ? "allowed" : "refused"}
+                </span>{" "}
+                {entry.refusal_headline ?? entry.label}
+                {entry.decision === "allowed" && entry.result_count !== null ? (
+                  <span className="muted">
+                    {" "}
+                    · {entry.result_count} result{entry.result_count === 1 ? "" : "s"}
+                  </span>
+                ) : null}
+                <span className="muted"> · {entry.decided_at}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="muted wrap">
+            DASH records which action was asked for and when, never what was
+            searched for and never anything from a message.
+          </p>
+        </details>
+      )}
+    </div>
   );
 }
 

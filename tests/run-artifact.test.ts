@@ -150,7 +150,11 @@ describe("ingest", () => {
     const found = store.artifactsForRun("ai-news-scout", "run-1");
     expect(found).toHaveLength(1);
     expect(found[0]?.title).toBe("Today's AI agent news");
-    expect(found[0]?.items[0]?.source_url).toBe("https://hn.algolia.com/api/v1/search");
+    const stored = found[0];
+    expect(stored?.kind).toBe("digest");
+    expect(stored?.kind === "digest" ? stored.items[0]?.source_url : null).toBe(
+      "https://hn.algolia.com/api/v1/search",
+    );
   });
 
   it("does not need the run row to exist first", async () => {

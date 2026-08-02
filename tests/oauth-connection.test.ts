@@ -41,6 +41,7 @@ const { performConnectionAction } = await import("../lib/connection-actions");
 const { connectionSecretName } = await import("../lib/connection-credentials");
 const { closeDb } = await import("../lib/db");
 const { listSecretReferences } = await import("../lib/secret-refs");
+const { listReceipts } = await import("../lib/broker/store");
 const { readStoreBytes } = await import("./helpers/store-bytes");
 
 const AGENT = "gmail-assistant";
@@ -121,6 +122,34 @@ describe("connect", () => {
     expect(bytes).not.toContain("henrik@example.com");
     // Nor the local part on its own, which the mask deliberately withholds.
     expect(bytes).not.toContain("nrik@");
+  });
+
+  /**
+   * MAR-458 added a second writer of the account to the store — the broker's
+   * receipt — and the first version of it stored the address whole. The test
+   * above caught it, and this one names the row so a future regression says
+   * *which* table rather than "some bytes are in the file".
+   */
+  it("masks the account on the permission receipt too", async () => {
+    const store = vault();
+    await performConnectionAction("connect", TARGET, deps(store, scriptedOAuth()));
+
+    const receipts = listReceipts(AGENT);
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]?.account_hint).toBe("he••••@example.com");
+    expect(receipts[0]?.operations).toContain("gmail.search");
+    // Approved now, never used yet. The distinction is the whole point of the
+    // column: a grant nothing has exercised should not read as one in use.
+    expect(receipts[0]?.last_used_at).toBeNull();
+  });
+
+  it("forgets the receipt when the connection is disconnected", async () => {
+    const store = vault();
+    await performConnectionAction("connect", TARGET, deps(store, scriptedOAuth()));
+    expect(listReceipts(AGENT)).toHaveLength(1);
+
+    await performConnectionAction("disconnect", TARGET, deps(store, scriptedOAuth()));
+    expect(listReceipts(AGENT)).toEqual([]);
   });
 
   it("survives a database close and reopen", async () => {
