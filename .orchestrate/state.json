@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-08-02",
   "current_wave": "Wave 2 - outside-app connections",
-  "lifecycle_note": "MAR-465, MAR-466 and MAR-472 record a proof that was executed, on a branch whose PR (#31) is open and human-gated. The commits they name are ancestors of this packet because the packet travels with them; they are not on master yet.",
+  "lifecycle_note": "MAR-465, MAR-466 and MAR-472 merged to master in PR #31 (merge commit 08a0d36) and are Done in Linear. MAR-458 remains In Progress by intent: it is merged but not proven, and MAR-468 owns the real-Google proof that would promote it.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -143,7 +143,7 @@
     {
       "id": "MAR-465",
       "lifecycle": "proven",
-      "linear_status": "In Progress",
+      "linear_status": "Done",
       "commit": "050dddb",
       "proof": {
         "command": "pnpm verify"
@@ -153,7 +153,7 @@
     {
       "id": "MAR-466",
       "lifecycle": "proven",
-      "linear_status": "In Progress",
+      "linear_status": "Done",
       "commit": "b977a8e",
       "proof": {
         "command": "pnpm verify"
@@ -163,7 +163,7 @@
     {
       "id": "MAR-472",
       "lifecycle": "merged",
-      "linear_status": "In Progress",
+      "linear_status": "Done",
       "commit": "b977a8e",
       "note": "Found while proving MAR-466, not filed before this session. tests/broker-transport.test.ts failed 3 runs out of 3 under full-suite load on Windows, on master's own code with none of this branch's changes, and passed in isolation and on Linux CI. settle(400) bet a fixed sleep on Windows spawning a Node process; the failures read 'expected [] to have a length of 1' - the child had not written yet. It now waits for the line rather than assuming it, accumulating across drains because a drain is destructive. Assertions unchanged and lib/broker/ untouched. Fixed here because pnpm verify could not go green on Windows without it. Three consecutive full-suite runs: 59 files, 1032 passed, 8 skipped, zero failures."
     },

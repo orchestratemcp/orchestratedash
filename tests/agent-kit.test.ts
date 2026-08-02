@@ -25,6 +25,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 
+import { analyzeGrounding } from "../lib/analyze";
+import type { DigestArtifact } from "../lib/contracts";
 import { run } from "../agent-kit/cli";
 import { writeHandoff } from "../agent-kit/open-in-dash";
 import { deriveAgentId, planScaffold, type TemplateSources } from "../agent-kit/scaffold";
@@ -632,5 +634,105 @@ describe("the generated agent", () => {
     expect(byName.get("Something else")).toBe("not_a_feed");
     expect(byName.get("A broken one")).toBe("unreachable");
     expect(byName.get("A news feed")).toBe("ok");
+  }, 25_000);
+
+  /*
+   * The contract the installed gate now rests on (MAR-473).
+   *
+   * `electron/smoke.ts` proof 6j used to assert only that *a* grounding verdict
+   * existed. A digest of zero items from three unreachable sources is reported
+   * `grounded` — nothing in it is uncited — so that check passed whether the
+   * sources answered or not, and twice in CI it passed with a source silently
+   * gone (30736386756 and 30753436632 carried 20 items where 30 were expected).
+   *
+   * 6j now asserts an exact count against a local feed, which is only a
+   * meaningful assertion if the count is deterministic. This is that claim,
+   * held here where it costs no network: three sources, one per parser, produce
+   * exactly their items, every one traceable to a source that was fetched.
+   */
+  it("grounds every item of a multi-format local feed, with an exact count", async () => {
+    const counts = { rss: 3, hn_algolia: 2, atom: 4 } as const;
+    const total = counts.rss + counts.hn_algolia + counts.atom;
+
+    const server = createServer((request, response) => {
+      const url = request.url ?? "";
+      if (url.startsWith("/rss")) {
+        response.writeHead(200, { "content-type": "application/rss+xml" });
+        response.end(
+          `<rss><channel>` +
+            Array.from({ length: counts.rss }, (_unused, index) =>
+              `<item><title>rss ${String(index + 1)}</title>` +
+              `<link>https://example.com/rss/${String(index + 1)}</link></item>`,
+            ).join("") +
+            `</channel></rss>`,
+        );
+        return;
+      }
+      if (url.startsWith("/hn")) {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            hits: Array.from({ length: counts.hn_algolia }, (_unused, index) => ({
+              title: `hn ${String(index + 1)}`,
+              url: `https://example.com/hn/${String(index + 1)}`,
+              created_at: "2026-08-01T07:00:00Z",
+            })),
+          }),
+        );
+        return;
+      }
+      if (url.startsWith("/atom")) {
+        response.writeHead(200, { "content-type": "application/atom+xml" });
+        response.end(
+          `<feed>` +
+            Array.from({ length: counts.atom }, (_unused, index) =>
+              `<entry><title>atom ${String(index + 1)}</title>` +
+              `<link href="https://example.com/atom/${String(index + 1)}"/></entry>`,
+            ).join("") +
+            `</feed>`,
+        );
+        return;
+      }
+      response.writeHead(404);
+      response.end("no");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    servers.push(server);
+    const base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+
+    const directory = scaffold();
+    writeFileSync(
+      path.join(directory, "sources.json"),
+      JSON.stringify([
+        { name: "Local RSS", url: `${base}/rss`, format: "rss" },
+        { name: "Local HN", url: `${base}/hn`, format: "hn_algolia" },
+        { name: "Local Atom", url: `${base}/atom`, format: "atom" },
+      ]),
+      "utf8",
+    );
+
+    const supervisor = startedSupervisor(directory);
+    await waitFor(() => supervisor.report("folder-digest") !== null, "startup");
+    expect(await runNow(supervisor)).toMatchObject({ ok: true });
+
+    const drained: unknown[] = [];
+    await waitFor(() => {
+      for (const entry of supervisor.drainArtifacts().artifacts) {
+        drained.push(entry.artifact);
+      }
+      return drained.length > 0;
+    }, "the digest");
+
+    expect(validateArtifact(drained[0])).toMatchObject({ ok: true });
+    const grounding = analyzeGrounding(drained[0] as DigestArtifact);
+    expect(grounding.verdict).toBe("grounded");
+    expect(grounding.items_total).toBe(total);
+    expect(grounding.items_cited).toBe(total);
+
+    // The count is a real assertion only while every source is required to have
+    // answered. A source that quietly returned nothing is the failure the live
+    // gate could not see, so it is named here.
+    const digest = drained[0] as { sources_fetched: Array<{ source_name: string; status: string }> };
+    expect(digest.sources_fetched.map((s) => s.status)).toEqual(["ok", "ok", "ok"]);
   }, 25_000);
 });
