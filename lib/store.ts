@@ -221,6 +221,16 @@ export function forgetAgent(name: string): { existed: boolean } {
     const existed = database.prepare("SELECT 1 FROM agents WHERE name = ?").get(name) !== undefined;
     database.prepare("DELETE FROM agents WHERE name = ?").run(name);
     database.prepare("DELETE FROM agent_dom_state WHERE agent = ?").run(name);
+    // MAR-458. A receipt and a call history for an agent DASH no longer knows
+    // are orphans: nothing renders them, nothing can act on them, and they name
+    // an account.
+    //
+    // This is a different question from *disconnecting*, which deliberately
+    // keeps the audit — there the agent is still here and the history is what a
+    // suspicious user disconnected in order to read. Removing the agent removes
+    // the thing the history is about.
+    database.prepare("DELETE FROM broker_grants WHERE agent = ?").run(name);
+    database.prepare("DELETE FROM broker_audit WHERE agent = ?").run(name);
     return { existed };
   });
 }

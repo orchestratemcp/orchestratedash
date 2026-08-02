@@ -479,7 +479,16 @@ export function registerReadChannel(): void {
  * listing which connections resolved would be a map of this machine's
  * credentials sitting in a file.
  */
-async function collectSpawnCredentials(agentId: string): Promise<Record<string, string>> {
+/**
+ * Exported for `electron/smoke.ts` (MAR-458), and for one reason.
+ *
+ * Proof 7 asserts that no provider token reaches a spawned agent's environment.
+ * That assertion is worth nothing if the harness assembles the environment
+ * itself: it would be proving a copy of this function rather than this one. So
+ * the proof calls the real thing, and what it hands the runner is exactly what
+ * `runnerLifecycle` hands it.
+ */
+export async function collectSpawnCredentials(agentId: string): Promise<Record<string, string>> {
   const manifest = readAgentManifest(agentId) as ConnectionSourceManifest | null;
   if (manifest === null) {
     return {};

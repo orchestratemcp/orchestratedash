@@ -99,3 +99,113 @@ The broker adds implementation work, but it creates the product distinction DASH
 needs: users approve comprehensible actions rather than handing opaque tokens to
 arbitrary agents. Native OAuth, MCP, and later hosted connectors can share one
 UX without pretending they share token custody or trust.
+
+## Amendment 1 (MAR-458): what the first slice established, and what it did not
+
+Status: Accepted
+
+Date: 2026-08-02
+
+The rollout above described three numbered stages. This amendment records what
+stage 1 actually built, and corrects two things the original text got slightly
+wrong about the defect it was written to close.
+
+### The rule that decides a grant
+
+The ADR said an agent receives "narrow operations". It did not say who decides
+which. The answer built here is that **three parties must all agree**, and the
+grant is their intersection:
+
+1. **DASH** — the operation exists in `lib/broker/operations.ts`.
+2. **The agent's author** — every scope it needs is in the manifest's declared
+   `provider_scopes`.
+3. **The user, through the provider** — every scope it needs is in the credential
+   the provider actually issued.
+
+Any one of these alone is wrong in a way the other two catch. DASH alone ignores
+what the user agreed to; the manifest alone lets an agent author widen its own
+access; the credential alone is the raw-token model this ADR exists to end.
+
+Invariant 6 becomes a property of step 1 rather than a promise: a credential
+granting `gmail.compose` and nothing else grants **no operations at all**,
+because no operation is built on that scope. The scope stays live at Google —
+DASH cannot narrow what Google granted — and it is dead at the broker. The
+capability card says so out loud rather than letting the checklist imply the
+permission is narrower than it is.
+
+### Two corrections to this ADR's account of the defect
+
+**The raw-token path was narrower than described.** The ADR says DASH "mints a
+general provider access token at agent spawn and places it in the agent
+environment". True of the code, and it required one more condition than the
+sentence implies: `deliverableFields` only ever listed a target whose manifest
+declared `technical.environment_name`, and **no manifest in `examples/` declares
+one for an OAuth field**. So the path was reachable and unexercised by anything
+DASH ships. That makes the defect narrower and no less real — a manifest is a
+third party's document, and that was the single line it had to contain. The
+fixture proving the guard lives in `tests/broker-boundary.test.ts` rather than in
+`examples/`, where it would be a sample asking for exactly what the broker
+withholds.
+
+**The compiled client id is disclosed, not removed.** The ADR names it as a
+present-tense problem, and it remains one: `lib/oauth/providers.ts` still carries
+the desktop client id, so DASH's Google Cloud project still owns the consent
+screen. What changed is that the capability card now says which — `client_owner`
+carries `dash_project` or `user_project` and `describeClientOwner` turns it into
+a sentence a user reads. Bring-your-own-client *onboarding* stays where this
+ADR's rollout put it: after settings, validation, guided setup and honest
+weekly-expiry UX. Disclosure is not the fix; it is the smallest honest thing to
+do before the fix.
+
+### Where the broker runs, and what that costs
+
+In Electron main, because `safeStorage` is only readable there. That turns
+invariant 1 from a rule someone must follow into a fact about where the code can
+run: the runner relays and could not mint a token if it wanted to.
+
+The cost is stated rather than designed around. **When DASH is closed, the broker
+is closed.** A hosted agent whose runtime declares `continues_when_dash_closed`
+keeps running and its brokered calls stop being answered — they settle as
+`broker_unavailable` at the agent's own timeout. That is the correct behaviour,
+because the alternative is a process that can reach a user's mailbox while the
+app they granted it through is not running.
+
+### What is audited, and what deliberately is not
+
+Invariant 5 says "safe metadata, never token or message content". Made concrete:
+`broker_audit` stores the operation name, the *names* of the input fields an
+agent supplied, a result count, a masked account and a duration. It does not
+store the search query. A durable table of every phrase an agent searched a
+user's mail for would be the single most sensitive table in the store, and the
+rule is the one `command_audit.payload_keys` has held since MAR-417.
+
+Disconnecting forgets the receipt and **keeps the audit rows**. The receipt
+describes access DASH holds; the rows are the record of what was done while it
+held it, and a disconnect that erased them would delete exactly the history a
+suspicious user disconnected in order to check.
+
+### The proof, and its one substitution
+
+`electron/smoke.ts` proof 7 drives a real read → local-draft round trip on the
+installed shell: a real vault read, a real refresh-for-access exchange over HTTP,
+a real bearer header, a real child process the runner spawned, and a real
+artifact arriving through the ingest a digest uses. The agent reports its own
+environment and everything the broker sent it, and neither contains the token
+DASH used on its behalf moments earlier.
+
+The provider is a loopback HTTP server the harness binds, because Google cannot
+be in an unattended proof — it needs an account, a human at a consent screen, and
+the restricted-scope verification this ADR's "Google release path" describes. So
+**what proof 7 establishes is the boundary, not Gmail's API.** The substitution is
+gated by `loopbackProofOrigin()`, which requires a `DASH_`-namespaced variable
+the runner refuses into every child environment, an `http:` scheme, a literal
+`127.0.0.1` host, and a manifest naming a provider no real service uses.
+
+### Stage 2 is not started, and one reason has hardened
+
+Provider-side draft creation stays unbuilt. The `draft` artifact kind added here
+is explicitly **local**: DASH holds it, nothing was sent, and nothing exists at
+the provider. `contracts/run-artifact.schema.json` says so in the kind's own
+description and `app/_components/digest.tsx` renders the sentence before the
+draft rather than under it, because a person scanning it needs to know what it is
+*not* before they read what it says.

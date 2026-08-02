@@ -18,6 +18,12 @@
  * the case the ADR calls out.
  */
 
+import {
+  loopbackProofOrigin,
+  LOOPBACK_PROOF_MANIFEST_PROVIDER,
+  LOOPBACK_PROOF_PROVIDER_ID,
+} from "../oauth/providers";
+
 /**
  * Where the credential behind a capability actually lives.
  *
@@ -128,31 +134,24 @@ const GMAIL: BrokerProviderProfile = {
  * stops the profile existing by accident on a machine nobody is running a proof
  * on, which is the realistic failure.
  */
-const PROOF_CONNECTION_PROVIDER = "dash-loopback-mail";
+const PROOF_CONNECTION_PROVIDER = LOOPBACK_PROOF_MANIFEST_PROVIDER;
 
 function proofProfile(): BrokerProviderProfile | null {
-  const configured = process.env.DASH_BROKER_PROOF_ORIGIN;
-  if (configured === undefined || configured.length === 0) {
-    return null;
-  }
-
-  let parsed: URL;
-  try {
-    parsed = new URL(configured);
-  } catch {
-    return null;
-  }
-  if (parsed.protocol !== "http:" || parsed.hostname !== "127.0.0.1") {
+  // The guard is `lib/oauth/providers.ts`'s, imported rather than restated. A
+  // security check written twice is one that can be relaxed once, and this one
+  // decides whether DASH sends a live token to something other than Google.
+  const origin = loopbackProofOrigin();
+  if (origin === null) {
     return null;
   }
 
   return {
     connection_provider: PROOF_CONNECTION_PROVIDER,
-    oauth_provider_id: "google",
+    oauth_provider_id: LOOPBACK_PROOF_PROVIDER_ID,
     label: "Loopback mail (proof harness)",
     token_custodian: "dash_vault",
     client_owner: "dash_project",
-    api_origin: parsed.origin,
+    api_origin: origin,
   };
 }
 

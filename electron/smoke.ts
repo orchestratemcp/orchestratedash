@@ -45,22 +45,43 @@
 // side-effect import that points the store at the user-data directory derived
 // from it. Every import below reads decisions those two have already made.
 import "./smoke-identity.js";
-import "./main.js";
+import { collectSpawnCredentials } from "./main.js";
 
 import { app, BrowserWindow, shell } from "electron";
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { IPC_ORIGIN, ipcFetch } from "../lib/agent-dom/ipc-fetch";
 import { putAgentDomState, readAgentDomState, readCommandAudit } from "../lib/agent-dom/store";
-import { connectableFields } from "../lib/connection-credentials";
+import { brokerProfileFor } from "../lib/broker/providers";
+import { readBrokerAudit } from "../lib/broker/store";
+import { connectableFields, connectionSecretName } from "../lib/connection-credentials";
 import { oauthProviderById } from "../lib/oauth/providers";
+import {
+  OAUTH_CREDENTIAL_VERSION,
+  serializeOAuthCredential,
+} from "../lib/oauth/credential";
 import { closeDb, dataDir } from "../lib/db";
 import { RENDERER_ORIGIN } from "../lib/shell/renderer-scheme";
-import { readAgentManifest, importManifest } from "../lib/store";
+import {
+  artifactsForRun,
+  forgetAgent,
+  readAgentManifest,
+  importManifest,
+} from "../lib/store";
+import {
+  BUNDLED_NODE_COMMAND,
+  removeRegistration,
+  writeRegistration,
+} from "../lib/registration";
+import { runnerFetch } from "./runner-process";
+import { secureStore } from "./secure-store";
 import { createSampleAgent, SAMPLE_AGENT_ID } from "../lib/sample-agent";
 import { openHandoff, removeAgent } from "../lib/handoff-flow";
 import { readHandoffRecord } from "../lib/handoff-ledger";
@@ -1081,6 +1102,12 @@ if (recorded !== null) {
       rmSync(parentDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   }
+
+  /* -- Proof 7: the permission broker, end to end (MAR-458) -------------- */
+
+  if (recorded.transport === "pipe" || recorded.transport === "unix") {
+    await proveTheBroker(recorded);
+  }
 }
 
 console.log(`\n[smoke] ${failures.length === 0 ? "all proofs passed" : `FAILED: ${failures.join(", ")}`}\n`);
@@ -1088,6 +1115,603 @@ console.log(
   `[smoke] the runner is left running on purpose (pid ${String(recorded?.pid ?? "-")}). ` +
     `That is what "closing DASH leaves agents running" means; see runner/README.md.\n`,
 );
+}
+
+/* ---------------------------------------------------------------------- *
+ * Proof 7: the permission broker (MAR-458, ADR 0002)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * A real agent reads a real mailbox through the broker and produces a local
+ * draft, and no provider token is observable from the agent process.
+ *
+ * ## What is real here and what is not
+ *
+ * Real: the vault read, the OAuth envelope, the token exchange over HTTP, the
+ * grant resolution, the operation allowlist, the URL DASH constructed, the
+ * bearer header, the response projection, the audit rows, the runner's pipe in
+ * both directions, a child process the runner actually spawned, and the artifact
+ * arriving in DASH's store through the same ingest a digest uses.
+ *
+ * Not real: the provider. It is an HTTP server this function binds on
+ * `127.0.0.1`, because Google cannot be in an unattended proof — it needs an
+ * account, a human at a consent screen, and a restricted-scope verification DASH
+ * does not have (ADR 0002, "Google release path"). `lib/oauth/providers.ts`
+ * documents the guard that makes the substitution possible and impossible to
+ * reach by accident.
+ *
+ * So the claim this proof supports is: **the boundary holds on a real installed
+ * shell, with a real child process.** It is not a claim about Gmail's API.
+ *
+ * ## The negative half is the point
+ *
+ * 7e asks the agent to report its own environment and its own view of what came
+ * back, and searches both for the access token the fake provider minted. That is
+ * the one check no unit test can make — `tests/broker-threat-model.test.ts`
+ * establishes that the *broker* does not hand a token over, and only a spawned
+ * child can establish that nothing else did either.
+ */
+async function proveTheBroker(recorded: {
+  endpoint: string;
+  transport: "pipe" | "unix" | string;
+  pid: number;
+}): Promise<void> {
+  const AGENT_ID = "dash-broker-proof";
+  const CONNECTION_ID = "loopback-mail";
+  const FIELD_ID = "mailbox-account";
+
+  /**
+   * The token the fake provider mints, and the string every negative check
+   * hunts for. Unmistakable on purpose: a short value could collide with a
+   * substring of an id and fail for the wrong reason.
+   */
+  const PROOF_ACCESS_TOKEN = "PROOF-ACCESS-TOKEN-MUST-NOT-REACH-THE-AGENT";
+  const PROOF_REFRESH_TOKEN = "PROOF-REFRESH-TOKEN-MUST-NEVER-LEAVE-THE-VAULT";
+  const MESSAGE_ID = "18e0a1b2c3";
+
+  const workDir = mkdtempSync(path.join(tmpdir(), "dash-broker-proof-"));
+  /** Where the agent testifies about its own process. See the write in the script. */
+  const reportPath = path.join(workDir, "proof-report.json");
+  /**
+   * A fresh run id per smoke run, and the reason is a defect this proof had.
+   *
+   * It was a constant. A run whose agent finished late left a draft in the store
+   * under that constant, and the *next* run matched it instantly — so every
+   * check after it ran before the agent had done anything, and the proof
+   * reported a boundary it had not exercised. This is the same trap proof 6
+   * guards with `previousRunIds`, and it is worth stating twice: a proof that
+   * can be satisfied by a previous proof's leftovers is not a proof.
+   */
+  const RUN_ID = `proof-run-${String(Date.now())}`;
+  /** Every Authorization header the fake provider was presented with. */
+  const presented: string[] = [];
+  let server: Server | null = null;
+
+  try {
+    server = createServer((request, response) => {
+      const url = new URL(request.url ?? "/", "http://127.0.0.1");
+      const authorization = request.headers.authorization;
+      if (typeof authorization === "string") {
+        presented.push(authorization);
+      }
+
+      const json = (status: number, body: unknown): void => {
+        response.writeHead(status, { "content-type": "application/json" });
+        response.end(JSON.stringify(body));
+      };
+
+      if (url.pathname === "/token") {
+        // The refresh-for-access exchange, which is DASH's real code path
+        // (`lib/oauth/flow.ts`) talking to this.
+        json(200, { access_token: PROOF_ACCESS_TOKEN, expires_in: 3599 });
+        return;
+      }
+      if (url.pathname === "/gmail/v1/users/me/messages") {
+        json(200, { messages: [{ id: MESSAGE_ID, threadId: "18e0a1b2c0" }] });
+        return;
+      }
+      if (url.pathname === `/gmail/v1/users/me/messages/${MESSAGE_ID}`) {
+        json(200, {
+          id: MESSAGE_ID,
+          threadId: "18e0a1b2c0",
+          snippet: "Can we move Thursday?",
+          payload: {
+            mimeType: "text/plain",
+            headers: [
+              { name: "From", value: "colleague@example.com" },
+              { name: "Subject", value: "Thursday" },
+            ],
+            body: {
+              data: Buffer.from("Can we move Thursday to the afternoon?").toString("base64url"),
+            },
+          },
+        });
+        return;
+      }
+      json(404, { error: "not_found" });
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server?.once("error", reject);
+      server?.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address() as AddressInfo;
+    const origin = `http://127.0.0.1:${String(address.port)}`;
+
+    // Set here rather than by the caller, so the window in which this process
+    // will talk to anything but Google is the body of this function.
+    process.env.DASH_BROKER_PROOF_ORIGIN = origin;
+
+    check(
+      "7a. the loopback provider profile exists only under its own guard",
+      brokerProfileFor("dash-loopback-mail")?.api_origin === origin &&
+        brokerProfileFor("google-gmail")?.api_origin === "https://gmail.googleapis.com",
+      { origin },
+    );
+
+    /* -- The agent ----------------------------------------------------- */
+
+    /**
+     * Asks for two operations, then writes a draft from what came back — and
+     * reports its own environment, which is the evidence 7e reads.
+     *
+     * Written here rather than shipped, because an agent whose purpose is to
+     * dump its own environment is a proof fixture and not a sample.
+     */
+    const agentScript = `
+      import { writeFileSync } from "node:fs";
+      const reportPath = ${JSON.stringify(reportPath)};
+      const send = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
+      const pending = new Map();
+      let seq = 0;
+      function ask(connection, operation, input) {
+        const id = "proof-" + (seq += 1);
+        return new Promise((resolve) => {
+          const timer = setTimeout(() => { pending.delete(id); resolve({ ok: false, refusal: "broker_unavailable" }); }, 30000);
+          pending.set(id, (r) => { clearTimeout(timer); resolve(r); });
+          send({ type: "broker_request", request: { request_id: id, connection_id: ${JSON.stringify(CONNECTION_ID)}, operation, input } });
+        });
+      }
+
+      let buffer = "";
+      process.stdin.setEncoding("utf8");
+      process.stdin.on("data", (chunk) => {
+        buffer += chunk;
+        let nl = buffer.indexOf("\\n");
+        while (nl !== -1) {
+          const line = buffer.slice(0, nl);
+          buffer = buffer.slice(nl + 1);
+          nl = buffer.indexOf("\\n");
+          let m; try { m = JSON.parse(line); } catch { continue; }
+          if (m && m.type === "broker_response") {
+            const settle = pending.get(m.request_id);
+            if (settle) { pending.delete(m.request_id); settle(m); }
+          }
+        }
+      });
+
+      send({ type: "state", state: { status: "running", runs: [], tasks: [] } });
+
+      // Written after every step, not only at the end.
+      //
+      // The first version wrote once, at the end, and a step that hung left the
+      // harness with nothing to read and no way to tell which step it was. A
+      // three-minute proof cycle is too long to spend on that, so the report is
+      // a running account rather than a summary.
+      const trace = [];
+      let report = {};
+      function record(patch) {
+        report = { ...report, ...patch, trace };
+        writeFileSync(reportPath, JSON.stringify(report), "utf8");
+      }
+      const note = (line) => { trace.push(line); process.stdout.write("[agent] " + line + "\\n"); };
+
+      (async () => {
+        const runId = ${JSON.stringify(RUN_ID)};
+        note("asking for search");
+        const found = await ask(${JSON.stringify(CONNECTION_ID)}, "gmail.search", { query: "is:unread", max_results: 5 });
+        note("search answered ok=" + String(found.ok) + " refusal=" + String(found.refusal));
+        record({ search: found });
+
+        const first = found.ok ? (found.result.messages || [])[0] : null;
+        note("first message = " + JSON.stringify(first));
+        const read = first
+          ? await ask(${JSON.stringify(CONNECTION_ID)}, "gmail.message.read", { message_id: first.message_id })
+          : { ok: false, refusal: "no_message" };
+        note("read answered ok=" + String(read.ok) + " refusal=" + String(read.refusal));
+        record({ read });
+        // Deliberately asked for and deliberately expected to fail: the proof
+        // that a send operation does not exist has to be made from the agent's
+        // side, on the installed path, not only in a unit test.
+        const send_attempt = await ask(${JSON.stringify(CONNECTION_ID)}, "gmail.send", { to: "x@example.com", subject: "s", body: "b" });
+        note("send answered ok=" + String(send_attempt.ok) + " refusal=" + String(send_attempt.refusal));
+        record({ send_attempt });
+
+        // Everything this process can see about itself. The names AND the
+        // values, because a token could be under any name at all.
+        const environment = Object.entries(process.env).map(([k, v]) => k + "=" + String(v)).join("\\n");
+
+        send({
+          type: "artifact",
+          artifact: {
+            artifact_version: 1,
+            agent: ${JSON.stringify(AGENT_ID)},
+            run_id: runId,
+            artifact_id: "draft-" + runId,
+            kind: "draft",
+            title: "Reply to " + (read.ok ? read.result.subject : "nothing"),
+            generated_at: new Date().toISOString(),
+            draft: {
+              to: read.ok && read.result.from ? [read.result.from] : [],
+              subject: read.ok ? "Re: " + read.result.subject : "Re:",
+              body: read.ok ? "Thanks — the afternoon works. (Re: " + read.result.body_text + ")" : "no message",
+              in_reply_to: read.ok ? { message_id: read.result.message_id, thread_id: read.result.thread_id } : undefined,
+              sources: read.ok ? [{ message_id: read.result.message_id, subject: read.result.subject, from: read.result.from }] : []
+            }
+          }
+        });
+
+        // Written to a file rather than emitted as telemetry.
+        //
+        // (No backticks in this comment: it lives inside the template literal
+        // that builds this script, and one would end the string.)
+        //
+        // The first version of this proof put the report in a run_completed
+        // event detail, and run-event.schema.json caps that at 300 characters,
+        // so DASH correctly rejected it and the proof read nothing. The cap is
+        // right and the channel was wrong: this is not telemetry, it is the
+        // agent testifying about its own process, and it should not have to fit
+        // in a field sized for a sentence.
+        //
+        // The file is also the stronger evidence. It is produced inside the
+        // agent process, from that process own environment, and read by the
+        // harness afterwards, so nothing DASH does in between can shape it.
+        record({
+          send_refusal: send_attempt.ok === false ? send_attempt.refusal : "ALLOWED",
+          environment,
+          complete: true
+        });
+      })().catch((e) => process.stdout.write("[agent] " + String(e) + "\\n"));
+
+      setInterval(() => {}, 1000);
+    `;
+    const scriptPath = path.join(workDir, "agent.mjs");
+    writeFileSync(scriptPath, agentScript, "utf8");
+
+    /*
+     * Check that the program this harness just wrote actually parses.
+     *
+     * Added because it did not, once, and the failure was expensive out of all
+     * proportion to the mistake: a single-escaped `\n` inside the template
+     * literal that builds the script became a real newline, which ended a string
+     * literal in the generated file. Every downstream proof then failed with
+     * "no report", which reads exactly like a broker that does not answer.
+     *
+     * Three minutes per cycle is too long to spend distinguishing "the boundary
+     * is broken" from "the harness wrote invalid JavaScript", so the harness now
+     * answers that question itself, first, in about fifty milliseconds.
+     */
+    const parsed = spawnSync(process.execPath, ["--check", scriptPath], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      encoding: "utf8",
+    });
+    check(
+      "7b0. the proof agent this harness wrote is valid JavaScript",
+      parsed.status === 0,
+      parsed.status === 0 ? "parses" : (parsed.stderr ?? "").split("\n").slice(0, 4).join(" "),
+    );
+
+    /* -- The manifest, the credential and the registration -------------- */
+
+    const manifest = example<Record<string, unknown>>(
+      "gmail-meeting-assistant.manifest.v2.example.json",
+    );
+    (manifest["agent"] as Record<string, unknown>)["name"] = AGENT_ID;
+    (manifest["agent_dom"] as Record<string, unknown>)["connections"] = [
+      {
+        id: CONNECTION_ID,
+        provider: "dash-loopback-mail",
+        label: "Loopback mail",
+        purpose: "Read messages and write a reply DASH holds",
+        ownership: "dash_managed",
+        capabilities: [{ id: "mail.read", label: "Read your messages", access: "read" }],
+        fields: [
+          {
+            id: FIELD_ID,
+            label: "Mailbox account",
+            purpose: "Authorize reading messages",
+            kind: "oauth_reauthorization",
+            required: true,
+            technical: {
+              provider_scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+              // Declared on purpose. This is the line that used to make DASH
+              // put a live provider token into the child's environment, and 7e
+              // is the check that it no longer does.
+              environment_name: "MAILBOX_OAUTH_TOKEN",
+            },
+          },
+        ],
+        // Required by `agent.manifest.v2.schema.json`. Present here because the
+        // schema is the schema — a proof that seeded a manifest DASH would
+        // refuse would be proving something about a document no user could
+        // actually import.
+        validation_action: {
+          id: "connect-loopback-mail",
+          label: "Reconnect and test",
+          behavior: "reconnect_test_switch",
+        },
+      },
+    ];
+
+    const imported = importManifest(manifest);
+    check("7b. the proof agent's manifest imports", imported.ok, imported.ok ? "imported" : imported);
+
+    // Straight into the vault, as a completed sign-in. The consent flow itself
+    // is proof 5's subject and needs a human; what this proof needs is a stored
+    // grant, which is what a consent flow leaves behind.
+    await secureStore().set(
+      connectionSecretName(AGENT_ID, CONNECTION_ID, FIELD_ID),
+      serializeOAuthCredential({
+        version: OAUTH_CREDENTIAL_VERSION,
+        provider: "dash-loopback",
+        refresh_token: PROOF_REFRESH_TOKEN,
+        scopes: ["openid", "email", "https://www.googleapis.com/auth/gmail.readonly"],
+        account: "proof@example.com",
+        obtained_at: new Date().toISOString(),
+      }),
+    );
+
+    const handle: RunnerHandle = {
+      origin: IPC_ORIGIN,
+      endpoint: recorded.endpoint,
+      transport: recorded.transport as RunnerHandle["transport"],
+      pid: recorded.pid,
+      token: ensureChannelSecret(dataDir),
+      adopted: true,
+    };
+    const call = runnerFetch(handle);
+
+    // Every audit row that already exists, so the assertions below can speak
+    // about *this* run. `forgetAgent` clears them at the end, but a run that
+    // failed before its cleanup would otherwise leave rows the next run counts.
+    const auditBefore = new Set(readBrokerAudit(AGENT_ID, 500).map((row) => row.id));
+
+    writeRegistration(dataDir, {
+      registration: {
+        agent_id: AGENT_ID,
+        manifest_path: "",
+        /*
+         * `BUNDLED_NODE_COMMAND`, not `process.execPath`, and the difference is
+         * not cosmetic — it cost several proof cycles.
+         *
+         * `resolveSpawnCommand` turns the sentinel into DASH's own binary
+         * *plus* `ELECTRON_RUN_AS_NODE=1`. Naming `process.execPath` directly
+         * skips the environment, so the child starts as a full Electron **app**
+         * rather than as node. Its stdout still reaches the runner — which is
+         * why brokered requests kept arriving and being audited — while its
+         * stdin is not a node stream, so no answer ever got back and every
+         * request timed out as `broker_unavailable`. The tell was in the
+         * runner's log: "App threw an error during load" is Electron's wording,
+         * not node's.
+         *
+         * `lib/sample-agent.ts` uses the sentinel for the shipped sample, so a
+         * proof that did not was also proving a spawn path no agent uses.
+         */
+        command: BUNDLED_NODE_COMMAND,
+        args: [scriptPath],
+        cwd: workDir,
+      },
+      manifestJson: JSON.stringify(manifest),
+      ownership: {
+        owner: "dash_handoff",
+        handoff_id: "smoke-broker-proof",
+        source_project: workDir,
+        display_name: "Broker proof agent",
+        summary: "Reads through the broker and writes a local draft.",
+        registered_at: new Date().toISOString(),
+      },
+    });
+
+    await call(`${handle.origin}/registrations/reload`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${handle.token}` },
+      signal: AbortSignal.timeout(5_000),
+    });
+    const started = await call(
+      `${handle.origin}/agents/${encodeURIComponent(AGENT_ID)}/lifecycle`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${handle.token}` },
+        body: JSON.stringify({ action: "start", credentials: await collectSpawnCredentials(AGENT_ID) }),
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    const startBody = (await started.json()) as { ok?: boolean; detail?: string };
+    check("7c. the runner started the proof agent", startBody.ok === true, startBody);
+
+    /* -- The round trip -------------------------------------------------- */
+
+    // The agent's own report first: it is written last by the agent, so its
+    // presence means the whole sequence finished. Asserting the draft before
+    // this would be asserting against a store that may not have received it yet.
+    const reported = await waitForValue(async () => {
+      if (!existsSync(reportPath)) {
+        return null;
+      }
+      try {
+        const parsed = JSON.parse(readFileSync(reportPath, "utf8")) as {
+          search?: { ok?: boolean; refusal?: string; result?: Record<string, unknown> };
+          read?: { ok?: boolean; refusal?: string; result?: Record<string, unknown> };
+          send_attempt?: { ok?: boolean; refusal?: string };
+          send_refusal?: string;
+          environment?: string;
+          trace?: string[];
+          complete?: boolean;
+        };
+        // Only a finished report counts. A partial one is the agent still
+        // working, and treating it as an answer is how the previous version of
+        // this proof read a previous run's leftovers.
+        return parsed.complete === true ? parsed : null;
+      } catch {
+        // A partially written file on the first look. Try again.
+        return null;
+      }
+    }, "the agent's own report of what the broker answered", 45_000);
+
+    /** Whatever the agent had written when the wait ended, complete or not. */
+    const partial = ((): Record<string, unknown> | null => {
+      try {
+        return existsSync(reportPath)
+          ? (JSON.parse(readFileSync(reportPath, "utf8")) as Record<string, unknown>)
+          : null;
+      } catch {
+        return null;
+      }
+    })();
+
+    check(
+      "7d. the agent's two read operations were both answered",
+      reported?.search?.ok === true && reported.read?.ok === true,
+      {
+        search: reported?.search?.ok === true ? "ok" : (reported?.search?.refusal ?? "no report"),
+        read: reported?.read?.ok === true ? "ok" : (reported?.read?.refusal ?? "no report"),
+        // The running account, so a hung step names itself instead of costing
+        // another three-minute cycle to locate.
+        trace: partial?.["trace"] ?? "none",
+      },
+    );
+
+    const draft = await waitForValue(async () => {
+      const artifacts = artifactsForRun(AGENT_ID, RUN_ID);
+      const found = artifacts.find((artifact) => artifact.kind === "draft");
+      return found === undefined ? null : found;
+    }, "a local draft to reach DASH through the broker", 30_000);
+
+    check(
+      "7e. a real read reached DASH as a local draft",
+      draft !== null &&
+        draft.kind === "draft" &&
+        draft.draft.subject === "Re: Thursday" &&
+        draft.draft.body.includes("afternoon") &&
+        (draft.draft.sources ?? [])[0]?.message_id === MESSAGE_ID,
+      draft === null ? null : { title: draft.title, kind: draft.kind },
+    );
+
+    // The token really was minted and really was presented. Without this, every
+    // negative check below could pass because nothing happened at all.
+    check(
+      "7f. DASH presented a bearer token to the provider, and the agent never held one",
+      presented.some((header) => header === `Bearer ${PROOF_ACCESS_TOKEN}`),
+      { calls_with_authorization: presented.length },
+    );
+
+    /*
+     * The proof MAR-458 exists for.
+     *
+     * The agent dumped every environment variable it has, names and values, and
+     * everything the broker sent it. Neither contains the token DASH used
+     * moments earlier on its behalf — and `MAILBOX_OAUTH_TOKEN`, the variable
+     * this manifest explicitly asked for, is absent entirely rather than empty.
+     */
+    const environment = reported?.environment ?? "";
+    const responses = JSON.stringify([reported?.search, reported?.read, reported?.send_attempt]);
+    check(
+      "7g. no provider token is observable from the agent process or its environment",
+      reported !== null &&
+        !environment.includes(PROOF_ACCESS_TOKEN) &&
+        !environment.includes(PROOF_REFRESH_TOKEN) &&
+        !environment.includes("MAILBOX_OAUTH_TOKEN") &&
+        !responses.includes(PROOF_ACCESS_TOKEN) &&
+        !responses.includes(PROOF_REFRESH_TOKEN),
+      {
+        reported: reported !== null,
+        environment_variables: environment.split("\n").filter((line) => line.length > 0).length,
+        names: environment
+          .split("\n")
+          .map((line) => line.split("=")[0])
+          .filter((name) => name !== undefined && name.length > 0),
+      },
+    );
+
+    check(
+      "7h. the agent's own send attempt was refused as an operation that does not exist",
+      reported?.send_refusal === "unknown_operation",
+      { send_refusal: reported?.send_refusal },
+    );
+
+    /* -- The record ------------------------------------------------------ */
+
+    const audited = readBrokerAudit(AGENT_ID, 500).filter((row) => !auditBefore.has(row.id));
+    const allowed = audited.filter((row) => row.decision === "allowed");
+    check(
+      "7i. every brokered call this run is audited, allowed and refused alike",
+      allowed.length === 2 &&
+        allowed.map((row) => row.operation).sort().join(",") ===
+          "gmail.message.read,gmail.search" &&
+        allowed.every((row) => row.connection_id === CONNECTION_ID) &&
+        audited.some((row) => row.refusal === "unknown_operation"),
+      audited.map((row) => `${row.decision}:${row.operation}:${row.refusal ?? "-"}`),
+    );
+
+    check(
+      "7j. the audit holds no token, no query text and no message content",
+      !JSON.stringify(audited).includes(PROOF_ACCESS_TOKEN) &&
+        !JSON.stringify(audited).includes(PROOF_REFRESH_TOKEN) &&
+        !JSON.stringify(audited).includes("is:unread") &&
+        !JSON.stringify(audited).includes("Thursday") &&
+        audited.every((row) => row.account_hint === null || !row.account_hint.includes("proof@")),
+      audited.map((row) => ({ operation: row.operation, input_keys: row.input_keys })),
+    );
+
+    /* -- Stop ------------------------------------------------------------ */
+
+    await call(`${handle.origin}/agents/${encodeURIComponent(AGENT_ID)}/lifecycle`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${handle.token}` },
+      body: JSON.stringify({ action: "stop" }),
+      signal: AbortSignal.timeout(10_000),
+    }).catch(() => undefined);
+
+    // Wait for the runner to confirm the process is gone before the `finally`
+    // deletes the directory it was running in. Windows keeps a handle on a
+    // child's cwd until it has fully exited, and the first version of this
+    // proof hit EPERM there — which turned a passing run into a failing one
+    // over a temporary file lock rather than over anything about the broker.
+    await waitForValue(async () => {
+      try {
+        const response = await call(`${handle.origin}/agents`, {
+          headers: { authorization: `Bearer ${handle.token}` },
+          signal: AbortSignal.timeout(3_000),
+        });
+        const body = (await response.json()) as {
+          agents?: Array<{ agent_id?: string; lifecycle?: string }>;
+        };
+        const entry = (body.agents ?? []).find((agent) => agent.agent_id === AGENT_ID);
+        return entry === undefined || entry.lifecycle === "exited" || entry.lifecycle === "stopped"
+          ? "gone"
+          : null;
+      } catch {
+        return null;
+      }
+    }, "the proof agent's process to exit", 15_000);
+
+    removeRegistration(dataDir, AGENT_ID);
+    forgetAgent(AGENT_ID);
+    await secureStore()
+      .delete(connectionSecretName(AGENT_ID, CONNECTION_ID, FIELD_ID))
+      .catch(() => undefined);
+    await call(`${handle.origin}/registrations/reload`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${handle.token}` },
+      signal: AbortSignal.timeout(5_000),
+    }).catch(() => undefined);
+  } finally {
+    // The window in which this process would talk to a loopback provider ends
+    // here, whatever happened above.
+    delete process.env.DASH_BROKER_PROOF_ORIGIN;
+    server?.close();
+    rmSync(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
 }
 
 /**

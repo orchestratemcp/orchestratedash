@@ -141,9 +141,10 @@
     },
     {
       "id": "MAR-458",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "note": "ADR 0002 is committed in 05201e7. Current OAuth PKCE/vault plumbing is merged, but raw access-token delivery, technical send authority under gmail.compose, and the compiled DASH-owned client ID remain blockers to a proven draft-only connector."
+      "commit": "PENDING",
+      "note": "The permission broker's first slice. Raw access-token delivery is closed: deliverableSecretFields cannot return an OAuth target and assertNoBrokeredCredentials refuses the spawn if one appears. An agent invokes gmail.search and gmail.message.read, whose provider URL DASH constructs and whose response DASH projects, and writes a LOCAL draft artifact; no send operation and no provider-side draft creation exist, so gmail.compose grants nothing. A grant is the intersection of what DASH implements, what the manifest declared and what the provider issued, re-resolved on every call so a disconnect binds at the agent's next request. Not proven: the installed proof runs against a loopback provider because Google needs an account, a human at a consent screen and a restricted-scope verification DASH does not have, so proof 7 establishes the boundary and not Gmail's API. Also not done: the compiled Google client id is disclosed on the capability card rather than removed, and BYO-client onboarding stays where ADR 0002's rollout puts it. See ADR 0002 amendment 1, which corrects this ADR's own account of the defect."
     }
   ]
 }
