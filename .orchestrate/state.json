@@ -124,6 +124,13 @@
       "note": "AI News Scout replaced the folder digest as the sample. 53 test files, 878 tests, and 41 installed-shell proofs passed: the agent waits to be asked, Run now is accepted through the audited bridge, telemetry reaches Runs, and a live 30-item digest reached DASH with every item cited and a grounded verdict, drawn on the run detail page. ADR 0003 records the artifact contract, the runless task, and the deliberate omission of the registry's scheduled_trigger step."
     },
     {
+      "id": "MAR-464",
+      "lifecycle": "merged",
+      "linear_status": "In Progress",
+      "commit": "5a4a625",
+      "note": "observed_at now advances only when the decision context does, so a control is no longer refused as stale_snapshot because a poll ticked. The MAR-457 Run now re-read is deleted rather than generalised: it minted a fresh idempotency key per press, and the key is derived from observed_at. Lifecycle stays merged until the installed smoke executes proofs 3g and 3h; a dev Electron shell was live on the machine and the smoke hangs against a running app. See ADR 0003 amendment 1."
+    },
+    {
       "id": "MAR-456",
       "lifecycle": "planned",
       "linear_status": "Backlog",
