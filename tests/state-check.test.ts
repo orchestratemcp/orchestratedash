@@ -29,6 +29,14 @@ const script = path.join(repoRoot, "scripts", "check-project-state.mjs");
 
 const scratch = mkdtempSync(path.join(tmpdir(), "dash-state-check-"));
 
+/**
+ * Each case builds a git repository and runs the gate in a grandchild process.
+ * That is a lot of process spawning for Windows to do while the rest of the
+ * suite is running, and the 5s default expires long before anything is wrong —
+ * which would be this file failing for the reason it exists to catch elsewhere.
+ */
+const SPAWNS_PROCESSES = 60_000;
+
 afterAll(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
@@ -159,7 +167,7 @@ describe("the state gate on a full clone", () => {
     expect(out).not.toContain("INVALID");
     expect(out).not.toContain("UNVERIFIED");
     expect(code).toBe(0);
-  });
+  }, SPAWNS_PROCESSES);
 
   it("fails a packet citing a commit that is not in the repository at all", () => {
     // The case a shallow clone was being mistaken for. It must stay INVALID.
@@ -184,7 +192,7 @@ describe("the state gate on a full clone", () => {
     expect(out).toContain("MAR-3");
     expect(out).toContain("not a commit in this repository");
     expect(code).toBe(1);
-  });
+  }, SPAWNS_PROCESSES);
 
   it("fails a packet citing a real commit HEAD cannot reach", () => {
     const { root, second, orphan } = originRepo("orphaned");
@@ -202,7 +210,7 @@ describe("the state gate on a full clone", () => {
     expect(out).toContain("INVALID");
     expect(out).toContain("is not an ancestor of HEAD");
     expect(code).toBe(1);
-  });
+  }, SPAWNS_PROCESSES);
 
   it("fails a proven issue with no reproducible proof command", () => {
     const { root, first, second } = originRepo("unproven");
@@ -218,7 +226,7 @@ describe("the state gate on a full clone", () => {
     expect(out).toContain("INVALID");
     expect(out).toContain("proven without a reproducible proof command");
     expect(code).toBe(1);
-  });
+  }, SPAWNS_PROCESSES);
 });
 
 describe("the state gate on a shallow clone", () => {
@@ -254,7 +262,7 @@ describe("the state gate on a shallow clone", () => {
     expect(out).not.toContain("INVALID");
     expect(out).toContain("not ancestry evidence");
     expect(code).toBe(0);
-  });
+  }, SPAWNS_PROCESSES);
 
   it("still fails a packet that is wrong for reasons a shallow clone can see", () => {
     /*
@@ -274,7 +282,7 @@ describe("the state gate on a shallow clone", () => {
     expect(out).toContain("INVALID");
     expect(out).toContain("proven without a reproducible proof command");
     expect(code).toBe(1);
-  });
+  }, SPAWNS_PROCESSES);
 
   it("refuses to run shallow in CI at all", () => {
     /*
@@ -305,5 +313,5 @@ describe("the state gate on a shallow clone", () => {
     expect(out).toContain("shallow clone in CI");
     expect(out).toContain("fetch-depth: 0");
     expect(code).toBe(1);
-  });
+  }, SPAWNS_PROCESSES);
 });
