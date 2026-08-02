@@ -87,6 +87,7 @@ import {
 } from "../lib/registration";
 import { runnerFetch } from "./runner-process";
 import { secureStore } from "./secure-store";
+import { DEFAULT_SOURCES, SOURCES_FILE_NAME } from "../lib/agent-sources";
 import { createSampleAgent, SAMPLE_AGENT_ID } from "../lib/sample-agent";
 import { openHandoff, removeAgent } from "../lib/handoff-flow";
 import { readHandoffRecord } from "../lib/handoff-ledger";
@@ -117,18 +118,104 @@ function check(label: string, passed: boolean, detail: unknown): void {
   }
 }
 
+/**
+ * A proof that was not attempted, and says so.
+ *
+ * MAR-473: when 6g produced no run, 6i/6j/6k each queried run id `""` and
+ * reported `undefined` — three red lines, each blaming the thing it is named
+ * after, for one upstream cause. A downstream proof whose input never arrived
+ * has not failed; it has not run. Recording that distinction is what lets a
+ * reader of the log find the one line that matters.
+ *
+ * A skip never fails the job on its own: the root failure above it already
+ * does, and duplicating it would restore the noise this replaces.
+ */
+function skip(label: string, because: string): void {
+  console.log(`SKIP  ${label}: not attempted — ${because}`);
+}
+
+/**
+ * An observation that is not a verdict.
+ *
+ * MAR-473 needs to know whether a live source still answers without that
+ * question being able to fail a release. This prints, is dated, and is never
+ * added to `failures`. See ADR 0004.
+ */
+function note(label: string, detail: unknown): void {
+  console.log(`NOTE  ${label}: ${JSON.stringify(detail)}`);
+}
+
+/** What a wait did, not merely whether it succeeded. */
+interface Waited<T> {
+  value: T | null;
+  elapsed_ms: number;
+  polls: number;
+  /** What the final poll saw instead of what it wanted. */
+  last_seen: unknown;
+}
+
+/**
+ * Wait, and be able to say what you waited for and what you saw.
+ *
+ * MAR-473: `waitForValue` returns `null` on timeout, and `6g` passed that
+ * straight into `check` as its whole diagnostic. `FAIL 6g ...: null` cannot
+ * distinguish "no run existed" from "a run existed and was still running" from
+ * "a run completed but its id was already known" — three different defects with
+ * one indistinguishable symptom, and the reason this issue needed CI archaeology
+ * rather than a log read. The `seen` half of each poll is the answer.
+ */
+async function waitForObserved<T>(
+  read: () => Promise<{ value: T | null; seen: unknown }>,
+  label: string,
+  timeoutMs: number,
+): Promise<Waited<T>> {
+  const started = Date.now();
+  const deadline = started + timeoutMs;
+  let polls = 0;
+  let seen: unknown = null;
+  while (Date.now() < deadline) {
+    const observation = await read();
+    polls += 1;
+    seen = observation.seen;
+    if (observation.value !== null) {
+      return {
+        value: observation.value,
+        elapsed_ms: Date.now() - started,
+        polls,
+        last_seen: seen,
+      };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  const elapsed = Date.now() - started;
+  console.warn(
+    `[smoke] timed out waiting for ${label} after ${String(elapsed)}ms ` +
+      `over ${String(polls)} polls; last saw ${JSON.stringify(seen)}`,
+  );
+  return { value: null, elapsed_ms: elapsed, polls, last_seen: seen };
+}
+
 async function waitForValue<T>(
   read: () => Promise<T | null>,
   label: string,
   timeoutMs = 20_000,
 ): Promise<T | null> {
-  const deadline = Date.now() + timeoutMs;
+  const started = Date.now();
+  const deadline = started + timeoutMs;
+  let polls = 0;
   while (Date.now() < deadline) {
     const value = await read();
+    polls += 1;
     if (value !== null) return value;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  console.warn(`[smoke] timed out waiting for ${label}`);
+  // How long, and how many times it looked. A wait that gave up after 20s and a
+  // wait that gave up after one poll because the deadline had already passed are
+  // different bugs, and until MAR-473 they printed the same line.
+  console.warn(
+    `[smoke] timed out waiting for ${label} after ${String(Date.now() - started)}ms ` +
+      `over ${String(polls)} polls`,
+  );
   return null;
 }
 
@@ -986,156 +1073,428 @@ if (recorded !== null) {
         );
 
         /*
-         * Run now, through the audited command boundary the renderer uses —
-         * not by poking the runner. If this path works only in a test harness
-         * it does not work.
+         * MAR-473: the feed this gate reads is served from this process.
          *
-         * `observed_at` is re-read here rather than fabricated, and that detail
-         * is the whole reason this proof earned its keep. The first version of
-         * this check invented a timestamp, and enforcement refused it as
-         * `stale_snapshot` — which then exposed the real defect behind it:
-         * `runner/state.ts` mints `observed_at` on every build and the adapter
-         * rebuilds every five seconds, so the value churns whether or not
-         * anything changed. Any control bound to a rendered snapshot has about
-         * a five-second window. The page now re-reads for the same reason this
-         * does.
-         */
-        const fresh = (await window.webContents.executeJavaScript(
-          `window.dashData.workspace(${JSON.stringify(agentId)})`,
-        )) as { data?: { snapshot?: { observed_at?: string } | null } };
-        const runRequest = {
-          agent_id: agentId,
-          observed_at: fresh.data?.snapshot?.observed_at ?? "",
-          task_id: "waiting-to-be-run",
-        };
-        const asked = (await window.webContents.executeJavaScript(
-          `window.dashShell.retry(${JSON.stringify(runRequest)})`,
-        )) as { ok?: boolean; reason?: string };
-        check("6f. Run now is accepted through the audited bridge", asked.ok === true, asked);
-
-        const completed = await waitForValue(async () => {
-          const view = (await window.webContents.executeJavaScript(
-            `window.dashData.runs()`,
-          )) as {
-            ok?: boolean;
-            data?: { runs?: Array<{ agent?: string; run_id?: string; status?: string }> };
-          };
-          return (
-            view.data?.runs?.find(
-              (run) =>
-                run.agent === agentId &&
-                run.status === "completed" &&
-                typeof run.run_id === "string" &&
-                !previousRunIds.has(run.run_id),
-            ) ?? null
-          );
-        }, "runner-hosted sample telemetry to reach Runs");
-        check("6g. runner-hosted telemetry renders through the Runs bridge", completed !== null, completed);
-
-        const reportsDir = path.join(created.value.directory, "reports");
-        const onDisk =
-          (await waitForValue(async () => {
-            const files = existsSync(reportsDir)
-              ? readdirSync(reportsDir).filter((name) => name.endsWith(".json"))
-              : [];
-            return files.length > 0 ? files : null;
-          }, "the runner-hosted sample digest artifact")) ?? [];
-        check("6h. the sample leaves a digest in its own folder", onDisk.length > 0, onDisk);
-
-        /*
-         * The half Wave 0 could not prove.
+         * Until now the mandatory gate read Google News, Hacker News and arXiv
+         * over the public internet, and `6g`'s single 20-second budget had to
+         * cover all three fetches *and* the telemetry propagation behind them.
+         * `agent-kit/template/agent.mjs` reads sources sequentially with a
+         * 15-second timeout each, so one unresponsive source consumed 15s of the
+         * 20 and left ~5s for a step that measurably needs ~4s. On `0ac58ac` the
+         * fetch took 15.6s and the telemetry needed 4.6s: the gate lost by 0.2
+         * seconds, and reported it as a defect in the Runs bridge.
          *
-         * 6h is the check this block used to end on: a file exists in the
-         * agent's folder. That is evidence the *agent* wrote something and no
-         * evidence whatsoever that DASH can show it — which was true, because
-         * until MAR-457 there was no artifact contract, table, view or surface
-         * for it to arrive in. This reads the digest back through the same
-         * bridge the renderer reads, with its citations and its verdict.
+         * Three loopback sources, one per parser, make the mandatory gate a
+         * statement about DASH: the run completes, telemetry reaches Runs, the
+         * artifact crosses into the app, and the page draws it. It also proves
+         * all three parsers on every run, which reading three live feeds never
+         * did — a source that went quiet simply produced fewer items and stayed
+         * green. Whether the live sources still answer is a real question, and
+         * it is asked below by `6l`, which cannot fail a release. See ADR 0004.
          */
-        const digest = await waitForValue(async () => {
-          const view = (await window.webContents.executeJavaScript(
-            `window.dashData.run(${JSON.stringify(agentId)}, ${JSON.stringify(
-              completed?.run_id ?? "",
-            )})`,
-          )) as {
-            data?: {
-              artifacts?: Array<{ artifact_id?: string; title?: string; items?: unknown[] }>;
-              grounding?: { verdict?: string; items_total?: number } | null;
-            };
-          };
-          const first = view.data?.artifacts?.[0];
-          return first === undefined ? null : { artifact: first, grounding: view.data?.grounding };
-        }, "the digest to reach DASH through the read bridge");
-        check(
-          "6i. the digest reaches DASH, not just the agent's folder",
-          digest !== null && typeof digest.artifact.artifact_id === "string",
-          digest?.artifact,
-        );
+        const LOCAL_ITEMS = { rss: 3, hn_algolia: 2, atom: 4 } as const;
+        const LOCAL_TOTAL = LOCAL_ITEMS.rss + LOCAL_ITEMS.hn_algolia + LOCAL_ITEMS.atom;
+        // Distinct per run, so a digest left by an earlier smoke cannot satisfy
+        // this one — the same rule `previousRunIds` enforces one proof above.
+        const feedTag = randomBytes(4).toString("hex");
+        const headlineFor = (format: string, index: number): string =>
+          `DASH local ${format} item ${String(index)} ${feedTag}`;
 
-        // An empty source list is the honest offline case for a smoke run, and
-        // an empty digest is still grounded: there is no unsupported claim in
-        // it. What is being proved is that a verdict was computed and crossed
-        // the boundary at all.
-        check(
-          "6j. the digest carries a grounding verdict",
-          digest?.grounding?.verdict !== undefined,
-          digest?.grounding,
-        );
-
-        // And the renderer actually draws it. MAR-454's whole lesson is that a
-        // proof reading data through a bridge can pass while the page above it
-        // is broken — proofs 5a-5j were green in a suite of 1635 tests while
-        // three shipped defects sat in the one path no unit test could reach.
-        /*
-         * Built from protocol and host rather than from `origin`.
-         *
-         * `dash-app:` is not one of the URL standard's "special" schemes, so
-         * `new URL("dash-app://ui/").origin` is the string "null" — an opaque
-         * origin, correctly per spec and useless here. The first version of this
-         * proof used it and produced `null/runs/detail?...`, which Electron
-         * refused with ERR_INVALID_URL. Found by running it.
-         */
-        const parsedRenderer = new URL(rendered.url);
-        const detailUrl =
-          `${parsedRenderer.protocol}//${parsedRenderer.host}` +
-          `/runs/detail?agent=${encodeURIComponent(agentId)}` +
-          `&run_id=${encodeURIComponent(completed?.run_id ?? "")}`;
-
-        let drawn: { text: string; sources: number } | null = null;
+        let feeds: Server | null = null;
         try {
-          await window.loadURL(detailUrl);
-          drawn = await waitForValue(async () => {
-            const seen = (await window.webContents.executeJavaScript(
-              `({ text: document.body.innerText,
-                  sources: document.querySelectorAll(".digest-sources").length })`,
-            )) as { text: string; sources: number };
-            // The page reads its view in an effect, so an empty body is "not
-            // yet" rather than "not there". Waiting for the digest's own title
-            // is what makes this an assertion about content and not about
-            // whether a document object exists.
-            //
-            // The fallback is a sentinel that cannot appear in rendered text,
-            // so a missing digest times out rather than matching every page.
-            // Written as an escape since MAR-464: it was a raw NUL byte, which
-            // made ripgrep classify this whole file as binary and skip it, and
-            // a proof file nobody can search is one nobody will read.
-            return seen.text.includes(digest?.artifact.title ?? "\u0000") ? seen : null;
-          }, "the run detail page to draw the digest");
-        } catch (error: unknown) {
-          drawn = null;
-          console.warn(`[smoke] the run detail page did not load: ${String(error)}`);
+          feeds = createServer((request, response) => {
+            const url = new URL(request.url ?? "/", "http://127.0.0.1");
+            const send = (type: string, body: string): void => {
+              response.writeHead(200, { "content-type": type });
+              response.end(body);
+            };
+
+            if (url.pathname === "/rss") {
+              const items = Array.from({ length: LOCAL_ITEMS.rss }, (_unused, index) =>
+                `<item><title>${headlineFor("rss", index + 1)}</title>` +
+                `<link>https://example.invalid/rss/${String(index + 1)}</link>` +
+                `<pubDate>Sat, 02 Aug 2026 12:0${String(index)}:00 GMT</pubDate></item>`,
+              ).join("");
+              send("application/rss+xml", `<rss><channel>${items}</channel></rss>`);
+              return;
+            }
+            if (url.pathname === "/hn") {
+              send(
+                "application/json",
+                JSON.stringify({
+                  hits: Array.from({ length: LOCAL_ITEMS.hn_algolia }, (_unused, index) => ({
+                    title: headlineFor("hn_algolia", index + 1),
+                    url: `https://example.invalid/hn/${String(index + 1)}`,
+                    created_at: `2026-08-02T11:0${String(index)}:00.000Z`,
+                  })),
+                }),
+              );
+              return;
+            }
+            if (url.pathname === "/atom") {
+              const entries = Array.from({ length: LOCAL_ITEMS.atom }, (_unused, index) =>
+                `<entry><title>${headlineFor("atom", index + 1)}</title>` +
+                `<link href="https://example.invalid/atom/${String(index + 1)}"/>` +
+                `<published>2026-08-02T10:0${String(index)}:00Z</published></entry>`,
+              ).join("");
+              send("application/atom+xml", `<feed>${entries}</feed>`);
+              return;
+            }
+            response.writeHead(404, { "content-type": "text/plain" });
+            response.end("not_found");
+          });
+
+          await new Promise<void>((resolve, reject) => {
+            feeds?.once("error", reject);
+            feeds?.listen(0, "127.0.0.1", resolve);
+          });
+          const feedOrigin = `http://127.0.0.1:${String((feeds.address() as AddressInfo).port)}`;
+
+          /*
+           * The agent reads this file at run time, so writing it after creation
+           * and before "Run now" is the same edit a user makes by hand. It is
+           * deliberately the user's own affordance rather than a harness-only
+           * switch: a test hook the product does not have would prove a path the
+           * product does not have.
+           */
+          writeFileSync(
+            path.join(created.value.directory, SOURCES_FILE_NAME),
+            JSON.stringify(
+              [
+                { name: "Local RSS", url: `${feedOrigin}/rss`, format: "rss" },
+                { name: "Local HN", url: `${feedOrigin}/hn`, format: "hn_algolia" },
+                { name: "Local Atom", url: `${feedOrigin}/atom`, format: "atom" },
+              ],
+              null,
+              2,
+            ),
+            "utf8",
+          );
+
+          /*
+           * Run now, through the audited command boundary the renderer uses —
+           * not by poking the runner. If this path works only in a test harness
+           * it does not work.
+           *
+           * `observed_at` is re-read here rather than fabricated, and that detail
+           * is the whole reason this proof earned its keep. The first version of
+           * this check invented a timestamp, and enforcement refused it as
+           * `stale_snapshot` — which then exposed the real defect behind it:
+           * `runner/state.ts` mints `observed_at` on every build and the adapter
+           * rebuilds every five seconds, so the value churns whether or not
+           * anything changed. Any control bound to a rendered snapshot has about
+           * a five-second window. The page now re-reads for the same reason this
+           * does.
+           */
+          const fresh = (await window.webContents.executeJavaScript(
+            `window.dashData.workspace(${JSON.stringify(agentId)})`,
+          )) as { data?: { snapshot?: { observed_at?: string } | null } };
+          const runRequest = {
+            agent_id: agentId,
+            observed_at: fresh.data?.snapshot?.observed_at ?? "",
+            task_id: "waiting-to-be-run",
+          };
+          const asked = (await window.webContents.executeJavaScript(
+            `window.dashShell.retry(${JSON.stringify(runRequest)})`,
+          )) as { ok?: boolean; reason?: string };
+          check("6f. Run now is accepted through the audited bridge", asked.ok === true, asked);
+
+          /*
+           * Two budgets, because there are two different things being waited on.
+           *
+           * MAR-473: this used to be one 20-second window covering the agent's own
+           * work *and* the telemetry propagation behind it, so a slow source spent
+           * the bridge's budget and the bridge got the blame. The agent's work is
+           * now loopback and bounded; the bridge's share is stated separately and
+           * measured against the ~3.3-5.5s this step has actually taken across
+           * every recorded CI run.
+           */
+          const AGENT_RUN_BUDGET_MS = 30_000;
+          const BRIDGE_BUDGET_MS = 20_000;
+
+          // The agent's half first: its own artifact on its own disk. Reaching
+          // this line means the run really ran, so a later failure is about DASH
+          // rather than about the agent — the distinction 6g could not draw.
+          const reportsDir = path.join(created.value.directory, "reports");
+          const digestFiles = await waitForObserved(
+            async () => {
+              const files = existsSync(reportsDir)
+                ? readdirSync(reportsDir).filter((name) => name.endsWith(".json"))
+                : [];
+              return { value: files.length > 0 ? files : null, seen: { reportsDir, files } };
+            },
+            "the runner-hosted sample digest artifact",
+            AGENT_RUN_BUDGET_MS,
+          );
+          const onDisk = digestFiles.value ?? [];
+          check("6h. the sample leaves a digest in its own folder", onDisk.length > 0, {
+            files: onDisk,
+            waited_ms: digestFiles.elapsed_ms,
+          });
+
+          /*
+           * Now the bridge, with its own budget and its own diagnosis.
+           *
+           * The failure detail names what it saw: every run this agent has,
+           * with its status and whether its id was already known. "No run at
+           * all", "a run still running" and "a completed run whose id predates
+           * this proof" are three different defects that all used to print
+           * `null`.
+           */
+          const runWait = await waitForObserved(
+            async () => {
+              const view = (await window.webContents.executeJavaScript(
+                `window.dashData.runs()`,
+              )) as {
+                ok?: boolean;
+                data?: { runs?: Array<{ agent?: string; run_id?: string; status?: string }> };
+              };
+              const mine = (view.data?.runs ?? []).filter((run) => run.agent === agentId);
+              const match =
+                mine.find(
+                  (run) =>
+                    run.status === "completed" &&
+                    typeof run.run_id === "string" &&
+                    !previousRunIds.has(run.run_id),
+                ) ?? null;
+              return {
+                value: match,
+                seen: mine.map((run) => ({
+                  run_id: run.run_id,
+                  status: run.status,
+                  predates_this_proof: previousRunIds.has(run.run_id ?? ""),
+                })),
+              };
+            },
+            "runner-hosted sample telemetry to reach Runs",
+            BRIDGE_BUDGET_MS,
+          );
+          const completed = runWait.value;
+          check(
+            "6g. runner-hosted telemetry renders through the Runs bridge",
+            completed !== null,
+            completed ?? {
+              waited_ms: runWait.elapsed_ms,
+              polls: runWait.polls,
+              runs_for_this_agent: runWait.last_seen,
+              // The agent's own half, so the reader can tell a bridge that never
+              // delivered from a run that never happened without leaving the line.
+              digest_on_disk: onDisk,
+              digest_waited_ms: digestFiles.elapsed_ms,
+            },
+          );
+
+          /*
+           * The half Wave 0 could not prove.
+           *
+           * 6h is the check this block used to end on: a file exists in the
+           * agent's folder. That is evidence the *agent* wrote something and no
+           * evidence whatsoever that DASH can show it — which was true, because
+           * until MAR-457 there was no artifact contract, table, view or surface
+           * for it to arrive in. This reads the digest back through the same
+           * bridge the renderer reads, with its citations and its verdict.
+           */
+          /*
+           * MAR-473: no run id, no query. This used to fall through to
+           * `run(agentId, "")`, which cannot match anything, so 6i/6j/6k reported
+           * `undefined` and read as three independent defects. A proof whose input
+           * never arrived says so instead.
+           */
+          const digest =
+            completed === null
+              ? null
+              : (
+                  await waitForObserved(
+                    async () => {
+                      const view = (await window.webContents.executeJavaScript(
+                        `window.dashData.run(${JSON.stringify(agentId)}, ${JSON.stringify(
+                          completed.run_id ?? "",
+                        )})`,
+                      )) as {
+                        data?: {
+                          artifacts?: Array<{
+                            artifact_id?: string;
+                            title?: string;
+                            items?: unknown[];
+                            sources_fetched?: Array<{
+                              source_name?: string;
+                              source_url?: string;
+                              status?: string;
+                            }>;
+                          }>;
+                          grounding?: {
+                            verdict?: string;
+                            items_total?: number;
+                            items_cited?: number;
+                          } | null;
+                        };
+                      };
+                      const first = view.data?.artifacts?.[0];
+                      return {
+                        value:
+                          first === undefined
+                            ? null
+                            : { artifact: first, grounding: view.data?.grounding },
+                        seen: { artifacts: view.data?.artifacts?.length ?? 0 },
+                      };
+                    },
+                    "the digest to reach DASH through the read bridge",
+                    BRIDGE_BUDGET_MS,
+                  )
+                ).value;
+
+          if (completed === null) {
+            skip(
+              "6i. the digest reaches DASH, not just the agent's folder",
+              "6g produced no run to read a digest from",
+            );
+          } else {
+            check(
+              "6i. the digest reaches DASH, not just the agent's folder",
+              digest !== null && typeof digest.artifact.artifact_id === "string",
+              digest?.artifact,
+            );
+          }
+
+          /*
+           * What 6j asserts, and why it changed.
+           *
+           * It used to assert `verdict !== undefined` — that *a* verdict existed.
+           * Per `lib/analyze.ts`, a digest of zero items from three unreachable
+           * sources has nothing uncited and nothing unsupported, so it is reported
+           * `grounded` and that check passed. It would have passed on `ungrounded`
+           * too. So the proof that supposedly made the live fetch the point could
+           * not tell a working fetch from a dead one, and twice it silently did
+           * not: CI runs 30736386756 and 30753436632 carried 20 items instead of
+           * 30, one source gone, everything green.
+           *
+           * Against a local feed the expected count is known exactly, so this now
+           * asserts the number and the verdict. Cited must equal total: an item
+           * DASH cannot trace to a source it saw fetched is the failure this
+           * surface exists for.
+           */
+          if (completed === null) {
+            skip(
+              "6j. the digest carries a grounding verdict over every local item",
+              "6g produced no run to read a digest from",
+            );
+          } else {
+            check(
+              "6j. the digest carries a grounding verdict over every local item",
+              digest?.grounding?.verdict === "grounded" &&
+                digest.grounding.items_total === LOCAL_TOTAL &&
+                digest.grounding.items_cited === LOCAL_TOTAL,
+              { expected_items: LOCAL_TOTAL, grounding: digest?.grounding },
+            );
+          }
+
+          /*
+           * ADR 0004's rule, enforced rather than trusted.
+           *
+           * Everything above is only network-independent while the sources this
+           * run actually read are local, and "actually read" is the operative
+           * word: `sources.json` is written a hundred lines up and could be
+           * changed, defaulted around, or quietly ignored. This reads the
+           * addresses back out of the digest DASH received, which is the only
+           * place that records where the bytes really came from.
+           *
+           * Without it the fix is a convention, and a convention is what decays.
+           * MAR-473 cost a day of CI archaeology; the next person to point this
+           * gate at a live feed should be told so by a proof, not by an
+           * intermittent red X three weeks later.
+           */
+          const fetchedUrls = (digest?.artifact.sources_fetched ?? []).map(
+            (source) => source.source_url ?? "",
+          );
+          const offMachine = fetchedUrls.filter((url) => {
+            try {
+              const host = new URL(url).hostname;
+              return host !== "127.0.0.1" && host !== "localhost" && host !== "::1";
+            } catch {
+              return true;
+            }
+          });
+          if (completed === null) {
+            skip(
+              "6m. the mandatory gate reached no host outside this machine",
+              "6g produced no run whose sources could be read back",
+            );
+          } else {
+            check(
+              "6m. the mandatory gate reached no host outside this machine",
+              fetchedUrls.length === 3 && offMachine.length === 0,
+              { fetched: fetchedUrls, off_machine: offMachine },
+            );
+          }
+
+          // And the renderer actually draws it. MAR-454's whole lesson is that a
+          // proof reading data through a bridge can pass while the page above it
+          // is broken — proofs 5a-5j were green in a suite of 1635 tests while
+          // three shipped defects sat in the one path no unit test could reach.
+          /*
+           * Built from protocol and host rather than from `origin`.
+           *
+           * `dash-app:` is not one of the URL standard's "special" schemes, so
+           * `new URL("dash-app://ui/").origin` is the string "null" — an opaque
+           * origin, correctly per spec and useless here. The first version of this
+           * proof used it and produced `null/runs/detail?...`, which Electron
+           * refused with ERR_INVALID_URL. Found by running it.
+           */
+          const parsedRenderer = new URL(rendered.url);
+          const detailUrl =
+            `${parsedRenderer.protocol}//${parsedRenderer.host}` +
+            `/runs/detail?agent=${encodeURIComponent(agentId)}` +
+            `&run_id=${encodeURIComponent(completed?.run_id ?? "")}`;
+
+          let drawn: { text: string; sources: number } | null = null;
+          try {
+            await window.loadURL(detailUrl);
+            drawn = completed === null ? null : await waitForValue(async () => {
+              const seen = (await window.webContents.executeJavaScript(
+                `({ text: document.body.innerText,
+                    sources: document.querySelectorAll(".digest-sources").length })`,
+              )) as { text: string; sources: number };
+              // The page reads its view in an effect, so an empty body is "not
+              // yet" rather than "not there". Waiting for the digest's own title
+              // is what makes this an assertion about content and not about
+              // whether a document object exists.
+              //
+              // The fallback is a sentinel that cannot appear in rendered text,
+              // so a missing digest times out rather than matching every page.
+              // Written as an escape since MAR-464: it was a raw NUL byte, which
+              // made ripgrep classify this whole file as binary and skip it, and
+              // a proof file nobody can search is one nobody will read.
+              return seen.text.includes(digest?.artifact.title ?? "\u0000") ? seen : null;
+            }, "the run detail page to draw the digest");
+          } catch (error: unknown) {
+            drawn = null;
+            console.warn(`[smoke] the run detail page did not load: ${String(error)}`);
+          }
+          if (completed === null) {
+            skip(
+              "6k. the run detail page draws the digest",
+              "6g produced no run whose detail page could be opened",
+            );
+          } else {
+            check(
+              "6k. the run detail page draws the digest",
+              drawn !== null,
+              drawn?.text.slice(0, 400),
+            );
+          }
+
+          const finalLedger = readHandoffRecord(created.value.handoff.handoff_id);
+          check(
+            "6f. the handoff ledger keeps the first final outcome",
+            finalLedger?.outcome === "registered",
+            finalLedger,
+          );
+
+          await removeAgent(agentId, ports);
+          agentId = "";
+        } finally {
+          feeds?.close();
         }
-        check("6k. the run detail page draws the digest", drawn !== null, drawn?.text.slice(0, 400));
-
-        const finalLedger = readHandoffRecord(created.value.handoff.handoff_id);
-        check(
-          "6f. the handoff ledger keeps the first final outcome",
-          finalLedger?.outcome === "registered",
-          finalLedger,
-        );
-
-        await removeAgent(agentId, ports);
-        agentId = "";
       }
     } finally {
       if (agentId !== "") {
@@ -1156,6 +1515,70 @@ if (recorded !== null) {
       rmSync(parentDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   }
+
+  /* -- 6l: are the shipped sources still there? (MAR-473, non-blocking) -- */
+
+  /*
+   * The question the mandatory gate stopped asking, asked properly.
+   *
+   * ADR 0004 splits liveness out of the release gate rather than deleting it.
+   * The gate above proves DASH's loop against a local feed; this proves nothing
+   * about DASH and everything about the three addresses the scout ships with —
+   * whether they still answer, how slowly, and whether what comes back still
+   * parses as the format the source declares.
+   *
+   * It is deliberately better than what it replaces. The old 6j could not tell
+   * 30 items from 20 from 0, and twice passed with a source dead. This names the
+   * source that failed. It is also deliberately *not* a failure: `note` never
+   * touches `failures`, because Hacker News being slow is not a reason to
+   * refuse a release, and a red X people learn to re-run is worse than no X at
+   * all. Read it, and file an issue when a source has gone.
+   */
+  const liveResults: unknown[] = [];
+  for (const source of DEFAULT_SOURCES) {
+    const started = Date.now();
+    try {
+      const response = await fetch(source.url, {
+        signal: AbortSignal.timeout(15_000),
+        headers: {
+          accept: "application/rss+xml, application/atom+xml, application/json, text/xml",
+        },
+        redirect: "follow",
+      });
+      const body = await response.text();
+      // The same shape test the agent's own parser applies, without importing
+      // an .mjs template into the harness: a JSON source must carry `hits`, an
+      // XML one must carry at least one block of the tag its format names.
+      const looksParseable =
+        source.format === "hn_algolia"
+          ? ((): boolean => {
+              try {
+                return Array.isArray((JSON.parse(body) as { hits?: unknown }).hits);
+              } catch {
+                return false;
+              }
+            })()
+          : body.includes(source.format === "atom" ? "<entry" : "<item");
+      liveResults.push({
+        source: source.name,
+        status: response.ok ? (looksParseable ? "ok" : "not_a_feed") : "http_error",
+        http_status: response.status,
+        ms: Date.now() - started,
+        bytes: body.length,
+      });
+    } catch (error: unknown) {
+      liveResults.push({
+        source: source.name,
+        status: "unreachable",
+        ms: Date.now() - started,
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  note("6l. the shipped live sources still answer (advisory, never blocking)", {
+    checked_at: new Date().toISOString(),
+    sources: liveResults,
+  });
 
   /* -- Proof 7: the permission broker, end to end (MAR-458) -------------- */
 
