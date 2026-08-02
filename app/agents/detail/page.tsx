@@ -252,50 +252,40 @@ function RunNow({
   }
 
   /*
-   * Read the snapshot again, immediately before asking.
+   * The rendered snapshot's own value, like every other control on this page.
    *
-   * `lib/agent-dom/enforce.ts` refuses a command whose `observed_at` is not the
-   * one DASH currently holds, which stops a *forged* value from minting a fresh
-   * idempotency key. But `runner/state.ts` mints `observed_at` on every build
-   * and `electron/agent-adapters.ts` rebuilds every five seconds, so the value
-   * churns whether or not anything changed — and this page deliberately does
-   * not re-read while the agent is idle. Using the rendered snapshot's value
-   * therefore fails for anybody who looked at the page for more than about five
-   * seconds, which is everybody.
+   * MAR-457 shipped a re-read here — ask DASH for the current `observed_at`
+   * immediately before issuing — because the value churned on the five-second
+   * poll and this button was refused as `stale_snapshot` for anyone who read the
+   * screen first. MAR-464 fixed the binding instead: `observed_at` now advances
+   * when the decision context does, so the workaround has nothing left to work
+   * around and is removed.
    *
-   * This does not weaken the check. The renderer still cannot invent the value:
-   * it asks DASH for the one DASH holds. What it stops doing is punishing a
-   * person for reading the screen before pressing the button.
-   *
-   * Narrow on purpose. Approvals keep the rendered snapshot's value, because
-   * "the world changed since you looked, look again" is a property worth having
-   * in front of an irreversible action. Starting a run of a manual-first agent
-   * is not one, and the agent refuses a second concurrent run itself.
+   * Removing it is not tidying. A re-read mints a *fresh* value per click, and
+   * `idempotencyKey` hashes that value — so the workaround gave this control a
+   * new idempotency key on every press, which is the one property the key
+   * exists to deny. It was defensible only because starting a manual-first
+   * agent is not irreversible and the agent refuses a concurrent run itself.
+   * With the binding fixed, two presses of this button collapse to one command,
+   * which is what it should always have done.
    */
   // Captured after the guards above, so the closure below does not have to
   // re-narrow what this function body already established.
   const taskId = waiting.id;
-  const renderedObservedAt = snapshot.observed_at;
-
-  async function runNow(): Promise<void> {
-    const current = await dataSource().workspace(agent);
-    const observedAt =
-      current.ok && current.data.found && current.data.snapshot !== null
-        ? current.data.snapshot.observed_at
-        : renderedObservedAt;
-    await issue(`run:${taskId}`, "retry", {
-      agent_id: agent,
-      observed_at: observedAt,
-      task_id: taskId,
-    });
-  }
+  const observedAt = snapshot.observed_at;
 
   return (
     <section className="section run-now">
       <button
         className="button-primary"
         disabled={pending !== null}
-        onClick={() => void runNow()}
+        onClick={() =>
+          void issue(`run:${taskId}`, "retry", {
+            agent_id: agent,
+            observed_at: observedAt,
+            task_id: taskId,
+          })
+        }
         type="button"
       >
         {pending === `run:${taskId}` ? "Starting…" : "Run now"}
@@ -400,8 +390,16 @@ function WorkspaceBody({
               <dd>{overview.offline_behavior}</dd>
             </div>
           )}
+          {/*
+            * Relabelled with MAR-464's binding. This value now advances when
+            * the agent's decision-relevant state changes, not on every poll, so
+            * "last snapshot" would read as "DASH has stopped checking" the
+            * moment an idle agent sat still — which is the opposite of true.
+            * When DASH last looked is a separate question, and `useLiveView`
+            * already answers it in its own live region during a run.
+            */}
           <div>
-            <dt>Last agent snapshot</dt>
+            <dt>State last changed</dt>
             <dd>{snapshot.observed_at}</dd>
           </div>
         </dl>

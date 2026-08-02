@@ -32,7 +32,7 @@ process.env.DASH_DATA_DIR = dataDir;
 
 const { closeDb } = await import("../lib/db");
 const { importManifest, resetStore } = await import("../lib/store");
-const { putAgentDomState, readCommandAudit, readCommandResult } = await import(
+const { putAgentDomState, readAgentDomState, readCommandAudit, readCommandResult } = await import(
   "../lib/agent-dom/store"
 );
 const { runAgentCommand, localPrincipal } = await import("../lib/agent-dom/runner");
@@ -215,10 +215,31 @@ describe("the five rejections, each audited and each distinguishable", () => {
     const first = await runAgentCommand(approveInput(), runtime);
     expect(first.ok).toBe(true);
 
-    // A different snapshot, so the idempotency key differs and the *nonce* is
-    // the only thing that can refuse it.
+    /*
+     * A different snapshot, so the idempotency key differs and the *nonce* is
+     * the only thing that can refuse it.
+     *
+     * The task's detail moves, not just the clock. Since MAR-464 a snapshot
+     * whose only difference is `observed_at` is held at the value it already
+     * had, so moving the timestamp alone would leave the key identical and this
+     * test would quietly become a proof about duplicates instead of replays.
+     */
     expect(
-      putAgentDomState(stateWith({ observed_at: "2026-07-16T09:07:00Z" })).ok,
+      putAgentDomState(
+        stateWith({
+          observed_at: "2026-07-16T09:07:00Z",
+          tasks: [
+            {
+              id: TASK,
+              run_id: RUN,
+              label: "Schedule a synthetic project review",
+              status: "waiting_for_approval",
+              created_at: "2026-07-16T09:01:20Z",
+              detail: "A second proposed time is ready for approval",
+            },
+          ],
+        }),
+      ).ok,
     ).toBe(true);
     const second = await runAgentCommand(
       approveInput({ request_id: "req-2", observed_at: "2026-07-16T09:07:00Z" }),
@@ -466,11 +487,57 @@ describe("duplicates", () => {
       await runAgentCommand(cancel("req-2", OBSERVED_AT), runtime);
       expect(adapter.sent).toHaveLength(1);
 
-      // A new snapshot is a new thing the user looked at, so the same click is
-      // a new decision rather than a repeat of the old one.
-      const moved = stateWith({ observed_at: "2026-07-16T09:20:00Z" });
+      /*
+       * A poll that found the same world is not a new thing the user looked at
+       * (MAR-464).
+       *
+       * This assertion used to be the opposite. It moved `observed_at` alone,
+       * called that "the state has moved on", and expected a second delivery —
+       * which passed, and meant the anti-duplication defence lapsed roughly
+       * five seconds after any control was drawn, because the runner re-mints
+       * `observed_at` on every build. The run's `progress` and `current_step`
+       * move here too, deliberately: they are the fields that genuinely churn
+       * during a run, and neither changes whether `cancel` is valid.
+       */
+      const ticked = stateWith({
+        observed_at: "2026-07-16T09:20:00Z",
+        runs: [
+          {
+            id: RUN,
+            status: "waiting_for_approval",
+            started_at: "2026-07-16T09:01:00Z",
+            progress: 0.83,
+            current_step: "human_approval_gate",
+          },
+        ],
+      });
+      expect(putAgentDomState(ticked).ok).toBe(true);
+      expect(readAgentDomState(AGENT)?.observed_at).toBe(OBSERVED_AT);
+      await runAgentCommand(cancel("req-3", OBSERVED_AT), runtime);
+      expect(adapter.sent).toHaveLength(1);
+
+      /*
+       * A decision the user could now make differently *is* a new snapshot.
+       *
+       * The run moved from waiting for approval to paused. `cancel` is declared
+       * and meaningful under both, so what this proves is the freshness rule
+       * rather than availability — the same care the fixture above takes.
+       */
+      const moved = stateWith({
+        observed_at: "2026-07-16T09:30:00Z",
+        runs: [
+          {
+            id: RUN,
+            status: "paused",
+            started_at: "2026-07-16T09:01:00Z",
+            progress: 0.83,
+            current_step: "human_approval_gate",
+          },
+        ],
+      });
       expect(putAgentDomState(moved).ok).toBe(true);
-      await runAgentCommand(cancel("req-3", "2026-07-16T09:20:00Z"), runtime);
+      expect(readAgentDomState(AGENT)?.observed_at).toBe("2026-07-16T09:30:00Z");
+      await runAgentCommand(cancel("req-4", "2026-07-16T09:30:00Z"), runtime);
 
       expect(adapter.sent).toHaveLength(2);
     })();
