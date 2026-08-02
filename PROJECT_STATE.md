@@ -65,12 +65,18 @@ MAR-458 to `proven`), MAR-469 (provider-side draft creation), MAR-470 (MCP
 connectors through the same card), MAR-471 (bring-your-own Google client),
 MAR-467 (a brokered request DASH never received leaves no trace).
 
-## The release signal, repaired (MAR-465, MAR-466) — and one reason it still is not trustworthy
+## The release signal, repaired (MAR-465, MAR-466, MAR-473)
 
-Both named halves are fixed and proven; a third defect was found while proving
-them, and it is not fixed. `pnpm verify` is green end to end on Windows at
-`b977a8e`: `[state] valid`, typecheck, 59 test files, 1032 tests, and 56
-installed-shell proofs with no failures. PR #31 is open and human-gated.
+All three defects are fixed and proven. MAR-465 and MAR-466 merged in PR #31 at
+`08a0d36`; MAR-473 — found while proving them, and the reason "master is green"
+meant "master was green once" — is PR #32.
+
+`pnpm verify` is green end to end on Windows: `[state] valid`, typecheck, 59 test
+files, 1033 tests, and 57 installed-shell proofs with no failures. The two gates
+now say different things on purpose. `verify` (Linux) checks that the state
+packet's ancestry claims are true; `shell-smoke` (Windows) checks the installed
+loop against sources this machine serves. Neither can be made red by a third
+party, which is ADR 0004's rule and the reason the signal is now worth reading.
 
 **MAR-465 (proven).** `fetch-depth: 0` on both jobs, but the line that mattered
 more is what `INVALID` is now allowed to mean. A commit absent from this *clone*
@@ -102,12 +108,44 @@ pushed its own failure downstream into 3c, where it read as a defect in the thin
 failures — runs 2 and 3 seeded 29.6 seconds apart, so the last one sat squarely
 inside the window that used to poison it.
 
-**MAR-473 (open, not fixed here).** `shell-smoke` is *not* the reliable half
-MAR-465 assumed. It passed on the four previous red runs and failed on `0ac58ac`,
-a docs-only commit, at proofs 6g/6i/6j/6k — `6g` returning `null`, so the run
-produced no telemetry at all. A docs-only commit cannot break runner-hosted
-telemetry, and 6j reads a live digest from three third-party endpoints. Whether a
-release gate should depend on Hacker News being up is the question behind it.
+**MAR-473 (fixed and proven).** `shell-smoke` was *not* the reliable half
+MAR-465 assumed, and the cause was arithmetic rather than luck. Reading all
+thirteen CI runs since 2026-08-01 separates the failure from the passes: telemetry
+propagation is a **constant** 3.3–5.5s in every run, while the agent's fetch is
+**bimodal** — ~1s when all three sources answer, 11–16s when one does not
+(`items_total` 30 versus 20). The scout reads its sources **sequentially** with a
+15-second timeout each, and `6g` had a **single 20-second** budget covering the
+fetch *and* the propagation behind it. One hung source spent 15 of the 20 seconds
+and left ~5 for a step needing ~4. On `0ac58ac` the fetch took 15.6s and the
+telemetry needed 4.6s: **the gate lost by 0.2 seconds** and reported it as
+`6g … : null`.
+
+So the two candidate stories — a blocked fetch, and a run not finishing inside
+the harness's wait — were the same event seen from two ends. The network was the
+variable; the bridge was the victim. Worst case is 3 × 15s against a 20s budget,
+so this was never a rare race.
+
+The mandatory gate now reads three **loopback** feeds the harness serves, one per
+declared parser; the live sources moved to `6l`, which is dated, names the source
+that failed, and can never fail a release. **ADR 0004** records the policy: a
+blocking release gate may depend only on this repository and this machine.
+
+Three defects were fixed independently of the root cause. `6g` failed with
+`null`, which cannot distinguish "no run" from "a run still running" from "a
+completed run whose id predates this proof"; it now reports what it waited for,
+for how long, over how many polls, and what it saw. `6i`/`6j`/`6k` were hardcoded
+to `completed?.run_id ?? ""`, so one upstream failure printed three red lines each
+blaming the thing it is named after; they skip explicitly now. And `6j` asserted
+only that *a* verdict existed — a digest of **zero** items from three dead sources
+is reported `grounded`, so it passed whether the fetch worked or not, and twice it
+did exactly that on runs 30736386756 and 30753436632, which carried 20 items where
+30 were expected with nobody the wiser.
+
+The gate is therefore **stronger**, not weaker: exact item counts, all three
+parsers exercised every run, and a propagation budget measured against what that
+step actually takes. What stops being proven, plainly: a release can go green
+while one of the three shipped source URLs is dead or has changed shape. The
+honest accounting is that enforcement was never there.
 
 **MAR-472 (fixed here, filed for the record).** `tests/broker-transport.test.ts`
 failed 3 runs out of 3 under full-suite load on Windows, on master's own code —
