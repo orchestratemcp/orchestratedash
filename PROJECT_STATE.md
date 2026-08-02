@@ -65,24 +65,55 @@ MAR-458 to `proven`), MAR-469 (provider-side draft creation), MAR-470 (MCP
 connectors through the same card), MAR-471 (bring-your-own Google client),
 MAR-467 (a brokered request DASH never received leaves no trace).
 
-## Both halves of the release signal are currently unreliable
+## The release signal, repaired (MAR-465, MAR-466) — and one reason it still is not trustworthy
 
-Nothing can honestly reach `proven` until these two are fixed, and they were
-found by MAR-458's session rather than by the gates themselves.
+Both named halves are fixed and proven; a third defect was found while proving
+them, and it is not fixed. `pnpm verify` is green end to end on Windows at
+`b977a8e`: `[state] valid`, typecheck, 59 test files, 1032 tests, and 56
+installed-shell proofs with no failures. PR #31 is open and human-gated.
 
-**MAR-465 (Urgent).** The CI `verify` job has been red on master since
-2026-08-01, through three merges. It fails in `state:check` because
-`actions/checkout@v4` shallow-clones and no recorded commit is then an ancestor
-of HEAD — so `pnpm verify` never reaches typecheck or the suite. A real
-regression would have looked identical. The Windows `shell-smoke` job is
-unaffected and has been passing, so the installed proofs are real; it is the
-Linux gate that is blind.
+**MAR-465 (proven).** `fetch-depth: 0` on both jobs, but the line that mattered
+more is what `INVALID` is now allowed to mean. A commit absent from this *clone*
+is `UNVERIFIED` and the run says it is not ancestry evidence; a commit absent
+from this *repository* is `INVALID`. On its own, `fetch-depth: 0` would have
+traded a false red for a false green, so a shallow clone under CI is itself a
+failure that names the workflow line responsible — deleting that line goes red
+again rather than passing having checked nothing. Proven both directions on
+GitHub Actions: the first green `verify` since 2026-08-01, and then a
+deliberately fabricated commit sha failing with **one** precise line rather than
+the shotgun every-issue-`INVALID` a shallow clone produced.
 
-**MAR-466.** MAR-464's `observed_at` proofs (3c/3d/3g) fail on the installed
-smoke, intermittently, and reproduce on master with none of MAR-458's code. The
-held snapshot advances by exactly one poll interval — the defect MAR-464 fixed
-and recorded as proven at `b9f5f07`. So a proof recorded as proven can fail
-later on the same commit, which is worth more attention than the failure itself.
+**MAR-466 (proven).** The cause was **accumulated store state**, and the
+hypothesis in the issue was wrong: `decisionIdentity` never treated
+`runs[].progress` as a change, and nothing else wrote a snapshot. Proof 3h ends
+by writing a snapshot dated `observed_at + 120s`, deliberately, and nothing
+removed it. `putAgentDomState` refuses any snapshot older than the newest the
+runner has said — correctly — so for two minutes afterwards the *next* run's seed
+was refused as out of order and every proof from 3c down ran against the previous
+run's world. The intermittency was a stopwatch, not a race, which is how a proof
+recorded as proven at `b9f5f07` could fail later on the same commit.
+
+Proof 3 now forgets the agent before seeding and takes the fabricated future back
+out when done. The quieter defect was **3b, which could not notice it had failed
+to seed**: an out-of-order snapshot is declined as `{ ok: true, superseded: true }`
+and the check read only `ok`, so it reported success having written nothing and
+pushed its own failure downstream into 3c, where it read as a defect in the thing
+3c is about. Three consecutive `verify:shell` runs, 56 proofs each, zero
+failures — runs 2 and 3 seeded 29.6 seconds apart, so the last one sat squarely
+inside the window that used to poison it.
+
+**MAR-473 (open, not fixed here).** `shell-smoke` is *not* the reliable half
+MAR-465 assumed. It passed on the four previous red runs and failed on `0ac58ac`,
+a docs-only commit, at proofs 6g/6i/6j/6k — `6g` returning `null`, so the run
+produced no telemetry at all. A docs-only commit cannot break runner-hosted
+telemetry, and 6j reads a live digest from three third-party endpoints. Whether a
+release gate should depend on Hacker News being up is the question behind it.
+
+**MAR-472 (fixed here, filed for the record).** `tests/broker-transport.test.ts`
+failed 3 runs out of 3 under full-suite load on Windows, on master's own code —
+`settle(400)` betting a fixed sleep on Windows spawning a Node process. It waits
+for the line now instead of assuming it. Assertions unchanged, `lib/broker/`
+untouched. Fixed because `pnpm verify` could not go green on Windows without it.
 
 ## UX principle
 

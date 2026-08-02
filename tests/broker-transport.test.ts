@@ -98,6 +98,34 @@ async function settle(ms = 400): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+type BrokerRequests = ReturnType<Supervisor["drainBrokerRequests"]>["requests"];
+type TelemetryEvents = ReturnType<Supervisor["drainTelemetry"]>["events"];
+type Artifacts = ReturnType<Supervisor["drainArtifacts"]>["artifacts"];
+
+/**
+ * Wait for the child to have actually written, rather than assuming 400ms is
+ * always enough for Windows to spawn a Node process and get its first line to
+ * the supervisor.
+ *
+ * Under the full suite it frequently is not, and these tests failed as
+ * `expected [] to have a length of 1` on three runs out of three — a fact about
+ * how loaded the machine was, not about the pipe. MAR-466 found the same class
+ * of defect in the installed smoke; a longer `settle` would be the same coin
+ * flip with a slower toss.
+ *
+ * The condition drains as it polls, and each caller accumulates, because a
+ * drain is destructive: a poll that looked too early would throw away the very
+ * line it went looking for. What is asserted afterwards is unchanged — this
+ * decides *when* to look and never what is true, so an extra request arriving
+ * still fails the length check exactly as before.
+ */
+async function waitUntil(condition: () => boolean, timeoutMs = 15_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 describe("a brokered request on the pipe", () => {
   it("arrives bound to the child that wrote it, not to anything in the request", async () => {
     const { supervisor } = register(`
@@ -116,13 +144,17 @@ describe("a brokered request on the pipe", () => {
     `);
 
     expect(supervisor.start("broker-probe").ok).toBe(true);
-    await settle();
 
-    const drained = supervisor.drainBrokerRequests();
-    expect(drained.requests).toHaveLength(1);
-    expect(drained.requests[0]?.agent_id).toBe("broker-probe");
+    const requests: BrokerRequests = [];
+    await waitUntil(() => {
+      requests.push(...supervisor.drainBrokerRequests().requests);
+      return requests.length > 0;
+    });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.agent_id).toBe("broker-probe");
     supervisor.stopAll();
-  });
+  }, 30_000);
 
   it("empties on drain, so one request is never answered twice", async () => {
     const { supervisor } = register(`
@@ -132,12 +164,19 @@ describe("a brokered request on the pipe", () => {
       }) + "\\n");
     `);
     expect(supervisor.start("broker-probe").ok).toBe(true);
-    await settle();
 
-    expect(supervisor.drainBrokerRequests().requests).toHaveLength(1);
+    const requests: BrokerRequests = [];
+    await waitUntil(() => {
+      requests.push(...supervisor.drainBrokerRequests().requests);
+      return requests.length > 0;
+    });
+
+    expect(requests).toHaveLength(1);
+    // The claim of this test, and the reason the wait above accumulates rather
+    // than re-draining until it likes the answer: once taken, it is gone.
     expect(supervisor.drainBrokerRequests().requests).toHaveLength(0);
     supervisor.stopAll();
-  });
+  }, 30_000);
 
   /**
    * The bound is deliberately much smaller than telemetry's. A deep queue of
@@ -170,13 +209,25 @@ describe("a brokered request on the pipe", () => {
       line({ type: "broker_request", request: { request_id: "r", connection_id: "c", operation: "o", input: {} } });
     `);
     expect(supervisor.start("broker-probe").ok).toBe(true);
-    await settle();
 
-    expect(supervisor.drainBrokerRequests().requests).toHaveLength(1);
-    expect(supervisor.drainTelemetry().events).toHaveLength(1);
-    expect(supervisor.drainArtifacts().artifacts).toHaveLength(1);
+    // All three streams, polled together: the three lines are written in one
+    // burst but need not arrive in one chunk, and draining only the stream that
+    // happened to be ready would discard the other two.
+    const requests: BrokerRequests = [];
+    const events: TelemetryEvents = [];
+    const artifacts: Artifacts = [];
+    await waitUntil(() => {
+      requests.push(...supervisor.drainBrokerRequests().requests);
+      events.push(...supervisor.drainTelemetry().events);
+      artifacts.push(...supervisor.drainArtifacts().artifacts);
+      return requests.length > 0 && events.length > 0 && artifacts.length > 0;
+    });
+
+    expect(requests).toHaveLength(1);
+    expect(events).toHaveLength(1);
+    expect(artifacts).toHaveLength(1);
     supervisor.stopAll();
-  });
+  }, 30_000);
 });
 
 describe("an answer on the way back", () => {
@@ -206,6 +257,10 @@ describe("an answer on the way back", () => {
     `);
 
     expect(supervisor.start("broker-probe").ok).toBe(true);
+    // The child must be up before an answer can reach its stdin, and `settle`
+    // was betting 400ms on that. Delivery is sent once and only once — the
+    // subject here is that one answer arrives at the child that asked, so
+    // retrying the send would be testing something else.
     await settle();
 
     const delivered = supervisor.respondToBroker(
@@ -213,9 +268,14 @@ describe("an answer on the way back", () => {
       encodeBrokerResponse(fulfil("req-1", { messages: [{ message_id: "18e0a1" }] })),
     );
     expect(delivered).toBe(true);
-    await settle();
 
-    const echoed = supervisor.drainArtifacts().artifacts[0]?.artifact as {
+    const artifacts: Artifacts = [];
+    await waitUntil(() => {
+      artifacts.push(...supervisor.drainArtifacts().artifacts);
+      return artifacts.length > 0;
+    });
+
+    const echoed = artifacts[0]?.artifact as {
       request_id?: string;
       ok?: boolean;
       result?: unknown;
@@ -224,7 +284,7 @@ describe("an answer on the way back", () => {
     expect(echoed?.ok).toBe(true);
     expect(echoed?.result).toEqual({ messages: [{ message_id: "18e0a1" }] });
     supervisor.stopAll();
-  });
+  }, 30_000);
 
   it("reports rather than buffers when the agent has already exited", () => {
     const { supervisor } = register(`process.exit(0);`);

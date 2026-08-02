@@ -58,7 +58,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { IPC_ORIGIN, ipcFetch } from "../lib/agent-dom/ipc-fetch";
-import { putAgentDomState, readAgentDomState, readCommandAudit } from "../lib/agent-dom/store";
+import {
+  forgetAgentDomState,
+  putAgentDomState,
+  readAgentDomState,
+  readCommandAudit,
+} from "../lib/agent-dom/store";
 import { brokerProfileFor } from "../lib/broker/providers";
 import { readBrokerAudit } from "../lib/broker/store";
 import { connectableFields, connectionSecretName } from "../lib/connection-credentials";
@@ -264,6 +269,26 @@ check(
 
 /* -- Proof 3: an Agent DOM command reaches noAdapter -------------------- */
 
+/**
+ * This proof runs against the installed store, which outlives it (MAR-466).
+ *
+ * Proof 3h below ends by writing a snapshot dated `observed_at + 120s` —
+ * deliberately, because it needs a decision context that has demonstrably moved
+ * on — and nothing removed it. `putAgentDomState` refuses any snapshot older
+ * than the newest the runner has said, so for the next two minutes this agent's
+ * seed was refused as out of order and every proof from 3c down ran against the
+ * *previous* run's world. Two of four runs passed and which two was a
+ * stopwatch, which is how a proof recorded as proven at `b9f5f07` could fail
+ * later on the same commit.
+ *
+ * Forgetting the agent first is what makes proof 3 independent of what earlier
+ * runs left behind — the lesson proof 7 learned when a constant run id let a
+ * previous run's artifact satisfy it. The rollback guard is untouched and still
+ * right; `tests/snapshot-carryover.test.ts` holds it to that for an agent DASH
+ * genuinely knows about.
+ */
+forgetAgent(AGENT);
+
 const imported = importManifest(
   example("gmail-meeting-assistant.manifest.v2.example.json"),
 );
@@ -272,7 +297,18 @@ check("3a. seeded the v2 manifest", imported.ok, imported);
 const observedAt = new Date().toISOString();
 const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 const seeded = putAgentDomState(liveSnapshot(observedAt, expiresAt));
-check("3b. seeded a live state snapshot", seeded.ok, seeded);
+/*
+ * `superseded` as well as `ok`. An out-of-order snapshot is declined as
+ * `{ ok: true, superseded: true }`, so reading only `ok` let this check report
+ * "seeded a live state snapshot" having stored nothing at all — and pushed the
+ * failure downstream into 3c, where it read as a defect in the thing 3c is
+ * about. A seeding step that cannot notice it failed to seed is not a step.
+ */
+check(
+  "3b. seeded a live state snapshot",
+  seeded.ok && !seeded.superseded,
+  seeded,
+);
 
 const workspaceRead = (await window.webContents.executeJavaScript(
   `window.dashData.workspace(${JSON.stringify(AGENT)})`,
@@ -449,6 +485,24 @@ check(
   "3h. a decision taken against a context that has since moved is still refused",
   staleRefused && rejectedStale.reason === "stale_snapshot",
   { advanced: staleRefused, ...rejectedStale },
+);
+
+/**
+ * Take the fabricated future back out of the installed store.
+ *
+ * `movedOn` is two minutes ahead of now, which is what made this proof refuse
+ * the *next* run's seed (MAR-466). Forgetting the agent at the top of proof 3
+ * already fixes that; this is the same fact stated from the other end, so the
+ * harness cannot poison a store it has finished with even if that call is
+ * someday moved or removed.
+ *
+ * The snapshot only — proof 5 below reads this agent's manifest, and a harness
+ * that tidied that away would fail somewhere with nothing to do with tidying.
+ */
+check(
+  "3i. the harness leaves no fabricated future snapshot behind",
+  forgetAgentDomState(AGENT).existed && readAgentDomState(AGENT) === null,
+  { held_after_cleanup: readAgentDomState(AGENT) },
 );
 
 /* -- Proof 3f: the credential bridge is not on the app window ----------- */

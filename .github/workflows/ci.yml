@@ -11,6 +11,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # `state:check` asks git whether each commit recorded in
+          # `.orchestrate/state.json` is an ancestor of HEAD. The default
+          # `fetch-depth: 1` clones one commit, so nothing is an ancestor of
+          # anything and every recorded issue fails at once — which is what made
+          # this job red for three merges without saying anything true. Full
+          # history is what makes the ancestry claim checkable rather than
+          # skipped; `check-project-state.mjs` refuses to run shallow in CI, so
+          # removing this line goes red again instead of quietly passing.
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
         with:
@@ -48,6 +58,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # This job does not run `state:check` today, but it is the other half
+          # of the release signal and the two should not disagree about what
+          # they can see. See the `verify` job above.
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
         with:

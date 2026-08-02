@@ -195,6 +195,31 @@ export function readAgentDomState(agent: string): StoredSnapshot | null {
   return readSnapshotRow(db(), agent);
 }
 
+/**
+ * Drop the held snapshot for one agent, keeping everything else DASH knows
+ * about it.
+ *
+ * `forgetAgent` in `lib/store.ts` is the user-facing removal and takes the
+ * manifest with it. This is narrower, and exists for a caller that fabricates
+ * snapshots: `electron/smoke.ts` proof 3h writes one dated two minutes ahead to
+ * prove a moved decision context, and leaving it behind silently refused the
+ * *next* run's seed as out of order for as long as it stayed in the future
+ * (MAR-466).
+ *
+ * Deliberately not reachable from the command channel or any bridge. Discarding
+ * the snapshot a pending approval is bound to is not something an agent, or a
+ * renderer, gets to ask for.
+ */
+export function forgetAgentDomState(agent: string): { existed: boolean } {
+  const database = db();
+  return transact(database, () => {
+    const existed =
+      database.prepare("SELECT 1 FROM agent_dom_state WHERE agent = ?").get(agent) !== undefined;
+    database.prepare("DELETE FROM agent_dom_state WHERE agent = ?").run(agent);
+    return { existed };
+  });
+}
+
 /* ---------------------------------------------------------------------- *
  * Nonces
  * ---------------------------------------------------------------------- */
