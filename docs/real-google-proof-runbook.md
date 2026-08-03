@@ -117,7 +117,8 @@ Google decides:
 | `G4` | the three-party intersection over a *real* consent grants exactly three operations, write first |
 | `G5` | the capability card admits the granted permission is wider than the action |
 | `G6` | the agent this harness wrote parses |
-| `G7` | the runner started it as a real child process |
+| `G7a` | the runner wrote an endpoint file |
+| `G7b` | the runner started the agent as a real child process |
 | `G8a` | Gmail answered both read operations through the broker |
 | `G8b` | **DASH's projection found a subject, a sender and a plain-text body in real Gmail MIME.** The check most likely to fail, and the reason the proof is worth running: the loopback serves one flat `text/plain` part, and Gmail serves a tree |
 | `G9` | Gmail accepted the message DASH composed and returned a draft id |
@@ -145,6 +146,21 @@ That is a real difference and it runs in the other direction too: `G11` refuses 
 send against a credential Google would actually have honoured, which no loopback
 run can claim. **The two proofs are complementary and neither replaces the other.**
 Do not delete proof 7 and do not describe this one as superseding it.
+
+## If the run fails partway
+
+The cleanup runs on every path, including the ones that die early. It withdraws
+the grant at Google **before** deleting DASH's copy — deleting first would turn a
+failed revocation into a live restricted-scope grant nobody can find — and it
+prints the draft id if one was created, so a draft this harness made is never one
+it failed to mention.
+
+Two things to check anyway if a run ended badly:
+
+- if the log says `COULD NOT withdraw the grant at Google`, remove DASH's access
+  yourself under your Google account's third-party connections. Otherwise it
+  stays live for the rest of its seven days.
+- if a draft id was printed, delete that draft.
 
 ## Recording the result
 

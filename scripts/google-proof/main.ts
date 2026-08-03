@@ -255,6 +255,22 @@ async function run(): Promise<void> {
   const REQUEST_PREFIX = `gproof-${String(Date.now())}`;
   const secretName = connectionSecretName(AGENT_ID, CONNECTION_ID, FIELD_ID);
 
+  /*
+   * Declared out here rather than inside the `try`, and the reason is the one
+   * failure mode this harness must not have.
+   *
+   * A run that dies after `G2` has obtained a real, live, restricted-scope
+   * Google grant. If revocation only happened on the success path, the `finally`
+   * would delete DASH's copy and leave that grant alive at Google for the rest
+   * of its seven days, owned by a throwaway proof agent and invisible from
+   * DASH — the exact orphan `lib/connection-actions.ts` refuses to create when a
+   * disconnect half-fails. So the credential is reachable from the cleanup, and
+   * the cleanup withdraws it however the run ended.
+   */
+  let credential: OAuthCredential | null = null;
+  let draftId: string | null = null;
+  let revokedAtGoogle = false;
+
   try {
     /* -- G1: the shipped manifest, imported as a proof agent -------------- */
 
@@ -349,8 +365,7 @@ async function run(): Promise<void> {
     const storedRaw = await secureStore()
       .get(secretName)
       .catch(() => null);
-    const credential: OAuthCredential | null =
-      storedRaw === null ? null : parseOAuthCredential(storedRaw);
+    credential = storedRaw === null ? null : parseOAuthCredential(storedRaw);
 
     check(
       "G3. Google returned a refresh token and named the account, in DASH's own envelope",
@@ -626,9 +641,13 @@ async function run(): Promise<void> {
         })
       : null;
     if (recorded === null) {
-      check("G7. the runner is reachable", false, "no runner.json — the shell did not start one");
+      check("G7a. the runner wrote an endpoint file", false, "no runner.json — the shell did not start one");
       return;
     }
+    check("G7a. the runner wrote an endpoint file", true, {
+      transport: recorded.transport,
+      pid: recorded.pid,
+    });
 
     const handle: RunnerHandle = {
       origin: IPC_ORIGIN,
@@ -692,7 +711,7 @@ async function run(): Promise<void> {
       signal: AbortSignal.timeout(10_000),
     });
     const startBody = (await started.json()) as { ok?: boolean; detail?: string };
-    check("G7. the runner started the proof agent", startBody.ok === true, startBody);
+    check("G7b. the runner started the proof agent", startBody.ok === true, startBody);
 
     /* -- The round trip against Gmail ------------------------------------- */
 
@@ -731,6 +750,9 @@ async function run(): Promise<void> {
       120_000,
     );
     const partial = readReport();
+    // Held where the cleanup can print it, so a run that dies after the write
+    // still tells the operator what is sitting in their mailbox.
+    draftId = reported?.draft_id ?? partial?.draft_id ?? null;
 
     check(
       "G8a. Gmail answered both read operations through the broker",
@@ -902,9 +924,9 @@ async function run(): Promise<void> {
     say("[proof] asking for the same search every five seconds; its next request after");
     say("[proof] this must come back refused as 'revoked'.");
 
-    const revoked =
+    revokedAtGoogle =
       credential === null ? false : await providerOperations().revoke(credential);
-    check("G15a. Google accepted the revocation", revoked, { revoked });
+    check("G15a. Google accepted the revocation", revokedAtGoogle, { revoked: revokedAtGoogle });
 
     const watched = await waitForValue(
       async () => {
@@ -967,7 +989,29 @@ async function run(): Promise<void> {
       { answered: deleted },
     );
   } finally {
-    /* -- Leaving the machine as it was found ------------------------------- */
+    /* -- Leaving the machine, and the Google account, as they were found ---- */
+
+    /*
+     * Withdraw first, delete second, and in that order for the reason
+     * `lib/connection-actions.ts` gives about a half-failed disconnect: DASH's
+     * copy is the only handle on the grant, so deleting it before withdrawing
+     * would turn a revocation failure into a live restricted-scope grant nobody
+     * can find. Best-effort and never fatal — an offline machine must not turn a
+     * finished proof into a crash — but it is reported, because a grant this
+     * harness could not withdraw is one the operator has to withdraw by hand.
+     */
+    if (credential !== null && !revokedAtGoogle) {
+      const late = await providerOperations()
+        .revoke(credential)
+        .catch(() => false);
+      say(
+        late
+          ? "[proof] cleanup: the grant was withdrawn at Google."
+          : "[proof] cleanup: COULD NOT withdraw the grant at Google. Remove DASH's access " +
+              "yourself under your Google account's third-party connections — otherwise it " +
+              "stays live for the rest of its seven days.",
+      );
+    }
 
     await secureStore()
       .delete(secretName)
@@ -975,6 +1019,13 @@ async function run(): Promise<void> {
     removeRegistration(dataDir, AGENT_ID);
     forgetAgent(AGENT_ID);
     rmSync(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+
+    // Printed on every path, including the ones that died before `G16` could
+    // ask. A draft this harness created and then failed to mention is the one
+    // piece of litter it must never leave in somebody's mailbox.
+    if (draftId !== null) {
+      say(`[proof] cleanup: a real draft (id ${draftId}) exists in Gmail. DELETE IT. Do not send it.`);
+    }
 
     say("");
     say(`[proof] finished ${new Date().toISOString()}`);
