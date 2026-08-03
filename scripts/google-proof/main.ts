@@ -228,9 +228,20 @@ async function run(): Promise<void> {
   });
 
   const startedAt = new Date();
+  /*
+   * Printed rather than left as arithmetic for whoever reads the log.
+   *
+   * A Testing-mode data-scope grant lasts seven days, so this evidence has a
+   * stated shelf life — and a record that gives only a start date makes the
+   * reader work out the other end, which is the sort of thing nobody does. ADR
+   * 0002's "Google release path" is where the seven days come from.
+   */
+  const expiresAt = new Date(startedAt.getTime() + 7 * 24 * 60 * 60 * 1000);
   say("");
   say(`[proof] MAR-468 attended real-Google proof`);
   say(`[proof] date: ${startedAt.toISOString()}`);
+  say(`[proof] regime: Google Testing mode, named test user, restricted scopes`);
+  say(`[proof] this grant expires: ${expiresAt.toISOString().slice(0, 10)} (seven days)`);
   say(`[proof] store: ${dataDir}`);
   say(`[proof] userData: ${app.getPath("userData")}`);
   say("");
@@ -269,7 +280,11 @@ async function run(): Promise<void> {
 
   if (failures.length > 0) {
     say("");
-    say("[proof] refusing to continue: this run would not have been against Google.");
+    say(
+      "[proof] refusing to continue. Either this run would not have been against " +
+        "Google, or it would not have been against the store the installed app uses — " +
+        "and in both cases everything below would pass while establishing nothing.",
+    );
     return;
   }
 
@@ -1068,8 +1083,9 @@ async function run(): Promise<void> {
     );
     say("");
     say("[proof] Paste everything above into the Linear issue and the state packet,");
-    say("[proof] WITH the date. Testing-mode grants for restricted scopes expire seven");
-    say("[proof] days after they were issued, so this evidence has a stated shelf life.");
+    say(`[proof] WITH the date and the expiry (${expiresAt.toISOString().slice(0, 10)}).`);
+    say("[proof] The runbook's promotion rule lists the four qualifications a promoted");
+    say("[proof] note must carry. A run that failed any check promotes nothing.");
   }
 }
 
