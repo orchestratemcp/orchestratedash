@@ -98,6 +98,79 @@ describe("the artifact contract", () => {
   });
 });
 
+/* ---------------------------------------------------------------------- *
+ * Where a draft actually is (MAR-469)
+ * ---------------------------------------------------------------------- */
+
+/** A minimal draft artifact. `placement` is supplied per case, never defaulted. */
+function draftArtifact(placement: unknown): Record<string, unknown> {
+  return {
+    artifact_version: 1,
+    agent: "synthetic-gmail-meeting-assistant",
+    run_id: "run-1",
+    artifact_id: "draft-1",
+    kind: "draft",
+    title: "Reply to Thursday",
+    generated_at: "2026-08-03T09:00:00.000Z",
+    draft: {
+      to: ["colleague@example.com"],
+      subject: "Re: Thursday",
+      body: "The afternoon works.",
+      placement,
+    },
+  };
+}
+
+describe("a draft's placement", () => {
+  it("accepts the local placement MAR-458 shipped", () => {
+    expect(validateArtifact(draftArtifact({ where: "dash_only" })).ok).toBe(true);
+  });
+
+  it("accepts a draft the agent says it created at the provider", () => {
+    expect(
+      validateArtifact(
+        draftArtifact({ where: "provider_draft", service: "Gmail", draft_id: "r-991" }),
+      ).ok,
+    ).toBe(true);
+  });
+
+  /**
+   * The load-bearing one, and the reason `placement` is required rather than
+   * optional.
+   *
+   * Until MAR-469 the `draft` kind *meant* local, and both the schema and the
+   * renderer said so. Stage 2 made that false for some drafts without changing
+   * the kind, so an artifact that does not say where the reply is would leave a
+   * renderer to guess — and the wrong guess tells a person nothing left DASH
+   * when a copy is sitting in their mailbox. There is no safe default here, so
+   * there is no default.
+   */
+  it("refuses a draft that does not say where the reply is", () => {
+    const artifact = draftArtifact({ where: "dash_only" });
+    delete (artifact["draft"] as Record<string, unknown>)["placement"];
+    expect(validateArtifact(artifact).ok).toBe(false);
+  });
+
+  it("refuses a placement DASH has no meaning for", () => {
+    expect(validateArtifact(draftArtifact({ where: "sent" })).ok).toBe(false);
+    expect(validateArtifact(draftArtifact({ where: "provider_draft" })).ok).toBe(false);
+  });
+
+  /**
+   * The absence fixture that pairs with the presence one above.
+   *
+   * A `dash_only` placement carrying a provider draft id is a contradiction: it
+   * asserts nothing exists at the provider while naming the thing that does.
+   * Refusing it means a renderer reading `where` alone is reading the whole
+   * truth, which is what lets the copy branch on one field.
+   */
+  it("refuses a local placement that names a provider draft anyway", () => {
+    expect(
+      validateArtifact(draftArtifact({ where: "dash_only", draft_id: "r-991" })).ok,
+    ).toBe(false);
+  });
+});
+
 describe("the runner pipe", () => {
   it("recognises an artifact message", () => {
     const message = parseAgentMessage(

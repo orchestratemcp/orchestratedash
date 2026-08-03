@@ -147,23 +147,36 @@ function SourceList({ artifact }: { artifact: DigestArtifact }): ReactNode {
 }
 
 /**
- * A reply an agent wrote, held locally (MAR-458).
+ * A reply an agent wrote (MAR-458, MAR-469).
  *
- * ## The sentence at the top is the whole component
+ * ## The notice at the top is the whole component
  *
- * "DASH is holding this. Nothing has been sent and nothing has been saved to
- * your mail." Everything else here is presentation; that line is the honesty
- * requirement, and it is rendered before the draft rather than under it because
- * a person scanning this needs to know what it is *not* before they read what it
- * says.
+ * Everything else here is presentation. The notice is the honesty requirement,
+ * and it is rendered before the draft rather than under it because a person
+ * scanning this needs to know what it is *not* before they read what it says.
  *
- * It is true by construction rather than by promise. ADR 0002's first slice
- * gives the broker `gmail.search` and `gmail.message.read` and nothing else —
- * no send operation and no provider-side draft creation — so there is no code
- * path from this artifact to the user's Gmail account. `PROJECT_STATE.md` records
- * the failure this avoids: `network: read` is "a declaration DASH renders, not a
- * boundary DASH enforces", and every surface has to say which it is. This one is
- * the enforced kind, and says so plainly rather than leaving the user to guess.
+ * ## Why there are now two notices
+ *
+ * MAR-458's version said "nothing has been sent, and it has not been saved to
+ * your mail either", and both halves were true by construction: the broker had
+ * two read operations and no way to reach a mailbox in the other direction.
+ * MAR-469 built `gmail.draft.create`, and the second half became false for some
+ * drafts while staying true for others.
+ *
+ * A safeguard sentence that is true of only some artifacts is not a safeguard,
+ * so this branches on `placement` rather than softening one line to cover both.
+ * The half that survives is the half that matters, and it survives in every
+ * branch: **nothing here has been sent.** That is still true by construction
+ * rather than by promise — no send operation exists in
+ * `lib/broker/operations.ts` for anything to call, whatever Google's compose
+ * permission would allow a token holder to do.
+ *
+ * `PROJECT_STATE.md` records the failure being avoided: `network: read` is "a
+ * declaration DASH renders, not a boundary DASH enforces", and every surface has
+ * to say which it is. The no-send claim is the enforced kind and is stated
+ * flatly. The claim that a draft reached the mailbox is the *agent's* — DASH's
+ * own record of what it performed is the broker audit trail — so that one is
+ * attributed rather than asserted, exactly as `sources` is below.
  *
  * ## Why the body is plain text in a `pre`
  *
@@ -176,29 +189,55 @@ export function Draft({ artifact }: { artifact: DraftArtifact }): ReactNode {
   const { draft } = artifact;
   const recipients = draft.to ?? [];
   const sources = draft.sources ?? [];
+  const atProvider = draft.placement.where === "provider_draft";
 
   return (
     <section className="section" aria-labelledby="draft-heading">
       <div className="section-heading">
         <h2 id="draft-heading">{artifact.title}</h2>
-        <span
-          className="chip chip-ok"
-          title="DASH has no operation that could send this or save it to your mail"
-        >
-          held here only
-        </span>
+        {atProvider ? (
+          <span
+            className="chip chip-warn"
+            title="The agent reports saving this to your drafts. DASH has no operation that could send it."
+          >
+            in your drafts, not sent
+          </span>
+        ) : (
+          <span
+            className="chip chip-ok"
+            title="DASH has no operation that could send this or save it to your mail"
+          >
+            held here only
+          </span>
+        )}
       </div>
 
-      <div className="notice" role="status">
-        <p>
-          <strong>DASH is holding this reply. Nothing has been sent.</strong>
-        </p>
-        <p>
-          It has not been saved to your mail either. The agent can read the messages you
-          approved and write a reply here; it has no way to send one or to put one in your
-          drafts folder.
-        </p>
-      </div>
+      {draft.placement.where === "provider_draft" ? (
+        <div className="notice" role="status">
+          <p>
+            <strong>Nothing has been sent.</strong> The agent reports saving this
+            reply to your {draft.placement.service} drafts, where you can edit it,
+            send it, or delete it yourself.
+          </p>
+          <p>
+            DASH has no action that sends mail, so this cannot go out unless you
+            send it. Saving a draft is the only change DASH will make to your
+            mailbox — and what DASH actually did on your behalf is recorded on the
+            Connections page, which is the record to check rather than this one.
+          </p>
+        </div>
+      ) : (
+        <div className="notice" role="status">
+          <p>
+            <strong>DASH is holding this reply. Nothing has been sent.</strong>
+          </p>
+          <p>
+            It has not been saved to your mail either — this copy exists only in
+            DASH. The agent can read the messages you approved and write a reply
+            here, and DASH has no action that sends mail.
+          </p>
+        </div>
+      )}
 
       <dl className="draft-headers">
         <dt>To</dt>

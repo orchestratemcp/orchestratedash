@@ -40,7 +40,7 @@
     },
     "kind": {
       "enum": ["digest", "draft"],
-      "description": "`draft` was added by MAR-458, when a second kind existed rather than in advance of one. It means a reply an agent composed and DASH is holding LOCALLY: nothing about this artifact has been sent, and nothing about it exists at the provider. ADR 0002's first slice has no operation that could create a provider-side draft and none that could send one, so an artifact of this kind is the only draft there is until a later slice says otherwise."
+      "description": "`draft` was added by MAR-458, when a second kind existed rather than in advance of one. It means a reply an agent composed. Whether that reply exists anywhere but DASH is `draft.placement`, which MAR-469 made a required member for exactly this reason: stage 1's description said a draft was always LOCAL, and stage 2 made that false without changing the kind. A renderer that reads the kind alone can no longer tell, and now cannot compile without asking."
     },
     "title": { "type": "string", "minLength": 1, "maxLength": 200 },
     "generated_at": { "type": "string", "format": "date-time" },
@@ -64,9 +64,44 @@
     },
     "draft": {
       "type": "object",
-      "description": "A reply an agent wrote and DASH is holding. Required when kind is `draft`. It is a local document: DASH does not send it, the broker has no send operation, and MAR-458's slice has no provider-side draft creation either. Copy rendering this must not say 'saved to your drafts' or anything else implying the provider has it.",
-      "required": ["subject", "body"],
+      "description": "A reply an agent wrote. Required when kind is `draft`. DASH never sends it and the broker has no send operation, in this slice or any other so far. What DASH can no longer assert for every draft is that nothing exists at the provider: MAR-469 added `gmail.draft.create`, so a reply may also be sitting in the user's own Drafts folder. `placement` is where that is stated, and it is required so no producer can leave it to a renderer to guess.",
+      "required": ["subject", "body", "placement"],
       "properties": {
+        "placement": {
+          "type": "object",
+          "description": "Where this reply actually is (MAR-469). Required, and a tagged union rather than a boolean, so a renderer must branch rather than default. Note what it is NOT: DASH's own record of what it performed is `broker_audit`, and this field is the agent's claim about its own work — the same standing `sources_fetched` has for a digest. Copy must attribute it.",
+          "required": ["where"],
+          "allOf": [
+            {
+              "description": "The MAR-458 meaning, kept and now named. DASH is holding this and it exists nowhere else — so there is no provider draft to carry an id for, and `draft_id: false` refuses one rather than letting a producer file a provider id under a placement that denies there is one.",
+              "if": { "properties": { "where": { "const": "dash_only" } }, "required": ["where"] },
+              "then": { "properties": { "draft_id": false } }
+            },
+            {
+              "description": "A draft the agent says it created at the provider through the broker. `service` is required because the sentence a user reads has to name where to go and look.",
+              "if": { "properties": { "where": { "const": "provider_draft" } }, "required": ["where"] },
+              "then": {
+                "required": ["service"],
+                "$comment": "Present only to satisfy Ajv's strictRequired check, as at the top level. `true` adds no constraint.",
+                "properties": { "service": true }
+              }
+            }
+          ],
+          "properties": {
+            "where": { "enum": ["dash_only", "provider_draft"] },
+            "service": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 60,
+              "description": "Plain service name, e.g. \"Gmail\". Not a provider id and not a URL — this is rendered."
+            },
+            "draft_id": {
+              "type": "string",
+              "maxLength": 128,
+              "description": "The provider's own id for the draft, as the broker returned it. Carried so a support conversation can name one thing rather than describe it, and deliberately NOT rendered as a link: DASH would be guessing at a provider's web UI, and a wrong link on this card sends a person looking for a draft where there is none."
+            }
+          }
+        },
         "to": {
           "type": "array",
           "description": "Who the agent proposes to reply to, as read from the source message. A proposal a person edits, never an address book DASH resolved.",

@@ -1881,8 +1881,22 @@ async function proveUntracedAttempts(recorded: {
  * ---------------------------------------------------------------------- */
 
 /**
- * A real agent reads a real mailbox through the broker and produces a local
- * draft, and no provider token is observable from the agent process.
+ * A real agent reads a real mailbox through the broker, saves a reply as a draft
+ * at the provider, and cannot send anything — and no provider token is
+ * observable from the agent process.
+ *
+ * ## What stage 2 added to this proof (MAR-469)
+ *
+ * Checks 7k–7n. The first three drive the write: the operation really runs, the
+ * message on the wire is the one DASH composed, and a recipient carrying a
+ * header injection is refused before a request is made.
+ *
+ * 7n is the one worth reading twice. The fake provider **serves** Gmail's two
+ * send endpoints and answers them with success, so the check that DASH never
+ * called one is a statement about DASH rather than about the provider's
+ * willingness. A negative proof whose subject is free to refuse is a proof of
+ * the wrong party, and this is the check that would notice if a future write
+ * operation reached the wrong path with a live token attached.
  *
  * ## What is real here and what is not
  *
@@ -1927,6 +1941,8 @@ async function proveTheBroker(recorded: {
   const PROOF_ACCESS_TOKEN = "PROOF-ACCESS-TOKEN-MUST-NOT-REACH-THE-AGENT";
   const PROOF_REFRESH_TOKEN = "PROOF-REFRESH-TOKEN-MUST-NEVER-LEAVE-THE-VAULT";
   const MESSAGE_ID = "18e0a1b2c3";
+  /** The draft id the fake provider returns from `POST /drafts` (MAR-469). */
+  const DRAFT_ID = "r-8812340099";
 
   const workDir = mkdtempSync(path.join(tmpdir(), "dash-broker-proof-"));
   /** Where the agent testifies about its own process. See the write in the script. */
@@ -1963,6 +1979,17 @@ async function proveTheBroker(recorded: {
   const REQUEST_PREFIX = `proof-${String(Date.now())}`;
   /** Every Authorization header the fake provider was presented with. */
   const presented: string[] = [];
+  /**
+   * Every path this provider was asked for, in order (MAR-469).
+   *
+   * The whole of check 7n. A frozen `WRITE_PATHS` array and a unit test over it
+   * say what DASH is *built* to reach; this says what DASH actually reached over
+   * a full installed run in which a real agent explicitly asked it to send. The
+   * two are different claims and only this one is about the running product.
+   */
+  const requestedPaths: string[] = [];
+  /** The bodies of every POST, so 7l can read the message DASH composed. */
+  const posted: Array<{ path: string; body: string }> = [];
   let server: Server | null = null;
 
   try {
@@ -1972,18 +1999,54 @@ async function proveTheBroker(recorded: {
       if (typeof authorization === "string") {
         presented.push(authorization);
       }
+      requestedPaths.push(url.pathname);
 
       const json = (status: number, body: unknown): void => {
         response.writeHead(status, { "content-type": "application/json" });
         response.end(JSON.stringify(body));
       };
 
-      if (url.pathname === "/token") {
-        // The refresh-for-access exchange, which is DASH's real code path
-        // (`lib/oauth/flow.ts`) talking to this.
-        json(200, { access_token: PROOF_ACCESS_TOKEN, expires_in: 3599 });
+      /*
+       * The draft endpoint, and the two send endpoints beside it.
+       *
+       * The sends are served rather than left to 404, and that is the point: if
+       * DASH ever reached one, this harness would answer it happily and 7n would
+       * be the check that noticed. A proof whose negative case depends on the
+       * provider refusing is a proof of the provider.
+       */
+      if (request.method === "POST") {
+        let body = "";
+        request.setEncoding("utf8");
+        request.on("data", (chunk: string) => {
+          body += chunk;
+        });
+        request.on("end", () => {
+          posted.push({ path: url.pathname, body });
+          if (url.pathname === "/token") {
+            // The refresh-for-access exchange, which is a POST and is DASH's
+            // real code path (`lib/oauth/flow.ts`) talking to this.
+            json(200, { access_token: PROOF_ACCESS_TOKEN, expires_in: 3599 });
+            return;
+          }
+          if (url.pathname === "/gmail/v1/users/me/drafts") {
+            json(200, {
+              id: DRAFT_ID,
+              message: { id: "18e0a1b2ff", threadId: "18e0a1b2c0", labelIds: ["DRAFT"] },
+            });
+            return;
+          }
+          if (
+            url.pathname === "/gmail/v1/users/me/messages/send" ||
+            url.pathname === "/gmail/v1/users/me/drafts/send"
+          ) {
+            json(200, { id: "SENT-AND-THAT-IS-A-FAILURE", labelIds: ["SENT"] });
+            return;
+          }
+          json(404, { error: "not_found" });
+        });
         return;
       }
+
       if (url.pathname === "/gmail/v1/users/me/messages") {
         json(200, { messages: [{ id: MESSAGE_ID, threadId: "18e0a1b2c0" }] });
         return;
@@ -2105,6 +2168,36 @@ async function proveTheBroker(recorded: {
         note("send answered ok=" + String(send_attempt.ok) + " refusal=" + String(send_attempt.refusal));
         record({ send_attempt });
 
+        // MAR-469. The write that is supposed to work, and it is asked for
+        // AFTER the send attempt on purpose: a run where the send was refused
+        // because the whole connection was broken would then also fail here,
+        // and 7h would be passing for the wrong reason.
+        const drafted = await ask(${JSON.stringify(CONNECTION_ID)}, "gmail.draft.create", {
+          to: read.ok && read.result.from ? read.result.from : "colleague@example.com",
+          subject: read.ok ? "Re: " + read.result.subject : "Re:",
+          body_text: "Thanks — the afternoon works.",
+          thread_id: read.ok ? read.result.thread_id : undefined
+        });
+        note("draft answered ok=" + String(drafted.ok) + " refusal=" + String(drafted.refusal));
+        record({ drafted });
+
+        // The send that goes through the drafts endpoint rather than the
+        // messages one. A guard written against the word "send" and not against
+        // the operation set would let this through.
+        const draft_send_attempt = await ask(${JSON.stringify(CONNECTION_ID)}, "gmail.drafts.send", { draft_id: drafted.ok ? drafted.result.draft_id : "x" });
+        note("drafts.send answered ok=" + String(draft_send_attempt.ok) + " refusal=" + String(draft_send_attempt.refusal));
+        record({ draft_send_attempt });
+
+        // A recipient carrying CRLF, which is the write-side attack: the header
+        // injection that would put a Bcc on a message DASH composed.
+        const injected = await ask(${JSON.stringify(CONNECTION_ID)}, "gmail.draft.create", {
+          to: "colleague@example.com\\r\\nBcc: attacker@evil.example",
+          subject: "Re: Thursday",
+          body_text: "hello"
+        });
+        note("injection answered ok=" + String(injected.ok) + " refusal=" + String(injected.refusal));
+        record({ injected });
+
         // Everything this process can see about itself. The names AND the
         // values, because a token could be under any name at all.
         const environment = Object.entries(process.env).map(([k, v]) => k + "=" + String(v)).join("\\n");
@@ -2123,6 +2216,14 @@ async function proveTheBroker(recorded: {
               to: read.ok && read.result.from ? [read.result.from] : [],
               subject: read.ok ? "Re: " + read.result.subject : "Re:",
               body: read.ok ? "Thanks — the afternoon works. (Re: " + read.result.body_text + ")" : "no message",
+              // MAR-469. The agent reports where the reply ended up, and this
+              // run is the provider-side branch: it really did create a draft
+              // through the broker moments ago. A run where that was refused
+              // says dash_only instead, which is the honest answer and the one
+              // 7k would then fail on.
+              placement: drafted.ok
+                ? { where: "provider_draft", service: "Loopback mail", draft_id: drafted.result.draft_id }
+                : { where: "dash_only" },
               in_reply_to: read.ok ? { message_id: read.result.message_id, thread_id: read.result.thread_id } : undefined,
               sources: read.ok ? [{ message_id: read.result.message_id, subject: read.result.subject, from: read.result.from }] : []
             }
@@ -2146,6 +2247,11 @@ async function proveTheBroker(recorded: {
         // harness afterwards, so nothing DASH does in between can shape it.
         record({
           send_refusal: send_attempt.ok === false ? send_attempt.refusal : "ALLOWED",
+          // "ALLOWED" rather than a boolean, in every one of these, so a check
+          // reading the field cannot pass on a falsy value it did not expect.
+          draft_send_refusal: draft_send_attempt.ok === false ? draft_send_attempt.refusal : "ALLOWED",
+          injection_refusal: injected.ok === false ? injected.refusal : "ALLOWED",
+          draft_id: drafted.ok ? drafted.result.draft_id : null,
           environment,
           complete: true
         });
@@ -2190,18 +2296,27 @@ async function proveTheBroker(recorded: {
         id: CONNECTION_ID,
         provider: "dash-loopback-mail",
         label: "Loopback mail",
-        purpose: "Read messages and write a reply DASH holds",
+        purpose: "Read messages and save a reply as a draft",
         ownership: "dash_managed",
-        capabilities: [{ id: "mail.read", label: "Read your messages", access: "read" }],
+        capabilities: [
+          { id: "mail.read", label: "Read your messages", access: "read" },
+          { id: "mail.draft", label: "Save a reply as a draft", access: "write" },
+        ],
         fields: [
           {
             id: FIELD_ID,
             label: "Mailbox account",
-            purpose: "Authorize reading messages",
+            purpose: "Authorize reading messages and saving drafts",
             kind: "oauth_reauthorization",
             required: true,
             technical: {
-              provider_scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+              provider_scopes: [
+                "https://www.googleapis.com/auth/gmail.readonly",
+                // MAR-469. Declared by the agent's author, which is step 2 of
+                // the three-party intersection; the credential below is step 3.
+                // Without both, `gmail.draft.create` is refused and 7k fails.
+                "https://www.googleapis.com/auth/gmail.compose",
+              ],
               // Declared on purpose. This is the line that used to make DASH
               // put a live provider token into the child's environment, and 7e
               // is the check that it no longer does.
@@ -2233,7 +2348,12 @@ async function proveTheBroker(recorded: {
         version: OAUTH_CREDENTIAL_VERSION,
         provider: "dash-loopback",
         refresh_token: PROOF_REFRESH_TOKEN,
-        scopes: ["openid", "email", "https://www.googleapis.com/auth/gmail.readonly"],
+        scopes: [
+          "openid",
+          "email",
+          "https://www.googleapis.com/auth/gmail.readonly",
+          "https://www.googleapis.com/auth/gmail.compose",
+        ],
         account: "proof@example.com",
         obtained_at: new Date().toISOString(),
       }),
@@ -2322,7 +2442,11 @@ async function proveTheBroker(recorded: {
           search?: { ok?: boolean; refusal?: string; result?: Record<string, unknown> };
           read?: { ok?: boolean; refusal?: string; result?: Record<string, unknown> };
           send_attempt?: { ok?: boolean; refusal?: string };
+          drafted?: { ok?: boolean; refusal?: string; result?: Record<string, unknown> };
           send_refusal?: string;
+          draft_send_refusal?: string;
+          injection_refusal?: string;
+          draft_id?: string | null;
           environment?: string;
           trace?: string[];
           complete?: boolean;
@@ -2367,13 +2491,20 @@ async function proveTheBroker(recorded: {
     }, "a local draft to reach DASH through the broker", 30_000);
 
     check(
-      "7e. a real read reached DASH as a local draft",
+      "7e. a real read reached DASH as a draft artifact that says where the reply is",
       draft !== null &&
         draft.kind === "draft" &&
         draft.draft.subject === "Re: Thursday" &&
         draft.draft.body.includes("afternoon") &&
-        (draft.draft.sources ?? [])[0]?.message_id === MESSAGE_ID,
-      draft === null ? null : { title: draft.title, kind: draft.kind },
+        (draft.draft.sources ?? [])[0]?.message_id === MESSAGE_ID &&
+        // MAR-469. The artifact contract stopped being able to mean "local" by
+        // itself, so the artifact has to say — and a run whose draft creation
+        // was refused would carry `dash_only` here and fail, rather than
+        // rendering a claim about a mailbox nothing reached.
+        draft.draft.placement.where === "provider_draft",
+      draft === null
+        ? null
+        : { title: draft.title, kind: draft.kind, placement: draft.draft.placement },
     );
 
     // The token really was minted and really was presented. Without this, every
@@ -2413,9 +2544,95 @@ async function proveTheBroker(recorded: {
     );
 
     check(
-      "7h. the agent's own send attempt was refused as an operation that does not exist",
-      reported?.send_refusal === "unknown_operation",
-      { send_refusal: reported?.send_refusal },
+      "7h. both of the agent's send attempts were refused as operations that do not exist",
+      reported?.send_refusal === "unknown_operation" &&
+        reported.draft_send_refusal === "unknown_operation",
+      {
+        send_refusal: reported?.send_refusal,
+        draft_send_refusal: reported?.draft_send_refusal,
+      },
+    );
+
+    /* -- The write (MAR-469) --------------------------------------------- */
+
+    /*
+     * The first brokered operation that changes something in an account, driven
+     * end to end on the installed shell: the manifest declared compose, the
+     * stored credential carried it, the grant intersected to include the draft
+     * operation, DASH composed the message itself, and a real POST carrying a
+     * real bearer token reached the provider.
+     */
+    check(
+      "7k. the agent created a draft at the provider through the broker",
+      reported?.drafted?.ok === true && reported.draft_id === DRAFT_ID,
+      {
+        refusal: reported?.drafted?.refusal ?? "none",
+        draft_id: reported?.draft_id ?? null,
+      },
+    );
+
+    const draftPost = posted.find((entry) => entry.path === "/gmail/v1/users/me/drafts");
+    const rawMessage =
+      draftPost === undefined
+        ? ""
+        : ((): string => {
+            try {
+              const parsed = JSON.parse(draftPost.body) as { message?: { raw?: unknown } };
+              return typeof parsed.message?.raw === "string"
+                ? Buffer.from(parsed.message.raw, "base64url").toString("utf8")
+                : "";
+            } catch {
+              return "";
+            }
+          })();
+
+    /*
+     * What DASH actually put on the wire, read back out of the provider's own
+     * received body rather than out of DASH's intentions.
+     *
+     * The `From` check is the one worth having: DASH writes no `From` header at
+     * all, so the account a draft appears to come from is the account whose
+     * token DASH presented, decided by Google. An agent cannot compose a reply
+     * that looks like it came from somebody else, and DASH does not have to
+     * check that it did not.
+     */
+    check(
+      "7l. DASH composed the message itself, with no From and no header the agent named",
+      rawMessage.includes("To: colleague@example.com") &&
+        rawMessage.includes("Content-Transfer-Encoding: base64") &&
+        !/^From:/im.test(rawMessage) &&
+        !/^Bcc:/im.test(rawMessage) &&
+        !rawMessage.includes("attacker@evil.example"),
+      {
+        headers: rawMessage.split("\r\n\r\n")[0]?.split("\r\n") ?? [],
+      },
+    );
+
+    check(
+      "7m. a recipient carrying a header injection was refused before any request",
+      reported?.injection_refusal === "invalid_input" &&
+        posted.filter((entry) => entry.path === "/gmail/v1/users/me/drafts").length === 1,
+      {
+        injection_refusal: reported?.injection_refusal,
+        draft_posts: posted.filter((entry) => entry.path === "/gmail/v1/users/me/drafts").length,
+      },
+    );
+
+    /*
+     * The load-bearing negative, and the reason the harness serves the send
+     * endpoints instead of leaving them to 404 (MAR-469).
+     *
+     * A frozen `WRITE_PATHS` and a unit test over it say what DASH is *built* to
+     * reach. This says what DASH actually reached across a whole installed run
+     * in which a real spawned agent asked twice, by two different names, to send
+     * — and it would fail even if the provider had been willing, because this
+     * provider is willing. Nothing here depends on Google refusing.
+     */
+    check(
+      "7n. across the whole run DASH never called a send endpoint, though the provider would have served one",
+      !requestedPaths.some((path) => path.endsWith("/send")) &&
+        requestedPaths.includes("/gmail/v1/users/me/drafts"),
+      { paths: [...new Set(requestedPaths)] },
     );
 
     /* -- The record ------------------------------------------------------ */
@@ -2424,11 +2641,12 @@ async function proveTheBroker(recorded: {
     const allowed = audited.filter((row) => row.decision === "allowed");
     check(
       "7i. every brokered call this run is audited, allowed and refused alike",
-      allowed.length === 2 &&
+      allowed.length === 3 &&
         allowed.map((row) => row.operation).sort().join(",") ===
-          "gmail.message.read,gmail.search" &&
+          "gmail.draft.create,gmail.message.read,gmail.search" &&
         allowed.every((row) => row.connection_id === CONNECTION_ID) &&
-        audited.some((row) => row.refusal === "unknown_operation"),
+        audited.filter((row) => row.refusal === "unknown_operation").length === 2 &&
+        audited.some((row) => row.refusal === "invalid_input"),
       audited.map((row) => `${row.decision}:${row.operation}:${row.refusal ?? "-"}`),
     );
 
@@ -2438,6 +2656,11 @@ async function proveTheBroker(recorded: {
         !JSON.stringify(audited).includes(PROOF_REFRESH_TOKEN) &&
         !JSON.stringify(audited).includes("is:unread") &&
         !JSON.stringify(audited).includes("Thursday") &&
+        // MAR-469. A write's audit row names the fields the agent supplied and
+        // none of their values, exactly as a read's does — so the reply DASH
+        // composed on the user's behalf is not sitting in a durable table.
+        !JSON.stringify(audited).includes("the afternoon works") &&
+        !JSON.stringify(audited).includes("colleague@example.com") &&
         audited.every((row) => row.account_hint === null || !row.account_hint.includes("proof@")),
       audited.map((row) => ({ operation: row.operation, input_keys: row.input_keys })),
     );
