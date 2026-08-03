@@ -73,10 +73,11 @@ describe("schema", () => {
     // One per shipped migration: 0 is the MAR-416 store, 1 is MAR-417's
     // command channel, 2 is MAR-428's handoff ledger, 3 is MAR-457's run
     // artifacts, 4 is MAR-464's decision-identity columns, 5 is MAR-458's
-    // permission broker. Asserted as a number rather than as MIGRATIONS.length
-    // so that appending a migration is a deliberate edit here too.
+    // permission broker, 6 is MAR-467's lapse table and delivery column.
+    // Asserted as a number rather than as MIGRATIONS.length so that appending a
+    // migration is a deliberate edit here too.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(6);
+    expect(version.user_version).toBe(7);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -111,9 +112,10 @@ describe("schema", () => {
     // anything this test is about.
     first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN runner_observed_at");
     first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN decision_identity");
-    // And migration 5 (MAR-458), for the same reason.
+    // And migration 5 (MAR-458), for the same reason, and 6 (MAR-467).
     first.db.db().exec("DROP TABLE broker_audit");
     first.db.db().exec("DROP TABLE broker_grants");
+    first.db.db().exec("DROP TABLE broker_lapses");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -148,6 +150,7 @@ describe("schema", () => {
     first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN decision_identity");
     first.db.db().exec("DROP TABLE broker_audit");
     first.db.db().exec("DROP TABLE broker_grants");
+    first.db.db().exec("DROP TABLE broker_lapses");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -179,6 +182,9 @@ describe("schema", () => {
     first.db.db().exec("PRAGMA user_version = 5");
     first.db.db().exec("DROP TABLE broker_audit");
     first.db.db().exec("DROP TABLE broker_grants");
+    // And migration 6 (MAR-467), which builds on migration 5's broker_audit and
+    // would otherwise fail creating a table that is still there.
+    first.db.db().exec("DROP TABLE broker_lapses");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -195,6 +201,82 @@ describe("schema", () => {
     expect(tables).toContain("broker_grants");
     expect(tables).toContain("broker_audit");
     expect(store.listAgents()).toHaveLength(1);
+  });
+
+  it("adds the lapse table and the delivery column to a store that predates them", async () => {
+    // MAR-467, in the shape the three cases above use. The store every user
+    // already has was created before this existed.
+    const first = await freshStore();
+    first.store.importManifest(manifest);
+    first.db.db().exec("PRAGMA user_version = 6");
+    first.db.db().exec("DROP TABLE broker_lapses");
+    first.db.db().exec("ALTER TABLE broker_audit DROP COLUMN delivered");
+    first.db.closeDb();
+
+    process.env.DASH_DATA_DIR = first.dataDir;
+    vi.resetModules();
+    const db = await import("../lib/db");
+    const store = await import("../lib/store");
+    opened.push({ dataDir: first.dataDir, closeDb: db.closeDb });
+
+    const tables = db
+      .db()
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+      .all()
+      .map((row) => String(row["name"]));
+    expect(tables).toContain("broker_lapses");
+
+    const auditColumns = db
+      .db()
+      .prepare("PRAGMA table_info(broker_audit)")
+      .all()
+      .map((row) => String(row["name"]));
+    expect(auditColumns).toContain("delivered");
+    expect(store.listAgents()).toHaveLength(1);
+  });
+
+  /**
+   * The structural half of ADR 0005, enforced rather than described.
+   *
+   * `broker_lapses` holds facts about requests DASH did *not* adjudicate. The
+   * argument for why that is safe to show a user next to the audit trail rests
+   * entirely on the two being impossible to confuse — so the table is built
+   * without any of the columns an adjudication has, and this is the test that
+   * keeps a later, well-meaning migration from adding one.
+   *
+   * If a future feature genuinely needs an operation name on a lapse, this test
+   * failing is the intended conversation: it means the runner has started
+   * parsing agent-authored request bodies, which is a decision for an ADR and
+   * not for a migration.
+   */
+  it("gives broker_lapses no column that could pass for an audited decision", async () => {
+    const { db } = await freshStore();
+    const columns = db
+      .db()
+      .prepare("PRAGMA table_info(broker_lapses)")
+      .all()
+      .map((row) => String(row["name"]));
+
+    expect(columns).toEqual([
+      "id",
+      "kind",
+      "agent",
+      "attempts",
+      "from_at",
+      "until_at",
+      "observed_by",
+    ]);
+    for (const forbidden of [
+      "decision",
+      "refusal",
+      "operation",
+      "connection_id",
+      "request_id",
+      "result_count",
+      "account_hint",
+    ]) {
+      expect(columns, `broker_lapses must not carry ${forbidden}`).not.toContain(forbidden);
+    }
   });
 
   it("uses WAL journalling, which is what replaces write-then-rename", async () => {
@@ -218,7 +300,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(6);
+    ).toBe(7);
   });
 
   it("preserves pending tasks and approvals across a DASH restart", async () => {

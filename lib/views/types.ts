@@ -276,12 +276,49 @@ export interface BrokerRowView {
     refusal_headline: string | null;
     result_count: number | null;
     decided_at: string;
+    /**
+     * True when DASH could not confirm this answer reached the agent (MAR-467).
+     *
+     * Rendered as a note *on* the decision rather than as a separate entry,
+     * because it is one: DASH really did decide this, and the decision is
+     * exactly as auditable as every other row. What failed happened afterwards.
+     */
+    undelivered: boolean;
   }>;
+}
+
+/**
+ * Something that kept an agent's request from being adjudicated (MAR-467).
+ *
+ * Carried beside the connection rows rather than inside a `BrokerRowView`, and
+ * the reason is a fact about what DASH knows rather than a layout preference:
+ * none of these can be attributed to a connection. The runner does not parse a
+ * brokered request, so a dropped one names no connection; a window in which DASH
+ * was closed names nothing at all. Rendering them under a particular connection
+ * card would invent the one detail that was never observed.
+ *
+ * ADR 0005 records why this is a separate shape from `recent` rather than more
+ * entries in it. `recent` is the audit trail, and the audit trail is worth
+ * believing because every line of it is a decision DASH made.
+ */
+export interface BrokerLapseView {
+  kind: "dropped_by_runner" | "dash_closed";
+  /** The sentence a person reads. Complete on its own. */
+  sentence: string;
+  /** The caveat that keeps the sentence from overclaiming, when there is one. */
+  qualifier: string | null;
+  from_at: string;
+  until_at: string | null;
 }
 
 export interface AgentConnections {
   name: string;
   rows: ConnectionRowWithCredential[];
+  /**
+   * What the permission cards above cannot account for (MAR-467). Newest first,
+   * bounded, and empty in the ordinary case where nothing went wrong.
+   */
+  lapses: BrokerLapseView[];
 }
 
 export interface ConnectionsView {

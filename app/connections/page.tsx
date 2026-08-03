@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { ConnectionChecklist } from "../_components/connection-checklist";
+import { BrokerLapseNotice, ConnectionChecklist } from "../_components/connection-checklist";
 import { HostNotice, ViewFailed, ViewLoading } from "../_components/view-state";
 import { submitConnectionCommand } from "../_data/source";
 import { useHost, useView } from "../_data/use-view";
@@ -60,11 +60,16 @@ export default function ConnectionsPage(): ReactNode {
               </p>
             </div>
           ) : (
-            state.data.agents.map(({ name, rows }) => (
+            state.data.agents.map(({ name, rows, lapses }) => (
               <section key={name} className="agent-connections">
                 <h2>
                   <code>{name}</code>
                 </h2>
+                {/* MAR-467. Above the checklist rather than below it: a user who
+                    opened this page because an agent did less than they expected
+                    is looking for exactly this, and burying it under the cards
+                    would reproduce the empty-history problem one scroll lower. */}
+                <BrokerLapseNotice lapses={lapses} />
                 <ConnectionChecklist
                   rows={rows}
                   act={async (action, target) => {

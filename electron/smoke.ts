@@ -65,7 +65,11 @@ import {
   readCommandAudit,
 } from "../lib/agent-dom/store";
 import { brokerProfileFor } from "../lib/broker/providers";
-import { readBrokerAudit } from "../lib/broker/store";
+import {
+  forgetBrokerLapses,
+  readBrokerAudit,
+  readBrokerLapses,
+} from "../lib/broker/store";
 import { connectableFields, connectionSecretName } from "../lib/connection-credentials";
 import { oauthProviderById } from "../lib/oauth/providers";
 import {
@@ -74,6 +78,7 @@ import {
 } from "../lib/oauth/credential";
 import { closeDb, dataDir } from "../lib/db";
 import { RENDERER_ORIGIN } from "../lib/shell/renderer-scheme";
+import { connectionsView } from "../lib/views/build";
 import {
   artifactsForRun,
   forgetAgent,
@@ -1007,6 +1012,7 @@ if (recorded !== null) {
           pid: recorded.pid,
           token: ensureChannelSecret(dataDir),
           adopted: true,
+          started_at: null,
         };
         let observedPending = false;
         const ports = handoffPorts(dataDir, handle);
@@ -1505,6 +1511,7 @@ if (recorded !== null) {
           pid: recorded.pid,
           token: ensureChannelSecret(dataDir),
           adopted: true,
+          started_at: null,
         };
         await removeAgent(agentId, handoffPorts(dataDir, handle)).catch(() => undefined);
       }
@@ -1584,6 +1591,7 @@ if (recorded !== null) {
 
   if (recorded.transport === "pipe" || recorded.transport === "unix") {
     await proveTheBroker(recorded);
+    await proveUntracedAttempts(recorded);
   }
 }
 
@@ -1592,6 +1600,280 @@ console.log(
   `[smoke] the runner is left running on purpose (pid ${String(recorded?.pid ?? "-")}). ` +
     `That is what "closing DASH leaves agents running" means; see runner/README.md.\n`,
 );
+}
+
+/* ---------------------------------------------------------------------- *
+ * Proof 8: an attempt DASH never received (MAR-467, ADR 0005)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * A real agent asks for more than the runner's buffer will hold, and the
+ * requests that were destroyed become something a user can find.
+ *
+ * ## Why this one, of the three
+ *
+ * MAR-467 names three ways a brokered request goes untraced. Only this one can
+ * be driven end to end on an installed shell without a human: a closed-DASH
+ * window needs DASH to be closed, which is not a thing a proof running *inside*
+ * DASH can arrange, and an undelivered answer depends on a child exiting inside
+ * the window between DASH deciding and the runner writing — reproducible, but a
+ * race to schedule rather than a fact to assert. Both are covered by unit tests
+ * and said so plainly in the ADR. This one is a bound being hit, which is
+ * deterministic: 200 requests against a buffer of 64.
+ *
+ * ## The check that matters
+ *
+ * Not 8b, which merely shows the surface exists. **8d** is the point: the number
+ * of audit rows this run produced is compared against the number of requests the
+ * agent actually made, and the requests that were dropped must be *missing* from
+ * the audit. A build that quietly synthesised a plausible row for a request DASH
+ * never saw would pass every other check in this file and fail that one.
+ *
+ * That is the same failure mode as MAR-473's proof 6j, which asserted a verdict
+ * existed and would have accepted `ungrounded` — a check that cannot tell the
+ * good case from the bad one reports the good case forever.
+ */
+async function proveUntracedAttempts(recorded: {
+  endpoint: string;
+  transport: "pipe" | "unix" | string;
+  pid: number;
+}): Promise<void> {
+  const AGENT_ID = "dash-lapse-proof";
+  const CONNECTION_ID = "loopback-mail";
+  /** How many the agent fires. Comfortably past MAX_BROKER_BUFFER_COUNT (64). */
+  const BURST = 200;
+
+  const workDir = mkdtempSync(path.join(tmpdir(), "dash-lapse-proof-"));
+  const reportPath = path.join(workDir, "burst-report.json");
+
+  try {
+    const scriptPath = path.join(workDir, "agent.mjs");
+    /*
+     * Writes its whole burst in one synchronous loop, then reports how many it
+     * sent. No waiting for answers: this agent's purpose is to overrun the
+     * buffer, and an agent that paused for each answer would never fill it.
+     */
+    writeFileSync(
+      scriptPath,
+      `
+      import { writeFileSync } from "node:fs";
+      const send = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
+      send({ type: "state", state: { status: "running", runs: [], tasks: [] } });
+      let sent = 0;
+      for (let i = 0; i < ${String(BURST)}; i += 1) {
+        send({
+          type: "broker_request",
+          request: {
+            request_id: "burst-" + i,
+            connection_id: ${JSON.stringify(CONNECTION_ID)},
+            operation: "gmail.search",
+            input: { query: "q", max_results: 1 },
+          },
+        });
+        sent += 1;
+      }
+      writeFileSync(${JSON.stringify(reportPath)}, JSON.stringify({ sent, complete: true }), "utf8");
+      // Stays alive so the runner keeps a live child while DASH drains. Exiting
+      // here would fold case 3 into this proof and make a failure ambiguous.
+      setInterval(() => {}, 60000);
+      `,
+      "utf8",
+    );
+
+    // The shipped example with its name changed, for the reason
+    // `tests/broker-transport.test.ts` gives: a hand-written v2 manifest drifts
+    // from the schema and starts proving things about the proof's own copy.
+    const manifest = example("gmail-meeting-assistant.manifest.v2.example.json") as Record<
+      string,
+      unknown
+    >;
+    (manifest["agent"] as { name: string }).name = AGENT_ID;
+
+    const imported = importManifest(manifest);
+    check("8a. the burst agent's manifest imports", imported.ok, imported.ok ? "imported" : imported);
+
+    const handle: RunnerHandle = {
+      origin: IPC_ORIGIN,
+      endpoint: recorded.endpoint,
+      transport: recorded.transport as RunnerHandle["transport"],
+      pid: recorded.pid,
+      token: ensureChannelSecret(dataDir),
+      adopted: true,
+      started_at: null,
+    };
+    const call = runnerFetch(handle);
+
+    // This run's rows only. A previous run's leftovers satisfying a check is the
+    // trap proof 7 documents and proof 6 guards with `previousRunIds`.
+    const auditBefore = new Set(readBrokerAudit(AGENT_ID, 1_000).map((row) => row.id));
+    const lapsesBefore = new Set(readBrokerLapses(AGENT_ID, 1_000).map((row) => row.id));
+
+    writeRegistration(dataDir, {
+      registration: {
+        agent_id: AGENT_ID,
+        manifest_path: "",
+        command: BUNDLED_NODE_COMMAND,
+        args: [scriptPath],
+        cwd: workDir,
+      },
+      manifestJson: JSON.stringify(manifest),
+      ownership: {
+        owner: "dash_handoff",
+        handoff_id: "smoke-lapse-proof",
+        source_project: workDir,
+        display_name: "Lapse proof agent",
+        summary: "Asks for more than the runner will buffer.",
+        registered_at: new Date().toISOString(),
+      },
+    });
+
+    await call(`${handle.origin}/registrations/reload`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${handle.token}` },
+      signal: AbortSignal.timeout(5_000),
+    });
+    const started = await call(`${handle.origin}/agents/${encodeURIComponent(AGENT_ID)}/lifecycle`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${handle.token}` },
+      body: JSON.stringify({ action: "start", credentials: await collectSpawnCredentials(AGENT_ID) }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const startBody = (await started.json()) as { ok?: boolean; detail?: string };
+    check("8b. the runner started the burst agent", startBody.ok === true, startBody);
+
+    /* -- The lapse reaches DASH ------------------------------------------ */
+
+    /**
+     * Waits for the *shell's own* broker loop to drain and record.
+     *
+     * Nothing here drives the broker: `electron/main.ts` started it, and this is
+     * the installed loop rather than a re-implementation of it. That is exactly
+     * what MAR-454 warned about — a proof that exercises the code in-process
+     * proves the code, not the product.
+     */
+    const lapses = await waitForValue(async () => {
+      const fresh = readBrokerLapses(AGENT_ID, 1_000).filter(
+        (row) => !lapsesBefore.has(row.id) && row.kind === "dropped_by_runner",
+      );
+      return fresh.length > 0 ? fresh : null;
+    }, "a dropped brokered request to reach DASH as a lapse", 45_000);
+
+    const dropped = (lapses ?? []).reduce((sum, row) => sum + (row.attempts ?? 0), 0);
+    check(
+      "8c. requests the runner destroyed reached DASH as lapses, attributed and dated",
+      (lapses ?? []).length > 0 &&
+        dropped > 0 &&
+        (lapses ?? []).every(
+          (row) =>
+            row.agent === AGENT_ID &&
+            row.observed_by === "runner" &&
+            row.attempts !== null &&
+            !Number.isNaN(Date.parse(row.from_at)),
+        ),
+      { lapse_rows: (lapses ?? []).length, dropped_total: dropped },
+    );
+
+    /* -- The check this proof exists for --------------------------------- */
+
+    const reportedSent = ((): number => {
+      try {
+        return existsSync(reportPath)
+          ? Number((JSON.parse(readFileSync(reportPath, "utf8")) as { sent?: unknown }).sent ?? 0)
+          : 0;
+      } catch {
+        return 0;
+      }
+    })();
+
+    const audited = readBrokerAudit(AGENT_ID, 1_000).filter((row) => !auditBefore.has(row.id));
+    check(
+      "8d. DASH invented no decision for a request it never received",
+      reportedSent === BURST &&
+        dropped > 0 &&
+        // The whole claim in one line: every request is either adjudicated or
+        // dropped, never both and never neither. If a dropped request had also
+        // produced an audit row, this sum would exceed what the agent sent.
+        audited.length + dropped <= BURST &&
+        audited.length < BURST,
+      {
+        sent_by_agent: reportedSent,
+        audited_decisions: audited.length,
+        dropped_without_decision: dropped,
+      },
+    );
+
+    check(
+      "8e. a lapse carries no operation, decision or refusal, because none was made",
+      (lapses ?? []).every((row) => {
+        const serialised = JSON.stringify(row);
+        return (
+          !serialised.includes("gmail.search") &&
+          !serialised.includes("allowed") &&
+          !serialised.includes("refused") &&
+          !Object.hasOwn(row, "operation") &&
+          !Object.hasOwn(row, "decision")
+        );
+      }),
+      { columns: Object.keys((lapses ?? [])[0] ?? {}) },
+    );
+
+    /* -- And a person can read it ---------------------------------------- */
+
+    const view = connectionsView().agents.find((entry) => entry.name === AGENT_ID);
+    const rendered = (view?.lapses ?? []).filter((entry) => entry.kind === "dropped_by_runner");
+    check(
+      "8f. the Connection Center says so in a sentence, without naming an operation",
+      rendered.length > 0 &&
+        rendered.every(
+          (entry) =>
+            entry.sentence.includes("before DASH saw") &&
+            (entry.qualifier ?? "").includes("does not know what they asked for") &&
+            !`${entry.sentence}${entry.qualifier ?? ""}`.includes("gmail.search"),
+        ),
+      { sentences: rendered.map((entry) => entry.sentence) },
+    );
+
+    /* -- Stop ------------------------------------------------------------ */
+
+    await call(`${handle.origin}/agents/${encodeURIComponent(AGENT_ID)}/lifecycle`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${handle.token}` },
+      body: JSON.stringify({ action: "stop" }),
+      signal: AbortSignal.timeout(10_000),
+    }).catch(() => undefined);
+
+    // Windows holds the child's cwd until it has fully exited; see proof 7.
+    await waitForValue(async () => {
+      try {
+        const response = await call(`${handle.origin}/agents`, {
+          headers: { authorization: `Bearer ${handle.token}` },
+          signal: AbortSignal.timeout(3_000),
+        });
+        const body = (await response.json()) as {
+          agents?: Array<{ agent_id?: string; lifecycle?: string }>;
+        };
+        const entry = (body.agents ?? []).find((agent) => agent.agent_id === AGENT_ID);
+        return entry === undefined || entry.lifecycle === "exited" || entry.lifecycle === "stopped"
+          ? "gone"
+          : null;
+      } catch {
+        return null;
+      }
+    }, "the burst agent's process to exit", 15_000);
+
+    removeRegistration(dataDir, AGENT_ID);
+    forgetAgent(AGENT_ID);
+    // The lapse rows go too. They are this proof's own droppings, and leaving
+    // them would show a real user a warning about an agent that never existed.
+    forgetBrokerLapses(AGENT_ID);
+    await call(`${handle.origin}/registrations/reload`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${handle.token}` },
+      signal: AbortSignal.timeout(5_000),
+    }).catch(() => undefined);
+  } finally {
+    rmSync(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
 }
 
 /* ---------------------------------------------------------------------- *
@@ -1660,6 +1942,25 @@ async function proveTheBroker(recorded: {
    * can be satisfied by a previous proof's leftovers is not a proof.
    */
   const RUN_ID = `proof-run-${String(Date.now())}`;
+  /**
+   * A fresh request-id prefix per smoke run, and the same lesson pointed the
+   * other way (MAR-467).
+   *
+   * The ids were `proof-1..3` against a constant agent id, and the broker's
+   * replay guard is per agent. An earlier smoke run that was interrupted leaves
+   * its requests in the runner's *bounded buffer*, which survives DASH; the next
+   * run's shell drains them at startup, adjudicates them, and seeds the replay
+   * set with those very ids — so this run's real calls come back
+   * `duplicate_request` and 7d/7e/7f/7h/7i fail together, naming a boundary that
+   * is working correctly. Observed once here, on this branch's first pass, with
+   * 64 undelivered answers reported at startup.
+   *
+   * `RUN_ID` above documents a proof that a leftover could satisfy. This is a
+   * proof a leftover could *fail*, which is the worse of the two: a blocking
+   * gate that goes red for a reason unrelated to the change in hand teaches
+   * people to re-run it until it is green. ADR 0004 is the standing rule.
+   */
+  const REQUEST_PREFIX = `proof-${String(Date.now())}`;
   /** Every Authorization header the fake provider was presented with. */
   const presented: string[] = [];
   let server: Server | null = null;
@@ -1742,7 +2043,7 @@ async function proveTheBroker(recorded: {
       const pending = new Map();
       let seq = 0;
       function ask(connection, operation, input) {
-        const id = "proof-" + (seq += 1);
+        const id = ${JSON.stringify(REQUEST_PREFIX)} + "-" + (seq += 1);
         return new Promise((resolve) => {
           const timer = setTimeout(() => { pending.delete(id); resolve({ ok: false, refusal: "broker_unavailable" }); }, 30000);
           pending.set(id, (r) => { clearTimeout(timer); resolve(r); });
@@ -1945,6 +2246,7 @@ async function proveTheBroker(recorded: {
       pid: recorded.pid,
       token: ensureChannelSecret(dataDir),
       adopted: true,
+      started_at: null,
     };
     const call = runnerFetch(handle);
 

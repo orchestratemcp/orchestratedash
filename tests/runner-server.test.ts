@@ -650,3 +650,82 @@ describe("POST /agents/{id}/lifecycle", () => {
     expect(response.status).toBe(401);
   });
 });
+
+/* ---------------------------------------------------------------------- *
+ * Broker answers that could not be delivered (MAR-467)
+ * ---------------------------------------------------------------------- */
+
+describe("POST /broker/responses", () => {
+  let harness: Harness;
+
+  beforeEach(async () => {
+    harness = await startRunner();
+  });
+
+  afterEach(async () => {
+    await harness.close();
+  });
+
+  async function deliver(
+    responses: unknown,
+  ): Promise<{ delivered: number; undelivered: number; malformed: number; undelivered_index: number[] }> {
+    const response = await harness.call(`${harness.base}/broker/responses`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({ responses }),
+    });
+    return (await response.json()) as {
+      delivered: number;
+      undelivered: number;
+      malformed: number;
+      undelivered_index: number[];
+    };
+  }
+
+  /**
+   * The runner has always known this and DASH has always thrown it away: the
+   * answer is written to a child's stdin, and a child that has exited has no
+   * stdin to write to. Reporting *which* answer failed is what lets DASH mark
+   * the right decision, and the position in the caller's own array is the only
+   * identifier that survives two answers to the same agent in one batch.
+   */
+  it("names the position of an answer whose agent is not running", async () => {
+    const line = `${JSON.stringify({ type: "broker_response", request_id: "r-1", ok: false })}\n`;
+
+    // Nothing has been started, so there is no child and nothing can be written.
+    const settled = await deliver([{ agent_id: AGENT, line }]);
+    expect(settled.delivered).toBe(0);
+    expect(settled.undelivered).toBe(1);
+    expect(settled.undelivered_index).toEqual([0]);
+  });
+
+  it("reports positions in the submitted array, not in the delivered subset", async () => {
+    const line = `${JSON.stringify({ type: "broker_response", request_id: "r", ok: true })}\n`;
+
+    // A malformed entry sits between two undeliverable ones. If the index were
+    // counted over anything but the caller's own array, the second answer would
+    // be reported at position 1 and DASH would mark the wrong decision — which
+    // is the specific small lie this whole issue exists to prevent.
+    const settled = await deliver([
+      { agent_id: AGENT, line },
+      { agent_id: "", line },
+      { agent_id: AGENT, line },
+    ]);
+    expect(settled.malformed).toBe(1);
+    expect(settled.undelivered_index).toEqual([0, 2]);
+  });
+
+  it("reports nothing undelivered when the agent is running", async () => {
+    const line = `${JSON.stringify({ type: "broker_response", request_id: "r-live", ok: true })}\n`;
+    await harness.call(`${harness.base}/agents/${AGENT}/lifecycle`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({ action: "start" }),
+    });
+    await waitFor(() => harness.supervisor.facts(AGENT)?.lifecycle === "running", "startup");
+
+    const settled = await deliver([{ agent_id: AGENT, line }]);
+    expect(settled.delivered).toBe(1);
+    expect(settled.undelivered_index).toEqual([]);
+  });
+});

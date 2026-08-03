@@ -31,7 +31,12 @@
  */
 
 import { createBroker, type BrokerAuditRow, type CredentialRead } from "../lib/broker/execute";
-import { recordBrokerCall, touchReceipt } from "../lib/broker/store";
+import {
+  markBrokerAnswerUndelivered,
+  recordBrokerCall,
+  recordBrokerLapse,
+  touchReceipt,
+} from "../lib/broker/store";
 import {
   encodeBrokerResponse,
   parseBrokerRequest,
@@ -54,6 +59,50 @@ export const BROKER_IDLE_INTERVAL_MS = 1_000;
 interface DrainedRequest {
   agent_id: string;
   request: unknown;
+}
+
+/** One agent's share of what the runner destroyed, as drained (MAR-467). */
+interface DroppedTally {
+  agent_id: string;
+  count: number;
+  first_at: string;
+  last_at: string;
+}
+
+/**
+ * Read the runner's drop tallies out of an untrusted drain body (MAR-467).
+ *
+ * The runner is DASH's own child and this is not a security boundary, but it is
+ * a *version* boundary — an installed DASH can meet a runner from a different
+ * build, which `runner_protocol` exists to catch and which a field added in one
+ * release is the ordinary way to trip. A tally that does not parse is skipped
+ * rather than defaulted, because a lapse row with an invented timestamp is a
+ * record of something that did not happen at that time.
+ */
+function parseDroppedDetail(candidate: unknown): DroppedTally[] {
+  if (!Array.isArray(candidate)) {
+    return [];
+  }
+  const tallies: DroppedTally[] = [];
+  for (const entry of candidate) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+    const { agent_id: agentId, count, first_at: firstAt, last_at: lastAt } = entry as Record<string, unknown>;
+    if (
+      typeof agentId !== "string" ||
+      agentId.length === 0 ||
+      typeof count !== "number" ||
+      !Number.isFinite(count) ||
+      count <= 0 ||
+      typeof firstAt !== "string" ||
+      typeof lastAt !== "string"
+    ) {
+      continue;
+    }
+    tallies.push({ agent_id: agentId, count, first_at: firstAt, last_at: lastAt });
+  }
+  return tallies;
 }
 
 /**
@@ -102,6 +151,23 @@ export function startBroker(
 
   const call = runnerFetch(runner);
 
+  /**
+   * Every audit row this loop has written, in the order the broker wrote them
+   * (MAR-467).
+   *
+   * `BrokerDeps.audit` is documented as "called exactly once per request, on
+   * every path", and `pass` awaits one `handle` at a time, so the entries
+   * appended across one `handle` call belong to that request. That is a real
+   * coupling to a documented contract rather than a hopeful one — and the
+   * request id is checked anyway before the id is used, because marking the
+   * wrong decision undelivered would be a false statement in the one table that
+   * must not contain any.
+   *
+   * Truncated at the top of every pass, so it is a scratchpad for the batch in
+   * hand and not a second copy of the audit table in memory.
+   */
+  const written: Array<{ id: number | null; request_id: string }> = [];
+
   const broker = createBroker({
     readManifest: (agentId: string) =>
       readAgentManifest(agentId) as ConnectionSourceManifest | null,
@@ -109,7 +175,7 @@ export function startBroker(
     mintAccessToken,
     fetchImpl: fetch,
     audit: (row: BrokerAuditRow) => {
-      recordBrokerCall(row);
+      written.push({ id: recordBrokerCall(row), request_id: row.request_id });
     },
     touchGrant: (grant, at) => {
       touchReceipt(grant.agent_id, grant.connection_id, at);
@@ -121,6 +187,7 @@ export function startBroker(
   let timer: NodeJS.Timeout | null = null;
 
   async function pass(): Promise<boolean> {
+    written.length = 0;
     let drained: DrainedRequest[];
     try {
       const response = await call(`${runner!.origin}/broker/drain`, {
@@ -131,13 +198,33 @@ export function startBroker(
       if (!response.ok) {
         return false;
       }
-      const body = (await response.json()) as { requests?: unknown; dropped?: unknown };
+      const body = (await response.json()) as {
+        requests?: unknown;
+        dropped?: unknown;
+        dropped_detail?: unknown;
+      };
       if (typeof body.dropped === "number" && body.dropped > 0) {
         log(
           `[dash-shell] the runner dropped ${String(body.dropped)} brokered ` +
             `request${body.dropped === 1 ? "" : "s"} before this pass; ` +
             `${body.dropped === 1 ? "that agent is" : "those agents are"} waiting for an answer that will not come`,
         );
+      }
+      // Written down rather than only logged (MAR-467). This is the first of the
+      // three ways a brokered request leaves no trace: the runner read it, the
+      // bounded buffer was full, and it was destroyed before DASH ever saw it.
+      // DASH is recording somebody else's observation here, which is why the row
+      // says `observed_by: "runner"` and carries no operation — see
+      // `BrokerDropTally` for why the runner does not know one.
+      for (const tally of parseDroppedDetail(body.dropped_detail)) {
+        recordBrokerLapse({
+          kind: "dropped_by_runner",
+          agent: tally.agent_id,
+          attempts: tally.count,
+          from_at: tally.first_at,
+          until_at: tally.last_at,
+          observed_by: "runner",
+        });
       }
       drained = Array.isArray(body.requests) ? (body.requests as DrainedRequest[]) : [];
     } catch {
@@ -151,6 +238,14 @@ export function startBroker(
     }
 
     const answers: Array<{ agent_id: string; line: string }> = [];
+    /**
+     * The audit row behind each answer, positionally aligned with `answers`
+     * (MAR-467), or null where there is none to point at — a request the broker
+     * threw on before auditing, or an audit write that itself failed. Null means
+     * the delivery failure is real and unrecordable, which is better left blank
+     * than pinned on the nearest row.
+     */
+    const auditIds: Array<number | null> = [];
 
     for (const candidate of drained) {
       if (
@@ -192,22 +287,62 @@ export function startBroker(
       }
 
       answers.push({ agent_id: candidate.agent_id, line: encodeBrokerResponse(response) });
+      // Checked, not assumed. If the broker threw before auditing, the newest
+      // entry belongs to an earlier request — or there is none — and this answer
+      // gets no row to point at rather than the wrong one.
+      const audited = written[written.length - 1];
+      auditIds.push(
+        audited !== undefined && audited.request_id === parsed.request_id ? audited.id : null,
+      );
     }
 
     if (answers.length > 0) {
       try {
-        await call(`${runner!.origin}/broker/responses`, {
+        const delivery = await call(`${runner!.origin}/broker/responses`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${runner!.token}` },
           body: JSON.stringify({ responses: answers }),
           signal: AbortSignal.timeout(3_000),
         });
+        // The response body was previously discarded, and it already carried the
+        // answer (MAR-467): the runner writes each line to a child's stdin and
+        // knows perfectly well when there is no child left to write to. The third
+        // way a brokered request leaves no trace was observed all along and
+        // thrown away one line short of a place to put it.
+        const settled = (await delivery.json()) as { undelivered_index?: unknown };
+        const lost = Array.isArray(settled.undelivered_index) ? settled.undelivered_index : [];
+        for (const index of lost) {
+          if (typeof index !== "number" || !Number.isInteger(index)) {
+            continue;
+          }
+          const auditId = auditIds[index];
+          if (auditId !== undefined && auditId !== null) {
+            markBrokerAnswerUndelivered(auditId);
+          }
+        }
+        if (lost.length > 0) {
+          log(
+            `[dash-shell] ${String(lost.length)} brokered answer${lost.length === 1 ? "" : "s"} ` +
+              `could not be delivered: the agent had exited by the time DASH decided`,
+          );
+        }
       } catch {
         // The agents wait and time out. Nothing here is retried: a brokered
         // answer is bound to a request id the agent has already given up on by
         // the time a retry would arrive, and re-running the operation to produce
         // a fresh one would be a second read of somebody's mail for a question
         // nobody is still asking.
+        //
+        // Every answer in the batch is marked undelivered, because none of them
+        // can be shown to have arrived (MAR-467). This branch also catches a
+        // body that would not parse, which is why it marks rather than assumes:
+        // the request may well have been delivered and DASH cannot say so, and
+        // "not known to have arrived" is the claim the column is built to make.
+        for (const auditId of auditIds) {
+          if (auditId !== null) {
+            markBrokerAnswerUndelivered(auditId);
+          }
+        }
         log("[dash-shell] could not deliver brokered answers to the runner");
       }
     }

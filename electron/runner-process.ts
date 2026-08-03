@@ -65,6 +65,17 @@ export interface RunnerHandle {
   token: string;
   /** True when DASH attached to a runner that was already up. */
   adopted: boolean;
+  /**
+   * When the runner says it started, from its own endpoint file (MAR-467).
+   *
+   * Null for a runner DASH just spawned — the file is written by the runner
+   * after it is listening, so at this point in a spawn there is nothing to read
+   * and inventing "now" would be DASH answering a question it asked the runner.
+   * Nothing needs it in that case: `closedWindow` only consults this for an
+   * adopted runner, because only an adopted one can have spanned a window in
+   * which DASH was not running.
+   */
+  started_at: string | null;
 }
 
 export type EnsureRunnerResult =
@@ -166,6 +177,7 @@ async function adopt(dataDir: string, token: string): Promise<RunnerCandidate | 
       pid: recorded.pid,
       token,
       adopted: true,
+      started_at: typeof recorded.started_at === "string" ? recorded.started_at : null,
     },
     compatible: runnerIdentityMatches(recorded, healthBody),
     observed_build: observedBuild,
@@ -287,6 +299,7 @@ export async function ensureRunner(dataDir: string): Promise<EnsureRunnerResult>
       pid: listening.pid,
       token,
       adopted: false,
+      started_at: null,
     },
   };
 }

@@ -201,6 +201,74 @@ describe("a brokered request on the pipe", () => {
     supervisor.stopAll();
   });
 
+  /**
+   * MAR-467. The aggregate count above says something was lost; this says whose
+   * and when, which is the difference between a log line and a sentence DASH can
+   * put on a page.
+   *
+   * Waits for the drop rather than sleeping through it, for MAR-472's reason:
+   * the test above this one bets a fixed 700ms on Windows spawning Node and
+   * writing 200 lines, and loses that bet occasionally under full-suite load.
+   */
+  it("says which agent's requests it dropped, and when", async () => {
+    const { supervisor } = register(`
+      for (let i = 0; i < 200; i += 1) {
+        process.stdout.write(JSON.stringify({
+          type: "broker_request",
+          request: { request_id: "req-" + i, connection_id: "gmail", operation: "gmail.search", input: {} }
+        }) + "\\n");
+      }
+    `);
+    expect(supervisor.start("broker-probe").ok).toBe(true);
+
+    // A drain is destructive, so accumulate rather than re-reading: a poll that
+    // arrived mid-burst would take the tally and leave the next poll with none.
+    let tallies: ReturnType<Supervisor["drainBrokerRequests"]>["dropped_detail"] = [];
+    await waitUntil(() => {
+      tallies = [...tallies, ...supervisor.drainBrokerRequests().dropped_detail];
+      return tallies.length > 0;
+    });
+
+    const total = tallies.reduce((sum, tally) => sum + tally.count, 0);
+    expect(tallies.every((tally) => tally.agent_id === "broker-probe")).toBe(true);
+    expect(total).toBeGreaterThan(0);
+    for (const tally of tallies) {
+      expect(Date.parse(tally.first_at)).not.toBeNaN();
+      expect(Date.parse(tally.last_at)).toBeGreaterThanOrEqual(Date.parse(tally.first_at));
+    }
+
+    // Cleared by the drain that reported it: a tally reported twice would double
+    // every count on the page.
+    expect(supervisor.drainBrokerRequests().dropped_detail).toEqual([]);
+    supervisor.stopAll();
+  }, 30_000);
+
+  it("has nothing to report when nothing was dropped", async () => {
+    // The absence check that pairs with the presence check above. A surface that
+    // renders "DASH cannot account for this" on a healthy agent is worse than
+    // no surface, because it teaches the user to scroll past it.
+    const { supervisor } = register(`
+      process.stdout.write(JSON.stringify({
+        type: "broker_request",
+        request: { request_id: "solo", connection_id: "gmail", operation: "gmail.search", input: {} }
+      }) + "\\n");
+    `);
+    expect(supervisor.start("broker-probe").ok).toBe(true);
+
+    const requests: BrokerRequests = [];
+    const tallies: ReturnType<Supervisor["drainBrokerRequests"]>["dropped_detail"] = [];
+    await waitUntil(() => {
+      const drain = supervisor.drainBrokerRequests();
+      requests.push(...drain.requests);
+      tallies.push(...drain.dropped_detail);
+      return requests.length > 0;
+    });
+
+    expect(requests).toHaveLength(1);
+    expect(tallies).toEqual([]);
+    supervisor.stopAll();
+  }, 30_000);
+
   it("does not confuse a brokered request with telemetry or an artifact", async () => {
     const { supervisor } = register(`
       const line = (o) => process.stdout.write(JSON.stringify(o) + "\\n");

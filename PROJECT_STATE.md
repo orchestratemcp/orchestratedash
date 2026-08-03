@@ -60,10 +60,39 @@ See ADR 0002 amendment 1, which also corrects this ADR's account of the defect â
 the raw-token path required a manifest to declare `technical.environment_name`
 on its OAuth field, and no shipped example does.
 
+**MAR-467 is built.** A brokered request DASH never received now leaves a trace,
+and the judgment is in ADR 0005: an attempt nobody adjudicated is a **different
+kind of fact** from a decision DASH made, and it is kept different in the data
+model rather than only in the copy. The new `broker_lapses` table has no
+`decision`, `refusal`, `operation`, `connection_id` or `request_id` column, so no
+row in it can be mistaken for an audit row by a careless join or a future
+renderer; `tests/store-sqlite.test.ts` pins the column list.
+
+The issue's own account of the third case was wrong and is corrected there. An
+undeliverable answer does **not** leave no trace: `lib/broker/execute.ts` audits
+on every path before the answer travels, so the row already exists and reads
+"allowed, 12 results" for a call the agent got nothing from. That is a record
+which overstates rather than a missing one, so it became a `delivered` column on
+the audit row and not a second population of near-misses. Two other things were
+already known and thrown away: the runner counted drops without attributing them,
+and `POST /broker/responses` had always returned which answers failed, in a body
+`electron/broker-host.ts` never read.
+
+DASH-was-closed is the case nobody observed, by construction. Nothing is stored
+about the agent: DASH records **its own absence**, and the per-agent sentence is
+derived at render time from whose runtime declares `continues_when_dash_closed`,
+because that answer changes when a manifest does.
+
+**One of the three is proven end to end** (proof 8, the buffer drop: 200 requests
+against a bound of 64, drained and rendered by the installed shell's own broker
+loop). Proof 8d is the load-bearing one â€” it fails if the audit rows and the
+dropped requests sum past what the agent actually sent, which is what a
+synthesised row would do. Cases 1 and 3 are covered by unit tests only, and ADR
+0005 says so plainly rather than letting the total imply otherwise.
+
 Wave 2's remaining work: MAR-468 (the real-Google proof that would promote
 MAR-458 to `proven`), MAR-469 (provider-side draft creation), MAR-470 (MCP
-connectors through the same card), MAR-471 (bring-your-own Google client),
-MAR-467 (a brokered request DASH never received leaves no trace).
+connectors through the same card), MAR-471 (bring-your-own Google client).
 
 ## The release signal, repaired (MAR-465, MAR-466, MAR-473)
 
