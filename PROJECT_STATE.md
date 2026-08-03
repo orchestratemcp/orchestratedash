@@ -152,9 +152,59 @@ Unchanged and still true: **the provider is not Google.** MAR-468 owns that, and
 nothing here is proven against Gmail's API — including that a draft appears in a
 real Drafts folder.
 
-Wave 2's remaining work: MAR-468 (the real-Google proof that would promote
-MAR-458 and MAR-469 to `proven`), MAR-470 (MCP connectors through the same card),
-MAR-471 (bring-your-own Google client).
+**MAR-468 is built and has not been run, and those are different things.** The
+attended harness (`scripts/google-proof/main.ts`), its launcher
+(`scripts/prove-google.mjs`) and the procedure
+(`docs/real-google-proof-runbook.md`) exist. Nobody has stood at the consent
+screen. **A runbook is not a run**, so MAR-458 and MAR-469 stay `merged`, and the
+promotion is a separate dated act with the rule written down in advance.
+
+Writing that rule in advance is the point of **ADR 0002 amendment 3**. Deciding
+afterwards, with a green log in hand, is how a proof comes to be read as
+establishing whatever the reader hoped for.
+
+The decision that shaped it was declining the cheap build. A standalone script
+driving `lib/broker/` against Google would have been a fraction of the work and
+would have left a union across two substrates, with seams wherever they failed to
+overlap. Instead the harness boots the same shell through the same
+`electron/smoke-identity.ts` and `electron/main.ts`, writes to the same user-data
+directory, uses the same OS vault, adopts the same runner and spawns a real child
+speaking the same broker protocol. **The only variable between it and proof 7 is
+which server answers.**
+
+So there is one seam rather than a class of them, and it is `7n`. Proof 7's
+harness *serves* Gmail's two send endpoints and answers them with success — which
+is what makes "DASH never called a send endpoint" a statement about DASH rather
+than about a provider's willingness to refuse. Google cannot be made willing, so
+the attended `G12b` reads `broker_audit` instead and is weaker in exactly that
+way. The asymmetry runs both ways, which is why neither is redundant: `G11`
+refuses both send attempts against a credential Google would genuinely have
+honoured, and no loopback grant can model that, because that grant is a fixture
+the harness wrote for itself. **Both proofs stay.**
+
+The cheapest check is the one the record rests on. `G0b` asserts
+`loopbackProofOrigin()` is null before anything is connected: without it every
+check below would pass against the fake provider and the dated log would be a lie
+about which server answered.
+
+It cannot become a gate **by construction rather than by convention**, which is
+ADR 0004's rule enforced: `scripts/prove-google.mjs` exits before it builds
+anything if `CI` is set or no terminal is attached, and no `package.json` script
+names it. `pnpm verify` does not run it and *does* typecheck it — `tsconfig.json`
+includes `scripts/google-proof` — because a proof that rots silently between
+attended runs would be worse than none, and typechecking a file is not executing
+it.
+
+The requirement the harness was verified against is that **`pnpm verify` still
+passes without it**. Two full runs on Windows, both green: `[state] valid`,
+typecheck, 62 test files, 1113 tests, and 67 installed-shell proof checks with no
+failures plus the one advisory note. 67 is unchanged from `c6c3406` and that is
+right — MAR-421 landed in between and added nine unit tests and no installed
+proof, which is why 1104 became 1113 and 67 stayed 67.
+
+Wave 2's remaining work: MAR-468's **run** (the dated attended pass that would
+promote MAR-458 and MAR-469 to `proven`), MAR-470 (MCP connectors through the same
+card), MAR-471 (bring-your-own Google client).
 
 ## The release signal, repaired (MAR-465, MAR-466, MAR-473)
 

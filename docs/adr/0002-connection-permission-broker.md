@@ -349,3 +349,114 @@ query is tested against a real store and the broker's use of it is tested with
 two brokers sharing one record — which is what a restart looks like from the
 broker's side — but no installed proof restarts DASH between two halves of one
 agent's work.
+
+## Amendment 3 (MAR-468): what a real Google run can promote, and what it cannot
+
+Status: Accepted
+
+Date: 2026-08-03
+
+Amendments 1 and 2 both end by saying MAR-468 owns the real-Google proof, and
+neither says what promoting on it would actually be a claim about. This amendment
+answers that **before the run**, on purpose: deciding afterwards, with a green log
+in hand, is how a proof gets read as establishing whatever the reader hoped.
+
+`scripts/google-proof/main.ts` is the harness and
+`docs/real-google-proof-runbook.md` is the procedure. Neither has been executed.
+
+### The two proofs differ in one variable, which is smaller than it looked
+
+The obvious framing is that proof 7 is real-except-the-provider and this one is
+real-including-the-provider, so between them everything is covered — a union
+across two substrates, with seams wherever they fail to overlap. That framing
+would have been right if the attended proof had been written as a standalone
+script driving `lib/broker/` directly, which is the cheap way to build it.
+
+It is not written that way, and that is the load-bearing decision here. The
+attended harness boots the same shell, through the same
+`electron/smoke-identity.ts` and the same `electron/main.ts`, writes to the same
+user-data directory, uses the same OS vault, adopts the same runner, and spawns a
+real child process that speaks the same broker protocol. **The only variable
+between the two runs is which server answers**, plus one renderer surface the
+attended run skips (the pre-consent summary window, which is not on the path any
+provider request takes).
+
+So there is no substrate seam to reason about. There is one seam, and it is a
+single check.
+
+### The seam is `7n`, and it is not closeable against Google
+
+Proof 7's harness **serves** Gmail's two send endpoints and answers them with
+success. That is what makes `7n` a statement about DASH rather than about a
+provider's willingness to refuse, and it is the check that would notice a future
+write operation reaching the wrong path with a live token attached.
+
+Google cannot be made willing. So the attended run's equivalent, `G12b`, reads
+DASH's own `broker_audit` — one row per brokered call on every path, refusals
+included — and asserts no `.send` row was ever `allowed`. That is weaker in a
+stated way: it would not distinguish a request DASH built and Google rejected
+from a request DASH never built.
+
+The asymmetry runs both ways, which is why neither proof is redundant. `G11`
+refuses both send attempts against a credential Google would genuinely have
+honoured them with — the exact condition invariant 6 is about, and one no
+loopback run can create, because the loopback grant is a fixture the harness
+wrote for itself.
+
+**Both stay. Proof 7 is the one that runs on every commit; this one runs when
+somebody is watching.**
+
+### What a green run makes true
+
+1. Google's Gmail API behaves as `lib/broker/operations.ts` models it — including
+   the projection over a **real MIME tree**, which is the single most likely
+   thing here to have been wrong. The loopback provider serves one flat
+   `text/plain` part with two headers; Gmail serves `multipart/alternative` with
+   the plain part nested and headers in whatever case it chooses, and
+   `plainTextBody` and `header` had never been given a document Google wrote.
+2. DASH's OAuth flow works against Google: PKCE, an ephemeral loopback redirect,
+   `access_type=offline` and `prompt=consent` really do yield a refresh token, and
+   `accountFromIdToken` really does read an address out of an id token Google
+   signed.
+3. The three-party intersection resolves the modelled operation set from a
+   **real** consent rather than from a credential the harness minted for itself.
+4. The negatives hold with a live restricted-scope credential in the vault.
+5. `revoked` is a real classification and not a hoped-for one. Google's
+   `invalid_grant` for a withdrawn refresh token reaches the agent as `revoked`,
+   which is a MAR-446 acceptance criterion that until now had only ever been asked
+   of a test server returning a hand-written body.
+6. A draft really does appear in a real Drafts folder, with a `From` DASH never
+   wrote, and a person looked at it.
+
+### What stays false, and would stay false after ten green runs
+
+- **"The broker is proven"**, unqualified. ADR 0005's cases 1 and 3 — DASH was
+  closed, and the answer DASH could not confirm was delivered — are unit tests
+  only, and MAR-469's durable replay memory meeting a real DASH restart is unit
+  tests only. Nothing about a real provider touches any of the three.
+- **Anything about a public DASH Gmail connection.** The run is Testing mode with
+  a named test user. `gmail.readonly` and `gmail.compose` are both restricted, so
+  no non-test user can grant either until Google verification; and if
+  restricted-scope data ever crosses a server, an annual independent CASA
+  assessment applies. A Testing-mode run is evidence about neither, and the note
+  recording it has to say which regime it was performed under or it will be read
+  as the other one.
+- **The compiled client id.** Still disclosed rather than removed, still DASH's
+  consent screen. Amendment 1's account of it is unchanged and MAR-471 still owns
+  the fix.
+- **That the evidence keeps.** A Testing-mode data-scope grant expires seven days
+  after it is issued. What expires is the grant rather than the observation, but a
+  `proven` claim resting on it must carry its date, and re-running means
+  consenting again.
+
+### The rule this leaves behind
+
+A green attended run promotes **MAR-458 and MAR-469** to `proven` with the four
+qualifications the runbook's promotion rule lists — date and expiry, regime,
+`G12b` being the weaker half of `7n`, and the three things that remain unit tests
+only. It promotes nothing else.
+
+And the ordinary failure this is written against: **a runbook is not a run.**
+MAR-468 is `merged` while this file, the harness and the procedure exist and
+nobody has stood at the consent screen. The promotion is a separate, dated,
+mechanical act afterwards.
