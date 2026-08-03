@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-08-03",
   "current_wave": "Wave 2 - outside-app connections",
-  "lifecycle_note": "MAR-465, MAR-466 and MAR-472 merged to master in PR #31 (merge commit 08a0d36) and are Done in Linear. MAR-473 merged to master in PR #32 (merge commit 2bf9965) on 2026-08-02 and is Done in Linear; the note that called it open and human-gated was written before that merge and is corrected here. MAR-458 remains In Progress by intent: it is merged but not proven, and MAR-468 owns the real-Google proof that would promote it. MAR-467 records a proof that was executed, on a branch whose PR is open and human-gated: the commit it names is an ancestor of this packet because the packet travels with it, and it is not on master yet. It stays In Progress in Linear for the same reason MAR-458 does - one of its three cases is proven end to end and the other two are unit tests only, which its note states plainly rather than letting the total imply otherwise.",
+  "lifecycle_note": "MAR-465, MAR-466 and MAR-472 merged to master in PR #31 (merge commit 08a0d36) and are Done in Linear. MAR-473 merged to master in PR #32 (merge commit 2bf9965) on 2026-08-02 and is Done in Linear. MAR-467 merged to master in PR #33 (merge commit e097aef) on 2026-08-03; the note that called its PR open and human-gated was written before that merge and is corrected here. It stays In Progress in Linear on purpose, for the same reason MAR-458 does: one of its three cases is proven end to end and the other two are unit tests only, and its note says so rather than letting the total imply otherwise. MAR-458 remains In Progress by intent: it is merged but not proven, and MAR-468 owns the real-Google proof that would promote it. MAR-469 is the same shape and is recorded the same way - it is merged on a branch whose PR is open and human-gated, its installed proof is real and its provider is not Google, so MAR-468 now gates the promotion of two issues rather than one. The commit MAR-469 names is an ancestor of this packet because the packet travels with it, and it is not on master yet. state:check reports 3 recorded cross-system drift warnings, for MAR-458, MAR-467 and MAR-469 (git says merged, recorded Linear status is In Progress); all three are deliberate and are explained above.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -12,7 +12,7 @@
     "index": ".orchestrate/state.json"
   },
   "git": {
-    "evidence_base_commit": "56b16a2"
+    "evidence_base_commit": "92c4145"
   },
   "issues": [
     {
@@ -191,7 +191,17 @@
       "id": "MAR-468",
       "lifecycle": "planned",
       "linear_status": "Backlog",
-      "note": "The remaining step to promote MAR-458 to proven: the same round trip against a real Google account rather than the loopback provider proof 7 binds. Needs a human at a consent screen, so it is a dated manual proof and must not be added to pnpm verify. Google Testing-mode data-scope grants expire after seven days, so record the date."
+      "note": "The remaining step to promote MAR-458 AND MAR-469 to proven: the same round trip against a real Google account rather than the loopback provider proof 7 binds. Needs a human at a consent screen, so it is a dated manual proof and must not be added to pnpm verify. Google Testing-mode data-scope grants expire after seven days, so record the date. Its scope grew with MAR-469 and the added part is the part with consequences: the read half leaves nothing behind, and the write half puts a real draft in a real Drafts folder. Delete it afterwards, and expect gmail.compose to need Google verification before any non-test user can grant it."
+    },
+    {
+      "id": "MAR-469",
+      "lifecycle": "merged",
+      "linear_status": "In Progress",
+      "commit": "92c4145",
+      "proof": {
+        "command": "pnpm verify"
+      },
+      "note": "ADR 0002 stage 2: gmail.draft.create writes a reply into the user's own Drafts folder, and there is still no send operation. PROVEN END TO END on the installed shell (proof 7, checks 7k-7n): a real agent the runner spawned drove a real POST carrying a real bearer token to a real HTTP provider, and the RFC 5322 message DASH composed was read back out of what the provider received. 7n is the load-bearing check - the harness SERVES Gmail's two send endpoints and answers them with success, so 'DASH never called a send endpoint' is a statement about DASH rather than about a provider's willingness to refuse; over a run in which the agent asked to send twice by two different names, the paths DASH actually reached were /token, the two read paths and /gmail/v1/users/me/drafts. 7l reads the composed headers back and asserts no From, no Bcc and nothing the agent named; 7m shows a recipient carrying CRLF refused as invalid_input before any request, with exactly one draft POST in the whole run. NOT PROVEN, and unchanged from MAR-458: the provider is a loopback server, not Google. Nothing here is proven against Gmail's API - including that a draft appears in a real Drafts folder - and MAR-468 owns that. UNIT TESTS ONLY: the durable replay memory meeting a real DASH restart. hasBrokerRequest is tested against a real store in tests/broker-write.test.ts and the broker's use of it is tested with two brokers sharing one record, which is what a restart looks like from the broker's side, but no installed proof restarts DASH between two halves of one agent's work. What replaced stage 1's free argument: stage 1 could say 'no send exists' because nothing was built on gmail.compose, and that is spent. A write operation now has no plan - it cannot return a URL, a path or a method because WriteOperation declares no member that could carry one - so planCall builds a POST's URL from the operation's own frozen path, checked at module load against WRITE_PATHS, which tests/broker-threat-model.test.ts pins by value. There is no raw input: DASH composes the message from four typed fields and writes no From, so Gmail fills the sender from the account whose token DASH presented. Honesty changes that were not optional: Google has no drafts-only scope, so the disclosure that used to ride on unused_scopes would have vanished the moment something was built on compose - wider_permission and consequence are now required fields on a write operation and render before a sign-in as well as after. draft.placement is a required tagged union because the draft artifact kind stopped meaning local; it is the agent's claim and broker_audit is DASH's record, which the copy says. Evidence: two pnpm verify runs on Windows, both green and identical - [state] valid, typecheck clean, 61 test files with 1095 passed and 8 skipped, and 67 installed-shell proof checks with zero failures plus the one advisory note (6l, the live sources, which can never fail a release). The first run's exit code was lost to a truncating PowerShell pipeline on the harness side rather than to anything in the run; the second recorded exit 0. Proof check count went 63 -> 67 with 7k, 7l, 7m and 7n. See ADR 0002 amendment 2."
     },
     {
       "id": "MAR-458",
