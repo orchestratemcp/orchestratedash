@@ -500,10 +500,11 @@ const GMAIL_MESSAGE_READ: ReadOperation = {
  * costs a small number of real users an operation and costs an attacker the
  * entire class.
  *
- * What it excludes is the attack: no CR, no LF, no NUL — none of them can match
- * `[^\s...]` or the domain set — so a value passing this cannot end the `To:`
- * line and start a `Bcc:` one. It also has no `,` and no `;`, so it cannot
- * become two recipients.
+ * Both halves are allowlists rather than exclusions, which is what makes the
+ * safety argument short: CR, LF and NUL are simply not in either character set,
+ * so a value passing this cannot end the `To:` line and start a `Bcc:` one. `,`
+ * and `;` are absent too, so it cannot become two recipients, and `<`, `>` and
+ * `"` are absent, so it cannot carry a display name with structure in it.
  */
 const ADDRESS = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]{1,64}@[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 
