@@ -38,7 +38,12 @@
       "availability": "always_on",
       "continues_when_dash_closed": true
     },
-    "trigger": { "type": "schedule", "label": "Every weekday morning", "schedule": "weekdays at 08:00 local time" },
+    "trigger": {
+      "type": "schedule",
+      "label": "Every weekday morning",
+      "schedule": "weekdays at 08:00 local time",
+      "expected_interval_seconds": 259200
+    },
     "locations": {
       "runtime": { "id": "report-worker", "label": "Remote report worker", "kind": "remote", "offline_behavior": "Runs independently of DASH" },
       "control": [

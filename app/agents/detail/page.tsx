@@ -390,6 +390,12 @@ function WorkspaceBody({
               <dd>{overview.offline_behavior}</dd>
             </div>
           )}
+          {overview.last_activity_at === null ? null : (
+            <div>
+              <dt>Last activity</dt>
+              <dd>{overview.last_activity_at}</dd>
+            </div>
+          )}
           {/*
             * Relabelled with MAR-464's binding. This value now advances when
             * the agent's decision-relevant state changes, not on every poll, so
