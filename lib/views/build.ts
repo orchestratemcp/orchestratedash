@@ -72,6 +72,8 @@ import type {
   PlannedStepView,
   RunView,
   RunsView,
+  StalledAgentRow,
+  WorkInboxRow,
   WorkInboxView,
   WorkspaceSnapshotView,
   WorkspaceView,
@@ -670,21 +672,40 @@ function declaredPermissions(manifest: unknown): PermissionGrant[] {
  * agent. It asks for exactly the document it renders.
  */
 export function workInboxView(now: Date = new Date()): WorkInboxView {
-  const items = listAgentNames().flatMap((agent) => {
+  const items: WorkInboxRow[] = [];
+  const stalled: StalledAgentRow[] = [];
+
+  for (const agent of listAgentNames()) {
     const manifest = readAgentManifest(agent);
     const stored = readAgentDomState(agent);
     if (manifest === null || stored === null) {
-      return [];
+      continue;
     }
     const workspaceManifest = manifest as WorkspaceManifest;
     const title = workspaceManifest.agent.display_name ?? workspaceManifest.agent.name;
-    return buildWorkInbox(workspaceManifest, stored.state, now).map((item) => ({
-      ...item,
-      agent,
-      agent_title: title,
-      observed_at: stored.observed_at,
-    }));
-  });
+
+    items.push(
+      ...buildWorkInbox(workspaceManifest, stored.state, now).map((item) => ({
+        ...item,
+        agent,
+        agent_title: title,
+        observed_at: stored.observed_at,
+      })),
+    );
+
+    // The overview is already the single place `stalled` is derived (MAR-441);
+    // recomputing that logic here would be a second copy to keep in sync.
+    const overview = buildOverview(workspaceManifest, stored.state, now);
+    if (overview.status === "stalled") {
+      stalled.push({
+        agent,
+        agent_title: title,
+        last_activity_at: overview.last_activity_at,
+        // Non-null: `describeNextAction` always names one for `stalled`.
+        next_action: overview.next_action ?? "Check why this agent hasn't run when scheduled",
+      });
+    }
+  }
 
   return {
     items: items.sort(
@@ -693,5 +714,13 @@ export function workInboxView(now: Date = new Date()): WorkInboxView {
         a.agent.localeCompare(b.agent) ||
         a.id.localeCompare(b.id),
     ),
+    // Longest-silent first: the agent that has been quiet longest is the one
+    // most worth looking at. An agent with no activity timestamp at all sorts
+    // last rather than first — there is no evidence it has ever been overdue.
+    stalled: stalled.sort((a, b) => {
+      if (a.last_activity_at === null) return 1;
+      if (b.last_activity_at === null) return -1;
+      return a.last_activity_at.localeCompare(b.last_activity_at) || a.agent.localeCompare(b.agent);
+    }),
   };
 }

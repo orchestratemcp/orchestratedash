@@ -491,6 +491,24 @@ export type WorkInboxRow = InboxItem & {
   observed_at: string;
 };
 
+/**
+ * A schedule-triggered agent past its expected window, alongside choices and
+ * approvals (MAR-441).
+ *
+ * Deliberately not an `InboxItem`: that type's shape is built around a
+ * concrete deadline (`expires_at`/`expired`), and a stalled agent has no
+ * deadline — there is nothing expiring, only a gap since the last activity
+ * this module could find evidence of. Forcing it into that shape would mean
+ * inventing an expiry the agent never declared.
+ */
+export interface StalledAgentRow {
+  agent: string;
+  agent_title: string;
+  last_activity_at: string | null;
+  next_action: string;
+}
+
 export interface WorkInboxView {
   items: WorkInboxRow[];
+  stalled: StalledAgentRow[];
 }
