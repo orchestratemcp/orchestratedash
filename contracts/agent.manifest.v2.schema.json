@@ -87,7 +87,12 @@
             "type": { "enum": ["manual", "schedule", "webhook", "event", "poll", "client_session", "other"] },
             "label": { "type": "string", "minLength": 1 },
             "schedule": { "type": "string" },
-            "technical": { "type": "object" }
+            "technical": { "type": "object" },
+            "expected_interval_seconds": {
+              "description": "The longest gap DASH should expect between this agent's activity before treating it as stalled rather than quietly idle. Optional and meaningful only alongside type \"schedule\": schedule is free text (\"weekdays at 08:00 local time\") and DASH does not parse it, so an absent value means no expectation can be derived and this agent is never marked stalled.",
+              "type": "number",
+              "minimum": 1
+            }
           }
         },
         "locations": {

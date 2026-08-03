@@ -82,6 +82,120 @@ describe("buildOverview", () => {
   });
 });
 
+describe("stalled agents (MAR-441)", () => {
+  const SCHEDULED: WorkspaceManifest = {
+    agent: { name: "scout", goal: "Read the morning digest" },
+    agent_dom: {
+      trigger: {
+        type: "schedule",
+        label: "Every weekday morning",
+        expected_interval_seconds: 86_400,
+      },
+    },
+  };
+
+  const MANUAL: WorkspaceManifest = {
+    agent: { name: "scout", goal: "Read the morning digest" },
+    agent_dom: {
+      trigger: { type: "manual", label: "Started by the user" },
+    },
+  };
+
+  /** Fixed instants, not wall-clock sleeps: MAR-472 and MAR-474 already paid for that lesson once each. */
+  const LAST_RUN_AT = "2026-08-01T08:00:00Z";
+  const WELL_WITHIN_WINDOW = new Date("2026-08-01T20:00:00Z"); // 12h later
+  const PAST_THE_WINDOW = new Date("2026-08-03T09:00:00Z"); // ~49h later
+
+  function readyState(overrides: Partial<AgentDomState> = {}): AgentDomState {
+    return {
+      agent_id: "scout",
+      observed_at: LAST_RUN_AT,
+      status: "ready",
+      runs: [
+        {
+          id: "run-1",
+          status: "completed",
+          started_at: LAST_RUN_AT,
+          finished_at: LAST_RUN_AT,
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  it("shows stalled, with when it was last seen, once a scheduled agent misses its window", () => {
+    const overview = buildOverview(SCHEDULED, readyState(), PAST_THE_WINDOW);
+    expect(overview.status).toBe("stalled");
+    expect(overview.status_detail).toBe(
+      "This agent has a schedule but has not reported activity within the window DASH expected.",
+    );
+    expect(overview.last_activity_at).toBe(LAST_RUN_AT);
+    expect(overview.next_action).toBe("Check why this agent hasn't run when scheduled");
+  });
+
+  it("does not call it stalled while still inside the expected window", () => {
+    const overview = buildOverview(SCHEDULED, readyState(), WELL_WITHIN_WINDOW);
+    expect(overview.status).toBe("ready");
+  });
+
+  it("never reports a manual-trigger agent as stalled, no matter how long it has been idle", () => {
+    const overview = buildOverview(MANUAL, readyState(), PAST_THE_WINDOW);
+    expect(overview.status).toBe("ready");
+    expect(overview.next_action).toBeNull();
+  });
+
+  it("distinguishes a killed process from a live one gone quiet: offline is not overridden", () => {
+    // The runner already made this call (`runner/state.ts`'s `resolveStatus`)
+    // before this snapshot ever reached the workspace layer — a process that
+    // exited reads `offline`/`error` regardless of what the schedule expected,
+    // and `stalled` must never paper over that stronger, more specific claim.
+    const overview = buildOverview(
+      SCHEDULED,
+      readyState({ status: "offline" }),
+      PAST_THE_WINDOW,
+    );
+    expect(overview.status).toBe("offline");
+  });
+
+  it("does not override error either, for the same reason", () => {
+    const overview = buildOverview(SCHEDULED, readyState({ status: "error" }), PAST_THE_WINDOW);
+    expect(overview.status).toBe("error");
+  });
+
+  it("treats a schedule with no declared interval as no expectation at all", () => {
+    const bareSchedule: WorkspaceManifest = {
+      agent: { name: "scout", goal: "Read the morning digest" },
+      agent_dom: {
+        trigger: { type: "schedule", label: "Sometime in the morning" },
+      },
+    };
+    const overview = buildOverview(bareSchedule, readyState(), PAST_THE_WINDOW);
+    expect(overview.status).toBe("ready");
+  });
+
+  it("does not call an agent with no recorded activity stalled — there is nothing to be overdue from", () => {
+    const overview = buildOverview(
+      SCHEDULED,
+      { agent_id: "scout", observed_at: LAST_RUN_AT, status: "ready" },
+      PAST_THE_WINDOW,
+    );
+    expect(overview.last_activity_at).toBeNull();
+    expect(overview.status).toBe("ready");
+  });
+
+  it("never marks a currently-running agent stalled, even past its window", () => {
+    const overview = buildOverview(
+      SCHEDULED,
+      readyState({
+        status: "running",
+        runs: [{ id: "run-2", status: "running", started_at: LAST_RUN_AT }],
+      }),
+      PAST_THE_WINDOW,
+    );
+    expect(overview.status).toBe("running");
+  });
+});
+
 describe("buildWorkInbox", () => {
   it("lists the pending approval and excludes the already-answered choice", () => {
     const inbox = buildWorkInbox(manifest, state, BEFORE_EXPIRY);
