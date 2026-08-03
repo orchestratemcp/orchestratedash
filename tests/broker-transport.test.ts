@@ -193,13 +193,28 @@ describe("a brokered request on the pipe", () => {
       }
     `);
     expect(supervisor.start("broker-probe").ok).toBe(true);
-    await settle(700);
 
-    const drained = supervisor.drainBrokerRequests();
-    expect(drained.requests.length).toBeLessThanOrEqual(MAX_BROKER_BUFFER_COUNT);
-    expect(drained.dropped).toBeGreaterThan(0);
+    // A drain is destructive, so the drop count must accumulate across polls
+    // (MAR-472's reason): a poll that looked before the buffer overflowed would
+    // take what had arrived so far and leave the drop for a later poll to find.
+    // The request count is not accumulated the same way: the bound applies to
+    // what a single drain holds, not to a sum across drains, and an early poll
+    // that emptied a not-yet-full buffer would let a later, separately-bounded
+    // drain's count add up to more than the bound without the bound ever having
+    // been violated.
+    let requestCount = 0;
+    let dropped = 0;
+    await waitUntil(() => {
+      const drain = supervisor.drainBrokerRequests();
+      requestCount = drain.requests.length;
+      dropped += drain.dropped;
+      return dropped > 0;
+    });
+
+    expect(requestCount).toBeLessThanOrEqual(MAX_BROKER_BUFFER_COUNT);
+    expect(dropped).toBeGreaterThan(0);
     supervisor.stopAll();
-  });
+  }, 30_000);
 
   /**
    * MAR-467. The aggregate count above says something was lost; this says whose
