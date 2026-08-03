@@ -1,6 +1,6 @@
 # DASH project state
 
-Updated: 2026-08-01 (Wave 1 proven)
+Updated: 2026-08-03 (the broker's reach decided; Wave 1 proven)
 
 Portfolio sequence and estimates: [`../orchestratekit-mcp/docs/PORTFOLIO_ROADMAP_2026-08-01.md`](../orchestratekit-mcp/docs/PORTFOLIO_ROADMAP_2026-08-01.md).
 
@@ -205,6 +205,82 @@ proof, which is why 1104 became 1113 and 67 stayed 67.
 Wave 2's remaining work: MAR-468's **run** (the dated attended pass that would
 promote MAR-458 and MAR-469 to `proven`), MAR-470 (MCP connectors through the same
 card), MAR-471 (bring-your-own Google client).
+
+## The broker's reach (MAR-476, epic MAR-475)
+
+**A decision, and nothing was implemented.** ADR 0006 answers the question ADR
+0002 amendment 1 left as a cost: what DASH does about agents that must run when
+DASH is closed. `lib/`, `electron/`, `runner/`, `contracts/` and the workflows
+are untouched by design.
+
+**The broker's reach ends at the machine DASH is installed on.** A process
+DASH's own runner did not spawn gets no brokered credential; DASH will not
+operate a hosted token broker; and an agent that must run unattended on a VPS
+or Railway **holds its own credentials**, rendered on the `agent_managed` path
+that already exists with a receipt saying DASH cannot narrow it, cannot show
+what it did, and cannot take it away.
+
+The finding that shaped it is that **the rule is already enforced by the
+transport rather than by policy.** Since MAR-430 the runner listens on a Unix
+socket or a Windows named pipe and never on a port, so there is no address an
+off-machine process could dial — `runner/server.ts` keeps `isLocalPeer` only
+against a TCP listener that does not exist. What was missing is that nothing
+writes it down, which is why `examples/gmail-meeting-assistant.manifest.v2.example.json`
+declares `continues_when_dash_closed: true` beside two brokered connections,
+validates, and tells the user only afterwards as an ADR 0005 case-1 lapse row.
+
+A **hosted broker was rejected**, and the shortest of four reasons decides it:
+it would turn invariant 1 back into a rule someone must follow, after amendment
+1 spent a paragraph on why its being a *fact about where the code can run* is
+what made the boundary worth having. The other three: what a user trusts
+changes category from installed software to an operator; revocation stops being
+locally checkable, which is proof `7n`'s lesson pointed at a receipt; and ADR
+0002's own Google release path attaches an annual independent CASA assessment,
+at a fee the assessor sets, the moment restricted-scope data crosses a server.
+Its receipt already fails the honesty test **in the code** — `describeCustody`'s
+`hosted_broker` sentence is missing the clause its `remote_mcp_server` sibling
+has, and both ways of writing it are bad.
+
+`hosted_broker` stays in `TokenCustodian` and is neither a plan nor a mistake:
+it is the vocabulary for **somebody else's** hosted broker, which is what ADR
+0002 stage 3 always described. DASH operating one is what is ruled out.
+
+**`continues_when_dash_closed` is not sufficient, and no new field is needed.**
+It asks a question about *time* where a grant needs one about *place*, and the
+shipped Gmail example disproves it directly: a `local_process`, at a `local`
+location, declaring it `true`. `locations.runtime.kind` already carries place,
+is required, and orchestratekit-mcp already emits it. It must not be the gate
+either — it is the author's claim about a fact DASH observes directly by having
+spawned the process, with the same standing `draft.placement` has. So it drives
+copy and never a grant.
+
+**ADR 0002 gains amendment 4**, narrowing the four sentences written as
+universals: the Decision's first line and invariants 1, 3 and 5. Invariant 6
+keeps every word and stops reassuring about the mailbox — it was always a
+statement about the operation set.
+
+What stops being proven is in the ADR and is larger than the decision looks:
+`broker_audit` stops being a complete answer to what has been done to an
+account, and that is **not** a fourth `broker_lapses` case, because a lapse
+needs DASH to observe its own absence and here DASH is uninvolved rather than
+absent. Revocation stops being immediate for the connections most likely to
+matter. Proof `7g` has **no analogue past the line** — on the unbrokered side
+the token *is* in the agent's environment by design — so the honesty burden
+sits entirely on copy. And nothing about remote deployment can ever have a
+blocking gate under ADR 0004's rule, permanently rather than until somebody
+automates it.
+
+Evidence: `pnpm state:check` valid and `pnpm typecheck` clean. **The Windows
+shell smoke was deliberately not run**, and that is a judgment rather than a
+skipped step: this change is documentation only, it asserts nothing an
+installed proof could confirm, and running it would be a machine-affecting act
+in support of no claim.
+
+Epic MAR-475's other children are filed and unstarted: MAR-477 (the MCP → DASH
+round-trip proof — the contract seam was re-verified field-for-field against
+both repositories this session and is **aligned**, so it is a proof and not an
+emitter), MAR-478 (deploy to a host, blocked by the ADR) and MAR-479 (the
+opt-in LAB telemetry ADR).
 
 ## The release signal, repaired (MAR-465, MAR-466, MAR-473)
 
