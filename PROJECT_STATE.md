@@ -90,6 +90,22 @@ dropped requests sum past what the agent actually sent, which is what a
 synthesised row would do. Cases 1 and 3 are covered by unit tests only, and ADR
 0005 says so plainly rather than letting the total imply otherwise.
 
+`pnpm verify` is green on Windows at `56b16a2`: `[state] valid`, typecheck, 60
+test files, 1056 tests, and 63 installed-shell proof checks with no failures.
+Proof 8 reported the same three numbers on every run — 200 sent, 64 adjudicated,
+136 dropped — which is what a bound being hit looks like next to a race.
+
+One smoke run was lost to **inherited state, and it was proof 7 that failed
+rather than anything MAR-467 built**. An interrupted earlier run had left its
+requests in the runner's *bounded buffer*, which survives DASH; the next pass
+drained and adjudicated them at startup and seeded the broker's per-agent replay
+set with proof 7's fixed request ids, so that run's real calls came back
+`duplicate_request` and five checks failed together, naming a boundary that was
+working correctly. Proof 7's ids are unique per smoke process now. This is
+MAR-473's lesson pointed the other way: a proof a leftover can *fail* is worse
+than one a leftover can satisfy, because a blocking gate that goes red for an
+unrelated reason teaches people to re-run it until it is green.
+
 Wave 2's remaining work: MAR-468 (the real-Google proof that would promote
 MAR-458 to `proven`), MAR-469 (provider-side draft creation), MAR-470 (MCP
 connectors through the same card), MAR-471 (bring-your-own Google client).
