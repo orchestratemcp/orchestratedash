@@ -80,6 +80,12 @@ import {
   workspaceView,
 } from "../lib/views/build";
 import { createAgentChannels, startPolling, type AgentChannels } from "./agent-adapters";
+import { startApprovalNotifier } from "./approval-notifier";
+import {
+  closeApprovalPopup,
+  focusApprovalPopup,
+  setApprovalPopupVisible,
+} from "./approval-popup";
 import {
   handoffPorts,
   openHandoffLink,
@@ -129,6 +135,9 @@ let stopBroker: (() => void) | null = null;
 
 /** Stops the uptime heartbeat (MAR-467). */
 let stopHeartbeat: (() => void) | null = null;
+
+/** Stops the approval notifier/popup watcher (MAR-421). */
+let stopApprovalNotifier: (() => void) | null = null;
 
 /**
  * How often DASH writes down that it is still running (MAR-467).
@@ -836,6 +845,16 @@ if (typeof app !== "undefined") {
     installApplicationMenu();
     createWindow();
 
+    // MAR-421. After the window exists, so the popup's own approve/reject
+    // calls have somewhere to be answered from — `registerCommandChannel`
+    // just above is unaffected either way, since it answers any window's
+    // request on the one shared channel, but there is no reason to watch for
+    // approvals before there is anything to show one in.
+    stopApprovalNotifier = startApprovalNotifier(
+      { sync: (pending) => { setApprovalPopupVisible(pending, RENDERER_ORIGIN); } },
+      () => { focusApprovalPopup(); },
+    );
+
     // MAR-428. Only now is there a store, a window to parent a dialog to, and a
     // decided answer about whether this machine can host agents. Any link that
     // arrived before this — including the one that started the process — has
@@ -891,6 +910,11 @@ if (typeof app !== "undefined") {
     stopHeartbeat?.();
     stopHeartbeat = null;
     writeDashLastAlive(new Date().toISOString());
+    // MAR-421. Stop watching before the popup window it controls is torn
+    // down, so a tick cannot land against a window that is already gone.
+    stopApprovalNotifier?.();
+    stopApprovalNotifier = null;
+    closeApprovalPopup();
   });
 
   app.on("will-quit", () => {
