@@ -32,6 +32,7 @@
 
 import { createBroker, type BrokerAuditRow, type CredentialRead } from "../lib/broker/execute";
 import {
+  hasBrokerRequest,
   markBrokerAnswerUndelivered,
   recordBrokerCall,
   recordBrokerLapse,
@@ -174,6 +175,10 @@ export function startBroker(
     readCredential,
     mintAccessToken,
     fetchImpl: fetch,
+    // The durable replay memory a write needs (MAR-469). Supplied here rather
+    // than imported inside the broker because `lib/broker/` touches no store,
+    // and this is the same seam `readCredential` and `mintAccessToken` occupy.
+    hasHandledRequest: hasBrokerRequest,
     audit: (row: BrokerAuditRow) => {
       written.push({ id: recordBrokerCall(row), request_id: row.request_id });
     },

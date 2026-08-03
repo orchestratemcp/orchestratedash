@@ -57,6 +57,22 @@ export interface RecordedCall {
   method: string;
   /** Every header the broker sent, lowercased. Includes the authorization one. */
   headers: Record<string, string>;
+  /**
+   * The request body as it went on the wire, or null for a GET (MAR-469).
+   *
+   * A string rather than a parsed object, deliberately. The write tests decode
+   * it themselves and read the RFC 5322 message out of it, because what is worth
+   * asserting about a draft is the bytes DASH composed — the headers it wrote
+   * and, much more importantly, the ones it did not.
+   */
+  body: string | null;
+}
+
+/** The RFC 5322 message inside a `drafts.create` body, decoded. */
+export function composedMessage(call: RecordedCall): string {
+  const parsed = JSON.parse(call.body ?? "{}") as { message?: { raw?: unknown } };
+  const raw = parsed.message?.raw;
+  return typeof raw === "string" ? Buffer.from(raw, "base64url").toString("utf8") : "";
 }
 
 export interface HarnessOptions {
@@ -66,6 +82,15 @@ export interface HarnessOptions {
   respond?: (call: RecordedCall, index: number) => { status: number; body: unknown };
   /** Throw from the token mint instead of returning one. */
   mintError?: OAuthError | Error;
+  /**
+   * The durable replay memory a write consults (MAR-469).
+   *
+   * A function rather than a set, so a test can model a DASH restart: two
+   * brokers with no shared memory and one shared record of what was decided,
+   * which is the only arrangement in which the durable half is the thing being
+   * tested rather than the in-memory half.
+   */
+  hasHandledRequest?: (agentId: string, requestId: string) => boolean;
   /** A fixed clock, advanced by `advance`. */
   startedAt?: number;
 }
@@ -105,6 +130,7 @@ export function harness(options: HarnessOptions = {}): Harness {
       url: String(url),
       method: init?.method ?? "GET",
       headers,
+      body: typeof init?.body === "string" ? init.body : null,
     };
     calls.push(recorded);
 
@@ -129,6 +155,7 @@ export function harness(options: HarnessOptions = {}): Harness {
       return Promise.resolve({ access_token: PLANTED_ACCESS_TOKEN });
     },
     fetchImpl,
+    hasHandledRequest: options.hasHandledRequest,
     audit: (row) => {
       audit.push(row);
     },

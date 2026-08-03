@@ -207,10 +207,20 @@ export const LOOPBACK_PROOF_MANIFEST_PROVIDER = "dash-loopback-mail";
  * Built per call rather than held in a module constant, because its endpoints
  * depend on a port the harness binds after this module is imported.
  *
- * Its permissions map is Gmail's read scope and nothing else. Deliberately
- * *not* a copy of Gmail's whole map: the proof exercises the read path, and a
- * proof provider that could be granted a write scope DASH has no operation for
- * would be modelling a situation the real one is designed to make impossible.
+ * Its permissions map is Gmail's read and compose scopes, and nothing else.
+ *
+ * The read scope was the whole map until MAR-469, and the reason recorded here
+ * was that "a proof provider that could be granted a write scope DASH has no
+ * operation for would be modelling a situation the real one is designed to make
+ * impossible". That reason expired the day `gmail.draft.create` shipped: DASH
+ * now has an operation on the compose scope, so a proof that could not be
+ * granted it would be the one modelling an impossible situation — a broker whose
+ * only write is unreachable by its own installed proof.
+ *
+ * It is still deliberately *not* a copy of Gmail's whole map. Nothing here can
+ * be granted a scope no operation is built on, which keeps the same property the
+ * original note was reaching for: the harness cannot model a permission DASH
+ * would never actually use.
  */
 function proofProvider(): OAuthProvider | null {
   const origin = loopbackProofOrigin();
@@ -228,6 +238,10 @@ function proofProvider(): OAuthProvider | null {
       "https://www.googleapis.com/auth/gmail.readonly": {
         label: "Read the messages in your mailbox",
         access: "read",
+      },
+      "https://www.googleapis.com/auth/gmail.compose": {
+        label: "Write and save drafts in your mailbox, and send them",
+        access: "write",
       },
     },
     identity_scopes: ["openid", "email"],

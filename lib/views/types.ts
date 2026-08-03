@@ -231,6 +231,17 @@ export interface BrokerCapabilityView {
   id: string;
   label: string;
   access: "read" | "write";
+  /**
+   * What will exist in the user's account because this ran, or null for a read
+   * (MAR-469).
+   *
+   * A write's label is a verb phrase — "Save a reply in your Gmail drafts" — and
+   * a person approving one needs the sentence after it: where the thing ends up,
+   * who can act on it, and what DASH still cannot do. Rendered under the
+   * capability rather than in a tooltip, because a consequence a user has to
+   * hover to discover is one they will approve without reading.
+   */
+  consequence: string | null;
 }
 
 /**
@@ -260,6 +271,20 @@ export interface BrokerRowView {
    * question from what has been granted.
    */
   requested: BrokerCapabilityView[];
+  /**
+   * How the provider permission behind a granted write is wider than the write
+   * itself, or null when nothing on this connection writes (MAR-469).
+   *
+   * Beside the capability list rather than inside it, because it is not a
+   * capability — it is a fact about the user's account at the provider that DASH
+   * cannot change and must not conceal. For Gmail it says that the permission
+   * allowing a draft also allows sending, and that DASH builds nothing on that.
+   *
+   * Derived from the manifest's declared operations, so it appears on the card
+   * *before* a sign-in as well as after. A disclosure that only shows up once a
+   * user has already granted the permission has told them nothing.
+   */
+  wider_permission_sentence: string | null;
   /** ADR 0002 invariant 4, once there is a grant to receipt. */
   receipt: {
     account_hint: string | null;

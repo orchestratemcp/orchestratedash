@@ -43,6 +43,8 @@ reaches Gmail through `gmail.search` and `gmail.message.read` — two read
 operations whose provider URL DASH constructs and whose response DASH projects —
 and produces a **local** draft artifact. There is no send operation and no
 provider-side draft creation, so `gmail.compose` grants no operation at all.
+*(The last sentence describes stage 1 only. MAR-469 built `gmail.draft.create` on
+that scope; there is still no send operation. See below.)*
 
 A grant is the intersection of three parties: DASH implements it, the manifest
 declared it, the provider issued it. It is re-resolved on every call, so
@@ -106,9 +108,53 @@ MAR-473's lesson pointed the other way: a proof a leftover can *fail* is worse
 than one a leftover can satisfy, because a blocking gate that goes red for an
 unrelated reason teaches people to re-run it until it is green.
 
+**MAR-469 is built: the broker can now change something in somebody's account.**
+`gmail.draft.create` puts a reply in the user's own Drafts folder, and there is
+still no send operation. The judgment is ADR 0002 amendment 2.
+
+What made stage 1's claim true was an absence — nothing was built on
+`gmail.compose`, so a credential granting it granted no operations at all and "no
+send exists" needed no check. That argument is spent, and what replaces it is
+structural in ADR 0005's sense: **a write operation has no `plan`.** It cannot
+return a URL, a path or a method, because the type declares no member that could
+carry one; it declares a frozen `path` and a `compose` that returns a JSON body.
+So the complete answer to "what can this do to my account?" is one array,
+`WRITE_PATHS`, pinned by value in the threat-model tests. There is no `raw`
+input either: DASH composes the RFC 5322 message from four typed fields, refuses
+control characters in headers, and writes no `From` — Gmail fills that from the
+account whose token DASH presented.
+
+The harder half was honesty. Google has **no drafts-only scope**, so DASH cannot
+ask for a permission incapable of sending, and the disclosure that used to ride
+on "you granted a permission DASH offers no action for" would have vanished the
+moment something was built on it. It is now `WriteOperation.wider_permission`,
+required and nullable so a future write cannot ship without answering it, and it
+renders before a sign-in as well as after. `consequence` is required for the same
+reason: "Save a reply in your Gmail drafts" says nothing about what will be
+sitting in the mailbox afterwards.
+
+The `draft` artifact kind stopped meaning "local" and now has to say:
+`draft.placement` is a **required** tagged union, so no producer can leave it to a
+renderer to guess. It is the agent's claim, not DASH's record — `broker_audit` is
+the record, and the copy points there. Replay protection gained a durable half
+against `broker_audit`, because replaying a read costs a second read and
+replaying a write costs a second draft in somebody's mailbox.
+
+`pnpm verify` is green on Windows: `[state] valid`, typecheck, 61 test files,
+1095 tests, and 67 installed-shell proof checks with no failures. **Proof 7n is
+the load-bearing one**: the harness serves Gmail's two send endpoints and answers
+them with success, so "DASH never called a send endpoint" is a statement about
+DASH rather than about a provider's willingness to refuse. Over a run in which
+the agent asked to send twice by two different names, the paths DASH reached were
+`/token`, the two read paths and `/gmail/v1/users/me/drafts`.
+
+Unchanged and still true: **the provider is not Google.** MAR-468 owns that, and
+nothing here is proven against Gmail's API — including that a draft appears in a
+real Drafts folder.
+
 Wave 2's remaining work: MAR-468 (the real-Google proof that would promote
-MAR-458 to `proven`), MAR-469 (provider-side draft creation), MAR-470 (MCP
-connectors through the same card), MAR-471 (bring-your-own Google client).
+MAR-458 and MAR-469 to `proven`), MAR-470 (MCP connectors through the same card),
+MAR-471 (bring-your-own Google client).
 
 ## The release signal, repaired (MAR-465, MAR-466, MAR-473)
 

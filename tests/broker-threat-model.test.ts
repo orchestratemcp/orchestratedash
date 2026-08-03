@@ -28,10 +28,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { operationById, allOperations } from "../lib/broker/operations";
+import { operationById, allOperations, planCall, writePaths } from "../lib/broker/operations";
 import { parseBrokerRequest } from "../lib/broker/protocol";
 import { OAuthError } from "../lib/oauth/flow";
 import {
+  composedMessage,
   everyString,
   harness,
   credential,
@@ -52,6 +53,62 @@ function search(connectionId = "gmail", input: Record<string, unknown> = { query
     input,
   };
 }
+
+/** A well-formed draft request. Overridden field by field by the attacks below. */
+function draft(input: Record<string, unknown> = {}) {
+  return {
+    request_id: `req-${Math.random().toString(36).slice(2)}`,
+    connection_id: "gmail",
+    operation: "gmail.draft.create",
+    input: {
+      to: "colleague@example.com",
+      subject: "Re: Thursday",
+      body_text: "The afternoon works.",
+      ...input,
+    },
+  };
+}
+
+/**
+ * Inputs swept across every operation, read and write alike.
+ *
+ * One list rather than one per operation, so a new operation is covered by every
+ * sweep the day it is added rather than the day somebody remembers to extend a
+ * fixture. Fields an operation does not read are simply ignored by it.
+ */
+const HOSTILE_INPUTS: Array<Record<string, unknown>> = [
+  { query: "x", message_id: "../../evil", to: "../../evil", subject: "x", body_text: "x" },
+  {
+    query: "https://evil.example",
+    message_id: "https://evil.example/x",
+    to: "https://evil.example/x",
+    subject: "https://evil.example",
+    body_text: "x",
+  },
+  { query: "", message_id: "18e0a1", to: "", subject: "", body_text: "" },
+  {
+    query: "a".repeat(400),
+    message_id: "b".repeat(120),
+    to: `${"c".repeat(400)}@example.com`,
+    subject: "d".repeat(400),
+    body_text: "e".repeat(30_000),
+  },
+  // The write-side ones: a path smuggled into a field, and the two send
+  // endpoints named where a recipient goes.
+  {
+    to: "colleague@example.com",
+    subject: "x",
+    body_text: "x",
+    thread_id: "../../../messages/send",
+    path: "/gmail/v1/users/me/messages/send",
+    url: "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+  },
+  {
+    to: "colleague@example.com\r\nBcc: attacker@evil.example",
+    subject: "x\r\nBcc: attacker@evil.example",
+    body_text: "x",
+  },
+];
 
 /* ---------------------------------------------------------------------- *
  * Exfiltration
@@ -173,7 +230,7 @@ describe("the operation allowlist", () => {
   it.each([
     "gmail.send",
     "gmail.messages.send",
-    "gmail.draft.create",
+    "gmail.draft.send",
     "gmail.drafts.send",
     "gmail.message.delete",
     "gmail.settings.forwarding.create",
@@ -192,35 +249,83 @@ describe("the operation allowlist", () => {
     expect(broker.audit[0]).toMatchObject({ decision: "refused", refusal: "unknown_operation" });
   });
 
-  it("ships no operation that writes at a provider", () => {
-    // The strongest form of the claim above: not "send is refused" but "there is
-    // nothing in the set that could write", checked against the set itself so
-    // that adding one is a failing test rather than a review comment.
-    expect(allOperations().filter((operation) => operation.access === "write")).toEqual([]);
+  /**
+   * The claim MAR-458 could make by absence, rebuilt now that a write exists
+   * (MAR-469).
+   *
+   * Stage 1's version of this test was `expect(writes).toEqual([])` — true, and
+   * true for free, because nothing was built on the scope that can send. That
+   * argument is spent, so what replaces it is the set of paths DASH will ever
+   * POST to, pinned **by value**.
+   *
+   * This is deliberately the most annoying test in the file to change. Adding a
+   * send means editing this line, and editing this line is the conversation ADR
+   * 0002 invariant 6 exists to force — the same move ADR 0005 made with
+   * `broker_lapses`' column list.
+   */
+  it("will ever POST to exactly one path, and it is not a send", () => {
+    expect(writePaths()).toEqual(["/gmail/v1/users/me/drafts"]);
+    // Stated separately from the equality above, because the equality is what
+    // pins the set and this is what says *why* these are the paths it may hold.
+    for (const path of writePaths()) {
+      expect(path.endsWith("/send")).toBe(false);
+    }
   });
 
-  it("has no operation built on the compose scope", () => {
+  it("declares a path, a consequence and a wider-permission answer for every write", () => {
+    for (const operation of allOperations()) {
+      if (operation.access !== "write") {
+        continue;
+      }
+      expect(writePaths()).toContain(operation.path);
+      // Required fields, so this is a type-level guarantee being spot-checked
+      // for emptiness rather than for presence: a write shipped with `""` here
+      // would compile and would tell a user nothing.
+      expect(operation.consequence.length).toBeGreaterThan(40);
+      expect(operation.wider_permission).not.toBeNull();
+    }
+  });
+
+  it("builds exactly one operation on the compose scope, and it creates a draft", () => {
     const built = allOperations().filter((operation) =>
       operation.required_scopes.includes(GMAIL_COMPOSE),
     );
-    expect(built).toEqual([]);
+    expect(built.map((operation) => operation.id)).toEqual(["gmail.draft.create"]);
   });
 
   /**
-   * A credential granting *only* compose grants no operations. The scope is live
-   * at Google and dead at the broker, which is the shape of the whole design.
+   * A credential granting *only* compose now grants exactly one operation, and
+   * the shape of the design is unchanged: the scope permits sending at Google
+   * and the broker has nothing that sends.
+   *
+   * Worth having as a positive test rather than only as the negative it replaced
+   * — an agent that can draft and cannot read is genuinely narrower than
+   * anything stage 1 could describe, and this is the test that says DASH can
+   * express it.
    */
-  it("grants nothing at all when the user granted only compose", async () => {
-    const broker = harness({
+  it("grants the draft and nothing else when the user granted only compose", async () => {
+    const composeOnly = {
       credential: {
-        kind: "found",
+        kind: "found" as const,
         credential: credential({ scopes: ["openid", "email", GMAIL_COMPOSE] }),
       },
-    });
+    };
 
-    const response = await broker.handle(AGENT, search());
-    expect(response).toMatchObject({ ok: false, refusal: "permission_missing" });
-    expect(broker.calls).toEqual([]);
+    const refused = await harness(composeOnly).handle(AGENT, search());
+    expect(refused).toMatchObject({ ok: false, refusal: "permission_missing" });
+
+    const broker = harness({
+      ...composeOnly,
+      respond: () => ({ status: 200, body: { id: "r-1", message: { id: "m-1" } } }),
+    });
+    const allowed = await broker.handle(AGENT, draft());
+    expect(allowed).toMatchObject({ ok: true, result: { draft_id: "r-1" } });
+
+    const sent = await broker.handle(AGENT, {
+      ...draft(),
+      operation: "gmail.drafts.send",
+    });
+    expect(sent).toMatchObject({ ok: false, refusal: "unknown_operation" });
   });
 
   it("cannot be reached through a prototype-shaped operation name", () => {
@@ -326,21 +431,262 @@ describe("input narrowing", () => {
    */
   it("never plans a request off the provider's origin, for any input", () => {
     const origin = "https://gmail.googleapis.com";
-    const hostile = [
-      { query: "x", message_id: "../../evil" },
-      { query: "https://evil.example", message_id: "https://evil.example/x" },
-      { query: "", message_id: "18e0a1" },
-      { query: "a".repeat(400), message_id: "b".repeat(120) },
-    ];
 
     for (const operation of allOperations()) {
-      for (const input of hostile) {
-        const planned = operation.plan(origin, input);
+      for (const input of HOSTILE_INPUTS) {
+        const planned = planCall(operation, origin, input);
         if (planned.ok) {
           expect(new URL(planned.call.url).origin).toBe(origin);
         }
       }
     }
+  });
+
+  /**
+   * The same sweep, pointed at the path rather than the host, and it is the one
+   * that matters now that a write exists (MAR-469). Gmail's send endpoints are
+   * on the same origin as its draft endpoint, so an origin check alone would let
+   * a bug reach them with a live token attached.
+   *
+   * Driven through `planCall`, which is the function the broker itself uses, so
+   * this cannot pass against a reconstruction that has drifted from the real
+   * one.
+   */
+  it("never plans a mutating request to any path but the operation's own", () => {
+    const origin = "https://gmail.googleapis.com";
+
+    for (const operation of allOperations()) {
+      if (operation.access !== "write") {
+        continue;
+      }
+      for (const input of HOSTILE_INPUTS) {
+        const planned = planCall(operation, origin, input);
+        if (planned.ok) {
+          expect(planned.call.method).toBe("POST");
+          expect(new URL(planned.call.url).pathname).toBe(operation.path);
+        }
+      }
+    }
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * The write, from the side an agent sits on (MAR-469)
+ * ---------------------------------------------------------------------- *
+ *
+ * ADR 0002's stage 2 asks for these by name: "adversarial tests proving an agent
+ * cannot substitute a send endpoint or escape the declared account and grant."
+ *
+ * The attacks worth writing moved. Against two read operations they were all
+ * about the URL, because the URL was the only thing an input could influence.
+ * Against a write the URL is the *least* of it — `planCall` builds it from a
+ * frozen literal — and the surface is the body: the headers a message carries,
+ * who it is addressed to, and who it appears to come from.
+ */
+
+describe("composing a draft", () => {
+  /** A broker whose provider answers a draft create the way Gmail does. */
+  function drafting() {
+    return harness({
+      respond: () => ({
+        status: 200,
+        body: { id: "r-99", message: { id: "m-99", threadId: "t-99", labelIds: ["DRAFT"] } },
+      }),
+    });
+  }
+
+  it("addresses the message DASH composed, and returns only named fields", async () => {
+    const broker = drafting();
+    const response = (await broker.handle(AGENT, draft())) as {
+      ok: boolean;
+      result: Record<string, unknown>;
+    };
+
+    expect(response.ok).toBe(true);
+    expect(Object.keys(response.result).sort()).toEqual([
+      "draft_id",
+      "message_id",
+      "thread_id",
+    ]);
+    // `labelIds` came back from the provider and does not cross. The projection
+    // is doing the same job for a write that it does for a read.
+    expect(everyString(response).filter((value) => value.includes("DRAFT"))).toEqual([]);
+
+    const call = broker.calls[0];
+    expect(call?.method).toBe("POST");
+    expect(new URL(call?.url ?? "").pathname).toBe("/gmail/v1/users/me/drafts");
+    expect(composedMessage(call!)).toContain("To: colleague@example.com");
+  });
+
+  /**
+   * The header injection, in the two fields that reach a header.
+   *
+   * Refused before a request rather than sanitised into one. A builder that
+   * stripped the newline and carried on would be making a decision on the user's
+   * behalf about a message an agent asked for and got something else.
+   */
+  it.each([
+    ["to", "colleague@example.com\r\nBcc: attacker@evil.example"],
+    ["to", "colleague@example.com\nBcc: attacker@evil.example"],
+    ["subject", "Re: Thursday\r\nBcc: attacker@evil.example"],
+    ["subject", "Re: Thursday\r\nTo: attacker@evil.example"],
+    ["to", "colleague@example.com, attacker@evil.example"],
+    ["to", "colleague@example.com;attacker@evil.example"],
+  ])("refuses a %s carrying a header of its own", async (field, value) => {
+    const broker = drafting();
+    const response = await broker.handle(AGENT, draft({ [field]: value }));
+
+    expect(response).toMatchObject({ ok: false, refusal: "invalid_input" });
+    expect(broker.calls).toEqual([]);
+  });
+
+  /**
+   * The most direct attempt: hand DASH the whole message.
+   *
+   * `raw` is Gmail's own field name, and an implementation that passed a body
+   * through would let an agent write every header including `Bcc`. There is no
+   * `raw` input, so this is not "refused" so much as "not read" — the request
+   * succeeds and the message on the wire is the one DASH composed from the typed
+   * fields, with the smuggled bytes nowhere in it.
+   */
+  it("ignores a raw message the agent supplied", async () => {
+    const broker = drafting();
+    const hostile = Buffer.from(
+      "To: attacker@evil.example\r\nBcc: attacker@evil.example\r\n\r\nowned",
+      "utf8",
+    ).toString("base64url");
+
+    const response = await broker.handle(
+      AGENT,
+      draft({ raw: hostile, message: { raw: hostile } }),
+    );
+
+    expect(response).toMatchObject({ ok: true });
+    const message = composedMessage(broker.calls[0]!);
+    expect(message).toContain("To: colleague@example.com");
+    expect(message).not.toContain("attacker@evil.example");
+    expect(message).not.toContain("Bcc:");
+  });
+
+  /**
+   * DASH writes no `From`, so the account a draft appears to come from is the
+   * account whose token DASH presented — Google's decision, made from the
+   * credential in the vault. An agent cannot set it, and this asserts the
+   * absence rather than asserting a correct value, because the absence is what
+   * makes the escape impossible rather than merely wrong.
+   */
+  it("names no sender, so the draft cannot escape the connected account", async () => {
+    const broker = drafting();
+    await broker.handle(
+      AGENT,
+      draft({ from: "someone@evil.example", sender: "someone@evil.example" }),
+    );
+
+    const message = composedMessage(broker.calls[0]!);
+    expect(/^From:/im.test(message)).toBe(false);
+    expect(/^Sender:/im.test(message)).toBe(false);
+    expect(/^Reply-To:/im.test(message)).toBe(false);
+    expect(message).not.toContain("someone@evil.example");
+  });
+
+  /**
+   * A body is the one field with no character restrictions, and it cannot need
+   * any: it is base64 with `Content-Transfer-Encoding: base64`, so a body that
+   * is itself a well-formed set of headers is just bytes.
+   */
+  it("cannot be made to grow a header out of the message body", async () => {
+    const broker = drafting();
+    await broker.handle(
+      AGENT,
+      draft({ body_text: "\r\n\r\nBcc: attacker@evil.example\r\n\r\nhello" }),
+    );
+
+    const message = composedMessage(broker.calls[0]!);
+    const [headers = "", ...rest] = message.split("\r\n\r\n");
+    expect(headers).not.toContain("Bcc:");
+    // The hostile text survives as content, which is the point: it was carried
+    // rather than dropped, and it carried as data.
+    expect(Buffer.from(rest.join("\r\n\r\n").replace(/\r\n/g, ""), "base64").toString("utf8")).toContain(
+      "Bcc: attacker@evil.example",
+    );
+  });
+
+  it("refuses a thread id that is not one, before any request", async () => {
+    for (const threadId of ["../../messages/send", "t/../../x", "t?x=1", 12, { id: "t" }]) {
+      const broker = drafting();
+      const response = await broker.handle(AGENT, draft({ thread_id: threadId }));
+      expect(response).toMatchObject({ ok: false, refusal: "invalid_input" });
+      expect(broker.calls).toEqual([]);
+    }
+  });
+
+  /**
+   * The bound that exists because a write is not a read.
+   *
+   * Reads share the twenty-a-minute window; writes have their own of three. An
+   * agent that has gone wrong fills a Drafts folder at a rate a person can
+   * notice and stop.
+   */
+  it("stops a burst of drafts well before the read budget would", async () => {
+    const broker = drafting();
+    const outcomes: string[] = [];
+    for (let index = 0; index < 6; index += 1) {
+      const response = (await broker.handle(AGENT, draft())) as {
+        ok: boolean;
+        refusal?: string;
+      };
+      outcomes.push(response.ok ? "ok" : (response.refusal ?? "?"));
+    }
+
+    expect(outcomes).toEqual([
+      "ok",
+      "ok",
+      "ok",
+      "rate_limited",
+      "rate_limited",
+      "rate_limited",
+    ]);
+    expect(broker.calls).toHaveLength(3);
+  });
+
+  /**
+   * The durable half of replay protection, which exists because replaying a
+   * write leaves a second draft in somebody's mailbox and the in-memory set dies
+   * with the process.
+   *
+   * Two brokers, no shared memory, one shared record — which is what a DASH
+   * restart looks like from the broker's side.
+   */
+  it("refuses a write whose id a previous process already decided", async () => {
+    const decided = new Set<string>();
+    const request = draft();
+
+    const first = drafting();
+    const answered = await first.handle(AGENT, request);
+    expect(answered).toMatchObject({ ok: true });
+    for (const row of first.audit) {
+      decided.add(`${row.agent}:${row.request_id}`);
+    }
+
+    const afterRestart = harness({
+      respond: () => ({ status: 200, body: { id: "r-2", message: { id: "m-2" } } }),
+      hasHandledRequest: (agentId, requestId) => decided.has(`${agentId}:${requestId}`),
+    });
+    const replayed = await afterRestart.handle(AGENT, request);
+
+    expect(replayed).toMatchObject({ ok: false, refusal: "duplicate_request" });
+    expect(afterRestart.calls).toEqual([]);
+  });
+
+  /**
+   * And the same durable memory does *not* block a read, because it must not.
+   * Replaying a read costs a second read; refusing one because DASH decided
+   * about that id yesterday would break an agent whose ids restart with it.
+   */
+  it("does not consult the durable memory for a read", async () => {
+    const broker = harness({ hasHandledRequest: () => true });
+    const response = await broker.handle(AGENT, search());
+    expect(response).toMatchObject({ ok: true });
   });
 });
 
@@ -695,9 +1041,21 @@ describe("the request envelope", () => {
     });
   });
 
-  it("requires the readonly scope for both shipped operations", () => {
+  /**
+   * Every read needs the readonly scope, and the write does not (MAR-469).
+   *
+   * The stage 1 version asserted the readonly scope over *every* operation,
+   * which was correct then and would now quietly force a drafting agent to be
+   * able to read the mailbox as well. Split rather than deleted: the read half
+   * is the claim that was worth making, and it still is.
+   */
+  it("asks each operation for the narrowest scope it actually needs", () => {
     for (const operation of allOperations()) {
-      expect(operation.required_scopes).toContain(GMAIL_READONLY);
+      if (operation.access === "read") {
+        expect(operation.required_scopes).toEqual([GMAIL_READONLY]);
+      } else {
+        expect(operation.required_scopes).toEqual([GMAIL_COMPOSE]);
+      }
     }
   });
 });

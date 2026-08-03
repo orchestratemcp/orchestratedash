@@ -209,3 +209,143 @@ the provider. `contracts/run-artifact.schema.json` says so in the kind's own
 description and `app/_components/digest.tsx` renders the sentence before the
 draft rather than under it, because a person scanning it needs to know what it is
 *not* before they read what it says.
+
+*(Superseded by amendment 2. Stage 2 shipped; the `draft` kind no longer means
+local by itself, and `draft.placement` is where it now says.)*
+
+## Amendment 2 (MAR-469): the first operation that writes to somebody's account
+
+Status: Accepted
+
+Date: 2026-08-03
+
+Stage 2 of the rollout above is built. `gmail.draft.create` puts a reply in the
+user's own Drafts folder, and **there is still no send operation.**
+
+### The argument that expired
+
+Amendment 1 made invariant 6 "a property of step 1 rather than a promise": a
+credential granting `gmail.compose` and nothing else granted **no operations at
+all**, because nothing was built on that scope. That was a strong claim and it
+was free. It is now spent. One thing is built on the scope that can send, so
+every guard between an agent's request and a sent message is a real check that
+can have a bug — which is exactly what this ADR's own stage 2 text anticipated
+when it asked for "adversarial tests proving an agent cannot substitute a send
+endpoint".
+
+Nothing about invariant 6 changes. What changes is what makes it true.
+
+### What replaces it: a field that is not there
+
+The same move ADR 0005 used on `broker_lapses`, applied to the one irreversible
+thing this product can do. **A write operation has no `plan`.** `ReadOperation`
+returns a whole `ProviderCall` including a URL; `WriteOperation` cannot, because
+the type declares no member that could carry one. It declares:
+
+- `path`, a literal on the operation object, checked at module load against a
+  frozen `WRITE_PATHS` and rejected if it is not rooted at this origin;
+- `compose(input)`, which returns `{ json }` and nothing else.
+
+`planCall` builds a POST's URL from `operation.path` and the profile's origin.
+So a bug inside `compose`, of any severity, cannot produce a request to
+`/gmail/v1/users/me/messages/send` — not because a check would catch it, but
+because `compose` does not get to say where the request goes. The complete
+answer to "what can this application do to my account?" is one frozen array,
+readable in ten seconds, and `tests/broker-threat-model.test.ts` pins it **by
+value**. Adding a send means editing that line, which is the conversation this
+invariant exists to force.
+
+The second half is the body, and it is the same argument applied one level down.
+Gmail's `drafts.create` accepts `message.raw`: an entire opaque message, which if
+passed through would let an agent choose recipients, `Bcc`, and every other
+header. So there is no `raw` input. DASH composes the RFC 5322 message from four
+typed fields, refuses any control character in a header value, and **writes no
+`From`** — Gmail fills that from the account whose token DASH presented, so an
+agent cannot compose a draft that appears to come from somebody else and DASH
+does not have to check that it did not.
+
+### The honesty problem this created, which is the harder half
+
+A draft in Gmail is visible in the user's mailbox and one human click from going
+out. That is not the risk of a local file, and three surfaces had to change to
+stop under-describing it.
+
+**Google has no drafts-only scope.** `gmail.compose` is the narrowest permission
+that can create a draft, and it can also send. DASH cannot ask for a permission
+incapable of sending, so the card must not imply the user granted one.
+
+Until now that disclosure rode on `unused_scopes`: compose reached no operation,
+so the card said DASH offers no action for it. Building something on it made it a
+*used* scope — and the uncomfortable half would have **silently vanished from the
+card at the exact moment it started to matter**. So `wider_permission` is a
+required, nullable field on `WriteOperation`, and `CapabilityCard` and
+`BrokerRowView` each carry a sentence built from it. Required-but-nullable rather
+than optional, so a future write cannot ship without someone answering the
+question. It renders before a sign-in as well as after, because the person who
+has not yet granted the permission is the one it is for.
+
+**A capability list can read like a read.** "Save a reply in your Gmail drafts"
+is a verb phrase that says nothing about what will be sitting in the mailbox
+afterwards, so `WriteOperation.consequence` is required too, travels on the
+granted operation, and renders under the capability rather than in a tooltip.
+
+**The `draft` artifact kind stopped meaning "local".** Amendment 1 recorded that
+`contracts/run-artifact.schema.json` said so "in the kind's own description".
+That sentence is now false for some drafts and true for others, which is worse
+than either. `draft.placement` is a **required** tagged union — `dash_only` or
+`provider_draft` — so no producer can leave it to a renderer to guess and no
+renderer can default. A `dash_only` placement carrying a `draft_id` is refused,
+because it asserts nothing exists at the provider while naming the thing that
+does. The renderer branches; the half that survives every branch is *nothing has
+been sent*, and it is still true by construction.
+
+Note what `placement` is **not**: it is the agent's claim about its own work, the
+same standing `sources_fetched` has for a digest. DASH's independent record of
+what it actually performed is `broker_audit`, and the copy points there rather
+than asserting.
+
+### Replaying a write is not replaying a read
+
+MAR-458 stated the replay guard's limit plainly — bounded per agent, dies with
+the process — and justified it: "the durable protection against a repeated effect
+is that every operation in this slice is a read." A replayed draft-create leaves
+a second draft in somebody's mailbox and survives a restart, so the guard has to
+as well.
+
+Writes now also check `broker_audit`, which already holds every request id DASH
+ever decided about, on every path including refusals. A query rather than a new
+table: a separate "ids seen" store would be a second answer to a question the
+audit already answers, free to disagree with it and no more durable. A failing
+query reads as "not seen", because a sick table must not make an agent unable to
+draft forever, and the cost of that direction is a duplicate draft rather than a
+duplicate send — there being no send.
+
+Writes also get their own budget of three per minute, beside the twenty-per-minute
+call budget rather than inside it. Twenty reads a minute is a busy assistant;
+twenty drafts a minute is a mailbox nobody can use.
+
+### What is proven, and what is not
+
+**Proven end to end on the installed shell** (proof 7, checks 7k–7n): the write.
+A real agent the runner spawned drove a real POST carrying a real bearer token to
+a real HTTP provider, and DASH's own composed message was read back out of what
+the provider received.
+
+**7n is the load-bearing one.** The harness *serves* Gmail's two send endpoints
+and answers them with success, so "DASH never called a send endpoint" is a
+statement about DASH rather than about a provider's willingness to refuse. Over a
+run in which the agent explicitly asked to send twice, by two different names,
+the paths DASH actually reached were `/token`, the two read paths, and
+`/gmail/v1/users/me/drafts`. A negative proof whose subject is free to refuse is
+a proof of the wrong party.
+
+**Not proven, and unchanged from amendment 1: the provider is not Google.** It is
+a loopback server, for the reasons that section gives, and MAR-468 still owns the
+real-Google proof. Nothing here may be described as proven against Gmail's API —
+including, and especially, that a draft appears in a real Drafts folder.
+
+**Unit tests only**: the durable replay memory meeting a real DASH restart. The
+query is tested against a real store and the broker's use of it is tested with
+two brokers sharing one record — which is what a restart looks like from the
+broker's side — but no installed proof restarts DASH between two halves of one
+agent's work.

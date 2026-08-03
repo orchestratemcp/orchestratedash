@@ -37,6 +37,8 @@ import {
 } from "./fakes/broker-harness";
 
 const AGENT = "synthetic-gmail-meeting-assistant";
+/** A scope no Gmail operation is built on, for the unused-permission cases. */
+const CALENDAR_READONLY = "https://www.googleapis.com/auth/calendar.readonly";
 const gmailExample = example("gmail-meeting-assistant.manifest.v2.example.json");
 const secretExample = example("dash-managed-secret.manifest.v2.example.json");
 
@@ -66,38 +68,114 @@ function grant(scopes: string[] = ["openid", "email", GMAIL_READONLY, GMAIL_COMP
  * ---------------------------------------------------------------------- */
 
 describe("what a grant covers", () => {
-  it("grants the read operations the manifest declared and the user approved", () => {
+  it("grants the operations the manifest declared and the user approved", () => {
     const resolved = grant();
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) return;
 
     expect(resolved.grant.operations.map((operation) => operation.id).sort()).toEqual([
+      "gmail.draft.create",
       "gmail.message.read",
       "gmail.search",
     ]);
     expect(grants(resolved.grant, "gmail.search")).toBe(true);
     expect(grants(resolved.grant, "gmail.send")).toBe(false);
+    expect(grants(resolved.grant, "gmail.drafts.send")).toBe(false);
   });
 
   /**
-   * The load-bearing one. `gmail.compose` was granted, Google will honour it,
-   * and it reaches no operation — so it is reported as unused rather than
-   * silently forgotten, which is what lets the card admit it.
+   * Writes first, and it is not cosmetic (MAR-469). The list is read top-down
+   * and abandoned halfway, so the line that says something will appear in the
+   * user's mailbox must not sit under two that say something will be read.
+   * `describePermissions` orders a consent screen the same way for the same
+   * reason.
    */
-  it("reports a granted scope that no operation uses", () => {
+  it("puts the write above the reads, where it will be read", () => {
     const resolved = grant();
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) return;
-    expect(resolved.grant.unused_scopes).toEqual([GMAIL_COMPOSE]);
+
+    expect(resolved.grant.operations[0]).toMatchObject({
+      id: "gmail.draft.create",
+      access: "write",
+    });
+    expect(resolved.grant.operations.slice(1).every((op) => op.access === "read")).toBe(true);
   });
 
-  it("grants nothing when the provider withheld the scope every operation needs", () => {
+  /**
+   * The consequence sentence travels *on* the granted operation rather than
+   * beside it, so a card rendered from a grant cannot describe a different set
+   * from the one the broker will honour. Reads carry null, which is the check
+   * that stops the field becoming decorative prose on everything.
+   */
+  it("carries a consequence for the write and none for a read", () => {
+    const resolved = grant();
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+
+    const write = resolved.grant.operations.find((op) => op.access === "write");
+    expect(write?.consequence).toContain("Drafts folder");
+    expect(write?.consequence).toContain("no action that sends mail");
+    for (const read of resolved.grant.operations.filter((op) => op.access === "read")) {
+      expect(read.consequence).toBeNull();
+    }
+  });
+
+  /**
+   * `gmail.compose` used to be the load-bearing example here: granted, honoured
+   * by Google, reaching no operation, and therefore reported as unused so the
+   * card could admit it. MAR-469 built something on it, so it is a *used* scope
+   * now and this asserts the new truth — with the disclosure that replaced it
+   * covered by "discloses that the permission behind the write is wider" below.
+   */
+  it("reports no unused scope once every granted permission reaches an operation", () => {
+    const resolved = grant();
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(resolved.grant.unused_scopes).toEqual([]);
+  });
+
+  it("reports a granted scope that no operation uses", () => {
+    // Calendar's read scope declared on the Gmail connection: granted, and
+    // nothing in the Gmail operation set asks for it.
+    const withSpare = withGmailScopes([GMAIL_READONLY, GMAIL_COMPOSE, CALENDAR_READONLY]);
+    const resolved = resolveGrant(
+      AGENT,
+      withSpare,
+      "gmail",
+      credential({ scopes: ["openid", "email", GMAIL_READONLY, GMAIL_COMPOSE, CALENDAR_READONLY] }),
+      "dash.connection.a.gmail.gmail-account",
+    );
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(resolved.grant.unused_scopes).toEqual([CALENDAR_READONLY]);
+  });
+
+  /**
+   * Compose alone is now a real grant rather than an empty one, and it is the
+   * narrowest agent DASH can describe: it can put a reply in the Drafts folder
+   * and cannot read a single message.
+   */
+  it("grants only the write when the provider gave only the compose scope", () => {
     const resolved = grant(["openid", "email", GMAIL_COMPOSE]);
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(resolved.grant.operations.map((operation) => operation.id)).toEqual([
+      "gmail.draft.create",
+    ]);
+    expect(resolved.grant.missing_scopes).toEqual([GMAIL_READONLY]);
+  });
+
+  it("grants nothing when the provider withheld every scope any operation needs", () => {
+    const resolved = grant(["openid", "email"]);
     expect(resolved).toMatchObject({
       ok: false,
       refusal: "no_operations_granted",
-      missing_scopes: [GMAIL_READONLY],
     });
+    if (resolved.ok) return;
+    expect([...(resolved.missing_scopes ?? [])].sort()).toEqual(
+      [GMAIL_COMPOSE, GMAIL_READONLY].sort(),
+    );
   });
 
   /**
@@ -112,36 +190,45 @@ describe("what a grant covers", () => {
    * that would change nothing.
    */
   it("does not count a scope as missing for an operation the agent never asked for", () => {
-    const composeOnly = withGmailScopes([GMAIL_COMPOSE]);
+    // A manifest declaring only the read scope, on a credential that carries
+    // only compose. `gmail.draft.create` is not a candidate at all — step 2
+    // fails before step 3 is consulted — so compose is not reported missing.
+    const readOnlyManifest = withGmailScopes([GMAIL_READONLY]);
     const resolved = resolveGrant(
       AGENT,
-      composeOnly,
+      readOnlyManifest,
       "gmail",
       credential({ scopes: ["openid", "email", GMAIL_COMPOSE] }),
       "dash.connection.a.gmail.gmail-account",
     );
     expect(resolved).toMatchObject({ ok: false, refusal: "no_operations_granted" });
     if (resolved.ok) return;
-    expect(resolved.missing_scopes).toEqual([]);
+    expect(resolved.missing_scopes).toEqual([GMAIL_READONLY]);
+    expect(resolved.missing_scopes).not.toContain(GMAIL_COMPOSE);
   });
 
   /**
-   * The same connection with the read scope declared and *withheld* by the user.
-   * Now the scope is genuinely missing, and the recovery really is a reconnect.
+   * The same connection with a scope declared and *withheld* by the user. Now
+   * the scope is genuinely missing, and the recovery really is a reconnect.
    */
   it("counts a scope as missing when the agent asked and the user declined", () => {
     const resolved = resolveGrant(
       AGENT,
       gmailExample,
       "gmail",
-      credential({ scopes: ["openid", "email", GMAIL_COMPOSE] }),
+      credential({ scopes: ["openid", "email", GMAIL_READONLY] }),
       "dash.connection.a.gmail.gmail-account",
     );
-    expect(resolved).toMatchObject({
-      ok: false,
-      refusal: "no_operations_granted",
-      missing_scopes: [GMAIL_READONLY],
-    });
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    // The reads survive and the write does not, which is the partial consent
+    // the intersection exists to render as a smaller set rather than a failure
+    // halfway through a run.
+    expect(resolved.grant.operations.map((operation) => operation.id).sort()).toEqual([
+      "gmail.message.read",
+      "gmail.search",
+    ]);
+    expect(resolved.grant.missing_scopes).toEqual([GMAIL_COMPOSE]);
   });
 
   it("brokers nothing for a provider it has no profile for, before any scope check", () => {
@@ -185,7 +272,7 @@ describe("what a grant covers", () => {
    */
   it("describes what an agent is asking for before anything is connected", () => {
     expect(requestedOperations(gmailExample, "gmail").map((operation) => operation.id).sort()).toEqual(
-      ["gmail.message.read", "gmail.search"],
+      ["gmail.draft.create", "gmail.message.read", "gmail.search"],
     );
     expect(requestedOperations(gmailExample, "calendar")).toEqual([]);
     expect(requestedOperations(secretExample, "ledger")).toEqual([]);
@@ -210,7 +297,13 @@ describe("the capability card", () => {
   });
 
   it("says out loud that a granted permission is not used", () => {
-    const resolved = grant();
+    const resolved = resolveGrant(
+      AGENT,
+      withGmailScopes([GMAIL_READONLY, GMAIL_COMPOSE, CALENDAR_READONLY]),
+      "gmail",
+      credential({ scopes: ["openid", "email", GMAIL_READONLY, GMAIL_COMPOSE, CALENDAR_READONLY] }),
+      "dash.connection.a.gmail.gmail-account",
+    );
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) return;
 
@@ -224,6 +317,35 @@ describe("the capability card", () => {
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) return;
     expect(describeGrant(resolved.grant, "Meeting Assistant").unused_permission_sentence).toBeNull();
+  });
+
+  /**
+   * The disclosure MAR-469 had to add, and the reason it could not stay where it
+   * was.
+   *
+   * Until stage 2 the compose scope showed up in `unused_scopes` and the card
+   * said DASH offers no action for it — true, and the whole story. Building
+   * `gmail.draft.create` on it made it a *used* scope, so that sentence
+   * correctly stopped appearing, and the uncomfortable half would have vanished
+   * from the card at the exact moment it began to matter. This is the test that
+   * would fail if someone deleted the replacement.
+   */
+  it("discloses that the permission behind the write is wider than the write", () => {
+    const resolved = grant();
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+
+    const card = describeGrant(resolved.grant, "Meeting Assistant");
+    expect(card.unused_permission_sentence).toBeNull();
+    expect(card.wider_permission_sentence).toContain("also allows sending");
+    expect(card.wider_permission_sentence).toContain("no agent can ask DASH to send");
+  });
+
+  it("says nothing about wider permissions for a grant that only reads", () => {
+    const resolved = grant(["openid", "email", GMAIL_READONLY]);
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(describeGrant(resolved.grant, "Meeting Assistant").wider_permission_sentence).toBeNull();
   });
 
   /**
@@ -245,7 +367,13 @@ describe("the capability card", () => {
       card.custody_sentence,
       card.client_sentence ?? "",
       card.unused_permission_sentence ?? "",
+      // MAR-469's two new strings are held to the same rule as everything else
+      // on the card. The temptation with a wider-permission disclosure is to
+      // name the scope so the user can look it up, which is exactly the
+      // identifier leak `lib/copy/identifiers.ts` forbids.
+      card.wider_permission_sentence ?? "",
       ...card.capabilities.map((capability) => capability.label),
+      ...card.capabilities.map((capability) => capability.consequence ?? ""),
     ]);
   });
 
@@ -517,15 +645,16 @@ describe("responses on the wire", () => {
  * ---------------------------------------------------------------------- */
 
 describe("the shipped operations", () => {
-  it("is exactly the two read operations ADR 0002's first slice describes", () => {
+  it("is the two reads of ADR 0002 stage 1 plus the one write of stage 2", () => {
     expect(allOperations().map((operation) => operation.id).sort()).toEqual([
+      "gmail.draft.create",
       "gmail.message.read",
       "gmail.search",
     ]);
   });
 
   it("belongs entirely to the Gmail profile", () => {
-    expect(operationsForProvider("google-gmail")).toHaveLength(2);
+    expect(operationsForProvider("google-gmail")).toHaveLength(3);
     expect(operationsForProvider("google-calendar")).toEqual([]);
   });
 

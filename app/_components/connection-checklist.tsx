@@ -331,6 +331,14 @@ function PermissionCard({
             {capability.access === "write" ? (
               <span className="chip chip-warn"> changes something</span>
             ) : null}
+            {/* MAR-469. Under the capability and not in a tooltip: a write's
+                label is a verb phrase, and the sentence that says where the
+                result ends up and who can act on it is the one a person needs
+                before approving. A consequence you have to hover to find is one
+                that gets approved unread. */}
+            {capability.consequence === null ? null : (
+              <div className="wrap muted">{capability.consequence}</div>
+            )}
           </li>
         ))}
         {(connected && approved.length > 0 ? approved : broker.requested).length === 0 ? (
@@ -340,6 +348,19 @@ function PermissionCard({
           </li>
         ) : null}
       </ul>
+
+      {/* The line that used to be carried by "you granted permissions DASH
+          offers no action for", and no longer can be (MAR-469). Once DASH built
+          a draft action on the Gmail compose permission, that permission stopped
+          being unused — so the disclosure would have vanished from this card at
+          the moment it began to matter. It is rendered whether or not the user
+          has signed in yet, because the person who has not yet granted it is the
+          one it is for. */}
+      {broker.wider_permission_sentence === null ? null : (
+        <p className="notice wrap" role="note">
+          {broker.wider_permission_sentence}
+        </p>
+      )}
 
       {broker.receipt === null ? null : (
         <dl className="permission-receipt">

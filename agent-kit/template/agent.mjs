@@ -77,7 +77,8 @@ const MAX_ITEMS_PER_SOURCE = 10;
  * agent never calls it: reading public news feeds needs nobody's password. An
  * agent that does need one writes
  * `await ask("gmail", "gmail.search", { query: "is:unread" })` and gets an
- * answer or a refusal. It never gets a token; see `ask`'s own comment for why.
+ * answer or a refusal. It never gets a token; see `ask`'s own comment for why,
+ * and for the one operation that changes something rather than reading it.
  */
 async function runOnce({ step, artifact }) {
   step("public_feed_fetch", "Reading your news sources");
@@ -331,9 +332,16 @@ function log(line) {
  * ## What you can ask for
  *
  * Whatever DASH implements and you connected and the user approved: all three,
- * intersected. Today that is `gmail.search` and `gmail.message.read`. There is
- * no operation that sends anything, and asking for one is refused rather than
- * queued — so an agent built on this cannot mail somebody by accident.
+ * intersected. Today that is `gmail.search`, `gmail.message.read` and
+ * `gmail.draft.create`. There is no operation that sends anything, and asking
+ * for one is refused rather than queued — so an agent built on this cannot mail
+ * somebody by accident.
+ *
+ * `gmail.draft.create` is the one that changes something. It saves a reply in
+ * the user's own Drafts folder, where they can send it or delete it themselves.
+ * You supply `to`, `subject`, `body_text` and optionally `thread_id`; DASH
+ * writes the message, so there is no header for you to set and no sender for you
+ * to choose. A recipient carrying a newline is refused rather than cleaned up.
  *
  * ## Handle the refusal
  *

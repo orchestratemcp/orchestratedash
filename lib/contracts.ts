@@ -429,18 +429,41 @@ export interface DigestArtifact extends RunArtifactBase {
 }
 
 /**
- * A reply an agent composed and DASH is holding (MAR-458).
+ * Where a composed reply actually is (MAR-469).
  *
- * **Local, and the word is load-bearing.** Nothing has been sent and nothing
- * exists at the provider: ADR 0002's first slice gives the broker two read
- * operations and no way to create a provider-side draft, let alone send one. Any
- * copy that renders this must not imply otherwise — "saved to your drafts" would
- * be a claim about Gmail that nothing in DASH performed.
+ * A union rather than a flag, so every renderer branches. MAR-458's draft was
+ * always local and the word "local" was load-bearing in the copy; MAR-469 made
+ * it conditionally false without changing the artifact kind, which is precisely
+ * the situation where an optional boolean gets forgotten by one call site and
+ * that call site is the one telling a person nothing left DASH.
+ *
+ * **It is a claim, not a record.** The agent asserts this about its own work.
+ * DASH's independent record of what it actually performed is the broker audit
+ * trail on the Connections page, and copy rendering `provider_draft` has to
+ * attribute rather than assert — the same standing `sources_fetched` has for a
+ * digest.
+ */
+export type DraftPlacement =
+  /** DASH is holding this and it exists nowhere else. */
+  | { where: "dash_only" }
+  /** The agent says it created a draft at the provider through the broker. */
+  | { where: "provider_draft"; service: string; draft_id?: string };
+
+/**
+ * A reply an agent composed (MAR-458, MAR-469).
+ *
+ * **Nothing here has been sent, in either placement.** The broker has no send
+ * operation: not for a message, not for a draft it created. What changed at
+ * stage 2 is narrower and worth stating exactly — a `provider_draft` reply is
+ * sitting in the user's own Drafts folder, visible in their mail client and one
+ * human click from going out. Copy must not flatten that back into "held here
+ * only", and must not inflate it into "sent" either.
  */
 export interface ArtifactDraft {
   to?: string[];
   subject: string;
   body: string;
+  placement: DraftPlacement;
   in_reply_to?: { message_id?: string; thread_id?: string };
   /** The messages the agent says it read to write this. */
   sources?: Array<{ message_id: string; subject?: string; from?: string }>;

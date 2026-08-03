@@ -16,12 +16,17 @@
  * 2. **Rate limit** — before the manifest, so a flood costs a counter increment.
  * 3. **Operation exists** — before the connection, because an operation nothing
  *    implements can be refused without consulting the user's data at all.
+ * 3b. **For a write: the durable replay check and the write budget** (MAR-469).
+ *    Both before the vault, so a repeated or excessive write costs a query
+ *    rather than a token — and the durable check has to come before anything
+ *    irreversible rather than beside it.
  * 4. **Connection is brokered** — from the manifest.
  * 5. **Credential** — the first vault touch, and only for a request that has
  *    already survived four checks.
  * 6. **Grant covers the operation** — the intersection in `grant.ts`.
  * 7. **Input narrows to a request** — the operation's own validation.
- * 8. **Origin check** — the planned URL really is the profile's host.
+ * 8. **Origin check** — the planned URL really is the profile's host, and for a
+ *    write the path really is the operation's own frozen one.
  * 9. **Mint, call, project.**
  *
  * Every one of them writes an audit row. A refusal that left no trace would make
@@ -52,7 +57,7 @@ import type { OAuthCredential } from "../oauth/credential";
 import { isOAuthError } from "../oauth/flow";
 import { maskAccount } from "../secret-refs";
 import { brokeredField, grants, resolveGrant, type BrokerGrant } from "./grant";
-import { operationById } from "./operations";
+import { operationById, planCall } from "./operations";
 import { fulfil, refuse, type BrokerRefusal, type BrokerRequest, type BrokerResponse } from "./protocol";
 
 /* ---------------------------------------------------------------------- *
@@ -114,6 +119,23 @@ export interface BrokerDeps {
    */
   mintAccessToken(credential: OAuthCredential): Promise<{ access_token: string }>;
   fetchImpl: typeof fetch;
+  /**
+   * Has this agent already had a request with this id adjudicated, ever
+   * (MAR-469)?
+   *
+   * Consulted **only for a write**, and it is the durable half of replay
+   * protection. The in-memory guard below is bounded by
+   * `BROKER_REPLAY_MEMORY` and dies with the process, which was the honest and
+   * sufficient answer while every operation was a read: replaying a read costs
+   * a second read. Replaying a write costs a second draft in somebody's
+   * mailbox, so the memory has to outlive the process, and `broker_audit`
+   * already holds every request id DASH ever decided about.
+   *
+   * Optional so the pure tests can leave it out. Absent means "no durable
+   * memory", which is a weaker broker rather than a broken one — and
+   * `electron/broker-host.ts` supplies it, so the shipped one always has it.
+   */
+  hasHandledRequest?(agentId: string, requestId: string): boolean;
   /** Record one attempt. Called exactly once per request, on every path. */
   audit(row: BrokerAuditRow): void;
   /** Note that a grant was used, for the receipt's "last used". */
@@ -138,14 +160,33 @@ export const BROKER_CALLS_PER_WINDOW = 20;
 export const BROKER_WINDOW_MS = 60_000;
 
 /**
+ * How many of those calls may change something at the provider (MAR-469).
+ *
+ * A second, tighter budget over the same window rather than a share of the
+ * first, because the two bound different harms. Twenty reads a minute is a busy
+ * assistant; twenty drafts a minute is a mailbox nobody can use. Three is more
+ * than a drafting agent needs — it replies to the messages a person asked it
+ * about — and it means an agent that has gone wrong fills a Drafts folder at a
+ * rate a person can notice and stop rather than faster than they can scroll.
+ *
+ * A write also costs a read from the budget above, so a write-only agent is
+ * still bounded by both.
+ */
+export const BROKER_WRITES_PER_WINDOW = 3;
+
+/**
  * How many request ids the broker remembers per agent, for replay detection.
  *
  * Bounded because the memory is the runner's lifetime and an agent chooses the
- * ids. When the window rolls, the oldest are forgotten — so replay protection is
- * a *recent-history* property, which is the honest claim. A replay after two
- * hundred intervening requests would not be caught, and that is stated rather
- * than papered over: the durable protection against a repeated effect is that
- * every operation in this slice is a read.
+ * ids. When the window rolls, the oldest are forgotten — so this half of replay
+ * protection is a *recent-history* property, and a replay after two hundred
+ * intervening requests would not be caught by it.
+ *
+ * That was the whole story while every operation was a read, and MAR-458 said so
+ * plainly: "the durable protection against a repeated effect is that every
+ * operation in this slice is a read." MAR-469 ends that, so writes get a second
+ * check against `broker_audit`, which is unbounded and survives a restart. See
+ * `BrokerDeps.hasHandledRequest`.
  */
 export const BROKER_REPLAY_MEMORY = 512;
 
@@ -159,6 +200,8 @@ interface AgentBudget {
   seenSet: Set<string>;
   /** Timestamps of recent calls, for the sliding window. */
   calls: number[];
+  /** Timestamps of recent calls that changed something (MAR-469). */
+  writes: number[];
 }
 
 export interface Broker {
@@ -179,7 +222,7 @@ export function createBroker(deps: BrokerDeps): Broker {
   function budgetFor(agentId: string): AgentBudget {
     let budget = budgets.get(agentId);
     if (budget === undefined) {
-      budget = { seen: [], seenSet: new Set(), calls: [] };
+      budget = { seen: [], seenSet: new Set(), calls: [], writes: [] };
       budgets.set(agentId, budget);
     }
     return budget;
@@ -237,9 +280,27 @@ export function createBroker(deps: BrokerDeps): Broker {
       /* 3. Does this operation exist at all? */
       const operation = operationById(request.operation);
       if (operation === null) {
-        // Where `gmail.send`, `gmail.draft.create` and everything else nobody
+        // Where `gmail.send`, `gmail.drafts.send` and everything else nobody
         // built lands — regardless of what the connected account's scopes allow.
+        // `gmail.compose` is granted and usable now (MAR-469), and this line is
+        // still where every send-shaped request ends.
         return no("unknown_operation");
+      }
+
+      /* 3b. A write, twice over (MAR-469).
+         The durable replay check first, because the point of it is to survive
+         the process that holds the set consulted in step 1 — and then the write
+         budget, which is the second, tighter window. Both before the vault, so
+         a repeated write costs a query rather than a token. */
+      if (operation.access === "write") {
+        if (deps.hasHandledRequest?.(agentId, request.request_id) === true) {
+          return no("duplicate_request");
+        }
+        budget.writes = budget.writes.filter((at) => at > windowStart);
+        if (budget.writes.length >= BROKER_WRITES_PER_WINDOW) {
+          return no("rate_limited");
+        }
+        budget.writes.push(startedAt);
       }
 
       /* 4. Is the connection one DASH brokers for this agent? */
@@ -296,16 +357,32 @@ export function createBroker(deps: BrokerDeps): Broker {
       }
 
       /* 7. The typed input. */
-      const planned = operation.plan(resolved.grant.profile.api_origin, request.input);
+      const planned = planCall(operation, resolved.grant.profile.api_origin, request.input);
       if (!planned.ok) {
         return no("invalid_input", accountHint);
       }
 
-      /* 8. The origin. A belt-and-braces check on DASH's own code: `plan` built
-         this URL from a constant path and an encoded id, so a mismatch here is a
-         bug in an operation rather than an agent's doing — and the cost of the
-         bug would be a live access token sent to whatever host it named. */
+      /* 8. The origin. A belt-and-braces check on DASH's own code: `planCall`
+         built this URL from a constant path and an encoded id, so a mismatch
+         here is a bug in an operation rather than an agent's doing — and the
+         cost of the bug would be a live access token sent to whatever host it
+         named. */
       if (new URL(planned.call.url).origin !== resolved.grant.profile.api_origin) {
+        return no("broker_error", accountHint);
+      }
+
+      /* 8b. And for a write, the path as well (MAR-469).
+         The origin check above would let a bug reach any path on the provider,
+         which for Gmail includes `/gmail/v1/users/me/messages/send`. This is
+         the second reading of the same fact `planCall` already guarantees
+         structurally, and it is here for the reason step 8 is: the two are
+         cheap, and the thing on the other side of them is somebody's mailbox.
+         A mismatch is DASH's bug, so it is `broker_error` and not a refusal
+         that would read as the agent's fault. */
+      if (
+        operation.access === "write" &&
+        new URL(planned.call.url).pathname !== operation.path
+      ) {
         return no("broker_error", accountHint);
       }
 
@@ -331,7 +408,17 @@ export function createBroker(deps: BrokerDeps): Broker {
             // function. Nothing below reads `accessToken` again.
             authorization: `Bearer ${accessToken}`,
             accept: "application/json",
+            ...(planned.call.method === "POST"
+              ? { "content-type": "application/json" }
+              : {}),
           },
+          // Serialised here rather than in the operation, so the only thing that
+          // ever becomes a request body is a value `compose` returned and
+          // `JSON.stringify` rendered. There is no path by which an agent's own
+          // string reaches the wire unquoted.
+          ...(planned.call.method === "POST"
+            ? { body: JSON.stringify(planned.call.json) }
+            : {}),
           signal: AbortSignal.timeout(20_000),
         });
 
@@ -345,7 +432,7 @@ export function createBroker(deps: BrokerDeps): Broker {
           );
         }
 
-        const text = await readBounded(response, planned.call.max_response_bytes);
+        const text = await readBounded(response, operation.max_response_bytes);
         if (text === null) {
           return no("provider_refused", accountHint);
         }

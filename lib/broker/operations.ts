@@ -14,14 +14,35 @@
  * `gmail.compose` can send mail. That is Google's design and DASH cannot narrow
  * it — a user who grants it has granted the ability to send, at Google. What
  * DASH controls is whether any *operation exists* that would use it, and in the
- * draft-only profile none does. ADR 0002 invariant 6 says this in as many words,
- * and this module is where it is true rather than promised: there is no send
- * operation, no draft-create operation, and `operationById` is a lookup over a
- * frozen list rather than a dispatch over anything an agent supplies.
+ * draft-only profile the only one that does is `gmail.draft.create`. ADR 0002
+ * invariant 6 says this in as many words, and this module is where it is true
+ * rather than promised: there is no send operation, and `operationById` is a
+ * lookup over a frozen list rather than a dispatch over anything an agent
+ * supplies.
  *
- * The consequence worth stating plainly: a connection whose credential grants
- * `gmail.compose` and nothing else is granted **no operations at all**. The
- * scope buys nothing, because nothing is built on it.
+ * ## What changed when a write appeared, and what had to replace it (MAR-469)
+ *
+ * Until stage 2 the sentence above was carried by an absence: nothing was built
+ * on `gmail.compose`, so a credential granting it was granted **no operations at
+ * all**, and "no send exists" needed no check because no code could reach the
+ * scope. That argument is now spent. A write operation exists, it runs on the
+ * scope that can send, and every guard between the two is a real check that can
+ * have a bug.
+ *
+ * So the guarantee is rebuilt structurally, in the shape ADR 0005 used for
+ * `broker_lapses`: **the field an escape would have to fill is not there.** A
+ * write operation does not have a `plan`. It cannot return a URL, a path, a
+ * method or a header, because `WriteOperation` declares no member that could
+ * carry one — it declares a `path` which is a frozen literal on the operation
+ * object, and a `compose` that returns a JSON body and nothing else. A bug
+ * inside `compose`, however bad, cannot produce a request to
+ * `/gmail/v1/users/me/messages/send`, because `compose` does not get to say
+ * where the request goes. Reaching a send endpoint means typing one into
+ * `WRITE_PATHS` below, which `tests/broker-threat-model.test.ts` pins by value.
+ *
+ * The second half is the body. DASH builds the RFC 5322 message itself from
+ * typed fields; there is no `raw` input and no header an agent can name. See
+ * `composeRfc822`.
  *
  * ## Why inputs are validated here and not at the transport
  *
@@ -51,20 +72,30 @@ export type BrokerAccess = "read" | "write";
  * The agent contributes values that were validated into `input`; it contributes
  * nothing to `method`, nothing to `origin`, and nothing to `path` beyond
  * segments this module encoded itself.
+ *
+ * A union rather than one shape with an optional body, and `method` stays an
+ * enum of two rather than becoming a string. The difference matters at the one
+ * call site in `lib/broker/execute.ts`: a `GET` carries no body and a `POST`
+ * always carries one, so the two cannot be confused into a mutating request
+ * with nothing in it or a read with a payload attached.
  */
-export interface ProviderCall {
-  method: "GET";
-  /** Absolute, and re-checked against the profile's origin before it is used. */
-  url: string;
-  /**
-   * How many bytes of response body the broker will read before giving up.
-   *
-   * Per operation because the two differ by an order of magnitude, and because
-   * an unbounded read of a provider response is a way for a compromised or
-   * misbehaving upstream to exhaust the DASH process.
-   */
-  max_response_bytes: number;
-}
+export type ProviderCall =
+  | {
+      method: "GET";
+      /** Absolute, and re-checked against the profile's origin before it is used. */
+      url: string;
+    }
+  | {
+      method: "POST";
+      /**
+       * Absolute, and built by `planCall` from the operation's own frozen
+       * `path` — never from anything `compose` returned, because `compose`
+       * cannot return one.
+       */
+      url: string;
+      /** The JSON body DASH will send. Every field of it was built by DASH. */
+      json: Record<string, unknown>;
+    };
 
 /** Why an input was refused. Returned rather than thrown so it can be audited. */
 export type BrokerInputRefusal =
@@ -78,14 +109,18 @@ export type PlanResult =
   | { ok: true; call: ProviderCall }
   | { ok: false; refusal: BrokerInputRefusal; field: string };
 
-export interface BrokerOperation {
+/** What a `compose` may return. Note what it may not: a URL, a path, a method. */
+export type ComposeResult =
+  | { ok: true; json: Record<string, unknown> }
+  | { ok: false; refusal: BrokerInputRefusal; field: string };
+
+interface OperationBase {
   /** Stable id an agent names, e.g. `gmail.search`. */
   id: string;
   /** The provider profile this belongs to, e.g. `google-gmail`. */
   connection_provider: string;
   /** One sentence, plain language, no identifiers. Rendered on the card. */
   label: string;
-  access: BrokerAccess;
   /**
    * Every scope this operation needs.
    *
@@ -94,13 +129,118 @@ export interface BrokerOperation {
    * runtime failure halfway through a run. See `lib/broker/grant.ts`.
    */
   required_scopes: readonly string[];
-  /** Turn a validated input into the one request DASH will make. */
-  plan(origin: string, input: Record<string, unknown>): PlanResult;
+  /**
+   * How many bytes of response body the broker will read before giving up.
+   *
+   * Per operation because they differ by an order of magnitude, and because an
+   * unbounded read of a provider response is a way for a compromised or
+   * misbehaving upstream to exhaust the DASH process. On the operation rather
+   * than on the planned call, so it is a property of the thing being done and
+   * not something a `plan` gets to decide per request.
+   */
+  max_response_bytes: number;
   /** Turn a parsed provider body into the agent's answer, field by named field. */
   project(body: unknown): Record<string, unknown>;
 }
 
+/**
+ * An operation that only reads.
+ *
+ * It builds its own URL, because a read's path carries an id the agent named
+ * and there is nothing a bad path could do that reading the wrong message would
+ * not already be. `plan` is still the only thing that touches it, and the
+ * origin is re-checked afterwards.
+ */
+export interface ReadOperation extends OperationBase {
+  access: "read";
+  plan(origin: string, input: Record<string, unknown>): PlanResult;
+}
+
+/**
+ * An operation that changes something in somebody's account (MAR-469).
+ *
+ * Three fields exist because a write cannot ship without answering three
+ * questions, and a type is a better place to ask them than a review checklist.
+ *
+ * `path` is the whole of the no-send guarantee. It is a literal on the
+ * operation object; `compose` never sees it and cannot return one. So the set
+ * of paths DASH will ever POST to is the set written out in `WRITE_PATHS`, and
+ * it is knowable by reading one array rather than by auditing every code path
+ * that might build a URL.
+ *
+ * `consequence` and `wider_permission` are the two sentences a person needs
+ * before approving a write, and they are required rather than optional because
+ * the failure this file is guarding against is a capability list that reads like
+ * a read. "Save a reply as a draft" tells a user almost nothing about what will
+ * be sitting in their mailbox afterwards.
+ */
+export interface WriteOperation extends OperationBase {
+  access: "write";
+  /**
+   * The one path this operation will ever POST to. A constant, never computed.
+   * Must appear in `WRITE_PATHS`, which the tests pin by value.
+   */
+  path: string;
+  /**
+   * What a person will be able to see and do because this ran. Plain language,
+   * no identifiers, and honest about who can undo it.
+   */
+  consequence: string;
+  /**
+   * How the provider permission behind this is wider than the action, or null
+   * when it is not.
+   *
+   * Required-but-nullable rather than optional, so adding a write operation
+   * means answering the question. For Gmail the answer is never null and it is
+   * the single most important line on the card: `gmail.compose` is the narrowest
+   * scope Google offers that can create a draft, and it can also send. There is
+   * no draft-only Gmail scope to ask for instead.
+   */
+  wider_permission: string | null;
+  /**
+   * Turn a validated input into the JSON body DASH will send.
+   *
+   * Takes no origin and returns no URL. That is the point — see the note at the
+   * top of this file.
+   */
+  compose(input: Record<string, unknown>): ComposeResult;
+}
+
+export type BrokerOperation = ReadOperation | WriteOperation;
+
 const GMAIL_READONLY = "https://www.googleapis.com/auth/gmail.readonly";
+
+/**
+ * The scope a provider-side draft needs, and the reason this file has a section
+ * about honesty in it (MAR-469).
+ *
+ * Google offers no draft-only Gmail scope. `gmail.compose` is the narrowest one
+ * that can create a draft and it can also send; the alternatives are wider
+ * still. So DASH cannot ask for a permission that is incapable of sending, and
+ * a card claiming the user granted "drafts only" would be false about their
+ * Google account.
+ *
+ * What DASH can do is hold the token and build nothing that sends — which is
+ * what `WRITE_PATHS` makes checkable rather than promised.
+ */
+const GMAIL_COMPOSE = "https://www.googleapis.com/auth/gmail.compose";
+
+/**
+ * Every path DASH will ever send a mutating request to (MAR-469).
+ *
+ * Read this array as the answer to "what can this application do to my
+ * account?". It is the complete answer: `planCall` builds a POST's URL from the
+ * operation's own `path` and from nothing else, and every `path` is checked
+ * against this list at module load, so a write operation that named a path
+ * absent from here would fail to build rather than fail closed at runtime.
+ *
+ * Gmail's send endpoints are `/gmail/v1/users/me/messages/send` and
+ * `/gmail/v1/users/me/drafts/send`. Neither is here, and adding either is a
+ * one-line diff in a file whose test asserts this array by value — which is the
+ * conversation ADR 0005 wanted its column-list test to force, pointed at the
+ * one irreversible thing this product can do.
+ */
+const WRITE_PATHS: readonly string[] = Object.freeze(["/gmail/v1/users/me/drafts"]);
 
 /**
  * A Gmail id, as Gmail actually writes them.
@@ -247,12 +387,13 @@ const MAX_BODY_CHARS = 20_000;
  * audit recorded one operation — so reading a message is a separate operation,
  * separately audited, one message at a time.
  */
-const GMAIL_SEARCH: BrokerOperation = {
+const GMAIL_SEARCH: ReadOperation = {
   id: "gmail.search",
   connection_provider: "google-gmail",
   label: "Find messages in your mailbox",
   access: "read",
   required_scopes: [GMAIL_READONLY],
+  max_response_bytes: 262_144,
 
   plan(origin, input) {
     const query = requireString(input, "query", { max: MAX_QUERY_LENGTH });
@@ -272,7 +413,7 @@ const GMAIL_SEARCH: BrokerOperation = {
     url.searchParams.set("q", query.value);
     url.searchParams.set("maxResults", String(limit.value));
 
-    return { ok: true, call: { method: "GET", url: url.toString(), max_response_bytes: 262_144 } };
+    return { ok: true, call: { method: "GET", url: url.toString() } };
   },
 
   project(body) {
@@ -301,12 +442,13 @@ const GMAIL_SEARCH: BrokerOperation = {
  * nothing else — no label ids, no raw MIME, no `historyId`, no attachment
  * handles that would name a second thing to fetch.
  */
-const GMAIL_MESSAGE_READ: BrokerOperation = {
+const GMAIL_MESSAGE_READ: ReadOperation = {
   id: "gmail.message.read",
   connection_provider: "google-gmail",
   label: "Read one message you asked it to look at",
   access: "read",
   required_scopes: [GMAIL_READONLY],
+  max_response_bytes: 2_097_152,
 
   plan(origin, input) {
     const id = requireString(input, "message_id", { max: 128, pattern: GMAIL_ID });
@@ -324,7 +466,7 @@ const GMAIL_MESSAGE_READ: BrokerOperation = {
     );
     url.searchParams.set("format", "full");
 
-    return { ok: true, call: { method: "GET", url: url.toString(), max_response_bytes: 2_097_152 } };
+    return { ok: true, call: { method: "GET", url: url.toString() } };
   },
 
   project(body) {
@@ -344,6 +486,217 @@ const GMAIL_MESSAGE_READ: BrokerOperation = {
   },
 };
 
+/* ---------------------------------------------------------------------- *
+ * Writing a message (MAR-469)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * A single address, conservatively.
+ *
+ * Narrower than RFC 5322 permits, deliberately. The grammar allows quoted local
+ * parts containing almost anything, and a header builder that accepts the whole
+ * grammar is a header builder whose safety depends on getting the quoting right.
+ * This accepts the addresses people actually have and rejects the rest, which
+ * costs a small number of real users an operation and costs an attacker the
+ * entire class.
+ *
+ * Both halves are allowlists rather than exclusions, which is what makes the
+ * safety argument short: CR, LF and NUL are simply not in either character set,
+ * so a value passing this cannot end the `To:` line and start a `Bcc:` one. `,`
+ * and `;` are absent too, so it cannot become two recipients, and `<`, `>` and
+ * `"` are absent, so it cannot carry a display name with structure in it.
+ */
+const ADDRESS = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]{1,64}@[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
+
+/**
+ * Anything that must never reach a header line.
+ *
+ * C0 controls and DEL. CR and LF are the ones that matter and the rest are here
+ * because a header value has no legitimate use for them either, and a check
+ * listing exactly two characters invites the question of why not the others.
+ */
+// eslint-disable-next-line no-control-regex
+const HEADER_CONTROL = /[\u0000-\u001F\u007F]/;
+
+/** The longest subject DASH will build a header from. */
+const MAX_SUBJECT_LENGTH = 300;
+
+/** The longest body. Matches `contracts/run-artifact.schema.json`'s draft body. */
+const MAX_DRAFT_BODY_CHARS = 20_000;
+
+/**
+ * A header value as RFC 2047 encoded words, when it is not plain ASCII.
+ *
+ * Plain printable ASCII is emitted as-is, because an encoded word where none is
+ * needed makes every subject unreadable in the raw message for no gain. Anything
+ * else is base64 encoded words folded across continuation lines: each word's
+ * payload is at most 45 bytes so the whole `=?UTF-8?B?…?=` stays inside RFC
+ * 2047's 75-character limit, and the split is taken on a code point boundary so
+ * a multi-byte character is never cut in half.
+ *
+ * The value has already been refused if it contains a control character, so the
+ * ASCII branch cannot emit one and the folding cannot be escaped.
+ */
+function encodeHeaderValue(value: string): string {
+  if (/^[ -~]*$/.test(value)) {
+    return value;
+  }
+
+  const words: string[] = [];
+  let chunk: string[] = [];
+  let bytes = 0;
+  for (const character of value) {
+    const size = Buffer.byteLength(character, "utf8");
+    if (bytes + size > 45 && chunk.length > 0) {
+      words.push(Buffer.from(chunk.join(""), "utf8").toString("base64"));
+      chunk = [];
+      bytes = 0;
+    }
+    chunk.push(character);
+    bytes += size;
+  }
+  if (chunk.length > 0) {
+    words.push(Buffer.from(chunk.join(""), "utf8").toString("base64"));
+  }
+
+  // Folded with CRLF + space, which is the only place this builder emits a CRLF
+  // that is not a header separator — and it emits it around base64, which
+  // cannot contain one.
+  return words.map((word) => `=?UTF-8?B?${word}?=`).join("\r\n ");
+}
+
+/**
+ * The message DASH will ask the provider to store, as RFC 5322 bytes.
+ *
+ * ## Why DASH builds this and the agent does not
+ *
+ * Gmail's `drafts.create` takes `message.raw`: an entire opaque message. Passing
+ * an agent's bytes through would make every guard in this file decorative — the
+ * agent would choose the recipients, the headers, and anything else a message
+ * can carry. So there is no `raw` input. The agent supplies four typed values
+ * and DASH writes the message, which is the same argument `plan` makes about a
+ * URL, applied to the one operation that has a body.
+ *
+ * ## What is deliberately absent
+ *
+ * **No `From`.** Gmail fills it from the account whose token DASH presented, so
+ * an agent cannot compose a draft that appears to come from somebody else — and
+ * DASH does not have to check that it did not, because it never had the chance.
+ *
+ * **No `Bcc`, no `Cc`, no `Reply-To`.** One recipient, named in one field. A
+ * draft with a blind copy on it is the shape of an exfiltration, and a header
+ * DASH does not write is a header nobody has to review.
+ *
+ * The body is base64 with `Content-Transfer-Encoding: base64`, which means the
+ * one field with no character restrictions cannot contain a line that looks like
+ * a header, a boundary, or anything else structural.
+ */
+function composeRfc822(fields: {
+  to: string;
+  subject: string;
+  body: string;
+}): string {
+  const headers = [
+    `To: ${fields.to}`,
+    `Subject: ${encodeHeaderValue(fields.subject)}`,
+    "MIME-Version: 1.0",
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64",
+  ];
+  // 76-character lines, as RFC 2045 requires of base64 bodies.
+  const body = (Buffer.from(fields.body, "utf8").toString("base64").match(/.{1,76}/g) ?? []).join(
+    "\r\n",
+  );
+  return `${headers.join("\r\n")}\r\n\r\n${body}\r\n`;
+}
+
+/**
+ * Save a reply in the user's own Drafts folder.
+ *
+ * The first operation in DASH that changes anything in somebody's account, and
+ * the reason ADR 0002 amendment 2 exists. What it creates is visible in Gmail
+ * and can be sent by one human click; what it cannot do is take that click.
+ *
+ * `required_scopes` is `gmail.compose` alone — deliberately not compose *and*
+ * readonly. An agent that only drafts should not have to be able to read the
+ * mailbox to do it, and the intersection in `lib/broker/grant.ts` means a
+ * manifest declaring only compose now gets exactly one operation: this one.
+ * That is a genuinely narrower agent than anything stage 1 could describe.
+ */
+const GMAIL_DRAFT_CREATE: WriteOperation = {
+  id: "gmail.draft.create",
+  connection_provider: "google-gmail",
+  label: "Save a reply in your Gmail drafts",
+  access: "write",
+  required_scopes: [GMAIL_COMPOSE],
+  path: "/gmail/v1/users/me/drafts",
+  max_response_bytes: 65_536,
+
+  consequence:
+    "The reply appears in your Drafts folder in Gmail, addressed and written, " +
+    "and stays there until you send it or delete it yourself. DASH has no action that sends mail.",
+  wider_permission:
+    "Google has no drafts-only permission to ask for: the one this needs also allows sending. " +
+    "DASH builds nothing on that half of it, so no agent can ask DASH to send — but the " +
+    "permission itself is wider than the action, and you can withdraw it in your Google account.",
+
+  compose(input) {
+    const to = requireString(input, "to", { max: 320, pattern: ADDRESS });
+    if (!to.ok) {
+      return to;
+    }
+    const subject = requireString(input, "subject", { max: MAX_SUBJECT_LENGTH });
+    if (!subject.ok) {
+      return subject;
+    }
+    if (HEADER_CONTROL.test(subject.value)) {
+      // The header-injection refusal. A subject carrying CRLF would otherwise
+      // end the Subject line and let the rest of the value become headers of
+      // DASH's own message — `Bcc:` being the one worth the trouble.
+      return { ok: false, refusal: "input_malformed", field: "subject" };
+    }
+    const body = requireString(input, "body_text", { max: MAX_DRAFT_BODY_CHARS });
+    if (!body.ok) {
+      return body;
+    }
+
+    const message: Record<string, unknown> = {
+      raw: Buffer.from(
+        composeRfc822({ to: to.value, subject: subject.value, body: body.value }),
+        "utf8",
+      ).toString("base64url"),
+    };
+
+    // Optional, and the only agent-supplied value that reaches the provider
+    // outside the message DASH wrote. Gmail resolves it *within the
+    // authenticated account*, so a thread id belonging to somebody else's
+    // mailbox does not reach it — it is a 404 for this account, and the draft
+    // is refused rather than filed against a stranger's conversation.
+    const threadId = input["thread_id"];
+    if (threadId !== undefined && threadId !== null) {
+      if (typeof threadId !== "string") {
+        return { ok: false, refusal: "input_wrong_type", field: "thread_id" };
+      }
+      if (!GMAIL_ID.test(threadId)) {
+        return { ok: false, refusal: "input_malformed", field: "thread_id" };
+      }
+      message["threadId"] = threadId;
+    }
+
+    return { ok: true, json: { message } };
+  },
+
+  project(body) {
+    const draft = (body ?? {}) as Record<string, unknown>;
+    const message = draft["message"];
+    return {
+      draft_id: readString(draft, "id"),
+      message_id: readString(message, "id"),
+      thread_id: readString(message, "threadId"),
+    };
+  },
+};
+
 /**
  * Every operation the broker will ever perform, frozen.
  *
@@ -355,15 +708,82 @@ const GMAIL_MESSAGE_READ: BrokerOperation = {
 const OPERATIONS: readonly BrokerOperation[] = Object.freeze([
   GMAIL_SEARCH,
   GMAIL_MESSAGE_READ,
+  GMAIL_DRAFT_CREATE,
 ]);
+
+/**
+ * Every write operation's path really is one this file declared (MAR-469).
+ *
+ * At module load, not at request time. A write operation whose path is not in
+ * `WRITE_PATHS`, or is not rooted at `/`, is a programming mistake that must not
+ * survive to become a runtime refusal somebody reads as an agent misbehaving —
+ * so it takes the module down on import, where the stack names the operation.
+ *
+ * The relative-path check is the one that would matter: `new URL("//evil.example/x", origin)`
+ * resolves to a different host entirely, and this is the line that means
+ * `planCall` cannot be handed one.
+ */
+for (const operation of OPERATIONS) {
+  if (operation.access !== "write") {
+    continue;
+  }
+  if (!operation.path.startsWith("/") || operation.path.startsWith("//")) {
+    throw new Error(`Broker write operation ${operation.id} has a path that is not rooted at this origin`);
+  }
+  if (!WRITE_PATHS.includes(operation.path)) {
+    throw new Error(`Broker write operation ${operation.id} names a path outside WRITE_PATHS`);
+  }
+}
+
+/** Every path a mutating brokered request can reach. For the card and the tests. */
+export function writePaths(): readonly string[] {
+  return WRITE_PATHS;
+}
+
+/**
+ * The one request DASH will make for this operation, or a refusal (MAR-469).
+ *
+ * The single place a `BrokerOperation` becomes a `ProviderCall`, so the
+ * asymmetry between the two kinds is written once. A read plans its own URL; a
+ * write composes only a body and **this function** builds the URL, from the
+ * operation's frozen `path` and the profile's origin. There is no argument
+ * `compose` could return, and no input an agent could supply, that reaches the
+ * path of a POST.
+ *
+ * Exported so `tests/broker-threat-model.test.ts` can drive every operation with
+ * hostile inputs through exactly the code the broker uses, rather than through a
+ * reconstruction of it that could drift.
+ */
+export function planCall(
+  operation: BrokerOperation,
+  origin: string,
+  input: Record<string, unknown>,
+): PlanResult {
+  if (operation.access === "read") {
+    return operation.plan(origin, input);
+  }
+  const composed = operation.compose(input);
+  if (!composed.ok) {
+    return composed;
+  }
+  return {
+    ok: true,
+    call: {
+      method: "POST",
+      url: new URL(operation.path, origin).toString(),
+      json: composed.json,
+    },
+  };
+}
 
 /**
  * The operation with this id, or null.
  *
  * Null for anything unknown, which includes every operation a future slice might
- * add and every operation an agent invents. `gmail.send`, `gmail.draft.create`
- * and `gmail.message.delete` all resolve to null here, today, whatever the
- * connected account's scopes happen to be.
+ * add and every operation an agent invents. `gmail.send`, `gmail.drafts.send`
+ * and `gmail.message.delete` all resolve to null here, whatever the connected
+ * account's scopes happen to be — `gmail.compose` grants the ability to send at
+ * Google and there is still nothing here to ask for it with.
  *
  * A `find` over a frozen array rather than an object lookup: a plain object is
  * reachable at `__proto__`, `constructor` and `toString` by an agent that names

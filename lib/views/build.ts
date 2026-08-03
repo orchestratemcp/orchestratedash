@@ -25,7 +25,7 @@ import { analyzeGrounding } from "../analyze";
 import { isDigestArtifact } from "../contracts";
 import type { ManifestPermissions, PermissionGrant } from "../contracts";
 import { brokeredField, requestedOperations } from "../broker/grant";
-import { operationById } from "../broker/operations";
+import { operationById, type BrokerOperation } from "../broker/operations";
 import { describeClientOwner, describeCustody } from "../broker/providers";
 import { listReceipts, readBrokerAudit, readBrokerLapses, type BrokerLapse } from "../broker/store";
 import { describeBrokerRefusal } from "../copy/recovery";
@@ -321,20 +321,37 @@ function brokerCard(
       ? // A receipt naming an operation this build no longer has. Said plainly
         // rather than dropped: an approval the user gave for something DASH has
         // since removed is a fact about their account worth showing.
-        { id, label: "An action this version of DASH no longer offers", access: "read" }
-      : { id: operation.id, label: operation.label, access: operation.access };
+        {
+          id,
+          label: "An action this version of DASH no longer offers",
+          access: "read",
+          consequence: null,
+        }
+      : {
+          id: operation.id,
+          label: operation.label,
+          access: operation.access,
+          consequence: operation.access === "write" ? operation.consequence : null,
+        };
   };
 
   const receipt = receipts.find((entry) => entry.connection_id === connectionId) ?? null;
   const rows = audit.filter((entry) => entry.connection_id === connectionId);
+  const requested = requestedOperations(manifest, connectionId);
 
   return {
     custody_sentence: describeCustody(profile),
     client_sentence: describeClientOwner(profile),
-    requested: requestedOperations(manifest, connectionId).map((operation) => ({
+    // From what the manifest *asks for*, not from what has been granted
+    // (MAR-469). A user reading this card before they sign in is the one who
+    // most needs to know that the permission behind the draft action also allows
+    // sending, because they are the one who has not granted it yet.
+    wider_permission_sentence: widerPermissionSentence(requested),
+    requested: requested.map((operation) => ({
       id: operation.id,
       label: operation.label,
       access: operation.access,
+      consequence: operation.access === "write" ? operation.consequence : null,
     })),
     receipt:
       receipt === null
@@ -361,6 +378,27 @@ function brokerCard(
       undelivered: entry.delivered === false,
     })),
   };
+}
+
+/**
+ * The wider-permission disclosure for a set of operations, or null (MAR-469).
+ *
+ * Deduplicated and joined, so two writes on one scope say the uncomfortable
+ * thing once. `lib/broker/grant.ts` does the same for the card built from a
+ * resolved grant; this one is built from the manifest, because the card renders
+ * before a sign-in and there is no grant yet.
+ */
+function widerPermissionSentence(operations: readonly BrokerOperation[]): string | null {
+  const sentences: string[] = [];
+  for (const operation of operations) {
+    if (operation.access !== "write" || operation.wider_permission === null) {
+      continue;
+    }
+    if (!sentences.includes(operation.wider_permission)) {
+      sentences.push(operation.wider_permission);
+    }
+  }
+  return sentences.length === 0 ? null : sentences.join(" ");
 }
 
 /** How many lapses one agent shows. A notice, not a log viewer. */

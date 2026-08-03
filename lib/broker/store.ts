@@ -196,6 +196,41 @@ export function recordBrokerCall(row: BrokerAuditRow): number | null {
 }
 
 /**
+ * Has this agent already had a request with this id adjudicated (MAR-469)?
+ *
+ * The durable half of replay protection, and it exists because a write appeared.
+ * `lib/broker/execute.ts` keeps a bounded per-agent set in memory, which was the
+ * whole answer while every operation was a read: the worst a replay could do was
+ * read the same message twice. A replayed draft-create puts a second copy in
+ * somebody's Drafts folder, and it survives a DASH restart, so the memory has to
+ * as well.
+ *
+ * This is a query rather than a new table. `broker_audit` already records every
+ * request id DASH ever decided about, on every path including refusals, and a
+ * separate store of "ids seen" would be a second answer to a question the audit
+ * already answers — free to disagree with it, and no more durable.
+ *
+ * **A failure reads as "not seen".** A query that throws must not be able to
+ * block a legitimate write, because the alternative is a broken table turning
+ * into an agent that can never draft again. The in-memory guard is still there,
+ * and the cost of the weaker direction is a duplicate draft rather than a
+ * duplicate send — there being no send.
+ */
+export function hasBrokerRequest(agent: string, requestId: string): boolean {
+  try {
+    const row = db()
+      .prepare("SELECT 1 FROM broker_audit WHERE agent = ? AND request_id = ? LIMIT 1")
+      .get(agent, requestId);
+    return row !== undefined;
+  } catch (error: unknown) {
+    console.warn(
+      `[dash] could not check a brokered request id: ${error instanceof Error ? error.message : "unknown"}`,
+    );
+    return false;
+  }
+}
+
+/**
  * Note that DASH could not confirm this decision's answer reached the agent
  * (MAR-467).
  *

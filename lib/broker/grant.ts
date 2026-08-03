@@ -24,18 +24,25 @@
  * ## What this makes true about `gmail.compose`
  *
  * A user may grant it — the meeting-assistant example asks for it, and Google's
- * scope really does permit sending. Step 1 then finds no operation that requires
- * it, so it contributes nothing to the granted set. The scope is live at Google
- * and dead at the broker, which is exactly the shape ADR 0002 invariant 6
- * describes: "The fact that Google's `gmail.compose` scope can technically send
- * does not enlarge the broker's operation set."
+ * scope really does permit sending. Until MAR-469, step 1 found no operation
+ * that required it, so it contributed nothing to the granted set: live at
+ * Google, dead at the broker.
  *
- * That is worth stating in the negative too, because it is the honest half: a
- * user who granted `gmail.compose` **has** given Google's permission to send
- * mail as them, to whatever holds a token. DASH's answer is not that the
- * permission is narrower than it is; it is that DASH never gives the agent
- * anything that could use it. `describeGrant` says so on the card rather than
- * letting the checklist imply otherwise.
+ * Stage 2 built exactly one thing on it, `gmail.draft.create`, and ADR 0002
+ * invariant 6 is unchanged by that — "the fact that Google's `gmail.compose`
+ * scope can technically send does not enlarge the broker's operation set" is a
+ * statement about *sending*, and the operation set still contains nothing that
+ * sends.
+ *
+ * What did change is which sentence has to say so. A scope nothing uses shows up
+ * in `unused_scopes`, and the card admits DASH offers no action for it. A scope
+ * something uses does not — so the disclosure would have disappeared from the
+ * card at the moment it started to matter, which is why `describeGrant` now
+ * carries `wider_permission_sentence` as well. The honest half is unchanged and
+ * is now the more important half: a user who granted `gmail.compose` **has**
+ * given Google's permission to send mail as them, to whatever holds a token.
+ * DASH's answer is not that the permission is narrower than it is; it is that
+ * DASH never gives the agent anything that could use it.
  *
  * Pure, like every other module in this directory: a manifest and a credential
  * in, a decision out. No vault, no network, no clock.
@@ -85,6 +92,17 @@ export interface GrantedOperation {
   id: string;
   label: string;
   access: "read" | "write";
+  /**
+   * What a person will be able to see and do because this ran, or null for a
+   * read (MAR-469).
+   *
+   * Carried on the granted operation rather than looked up beside it, for the
+   * reason `label` is: a card rendered from the grant cannot describe a
+   * different set from the one the broker will honour. A write whose
+   * consequence went missing between here and the page would be a capability
+   * list that reads like a read, which is the failure this field exists to stop.
+   */
+  consequence: string | null;
 }
 
 export interface BrokerGrant {
@@ -255,7 +273,12 @@ export function resolveGrant(
       }
       continue;
     }
-    operations.push({ id: operation.id, label: operation.label, access: operation.access });
+    operations.push({
+      id: operation.id,
+      label: operation.label,
+      access: operation.access,
+      consequence: operation.access === "write" ? operation.consequence : null,
+    });
   }
 
   if (operations.length === 0) {
@@ -331,6 +354,23 @@ export interface CapabilityCard {
    * and every surface has to say which it is.
    */
   unused_permission_sentence: string | null;
+  /**
+   * How the provider permissions behind the granted *write* actions are wider
+   * than the actions themselves, or null when nothing here writes (MAR-469).
+   *
+   * The line `unused_permission_sentence` used to carry for Gmail, and no longer
+   * can. Until stage 2, `gmail.compose` reached no operation, so it appeared in
+   * `unused_scopes` and the card said DASH offers no action for it — true, and
+   * the whole disclosure. Now it reaches one, so it is a *used* scope, and the
+   * uncomfortable half of it would have silently vanished from the card at
+   * exactly the moment it started to matter.
+   *
+   * So it gets its own sentence, sourced from the operation rather than written
+   * here: `WriteOperation.wider_permission` is a required field, which means a
+   * future write cannot be added without someone answering the question this
+   * line asks.
+   */
+  wider_permission_sentence: string | null;
 }
 
 /**
@@ -345,6 +385,7 @@ export interface CapabilityCard {
 export function describeGrant(grant: BrokerGrant, displayName: string): CapabilityCard {
   const unusedCount = grant.unused_scopes.length;
   return {
+    wider_permission_sentence: widerPermissionSentence(grant),
     connection_id: grant.connection_id,
     service: grant.profile.label,
     requesting_agent: displayName,
@@ -358,6 +399,37 @@ export function describeGrant(grant: BrokerGrant, displayName: string): Capabili
         : `You granted ${String(unusedCount)} further permission${unusedCount === 1 ? "" : "s"} that ${grant.profile.label} allows and DASH offers no action for. ` +
           `The agent cannot use ${unusedCount === 1 ? "it" : "them"} through DASH, and you can withdraw ${unusedCount === 1 ? "it" : "them"} in your account settings.`,
   };
+}
+
+/**
+ * The wider-permission disclosure for whatever writes this grant covers
+ * (MAR-469), or null.
+ *
+ * Deduplicated, because two write operations built on `gmail.compose` would
+ * otherwise say the same uncomfortable thing twice and a user would read it
+ * once. Ordered by the operation list, which puts writes first.
+ *
+ * Reads contribute nothing here even when their scope is arguably wide, and that
+ * is deliberate: this line is about an action that changes something, and
+ * diluting it with "reading your mail lets it read your mail" is how a warning
+ * stops being read.
+ */
+function widerPermissionSentence(grant: BrokerGrant): string | null {
+  const candidates = operationsForProvider(operationProviderFor(grant.profile));
+  const sentences: string[] = [];
+  for (const granted of grant.operations) {
+    if (granted.access !== "write") {
+      continue;
+    }
+    const operation = candidates.find((entry) => entry.id === granted.id);
+    if (operation === undefined || operation.access !== "write") {
+      continue;
+    }
+    if (operation.wider_permission !== null && !sentences.includes(operation.wider_permission)) {
+      sentences.push(operation.wider_permission);
+    }
+  }
+  return sentences.length === 0 ? null : sentences.join(" ");
 }
 
 /**
