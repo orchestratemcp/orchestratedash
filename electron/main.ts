@@ -50,6 +50,11 @@ import {
   type CredentialTarget,
 } from "../lib/connection-credentials";
 import type { ConnectionSourceManifest } from "../lib/connections";
+import {
+  readDashLastAlive,
+  recordClosedWindow,
+  writeDashLastAlive,
+} from "../lib/broker/store";
 import { closeDb, dataDir } from "../lib/db";
 import type { HandoffPorts } from "../lib/handoff-flow";
 import { findDeepLink } from "../lib/shell/deep-link";
@@ -121,6 +126,37 @@ let stopPolling: (() => void) | null = null;
 
 /** Stops the permission broker's loop (MAR-458). Null when there is no runner. */
 let stopBroker: (() => void) | null = null;
+
+/** Stops the uptime heartbeat (MAR-467). */
+let stopHeartbeat: (() => void) | null = null;
+
+/**
+ * How often DASH writes down that it is still running (MAR-467).
+ *
+ * This interval is the resolution of every "DASH was closed from X to Y"
+ * sentence, and the error is one-sided: the recorded window starts at the last
+ * heartbeat, so it can overstate DASH's absence by up to this much and can never
+ * understate it. Thirty seconds keeps that overstatement smaller than the
+ * `MIN_CLOSED_WINDOW_MS` threshold a window has to clear to be recorded at all,
+ * which is what stops the rounding from manufacturing windows.
+ *
+ * A crash is the case that makes a periodic write necessary rather than a single
+ * one on quit: `before-quit` does not run when a process is killed, and the
+ * launches most worth explaining are the ones that follow a launch that ended
+ * badly.
+ */
+const HEARTBEAT_INTERVAL_MS = 30_000;
+
+function startHeartbeat(): () => void {
+  writeDashLastAlive(new Date().toISOString());
+  const timer = setInterval(() => {
+    writeDashLastAlive(new Date().toISOString());
+  }, HEARTBEAT_INTERVAL_MS);
+  timer.unref?.();
+  return () => {
+    clearInterval(timer);
+  };
+}
 
 /**
  * The handoff ports, once the runner's fate is known (MAR-428).
@@ -767,6 +803,25 @@ if (typeof app !== "undefined") {
       stopPolling = startPolling(channels);
     }
 
+    // MAR-467. Before the broker starts, and before the heartbeat moves: the
+    // window being recorded is the one that ended when this launch began, and
+    // moving the heartbeat first would erase its start. See ADR 0005 — this is
+    // the one of the three untraced cases nobody observed, so what gets written
+    // is DASH's own absence and never an agent's request.
+    const closed = recordClosedWindow({
+      last_alive_at: readDashLastAlive(),
+      now: new Date().toISOString(),
+      runner_adopted: runner?.adopted ?? false,
+      runner_started_at: runner?.started_at ?? null,
+    });
+    if (closed !== null) {
+      console.warn(
+        `[dash-shell] DASH was closed from ${closed.from_at} to ${closed.until_at} ` +
+          `while the runner kept running; brokered requests in that window went unanswered`,
+      );
+    }
+    stopHeartbeat = startHeartbeat();
+
     // MAR-458. Its own loop rather than a step inside the poll above: an agent
     // is *blocked* on a brokered answer, and five seconds is right for "is this
     // agent still alive" and absurd for a request somebody is waiting on. See
@@ -830,6 +885,12 @@ if (typeof app !== "undefined") {
     // the app they granted it through is exactly what ADR 0002 is about.
     stopBroker?.();
     stopBroker = null;
+    // MAR-467. One last heartbeat on the way out, so a clean quit starts the
+    // next launch's closed window at the moment DASH actually stopped rather
+    // than up to thirty seconds before it.
+    stopHeartbeat?.();
+    stopHeartbeat = null;
+    writeDashLastAlive(new Date().toISOString());
   });
 
   app.on("will-quit", () => {

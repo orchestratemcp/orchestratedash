@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { groupByOwnership } from "../../lib/connections";
 import type { Recovery } from "../../lib/copy/recovery";
-import type { ConnectionRowWithCredential } from "../../lib/views/types";
+import type { BrokerLapseView, ConnectionRowWithCredential } from "../../lib/views/types";
 import { useCanAct } from "../_data/use-view";
 
 /**
@@ -369,6 +369,17 @@ function PermissionCard({
                   </span>
                 ) : null}
                 <span className="muted"> · {entry.decided_at}</span>
+                {entry.undelivered ? (
+                  // MAR-467. On the decision, not beside it: DASH made this
+                  // call, and what it could not confirm is that the answer got
+                  // back. "Could not confirm" rather than "did not arrive"
+                  // because an acknowledgement DASH never received looks the
+                  // same from here as one that was never sent.
+                  <div className="muted wrap">
+                    DASH could not confirm this answer reached the agent, so the
+                    agent may have carried on as though it had asked for nothing.
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -378,6 +389,50 @@ function PermissionCard({
           </p>
         </details>
       )}
+    </div>
+  );
+}
+
+/**
+ * What the permission cards cannot account for (MAR-467, ADR 0005).
+ *
+ * Rendered outside the cards and visually unlike them, on purpose. A permission
+ * card's history is a list of decisions DASH made and is worth believing for
+ * exactly that reason; these are requests DASH never adjudicated and a window in
+ * which it was not running. Putting them in the same list — even styled
+ * differently — would make the history a mixture of things DASH did and things
+ * DASH infers, and a table like that cannot be trusted at a glance by anyone.
+ *
+ * So there is no `allowed`/`refused` chip here, no operation name, and nothing
+ * shaped like a verdict. There is a sentence and the limits of it.
+ */
+export function BrokerLapseNotice({ lapses }: { lapses: BrokerLapseView[] }): ReactNode {
+  if (lapses.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="broker-lapses">
+      <h3>What DASH cannot account for</h3>
+      <p className="muted wrap">
+        These are not decisions. They are times this agent may have asked for
+        something and DASH was not in a position to answer or to record it.
+      </p>
+      <ul>
+        {lapses.map((lapse) => (
+          <li key={`${lapse.kind}:${lapse.from_at}`} className="wrap">
+            {lapse.sentence}
+            <div className="muted">
+              {lapse.until_at === null || lapse.until_at === lapse.from_at
+                ? lapse.from_at
+                : `${lapse.from_at} — ${lapse.until_at}`}
+            </div>
+            {lapse.qualifier === null ? null : (
+              <div className="muted">{lapse.qualifier}</div>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

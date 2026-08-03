@@ -295,9 +295,41 @@ export interface BufferedBrokerRequest {
   request: unknown;
 }
 
+/**
+ * What the runner destroyed, and whose it was (MAR-467).
+ *
+ * The aggregate `dropped` count came first and says only that something was
+ * lost. That is enough to log and not enough to show anyone: a user asking why
+ * an agent did less than it should needs to know it was *their* agent, and
+ * when.
+ *
+ * The operation is deliberately absent, and not because it would be hard to
+ * obtain. The runner does not parse a broker request — `runner/server.ts` says
+ * why, and `lib/broker/protocol.ts` is the parser, on the DASH side where the
+ * allowlist and the vault are. Parsing one here in order to label a drop would
+ * put a second reader of an untrusted agent-authored body in the one process
+ * that talks to every agent, to improve a diagnostic. The count is honest about
+ * being a count of things nobody read.
+ */
+export interface BrokerDropTally {
+  agent_id: string;
+  count: number;
+  /** ISO 8601. When this agent's first still-unreported drop happened. */
+  first_at: string;
+  /** ISO 8601. And its most recent. Equal to `first_at` when count is 1. */
+  last_at: string;
+}
+
 export interface BrokerDrain {
   requests: BufferedBrokerRequest[];
   dropped: number;
+  /**
+   * The same drops, attributed. `dropped` is the sum of these `count`s and is
+   * kept rather than replaced: it is the field the runner's own logging reads,
+   * and a drain is consumed by exactly one caller who should not have to add up
+   * an array to answer "was anything lost".
+   */
+  dropped_detail: BrokerDropTally[];
 }
 
 interface Supervised {
@@ -387,6 +419,16 @@ export class Supervisor {
   private readonly brokerRequests: BufferedBrokerEntry[] = [];
   private brokerBytes = 0;
   private droppedBrokerRequests = 0;
+  /**
+   * Per-agent drop tallies, cleared with the drain that reports them (MAR-467).
+   *
+   * A map keyed by agent id, so its size is bounded by the number of registered
+   * agents rather than by how badly one of them is behaving. That matters: the
+   * buffer bound exists to stop a runaway agent costing unbounded memory, and a
+   * record *of* the dropping that grew per dropped request would reintroduce the
+   * cost the bound was protecting against.
+   */
+  private readonly droppedBrokerByAgent = new Map<string, BrokerDropTally>();
 
   constructor(
     registrations: readonly AgentRegistration[],
@@ -555,10 +597,16 @@ export class Supervisor {
   drainBrokerRequests(): BrokerDrain {
     const requests = this.brokerRequests.map(({ agent_id, request }) => ({ agent_id, request }));
     const dropped = this.droppedBrokerRequests;
+    // Copied out before the map is cleared. The tallies are handed to a caller
+    // that will write them down; leaking the live objects would let a later drop
+    // mutate a record already reported, which is the sort of thing that makes a
+    // count disagree with itself between two screens.
+    const droppedDetail = [...this.droppedBrokerByAgent.values()].map((tally) => ({ ...tally }));
     this.brokerRequests.length = 0;
     this.brokerBytes = 0;
     this.droppedBrokerRequests = 0;
-    return { requests, dropped };
+    this.droppedBrokerByAgent.clear();
+    return { requests, dropped, dropped_detail: droppedDetail };
   }
 
   /**
@@ -963,9 +1011,18 @@ export class Supervisor {
       this.brokerBytes + bytes > MAX_BROKER_BUFFER_BYTES
     ) {
       this.droppedBrokerRequests += 1;
-      // Logged, because a dropped brokered request is an agent left waiting for
-      // an answer that is never coming — a hang from the agent's side, and the
-      // reason has to be findable somewhere.
+      // Tallied per agent as well as counted, so DASH can say whose request was
+      // lost and when rather than only that something was (MAR-467). Logged too:
+      // the log line is what a support session greps, and the tally is what the
+      // Connections page renders, and neither replaces the other.
+      const at = new Date().toISOString();
+      const tally = this.droppedBrokerByAgent.get(agentId);
+      if (tally === undefined) {
+        this.droppedBrokerByAgent.set(agentId, { agent_id: agentId, count: 1, first_at: at, last_at: at });
+      } else {
+        tally.count += 1;
+        tally.last_at = at;
+      }
       this.log(
         `[runner] ${agentId} asked the broker for something while the bounded buffer was full; the request was dropped`,
       );

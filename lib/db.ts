@@ -420,6 +420,76 @@ const MIGRATIONS: readonly string[] = [
   CREATE INDEX broker_audit_by_agent ON broker_audit (agent, decided_at);
   CREATE INDEX broker_audit_by_connection ON broker_audit (agent, connection_id, decided_at);
   `,
+
+  // MAR-467: the two facts that make broker_audit an incomplete account of what
+  // an agent tried to do.
+  `
+  -- Whether the answer DASH decided could be confirmed to reach the agent.
+  --
+  -- Two values are used and neither is 1. A 0 means **DASH could not confirm
+  -- delivery** — the child had exited, or the POST carrying the answer failed,
+  -- or its reply did not parse. That wording is chosen over "the agent never
+  -- got it" because one of those three cases genuinely cannot be distinguished
+  -- from a delivery whose acknowledgement was lost, and a column asserting a
+  -- failure it cannot see is the same error as a row asserting a decision
+  -- nobody made, in the other direction.
+  --
+  -- NULL is the ordinary case: nothing went wrong, or DASH stopped between
+  -- deciding and finding out. The renderer must not read NULL as "no".
+  --
+  -- On the audit row rather than in broker_lapses below, and this is the whole
+  -- distinction the table split rests on: an undelivered answer IS a decision
+  -- DASH made. It has an operation, a request id and a result count, all of them
+  -- real. What went wrong happened after the decision, so it belongs to the
+  -- decision as a property and not to some separate population of near-misses.
+  ALTER TABLE broker_audit ADD COLUMN delivered INTEGER;
+
+  -- Attempts and gaps that broker_audit cannot represent, because DASH did not
+  -- decide them (MAR-467).
+  --
+  -- **Look at what this table cannot say.** There is no decision column, no
+  -- refusal, no operation, no connection_id and no request_id. That is not an
+  -- oversight to be corrected by a later migration: those are the fields of an
+  -- adjudication, DASH performed none, and a table without the columns cannot be
+  -- made to imply one by a careless join or a future renderer. The audit trail is
+  -- believable precisely because every row in it is a decision DASH actually
+  -- made, and the way to keep it that way is to give the other facts a shape that
+  -- could never be mistaken for one.
+  --
+  -- Two kinds live here, and they differ in who observed them:
+  --
+  --   dropped_by_runner  The runner read a brokered request off an agent's stdout
+  --                      and destroyed it because its bounded buffer was full. It
+  --                      knows the agent and the wall-clock time. It does not know
+  --                      the operation, because the runner never parses a broker
+  --                      request — that happens on the DASH side, where the
+  --                      allowlist and the vault are — so attempts is a count of
+  --                      things nobody read.
+  --
+  --   dash_closed        DASH was not running between from_at and until_at. Nobody
+  --                      observed any request in that window; this row asserts
+  --                      only DASH's own absence, which DASH does observe. Whether
+  --                      an agent asked for anything is unknown and stays unknown,
+  --                      and attempts is NULL to say so rather than 0, which
+  --                      would be a claim.
+  --
+  -- The agent column is nullable for that second kind. A closed window is a fact about
+  -- DASH, not about any one agent; which agents it *mattered* for is derived at
+  -- render time from whose runtime keeps running while DASH is closed, and
+  -- deriving it beats storing it because the answer changes when a manifest does.
+  CREATE TABLE broker_lapses (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind        TEXT NOT NULL,
+    agent       TEXT,
+    attempts    INTEGER,
+    from_at     TEXT NOT NULL,
+    until_at    TEXT,
+    observed_by TEXT NOT NULL
+  );
+
+  CREATE INDEX broker_lapses_by_agent ON broker_lapses (agent, from_at);
+  CREATE INDEX broker_lapses_by_kind ON broker_lapses (kind, from_at);
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

@@ -154,6 +154,7 @@ beforeAll(async () => {
     pid: process.pid,
     token: TOKEN,
     adopted: false,
+    started_at: null,
   };
 });
 

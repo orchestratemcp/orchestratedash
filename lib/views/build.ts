@@ -27,7 +27,7 @@ import type { ManifestPermissions, PermissionGrant } from "../contracts";
 import { brokeredField, requestedOperations } from "../broker/grant";
 import { operationById } from "../broker/operations";
 import { describeClientOwner, describeCustody } from "../broker/providers";
-import { listReceipts, readBrokerAudit } from "../broker/store";
+import { listReceipts, readBrokerAudit, readBrokerLapses, type BrokerLapse } from "../broker/store";
 import { describeBrokerRefusal } from "../copy/recovery";
 import { heldCredentials } from "../connection-actions";
 import { connectableFields } from "../connection-credentials";
@@ -66,6 +66,7 @@ import type {
   AgentOriginView,
   AgentsView,
   BrokerCapabilityView,
+  BrokerLapseView,
   BrokerRowView,
   ConnectionsView,
   PlannedStepView,
@@ -352,8 +353,84 @@ function brokerCard(
               .headline,
       result_count: entry.result_count,
       decided_at: entry.decided_at,
+      // `=== false` and not a truthiness test: null means DASH never found out,
+      // which is the ordinary state of almost every row, and rendering a warning
+      // on it would put a caution on the entire history (MAR-467).
+      undelivered: entry.delivered === false,
     })),
   };
+}
+
+/** How many lapses one agent shows. A notice, not a log viewer. */
+const BROKER_LAPSE_LIMIT = 5;
+
+/**
+ * Does this agent keep running while DASH is closed?
+ *
+ * Absent or malformed reads as `false`, which is the safe direction here: a
+ * `dash_closed` window is only worth showing a user for an agent that could
+ * plausibly have been asking during it, and claiming one for an agent that stops
+ * with DASH would be a warning about something that cannot have happened.
+ */
+function survivesDashClosing(manifest: ConnectionSourceManifest): boolean {
+  const runtime = (
+    manifest as { agent_dom?: { runtime?: { continues_when_dash_closed?: unknown } } }
+  ).agent_dom?.runtime;
+  return runtime?.continues_when_dash_closed === true;
+}
+
+/**
+ * The lapses worth showing beside one agent's connection cards (MAR-467).
+ *
+ * This is where a stored fact becomes a statement, and the two kinds become
+ * statements in different ways. A drop is reported nearly as stored — the runner
+ * observed it and counted it. A closed window is stored globally, with no agent
+ * on it, and is *derived* into relevance here by asking whether this particular
+ * agent keeps running while DASH does not. ADR 0005 explains why that derivation
+ * lives at render time: the answer changes when a manifest changes, and a stored
+ * answer would go on asserting yesterday's.
+ *
+ * Every sentence is written to survive the question "how do you know?". Neither
+ * one says an agent asked for anything, because in neither case did DASH see a
+ * request.
+ */
+function lapseViews(agent: string, manifest: ConnectionSourceManifest): BrokerLapseView[] {
+  const survives = survivesDashClosing(manifest);
+  const relevant = readBrokerLapses(agent, BROKER_LAPSE_LIMIT * 4).filter(
+    (lapse: BrokerLapse) => lapse.kind !== "dash_closed" || survives,
+  );
+
+  return relevant.slice(0, BROKER_LAPSE_LIMIT).map((lapse) => {
+    if (lapse.kind === "dropped_by_runner") {
+      const attempts = lapse.attempts ?? 0;
+      return {
+        kind: "dropped_by_runner" as const,
+        sentence:
+          `${attempts === 1 ? "One request" : `${String(attempts)} requests`} from this agent ` +
+          `${attempts === 1 ? "was" : "were"} discarded before DASH saw ` +
+          `${attempts === 1 ? "it" : "them"}, because too many arrived at once.`,
+        // The limit of what was observed, stated next to the observation rather
+        // than left for a user to discover by looking for rows that are not
+        // there.
+        qualifier:
+          "These are not in the history above and cannot be: DASH never received them, " +
+          "so it made no decision about them and does not know what they asked for.",
+        from_at: lapse.from_at,
+        until_at: lapse.until_at,
+      };
+    }
+
+    return {
+      kind: "dash_closed" as const,
+      sentence:
+        "DASH was closed for this period, and this agent keeps running while DASH is closed. " +
+        "The permission broker runs inside DASH, so nothing was there to answer it.",
+      qualifier:
+        "DASH has no record of whether this agent asked for anything during that time, and cannot have one.",
+      from_at: lapse.from_at,
+      until_at: lapse.until_at,
+    };
+  });
 }
 
 export function connectionsView(store: StoreShape = readStore()): ConnectionsView {
@@ -380,6 +457,7 @@ export function connectionsView(store: StoreShape = readStore()): ConnectionsVie
             broker: brokerCard(name, displayName, manifest, row.connection_id, receipts, audit),
           };
         }),
+        lapses: lapseViews(name, manifest),
       };
     }),
     older_agent_names: listAgents(store)

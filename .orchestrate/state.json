@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "project": "DASH",
-  "updated_at": "2026-08-02",
+  "updated_at": "2026-08-03",
   "current_wave": "Wave 2 - outside-app connections",
-  "lifecycle_note": "MAR-465, MAR-466 and MAR-472 merged to master in PR #31 (merge commit 08a0d36) and are Done in Linear. MAR-473 records a proof that was executed, on a branch whose PR (#32) is open and human-gated; the commit it names is an ancestor of this packet because the packet travels with it, and it is not on master yet. MAR-458 remains In Progress by intent: it is merged but not proven, and MAR-468 owns the real-Google proof that would promote it.",
+  "lifecycle_note": "MAR-465, MAR-466 and MAR-472 merged to master in PR #31 (merge commit 08a0d36) and are Done in Linear. MAR-473 merged to master in PR #32 (merge commit 2bf9965) on 2026-08-02 and is Done in Linear; the note that called it open and human-gated was written before that merge and is corrected here. MAR-458 remains In Progress by intent: it is merged but not proven, and MAR-468 owns the real-Google proof that would promote it. MAR-467 records a proof that was executed, on a branch whose PR is open and human-gated: the commit it names is an ancestor of this packet because the packet travels with it, and it is not on master yet. It stays In Progress in Linear for the same reason MAR-458 does - one of its three cases is proven end to end and the other two are unit tests only, which its note states plainly rather than letting the total imply otherwise.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -12,7 +12,7 @@
     "index": ".orchestrate/state.json"
   },
   "git": {
-    "evidence_base_commit": "af678fe"
+    "evidence_base_commit": "56b16a2"
   },
   "issues": [
     {
@@ -170,12 +170,22 @@
     {
       "id": "MAR-473",
       "lifecycle": "proven",
-      "linear_status": "In Progress",
+      "linear_status": "Done",
       "commit": "af678fe",
       "proof": {
         "command": "pnpm verify"
       },
       "note": "The cause is arithmetic, not luck, and the job logs settled it the way MAR-466's store row did. Across all 13 CI runs since 2026-08-01, telemetry propagation is a constant 3.3-5.5s while the agent's fetch is bimodal: ~1s when all three sources answer, 11-16s when one does not (items_total 30 vs 20). agent-kit/template/agent.mjs reads sources sequentially with a 15s timeout each, and 6g had a single 20s budget covering the fetch AND the propagation behind it, so one hung source spent 15 of the 20 and left ~5 for a step needing ~4. On 0ac58ac the fetch took 15.6s and the telemetry 4.6s: the gate lost by 0.2s and reported it as '6g ...: null'. The blocked-fetch story and the did-not-finish-in-the-wait story are the same event from two ends. Fixed by serving the mandatory gate three loopback feeds, one per parser; live sources moved to advisory 6l, which is dated, names the source that failed and can never fail a release. Three defects fixed independent of root cause: 6g reported null and now reports what it waited for, how long, over how many polls and what it saw; 6i/6j/6k cascaded off `completed?.run_id ?? \"\"` into three misleading red lines and now skip explicitly; 6j asserted only that a verdict existed, which passes on a zero-item digest from three dead sources, and twice did exactly that (runs 30736386756 and 30753436632 carried 20 items where 30 were expected) - it now asserts grounded AND 9 of 9 cited. 6m enforces ADR 0004 by reading the source addresses back out of the digest DASH received and failing if any is off-machine. Evidence: hosted Windows runner slack went from 4.4s on the failing run to ~20s (digest in 265ms vs 15.6s); pnpm verify green on Windows; CI green on three separate pushes to PR #32, the last of which is docs-only, the same commit shape that originally failed. Known unrelated flake: tests/broker-transport.test.ts 'drops past its bound' failed once in 5 full-suite runs under Windows load and passes in isolation - MAR-472's file, a different test, not fixed here. See ADR 0004."
+    },
+    {
+      "id": "MAR-467",
+      "lifecycle": "merged",
+      "linear_status": "In Progress",
+      "commit": "56b16a2",
+      "note": "ONE of the three cases is proven end to end and two are unit tests only; the split matters more than the total, and ADR 0005 records the judgment behind it. PROVEN END TO END on the installed shell (proof 8, using the issue's numbering): case 2, the request the runner destroyed because its bounded buffer was full. A real agent the runner spawned fired 200 brokered requests past a buffer of 64 and the shell's own broker loop drained, recorded and rendered them - 200 sent, 64 adjudicated, 136 dropped, identical in all three runs, so it is a bound being hit rather than a race. 8d is the load-bearing check: audit rows plus dropped requests may not exceed what the agent actually sent, which is exactly what a synthesised row would do, and a build that faked a plausible decision would pass every other check in the file and fail that one. 8e asserts the lapse carries no operation, decision or refusal; 8f asserts the rendered sentence names no operation either. UNIT TESTS ONLY: case 1 (DASH was closed) and case 3 (the answer DASH could not confirm was delivered). Case 3's runner half runs over the real local transport in tests/runner-server.test.ts and its DASH half - marking the right audit row - is in tests/broker-lapses.test.ts; what is not proven on the installed shell is the two halves meeting, because that needs a child to exit inside the window between DASH deciding and the runner writing. Case 1 cannot be driven by a proof running inside DASH, because it requires DASH not to be running; lib/broker/uptime.ts is tested exhaustively and the wiring in electron/main.ts is not covered by an installed proof. The issue's own account of case 3 was wrong and is corrected in ADR 0005: an undeliverable answer does not leave no trace, because lib/broker/execute.ts audits on every path before the answer travels, so the row already exists and overstates - it became a delivered column on the audit row rather than a second population of near-misses. The new broker_lapses table has no decision, refusal, operation, connection_id or request_id column and tests/store-sqlite.test.ts pins that list. Evidence: pnpm verify green on Windows at this tree - [state] valid, typecheck clean, 60 test files with 1056 passed and 8 skipped, and 63 installed-shell proof checks passed with zero failures plus one advisory note (6l, the live sources, which can never fail a release). Three smoke runs were triggered and the last two were green. The first failed 7d/7e/7f/7h/7i and the cause was inherited state, not this branch: a previous interrupted run had left its requests in the runner's bounded buffer, which survives DASH, and this pass drained them at startup (138 dropped, 64 undeliverable, both reported in the log), seeding the broker's per-agent replay set with proof 7's fixed request ids so this run's real calls came back duplicate_request. Proof 8 passed all six checks on that same first run. Proof 7's ids are now unique per smoke process, which is MAR-473's own lesson pointed the other way: a blocking gate that goes red for a reason unrelated to the change in hand teaches people to re-run it until it is green. See ADR 0005.",
+      "proof": {
+        "command": "pnpm verify"
+      }
     },
     {
       "id": "MAR-468",

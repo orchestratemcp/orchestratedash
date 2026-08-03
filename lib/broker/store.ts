@@ -16,10 +16,11 @@
  * safe to cache a receipt at all.
  */
 
-import { db } from "../db";
+import { db, getMeta, setMeta } from "../db";
 import { maskAccount } from "../secret-refs";
 import type { BrokerAuditRow } from "./execute";
 import type { BrokerGrant } from "./grant";
+import { closedWindow, type UptimeObservation } from "./uptime";
 
 /* ---------------------------------------------------------------------- *
  * Receipts
@@ -157,9 +158,9 @@ function parseOperations(value: unknown): string[] {
  * The values written are the ones `BrokerAuditRow` already restricted. This
  * function adds nothing and reads nothing it was not given.
  */
-export function recordBrokerCall(row: BrokerAuditRow): void {
+export function recordBrokerCall(row: BrokerAuditRow): number | null {
   try {
-    db()
+    const result = db()
       .prepare(
         "INSERT INTO broker_audit " +
           "(agent, connection_id, operation, request_id, decision, refusal, input_keys, " +
@@ -179,15 +180,199 @@ export function recordBrokerCall(row: BrokerAuditRow): void {
         row.duration_ms,
         row.decided_at,
       );
+    // The row id, so the caller can come back and say whether the answer to this
+    // decision ever reached the agent (MAR-467). Returned rather than looked up
+    // afterwards by (agent, request_id): that pair is not unique — a replayed
+    // request produces a second row carrying the same id with a
+    // `duplicate_request` refusal — and an update matching both rows would mark a
+    // decision undelivered that was delivered perfectly well.
+    return Number(result.lastInsertRowid);
   } catch (error: unknown) {
     console.warn(
       `[dash] could not record a brokered call: ${error instanceof Error ? error.message : "unknown"}`,
     );
+    return null;
   }
+}
+
+/**
+ * Note that DASH could not confirm this decision's answer reached the agent
+ * (MAR-467).
+ *
+ * Named for what DASH knows rather than for what happened. Three situations
+ * reach this function — the child had exited, the POST failed, its reply did not
+ * parse — and only the first is certainly a non-delivery. Rather than sort the
+ * certain case from the two ambiguous ones and render three shades of the same
+ * caution, all three record the claim DASH can actually support.
+ *
+ * Only ever writes 0. There is no "mark delivered" counterpart and the column
+ * stays NULL on the happy path, which is the deliberate asymmetry: a successful
+ * delivery is the ordinary case and the reader's default reading of an audit row,
+ * so spending a write on every one of them would buy nothing. What is worth a
+ * write is the exception, and NULL keeps meaning "nothing to report" rather than
+ * being quietly recruited to mean "confirmed fine".
+ */
+export function markBrokerAnswerUndelivered(auditId: number): void {
+  try {
+    db().prepare("UPDATE broker_audit SET delivered = 0 WHERE id = ?").run(auditId);
+  } catch (error: unknown) {
+    console.warn(
+      `[dash] could not record an undelivered brokered answer: ${error instanceof Error ? error.message : "unknown"}`,
+    );
+  }
+}
+
+/* ---------------------------------------------------------------------- *
+ * Lapses — what the audit cannot cover (MAR-467)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * A brokered attempt or window that DASH did not adjudicate.
+ *
+ * Read the type as much for what it lacks as for what it has: no operation, no
+ * connection, no decision, no refusal. `lib/db.ts` argues the point at the table
+ * — the audit trail is worth believing because every row is a decision DASH
+ * really made, and the way to keep that true is to give everything else a shape
+ * that cannot pass for one.
+ */
+export interface BrokerLapse {
+  id: number;
+  kind: BrokerLapseKind;
+  /** Null only for `dash_closed`, which is a fact about DASH and not an agent. */
+  agent: string | null;
+  /** How many requests were destroyed. Null when nobody counted, and nobody can. */
+  attempts: number | null;
+  from_at: string;
+  until_at: string | null;
+  observed_by: "runner" | "dash";
+}
+
+export type BrokerLapseKind = "dropped_by_runner" | "dash_closed";
+
+export function recordBrokerLapse(lapse: Omit<BrokerLapse, "id">): void {
+  try {
+    db()
+      .prepare(
+        "INSERT INTO broker_lapses (kind, agent, attempts, from_at, until_at, observed_by) " +
+          "VALUES (?, ?, ?, ?, ?, ?)",
+      )
+      .run(lapse.kind, lapse.agent, lapse.attempts, lapse.from_at, lapse.until_at, lapse.observed_by);
+  } catch (error: unknown) {
+    // Swallowed for `recordBrokerCall`'s reason: a sick table must not take down
+    // the request it is describing. The cost here is smaller and the argument is
+    // the same one.
+    console.warn(
+      `[dash] could not record a broker lapse: ${error instanceof Error ? error.message : "unknown"}`,
+    );
+  }
+}
+
+/**
+ * Lapses relevant to one agent, newest first.
+ *
+ * Returns both the drops attributed to this agent and every `dash_closed`
+ * window, which carries no agent at all. The join is deliberately this loose:
+ * whether a closed window mattered to a particular agent depends on whether its
+ * runtime keeps running while DASH is shut, and that is a question about the
+ * agent's current manifest rather than about the window. Answering it here would
+ * freeze an answer that changes when the manifest does, so the caller answers it.
+ */
+/**
+ * The last time DASH was known to be running (MAR-467).
+ *
+ * A single `store_meta` row rather than a table of sessions. The only question
+ * anyone asks of it is "when did DASH stop", and the answer is a high-water mark
+ * — a history of every launch would be a second, longer answer to a question
+ * nobody is asking, kept forever.
+ */
+const LAST_ALIVE_KEY = "broker.dash_last_alive_at";
+
+export function readDashLastAlive(): string | null {
+  return getMeta(db(), LAST_ALIVE_KEY);
+}
+
+export function writeDashLastAlive(at: string): void {
+  try {
+    setMeta(db(), LAST_ALIVE_KEY, at);
+  } catch (error: unknown) {
+    console.warn(
+      `[dash] could not record the heartbeat: ${error instanceof Error ? error.message : "unknown"}`,
+    );
+  }
+}
+
+/**
+ * Record the window DASH was closed for, if there is an honest one to record.
+ *
+ * Called once at startup, before the heartbeat is moved forward. Returns the
+ * window it wrote, or null when there was nothing to write — see `closedWindow`,
+ * which owns every reason that can be.
+ *
+ * `attempts` is NULL and that is the whole point of the row. A count of zero
+ * would be a claim that nothing was asked, and DASH has no basis for it: nothing
+ * was watching. NULL says so.
+ */
+export function recordClosedWindow(observation: UptimeObservation): { from_at: string; until_at: string } | null {
+  const window = closedWindow(observation);
+  if (window === null) {
+    return null;
+  }
+  recordBrokerLapse({
+    kind: "dash_closed",
+    agent: null,
+    attempts: null,
+    from_at: window.from_at,
+    until_at: window.until_at,
+    observed_by: "dash",
+  });
+  return window;
+}
+
+/**
+ * Forget one agent's lapses. Called when the agent is removed, and by the
+ * installed smoke to clear up after its own burst.
+ *
+ * Deliberately narrower than it looks: `agent IS NULL` rows — the closed windows
+ * — are never touched, because they are not this agent's to delete. A window in
+ * which DASH was shut is a fact about DASH, and removing an agent does not make
+ * DASH have been running.
+ */
+export function forgetBrokerLapses(agent: string): void {
+  db().prepare("DELETE FROM broker_lapses WHERE agent = ?").run(agent);
+}
+
+export function readBrokerLapses(agent: string, limit = 20): BrokerLapse[] {
+  const rows = db()
+    .prepare(
+      "SELECT id, kind, agent, attempts, from_at, until_at, observed_by FROM broker_lapses " +
+        "WHERE agent = ? OR agent IS NULL ORDER BY id DESC LIMIT ?",
+    )
+    .all(agent, limit);
+
+  return rows.map((row) => ({
+    id: Number(row["id"]),
+    kind: String(row["kind"]) as BrokerLapseKind,
+    agent: row["agent"] === null ? null : String(row["agent"]),
+    attempts: row["attempts"] === null ? null : Number(row["attempts"]),
+    from_at: String(row["from_at"]),
+    until_at: row["until_at"] === null ? null : String(row["until_at"]),
+    observed_by: row["observed_by"] === "runner" ? "runner" : "dash",
+  }));
 }
 
 export interface BrokerAuditEntry extends BrokerAuditRow {
   id: number;
+  /**
+   * Whether the answer reached the agent (MAR-467).
+   *
+   * Three-valued on purpose. `true` is never written — see
+   * `markBrokerAnswerUndelivered` — so in practice this is `false` for an answer
+   * DASH knows was lost and `null` for every other row, meaning "not known to
+   * have failed". `delivered` is not on `BrokerAuditRow` because that type is
+   * what the broker hands to the audit at decision time, and at that moment
+   * nothing has been delivered yet.
+   */
+  delivered: boolean | null;
 }
 
 /** The most recent calls for one agent, newest first. */
@@ -195,7 +380,7 @@ export function readBrokerAudit(agent: string, limit = 50): BrokerAuditEntry[] {
   const rows = db()
     .prepare(
       "SELECT id, agent, connection_id, operation, request_id, decision, refusal, input_keys, " +
-        " result_count, account_hint, duration_ms, decided_at " +
+        " result_count, account_hint, duration_ms, decided_at, delivered " +
         "FROM broker_audit WHERE agent = ? ORDER BY id DESC LIMIT ?",
     )
     .all(agent, limit);
@@ -213,5 +398,6 @@ export function readBrokerAudit(agent: string, limit = 50): BrokerAuditEntry[] {
     account_hint: row["account_hint"] === null ? null : String(row["account_hint"]),
     duration_ms: Number(row["duration_ms"]),
     decided_at: String(row["decided_at"]),
+    delivered: row["delivered"] === null || row["delivered"] === undefined ? null : row["delivered"] !== 0,
   }));
 }

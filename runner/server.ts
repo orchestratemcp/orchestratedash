@@ -418,13 +418,20 @@ export function parseSpawnCredentials(value: unknown): Record<string, string> | 
 function deliverBrokerResponses(
   supervisor: Supervisor,
   candidate: unknown,
-): { delivered: number; undelivered: number; malformed: number } {
-  const summary = { delivered: 0, undelivered: 0, malformed: 0 };
+): { delivered: number; undelivered: number; malformed: number; undelivered_index: number[] } {
+  // `undelivered_index` carries the *positions* in the submitted array rather
+  // than agent ids (MAR-467). DASH holds the batch it just sent, in order, and
+  // needs to mark the audit row of the specific answer that did not arrive; two
+  // answers to the same agent in one batch would be indistinguishable by id, and
+  // marking the wrong decision undelivered is exactly the kind of small lie this
+  // work exists to avoid. The runner adds nothing it did not observe: an index is
+  // a fact about the caller's own array.
+  const summary = { delivered: 0, undelivered: 0, malformed: 0, undelivered_index: [] as number[] };
   if (!Array.isArray(candidate)) {
     return summary;
   }
 
-  for (const entry of candidate) {
+  for (const [index, entry] of candidate.entries()) {
     if (typeof entry !== "object" || entry === null) {
       summary.malformed += 1;
       continue;
@@ -444,6 +451,7 @@ function deliverBrokerResponses(
       summary.delivered += 1;
     } else {
       summary.undelivered += 1;
+      summary.undelivered_index.push(index);
     }
   }
 
