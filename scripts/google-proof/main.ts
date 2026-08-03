@@ -64,7 +64,7 @@ import { createInterface } from "node:readline";
 
 import { IPC_ORIGIN } from "../../lib/agent-dom/ipc-fetch";
 import { readBrokerAudit } from "../../lib/broker/store";
-import { brokeredField, describeGrant, resolveGrant } from "../../lib/broker/grant";
+import { describeGrant, resolveGrant } from "../../lib/broker/grant";
 import { brokerProfileFor } from "../../lib/broker/providers";
 import { performConnectionAction } from "../../lib/connection-actions";
 import { connectionSecretName } from "../../lib/connection-credentials";
@@ -113,6 +113,31 @@ function check(label: string, passed: boolean, detail: unknown): void {
 function skip(label: string, because: string): void {
   say(`SKIP  ${label}: not attempted — ${because}`);
 }
+
+/**
+ * Every check from the write onwards, named once.
+ *
+ * A run that stops early has not failed these; it has not run them, and a reader
+ * counting PASS lines needs to see the difference. Listed rather than derived
+ * because the alternative is a harness that knows its own check names only after
+ * it has run them, which is exactly when it cannot say what it skipped.
+ */
+const CHECKS_AFTER_THE_WRITE = [
+  "G7b. the runner started the proof agent",
+  "G8a. Gmail answered both read operations",
+  "G8b. the projection over real Gmail MIME",
+  "G9. Gmail accepted the composed draft",
+  "G10. Google filed it against the right thread",
+  "G11. both send attempts refused",
+  "G12a. header injection refused",
+  "G12b. the audit allowed no send",
+  "G12c. the audit holds no content",
+  "G13. no token observable from the agent",
+  "G14. the artifact reached DASH",
+  "G15a. Google accepted the revocation",
+  "G15b. the next request came back revoked",
+  "G16. the operator deleted the real draft",
+];
 
 async function waitForValue<T>(
   read: () => Promise<T | null>,
@@ -642,6 +667,9 @@ async function run(): Promise<void> {
       : null;
     if (recorded === null) {
       check("G7a. the runner wrote an endpoint file", false, "no runner.json — the shell did not start one");
+      for (const label of CHECKS_AFTER_THE_WRITE) {
+        skip(label, "the runner never wrote an endpoint file");
+      }
       return;
     }
     check("G7a. the runner wrote an endpoint file", true, {
@@ -700,6 +728,12 @@ async function run(): Promise<void> {
     const consent = await ask("[proof] Type 'draft' to continue, or anything else to stop: ");
     if (consent !== "draft") {
       say("[proof] stopped before the write, at the operator's request.");
+      for (const label of CHECKS_AFTER_THE_WRITE) {
+        skip(label, "the operator stopped the run before the write");
+      }
+      // A failure rather than a clean exit, and deliberately: a run that stopped
+      // is not a run that passed, and the difference must survive somebody
+      // pasting the last line of the log into an issue.
       failures.push("operator stopped before the write");
       return;
     }
