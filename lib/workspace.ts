@@ -55,6 +55,20 @@ export type RunStatus =
  * still describes v1 only — importing it would drag I/O into a pure module.
  * ---------------------------------------------------------------------- */
 
+export interface WorkspaceTrigger {
+  type: string;
+  label: string;
+  /**
+   * The longest gap DASH should expect between this agent's activity before
+   * treating it as stalled (MAR-441). Meaningful only alongside
+   * `type: "schedule"`. `schedule` itself stays free text ("weekdays at
+   * 08:00 local time") and DASH does not parse it — parsing prose reliably
+   * is not honest, so a schedule with no interval declared yields no
+   * expectation and this agent is never marked stalled.
+   */
+  expected_interval_seconds?: number;
+}
+
 export interface WorkspaceManifest {
   agent: { name: string; display_name?: string; goal: string };
   safety_contract?: { irreversible_components?: string[] };
@@ -65,7 +79,7 @@ export interface WorkspaceManifest {
       availability: string;
       continues_when_dash_closed: boolean;
     };
-    trigger?: { type: string; label: string };
+    trigger?: WorkspaceTrigger;
     locations?: { runtime?: { offline_behavior?: string } };
     control?: { supported: boolean; commands?: AgentCommand[] };
   };
@@ -170,12 +184,26 @@ export interface AgentDomState {
  * Overview
  * ---------------------------------------------------------------------- */
 
+/**
+ * `AgentStatus` plus `stalled`, which is deliberately not part of that type.
+ *
+ * `AgentStatus` is the wire vocabulary: what an agent may claim about itself,
+ * bounded further by `SELF_REPORTABLE_STATUSES` in `runner/state.ts`, and
+ * what the runner asserts once a process is confirmed dead. `stalled` is
+ * neither — no agent or runner ever mints it. It is DASH's own temporal
+ * judgment, computed here from a schedule expectation and the state's own
+ * timestamps, and only ever appears in what this module derives for display.
+ * Keeping it out of `AgentStatus` keeps that distinction visible in the type
+ * system rather than only in a comment.
+ */
+export type WorkspaceStatus = AgentStatus | "stalled";
+
 export interface WorkspaceOverview {
   agent_id: string;
   /** `display_name` when the manifest offers one — never the slug if avoidable. */
   title: string;
   goal: string;
-  status: AgentStatus;
+  status: WorkspaceStatus;
   /** One plain-language sentence explaining the status to a non-technical user. */
   status_detail: string;
   runtime_label: string;
@@ -183,11 +211,18 @@ export interface WorkspaceOverview {
   continues_when_dash_closed: boolean;
   offline_behavior: string | null;
   trigger_label: string;
+  /**
+   * The most recent timestamp this module can find evidence of activity for,
+   * read from the state's own runs/tasks/audit_events (MAR-441). Null when
+   * none of those carry a parseable timestamp yet — an agent that has never
+   * reported anything, not an agent reported as "just now".
+   */
+  last_activity_at: string | null;
   /** The single thing the user should do next, or null when nothing is waiting. */
   next_action: string | null;
 }
 
-const STATUS_DETAIL: Record<AgentStatus, string> = {
+const STATUS_DETAIL: Record<WorkspaceStatus, string> = {
   inactive: "This agent is set up but has not been started.",
   ready: "This agent is connected and ready to run.",
   running: "This agent is working now.",
@@ -195,7 +230,106 @@ const STATUS_DETAIL: Record<AgentStatus, string> = {
   needs_attention: "This agent is waiting for you before it can continue.",
   offline: "DASH cannot reach this agent right now.",
   error: "This agent stopped because something went wrong.",
+  stalled: "This agent has a schedule but has not reported activity within the window DASH expected.",
 };
+
+/** Run statuses that mean the agent is doing something right now (MAR-441). */
+function hasActiveRun(state: AgentDomState): boolean {
+  return (state.runs ?? []).some(
+    (run) => run.status === "running" || run.status === "queued",
+  );
+}
+
+/**
+ * The most recent timestamp this snapshot carries evidence of activity for.
+ *
+ * Reads only fields the state already exposes — run start/finish, task
+ * creation, audit events — so this needs no new storage or polling: exactly
+ * the "derive before extending the contract" the issue asks for. Unparseable
+ * or absent timestamps are skipped rather than guessed at.
+ */
+function latestActivityAt(state: AgentDomState): string | null {
+  const candidates: string[] = [];
+  for (const run of state.runs ?? []) {
+    if (run.started_at !== undefined) {
+      candidates.push(run.started_at);
+    }
+    if (run.finished_at !== undefined) {
+      candidates.push(run.finished_at);
+    }
+  }
+  for (const task of state.tasks ?? []) {
+    if (task.created_at !== undefined) {
+      candidates.push(task.created_at);
+    }
+  }
+  for (const event of state.audit_events ?? []) {
+    candidates.push(event.ts);
+  }
+
+  let latest: string | null = null;
+  let latestMs = -Infinity;
+  for (const candidate of candidates) {
+    const ms = Date.parse(candidate);
+    if (!Number.isNaN(ms) && ms > latestMs) {
+      latestMs = ms;
+      latest = candidate;
+    }
+  }
+  return latest;
+}
+
+/**
+ * Layer `stalled` on top of the wire status, or leave it untouched.
+ *
+ * Every guard here is a reason NOT to override, and each maps to one of the
+ * issue's acceptance criteria:
+ *
+ * - `offline`/`error` already mean the runner confirmed the process is gone
+ *   (`runner/state.ts`'s `resolveStatus`) — that is a stronger, more specific
+ *   claim than "stalled" and must not be papered over by it. This is also
+ *   what keeps "killed" distinguishable from "quiet" without DASH touching
+ *   `ProcessFacts` at all: the runner already made that call before this
+ *   snapshot ever arrived.
+ * - `paused`/`needs_attention` are states the user or agent put it in on
+ *   purpose; overriding them would hide a more relevant signal.
+ * - An active run is activity happening right now, regardless of what the
+ *   schedule expected.
+ * - A manual (or any non-`schedule`) trigger has no expected window at all —
+ *   "has simply not been asked to run" is correct behaviour, not staleness.
+ * - No `expected_interval_seconds` means no derivable expectation; absent
+ *   stays absent rather than becoming a guess.
+ * - No activity timestamp anywhere in the snapshot means there is nothing to
+ *   measure a gap from — a brand-new agent is not "overdue".
+ */
+function deriveStatus(
+  baseStatus: AgentStatus,
+  trigger: WorkspaceTrigger | undefined,
+  state: AgentDomState,
+  lastActivity: string | null,
+  now: Date,
+): WorkspaceStatus {
+  const NEVER_OVERRIDE: ReadonlySet<AgentStatus> = new Set([
+    "offline",
+    "error",
+    "paused",
+    "needs_attention",
+  ]);
+  if (NEVER_OVERRIDE.has(baseStatus) || hasActiveRun(state)) {
+    return baseStatus;
+  }
+  if (trigger?.type !== "schedule" || trigger.expected_interval_seconds === undefined) {
+    return baseStatus;
+  }
+  if (lastActivity === null) {
+    return baseStatus;
+  }
+  const elapsedMs = now.getTime() - Date.parse(lastActivity);
+  if (Number.isNaN(elapsedMs)) {
+    return baseStatus;
+  }
+  return elapsedMs > trigger.expected_interval_seconds * 1000 ? "stalled" : baseStatus;
+}
 
 export function buildOverview(
   manifest: WorkspaceManifest,
@@ -204,24 +338,27 @@ export function buildOverview(
 ): WorkspaceOverview {
   const dom = manifest.agent_dom;
   const waiting = buildWorkInbox(manifest, state, now);
+  const lastActivity = latestActivityAt(state);
+  const status = deriveStatus(state.status, dom?.trigger, state, lastActivity, now);
 
   return {
     agent_id: state.agent_id,
     title: manifest.agent.display_name ?? manifest.agent.name,
     goal: manifest.agent.goal,
-    status: state.status,
-    status_detail: STATUS_DETAIL[state.status],
+    status,
+    status_detail: STATUS_DETAIL[status],
     runtime_label: dom?.runtime?.label ?? "Unknown runtime",
     // Absent means unknown, and unknown is not the same as false. A user
     // deciding whether to close DASH deserves the honest answer.
     continues_when_dash_closed: dom?.runtime?.continues_when_dash_closed ?? false,
     offline_behavior: dom?.locations?.runtime?.offline_behavior ?? null,
     trigger_label: dom?.trigger?.label ?? "Unknown trigger",
-    next_action: describeNextAction(waiting, state.status),
+    last_activity_at: lastActivity,
+    next_action: describeNextAction(waiting, status),
   };
 }
 
-function describeNextAction(waiting: InboxItem[], status: AgentStatus): string | null {
+function describeNextAction(waiting: InboxItem[], status: WorkspaceStatus): string | null {
   const live = waiting.filter((item) => !item.expired);
   if (live.length > 0) {
     const noun = live.length === 1 ? "item" : "items";
@@ -237,6 +374,9 @@ function describeNextAction(waiting: InboxItem[], status: AgentStatus): string |
   }
   if (status === "offline") {
     return "Bring this agent back online";
+  }
+  if (status === "stalled") {
+    return "Check why this agent hasn't run when scheduled";
   }
   return null;
 }

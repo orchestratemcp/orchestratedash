@@ -292,6 +292,57 @@ describe("workspaceView", () => {
       true,
     );
   });
+
+  it("surfaces a scheduled agent past its window as stalled, separately from choices and approvals (MAR-441)", () => {
+    // v2Manifest declares `trigger: { type: "schedule", expected_interval_seconds: 259200 }`.
+    importManifest(v2Manifest);
+    const lastActivityAt = "2026-07-10T08:05:00Z";
+    expect(
+      putAgentDomState({
+        state_version: 1,
+        manifest_version: 2,
+        agent_id: "synthetic-project-reporter",
+        observed_at: "2026-07-10T08:00:00Z",
+        status: "ready",
+        connections: [],
+        runs: [
+          {
+            id: "run-1",
+            status: "completed",
+            started_at: "2026-07-10T08:00:00Z",
+            finished_at: lastActivityAt,
+            progress: 1,
+          },
+        ],
+        tasks: [],
+        choices: [],
+        actions: [],
+        approval_requests: [],
+        approval_decisions: [],
+        memory: [],
+        audit_events: [],
+        plan_vs_actual: {
+          run_id: "run-1",
+          planned_components: [],
+          executed_components: [],
+          deviations: [],
+        },
+      }).ok,
+    ).toBe(true);
+
+    // Ten days later — well past the 3-day expected interval.
+    const view = workInboxView(new Date("2026-07-20T08:00:00Z"));
+    expect(view.stalled).toEqual([
+      {
+        agent: "synthetic-project-reporter",
+        agent_title: "Project Reporter",
+        last_activity_at: lastActivityAt,
+        next_action: "Check why this agent hasn't run when scheduled",
+      },
+    ]);
+    // Stalled is reported separately from choices/approvals, not folded into them.
+    expect(view.items).toEqual([]);
+  });
 });
 
 describe("every view", () => {
