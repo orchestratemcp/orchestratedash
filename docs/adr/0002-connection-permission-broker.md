@@ -460,3 +460,78 @@ And the ordinary failure this is written against: **a runbook is not a run.**
 MAR-468 is `merged` while this file, the harness and the procedure exist and
 nobody has stood at the consent screen. The promotion is a separate, dated,
 mechanical act afterwards.
+
+## Amendment 4 (MAR-476): four of these sentences were written as universals
+
+Status: Accepted
+
+Date: 2026-08-03
+
+ADR 0006 decides that the broker's reach ends at the machine DASH is installed
+on, and that an agent running past that line holds its own credentials and is
+rendered as a connection DASH does not mediate. That does not change anything
+this ADR built. It changes what four of its sentences are claims *about*, and
+they were written before there was anything outside the broker to distinguish
+them from.
+
+Narrowed here rather than edited in place, so the original claim and the reason
+it stopped being universal both stay readable — the same treatment amendment 2
+gave invariant 6's argument.
+
+### The Decision
+
+> "An agent receives narrow operations, not a provider refresh token or a
+> general OAuth access token."
+
+True of **every connection DASH brokers**, and false as a statement about every
+agent, because `ownership: agent_managed` has always existed and ADR 0006 makes
+it the answer for the unattended case. The sentence was accurate when the only
+connections worth discussing were the brokered ones.
+
+The paragraph below it — the broker as "the common boundary for native OAuth
+connections and authenticated MCP servers", both rendered "with the same
+permission receipt" — is likewise about brokered rows. `ConnectionRequirementRow.broker`
+was already nullable when it was written.
+
+### Invariants 1, 3 and 5
+
+- **1** reads "Refresh tokens remain in the OS vault and never enter an agent
+  process." Read it as **every refresh token DASH holds**. An agent-managed
+  credential was never DASH's, is not in DASH's vault, and DASH cannot put it
+  there or take it out.
+- **3** and **5** each need the word **brokered**. An agent-managed connection
+  chooses its own URL, method and scope, and DASH audits nothing it did not
+  decide.
+
+None of the three is weakened for anything the broker touches. What changes is
+that a reader can no longer infer from them what an arbitrary agent can do.
+
+### Invariant 6, unchanged in wording
+
+> "No Gmail send operation exists in the draft-only product profile."
+
+Not one word moves. It is a statement about `lib/broker/operations.ts`, which
+remains three entries, and amendment 2 made it structural — `WRITE_PATHS` is one
+frozen array pinned by value.
+
+What changes is what it reassures a reader about. A remote agent holding its own
+`gmail.compose` credential can send mail, and nothing in this ADR was ever a
+claim that it could not. The invariant is about DASH's operation set. Written
+when every path to a user's mailbox ran through that set, it read like a
+statement about the mailbox, and it will keep reading like one unless this
+paragraph exists.
+
+### What does not change
+
+Amendment 1's cost — **when DASH is closed, the broker is closed** — is not
+softened, worked around, or scheduled for removal. ADR 0006 promotes it from a
+cost this ADR accepted to a rule that bounds what DASH will build, and adds the
+finding that it is already enforced by the runner's transport rather than by any
+check: since MAR-430 that transport is a socket or a named pipe and never a
+port, so there is no address an off-machine process could dial.
+
+Stage 3's line about a hosted token broker — "such as Vercel Connect… an
+optional deployment choice; it is not required for the local-first path" —
+stays exactly true, and ADR 0006 sharpens what it was always describing:
+somebody else's hosted broker, as a custody fact a card must be able to state.
+DASH operating one is ruled out.
