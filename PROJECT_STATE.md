@@ -1,6 +1,6 @@
 # DASH project state
 
-Updated: 2026-08-03 (the broker's reach decided; Wave 1 proven)
+Updated: 2026-08-05 (the design pass executed; Wave 1 proven)
 
 Portfolio sequence and estimates: [`../orchestratekit-mcp/docs/PORTFOLIO_ROADMAP_2026-08-01.md`](../orchestratekit-mcp/docs/PORTFOLIO_ROADMAP_2026-08-01.md).
 
@@ -369,6 +369,82 @@ failed 3 runs out of 3 under full-suite load on Windows, on master's own code �
 `settle(400)` betting a fixed sleep on Windows spawning a Node process. It waits
 for the line now instead of assuming it. Assertions unchanged, `lib/broker/`
 untouched. Fixed because `pnpm verify` could not go green on Windows without it.
+
+## Wave 1 - the design pass, executed (MAR-440, MAR-436, MAR-420)
+
+**Merge-ready and not merged.** All three are `planned`. PRs [#41](https://github.com/orchestratemcp/orchestratedash/pull/41)
+(MAR-440, MAR-436) and [#42](https://github.com/orchestratemcp/orchestratedash/pull/42)
+(MAR-420, stacked on it) are `merge:human-gated`; nothing here promotes them.
+
+The stack had **never been executed by an Electron shell** when it was written —
+the design session could measure the DOM at three widths and could not launch
+anything. `pnpm verify` is now green on Windows at `033aa01`, and #42 is that
+commit merged into the density branch: `[state]
+valid` with the 7 recorded drift warnings, typecheck clean, 65 test files, 1202
+tests, and **70 installed-shell proofs with no failures** plus the one advisory
+note, all three live sources answering.
+
+67 of those proofs are the existing gate, unchanged. The three new ones are the
+interesting part, and **the smoke found nothing — the screenshots did.**
+
+**The skip link was never hidden.** MAR-440 moved it down by a 40px title bar
+and left `translateY(-200%)`, which is twice the *element's* height and knows
+nothing about `top`. The link measures 39px: 48 down, 78 up, and 9px of
+accent-coloured link sat across the top of every page, at every width, in both
+themes, from the moment the chrome landed. Nothing overflowed and nothing was
+misplaced, so no DOM measurement could have seen it and none did. It took a
+picture. Proof `1e` now measures it in a real window in both directions, because
+a link that never shows would take away a keyboard user's only shortcut past six
+navigation links, and that failure is as invisible as the one being fixed.
+
+**The harness claimed to cover the splash and did not.** `firstWindow`'s comment
+said keeping the splash meant the mandatory gate "covers the splash's whole
+lifecycle, including that it closes"; no check anywhere asserted either half —
+the same shape as `6j` asserting only that *a* verdict existed. `1c` and `1d` are
+that sentence made true. `1d` also retires a standing hazard rather than only a
+false claim: proof 7 finds the credential prompt by taking "the window that is
+not the app window", which is correct only once the splash is gone, and now
+something establishes that before proof 7 relies on it.
+
+Two of the four risks this stack was audited for were **already sound and are
+recorded here so they are not re-audited**. `electron/app-window.ts` is bundled
+into `smoke.mjs` exactly once — main and the harness share one module instance,
+because the harness imports main rather than launching it — so `appWindow()`
+answers with the window `createWindow` set. And `startupFailed` is assigned on
+one line inside the startup `catch`, so an ordinary quit still exits 0; the green
+run is the evidence.
+
+The screenshots both PRs said they lacked are `electron/capture.ts`: 13 images
+across 1280/768/375 in both themes plus the splash, and a `layout.json` beside
+them. It is a script for the reason the smoke is a script — a picture somebody
+took once is not evidence the next person can refresh — and it fakes neither
+half of what it photographs. The theme moves through `nativeTheme`, the same
+signal the OS sends; the density moves by **clicking the real control**, so each
+pair is a small proof as well as an image and a toggle that had stopped working
+would produce visibly identical output. It is on no `package.json` script and
+never on the `electron .` path, per ADR 0004: it produces evidence, not a
+verdict, and must not be able to fail a release.
+
+**What is not fixed, and is not MAR-491.** At 375px the density control is at
+x=437..472 in a 374px viewport — `nav.app-nav` scrolls 484px of content through
+374px, so MAR-420's one control is off-screen at rest. The `560px` query does
+work: the label goes and the glyph stays, 35px wide, exactly as its comment
+intends. The five navigation links overflow anyway, so the stated reason for
+keeping the control at narrow widths — *"density matters most on a narrow
+window"* — is defeated by the strip it sits in. MAR-491 measured the **tables**
+and explicitly recorded that the chrome was fine; this is the chrome, it is a
+different finding, and it wants the same breakpoint decision rather than a patch.
+The page itself does not overflow at any of the three widths, which is the claim
+MAR-491 made and which still holds.
+
+MAR-420's fleet grid, sidebar and honesty pass are unbuilt and out of scope of
+#42 by its own description.
+
+One operational note, because it looked like a blocker and was not. A runner from
+a previous build was holding the store; DASH retired it itself through the
+authenticated shutdown route on the identity mismatch and span a fresh one, which
+is `runner-process.ts` doing exactly what it was written to do. Nothing was
+force-killed, and AGENTS.md's rule cost nothing.
 
 ## UX principle
 
