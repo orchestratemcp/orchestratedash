@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { SURFACES, surfaceFor } from "../_data/routes";
+import { DensityToggle } from "./density-toggle";
 import { TitleBar } from "./title-bar";
 
 /**
@@ -50,6 +51,15 @@ export function AppChrome(): ReactNode {
             </Link>
           );
         })}
+        {/*
+          At the end of the nav rather than in the title bar (MAR-420, not
+          MAR-440). The title bar is the *window*: what it says is which
+          application this is and which surface you are on. Density is a view
+          preference about the page, so it belongs with the other things that
+          change what the page shows.
+        */}
+        <span className="app-nav-spacer" />
+        <DensityToggle />
       </nav>
     </header>
   );

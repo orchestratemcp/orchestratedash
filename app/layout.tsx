@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import "./tokens.css";
 import "./globals.css";
 import { AppChrome } from "./_components/app-chrome";
+import { DensityScript } from "./_components/density-toggle";
 
 export const metadata = {
   title: "OrchestrateDASH",
@@ -22,6 +23,15 @@ export default function RootLayout({
 }): ReactNode {
   return (
     <html lang="en">
+      <head>
+        {/*
+          MAR-420. Before the body, so the first frame already has the user's
+          density. A static export's first render is a build artefact made on a
+          machine that never met this user, so without this every row on the
+          page visibly jumps once on a slow paint.
+        */}
+        <DensityScript />
+      </head>
       <body>
         {/*
           A skip link, because the chrome now sits between the window and the

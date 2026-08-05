@@ -70,6 +70,7 @@ export function TitleBar({ surface }: TitleBarProps): ReactNode {
     const overlay = (
       navigator as Navigator & {
         windowControlsOverlay?: {
+          visible: boolean;
           getTitlebarAreaRect(): DOMRect;
           addEventListener(type: "geometrychange", listener: () => void): void;
           removeEventListener(type: "geometrychange", listener: () => void): void;
@@ -79,9 +80,28 @@ export function TitleBar({ surface }: TitleBarProps): ReactNode {
     if (overlay === undefined) {
       return;
     }
+    /*
+     * `visible` is checked, and the width is checked again after that.
+     *
+     * The API object **exists in every Chromium**, including an ordinary
+     * browser tab and an Electron window on a platform with no overlay. When
+     * the overlay is not showing, `getTitlebarAreaRect()` returns an all-zero
+     * rect — so the obvious arithmetic, `innerWidth - rect.width - rect.x`,
+     * reports the entire window as the space to reserve for buttons that are
+     * not there.
+     *
+     * That is not hypothetical: it shipped in the first draft of this component
+     * and put a 449px `padding-right` on a 375px-wide bar, pushing the whole
+     * page 98px wider than the viewport. It was invisible at 1280 because the
+     * bar had the room to absorb it, which is exactly why the acceptance
+     * criterion is written at the narrow width.
+     */
     const measure = (): void => {
-      const rect = overlay.getTitlebarAreaRect();
-      const inset = Math.max(0, window.innerWidth - rect.width - rect.x);
+      const rect = overlay.visible ? overlay.getTitlebarAreaRect() : null;
+      const inset =
+        rect === null || rect.width === 0
+          ? 0
+          : Math.max(0, Math.round(window.innerWidth - rect.width - rect.x));
       document.documentElement.style.setProperty("--window-controls-inset", `${String(inset)}px`);
     };
     measure();
