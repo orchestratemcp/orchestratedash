@@ -46,7 +46,24 @@ code {
   white-space: nowrap;
 }
 
-/* The skip link is invisible until focused, and then it is unmissable. */
+/* The skip link is invisible until focused, and then it is unmissable.
+ *
+ * The hidden transform has to undo `top` as well as the element's own height,
+ * and this is the second thing rather than an over-cautious first. `-200%` is
+ * two times the *element's* height and knows nothing about `top`; that was fine
+ * while `top` was one spacing step, and this issue put a 40px title bar in
+ * front of it. The link measures 39px, so 48px down and 78px up left 9px of
+ * accent-coloured link sitting across the top of every page — visible in the
+ * 1280/768/375 captures and in no DOM measurement, because nothing overflowed
+ * and nothing moved.
+ *
+ * `-100%` is the element's full height and the rest is the offset it is
+ * fighting, so the bottom edge lands exactly on y=0 whatever the font, the
+ * padding or the title bar later become; the last step is the margin that keeps
+ * "exactly 0" from being a rounding error away from a visible sliver.
+ *
+ * `electron/smoke.ts` proof 1e measures both directions in a real window,
+ * because a stylesheet test cannot: nothing here is wrong in isolation. */
 .skip-link {
   position: absolute;
   left: var(--space-2);
@@ -57,7 +74,9 @@ code {
   background: var(--accent);
   color: var(--accent-contrast);
   text-decoration: none;
-  transform: translateY(-200%);
+  transform: translateY(
+    calc(-100% - var(--titlebar-height) - var(--space-2) - var(--space-1))
+  );
 }
 
 .skip-link:focus {
