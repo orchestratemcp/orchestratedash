@@ -2,7 +2,7 @@
 
 import { Suspense, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
-import { RunOutput } from "../../_components/digest";
+import { OutputsPanel } from "../../_components/outputs";
 import { RunVerdictChips } from "../../_components/verdict";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import { RUN_DETAIL_PARAMS } from "../../_data/routes";
@@ -128,10 +128,12 @@ function RunDetail(): ReactNode {
 
       {/* What the run produced, above what it did. Somebody opening a run is
           usually asking "what did it find?" before "which steps ran?", and the
-          technical record below answers the second question either way. */}
-      {view.artifacts[0] === undefined ? null : (
-        <RunOutput artifact={view.artifacts[0]} grounding={view.grounding} />
-      )}
+          technical record below answers the second question either way.
+
+          Every output, not just the newest (MAR-434). This page used to render
+          `artifacts[0]`, so a run that produced a digest and a reply showed one
+          of them and said nothing about the other. */}
+      <OutputsPanel cards={view.artifact_cards} grounding={view.grounding} />
 
       {view.planned_route.length > 0 ? (
         <div className="section">
