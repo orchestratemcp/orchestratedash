@@ -190,6 +190,18 @@ await Promise.all([
     format: "esm",
   }),
 
+  // The screenshot harness, on the same terms as the smoke above: never on the
+  // `electron .` path, built here only so there is something to run. It is
+  // deliberately not named by any `package.json` script — it produces evidence,
+  // not a verdict, and ADR 0004 keeps things that cannot fail a release out of
+  // the gate. See `electron/capture.ts`.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture.ts")],
+    outfile: path.join(outDir, "capture.mjs"),
+    format: "esm",
+  }),
+
   // MAR-423. "Try a sample agent" scaffolds a project, and a scaffold needs the
   // same `scripts/open-in-dash.mjs` the Agent Kit copies in, so the user can
   // re-add their agent later from their own folder without DASH.

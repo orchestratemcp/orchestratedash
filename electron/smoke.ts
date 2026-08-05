@@ -302,6 +302,20 @@ function firstWindow(): Promise<BrowserWindow> {
  */
 async function run(): Promise<void> {
 await app.whenReady();
+
+/*
+ * MAR-436. Observed here, before anything awaits, or not at all: the splash's
+ * whole lifetime is shorter than the startup it narrates.
+ *
+ * The ordering is deterministic rather than lucky. `main.ts` registers its
+ * `whenReady` handler as an import side effect — which is to say before this
+ * module's body runs — Electron dispatches handlers in registration order, and
+ * `openSplash` is the first statement in that handler with nothing awaited in
+ * front of it. So when this line runs the splash exists and the app window does
+ * not.
+ */
+const windowsDuringStartup = BrowserWindow.getAllWindows();
+
 const window = await firstWindow();
 
 console.log(`\n[smoke] store: ${dataDir}`);
@@ -334,6 +348,85 @@ if (process.env.DASH_SHELL_URL?.startsWith("dash-app://") === true) {
     rendered.url,
   );
 }
+
+/* -- Proofs 1c/1d: the splash's lifecycle (MAR-436) -------------------- */
+
+/**
+ * The splash is deliberately not suppressed under this harness, and until now
+ * that was a claim this file made in a comment and never checked — the same
+ * shape of defect as `6j` asserting only that *a* verdict existed.
+ *
+ * Two things have to be true and they fail in opposite directions. A splash
+ * that never appears leaves the cold-start gap MAR-436 exists to close; a
+ * splash that never closes leaves DASH showing two windows, one of them
+ * frameless and permanent.
+ *
+ * `1d` is also what makes proof 7's credential-prompt finder safe. That finder
+ * takes "the window that is not the app window" to be the prompt, which is only
+ * true once the splash is gone — so the harness establishes it here rather than
+ * assuming it several hundred lines further down.
+ */
+check(
+  "1c. a splash window was up while DASH started",
+  windowsDuringStartup.length === 1 && !windowsDuringStartup.includes(window),
+  {
+    windows_at_ready: windowsDuringStartup.length,
+    was_the_app_window: windowsDuringStartup.includes(window),
+  },
+);
+
+const soleWindow = await waitForObserved(
+  async () => {
+    const open = BrowserWindow.getAllWindows();
+    const besides = open.filter((candidate) => candidate !== window);
+    return {
+      value: besides.length === 0 ? open.length : null,
+      seen: { open: open.length, besides_the_app_window: besides.length },
+    };
+  },
+  "1d. the splash to close",
+  15_000,
+);
+check(
+  "1d. the splash closed itself, leaving DASH one window",
+  soleWindow.value === 1,
+  soleWindow,
+);
+
+/**
+ * MAR-440, and a defect this harness is the only thing that could have caught.
+ *
+ * The chrome moved the skip link down by a title bar and left its hidden
+ * transform — two times the element's own height — where it was, so about 11px
+ * of accent-coloured link sat across the top of every page. Nothing overflowed,
+ * no element was misplaced in the DOM, and the rule reads as correct in
+ * isolation, which is why a stylesheet test and a DOM measurement both missed
+ * it. It takes a real layout, and this is the file with one.
+ *
+ * Both directions, because they fail differently: a link that never hides is the
+ * regression, and a link that never *shows* is the over-correction that would
+ * take a keyboard user's only shortcut past six navigation links away.
+ */
+const skipLink = (await window.webContents.executeJavaScript(
+  `(() => {
+     const link = document.querySelector("a.skip-link");
+     if (link === null) return null;
+     const hidden = link.getBoundingClientRect();
+     link.focus({ preventScroll: true });
+     const shown = link.getBoundingClientRect();
+     link.blur();
+     return {
+       hidden_bottom: Math.round(hidden.bottom),
+       shown_top: Math.round(shown.top),
+       height: Math.round(hidden.height),
+     };
+   })()`,
+)) as { hidden_bottom: number; shown_top: number; height: number } | null;
+check(
+  "1e. the skip link is off-screen until it is focused",
+  skipLink !== null && skipLink.hidden_bottom <= 0 && skipLink.shown_top > 0,
+  skipLink,
+);
 
 /* -- Proof 2: shell.ping round trip ------------------------------------ */
 
