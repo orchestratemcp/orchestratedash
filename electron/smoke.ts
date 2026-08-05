@@ -46,6 +46,8 @@
 // from it. Every import below reads decisions those two have already made.
 import "./smoke-identity.js";
 import { collectSpawnCredentials } from "./main.js";
+// MAR-436. Which window is the app's, now that it is not the first one made.
+import { appWindow } from "./app-window.js";
 
 import { app, BrowserWindow, shell } from "electron";
 
@@ -250,13 +252,27 @@ function liveSnapshot(observedAt: string, expiresAt: string): Record<string, unk
   };
 }
 
-/** Resolve once the window has painted, or reject rather than hang forever. */
+/**
+ * Resolve once the app window has painted, or reject rather than hang forever.
+ *
+ * **Not `getAllWindows()[0]` any more (MAR-436).** The splash is created first,
+ * on purpose, so the first window is now reliably the wrong one — and even
+ * before the splash existed this was luck rather than a guarantee, which the
+ * credential-prompt helper further down this file already says in its own
+ * comment: *"`getAllWindows` order is not contractual"*.
+ *
+ * The splash is deliberately **not** suppressed under the smoke. A product that
+ * takes a different startup path when it is being proven is a product whose
+ * proof is about a different program; keeping it means the mandatory gate now
+ * covers the splash's whole lifecycle, including that it closes and does not
+ * leave DASH with a second window.
+ */
 function firstWindow(): Promise<BrowserWindow> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("no window after 30s")), 30_000);
+    const timer = setTimeout(() => reject(new Error("no app window after 30s")), 30_000);
     const attach = (): void => {
-      const [window] = BrowserWindow.getAllWindows();
-      if (window === undefined) {
+      const window = appWindow();
+      if (window === null) {
         setTimeout(attach, 100);
         return;
       }

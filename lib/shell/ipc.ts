@@ -115,6 +115,30 @@ export const COMMANDS = {
     irreversible: false,
   },
 
+  // MAR-440. The window's own menu bar is gone, so something in the app has to
+  // be able to show the menu that is still registered behind it.
+  //
+  // This rides the audited channel rather than arriving as a third
+  // `contextBridge` surface, and the difference is the point. ADR 0001
+  // amendment 7 makes a new bridge a review event; the command catalogue is the
+  // extension point that already *is* one, and routing through it means the
+  // request is allowlisted, its payload is constrained to two numbers, and it
+  // produces an audit record — none of which a bridge method would have got.
+  //
+  // What crosses is a coordinate and nothing else. The renderer cannot name a
+  // menu, an item, or an action: `applicationMenu()` builds the template in
+  // main and main owns every click handler, exactly as it did when the bar was
+  // visible. So this widens what can be *shown*, never what can be *done*.
+  "shell.menu": {
+    effect: "Show the application menu. Changes nothing by itself.",
+    payload_keys: ["x", "y"],
+    required_keys: [],
+    // Displaying a menu is not a mutation. Whatever the user then picks is
+    // main's own menu handler running, and is audited wherever that action is.
+    mutates: false,
+    irreversible: false,
+  },
+
   "runner.start": {
     effect: "Start a registered agent's process on this machine. Not an Agent DOM command.",
     payload_keys: ["agent_id"],
@@ -325,6 +349,25 @@ export function isConnectionCommandName(value: CommandName): value is Connection
 }
 
 /**
+ * The window-chrome commands (MAR-440).
+ *
+ * A fourth family for the reason the second and third exist: it is not an Agent
+ * DOM verb, not runner lifecycle and not a credential. It asks main to draw
+ * something on this machine's screen and reaches no agent, no store and no
+ * provider — which is why it is the only family whose commands may declare
+ * `mutates: false`.
+ */
+export const SHELL_UI_ACTIONS = {
+  "shell.menu": "menu",
+} as const;
+
+export type ShellUiCommandName = keyof typeof SHELL_UI_ACTIONS;
+
+export function isShellUiCommandName(value: CommandName): value is ShellUiCommandName {
+  return Object.hasOwn(SHELL_UI_ACTIONS, value);
+}
+
+/**
  * Every command is local, an Agent DOM command, or runner lifecycle.
  *
  * This is a compile-time assertion, not a runtime one: adding an entry to
@@ -334,7 +377,11 @@ export function isConnectionCommandName(value: CommandName): value is Connection
  */
 type UnroutedCommand = Exclude<
   CommandName,
-  AgentCommandChannelName | RunnerCommandName | ConnectionCommandName | "shell.ping"
+  | AgentCommandChannelName
+  | RunnerCommandName
+  | ConnectionCommandName
+  | ShellUiCommandName
+  | "shell.ping"
 >;
 const _allCommandsAreRouted: UnroutedCommand extends never ? true : never = true;
 void _allCommandsAreRouted;
@@ -558,14 +605,21 @@ export function executeCommand(review: CommandReview): CommandResult {
   if (
     isAgentCommandName(review.command) ||
     isRunnerCommandName(review.command) ||
-    isConnectionCommandName(review.command)
+    isConnectionCommandName(review.command) ||
+    isShellUiCommandName(review.command)
   ) {
     // Not a denial and not a result: a caller that reached here bypassed the
     // trusted side entirely. Throwing is the only honest answer — returning a
     // failure would let a miswired call site look like a refused command, and
     // returning success would be a lie about an effect nothing performed.
+    //
+    // `shell.menu` is in this list despite mutating nothing (MAR-440). What it
+    // needs from the trusted side is not permission but *capability*: this
+    // module is pure and importable from a sandboxed preload, so it cannot
+    // reach a `Menu`. Silently succeeding here would report that a menu opened
+    // when none did.
     throw new Error(
-      `${review.command} carries an effect and must go through dispatchCommand, not executeCommand.`,
+      `${review.command} needs the trusted side and must go through dispatchCommand, not executeCommand.`,
     );
   }
 
@@ -634,6 +688,18 @@ export interface DispatchContext {
     action: ConnectionAction,
     target: { agent_id: string; connection_id: string; field_id: string },
   ): Promise<ConnectionActionResult>;
+  /**
+   * Show the application menu at a point in the window (MAR-440).
+   *
+   * Injected like the three above, and for the plainest version of the reason:
+   * `Menu` is an Electron main API and this module must stay importable from a
+   * sandboxed preload.
+   *
+   * It returns nothing. A menu that opened and a menu the user then dismissed
+   * are the same outcome, and there is no result the renderer could act on —
+   * every consequence of the menu happens in main, where the handlers are.
+   */
+  showApplicationMenu(at: { x: number; y: number } | undefined): void;
   /**
    * Where the IPC-level audit record goes.
    *
@@ -704,6 +770,20 @@ export async function dispatchCommand(
       recovery: result.recovery,
       data: { state: result.state, masked_hint: result.masked_hint ?? "" },
     };
+  }
+
+  if (isShellUiCommandName(review.command)) {
+    // Both coordinates or neither. A menu popped at a half-known point would
+    // land somewhere nobody chose, and Electron's own default — the pointer's
+    // position — is the better answer when we do not have both.
+    const x = review.payload["x"];
+    const y = review.payload["y"];
+    const at =
+      typeof x === "number" && typeof y === "number"
+        ? { x: Math.round(x), y: Math.round(y) }
+        : undefined;
+    context.showApplicationMenu(at);
+    return { ok: true, request_id: review.audit.request_id };
   }
 
   if (isRunnerCommandName(review.command)) {

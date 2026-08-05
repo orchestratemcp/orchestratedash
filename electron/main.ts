@@ -32,7 +32,7 @@ import { assertStoreLocation } from "./data-dir";
 // development tree and wrong in an install, which is the worst combination.
 import { assertContractsLocation } from "./resources";
 
-import { app, BrowserWindow, ipcMain, Menu } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, nativeTheme } from "electron";
 
 import { userInfo } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -114,6 +114,12 @@ import {
   assertHardenedWebPreferences,
   isAllowedRendererUrl,
 } from "../lib/shell/window";
+// MAR-440 / MAR-436. The window's colours and geometry, decided once for the
+// three processes that need them; see `lib/shell/chrome.ts`.
+import { SURFACE_0, resolveTheme, titleBarOverlay, titleBarStyle } from "../lib/shell/chrome";
+import { appWindow, clearAppWindow, setAppWindow } from "./app-window";
+import { openSplash, type SplashWindow } from "./splash";
+import type { StartupStepId } from "../lib/shell/splash";
 import { secureStore } from "./secure-store";
 
 /**
@@ -138,6 +144,31 @@ let stopHeartbeat: (() => void) | null = null;
 
 /** Stops the approval notifier/popup watcher (MAR-421). */
 let stopApprovalNotifier: (() => void) | null = null;
+
+/**
+ * The startup window, while it is up (MAR-436). Null once the app window has
+ * painted, which is the normal ending.
+ */
+let splash: SplashWindow | null = null;
+
+/**
+ * The step now under way, so a throw can be described rather than dumped.
+ *
+ * Assigned *before* each step runs, never after. That ordering is the whole
+ * mechanism: `catch` reads whatever was last assigned, so the value it finds is
+ * the step that was in progress when something threw.
+ */
+let splashStep: StartupStepId | null = null;
+
+/**
+ * True once the splash is showing a startup failure.
+ *
+ * DASH stops exiting immediately in that case — the window has become the only
+ * report a person will ever see — so the non-zero exit has to happen when they
+ * close it instead. Without this flag `window-all-closed` cannot tell a failed
+ * launch from an ordinary quit, and a broken install would exit 0.
+ */
+let startupFailed = false;
 
 /**
  * How often DASH writes down that it is still running (MAR-467).
@@ -262,14 +293,56 @@ function installApplicationMenu(): void {
     };
   };
 
-  Menu.setApplicationMenu(
-    Menu.buildFromTemplate(
-      applicationMenu(process.platform, app.getName()).map((menu) => ({
-        label: menu.label,
-        submenu: menu.items.map(toItem),
-      })),
-    ),
+  const menu = Menu.buildFromTemplate(
+    applicationMenu(process.platform, app.getName()).map((spec) => ({
+      label: spec.label,
+      submenu: spec.items.map(toItem),
+    })),
   );
+
+  /*
+   * Still `setApplicationMenu`, even though MAR-440 hides the bar.
+   *
+   * This is the line that registers the accelerators. A hidden application menu
+   * goes on answering Ctrl+R, Ctrl+Shift+I, F11 and the clipboard shortcuts;
+   * a menu that was merely *built* and popped up on demand would answer none of
+   * them, and the issue is explicit that "their accelerators must keep working".
+   *
+   * On Windows the bar itself stops being drawn because `titleBarStyle` is
+   * `hidden` — there is no caption area for it to live in — so no extra call is
+   * needed to hide it, and adding `setMenuBarVisibility(false)` would suggest
+   * the two are related when only one of them is doing anything.
+   */
+  Menu.setApplicationMenu(menu);
+  applicationMenuInstance = menu;
+}
+
+/**
+ * The built menu, kept so `shell.menu` can pop the same one (MAR-440).
+ *
+ * `Menu.getApplicationMenu()` would also return it. Holding the reference is
+ * for the failure case rather than the happy one: if something ever replaces
+ * the application menu, popping whatever is currently installed would show the
+ * user a menu DASH did not build, and holding this makes the button show DASH's
+ * menu or nothing.
+ */
+let applicationMenuInstance: Menu | null = null;
+
+/**
+ * Show the application menu, at a point the renderer asked for (MAR-440).
+ *
+ * The renderer reaches this through `shell.menu` on the audited command
+ * channel, which carries two numbers. It cannot name a menu or an item — this
+ * function looks up neither — so the button in the title bar can *display* the
+ * menu and can never invoke anything in it. Every click is still main's own
+ * handler, as it was when the bar was visible.
+ */
+function showApplicationMenu(at: { x: number; y: number } | undefined): void {
+  const window = appWindow();
+  if (applicationMenuInstance === null || window === null) {
+    return;
+  }
+  applicationMenuInstance.popup(at === undefined ? { window } : { window, ...at });
 }
 
 async function runMenuAction(action: MenuAction | undefined): Promise<void> {
@@ -296,11 +369,37 @@ export function createWindow(): BrowserWindow {
   // precisely the regression worth catching, and the tests catch it earlier.
   assertHardenedWebPreferences(SHELL_WEB_PREFERENCES);
 
+  // MAR-440. The OS decides the theme unless the user has chosen; main has to
+  // answer that before any stylesheet is parsed, which is why the rule lives in
+  // `lib/shell/chrome.ts` beside the colours rather than only in CSS.
+  const theme = resolveTheme(nativeTheme.shouldUseDarkColors, null);
+
   const window = new BrowserWindow({
     width: 1280,
     height: 860,
     // Do not paint an empty frame while the renderer boots.
     show: false,
+    /*
+     * MAR-440. The frame is ours; the buttons stay the operating system's.
+     *
+     * `titleBarStyle: "hidden"` with `titleBarOverlay` is the combination that
+     * gets both: no native menu bar and no native caption, but minimise,
+     * maximise and close are still Windows' own controls — so they are drawn in
+     * the right place, in the right order for the user's locale, with the
+     * right snap-layouts hover behaviour, none of which a `<button>` of ours
+     * would have.
+     */
+    titleBarStyle: titleBarStyle(process.platform),
+    ...(process.platform === "darwin" ? {} : { titleBarOverlay: titleBarOverlay(theme) }),
+    /*
+     * The colour behind everything, before anything.
+     *
+     * Electron's default is white, and it is what the eye catches on a cold
+     * start and on every resize: a white frame for one or two frames, then the
+     * app. Setting it here is half of MAR-436's "no unpainted or white window";
+     * the splash is the other half.
+     */
+    backgroundColor: SURFACE_0[theme],
     webPreferences: {
       ...SHELL_WEB_PREFERENCES,
       // `fileURLToPath`, not `URL.pathname`: on Windows the latter yields
@@ -338,6 +437,30 @@ export function createWindow(): BrowserWindow {
     }
   });
 
+  /*
+   * Follow the OS if it changes while DASH is open (MAR-440).
+   *
+   * The renderer follows on its own — `app/tokens.css` is written in
+   * `light-dark()` against `color-scheme` — but the overlay and the window's
+   * background are main's, and without this the caption buttons stay in
+   * yesterday's theme while everything under them switches. That seam is
+   * exactly the one this issue exists to remove.
+   */
+  const followTheme = (): void => {
+    if (window.isDestroyed() || process.platform === "darwin") {
+      return;
+    }
+    const next = resolveTheme(nativeTheme.shouldUseDarkColors, null);
+    window.setTitleBarOverlay(titleBarOverlay(next));
+    window.setBackgroundColor(SURFACE_0[next]);
+  };
+  nativeTheme.on("updated", followTheme);
+  window.on("closed", () => {
+    nativeTheme.off("updated", followTheme);
+    clearAppWindow(window);
+  });
+
+  setAppWindow(window);
   void window.loadURL(rendererUrl());
   return window;
 }
@@ -402,6 +525,10 @@ export function registerCommandChannel(
           adapter: channels?.adapterFor(input.target.agent_id) ?? noAdapter,
         }),
       runnerLifecycle: (action, agentId) => runnerLifecycle(runner, action, agentId),
+      // MAR-440. Draws a menu and reaches nothing else — no store, no runner,
+      // no provider. See `showApplicationMenu` for why the renderer cannot name
+      // what it wants popped.
+      showApplicationMenu,
       // MAR-383. The vault is reachable from exactly this one entry in exactly
       // this one context object, and the value the user types never comes back
       // through it — see `lib/connection-actions.ts` for what does.
@@ -415,7 +542,7 @@ export function registerCommandChannel(
               credential,
               vaultLabel,
               alreadyHeld(credential),
-              BrowserWindow.getAllWindows()[0] ?? null,
+              appWindow(),
               RENDERER_ORIGIN,
             ),
           // MAR-446. `check` and `revoke` are pure provider calls and come from
@@ -430,7 +557,7 @@ export function registerCommandChannel(
                 alreadyHeld(credential),
                 heldHintFor(credential),
                 options.login_hint,
-                BrowserWindow.getAllWindows()[0] ?? null,
+                appWindow(),
                 RENDERER_ORIGIN,
               ),
           },
@@ -763,18 +890,40 @@ if (typeof app !== "undefined") {
   }
 
   void app.whenReady().then(async () => {
+    /*
+     * MAR-436. The first thing that happens, before any check that can throw.
+     *
+     * `splashStep` is what makes the splash honest rather than decorative: each
+     * assertion below announces itself *before* running, so if it throws, the
+     * step showing on screen is the step that failed and the `catch` at the end
+     * of this chain has a name to describe. A spinner started here and never
+     * updated would tell a user with a broken install exactly as much as the
+     * blank window it replaced.
+     */
+    splash = openSplash(resolveTheme(nativeTheme.shouldUseDarkColors, null));
+
     // `electron/data-dir.ts` already pointed the store at `userData`, as the
     // first import in this file. This is the proof it worked — see that module
     // for why the old `useUserDataDirectory()` call here could never have.
+    splashStep = "store";
+    splash.step("store");
     assertStoreLocation(dataDir);
     reportStoreLocation();
+
+    splashStep = "vault";
+    splash.step("vault");
     reportSecureStoreBacking();
 
     // MAR-429. The read-only half of the same question: the store must land in
     // the user's data directory, and the schemas must come from this install
     // rather than from a development tree that happens to be on the build
     // machine. Both fail loudly here or not at all.
+    splashStep = "rules";
+    splash.step("rules");
     assertContractsLocation();
+
+    splashStep = "screens";
+    splash.step("screens");
     assertRendererPresent();
     // MAR-432. After `whenReady`, unlike `registerRendererScheme` above.
     // Registered whether or not this launch will load it, so that
@@ -796,6 +945,11 @@ if (typeof app !== "undefined") {
     // machine without an OS keyring. Now it means DASH could not put a proven
     // owner-only ACL on one file — which is a real refusal, and a much rarer
     // one.
+    // Named on the splash but deliberately *not* a failure that stops startup:
+    // `ensureRunner` returns a refusal rather than throwing, DASH works without
+    // a runner, and `lib/shell/splash.ts` has no hard-failure entry for it.
+    splashStep = "runner";
+    splash.step("runner");
     const started = await ensureRunner(dataDir);
     const runner = started.ok ? started.handle : null;
     if (started.ok) {
@@ -843,7 +997,26 @@ if (typeof app !== "undefined") {
     // the other two so every channel DASH answers is visible in one place.
     registerCredentialChannels();
     installApplicationMenu();
-    createWindow();
+    splashStep = "window";
+    splash.step("window");
+    const window = createWindow();
+
+    /*
+     * The handover, and the ordering is load-bearing in both directions.
+     *
+     * Closed on `ready-to-show` — the same event `createWindow` reveals the app
+     * on — so the two happen in one frame and there is never a moment with
+     * neither window painted. That is the whole point of the splash and it
+     * would be undone by closing it any earlier.
+     *
+     * And never *before* the app window exists, because `window-all-closed`
+     * quits the app: closing the splash while it was the only window would shut
+     * DASH down during its own startup.
+     */
+    window.once("ready-to-show", () => {
+      splash?.close();
+      splash = null;
+    });
 
     // MAR-421. After the window exists, so the popup's own approve/reject
     // calls have somewhere to be answered from — `registerCommandChannel`
@@ -876,6 +1049,27 @@ if (typeof app !== "undefined") {
     console.error(
       `[dash-shell] startup failed: ${error instanceof Error ? error.stack : String(error)}`,
     );
+
+    /*
+     * MAR-436's actual requirement, and the reason the splash is not decorative.
+     *
+     * Until now a failed startup was `app.exit(1)` and a line on a stderr
+     * stream nobody double-clicking an icon will ever see: DASH vanished. It
+     * now says which step failed, what that means, and what to do — from
+     * `describeStartupFailure`, in plain language, and *never* from the thrown
+     * error, whose message is a developer's sentence full of paths.
+     *
+     * Note that this does not exit. The window is the message now, so the
+     * process lives until the user closes it, and `window-all-closed` ends it
+     * with the failing code. Exiting here would put the splash's whole point
+     * back where it started.
+     */
+    if (splash !== null && splashStep !== null) {
+      splash.fail(splashStep);
+      startupFailed = true;
+      return;
+    }
+
     app.exit(1);
   });
 
@@ -889,6 +1083,16 @@ if (typeof app !== "undefined") {
     // What did change is that DASH now leaves a process behind on purpose. The
     // runner is stopped by `runner.stop`, not by closing the window; see
     // `runner/README.md`.
+    //
+    // MAR-436. One exception, and it is about the exit code rather than the
+    // quitting. A startup that failed now keeps the splash up to say so instead
+    // of exiting on the spot, so the non-zero code has to be paid here — when
+    // the user closes the message. `app.exit` rather than `app.quit` because
+    // this path has already decided; there is nothing left to interrupt it for.
+    if (startupFailed) {
+      app.exit(1);
+      return;
+    }
     if (process.platform !== "darwin") {
       app.quit();
     }

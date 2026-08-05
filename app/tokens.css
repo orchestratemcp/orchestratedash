@@ -1,0 +1,273 @@
+/*
+ * The design system, as tokens.
+ *
+ * MAR-440, MAR-436, MAR-420, MAR-434 and MAR-435 are one design pass, not five.
+ * This file is the part they share: every colour, space, size and radius any of
+ * them uses is named here, and a surface that needs a value not in this file is
+ * a surface that should change this file in review.
+ *
+ * ## Dark is the designed base; light is not a courtesy
+ *
+ * MAR-420 specifies an obsidian blue-black base from the Stitch designs. DASH
+ * shipped light-default with a dark variant. Both are kept, and the reason is
+ * not politeness: DASH is a local-first product whose whole argument is that it
+ * behaves like software you installed rather than a site you visited, and an app
+ * that ignores the operating system's own light/dark preference is doing the
+ * opposite of that on the very first frame.
+ *
+ * So dark is what the palette is *designed* against — it is what the demo, the
+ * screenshots and the brand assume — and light is generated from the same
+ * semantic names with its own contrast checked, not by inverting the dark one.
+ *
+ * `light-dark()` is what keeps that from doubling the file. Each token is
+ * declared once with both values; `color-scheme` on `:root` decides which is
+ * live, and the two `[data-theme]` rules at the bottom are the whole of the
+ * user's override. There is no second palette block to keep in sync, which is
+ * the failure mode a themed stylesheet always eventually has.
+ *
+ * ## Calm by default, dense on request
+ *
+ * The spacing scale is fixed. What varies is `--density-*`, and only that: a
+ * compact DASH is the same layout with less air, never a different layout or a
+ * different amount of truth. `[data-density="compact"]` is the opt-in, and the
+ * default is the calm one because a novice with three agents does not have a
+ * density problem.
+ *
+ * ## The mono font is for content, never for vocabulary
+ *
+ * MAR-420 asks for JetBrains Mono on "agent IDs, logs, terminal input, telemetry
+ * values". Two of those four are things `lib/copy/identifiers.ts` forbids on the
+ * guided path, and a monospace style is exactly the invitation to start printing
+ * them: give a design system a slot for a raw identifier and one will appear in
+ * it. So `--font-mono` is scoped to *values* — a count, a duration, a timestamp,
+ * a name the user typed, an agent's own log line — and never to DASH's internal
+ * vocabulary, which does not get a typeface because it does not get shown.
+ *
+ * The copy system is a tested product feature. The type scale designs around it.
+ */
+
+:root {
+  /*
+   * Follows the OS unless `[data-theme]` overrides it below. Every `light-dark()`
+   * in this file resolves against this one declaration.
+   */
+  color-scheme: light dark;
+
+  /* ------------------------------------------------------------------ *
+   * Surfaces — depth by tonal layering, not by shadow (MAR-420)
+   *
+   * Four steps, each a lift rather than a drop shadow. A shadow implies a
+   * light source and a physical stack, which is a metaphor DASH's content
+   * does not have; a lighter surface just reads as nearer.
+   *
+   * `--surface-0` is load-bearing beyond CSS: it is also the Electron window's
+   * `backgroundColor`, the Windows title bar overlay colour and the splash's
+   * background. Those three are set in Node from `lib/shell/chrome.ts`, and
+   * `tests/chrome.test.ts` asserts this file still agrees with it.
+   * ------------------------------------------------------------------ */
+  --surface-0: light-dark(#ffffff, #0b0e14);
+  --surface-1: light-dark(#f6f8fb, #12161f);
+  --surface-2: light-dark(#eef2f7, #181d28);
+  --surface-3: light-dark(#e4eaf2, #202634);
+
+  --line: light-dark(#dfe4ec, #232a36);
+  --line-strong: light-dark(#c3ccda, #313a4a);
+
+  /* ------------------------------------------------------------------ *
+   * Text
+   *
+   * Three weights of emphasis and no more. `--text-faint` is for text that is
+   * still text — a timestamp, a unit — and never for text that matters and has
+   * been greyed to make a layout calmer.
+   * ------------------------------------------------------------------ */
+  --text: light-dark(#131722, #e8ecf3);
+  --text-muted: light-dark(#5a6474, #9aa5b8);
+  /*
+   * Measured against `--surface-2`, not against `--surface-0`.
+   *
+   * The first values written here were #7c8698 and #6b7688, chosen by eye
+   * against the page background, and they measured 3.67:1 and 4.21:1 — both
+   * below AA for body text, and the light one worse than the dark one, which is
+   * the giveaway that neither was measured at all. On `--surface-2`, which is
+   * where faint text most often sits (a timestamp inside a card inside a
+   * panel), they were 3.45:1 and 3.67:1.
+   *
+   * These pass on every surface a token can legitimately be drawn on, and the
+   * worst case is `--surface-3` rather than the page background: 4.52:1 light
+   * and 4.66:1 dark. "Faint" is a rank in a hierarchy, not a licence to fall
+   * under the floor.
+   */
+  --text-faint: light-dark(#616a77, #8290a4);
+
+  /* ------------------------------------------------------------------ *
+   * Meaning colours
+   *
+   * MAR-420's rule, kept exactly: electric blue is primary and active, emerald
+   * is reserved for healthy/active *only*, amber warns, red errors.
+   *
+   * "Emerald reserved" is a constraint on us, not decoration. If success green
+   * is also used for "done", "saved" and "connected", then a fleet of green
+   * cards stops meaning the agents are healthy and starts meaning the page
+   * rendered. `--ok` is for a live, healthy thing; a finished neutral thing
+   * takes `--text-muted`.
+   *
+   * Every pair below passes AA against `--surface-0` and `--surface-1` in both
+   * themes; the `-bg` tints are backgrounds only and never carry text at their
+   * own hue.
+   * ------------------------------------------------------------------ */
+  --accent: light-dark(#1d5fd6, #4d8dff);
+  --accent-hover: light-dark(#1a52ba, #6d9fff);
+  --accent-contrast: #ffffff;
+  --accent-bg: light-dark(#eaf0fd, #16233a);
+
+  /* Darkened from #0f7a4a, which measured 4.45:1 on `--surface-3` — a green
+     that passes on the page and fails inside a card is worse than one that
+     fails everywhere, because it is the healthy-agent colour and nobody would
+     ever have looked at it twice. */
+  --ok: light-dark(#0d7145, #34d399);
+  --ok-bg: light-dark(#e6f5ed, #0e2a20);
+
+  --warn: light-dark(#8a5a00, #f5b544);
+  --warn-bg: light-dark(#fdf3e0, #2c2110);
+
+  --err: light-dark(#b3261e, #ff6b5e);
+  --err-bg: light-dark(#fdecea, #331614);
+
+  /*
+   * Focus is its own colour and never `--accent`. A focus ring that matches the
+   * primary button is invisible on the primary button, which is the one control
+   * a keyboard user most needs to find.
+   */
+  --focus: light-dark(#1d5fd6, #8fb6ff);
+
+  /* ------------------------------------------------------------------ *
+   * Type
+   *
+   * Neither family is bundled: DASH ships no web fonts, because a local-first
+   * app that blocks its first paint on a font file has chosen the wrong thing
+   * to be strict about. Inter and JetBrains Mono lead the stacks and are used
+   * when the machine has them; the fallbacks are the platform faces the app
+   * has always rendered in, so nothing regresses on a machine that has neither.
+   * ------------------------------------------------------------------ */
+  --font-ui: Inter, "Segoe UI Variable Text", "Segoe UI", ui-sans-serif, system-ui,
+    -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", "SF Mono", Menlo,
+    Consolas, monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+
+  --leading-tight: 1.3;
+  --leading-normal: 1.55;
+  --leading-loose: 1.7;
+
+  --tracking-eyebrow: 0.06em;
+
+  /* ------------------------------------------------------------------ *
+   * Space — a 4px base, and nothing between the steps
+   *
+   * The scale is deliberately short. Every ad-hoc `0.65rem` and `0.85rem` in a
+   * stylesheet is a decision someone made once at 2am, and eight steps is
+   * enough to lay out anything DASH shows.
+   * ------------------------------------------------------------------ */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* ------------------------------------------------------------------ *
+   * Radius — 4px on components, pill on status badges (MAR-420)
+   * ------------------------------------------------------------------ */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+
+  /* The 2px left bar on an active list item, per the design system. */
+  --active-bar: 2px;
+
+  /* ------------------------------------------------------------------ *
+   * Chrome (MAR-440)
+   *
+   * Mirrors `TITLE_BAR_HEIGHT` in `lib/shell/chrome.ts`; the same test that
+   * checks the colours checks this.
+   *
+   * `--window-controls-inset` is how much horizontal room the operating
+   * system's own buttons need inside our bar. It is set from JavaScript at
+   * runtime, because Windows tells us the overlay's real width and guessing it
+   * is how a close button ends up on top of a control.
+   * ------------------------------------------------------------------ */
+  --titlebar-height: 40px;
+  --window-controls-inset: 0px;
+
+  /* ------------------------------------------------------------------ *
+   * Layout
+   * ------------------------------------------------------------------ */
+  --sidebar-width: 260px;
+  --content-max: 72rem;
+
+  /* ------------------------------------------------------------------ *
+   * Density — the only thing the compact opt-in is allowed to change
+   *
+   * Comfortable is the default because calm is the default. Note what is *not*
+   * here: no font size, no colour, no border, and above all no content. A
+   * compact DASH shows the same facts in less space, never fewer facts.
+   * ------------------------------------------------------------------ */
+  --density-row-y: var(--space-3);
+  --density-row-x: var(--space-4);
+  --density-card-p: var(--space-4);
+  --density-gap: var(--space-4);
+  --density-stack: var(--space-5);
+}
+
+[data-density="compact"] {
+  --density-row-y: var(--space-1);
+  --density-row-x: var(--space-3);
+  --density-card-p: var(--space-3);
+  --density-gap: var(--space-2);
+  --density-stack: var(--space-4);
+}
+
+/*
+ * The user's explicit choice, which is the whole of the override.
+ *
+ * Setting `color-scheme` is not a nicety here — it is what re-resolves every
+ * `light-dark()` above, and it is also what tells the browser to draw
+ * scrollbars, form controls and the canvas behind our first paint in the
+ * matching theme. Without it a chosen-dark DASH gets light scrollbars.
+ */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+/*
+ * Reduced motion is honoured at the token layer so no surface has to remember.
+ * MAR-435's sprites will read this too; it is here rather than there because
+ * the rule is the app's, not the mascot's.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-normal: 0ms;
+  }
+}
+
+@media not (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 90ms;
+    --motion-normal: 160ms;
+  }
+}

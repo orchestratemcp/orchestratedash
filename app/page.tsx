@@ -143,10 +143,21 @@ function TryTheScout(): ReactNode {
         <li>It runs only when you ask it to.</li>
         <li>You choose what it reads, and can change it at any time.</li>
       </ul>
+      {/*
+        MAR-440 made this sentence false and it is corrected here rather than in
+        that issue's own files, because it is the only place in the product that
+        told a user where the menu was.
+
+        The old wording — "open the DASH menu" — described the native menu bar,
+        which no longer exists. There is no menu *bar* to name any more, so the
+        copy names the button instead, and describes it by where it is and what
+        it looks like rather than by a word ("hamburger", "app menu") that a
+        novice has no reason to know.
+      */}
       <p>
-        Open the <strong>DASH</strong> menu and choose{" "}
-        <strong>Try a sample agent</strong>. DASH makes it, shows you what it
-        will do, and asks before adding anything.
+        Choose <strong>Try a sample agent</strong> from the menu button
+        (<span aria-hidden="true">☰</span>) at the top left of the window. DASH
+        makes it, shows you what it will do, and asks before adding anything.
       </p>
     </section>
   );

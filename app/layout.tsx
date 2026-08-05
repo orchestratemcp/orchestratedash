@@ -1,12 +1,20 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
+import "./tokens.css";
 import "./globals.css";
+import { AppChrome } from "./_components/app-chrome";
 
 export const metadata = {
   title: "OrchestrateDASH",
   description: "Local monitor for agents planned with OrchestrateKit.",
 };
 
+/**
+ * MAR-440. `tokens.css` is imported before `globals.css` and the order is not
+ * cosmetic: every declaration in the second file resolves against custom
+ * properties declared in the first, and a `var()` with no declaration is not an
+ * error — it is a silently missing value, which is the worst way for a design
+ * system to fail.
+ */
 export default function RootLayout({
   children,
 }: {
@@ -15,18 +23,19 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <header>
-          <strong>OrchestrateDASH</strong>
-          <nav>
-            <Link href="/">Agents</Link>
-            <Link href="/work">Work inbox</Link>
-            <Link href="/runs">Runs</Link>
-            <Link href="/connections">Connections</Link>
-            <Link href="/agents/add">Add agent</Link>
-          </nav>
-          <span className="badge">local agent workspace &middot; audited controls</span>
-        </header>
-        <main>{children}</main>
+        {/*
+          A skip link, because the chrome now sits between the window and the
+          content on every page. Six navigation links is not much to tab past
+          once; it is a lot to tab past on every navigation, which is what a
+          keyboard user actually does.
+        */}
+        <a className="skip-link" href="#main">
+          Skip to content
+        </a>
+        <AppChrome />
+        <main id="main" tabIndex={-1}>
+          {children}
+        </main>
       </body>
     </html>
   );
