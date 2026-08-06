@@ -1,28 +1,21 @@
+/*
+ * The palette moved to `app/tokens.css` (MAR-440).
+ *
+ * These six names stay as aliases rather than being renamed across every rule
+ * in this file. That is deliberate and it is not laziness: this stylesheet is
+ * read by `tests/copy-*.test.ts` only indirectly, but it dresses every surface
+ * MAR-457, MAR-458, MAR-467 and MAR-469 proved, and a rename touching six
+ * hundred lines would put the design pass and a regression risk in the same
+ * diff with no way to review either.
+ *
+ * The aliases are the seam. Surfaces built from here on use the token names
+ * directly, and these six shrink as the older rules are revisited.
+ */
 :root {
-  color-scheme: light dark;
-  --bg: #ffffff;
-  --fg: #16181d;
-  --muted: #5f6672;
-  --line: #e3e6ea;
-  --panel: #f7f8fa;
-  --accent: #2f6feb;
-  --ok: #1a7f4b;
-  --warn: #9a6700;
-  --err: #b3261e;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1115;
-    --fg: #e6e8ec;
-    --muted: #9099a6;
-    --line: #262a31;
-    --panel: #161a20;
-    --accent: #6ea0ff;
-    --ok: #4ec27f;
-    --warn: #e0b341;
-    --err: #ff6b5e;
-  }
+  --bg: var(--surface-0);
+  --fg: var(--text);
+  --muted: var(--text-muted);
+  --panel: var(--surface-1);
 }
 
 * {
@@ -33,41 +26,219 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
 }
 
-header {
-  display: flex;
-  align-items: center;
-  gap: 1.25rem;
-  flex-wrap: wrap;
-  padding: 0.9rem 1.5rem;
+code {
+  font-family: var(--font-mono);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The skip link is invisible until focused, and then it is unmissable.
+ *
+ * The hidden transform has to undo `top` as well as the element's own height,
+ * and this is the second thing rather than an over-cautious first. `-200%` is
+ * two times the *element's* height and knows nothing about `top`; that was fine
+ * while `top` was one spacing step, and this issue put a 40px title bar in
+ * front of it. The link measures 39px, so 48px down and 78px up left 9px of
+ * accent-coloured link sitting across the top of every page — visible in the
+ * 1280/768/375 captures and in no DOM measurement, because nothing overflowed
+ * and nothing moved.
+ *
+ * `-100%` is the element's full height and the rest is the offset it is
+ * fighting, so the bottom edge lands exactly on y=0 whatever the font, the
+ * padding or the title bar later become; the last step is the margin that keeps
+ * "exactly 0" from being a rounding error away from a visible sliver.
+ *
+ * `electron/smoke.ts` proof 1e measures both directions in a real window,
+ * because a stylesheet test cannot: nothing here is wrong in isolation. */
+.skip-link {
+  position: absolute;
+  left: var(--space-2);
+  top: calc(var(--titlebar-height) + var(--space-2));
+  z-index: 20;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  text-decoration: none;
+  transform: translateY(
+    calc(-100% - var(--titlebar-height) - var(--space-2) - var(--space-1))
+  );
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+/* Focus is one ring, everywhere, and it is never the accent colour — see the
+   note in tokens.css about a focus ring that vanishes on the primary button. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* `main` takes focus from the skip link and must not draw a ring for it: the
+   user asked to go there, and a box around the whole page says nothing. */
+main:focus {
+  outline: none;
+}
+
+/* ---------------------------------------------------------------------- *
+ * App chrome (MAR-440)
+ * ---------------------------------------------------------------------- */
+
+.app-chrome {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--surface-0);
   border-bottom: 1px solid var(--line);
 }
 
-header nav {
+/*
+ * The strip the window is dragged by.
+ *
+ * `-webkit-app-region: drag` here and `no-drag` on every control inside it. The
+ * order matters: a bar that is draggable and a button that has not opted out is
+ * a button that cannot be clicked, only dragged — which looks exactly like a
+ * broken button and is the single most common way this pattern ships wrong.
+ *
+ * `padding-right` is the room Windows' own caption buttons need.
+ * `--window-controls-inset` is measured at runtime by `title-bar.tsx`; it is
+ * `0px` in a browser tab, where there are no such buttons.
+ */
+.title-bar {
   display: flex;
-  gap: 1rem;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--titlebar-height);
+  padding-left: var(--space-3);
+  padding-right: calc(var(--window-controls-inset) + var(--space-3));
+  -webkit-app-region: drag;
+  user-select: none;
 }
 
-header a {
-  color: var(--accent);
+.title-bar-menu,
+.title-bar-mark,
+.title-bar-surface {
+  -webkit-app-region: no-drag;
+}
+
+/*
+ * The mark and the surface name are not draggable, and that is on purpose
+ * rather than an oversight: text a user might want to select should not be
+ * something that moves the window when they try. The bar has plenty of empty
+ * space to drag by, which is what a title bar is mostly made of.
+ */
+.title-bar-mark {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.title-bar-divider {
+  width: 1px;
+  height: 12px;
+  background: var(--line-strong);
+}
+
+.title-bar-surface {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.title-bar-menu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.title-bar-menu:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.title-bar-glyph {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.app-nav {
+  display: flex;
+  gap: var(--space-1);
+  padding: 0 var(--space-3) var(--space-2);
+  overflow-x: auto;
+  /* The bar scrolls at 375px rather than wrapping into two rows: a chrome that
+     changes height by breakpoint moves the content under it, and MAR-440's
+     acceptance is explicitly about no horizontal overflow of the *page*. */
+  scrollbar-width: thin;
+}
+
+.app-nav-link {
+  position: relative;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
   text-decoration: none;
+  white-space: nowrap;
 }
 
-header a:hover {
-  text-decoration: underline;
+.app-nav-link:hover {
+  background: var(--surface-1);
+  color: var(--text);
 }
 
-.badge {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 0.8rem;
+/* The design system's 2px bar on an active item. Paired with `aria-current` in
+   the markup, because colour and a rule alone are not a status. */
+.app-nav-link.is-active {
+  color: var(--text);
+  background: var(--surface-1);
+}
+
+.app-nav-link.is-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  width: var(--active-bar);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
 }
 
 main {
-  padding: 1.5rem;
-  max-width: 72rem;
+  padding: var(--density-stack) var(--space-5);
+  max-width: var(--content-max);
+}
+
+@media (max-width: 480px) {
+  main {
+    padding: var(--space-4) var(--space-4);
+  }
 }
 
 h1 {
@@ -118,7 +289,6 @@ td.wrap {
 }
 
 code {
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 0.88em;
 }
 
@@ -233,7 +403,7 @@ a.plain:hover {
 
 .add-agent textarea {
   width: 100%;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85rem;
   background: var(--panel);
   color: var(--fg);
@@ -558,7 +728,7 @@ button:disabled {
 
 .credential-prompt input {
   width: 100%;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 0.9rem;
   background: var(--panel);
   color: var(--fg);

@@ -22,7 +22,11 @@
  * making the rest of onboarding beautiful. This gate has to remain trustworthy.
  */
 
-import { app, dialog, BrowserWindow } from "electron";
+import { app, dialog } from "electron";
+
+// MAR-436. `getAllWindows()[0]` used to answer "the DASH window"; the splash
+// made that wrong for the first seconds of every launch. See `./app-window.ts`.
+import { appWindow } from "./app-window";
 
 import path from "node:path";
 
@@ -246,7 +250,7 @@ async function askUser(prompt: HandoffPrompt, expiresAt: string): Promise<boolea
   }, expiresAtMs - Date.now());
   timeout.unref();
 
-  const parent = BrowserWindow.getAllWindows()[0];
+  const parent = appWindow();
   const options = {
     type: "question" as const,
     title: prompt.title,
@@ -261,7 +265,7 @@ async function askUser(prompt: HandoffPrompt, expiresAt: string): Promise<boolea
 
   try {
     const answer =
-      parent === undefined
+      parent === null
         ? await dialog.showMessageBox(options)
         : await dialog.showMessageBox(parent, options);
     if (controller.signal.aborted || Date.now() >= expiresAtMs) {
@@ -280,7 +284,7 @@ async function askUser(prompt: HandoffPrompt, expiresAt: string): Promise<boolea
 
 /** Report an outcome that needs no decision. */
 export function reportOutcome(report: HandoffReport): void {
-  const parent = BrowserWindow.getAllWindows()[0];
+  const parent = appWindow();
   const options = {
     type: report.ok ? ("info" as const) : ("warning" as const),
     title: report.ok ? "DASH" : "DASH could not add that agent",
@@ -289,7 +293,7 @@ export function reportOutcome(report: HandoffReport): void {
     buttons: ["OK"],
     noLink: true,
   };
-  if (parent === undefined) {
+  if (parent === null) {
     void dialog.showMessageBox(options);
   } else {
     void dialog.showMessageBox(parent, options);
@@ -304,8 +308,8 @@ export function reportOutcome(report: HandoffReport): void {
  * Windows flashes the taskbar button and shows nothing.
  */
 export function surfaceWindow(): void {
-  const window = BrowserWindow.getAllWindows()[0];
-  if (window === undefined) {
+  const window = appWindow();
+  if (window === null) {
     return;
   }
   if (window.isMinimized()) {

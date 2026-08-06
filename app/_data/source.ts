@@ -69,6 +69,20 @@ export interface ConnectionCommandArgs {
 }
 
 interface DashShellClient {
+  /**
+   * Show the application menu (MAR-440).
+   *
+   * The odd one out on this interface, and worth the sentence: every other
+   * method here asks main to *do* something to an agent or a credential, and
+   * this one asks it to draw a menu. It is on the same bridge because it goes
+   * down the same audited channel — see the `shell.menu` entry in
+   * `lib/shell/ipc.ts` for why that was preferred to a third `contextBridge`
+   * surface.
+   *
+   * Optional on top of the bridge already being optional: a build of the shell
+   * older than the title bar has a `dashShell` without it.
+   */
+  openAppMenu?(at?: { x: number; y: number }): Promise<CommandResult>;
   connectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   testConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   disconnectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;

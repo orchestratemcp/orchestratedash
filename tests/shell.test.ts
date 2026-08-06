@@ -118,6 +118,10 @@ describe("the audited command chokepoint", () => {
     expect(SHELL_COMMAND_CHANNEL).toBe("dash:shell-command");
     expect(Object.keys(COMMANDS)).toEqual([
       "shell.ping",
+      // MAR-440. Window chrome: asks main to draw a menu and reaches no agent,
+      // no store and no provider. The only command besides `shell.ping` that
+      // can honestly declare `mutates: false`.
+      "shell.menu",
       // MAR-415. Lifecycle, not Agent DOM commands: they act on a process, no
       // manifest declares them, and they never become an envelope. The
       // `runner.` prefix is what keeps that legible at every call site.
@@ -344,11 +348,19 @@ describe("dispatch", () => {
     const inputs: AgentCommandInput[] = [];
     const lifecycle: Array<{ action: string; agent_id: string | undefined }> = [];
     const connections: Array<{ action: string; target: Record<string, string> }> = [];
+    // MAR-440. Where the menu was asked to appear, or `undefined` for "wherever
+    // Electron would put it". Recorded rather than performed for the same
+    // reason as everything else here: there is no `Menu` in this process.
+    const menus: Array<{ x: number; y: number } | undefined> = [];
     return {
       audited,
       inputs,
       lifecycle,
       connections,
+      menus,
+      showApplicationMenu: (at: { x: number; y: number } | undefined) => {
+        menus.push(at);
+      },
       // MAR-383. Recorded, not performed — and note the fake holds no secret,
       // which it could not do usefully anyway: no credential is an argument to
       // or a result of this call.
@@ -413,6 +425,71 @@ describe("dispatch", () => {
 
     expect(result).toMatchObject({ ok: true, data: { pong: true } });
     expect(ctx.inputs).toHaveLength(0);
+  });
+
+  /**
+   * MAR-440. The title bar's menu button.
+   *
+   * Three properties, and the third is the one that matters. It reaches main
+   * (a pure module cannot pop a `Menu`); it is audited like everything else on
+   * this channel; and it can carry **nothing but a coordinate** — so a renderer
+   * that has been taken over can make a menu appear and still cannot name an
+   * item in it, because no payload key exists that could.
+   */
+  describe("shell.menu", () => {
+    it("reaches the trusted side with the point the renderer asked for", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(
+        { command: "shell.menu", request_id: "req-m", payload: { x: 12, y: 40 } },
+        ctx,
+      );
+
+      expect(result).toMatchObject({ ok: true, request_id: "req-m" });
+      expect(ctx.menus).toEqual([{ x: 12, y: 40 }]);
+      // Not an agent command and not lifecycle: no envelope was built for it.
+      expect(ctx.inputs).toHaveLength(0);
+      expect(ctx.lifecycle).toHaveLength(0);
+    });
+
+    it("is audited, and recorded as changing nothing", async () => {
+      const ctx = context();
+      await dispatchCommand({ command: "shell.menu", request_id: "req-m2" }, ctx);
+
+      expect(ctx.audited[0]).toMatchObject({
+        command: "shell.menu",
+        decision: "allowed",
+        mutates: false,
+      });
+    });
+
+    it("falls back to Electron's own placement when only one coordinate arrives", async () => {
+      const ctx = context();
+      await dispatchCommand(
+        { command: "shell.menu", request_id: "req-m3", payload: { x: 12 } },
+        ctx,
+      );
+
+      // A menu popped at a half-known point lands somewhere nobody chose.
+      expect(ctx.menus).toEqual([undefined]);
+    });
+
+    it("cannot be told which menu item to invoke", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(
+        {
+          command: "shell.menu",
+          request_id: "req-m4",
+          payload: { x: 1, y: 2, action: "sample_agent" },
+        },
+        ctx,
+      );
+
+      // The whole request is denied rather than the extra field dropped: a
+      // caller sending a field we do not understand has a different model of
+      // this command than we do.
+      expect(result).toMatchObject({ ok: false, reason: "unexpected_payload_field" });
+      expect(ctx.menus).toHaveLength(0);
+    });
   });
 
   /**

@@ -21,7 +21,11 @@
  * a replacement implementation and not a reason to remove the menu.
  */
 
-import { app, dialog, BrowserWindow } from "electron";
+import { app, dialog } from "electron";
+
+// MAR-436. `getAllWindows()[0]` used to answer "the DASH window"; the splash
+// made that wrong for the first seconds of every launch. See `./app-window.ts`.
+import { appWindow } from "./app-window";
 
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -162,7 +166,7 @@ export async function offerSampleAgent(ports: HandoffPorts | null): Promise<void
 }
 
 function showProblem(message: string): void {
-  const parent = BrowserWindow.getAllWindows()[0];
+  const parent = appWindow();
   const options = {
     type: "warning" as const,
     title: "DASH could not make a sample agent",
@@ -170,7 +174,7 @@ function showProblem(message: string): void {
     buttons: ["OK"],
     noLink: true,
   };
-  if (parent === undefined) {
+  if (parent === null) {
     void dialog.showMessageBox(options);
   } else {
     void dialog.showMessageBox(parent, options);

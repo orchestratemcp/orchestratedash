@@ -82,6 +82,21 @@ function send(command: string, payload: Record<string, string>): Promise<Command
   }) as Promise<CommandResult>;
 }
 
+/**
+ * The same call for a payload of numbers (MAR-440).
+ *
+ * A separate function rather than widening `send`'s value type, so that every
+ * existing caller stays constrained to strings and only the one command that
+ * needs a coordinate can send one.
+ */
+function sendNumbers(command: string, payload: Record<string, number>): Promise<CommandResult> {
+  return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
+    command,
+    request_id: requestId(),
+    payload,
+  }) as Promise<CommandResult>;
+}
+
 /** Drop unset optional fields: the boundary denies a payload key it did not declare. */
 function fields(args: AgentCommandArgs, keys: readonly (keyof AgentCommandArgs)[]): Record<string, string> {
   const payload: Record<string, string> = {};
@@ -112,6 +127,19 @@ const dashShell = {
    */
   ping(): Promise<CommandResult> {
     return send("shell.ping", { issued_at: new Date().toISOString() });
+  },
+
+  /**
+   * Show the application menu, under the button the user pressed (MAR-440).
+   *
+   * The bar is ours since the native one was hidden; the menu behind it is
+   * still main's. This carries two numbers and cannot name an item, so pressing
+   * the button is a request to *display*, never to invoke — which is what keeps
+   * "the renderer cannot reach a menu action directly" true after the bar it
+   * used to reach them through stopped being drawn.
+   */
+  openAppMenu(at?: { x: number; y: number }): Promise<CommandResult> {
+    return sendNumbers("shell.menu", at === undefined ? {} : { x: at.x, y: at.y });
   },
 
   /**
