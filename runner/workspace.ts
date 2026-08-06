@@ -58,14 +58,12 @@
  * slice already made for the same field. It stays unbuilt and stays named.
  */
 
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { randomBytes } from "node:crypto";
 import {
   closeSync,
   createReadStream,
   createWriteStream,
-  existsSync,
   mkdirSync,
   openSync,
   readdirSync,
@@ -515,7 +513,6 @@ export async function admitInput(
     // the runner's own log, where the code is the difference between a source
     // a person can fix and a workspace defect only a release can.
     console.error("[workspace] input copy failed:", describeCaught(error));
-    logAdmitDiagnostics(root, request.task_id);
     rmSync(destination, { force: true });
     return {
       ok: false,
@@ -1190,49 +1187,6 @@ class OversizeError extends Error {}
  * after — the file could be a pipe, a growing log, or a deliberate attempt to
  * spend the runner's disk.
  */
-/**
- * Runner-log-only diagnostics for an admission copy failure: which of the
- * directories the copy depends on exist, and what the task directory's ACL
- * actually says. Existence is reported as booleans and the ACL as icacls's
- * own account/rights lines — no user path is logged. Proof 9 fails with
- * EPERM(mkdir) on the CI runner and nowhere else reachable; this is how the
- * next session tells "the directory vanished" from "the directory denies us".
- */
-function logAdmitDiagnostics(root: WorkspaceRoot, taskId: string): void {
-  const taskDir = taskDirectory(root, taskId);
-  console.error(
-    "[workspace] admit diagnostics:",
-    JSON.stringify({
-      workspaces_root_exists: existsSync(root.tasks),
-      task_dir_exists: existsSync(taskDir),
-      inputs_dir_exists: existsSync(inputsDirectory(root, taskId)),
-    }),
-  );
-  if (process.platform === "win32") {
-    try {
-      const acl = execFileSync("icacls", [taskDir], { encoding: "utf8", stdio: "pipe", windowsHide: true })
-        .split(/\r?\n/)
-        .map((line) => line.replace(taskDir, "<task dir>").trim())
-        .filter((line) => line.length > 0)
-        .join(" | ");
-      console.error("[workspace] task dir ACL:", acl);
-    } catch (aclError: unknown) {
-      console.error("[workspace] task dir ACL unreadable:", describeCaught(aclError));
-    }
-    try {
-      // The SID and only the SID: which principal was denied is half of any
-      // ACL diagnosis, and an account *name* in a log is the leak the SID
-      // spelling avoids.
-      const sid = /(S-1-[0-9-]+)/.exec(
-        execFileSync("whoami", ["/user", "/fo", "csv", "/nh"], { encoding: "utf8", stdio: "pipe", windowsHide: true }),
-      )?.[1];
-      console.error("[workspace] admitting process sid:", sid ?? "unparsed");
-    } catch (sidError: unknown) {
-      console.error("[workspace] admitting process sid unreadable:", describeCaught(sidError));
-    }
-  }
-}
-
 /**
  * One line of log per caught filesystem error: the code and the syscall,
  * never the path. Codes are diagnosis; paths in logs are the leak the rest of
