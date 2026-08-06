@@ -52,6 +52,7 @@ import {
   listAgentNames,
   listConnectionCapableAgents,
   readAgentManifest,
+  resolveArtifactAvailability,
   readStore,
   type StoreShape,
 } from "../store";
@@ -188,6 +189,7 @@ export function runView(
   // user cannot see on the page in front of them.
   const artifactRecords = artifactRecordsForRun(agent, runId);
   const artifacts = artifactRecords.map((record) => record.artifact);
+  const availabilityForArtifact = resolveArtifactAvailability(agent, runId);
 
   return {
     found: true,
@@ -208,10 +210,15 @@ export function runView(
      * artifact objects in memory; only a serialised view pays for both, which
      * is a local channel and a price worth one working blocking proof.
      *
-     * Availability is left at its honest default: nothing in DASH observes a
-     * file, so nothing here can claim one moved. See `lib/views/artifacts.ts`.
+     * Availability now asks the real producer: `resolveArtifactAvailability`
+     * reads `workspace_artifacts`, which `runner/workspace.ts` (MAR-434's
+     * protected-workspace half) populates. See `lib/views/artifacts.ts` for why
+     * an artifact `resolveArtifactAvailability` has never heard of still reads
+     * `available`.
      */
-    artifact_cards: buildArtifactCards(artifactRecords),
+    artifact_cards: buildArtifactCards(artifactRecords, (record) =>
+      availabilityForArtifact(record.artifact.artifact_id),
+    ),
     // Only a digest is graded (MAR-458). A draft has no items and no
     // `sources_fetched`, so there is nothing to check its citations against —
     // and a null verdict renders as no chip, which is the honest outcome. The

@@ -52,7 +52,7 @@ import { appWindow } from "./app-window.js";
 import { app, BrowserWindow, shell } from "electron";
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -86,6 +86,7 @@ import {
   forgetAgent,
   readAgentManifest,
   importManifest,
+  resolveArtifactAvailability,
 } from "../lib/store";
 import {
   BUNDLED_NODE_COMMAND,
@@ -1701,6 +1702,7 @@ if (recorded !== null) {
   if (recorded.transport === "pipe" || recorded.transport === "unix") {
     await proveTheBroker(recorded);
     await proveUntracedAttempts(recorded);
+    await proveProtectedWorkspaceDownload(recorded);
   }
 }
 
@@ -2822,6 +2824,308 @@ async function proveTheBroker(recorded: {
     delete process.env.DASH_BROKER_PROOF_ORIGIN;
     server?.close();
     rmSync(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+}
+
+/* ---------------------------------------------------------------------- *
+ * Proof 9: the protected workspace, select to download (MAR-434)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The issue's own acceptance criterion, driven on the real installed shell: a
+ * person's own file is selected, a real agent the runner spawned turns it into
+ * an output, and the bytes that come back out through the download route hash
+ * to what the runner registered.
+ *
+ * ## Why this is checked at the runner's HTTP surface and not through a button
+ *
+ * Nothing in `app/` renders a file picker or a download action for this
+ * feature yet — `PROJECT_STATE.md` says so plainly. Proof 8 already established
+ * the pattern for a runner feature ahead of its UI: drive the real routes on
+ * the real, installed, adopted runner, and read DASH's own store functions
+ * directly to confirm the *installed shell's own poll loop* — not a
+ * reimplementation of it — picked the result up. That is what
+ * `electron/agent-adapters.ts`'s `syncWorkspace` is doing every five seconds
+ * while this proof runs; **9g** is the check that it did.
+ *
+ * ## The check that matters
+ *
+ * Not 9e, which only shows the runner accepted a file from the agent's outbox.
+ * **9f** is the point: the exact bytes a person would receive from a download
+ * action are read back over the same authenticated channel a download button
+ * would use, and hashed independently of the registration record. A build that
+ * registered a plausible-looking receipt without actually being able to
+ * reproduce the bytes later would pass every earlier check here and fail that
+ * one.
+ */
+async function proveProtectedWorkspaceDownload(recorded: {
+  endpoint: string;
+  transport: "pipe" | "unix" | string;
+  pid: number;
+}): Promise<void> {
+  const AGENT_ID = "dash-workspace-proof";
+  // Unique per smoke process, per MAR-473's lesson: proof 7's fixed ids once
+  // let a previous run's leftovers answer for this one.
+  const RUN_ID = `run-workspace-proof-${randomBytes(4).toString("hex")}`;
+
+  const workDir = mkdtempSync(path.join(tmpdir(), "dash-workspace-proof-"));
+  const selectedFilesDir = mkdtempSync(path.join(tmpdir(), "dash-workspace-proof-selected-"));
+
+  try {
+    const scriptPath = path.join(workDir, "agent.mjs");
+    /*
+     * Reads the one file it is given, writes an unmistakably transformed copy
+     * to its outbox and announces it. The transform (uppercasing) is what
+     * makes 9f a check that the agent's real output travelled all the way to
+     * the download route, rather than a check that some file with the right
+     * name exists somewhere.
+     */
+    writeFileSync(
+      scriptPath,
+      `
+      import { readFileSync, writeFileSync } from "node:fs";
+      import path from "node:path";
+      import readline from "node:readline";
+      const send = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
+      send({ type: "state", state: { status: "running", runs: [], tasks: [] } });
+      const rl = readline.createInterface({ input: process.stdin });
+      rl.on("line", (line) => {
+        let message;
+        try {
+          message = JSON.parse(line);
+        } catch {
+          return;
+        }
+        if (message.type !== "task") return;
+        const input = message.inputs[0];
+        const bytes = readFileSync(input.path, "utf8");
+        const outPath = path.join(message.directory, "outbox", "result.txt");
+        writeFileSync(outPath, bytes.toUpperCase());
+        send({ type: "artifact_file", task_id: message.task_id, role: "result", name: "result.txt" });
+      });
+      setInterval(() => {}, 60000);
+      `,
+      "utf8",
+    );
+
+    // The shipped example with its name changed, for the reason proof 8's
+    // comment already gives: a hand-written v2 manifest drifts from the schema
+    // and starts proving things about the proof's own copy. Nothing about this
+    // proof exercises broker connections; the example is reused only because it
+    // is a manifest known to validate.
+    const manifest = example("gmail-meeting-assistant.manifest.v2.example.json") as Record<
+      string,
+      unknown
+    >;
+    (manifest["agent"] as { name: string }).name = AGENT_ID;
+
+    const handle: RunnerHandle = {
+      origin: IPC_ORIGIN,
+      endpoint: recorded.endpoint,
+      transport: recorded.transport as RunnerHandle["transport"],
+      pid: recorded.pid,
+      token: ensureChannelSecret(dataDir),
+      adopted: true,
+      started_at: null,
+    };
+    const call = runnerFetch(handle);
+
+    writeRegistration(dataDir, {
+      registration: {
+        agent_id: AGENT_ID,
+        manifest_path: "",
+        command: BUNDLED_NODE_COMMAND,
+        args: [scriptPath],
+        cwd: workDir,
+      },
+      manifestJson: JSON.stringify(manifest),
+      ownership: {
+        owner: "dash_handoff",
+        handoff_id: "smoke-workspace-proof",
+        source_project: workDir,
+        display_name: "Workspace proof agent",
+        summary: "Turns one selected file into one output.",
+        registered_at: new Date().toISOString(),
+      },
+    });
+
+    await call(`${handle.origin}/registrations/reload`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${handle.token}` },
+      signal: AbortSignal.timeout(5_000),
+    });
+    const started = await call(`${handle.origin}/agents/${encodeURIComponent(AGENT_ID)}/lifecycle`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${handle.token}` },
+      body: JSON.stringify({ action: "start", credentials: await collectSpawnCredentials(AGENT_ID) }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const startBody = (await started.json()) as { ok?: boolean; detail?: string };
+    check("9a. the workspace proof agent's manifest imports and the runner started it", startBody.ok === true, startBody);
+
+    /* -- Select a file that is genuinely the user's own -------------------- */
+
+    const selectedPath = path.join(selectedFilesDir, "price-list.txt");
+    const selectedContents = "acme widget — 19.00 kr\n";
+    writeFileSync(selectedPath, selectedContents, "utf8");
+
+    const created = await call(`${handle.origin}/agents/${encodeURIComponent(AGENT_ID)}/tasks`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${handle.token}` },
+      signal: AbortSignal.timeout(5_000),
+    });
+    const createdBody = (await created.json()) as { ok?: boolean; task?: { task_id?: string } };
+    const taskId = createdBody.task?.task_id ?? "";
+    check("9b. a task was opened for the workspace proof agent", createdBody.ok === true && taskId.length > 0, createdBody);
+
+    const admitted = await call(
+      `${handle.origin}/agents/${encodeURIComponent(AGENT_ID)}/tasks/${encodeURIComponent(taskId)}/inputs`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${handle.token}` },
+        body: JSON.stringify({ role: "price_list", source_path: selectedPath }),
+        signal: AbortSignal.timeout(5_000),
+      },
+    );
+    const admittedBody = (await admitted.json()) as { ok?: boolean };
+    check("9c. the selected file was admitted as the task's input", admittedBody.ok === true, admittedBody);
+
+    /* -- Trigger: bind a run and hand the task to the running agent -------- */
+
+    const dispatched = await call(
+      `${handle.origin}/agents/${encodeURIComponent(AGENT_ID)}/tasks/${encodeURIComponent(taskId)}/dispatch`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${handle.token}` },
+        body: JSON.stringify({ run_id: RUN_ID }),
+        signal: AbortSignal.timeout(5_000),
+      },
+    );
+    const dispatchedBody = (await dispatched.json()) as { ok?: boolean };
+    check("9d. dispatch handed the task to the running agent", dispatchedBody.ok === true, dispatchedBody);
+
+    /* -- Output: the runner registers what the agent wrote ------------------ */
+
+    const registered = await waitForValue(async () => {
+      const response = await call(
+        `${handle.origin}/agents/${encodeURIComponent(AGENT_ID)}/artifacts?run_id=${encodeURIComponent(RUN_ID)}`,
+        { headers: { authorization: `Bearer ${handle.token}` }, signal: AbortSignal.timeout(3_000) },
+      );
+      const body = (await response.json()) as {
+        artifacts?: Array<{ artifact_id: string; sha256: string; byte_size: number; display_name: string }>;
+      };
+      const artifact = (body.artifacts ?? [])[0];
+      return artifact ?? null;
+    }, "the runner to register the agent's output", 20_000);
+
+    const expectedBytes = selectedContents.toUpperCase();
+    const expectedSha256 = createHash("sha256").update(expectedBytes, "utf8").digest("hex");
+    check(
+      "9e. the runner registered exactly one output, hashed to the bytes the agent actually wrote",
+      registered !== null &&
+        registered.display_name === "result.txt" &&
+        registered.byte_size === Buffer.byteLength(expectedBytes) &&
+        registered.sha256 === expectedSha256,
+      registered,
+    );
+
+    /* -- Download: the same authenticated channel a download action uses --- */
+
+    let downloadedBytes: Buffer | null = null;
+    let downloadedSha256: string | null = null;
+    if (registered !== null) {
+      const download = await call(
+        `${handle.origin}/artifacts/${encodeURIComponent(registered.artifact_id)}/download`,
+        { headers: { authorization: `Bearer ${handle.token}` }, signal: AbortSignal.timeout(10_000) },
+      );
+      downloadedBytes = Buffer.from(await download.arrayBuffer());
+      downloadedSha256 = createHash("sha256").update(downloadedBytes).digest("hex");
+      check(
+        "9f. downloaded bytes hash to the registered artifact's own SHA-256, and are the agent's real output",
+        download.ok &&
+          download.headers.get("x-artifact-sha256") === registered.sha256 &&
+          downloadedSha256 === registered.sha256 &&
+          downloadedBytes.length === registered.byte_size &&
+          downloadedBytes.toString("utf8") === expectedBytes,
+        {
+          http_status: download.status,
+          downloaded_bytes: downloadedBytes.length,
+          downloaded_sha256: downloadedSha256,
+          registered_sha256: registered.sha256,
+        },
+      );
+    } else {
+      skip("9f. downloaded bytes hash to the registered artifact's own SHA-256", "no artifact was registered (9e)");
+    }
+
+    /* -- And the installed shell's own poll loop picked it up (not this proof) */
+
+    const availability = await waitForValue(async () => {
+      if (registered === null) return null;
+      const state = resolveArtifactAvailability(AGENT_ID, RUN_ID)(registered.artifact_id);
+      return state === "available" ? state : null;
+    }, "electron/agent-adapters.ts's own poll to sync the artifact into DASH's store", 15_000);
+    check(
+      "9g. the installed shell's own 5-second poll — not this harness — brought the output into DASH's store as available",
+      availability === "available",
+      { availability },
+    );
+
+    /* -- On failure, the runner's own log is the only witness --------------- */
+
+    // The runner is detached with its stdio on {dataDir}/runner.log, so a
+    // refusal's underlying error code never reaches this harness's output. On
+    // CI that file is discarded with the machine, which makes a proof-9
+    // failure undiagnosable from the one place it currently reproduces.
+    if (registered === null || availability !== "available") {
+      try {
+        const tail = readFileSync(path.join(dataDir, "runner.log"), "utf8")
+          .split(/\r?\n/)
+          .slice(-40)
+          .join("\n");
+        console.log(`[smoke] tail of runner.log, because proof 9 failed:\n${tail}`);
+      } catch {
+        console.log("[smoke] proof 9 failed and runner.log could not be read");
+      }
+    }
+
+    /* -- Stop -------------------------------------------------------------- */
+
+    await call(`${handle.origin}/agents/${encodeURIComponent(AGENT_ID)}/lifecycle`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${handle.token}` },
+      body: JSON.stringify({ action: "stop" }),
+      signal: AbortSignal.timeout(10_000),
+    }).catch(() => undefined);
+
+    await waitForValue(async () => {
+      try {
+        const response = await call(`${handle.origin}/agents`, {
+          headers: { authorization: `Bearer ${handle.token}` },
+          signal: AbortSignal.timeout(3_000),
+        });
+        const body = (await response.json()) as {
+          agents?: Array<{ agent_id?: string; lifecycle?: string }>;
+        };
+        const entry = (body.agents ?? []).find((agent) => agent.agent_id === AGENT_ID);
+        return entry === undefined || entry.lifecycle === "exited" || entry.lifecycle === "stopped"
+          ? "gone"
+          : null;
+      } catch {
+        return null;
+      }
+    }, "the workspace proof agent's process to exit", 15_000);
+
+    removeRegistration(dataDir, AGENT_ID);
+    forgetAgent(AGENT_ID);
+    await call(`${handle.origin}/registrations/reload`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${handle.token}` },
+      signal: AbortSignal.timeout(5_000),
+    }).catch(() => undefined);
+  } finally {
+    rmSync(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    rmSync(selectedFilesDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 }
 

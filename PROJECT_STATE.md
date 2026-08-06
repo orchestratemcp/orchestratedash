@@ -655,6 +655,69 @@ The receipt's **producer component** is unbuilt for a different reason: nothing
 links an artifact to the step that made it, and inferring it from event
 ordering would be a guess rendered as a fact.
 
+## The two follow-ups the merge order created, and the acceptance criterion (MAR-434)
+
+`docs/merge-order-2026-08-06.md` named two follow-ups PRs #43 and #46 could not
+close themselves, because #43 shipped before #46 existed and #46 could not
+touch `app/`. Both are closed here. `lib/views/build.ts`'s `runView` now passes
+`resolveArtifactAvailability(agent, runId)` into `buildArtifactCards`, adapted
+to the per-record signature it takes; `tests/views.test.ts` drives a real
+`moved` row through `syncWorkspaceArtifacts` and `runView` rather than a stub
+resolver, so the assertion is that production asks the producer, not that the
+view model can represent the answer. `.orchestrate/state.json`'s MAR-434 entry
+carries the same pre-merge-sentence correction MAR-473, MAR-467, MAR-441,
+MAR-474 and MAR-469 each made for the predecessor before them.
+
+**Building MAR-434's own acceptance criterion — select files, trigger, output,
+download — found the half of the feature that was still missing.** Nothing
+served an output's bytes anywhere: `runner/server.ts` had `GET
+/artifacts/{id}/verify` (re-hashes in place, returns a boolean) and `POST
+.../delete`, and no route that returned the bytes themselves. A download
+action had nothing to call. `runner/workspace.ts` gains
+`openArtifactForDownload`, which opens a stream and never returns
+`stored_path` — the same discipline `toView` already keeps for every other
+route on this surface. `runner/task-api.ts`'s `download` wraps it with the
+same audit-on-every-path discipline `verify` and `remove` already carry.
+`runner/server.ts` routes `GET /artifacts/{id}/download` to it, streamed, over
+the same bearer-token channel as everything else here.
+`tests/task-workspace.test.ts` drives it against a real registered artifact:
+exact bytes back, an unknown id refused, a deleted one refused without
+pretending the bytes are still there.
+
+`electron/smoke.ts` gains **proof 9** (9a–9g), matching proof 8's own answer to
+"this runner feature has no UI yet": drive the real routes on the real,
+installed, adopted runner, and read DASH's own store back to confirm the
+*installed shell's own poll loop* — not a reimplementation of it — did the
+rest. A real agent the runner spawns is handed one user's own file, dispatched,
+and turns it into an output; **9f** reads that output back through the new
+download route and hashes it independently of the registration record, which
+is the acceptance criterion itself; **9g** waits for
+`electron/agent-adapters.ts`'s own five-second poll — not the harness — to
+carry the result into DASH's own `workspace_artifacts` table as `available`,
+closing the loop the `resolveArtifactAvailability` wiring above opened.
+
+**Proof 9 has not been run, and the reason is outside this change.** This
+machine had a live DASH session open for the whole of this session: a real
+`dash://handoff` window from an unrelated `orchestratekit-mcp` export
+(MAR-477's agent-project), with its own uncommitted work
+(`docs/adr/0007-the-deploy-transport.md`) sitting in this same working tree.
+AGENTS.md forbids force-killing Electron, DASH is single-instance by design
+(MAR-450), and closing another session's live window is not this session's
+call to make — the same reasoning MAR-441, MAR-421 and this issue's own #43
+session each recorded when they found Electron already running. `pnpm
+state:check` and `pnpm typecheck` are clean; `pnpm vitest run`, scoped past two
+stale-but-registered git worktrees this machine still carries under
+`.claude/worktrees/` (both from already-merged branches, both clean — vitest's
+default glob otherwise triples the file and test count by including them), is
+71 files / 1330 passed / 8 skipped / 0 failed.
+
+**So MAR-434 stays merged rather than proven**, for a third reason layered on
+the first two: the runner-half code (#46) is proven on an older installed run
+that predates this session's addition, this session's new code is new and
+green in its own unit tests, and the run that would prove the acceptance
+criterion itself is written but has not executed. Whoever runs it next needs
+only to confirm no Electron process is running, then `pnpm verify`.
+
 ## UX principle
 
 The home view answers three questions: what can I run, what is happening now, and what needs my decision? Connections are capabilities with scopes and receipts, not a wall of OAuth settings. Every run should make inputs, actions, outputs, gates, and failures inspectable.

@@ -739,4 +739,58 @@ describe("the task API", () => {
     expect(serialised(index)).not.toContain(root.artifacts);
     expect(index.artifacts[0]?.availability).toEqual({ state: "available" });
   });
+
+  it("serves the exact bytes it registered, over the same channel a delete or verify uses", async () => {
+    const task = api.create(AGENT);
+    api.dispatch(AGENT, task.task_id, RUN);
+    const contents = "%PDF-1.7\nOffert v2\n";
+    writeToOutbox(task.task_id, "offert.pdf", contents);
+    const registered = await registerArtifact(store.database, root, {
+      task_id: task.task_id,
+      agent: AGENT,
+      role: "finished_offert",
+      name: "offert.pdf",
+    });
+    if (!registered.ok) throw new Error("setup: registration failed");
+
+    const downloaded = api.download(registered.artifact.artifact_id);
+    if (downloaded === null || !downloaded.ok) throw new Error("download refused");
+
+    expect(downloaded.byte_size).toBe(Buffer.byteLength(contents));
+    expect(downloaded.sha256).toBe(sha256(contents));
+    expect(downloaded.display_name).toBe("offert.pdf");
+
+    // The claim the whole route exists to make: what comes out of the stream
+    // hashes to what the receipt says, not merely that the metadata agrees
+    // with itself.
+    const chunks: Buffer[] = [];
+    for await (const chunk of downloaded.stream) {
+      chunks.push(chunk as Buffer);
+    }
+    const bytes = Buffer.concat(chunks);
+    expect(sha256(bytes)).toBe(registered.artifact.sha256);
+    expect(bytes.toString("utf8")).toBe(contents);
+  });
+
+  it("refuses a download for an artifact it has never heard of", () => {
+    expect(api.download("art_does_not_exist")).toBeNull();
+  });
+
+  it("refuses a download of bytes that were deleted, without pretending they are still here", async () => {
+    const task = api.create(AGENT);
+    api.dispatch(AGENT, task.task_id, RUN);
+    writeToOutbox(task.task_id, "offert.pdf", "%PDF-1.7\nOffert\n");
+    const registered = await registerArtifact(store.database, root, {
+      task_id: task.task_id,
+      agent: AGENT,
+      role: "finished_offert",
+      name: "offert.pdf",
+    });
+    if (!registered.ok) throw new Error("setup: registration failed");
+
+    deleteArtifact(store.database, registered.artifact.artifact_id);
+
+    const downloaded = api.download(registered.artifact.artifact_id);
+    expect(downloaded).toMatchObject({ ok: false });
+  });
 });

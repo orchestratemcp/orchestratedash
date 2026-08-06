@@ -31,6 +31,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import type { createReadStream } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 
 import type { AgentArtifactFileMessage } from "./protocol";
@@ -44,6 +45,7 @@ import {
   createTask,
   deleteArtifact,
   effectiveLimits,
+  openArtifactForDownload,
   readArtifact,
   readInputs,
   readTask,
@@ -117,6 +119,26 @@ export interface TaskWorkspaceApi {
    */
   index(): { artifacts: ArtifactView[]; truncated: boolean };
   verify(artifactId: string): { ok: boolean; sha256: string | null; expected: string } | null;
+  /**
+   * Open one output's bytes for a download, over the same authenticated
+   * channel a download action would use. Null when there is no such artifact;
+   * `ok: false` when the record exists but its bytes do not (deleted, or gone
+   * from disk) — the same split `verify` draws between a check that ran and a
+   * caller that named nothing.
+   */
+  download(
+    artifactId: string,
+  ):
+    | {
+        ok: true;
+        stream: ReturnType<typeof createReadStream>;
+        media_type: string;
+        byte_size: number;
+        sha256: string;
+        display_name: string;
+      }
+    | { ok: false; detail: string }
+    | null;
   remove(agent: string, artifactId: string): { ok: boolean; detail: string };
   /** Called by the supervisor the moment a child says it wrote something. */
   onArtifactFile(agentId: string, message: AgentArtifactFileMessage): void;
@@ -360,6 +382,34 @@ export function createTaskWorkspaceApi(options: TaskWorkspaceOptions): TaskWorks
         `artifact=${artifactId}`,
       );
       return { ...result, expected: record.sha256 };
+    },
+
+    download(artifactId) {
+      const record = readArtifact(database, artifactId);
+      if (record === null) {
+        return null;
+      }
+      const opened = openArtifactForDownload(record);
+      if (!opened.ok) {
+        audit(record.agent, "artifact.download", "refused", record.task_id, "unavailable", opened.detail);
+        return { ok: false, detail: opened.detail };
+      }
+      audit(
+        record.agent,
+        "artifact.download",
+        "accepted",
+        record.task_id,
+        undefined,
+        `artifact=${artifactId} bytes=${String(record.byte_size)}`,
+      );
+      return {
+        ok: true,
+        stream: opened.stream,
+        media_type: record.media_type,
+        byte_size: record.byte_size,
+        sha256: record.sha256,
+        display_name: record.display_name,
+      };
     },
 
     remove(agent, artifactId) {

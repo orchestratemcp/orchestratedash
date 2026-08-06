@@ -91,6 +91,58 @@ describe("inspectAcl", () => {
     expect(inspection).toMatchObject({ ok: false, foreign: ["WD"] });
   });
 
+  it("refuses a protected DACL that locks the owner out", () => {
+    // Owner-only means "the owner and nothing else", not "nothing at all".
+    // This is the descriptor MAR-434's proof 9 actually observed on CI: only
+    // SYSTEM, the proof passing, and the runner locked out of its own task
+    // directory 60ms later with an EPERM nothing had named.
+    expect(inspectAcl("D:PAI(A;OICI;FA;;;SY)", OWNER)).toMatchObject({
+      ok: false,
+      problem: "acl_unprovable",
+      detail: expect.stringContaining(OWNER) as unknown as string,
+    });
+  });
+
+  it("refuses an owner grant that is less than full control", () => {
+    // A workspace the owner can read but not write into is as locked as one
+    // they cannot see; the runner creates files under these directories.
+    expect(inspectAcl(`D:PAI(A;;FA;;;SY)(A;;FR;;;${OWNER})`, OWNER)).toMatchObject({
+      ok: false,
+      problem: "acl_unprovable",
+    });
+  });
+
+  it("accepts the owner's full control spelled as a raw access mask", () => {
+    // `icacls /save` writes what this module grants back as `FA`, but a rights
+    // check should accept every spelling of the fact it checks.
+    expect(inspectAcl(`D:PAI(A;;FA;;;SY)(A;;0x1f01ff;;;${OWNER})`, OWNER)).toEqual({ ok: true });
+  });
+
+  it("recognises a RID-500 owner when the readback abbreviates it to LA", () => {
+    // `whoami` answers raw, but `icacls /save` writes the machine's own
+    // built-in Administrator back as `LA`. GitHub-hosted Windows runners run
+    // jobs as a renamed RID-500 account, and before this case existed the
+    // repair pass read that readback as a stranger's grant, removed it, and
+    // proved owner-only on the lockout it had just created (MAR-434, proof 9).
+    const rid500 = "S-1-5-21-1178926710-2200278958-3596451971-500";
+    expect(inspectAcl("D:PAI(A;;FA;;;SY)(A;;FA;;;LA)", rid500)).toEqual({ ok: true });
+  });
+
+  it("still treats LA as foreign when the caller is not the RID-500 account", () => {
+    // The alias is a spelling of one specific principal, not a courtesy to
+    // local administrators in general.
+    expect(inspectAcl(`D:PAI(A;;FA;;;SY)(A;;FA;;;LA)(A;;FA;;;${OWNER})`, OWNER)).toMatchObject({
+      ok: false,
+      problem: "acl_too_wide",
+      foreign: ["LA"],
+    });
+  });
+
+  it("recognises a RID-501 owner when the readback abbreviates it to LG", () => {
+    const rid501 = "S-1-5-21-1178926710-2200278958-3596451971-501";
+    expect(inspectAcl("D:PAI(A;;FA;;;SY)(A;;FA;;;LG)", rid501)).toEqual({ ok: true });
+  });
+
   it("refuses a descriptor it cannot find a DACL in", () => {
     expect(inspectAcl("O:BAG:BA", OWNER)).toMatchObject({
       ok: false,
