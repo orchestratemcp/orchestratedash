@@ -50,6 +50,8 @@ import { createRunnerServer } from "./server";
 import { RUNNER_BUILD_ID, RUNNER_PROTOCOL_VERSION } from "./identity";
 import { openRunnerStore } from "./store";
 import { Supervisor, loadRegistrations } from "./supervisor";
+import { createTaskWorkspaceApi, type TaskWorkspaceApi } from "./task-api";
+import { openWorkspaceRoot } from "./workspace";
 
 /**
  * Where DASH looks to find a runner it did not just start.
@@ -105,7 +107,35 @@ async function main(): Promise<void> {
     console.warn(`[runner] ignoring registration ${failure.file}: ${failure.problem}`);
   }
 
-  const supervisor = new Supervisor(registrations);
+  /**
+   * The task workspace and the supervisor need each other (MAR-434): the
+   * workspace dispatches down a child's pipe, and the supervisor calls the
+   * workspace the instant a child publishes a file. Neither can be constructed
+   * with the other already in hand.
+   *
+   * Broken with a `let` and two closures rather than by giving one of them a
+   * setter. A setter would make "is the workspace attached yet" a question with
+   * a window in which the answer is no, and that window is exactly when a child
+   * started by a previous run could be writing. The closures capture a binding
+   * that is assigned before any agent can start, and the guard below says what
+   * happens if that ordering is ever broken instead of dereferencing null.
+   */
+  let workspace: TaskWorkspaceApi | null = null;
+
+  const supervisor = new Supervisor(registrations, undefined, (agentId, message) => {
+    if (workspace === null) {
+      console.warn(`[runner] ${agentId} published a file before the workspace was open`);
+      return;
+    }
+    workspace.onArtifactFile(agentId, message);
+  });
+
+  workspace = createTaskWorkspaceApi({
+    database: store.database,
+    root: openWorkspaceRoot(dataDir),
+    dispatchToChild: (agentId, task) => supervisor.dispatchTask(agentId, task),
+  });
+
   let server: ReturnType<typeof createRunnerServer>;
   let shuttingDown = false;
   const shutdown = (signal: string): void => {
@@ -144,6 +174,7 @@ async function main(): Promise<void> {
       }
       return { ...supervisor.adopt(fresh.registrations), skipped: fresh.skipped };
     },
+    workspace,
     shutdown: () => {
       shutdown("control request");
     },

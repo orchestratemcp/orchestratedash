@@ -78,6 +78,52 @@ export function encodeCommand(message: Omit<AgentCommandMessage, "protocol_versi
   return `${JSON.stringify(line)}\n`;
 }
 
+/**
+ * The task a run is about to do, and the files it may read (MAR-434).
+ *
+ * **Deliberately not a command.** The contract's seven verbs act on a run in
+ * flight — approve, reject, choose, retry, pause, resume, cancel — and
+ * `docs/agent-command-channel.md` is explicit that inventing an eighth to cover
+ * something they do not describe is dishonest, which is the same argument that
+ * kept `start` and `stop` off the command channel and on `/lifecycle`. Handing an
+ * agent its inputs is not adjudicating a gate. It gets its own message, its own
+ * route and no envelope machinery.
+ *
+ * What travels is a resolved path per input **and nothing about where the file
+ * came from**. The user's own path never leaves DASH's process: what the child
+ * sees is a path inside a directory the runner made, under a name the runner
+ * minted. So a child cannot learn that the price list came from
+ * `C:\Users\henri\Desktop\kunder\`, and a log line that quotes an input path
+ * quotes an opaque id.
+ */
+export interface AgentTaskMessage {
+  protocol_version: number;
+  type: "task";
+  task_id: string;
+  /** The task workspace root. `inputs/` is readable; `outbox/` is writable. */
+  directory: string;
+  inputs: Array<{
+    input_id: string;
+    role: string;
+    /** For the agent's own logging and prompts. Not a path. */
+    display_name: string;
+    media_type: string;
+    byte_size: number;
+    sha256: string;
+    /** Inside `directory`. The only file paths this agent is given. */
+    path: string;
+  }>;
+}
+
+export function encodeTask(message: Omit<AgentTaskMessage, "protocol_version" | "type">): string {
+  const line: AgentTaskMessage = {
+    protocol_version: AGENT_PROTOCOL_VERSION,
+    type: "task",
+    ...message,
+  };
+  return `${JSON.stringify(line)}\n`;
+}
+
 /* ---------------------------------------------------------------------- *
  * Agent → runner
  * ---------------------------------------------------------------------- */
@@ -161,11 +207,38 @@ export interface AgentBrokerRequestMessage {
   request: unknown;
 }
 
+/**
+ * The agent saying it wrote a file into its outbox (MAR-434).
+ *
+ * Every field is checked here rather than left `unknown`, which is the opposite
+ * of the three messages above and is the right call for the opposite reason.
+ * Those three carry *documents* that a schema on the DASH side is authoritative
+ * for, so parsing them here would put a second reader of an untrusted body in
+ * the process that talks to every agent. This message carries no document at
+ * all: three short strings, all of which the runner itself must act on, and the
+ * one that becomes a filesystem operation is checked by `inspectComponent`
+ * before anything opens it.
+ *
+ * Note the fields that are **not** here. No agent, no run id, no size, no
+ * digest, no path — only a name inside a directory the runner made. Everything
+ * else on the resulting receipt is observed by the runner. An agent cannot
+ * publish under another agent's name because there is nowhere in this message to
+ * write a name, which is a stronger statement than a check that it matches.
+ */
+export interface AgentArtifactFileMessage {
+  type: "artifact_file";
+  task_id: string;
+  role: string;
+  /** One path component in this agent's own outbox. Never a path. */
+  name: string;
+}
+
 export type AgentMessage =
   | AgentAckMessage
   | AgentStateMessage
   | AgentTelemetryMessage
   | AgentArtifactMessage
+  | AgentArtifactFileMessage
   | AgentBrokerRequestMessage;
 
 /**
@@ -227,6 +300,26 @@ export function parseAgentMessage(line: string): AgentMessage | null {
 
   if (message["type"] === "artifact" && Object.hasOwn(message, "artifact")) {
     return { type: "artifact", artifact: message["artifact"] };
+  }
+
+  if (message["type"] === "artifact_file") {
+    const taskId = message["task_id"];
+    const role = message["role"];
+    const name = message["name"];
+    if (
+      typeof taskId !== "string" ||
+      taskId.length === 0 ||
+      typeof role !== "string" ||
+      role.length === 0 ||
+      typeof name !== "string" ||
+      name.length === 0
+    ) {
+      // Null, not a partial message. An `artifact_file` missing its name is not
+      // an artifact with a default name; it is a line the runner logs and
+      // ignores, exactly as it does any other output it cannot read.
+      return null;
+    }
+    return { type: "artifact_file", task_id: taskId, role, name };
   }
 
   if (message["type"] === "broker_request" && Object.hasOwn(message, "request")) {

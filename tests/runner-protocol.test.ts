@@ -18,6 +18,7 @@ import {
   AGENT_PROTOCOL_VERSION,
   createLineReader,
   encodeCommand,
+  encodeTask,
   parseAgentMessage,
 } from "../runner/protocol";
 
@@ -129,5 +130,73 @@ describe("line framing", () => {
 
     expect(reader.push("still-truncated\nrecovered\n")).toEqual(["still-truncated", "recovered"]);
     expect(reader.overflowed()).toBe(false);
+  });
+});
+
+/**
+ * The task messages (MAR-434).
+ *
+ * `artifact_file` is the one agent→runner message whose fields are checked here
+ * rather than left `unknown`, and the asymmetry is deliberate: telemetry,
+ * artifacts and broker requests carry *documents* a schema on the DASH side owns,
+ * so parsing them in the process that talks to every agent would put a second
+ * reader of an untrusted body where it does not belong. This message carries no
+ * document — three short strings, all of which the runner itself acts on.
+ */
+describe("task messages", () => {
+  it("encodes a task as one newline-terminated line", () => {
+    const line = encodeTask({
+      task_id: "task_abc",
+      directory: "/data/workspaces/task_abc",
+      inputs: [
+        {
+          input_id: "in_1",
+          role: "customer_brief",
+          display_name: "kund-brief.pdf",
+          media_type: "application/pdf",
+          byte_size: 12,
+          sha256: "a".repeat(64),
+          path: "/data/workspaces/task_abc/inputs/in_1",
+        },
+      ],
+    });
+
+    // One line, because this is written into a newline-delimited stream and an
+    // interior newline would frame a second message.
+    expect(line.endsWith("\n")).toBe(true);
+    expect(line.indexOf("\n")).toBe(line.length - 1);
+
+    const parsed = JSON.parse(line) as Record<string, unknown>;
+    expect(parsed).toMatchObject({ type: "task", protocol_version: AGENT_PROTOCOL_VERSION });
+  });
+
+  it("parses a well-formed artifact_file announcement", () => {
+    expect(
+      parseAgentMessage('{"type":"artifact_file","task_id":"task_abc","role":"offert","name":"offert.pdf"}'),
+    ).toEqual({ type: "artifact_file", task_id: "task_abc", role: "offert", name: "offert.pdf" });
+  });
+
+  it("refuses an announcement missing any of its three fields", () => {
+    // Null rather than a partial message: an `artifact_file` with no name is not
+    // an artifact with a default name, it is a line the runner logs and ignores.
+    for (const line of [
+      '{"type":"artifact_file","role":"offert","name":"offert.pdf"}',
+      '{"type":"artifact_file","task_id":"task_abc","name":"offert.pdf"}',
+      '{"type":"artifact_file","task_id":"task_abc","role":"offert"}',
+      '{"type":"artifact_file","task_id":"task_abc","role":"offert","name":""}',
+      '{"type":"artifact_file","task_id":"task_abc","role":"offert","name":123}',
+    ]) {
+      expect(parseAgentMessage(line), line).toBeNull();
+    }
+  });
+
+  it("carries no agent and no run id for the child to claim", () => {
+    const parsed = parseAgentMessage(
+      '{"type":"artifact_file","task_id":"t","role":"r","name":"n","agent":"impostor","run_id":"forged"}',
+    );
+    // The parser keeps exactly three fields, so a child that sends an agent name
+    // has sent something nothing downstream can read. That is a stronger
+    // statement than a check that it matches.
+    expect(parsed).toEqual({ type: "artifact_file", task_id: "t", role: "r", name: "n" });
   });
 });
