@@ -763,6 +763,66 @@ reading its own owner as a stranger on CI's RID-500 account, because `icacls
 as owner spellings only for that exact account. The full story is in
 `.orchestrate/state.json`'s MAR-434 entry and PR #48's root-cause comment.
 
+## The developer path had no gate (MAR-505, MAR-506)
+
+**Open on PR [#51](https://github.com/orchestratemcp/orchestratedash/pull/51), not merged.**
+`pnpm shell` showed a window that said "Reading your agents…" and never said
+anything else, and **the renderer was never at fault**: a freshly built export
+of the same source hydrates and renders real data in the real shell.
+
+`pnpm shell` builds the shell from the working tree and then loads whatever
+answers on `127.0.0.1:3000`. On this machine that was a `next dev` server 59
+hours and three merges old, serving a complete page whose client never
+hydrated — reproduced identically in an ordinary Chromium, which is what
+exonerated Electron, the preload and `dist/`. Editing `next.config.mjs` made
+that server restart itself and the page hydrated in 268ms: same code, same
+machine, same port.
+
+**Nobody noticed it had gone stale because hot reload had never worked on this
+origin.** Next blocks cross-origin access to its own dev resources for any host
+not in `allowedDevOrigins`, and the default list omits the literal loopback
+address `lib/shell/window.ts` deliberately requires — it refuses `localhost` on
+purpose, because a name resolves through DNS. Two individually correct
+decisions, whose intersection logged `Blocked cross-origin request to Next.js
+dev resource /_next/webpack-hmr from "127.0.0.1"` into
+`.next/dev/logs/next-development.log`, where nobody reads.
+
+**Why no gate caught it is the larger half.** `scripts/verify-shell.mjs` forces
+`DASH_SHELL_URL=dash-app://ui/` so the mandatory proof depends only on this
+repository and this machine (ADR 0004). That is right and is unchanged; its
+consequence is that **the gate has never once loaded the developer path**. And
+the two proofs that look like they would have caught it would not have: proof
+`1` counts headings the server had already delivered, and `2d` calls
+`window.dashData` from the harness, which is not the page. Both are the shape
+MAR-473 named when `6j` asserted only that *a* verdict existed.
+
+So the assertion is an **absence**, because a frozen shell is not missing
+anything on screen. Since MAR-432 every page opens in a loading state and leaves
+it in an effect, so `data-view-state="loading"` still present after the budget
+means no effect ever ran. `lib/shell/first-paint.ts` owns the rule; smoke proof
+`1f` and `pnpm shell:check` evaluate the same probe so they cannot drift into
+asking different questions under one name. `pnpm shell` also stops launching
+against a renderer it cannot vouch for — nothing listening, another application
+on the port, an error status, or an export older than the source it is built
+from — and `lib/shell/preflight.ts` says plainly that it cannot tell a healthy
+page from a frozen one, because no HTTP probe can.
+
+Proven in three directions on Windows: PASS against the restarted dev server
+(281ms, 2 polls), PASS against the packaged origin (`1f`, 3ms, 1 poll), and FAIL
+with exit 1 against a page that never hydrates (stuck after 20207ms over 78
+polls). The preflight's staleness refusal fired for real, naming the file.
+`pnpm typecheck` clean, `pnpm state:check` valid, 74 test files / 1372 passed /
+8 skipped / 0 failed.
+
+**`pnpm verify:shell` cannot pass on this machine, for a reason outside this
+change.** `runner.sqlite` in the installed-style data directory cannot be opened
+at all — `database disk image is malformed` — while `dash.sqlite` reports
+`integrity_check: ok`. All eight smoke failures need the runner's own database
+(`6f`, `6g`, `6h`, `9b`–`9e`, `9g`); the other 65 pass, including `1f`. That is
+MAR-506, which also names the product gap it exposed: a person is told "The
+runner answered 500", by an application that has an entire recovery vocabulary
+for damage to its *own* store and none for the runner's.
+
 ## UX principle
 
 The home view answers three questions: what can I run, what is happening now, and what needs my decision? Connections are capabilities with scopes and receipts, not a wall of OAuth settings. Every run should make inputs, actions, outputs, gates, and failures inspectable.
