@@ -1111,6 +1111,31 @@ export function verifyArtifact(record: WorkspaceArtifact): { ok: boolean; sha256
 }
 
 /**
+ * Open one artifact's stored bytes for a download, or say why not.
+ *
+ * A stream crosses this boundary and `stored_path` does not, for the reason
+ * `toView` in `runner/task-api.ts` already gives: a path in a returned value is
+ * a path a caller can log, and this one is reached over the same authenticated
+ * channel as everything else in this file. `deleted` is refused explicitly
+ * rather than left to `createReadStream` to fail on — the record already knows
+ * the bytes are gone, and answering from that fact is a route that fails for a
+ * reason rather than an errno.
+ */
+export function openArtifactForDownload(
+  record: WorkspaceArtifact,
+): { ok: true; stream: ReturnType<typeof createReadStream> } | { ok: false; detail: string } {
+  if (record.retention === "deleted") {
+    return { ok: false, detail: "That output has been deleted." };
+  }
+  try {
+    statSync(record.stored_path);
+  } catch {
+    return { ok: false, detail: "That output's bytes could not be found on this computer." };
+  }
+  return { ok: true, stream: createReadStream(record.stored_path) };
+}
+
+/**
  * Delete one artifact's bytes, explicitly and reversibly in the record.
  *
  * The row stays and the bytes go. That is the issue's "deleting an artifact is
