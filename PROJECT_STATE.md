@@ -806,6 +806,95 @@ against the manifest's declared roles needs three more members of the family
 this change opens; the runner has served all three routes since PR #46 and proof
 9 drives them. MAR-434 stays open on that half.
 
+## What actually runs on the VPS (MAR-497)
+
+**Open on a PR, not merged.** ADR 0007 chose this repository's runner as the
+remote process and left one follow-up unowned: the runner is bundled into the
+Electron app and started by the Electron binary with `ELECTRON_RUN_AS_NODE=1`,
+and a host has no Electron binary to start it with. **ADR 0007 amendment 1
+answers it — the host supplies Node; DASH does not ship a runtime** — and
+`pnpm build:runner-standalone` is the artifact. `dist/runner-standalone/` holds
+`start.mjs`, `runner.mjs`, `contracts/`, a `package.json` and a README, and is
+started with one command. `runner/main.ts`, `runner/server.ts` and
+`runner/endpoint.ts` are untouched.
+
+**The preflight is its own module and its own bundle, and that is the
+structural half.** `runner/store.ts` imports `node:sqlite` at the top level, so
+a check living in that module graph would run *after* the import it exists to
+check — on the host it is written for, it would never execute.
+`runner/host-runtime.ts` checks the major version against a floor and then
+actually **resolves** the module, because a version comparison alone would be
+this repository carrying a changelog fact it cannot verify on the machine it is
+refusing. An unsuitable host exits **78** (`EX_CONFIG`) with a sentence naming
+what it found; a runner that started and then failed still exits 1, and a deploy
+verb can branch on the difference without parsing English out of a log.
+
+The floor is Node 24 as a *support* claim rather than the earliest version that
+might work. `node:sqlite` appeared in 22.5 and spent its first releases behind
+`--experimental-sqlite`, and a floor admitting a release where the module needs
+a flag would make the documented start command wrong on a host that satisfies
+the floor.
+
+**`contracts/` is in the artifact because the search would otherwise find the
+repository.** `lib/contracts.ts` walks up from its own module location, so an
+artifact carrying no schemas at all works perfectly under this repository and
+fails on a host at the first manifest — not at build time and not at start time.
+`tests/runner-standalone.test.ts` copies the artifact to a temporary directory
+with nothing above it, strips `DASH_CONTRACTS_DIR` and `ELECTRON_RUN_AS_NODE`
+from the child's environment, and asserts that the runner's own `contracts:`
+line names the artifact's own directory. That is the only arrangement in which
+the difference is visible.
+
+**The data directory is created and hardened here rather than inherited.** On
+Windows it sits under a user profile whose ACL already excludes other
+principals; a VPS home directory does not, and this one holds the channel
+credential, the database and any file a person handed to an agent. The entry
+point applies `runner/channel-secret.ts`'s own `hardenOwnerOnly` and refuses to
+start if the permissions cannot be **proven**.
+
+**`dash:node` already means the right thing on a host**, which the sentinel's
+name does not suggest and which the issue listed as an open question.
+`resolveSpawnCommand` returns the *spawning* process's own `execPath` plus
+`ELECTRON_RUN_AS_NODE=1`; on a host the spawning process is the standalone
+runner under the host's own Node, so it resolves to that and the variable is a
+flag plain Node has no opinion about. No host-specific branch, and the reason
+the sentinel exists carries over intact — a registration must not name a real
+interpreter path, on a version-stamped MSIX root or on a host. It matters
+immediately rather than eventually: **the sample agent is registered with
+exactly this sentinel** and is the first thing anybody would deploy. Proven by
+starting a real child under the standalone runner rather than by reading the
+resolver.
+
+**One correction it forced, and it was load-bearing.** `runner_build` is what
+`electron/runner-process.ts` compares before adopting a runner, and the
+algorithm hashed `path.relative` output and raw file bytes — both
+platform-dependent, which nothing had noticed because only one machine ever
+computed it. A Linux-built artifact beside a Windows-built shell, from one
+commit, would have reported **different** identities, so "the host is running
+the build this DASH shipped" would have been false in the only situation
+anybody asks it. `scripts/runner-build-id.mjs` is now the one implementation and
+folds path separators to `/` and CRLF to LF. Every input is TypeScript or JSON,
+so there is no binary to corrupt.
+
+Evidence: `pnpm typecheck` clean, `pnpm state:check` valid with the 8 recorded
+drift warnings, 73 test files / 1383 passed / 8 skipped / 0 failed including 18
+new cases, and both build scripts reporting the same `runner_build` from this
+tree — which is the identity claim executed rather than asserted.
+
+**`pnpm verify:shell` is red on this machine and not because of this branch.**
+64 passed, 8 failed, 1 advisory; every failure is downstream of `[runner]
+request failed: database disk image is malformed`, and the identical 8 fail on
+master's own tree in the same session. MAR-506's quarantine of the malformed
+`runner.sqlite` **has not actually happened**: the quarantine directory exists
+and is empty, and a read-only open of the live store still answers "database
+disk image is malformed". Nothing was worked around and nothing was moved.
+
+**Nothing about a host is proven, and that is permanent rather than pending.**
+What CI proves is the artifact starting under plain Node on a tree containing
+only itself, serving a task over its own socket, and stopping through the
+authenticated route. `ssh`, the deploy verbs and a real VPS are ADR 0004's
+attended half; MAR-489 owns them.
+
 
 ## The developer path had no gate (MAR-505, MAR-506)
 
