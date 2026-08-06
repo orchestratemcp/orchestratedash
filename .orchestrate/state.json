@@ -241,6 +241,15 @@
       "proof": {
         "command": "pnpm state:check && pnpm typecheck"
       }
+    },
+    {
+      "id": "MAR-491",
+      "lifecycle": "planned",
+      "linear_status": "In Progress",
+      "note": "Every table in app/** (agents list, runs list, run-detail's planned-route and events tables, the agent workspace's tasks and command-decision tables, and the connection checklist) becomes a card list: an ol.row-list of article.row-card, following the pattern app/_components/outputs.tsx established for MAR-434. .row-list/.row-card are folded into the existing .card-grid/.work-list and .summary-card/.work-card rules; table, th, td, .table-wrap and the now-unused --density-row-x/-y tokens are removed. No column is hidden at any width or density - .facts already collapses to one column below 760px and nothing new reads data-density - which is the interaction the issue itself flagged as the substance of the ticket. Confirmed the reported number live before changing anything, by stashing the diff mid-session and letting the dev server hot-reload the old table back: at 375px .table-wrap on / measured scrollWidth 1425 / clientWidth 341, exactly the issue's numbers. After: document.documentElement.scrollWidth has no overflow at 375/768/1280 on /, /runs, /runs/detail, /agents/detail and /connections, and no page has a <table> left. NOT independently checked in the browser: the agent workspace's two tables-turned-cards, because none of the five seeded dev-store agents carry a live Agent DOM snapshot in this browser-only dev environment - typecheck against their exact view types and the unchanged unit suite are the evidence for those two, not a render. pnpm typecheck clean; pnpm test scoped to this repo's own tests/ (PowerShell, to dodge Git Bash's whoami false-failing 5 unrelated channel-secret.test.ts cases): 65 files / 1202 passed / 8 skipped / 0 failed. pnpm verify:shell not run - no Electron process was confirmed absent, and the change is renderer-only. Diff confined to app/**, 7 files. PR #45, open, human-gated, not merged by this session.",
+      "proof": {
+        "command": "pnpm typecheck && pnpm test"
+      }
     }
   ]
 }
