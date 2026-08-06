@@ -91,6 +91,33 @@ describe("inspectAcl", () => {
     expect(inspection).toMatchObject({ ok: false, foreign: ["WD"] });
   });
 
+  it("refuses a protected DACL that locks the owner out", () => {
+    // Owner-only means "the owner and nothing else", not "nothing at all".
+    // This is the descriptor MAR-434's proof 9 actually observed on CI: only
+    // SYSTEM, the proof passing, and the runner locked out of its own task
+    // directory 60ms later with an EPERM nothing had named.
+    expect(inspectAcl("D:PAI(A;OICI;FA;;;SY)", OWNER)).toMatchObject({
+      ok: false,
+      problem: "acl_unprovable",
+      detail: expect.stringContaining(OWNER) as unknown as string,
+    });
+  });
+
+  it("refuses an owner grant that is less than full control", () => {
+    // A workspace the owner can read but not write into is as locked as one
+    // they cannot see; the runner creates files under these directories.
+    expect(inspectAcl(`D:PAI(A;;FA;;;SY)(A;;FR;;;${OWNER})`, OWNER)).toMatchObject({
+      ok: false,
+      problem: "acl_unprovable",
+    });
+  });
+
+  it("accepts the owner's full control spelled as a raw access mask", () => {
+    // `icacls /save` writes what this module grants back as `FA`, but a rights
+    // check should accept every spelling of the fact it checks.
+    expect(inspectAcl(`D:PAI(A;;FA;;;SY)(A;;0x1f01ff;;;${OWNER})`, OWNER)).toEqual({ ok: true });
+  });
+
   it("refuses a descriptor it cannot find a DACL in", () => {
     expect(inspectAcl("O:BAG:BA", OWNER)).toMatchObject({
       ok: false,

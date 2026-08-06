@@ -203,6 +203,14 @@ function hardenWindows(file: string, directory = false): void {
     throw new ChannelSecretError(first.problem, first.detail);
   }
 
+  // Removing an ACE is a security decision and gets a log line: if a readback
+  // ever renders the owner's own SID in a spelling `inspectAcl` does not
+  // recognise, this pass is what would strip the owner's access — and this
+  // line is how that would be seen. Trustees are SIDs or SDDL abbreviations,
+  // never names or paths.
+  console.error(
+    `[acl] readback of ${path.basename(file)} named foreign trustees; removing: ${first.foreign.join(", ")} (owner sid ${sid})`,
+  );
   for (const trustee of first.foreign) {
     icacls(file, ["/remove:g", `*${trustee}`, "/remove:d", `*${trustee}`]);
   }
@@ -259,7 +267,7 @@ export type AclInspection =
  * with `WD` and `AN` in it — can be written down exactly and asserted against
  * on any platform.
  *
- * Three things are checked, and the first is the one that is easy to forget:
+ * Four things are checked, and the first is the one that is easy to forget:
  *
  * 1. **The DACL is protected** (`P` in the `D:` flags). Without that, the ACEs
  *    below are merely today's inherited answer.
@@ -267,6 +275,14 @@ export type AclInspection =
  * 3. **Nothing else appears** — in particular not `WD` (Everyone) or `AN`
  *    (Anonymous), which are exactly what a Windows named pipe's default
  *    descriptor grants and what this file exists to compensate for.
+ * 4. **The owner's own full-control ACE is present.** Owner-only means "the
+ *    owner and nothing else", not "nothing at all": an ACL that locks the
+ *    owner out passes checks 1–3 while making the protected thing unusable by
+ *    the very process that proved it. MAR-434's proof 9 hit exactly that on
+ *    CI — a task directory whose readback named only SYSTEM survived this
+ *    inspection, and the lockout surfaced 60ms later as an EPERM with no
+ *    named cause. An ACL this module cannot find its caller in is an ACL it
+ *    must not vouch for.
  *
  * Administrators are *accepted but not granted*. An administrator can take
  * ownership of any file on the machine, so refusing to run because they appear
@@ -290,10 +306,12 @@ export function inspectAcl(sddl: string, sid: string, file = "the secret"): AclI
 
   const [, flags = "", aces = ""] = dacl;
   const foreign: string[] = [];
+  let ownerHoldsFullControl = false;
   for (const ace of aces.matchAll(/\(([^)]*)\)/g)) {
     // type;flags;rights;objectGuid;inheritObjectGuid;accountSid
     const fields = (ace[1] ?? "").split(";");
     const type = fields[0] ?? "";
+    const rights = fields[2] ?? "";
     const trustee = fields[5] ?? "";
     if (type !== "A" && type !== "D") {
       // Audit and alarm ACEs belong in a SACL. One here is a descriptor this
@@ -307,6 +325,9 @@ export function inspectAcl(sddl: string, sid: string, file = "the secret"): AclI
       };
     }
     if (type === "A" && (trustee === sid || SYSTEM_SIDS.has(trustee) || ADMIN_SIDS.has(trustee))) {
+      if (trustee === sid && grantsFullControl(rights)) {
+        ownerHoldsFullControl = true;
+      }
       continue;
     }
     foreign.push(trustee);
@@ -323,8 +344,9 @@ export function inspectAcl(sddl: string, sid: string, file = "the secret"): AclI
     };
   }
 
-  // Checked last so that a widened *and* inherited ACL reports the trustees a
-  // caller can actually remove, rather than stopping at the flag.
+  // Checked after the foreign scan so that a widened *and* inherited ACL
+  // reports the trustees a caller can actually remove, rather than stopping at
+  // the flag.
   if (!flags.includes("P")) {
     return {
       ok: false,
@@ -334,7 +356,52 @@ export function inspectAcl(sddl: string, sid: string, file = "the secret"): AclI
     };
   }
 
+  if (!ownerHoldsFullControl) {
+    // The descriptor is quoted whole: it holds SIDs and rights and nothing
+    // else, and when this fires the exact spelling of the ACE that should have
+    // matched `sid` is the entire diagnosis.
+    return {
+      ok: false,
+      problem: "acl_unprovable",
+      detail:
+        `The ACL on ${file} does not grant this user (${sid}) full control, so hardening it ` +
+        `owner-only would really be locking the owner out. It reads: ${compactSddl(sddl)}`,
+      foreign: [],
+    };
+  }
+
   return { ok: true };
+}
+
+/**
+ * Whether one ACE rights field is full control.
+ *
+ * `icacls /save` writes the rights this module grants back as `FA`
+ * (FILE_ALL_ACCESS). `GA` (GENERIC_ALL) and a raw mask covering
+ * FILE_ALL_ACCESS mean the same thing spelled by something else, and a rights
+ * *check* should accept every spelling of the fact it is checking — the grant
+ * still only ever writes one of them.
+ */
+const FILE_ALL_ACCESS = 0x1f01ff;
+const GENERIC_ALL = 0x10000000;
+function grantsFullControl(rights: string): boolean {
+  if (rights === "FA" || rights === "GA") {
+    return true;
+  }
+  if (/^0x[0-9a-fA-F]+$/.test(rights)) {
+    const mask = Number.parseInt(rights, 16);
+    return (mask & FILE_ALL_ACCESS) === FILE_ALL_ACCESS || (mask & GENERIC_ALL) === GENERIC_ALL;
+  }
+  return false;
+}
+
+/** One SDDL on one log line: the `/save` dump's filename line dropped, whitespace folded. */
+function compactSddl(sddl: string): string {
+  return sddl
+    .split(/\r?\n/)
+    .filter((line) => line.includes("D:"))
+    .join(" ")
+    .trim();
 }
 
 /**

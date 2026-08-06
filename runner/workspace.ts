@@ -1219,6 +1219,17 @@ function logAdmitDiagnostics(root: WorkspaceRoot, taskId: string): void {
     } catch (aclError: unknown) {
       console.error("[workspace] task dir ACL unreadable:", describeCaught(aclError));
     }
+    try {
+      // The SID and only the SID: which principal was denied is half of any
+      // ACL diagnosis, and an account *name* in a log is the leak the SID
+      // spelling avoids.
+      const sid = /(S-1-[0-9-]+)/.exec(
+        execFileSync("whoami", ["/user", "/fo", "csv", "/nh"], { encoding: "utf8", stdio: "pipe", windowsHide: true }),
+      )?.[1];
+      console.error("[workspace] admitting process sid:", sid ?? "unparsed");
+    } catch (sidError: unknown) {
+      console.error("[workspace] admitting process sid unreadable:", describeCaught(sidError));
+    }
   }
 }
 
