@@ -463,6 +463,61 @@ export function artifactsForRun(agent: string, runId: string): RunArtifact[] {
 }
 
 /**
+ * One artifact, with what DASH knows about receiving it (MAR-434).
+ *
+ * The distinction this type exists to carry is the one the whole codebase turns
+ * on: `generated_at` inside the artifact is **the agent's claim** about when it
+ * made this, and `received_at` is **DASH's own record** of when it arrived. A
+ * provenance receipt that showed only the first would be repeating an agent's
+ * word back to a user as though DASH had checked it — the same mistake
+ * `draft.placement` is carefully worded around, where the agent claims a draft
+ * reached a mailbox and `broker_audit` is what DASH actually did.
+ */
+export interface RunArtifactRecord {
+  artifact: RunArtifact;
+  /** When DASH stored it. DASH's own clock, not the agent's. */
+  received_at: string;
+  /**
+   * How many bytes of artifact DASH is holding.
+   *
+   * Measured from the stored body rather than from any file, because there is
+   * no file: MAR-457's seam stores what the agent sent. The receipt says so.
+   */
+  stored_bytes: number;
+}
+
+/**
+ * Every artifact a run produced with its receiving record, newest first.
+ *
+ * A separate function rather than a wider return type on `artifactsForRun`,
+ * because every other caller wants the artifact and nothing else, and widening
+ * the common path to serve one page would make three surfaces destructure a
+ * field they never read.
+ */
+export function artifactRecordsForRun(agent: string, runId: string): RunArtifactRecord[] {
+  const rows = db()
+    .prepare(
+      "SELECT artifact_json, received_at FROM run_artifacts WHERE agent = ? AND run_id = ? " +
+        "ORDER BY generated_at DESC",
+    )
+    .all(agent, runId) as Array<Record<string, unknown>>;
+
+  const records: RunArtifactRecord[] = [];
+  for (const row of rows) {
+    const json = text(row, "artifact_json");
+    const artifact = parseOrNull<RunArtifact>(json);
+    if (artifact !== null) {
+      records.push({
+        artifact,
+        received_at: text(row, "received_at"),
+        stored_bytes: Buffer.byteLength(json, "utf8"),
+      });
+    }
+  }
+  return records;
+}
+
+/**
  * The most recent digest this agent produced, across every run.
  *
  * What the agent workspace opens on: a person who came back to see what their

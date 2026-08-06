@@ -28,6 +28,7 @@
  */
 
 import type { GroundingAnalysis, RunAnalysis } from "../analyze";
+import type { ArtifactCardView } from "./artifacts";
 import type { Recovery } from "../copy/recovery";
 import type { ConnectionRequirementRow } from "../connections";
 import type { ManifestPermissions, PermissionGrant, RunArtifact, RunEvent } from "../contracts";
@@ -162,6 +163,15 @@ export type RunView =
       unplanned_component_ids: string[];
       /** What the run produced, newest first. Empty for a run that produced nothing. */
       artifacts: RunArtifact[];
+      /**
+       * The same outputs with their role, provenance receipt and availability
+       * resolved (MAR-434) — what the Outputs panel draws.
+       *
+       * Alongside `artifacts` rather than replacing it: `electron/smoke.ts`
+       * reads that field as proof 6k, and a blocking release gate is not
+       * something to break for a tidier shape.
+       */
+      artifact_cards: ArtifactCardView[];
       /**
        * The newest artifact's grounding, or null when the run produced none.
        *

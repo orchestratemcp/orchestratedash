@@ -372,9 +372,11 @@ untouched. Fixed because `pnpm verify` could not go green on Windows without it.
 
 ## Wave 1 - the design pass, executed (MAR-440, MAR-436, MAR-420)
 
-**Merge-ready and not merged.** All three are `planned`. PRs [#41](https://github.com/orchestratemcp/orchestratedash/pull/41)
+**Both merged.** PRs [#41](https://github.com/orchestratemcp/orchestratedash/pull/41)
 (MAR-440, MAR-436) and [#42](https://github.com/orchestratemcp/orchestratedash/pull/42)
-(MAR-420, stacked on it) are `merge:human-gated`; nothing here promotes them.
+(MAR-420, stacked on it) are on master at `7d77e98` and `095a6da`. This paragraph
+said "merge-ready and not merged" until after they were, which is the smallest
+possible instance of what the rest of this file is careful about.
 
 The stack had **never been executed by an Electron shell** when it was written —
 the design session could measure the DOM at three widths and could not launch
@@ -436,6 +438,36 @@ and explicitly recorded that the chrome was fine; this is the chrome, it is a
 different finding, and it wants the same breakpoint decision rather than a patch.
 The page itself does not overflow at any of the three widths, which is the claim
 MAR-491 made and which still holds.
+
+**One defect reached master, and a comment was what hid it (MAR-492).**
+MAR-420's pre-paint script sets `data-density` on `<html>`, and `density-toggle.tsx`
+asserted that `suppressHydrationWarning` was therefore unnecessary — "this
+touches `<html>`'s attribute, not any element React rendered". `app/layout.tsx`
+renders `<html>`. So React hydrated it, found an attribute the build never
+produced, and logged a mismatch on every load for anybody who had chosen
+compact. `<html lang="en" suppressHydrationWarning>` is the fix and the comment
+is rewritten; `tests/density.test.ts` now fails if the flag leaves that element
+or spreads to any other.
+
+The interesting part is which gate could have caught it and none did. It is a
+**dev-mode console message** — production hydration does not warn, and React
+patches no attribute either way, so compact kept working and nothing on screen
+was wrong. The three new proofs photograph density by clicking the real control
+in a fresh window, which never has a stored preference to disagree about, and
+no test in this repository reads a console. The screenshots found the skip link;
+running the app found this. Evidence: typecheck clean, 65 test files, 1204 tests
+(the two new ones), `[state] valid` with the same 7 drift warnings, and a clean
+console on `/` and `/runs/detail` in `next dev` with `dash.density=compact`
+stored. `pnpm verify:shell` was **not** run locally — Electron was open, and
+AGENTS.md's rule is worth more than a proof this change cannot affect — but
+**CI's Windows `shell-smoke` ran it** on the branch tip `b26107b`: 70 proofs,
+zero failures, plus the advisory `6l` with all three live sources answering.
+Still 70, which is the right number: this change adds no proof, and one that
+moved the count would mean it had done something to the installed loop.
+
+MAR-492 was filed after the fix rather than before it, which is worth naming
+rather than tidying away: the work arrived as a bug report against master, and
+an issue written afterwards is a record, not intent.
 
 MAR-420's fleet grid, sidebar and honesty pass are unbuilt and out of scope of
 #42 by its own description.
@@ -562,6 +594,66 @@ is untouched and was an explicit non-goal. Producer component stays unbuilt for
 the reason the design slice gave: the runner knows which agent and which task,
 not which step, and inferring it from event ordering would be a guess rendered as
 a fact.
+## What a run produced, as a thing you own (MAR-434, design slice)
+
+**Open on PR #43, stacked behind #42 and #41, and half the issue is
+deliberately unbuilt.** MAR-457 built the artifact seam and proved it; this
+dresses it and invents no contract.
+
+The defect underneath was small and quiet: the run detail page rendered
+`view.artifacts[0]` and nothing else, while the store kept every artifact a run
+sent. An agent that writes a digest *and* a reply had half its work invisible,
+with nothing on screen to say so.
+
+**Missing, moved, quarantined and deleted are four states because they lead
+somewhere different** — the argument `lib/copy/recovery.ts` already makes about
+credentials, applied to outputs. Moved is the one that decides it: re-running
+leaves the person with two outputs and the one they were hunting for is still
+wherever it went, so "run it again" is not a weaker recovery there but a wrong
+one. A quarantine sends them to the software holding it, because re-running
+produces another file taken the same way. A deletion is somebody's decision,
+usually theirs, so its next action is conditional and never reads as a fault.
+The test asserts the four *next actions* are four distinct strings, which is
+the assertion a collapse into "unavailable" would fail.
+
+**A receipt distinguishes the agent's claim from DASH's record.**
+`generated_at` is what the agent says; `received_at` is when DASH stored it.
+One "Created" row would quietly promote the first into the second — the same
+care `draft.placement` is worded with. Size is measured from the stored body
+because **there is no file**, and the receipt says so rather than implying a
+path. `ArtifactReceipt` carries no run id at all: the panel only ever renders
+on that run's page, and a field that exists is one a later renderer will print.
+A test holds it to that, and caught the field the first draft left in.
+
+`describeArtifactRole` takes a `string` rather than the `kind` union, because
+the JSON schema and the renderer's union are two authorities that can disagree
+across a version. An unknown kind now degrades to metadata plus a reveal;
+`RunOutput`'s `default` branch used to throw on a page a user was reading.
+
+`view.artifacts` is **kept** beside the new `artifact_cards`, because
+`electron/smoke.ts` reads it as proof 6k. A blocking release gate is not
+something to break for a tidier shape.
+
+Evidence: `pnpm typecheck` clean, `pnpm state:check` valid, `pnpm test` 67 files
+/ 1245 passed / 8 skipped / 0 failed including 43 new cases. **`pnpm
+verify:shell` was not run** — two Electron processes were live, AGENTS.md
+forbids force-killing them and DASH is single-instance by design, which is the
+call MAR-441 and MAR-421 made in the same situation. **No screenshot either**:
+the session was unattended and the Browser pane composites no frames when it is
+not displayed, so a render test took its place — repeatable, and in CI.
+
+**What is not built is the half that would populate the four states.** MAR-457
+stores the artifact *body* in DASH's own records rather than a reference to a
+file, so there is no file whose absence could be observed. The thing that would
+observe it is the runner-owned protected workspace — a separate feature with
+its own installed-MSIX proof, which this slice does not touch. So
+`resolveAvailability` is a parameter with an honest default: production passes
+nothing and every output is `available`, which is true, while tests drive all
+five states. That is the pattern `describeConnectionCondition`'s revoked
+sentence shipped under, written before anything could produce the condition.
+The receipt's **producer component** is unbuilt for a different reason: nothing
+links an artifact to the step that made it, and inferring it from event
+ordering would be a guess rendered as a fact.
 
 ## UX principle
 

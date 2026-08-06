@@ -222,16 +222,12 @@
    * here: no font size, no colour, no border, and above all no content. A
    * compact DASH shows the same facts in less space, never fewer facts.
    * ------------------------------------------------------------------ */
-  --density-row-y: var(--space-3);
-  --density-row-x: var(--space-4);
   --density-card-p: var(--space-4);
   --density-gap: var(--space-4);
   --density-stack: var(--space-5);
 }
 
 [data-density="compact"] {
-  --density-row-y: var(--space-1);
-  --density-row-x: var(--space-3);
   --density-card-p: var(--space-3);
   --density-gap: var(--space-2);
   --density-stack: var(--space-4);

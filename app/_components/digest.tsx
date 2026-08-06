@@ -31,17 +31,39 @@ export function Digest({
   artifact: DigestArtifact;
   grounding: GroundingAnalysis | null;
 }): ReactNode {
-  const uncited = new Set(grounding?.uncited ?? []);
-  const unsupported = new Set((grounding?.unsupported ?? []).map((entry) => entry.headline));
-  const gap = describeDigestGaps(artifact.sources_fetched ?? []);
-
   return (
     <section className="section" aria-labelledby="digest-heading">
       <div className="section-heading">
         <h2 id="digest-heading">{artifact.title}</h2>
         <GroundingChip grounding={grounding} />
       </div>
+      <DigestBody artifact={artifact} grounding={grounding} />
+    </section>
+  );
+}
 
+/**
+ * The digest itself, with no heading and no section of its own (MAR-434).
+ *
+ * Split out so the Outputs panel can put a digest inside a card that has
+ * already named it, without a second copy of the title appearing underneath the
+ * first and without an `h2` nested where an `h3` belongs. `Digest` above is now
+ * the standalone framing — the agent workspace still opens on one of these on
+ * its own, and nothing about that call site changed.
+ */
+export function DigestBody({
+  artifact,
+  grounding,
+}: {
+  artifact: DigestArtifact;
+  grounding: GroundingAnalysis | null;
+}): ReactNode {
+  const uncited = new Set(grounding?.uncited ?? []);
+  const unsupported = new Set((grounding?.unsupported ?? []).map((entry) => entry.headline));
+  const gap = describeDigestGaps(artifact.sources_fetched ?? []);
+
+  return (
+    <>
       {gap === null ? null : (
         <div className="notice notice-err" role="status">
           <p>
@@ -96,7 +118,7 @@ export function Digest({
       )}
 
       <SourceList artifact={artifact} />
-    </section>
+    </>
   );
 }
 
@@ -186,32 +208,52 @@ function SourceList({ artifact }: { artifact: DigestArtifact }): ReactNode {
  * agent's own line breaks — which are part of what the user is reviewing.
  */
 export function Draft({ artifact }: { artifact: DraftArtifact }): ReactNode {
-  const { draft } = artifact;
-  const recipients = draft.to ?? [];
-  const sources = draft.sources ?? [];
-  const atProvider = draft.placement.where === "provider_draft";
-
   return (
     <section className="section" aria-labelledby="draft-heading">
       <div className="section-heading">
         <h2 id="draft-heading">{artifact.title}</h2>
-        {atProvider ? (
-          <span
-            className="chip chip-warn"
-            title="The agent reports saving this to your drafts. DASH has no operation that could send it."
-          >
-            in your drafts, not sent
-          </span>
-        ) : (
-          <span
-            className="chip chip-ok"
-            title="DASH has no operation that could send this or save it to your mail"
-          >
-            held here only
-          </span>
-        )}
+        <DraftPlacementChip artifact={artifact} />
       </div>
+      <DraftBody artifact={artifact} />
+    </section>
+  );
+}
 
+/**
+ * Where this reply is, as a chip (MAR-434).
+ *
+ * Exported so the Outputs panel can carry it in a card header that has already
+ * named the draft. It is a safety signal rather than decoration — "in your
+ * drafts, not sent" is the difference between something sitting in a mailbox
+ * and something that only exists in DASH — so a list of outputs that dropped it
+ * would be hiding the one fact worth scanning for.
+ */
+export function DraftPlacementChip({ artifact }: { artifact: DraftArtifact }): ReactNode {
+  return artifact.draft.placement.where === "provider_draft" ? (
+    <span
+      className="chip chip-warn"
+      title="The agent reports saving this to your drafts. DASH has no operation that could send it."
+    >
+      in your drafts, not sent
+    </span>
+  ) : (
+    <span
+      className="chip chip-ok"
+      title="DASH has no operation that could send this or save it to your mail"
+    >
+      held here only
+    </span>
+  );
+}
+
+/** The reply itself, with no heading and no section of its own (MAR-434). */
+export function DraftBody({ artifact }: { artifact: DraftArtifact }): ReactNode {
+  const { draft } = artifact;
+  const recipients = draft.to ?? [];
+  const sources = draft.sources ?? [];
+
+  return (
+    <>
       {draft.placement.where === "provider_draft" ? (
         <div className="notice" role="status">
           <p>
@@ -269,7 +311,7 @@ export function Draft({ artifact }: { artifact: DraftArtifact }): ReactNode {
           </p>
         </details>
       )}
-    </section>
+    </>
   );
 }
 

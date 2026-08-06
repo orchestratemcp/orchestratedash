@@ -462,26 +462,21 @@ function WorkspaceBody({
         {snapshot.tasks.length === 0 ? (
           <p className="muted">No tasks have been published.</p>
         ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Task</th>
-                  <th>Status</th>
-                  <th>Detail</th>
-                </tr>
-              </thead>
-              <tbody>
-                {snapshot.tasks.map((task) => (
-                  <tr key={task.id}>
-                    <td>{task.label}</td>
-                    <td>{task.status.replaceAll("_", " ")}</td>
-                    <td className="wrap">{task.detail ?? ""}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ol className="row-list">
+            {snapshot.tasks.map((task) => (
+              <li key={task.id}>
+                <article className="row-card">
+                  <div className="section-heading">
+                    <div>
+                      <p className="eyebrow">{task.status.replaceAll("_", " ")}</p>
+                      <h3>{task.label}</h3>
+                    </div>
+                  </div>
+                  {task.detail === null ? null : <p className="muted wrap">{task.detail}</p>}
+                </article>
+              </li>
+            ))}
+          </ol>
         )}
       </section>
 
@@ -827,36 +822,46 @@ function AuditHistory({
         {snapshot.command_audit.length === 0 ? (
           <p className="muted">No command has crossed the audited agent boundary.</p>
         ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Decision</th>
-                  <th>Command</th>
-                  <th>Actor</th>
-                  <th>Authenticated by</th>
-                  <th>When</th>
-                  <th>Reason</th>
-                  <th>Correlation</th>
-                </tr>
-              </thead>
-              <tbody>
-                {snapshot.command_audit.map((record, index) => (
-                  <tr key={`${record.correlation_id}:${record.command}:${String(index)}`}>
-                    <td>{record.decision}</td>
-                    <td>{record.command}</td>
-                    <td>{record.actor_id}</td>
-                    <td>{record.authenticated_by}</td>
-                    <td>{record.decided_at}</td>
-                    <td>{record.reason ?? ""}</td>
-                    <td>
-                      <code>{record.correlation_id}</code>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ol className="row-list">
+            {snapshot.command_audit.map((record, index) => (
+              <li key={`${record.correlation_id}:${record.command}:${String(index)}`}>
+                <article className="row-card">
+                  <div className="section-heading">
+                    <div>
+                      <p className="eyebrow">{record.decision}</p>
+                      <h3>{record.command}</h3>
+                    </div>
+                  </div>
+                  <dl className="facts">
+                    <div>
+                      <dt>Actor</dt>
+                      <dd>{record.actor_id}</dd>
+                    </div>
+                    <div>
+                      <dt>Authenticated by</dt>
+                      <dd>{record.authenticated_by}</dd>
+                    </div>
+                    <div>
+                      <dt>When</dt>
+                      <dd>{record.decided_at}</dd>
+                    </div>
+                    {record.reason === null ? null : (
+                      <div>
+                        <dt>Reason</dt>
+                        <dd>{record.reason}</dd>
+                      </div>
+                    )}
+                    <div>
+                      <dt>Correlation</dt>
+                      <dd>
+                        <code>{record.correlation_id}</code>
+                      </dd>
+                    </div>
+                  </dl>
+                </article>
+              </li>
+            ))}
+          </ol>
         )}
       </details>
     </section>
