@@ -178,6 +178,30 @@ await Promise.all([
     format: "esm",
   }),
 
+  // The launch preflight. Runs under plain **Node**, before `electron .`, which
+  // is the whole point of it — see `electron/preflight.ts`. Bundled here rather
+  // than written as a `.mjs` script so that its rules can live in
+  // `lib/shell/preflight.ts` with the rest of the shell's rules and be
+  // unit-tested there, which a `scripts/*.mjs` file could not import.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "preflight.ts")],
+    outfile: path.join(outDir, "preflight.mjs"),
+    format: "esm",
+  }),
+
+  // The first-paint check (`pnpm shell:check`). Never on the `electron .` path,
+  // built here only so there is something to run — the same terms as the smoke
+  // and the screenshot harness below. It produces a verdict about the developer
+  // path, which ADR 0004 keeps out of the release gate because that path
+  // depends on a dev server somebody has to have started.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "first-paint.ts")],
+    outfile: path.join(outDir, "first-paint.mjs"),
+    format: "esm",
+  }),
+
   // The screenshot harness, on the same terms as the smoke above: never on the
   // `electron .` path, built here only so there is something to run. It is
   // deliberately not named by any `package.json` script — it produces evidence,

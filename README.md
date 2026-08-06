@@ -36,7 +36,18 @@ To run the same UI inside the installable shell instead of a browser tab, leave
 
 ```sh
 pnpm shell        # builds electron/ and launches the window
+pnpm shell:check  # same launch, but asserts the first page actually renders
 ```
+
+`pnpm shell` builds the shell from the working tree and then loads a renderer it
+did not build — the dev server on the developer path, the export under
+`DASH_SHELL_URL=dash-app://ui/`. It now refuses to launch when that renderer is
+missing, is older than the source it is built from, or is another application
+that happened to take the port. What no HTTP probe can tell you is whether the
+page *works*, so `pnpm shell:check` opens the real window and waits for the
+first page to leave its loading state. Run it when the shell looks wrong; a dev
+server that has been up for days can serve a complete page that never hydrates,
+which looks exactly like DASH being slow.
 
 The shell is where secrets and audited commands live — see
 [`electron/`](electron/README.md). `pnpm package:msix` builds the packaging-proof

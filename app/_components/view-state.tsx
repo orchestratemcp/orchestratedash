@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { describeReadOnlyHost, type RenderHost } from "../../lib/copy/host";
 import type { Recovery } from "../../lib/copy/recovery";
+import { VIEW_STATE_ATTRIBUTE } from "../../lib/shell/first-paint";
 
 /**
  * The two states every page gained when it stopped being a server component
@@ -22,10 +23,23 @@ import type { Recovery } from "../../lib/copy/recovery";
  * Says what it is waiting for, rather than spinning. The brief's "nothing moves
  * or refreshes without saying it did" is about not surprising the reader, and an
  * unlabelled spinner surprises them with whatever appears next.
+ *
+ * ## The attribute, and why the product carries it
+ *
+ * `data-view-state` is the one hook that makes "the first page left its loading
+ * state" checkable from outside the renderer, and it is on the product rather
+ * than on a fixture because the thing worth checking is the shipped page. A
+ * check that matched the sentence instead would be pinned to prose — the part
+ * of this component most likely to be improved for good reasons, and the part
+ * whose change says nothing at all about whether the page works.
+ *
+ * It is what `electron/first-paint.ts` waits to disappear. See
+ * `lib/shell/first-paint.ts` for why the absence of this attribute is the
+ * assertion rather than the presence of any particular content.
  */
 export function ViewLoading({ what }: { what: string }): ReactNode {
   return (
-    <div className="empty" aria-live="polite">
+    <div className="empty" aria-live="polite" {...{ [VIEW_STATE_ATTRIBUTE]: "loading" }}>
       <p>Reading {what}…</p>
     </div>
   );
@@ -40,7 +54,14 @@ export function ViewLoading({ what }: { what: string }): ReactNode {
  */
 export function ViewFailed({ recovery }: { recovery: Recovery }): ReactNode {
   return (
-    <div className="empty" role="alert">
+    /*
+      Marked as well as `ViewLoading`, and the distinction is the point. A page
+      that failed has left the loading state and is still not a working page, so
+      a check that only waited for "loading" to go would call a rendered failure
+      a success. `electron/first-paint.ts` reports the three outcomes as three
+      different things.
+    */
+    <div className="empty" role="alert" {...{ [VIEW_STATE_ATTRIBUTE]: "failed" }}>
       <p>
         <strong>{recovery.headline}</strong>
       </p>
