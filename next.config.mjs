@@ -43,6 +43,31 @@ const nextConfig = {
   ...(packaging ? { output: "export" } : {}),
 
   /**
+   * The shell loads `http://127.0.0.1:3000`, so the dev server has to answer it.
+   *
+   * Next blocks cross-origin access to its own dev resources — `/_next/webpack-hmr`
+   * and the dev overlay's assets — for any host not on this list, and the default
+   * list does not include the literal loopback address. `lib/shell/window.ts`
+   * accepts *only* the literal addresses and deliberately refuses `localhost`,
+   * because a name can resolve through DNS and the point of the allowlist is to
+   * be independent of resolver behaviour. Those two decisions are individually
+   * right and together they silently killed hot reload on the developer path:
+   * every `pnpm shell` window logged
+   *
+   *     ⚠ Blocked cross-origin request to Next.js dev resource /_next/webpack-hmr
+   *       from "127.0.0.1".
+   *
+   * into `.next/dev/logs/next-development.log`, where nobody was reading, and the
+   * shell stopped picking up edits. A developer whose hot reload has quietly
+   * stopped is exactly the person who ends up looking at a dev server that has
+   * been running for two days.
+   *
+   * This is a development-only setting. It has no effect on the export, which is
+   * what the packaged app ships and which has no dev server behind it at all.
+   */
+  allowedDevOrigins: ["127.0.0.1"],
+
+  /**
    * `.dev.ts` must come first: extensions are matched in order, and a
    * `route.dev.ts` seen as `route.dev` + `.ts` would be a route named
    * "route.dev" rather than a route handler.

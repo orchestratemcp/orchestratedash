@@ -3,9 +3,17 @@ import "./tokens.css";
 import "./globals.css";
 import { AppChrome } from "./_components/app-chrome";
 import { DensityScript } from "./_components/density-toggle";
+import { RENDERER_TITLE } from "../lib/shell/preflight";
 
 export const metadata = {
-  title: "OrchestrateDASH",
+  /*
+    The one place this string is written. `pnpm shell`'s preflight reads the
+    `<title>` of whatever is answering on the developer origin to tell DASH's
+    own dev server from another application that happened to take port 3000 —
+    a hazard this machine has hit — and two copies of a string are two copies
+    that can disagree. See `lib/shell/preflight.ts`.
+  */
+  title: RENDERER_TITLE,
   description: "Local monitor for agents planned with OrchestrateKit.",
 };
 
