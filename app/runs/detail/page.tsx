@@ -136,83 +136,90 @@ function RunDetail(): ReactNode {
       {view.planned_route.length > 0 ? (
         <div className="section">
           <h2>Planned route</h2>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Step</th>
-                  <th>Component</th>
-                  <th>Risk</th>
-                  <th>Model tier</th>
-                  <th>Executed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {view.planned_route.map((entry) => (
-                  <tr key={`${entry.step} ${entry.component_id}`}>
-                    <td>{entry.step}</td>
-                    <td>
-                      <code>{entry.component_id}</code>
-                    </td>
-                    <td>{entry.risk_level}</td>
-                    <td>{entry.model_tier}</td>
-                    <td>
-                      {entry.executed ? (
-                        <span className="chip chip-ok">ran</span>
-                      ) : (
-                        <span className="chip chip-warn">never ran</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ol className="row-list">
+            {view.planned_route.map((entry) => (
+              <li key={`${entry.step} ${entry.component_id}`}>
+                <article className="row-card">
+                  <div className="section-heading">
+                    <div>
+                      <p className="eyebrow">Step {entry.step}</p>
+                      <h3>
+                        <code>{entry.component_id}</code>
+                      </h3>
+                    </div>
+                    {entry.executed ? (
+                      <span className="chip chip-ok">ran</span>
+                    ) : (
+                      <span className="chip chip-warn">never ran</span>
+                    )}
+                  </div>
+                  <dl className="facts">
+                    <div>
+                      <dt>Risk</dt>
+                      <dd>{entry.risk_level}</dd>
+                    </div>
+                    <div>
+                      <dt>Model tier</dt>
+                      <dd>{entry.model_tier}</dd>
+                    </div>
+                  </dl>
+                </article>
+              </li>
+            ))}
+          </ol>
         </div>
       ) : null}
 
       <div className="section">
         <h2>Events</h2>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Seq</th>
-                <th>Type</th>
-                <th>Component</th>
-                <th>Status</th>
-                <th>Timestamp</th>
-                <th>Detail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {view.events.map((event) => (
-                <tr key={event.seq}>
-                  <td>{event.seq}</td>
-                  <td>{event.type}</td>
-                  <td>
-                    {event.component_id === undefined ? (
-                      <span className="chip chip-muted">&mdash;</span>
-                    ) : (
-                      <>
-                        <code>{event.component_id}</code>
-                        {event.type === "step_started" && unplanned.has(event.component_id) ? (
-                          <>
-                            {" "}
-                            <span className="chip chip-warn">unplanned</span>
-                          </>
-                        ) : null}
-                      </>
-                    )}
-                  </td>
-                  <td>{event.status ?? ""}</td>
-                  <td>{event.ts}</td>
-                  <td className="wrap">{event.detail ?? ""}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ol className="row-list">
+          {view.events.map((event) => (
+            <li key={event.seq}>
+              <article className="row-card">
+                <div className="section-heading">
+                  <div>
+                    <p className="eyebrow">Seq {event.seq}</p>
+                    <h3>{event.type}</h3>
+                  </div>
+                </div>
+                <dl className="facts">
+                  <div>
+                    <dt>Component</dt>
+                    <dd>
+                      {event.component_id === undefined ? (
+                        <span className="chip chip-muted">&mdash;</span>
+                      ) : (
+                        <>
+                          <code>{event.component_id}</code>
+                          {event.type === "step_started" && unplanned.has(event.component_id) ? (
+                            <>
+                              {" "}
+                              <span className="chip chip-warn">unplanned</span>
+                            </>
+                          ) : null}
+                        </>
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd>{event.status ?? ""}</dd>
+                  </div>
+                  <div>
+                    <dt>Timestamp</dt>
+                    <dd>{event.ts}</dd>
+                  </div>
+                  {event.detail === undefined ? null : (
+                    <div>
+                      <dt>Detail</dt>
+                      <dd className="wrap">{event.detail}</dd>
+                    </div>
+                  )}
+                </dl>
+              </article>
+            </li>
+          ))}
+        </ol>
       </div>
     </>
   );
