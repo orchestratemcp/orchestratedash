@@ -399,7 +399,23 @@ async function run(): Promise<void> {
     check(
       "G2. a real Google sign-in completed and DASH stored it in this machine's vault",
       connected.ok && connected.state === "connected",
-      { ok: connected.ok, state: connected.state, masked_hint: connected.masked_hint },
+      {
+        ok: connected.ok,
+        state: connected.state,
+        masked_hint: connected.masked_hint,
+        /*
+         * `detail` and `recovery` carry the only account of *why*, and this check
+         * used to drop both. A failed sign-in printed `not_connected` and a null
+         * hint — true, and indistinguishable between a cancelled consent, a
+         * refused exchange, a vault that would not store, and a listener that
+         * timed out waiting for a browser. The same lesson `MAR-473` records
+         * about `6g` and this file's own `skip` helper states in its comment: a
+         * failure that does not name itself costs a whole attended run, and this
+         * run is one a person has to stand up for.
+         */
+        detail: connected.detail,
+        recovery: connected.recovery ?? null,
+      },
     );
 
     const storedRaw = await secureStore()
