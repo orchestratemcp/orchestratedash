@@ -34,7 +34,14 @@ import { checkEnvironmentName } from "../lib/connection-credentials";
 import { isManifestV2, validateManifest } from "../lib/contracts";
 import { resolveSpawnCommand, sameRegistration, type AgentRegistration } from "../lib/registration";
 import type { AgentCommand } from "../lib/workspace";
-import { createLineReader, encodeCommand, parseAgentMessage } from "./protocol";
+import {
+  createLineReader,
+  encodeCommand,
+  encodeTask,
+  parseAgentMessage,
+  type AgentArtifactFileMessage,
+  type AgentTaskMessage,
+} from "./protocol";
 import type { ProcessFacts } from "./state";
 
 /* ---------------------------------------------------------------------- *
@@ -435,6 +442,27 @@ export class Supervisor {
     private readonly log: (line: string) => void = (line) => {
       console.warn(line);
     },
+    /**
+     * What to do when a child says it wrote a file (MAR-434).
+     *
+     * Injected rather than performed here, and the reason is the same one that
+     * keeps `reload` out of `runner/server.ts`: this class supervises processes
+     * and holds no database, no data directory and no idea where a workspace
+     * is. `runner/main.ts` owns all three and wires them together.
+     *
+     * Absent means the runner was built without a workspace, and the line is
+     * logged and dropped — which is what a runner started by hand for
+     * debugging should do, rather than throw at an agent that did nothing
+     * wrong.
+     *
+     * Unlike telemetry, artifacts and broker requests, this is **not**
+     * buffered for a later drain. Those three carry their own payload, so a
+     * delay costs nothing; this one names a file the child still holds and can
+     * still overwrite, and every millisecond between the announcement and the
+     * copy is a millisecond in which the bytes DASH registers are not the bytes
+     * the agent meant to publish.
+     */
+    private readonly onArtifactFile?: (agentId: string, message: AgentArtifactFileMessage) => void,
   ) {
     for (const registration of registrations) {
       this.agents.set(registration.agent_id, this.entryFor(registration));
@@ -629,6 +657,32 @@ export class Supervisor {
       return false;
     }
     entry.child.stdin.write(line);
+    return true;
+  }
+
+  /**
+   * Hand an agent its task (MAR-434).
+   *
+   * Down the same pipe a command goes, and for the same reason: the pipe is
+   * authenticated by construction, so the paths in this message reach exactly
+   * the child they were resolved for and no other process on the machine. There
+   * is no acknowledgement, deliberately — an ack would make this look like a
+   * command, and a command is a thing the runner adjudicates. This is the runner
+   * telling a child where its own files are.
+   *
+   * Returns whether the line reached a live pipe. An agent that is not running
+   * has no task; the caller reports that rather than queueing a dispatch for a
+   * process that may never exist.
+   */
+  dispatchTask(
+    agentId: string,
+    task: Omit<AgentTaskMessage, "protocol_version" | "type">,
+  ): boolean {
+    const entry = this.agents.get(agentId);
+    if (entry === undefined || entry.child === null || entry.child.stdin === null) {
+      return false;
+    }
+    entry.child.stdin.write(encodeTask(task));
     return true;
   }
 
@@ -936,6 +990,17 @@ export class Supervisor {
         message.artifact,
         Buffer.byteLength(line, "utf8"),
       );
+      return;
+    }
+
+    if (message.type === "artifact_file") {
+      if (this.onArtifactFile === undefined) {
+        this.log(
+          `[runner] ${entry.registration.agent_id} published a file, but this runner has no task workspace`,
+        );
+        return;
+      }
+      this.onArtifactFile(entry.registration.agent_id, message);
       return;
     }
 

@@ -36,7 +36,13 @@ import { putAgentDomState } from "../lib/agent-dom/store";
 import { fetchAgentDomState, httpAdapter, type ControlChannel } from "../lib/agent-dom/transport";
 import { isManifestV2 } from "../lib/contracts";
 import { isSecureStoreError, type SecureStore } from "../lib/secure-store";
-import { ingestArtifacts, ingestEvents, listAgentNames, readAgentManifest } from "../lib/store";
+import {
+  ingestArtifacts,
+  ingestEvents,
+  listAgentNames,
+  readAgentManifest,
+  syncWorkspaceArtifacts,
+} from "../lib/store";
 import { runnerFetch, type RunnerHandle } from "./runner-process";
 
 /**
@@ -264,6 +270,65 @@ export function createAgentChannels(
     }
   }
 
+  /**
+   * Take up the runner's picture of its file-backed artifacts (MAR-434).
+   *
+   * A GET of the whole index rather than a drain, because availability is a
+   * state and not an event — `runner/server.ts` says why at the route. So this
+   * runs on every poll and overwrites, and a poll that fails leaves the previous
+   * answer in place with its own `observed_at` rather than emptying the panel.
+   *
+   * The provenance binding is the same one `drainArtifacts` applies and is worth
+   * as much: `sourceAgents` comes from the record's own `agent` field here
+   * rather than from a transport envelope, because unlike a drained candidate
+   * this row was **written by the runner**, not forwarded by it. The runner is
+   * what bound the agent identity in the first place, at the moment the child
+   * published the file. Re-deriving it from the same field it came from would be
+   * a check that cannot fail, so it is not performed and this comment is here
+   * instead of one.
+   */
+  async function syncWorkspace(): Promise<void> {
+    if (runner === null) {
+      return;
+    }
+
+    try {
+      const response = await runnerFetch(runner)(`${runner.origin}/workspace-artifacts`, {
+        method: "GET",
+        headers: { authorization: `Bearer ${runner.token}` },
+        signal: AbortSignal.timeout(3_000),
+      });
+      if (!response.ok) {
+        // 501 is the ordinary answer from a runner built without a workspace,
+        // and is not worth a log line on every poll.
+        return;
+      }
+
+      const body = (await response.json()) as { artifacts?: unknown; truncated?: unknown };
+      if (body.truncated === true) {
+        log(
+          "[dash-shell] the runner's artifact index was truncated; the Outputs panel is not " +
+            "showing every file this installation has produced",
+        );
+      }
+      if (!Array.isArray(body.artifacts)) {
+        return;
+      }
+
+      const result = syncWorkspaceArtifacts(body.artifacts);
+      for (const rejection of result.rejected) {
+        log(
+          `[dash-shell] rejected runner workspace artifact at index ${String(rejection.index)}: ` +
+            rejection.errors.slice(0, 3).join("; "),
+        );
+      }
+    } catch {
+      // Fire and forget, as the two drains above are. The runner's own index is
+      // the record; this is a copy for rendering, and a failed refresh costs a
+      // page being five seconds behind.
+    }
+  }
+
   /** Synchronous channel resolution, for the command path. */
   function channelFor(agentId: string): ControlChannel | null {
     if (runner !== null && hosted.has(agentId)) {
@@ -306,6 +371,7 @@ export function createAgentChannels(
       await refresh();
       await drainTelemetry();
       await drainArtifacts();
+      await syncWorkspace();
 
       for (const agentId of listAgentNames()) {
         // Warm the vault lookup so `channelFor` can stay synchronous on the

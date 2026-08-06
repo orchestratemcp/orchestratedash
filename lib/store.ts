@@ -195,6 +195,7 @@ export function resetStore(): void {
     database.exec("DELETE FROM command_audit");
     database.exec("DELETE FROM agent_handoffs");
     database.exec("DELETE FROM run_artifacts");
+    database.exec("DELETE FROM workspace_artifacts");
   });
 }
 
@@ -535,6 +536,259 @@ export function latestArtifactForAgent(agent: string): RunArtifact | null {
     .get(agent) as Record<string, unknown> | undefined;
 
   return row === undefined ? null : parseOrNull<RunArtifact>(text(row, "artifact_json"));
+}
+
+/* ---------------------------------------------------------------------- *
+ * File-backed artifacts, and the availability seam (MAR-434)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The five states an output's bytes can be in.
+ *
+ * `lib/copy/artifacts.ts` has had vocabulary and a test for these since MAR-434's
+ * design slice, and had no producer: MAR-457 stores an artifact as a body, so
+ * there was no file whose absence anything could observe. `runner/workspace.ts`
+ * is the producer, this is how it reaches DASH, and `resolveArtifactAvailability`
+ * is what the Outputs panel's `resolveAvailability` parameter is meant to be
+ * given.
+ *
+ * The order below is not alphabetical and is not severity. It is the order of
+ * how much DASH knows: `available` and `deleted` are facts it holds directly,
+ * `moved` and `quarantined` are observations the runner made about a filesystem,
+ * and `missing` is the residue — the state that means nothing else was true.
+ */
+export type ArtifactAvailability =
+  | "available"
+  | "deleted"
+  | "moved"
+  | "quarantined"
+  | "missing";
+
+export interface WorkspaceArtifactRecord {
+  artifact_id: string;
+  agent: string;
+  run_id: string;
+  task_id: string;
+  role: string;
+  display_name: string;
+  media_type: string;
+  byte_size: number;
+  sha256: string;
+  registered_at: string;
+  retention: string;
+  availability: ArtifactAvailability;
+  /** Where it was found, or why it could not be read. Null when neither applies. */
+  availability_detail: string | null;
+  /** When the runner looked. Not when DASH wrote this down. */
+  observed_at: string;
+}
+
+const AVAILABILITY_STATES = new Set<string>([
+  "available",
+  "deleted",
+  "moved",
+  "quarantined",
+  "missing",
+]);
+
+/**
+ * Replace DASH's picture of one runner's file-backed artifacts.
+ *
+ * An upsert per record rather than a delete-then-insert, because a poll that
+ * failed halfway through a truncated table would leave the Outputs panel
+ * showing nothing at all — which reads as "this run produced no files" and is
+ * the one wrong answer that looks like a right one.
+ *
+ * Rows the runner no longer reports are **kept**, not pruned. The runner
+ * bounding its index page is the likeliest reason a record stops appearing, and
+ * deleting a user's record of an output because a paging limit moved would be
+ * losing data to an implementation detail. A row that has genuinely gone is
+ * covered already: the runner reports it as `deleted` before it stops reporting
+ * it at all.
+ *
+ * Each candidate is validated independently and a malformed one is counted
+ * rather than thrown — the same discipline `ingestEvents` and `ingestArtifacts`
+ * use, for the same reason.
+ */
+export function syncWorkspaceArtifacts(
+  input: unknown,
+  options: IngestOptions = {},
+): IngestResult {
+  const items = Array.isArray(input) ? input : [input];
+  const accepted: WorkspaceArtifactRecord[] = [];
+  const rejected: IngestResult["rejected"] = [];
+
+  items.forEach((item, index) => {
+    const record = narrowWorkspaceArtifact(item);
+    if (record === null) {
+      rejected.push({ index, errors: ["not a workspace artifact record"] });
+      return;
+    }
+    const sourceAgent = options.sourceAgents?.[index];
+    if (sourceAgent !== undefined && record.agent !== sourceAgent) {
+      // The same binding `ingestArtifacts` applies, and it matters as much: an
+      // output attributed to the wrong agent is a file a person would go looking
+      // for on the wrong page.
+      rejected.push({ index, errors: ["/agent must match the runner-hosted source"] });
+      return;
+    }
+    accepted.push(record);
+  });
+
+  if (accepted.length > 0) {
+    const database = db();
+    transact(database, () => {
+      for (const record of accepted) {
+        database
+          .prepare(
+            "INSERT INTO workspace_artifacts " +
+              "(artifact_id, agent, run_id, task_id, role, display_name, media_type, byte_size, " +
+              " sha256, registered_at, retention, availability, availability_detail, observed_at) " +
+              "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+              "ON CONFLICT (artifact_id) DO UPDATE SET " +
+              "retention = excluded.retention, " +
+              "availability = excluded.availability, " +
+              "availability_detail = excluded.availability_detail, " +
+              "observed_at = excluded.observed_at",
+          )
+          .run(
+            record.artifact_id,
+            record.agent,
+            record.run_id,
+            record.task_id,
+            record.role,
+            record.display_name,
+            record.media_type,
+            record.byte_size,
+            record.sha256,
+            record.registered_at,
+            record.retention,
+            record.availability,
+            record.availability_detail,
+            record.observed_at,
+          );
+      }
+    });
+  }
+
+  return { accepted: accepted.length, rejected };
+}
+
+/**
+ * Narrow one candidate from the runner.
+ *
+ * The runner is a process DASH started and authenticates, which is a good reason
+ * to trust it and not a reason to skip this. It is also a *separate build* — the
+ * whole point of `RUNNER_BUILD_ID` is that the runner on disk may not be the one
+ * this DASH was compiled against — so a field that changed shape between builds
+ * arrives here rather than at a renderer.
+ *
+ * An unrecognised availability becomes `missing` rather than being accepted. The
+ * alternative is a state no copy exists for reaching a page that has to say
+ * something about it, and `missing` is the state whose recovery — run it again —
+ * is correct for the largest number of things that could have gone wrong.
+ */
+function narrowWorkspaceArtifact(candidate: unknown): WorkspaceArtifactRecord | null {
+  if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) {
+    return null;
+  }
+  const value = candidate as Record<string, unknown>;
+  const stringField = (key: string): string | null =>
+    typeof value[key] === "string" && (value[key] as string).length > 0 ? (value[key] as string) : null;
+
+  const artifactId = stringField("artifact_id");
+  const agent = stringField("agent");
+  const runId = stringField("run_id");
+  const taskId = stringField("task_id");
+  const sha256 = stringField("sha256");
+  const registeredAt = stringField("registered_at");
+  if (
+    artifactId === null ||
+    agent === null ||
+    runId === null ||
+    taskId === null ||
+    sha256 === null ||
+    registeredAt === null
+  ) {
+    return null;
+  }
+
+  const availability = value["availability"];
+  const state =
+    typeof availability === "string" && AVAILABILITY_STATES.has(availability)
+      ? (availability as ArtifactAvailability)
+      : "missing";
+
+  const detail = value["availability_detail"];
+  const observedAt = stringField("observed_at");
+
+  return {
+    artifact_id: artifactId,
+    agent,
+    run_id: runId,
+    task_id: taskId,
+    role: stringField("role") ?? "output",
+    display_name: stringField("display_name") ?? artifactId,
+    media_type: stringField("media_type") ?? "application/octet-stream",
+    byte_size: typeof value["byte_size"] === "number" ? Math.max(0, Math.floor(value["byte_size"])) : 0,
+    sha256,
+    registered_at: registeredAt,
+    retention: stringField("retention") ?? "kept",
+    availability: state,
+    availability_detail: typeof detail === "string" && detail.length > 0 ? detail : null,
+    observed_at: observedAt ?? registeredAt,
+  };
+}
+
+/** Every file-backed artifact one run produced, oldest first. */
+export function workspaceArtifactsForRun(agent: string, runId: string): WorkspaceArtifactRecord[] {
+  return db()
+    .prepare(
+      "SELECT * FROM workspace_artifacts WHERE agent = ? AND run_id = ? ORDER BY registered_at, artifact_id",
+    )
+    .all(agent, runId)
+    .map((row) => ({
+      artifact_id: text(row, "artifact_id"),
+      agent: text(row, "agent"),
+      run_id: text(row, "run_id"),
+      task_id: text(row, "task_id"),
+      role: text(row, "role"),
+      display_name: text(row, "display_name"),
+      media_type: text(row, "media_type"),
+      byte_size: Number(row["byte_size"]),
+      sha256: text(row, "sha256"),
+      registered_at: text(row, "registered_at"),
+      retention: text(row, "retention"),
+      availability: text(row, "availability") as ArtifactAvailability,
+      availability_detail: row["availability_detail"] === null ? null : text(row, "availability_detail"),
+      observed_at: text(row, "observed_at"),
+    }));
+}
+
+/**
+ * The lookup the Outputs panel's `resolveAvailability` parameter takes.
+ *
+ * MAR-434's design slice shipped that parameter with an honest default —
+ * production passed nothing and every output read as `available`, which was true
+ * because nothing could yet be otherwise. This is what production passes now.
+ *
+ * **It answers `available` for an artifact it has never heard of, and that is
+ * deliberate.** The overwhelming majority of artifacts are MAR-457 bodies stored
+ * in `run_artifacts`: there is no file, so there is nothing that could be
+ * missing, and reporting them as `missing` because they are absent from a table
+ * about files would turn every existing digest on every existing run page red.
+ * A caller that needs to distinguish "this is a body" from "this is a file the
+ * runner is holding" should ask `workspaceArtifactsForRun`, which returns only
+ * the second kind.
+ */
+export function resolveArtifactAvailability(
+  agent: string,
+  runId: string,
+): (artifactId: string) => ArtifactAvailability {
+  const byId = new Map(
+    workspaceArtifactsForRun(agent, runId).map((record) => [record.artifact_id, record.availability]),
+  );
+  return (artifactId: string): ArtifactAvailability => byId.get(artifactId) ?? "available";
 }
 
 export interface AgentSummary {

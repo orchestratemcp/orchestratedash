@@ -478,6 +478,122 @@ authenticated shutdown route on the identity mismatch and span a fresh one, whic
 is `runner-process.ts` doing exactly what it was written to do. Nothing was
 force-killed, and AGENTS.md's rule cost nothing.
 
+## The protected workspace (MAR-434, runner half)
+
+**Built and not proven, and the unproven half is named.** This is the feature
+MAR-434's design slice deliberately did not build: the runner-owned task
+workspace that gives `resolveAvailability` something to resolve against. Branch
+`000henrik/mar-434-protected-workspace`, cut from `095a6da`.
+
+The design slice's own account of the gap was exact — MAR-457 stores an artifact
+*body*, so there was no file whose absence could be observed, and missing / moved
+/ quarantined / deleted had vocabulary, a test and no producer. `runner/workspace.ts`
+is the producer, and each of the five states is now driven in a test by making the
+thing that causes it actually happen rather than by passing a resolver a value.
+
+**A child is told one path and it is not the one that matters.** It gets its own
+task directory: `inputs/` holding bytes a human selected, `outbox/` to write into.
+Registered artifacts go to `{dataDir}/artifacts/{opaque}` — a directory the child
+is never told about, under a name it cannot guess. So an artifact stops being
+writable by the process that produced it *at the moment it is registered*, and
+that is what makes a SHA-256 recorded then still true later: not a promise the
+agent will not rewrite the file, but the absence of a path it could rewrite it
+through. Registration copies rather than renames and then re-reads and re-hashes
+from the registered location, so the digest on the receipt describes the bytes in
+the file the receipt points at.
+
+**The defect this session found was in its own first draft, and the test that
+should have caught it was passing.** `resolveInsideWorkspace` compared
+`realpath(root)` with `realpath(target)`, which holds perfectly when the *root
+itself* has been replaced by a junction: both sides resolve through it, the file
+genuinely is inside the directory the root now points at, and containment is
+true. A child runs as the same user as the runner, so it can delete the outbox
+and recreate it as a junction to the user's Documents folder — and on Windows a
+junction needs no elevation, which is why the symlink half was never the
+interesting case. The test covering it used `symlinkSync(…, "dir")`, which
+Windows refuses to an unelevated process, so it caught the error and returned:
+passing without executing anything, on the one platform the rule exists for. Both
+are fixed. `assertUnlinkedBelow` walks from the data directory down and requires
+every directory the runner created to still be a directory, and the test uses a
+junction, which needs no privilege and therefore actually runs.
+
+The walk starts at the data directory rather than the filesystem root on
+purpose. Above that line the layout is the user's operating system — a
+redirected `%LOCALAPPDATA%`, a roaming profile, macOS's `/tmp` — and refusing to
+run there would be refusing to run on ordinary machines. Below it, anything that
+is not a directory replaced one.
+
+**The Windows path rules run on every platform**, so CI executes them. `NUL`,
+`\\?\`, `COM1`, `offert.pdf:stream` and a trailing dot mean nothing to Linux, and
+a check guarded by `process.platform === "win32"` would be enforced only on the
+machine the shell smoke runs on and proven nowhere. That is ADR 0004's rule
+pointed at a security boundary rather than at a release gate.
+
+**What the child cannot say is stronger than what it is checked against.** The
+`artifact_file` message carries three strings — task, role, name — and no agent,
+no run id, no size, no digest and no path. Agent identity comes from the
+supervisor's knowledge of which pipe the line arrived on; run identity comes from
+the task record. There is nowhere in the message to forge either, which is a
+different quality of statement from a check that they match.
+
+**`resolveAvailability` has a producer now.** `resolveArtifactAvailability` in
+`lib/store.ts` is what production passes. It answers `available` for an artifact
+it has never heard of, deliberately: almost every artifact in DASH is a MAR-457
+body with no file, so reporting those as `missing` because they are absent from a
+table about files would turn every existing digest on every existing run page
+red.
+
+**Availability is fetched, not drained.** Telemetry, artifacts and broker
+requests are events — each happens once, so an emptied buffer has been delivered.
+Availability is a state: a file that was there five seconds ago may not be now,
+and nothing emits an event when antivirus takes it. So `GET /workspace-artifacts`
+returns the whole current picture on each poll, capped at 500 with `truncated`
+reported rather than silently applied.
+
+**`pnpm verify` is green end to end on Windows at `3a630ee`**: `[state] valid`
+with the 7 recorded drift warnings, typecheck clean, 68 test files, 1275 tests
+passed and 8 skipped, and **70 installed-shell proofs with no failures**. 73 of
+those tests are new, across `tests/path-guard.test.ts`,
+`tests/task-workspace.test.ts`, `tests/workspace-availability.test.ts` and
+additions to `tests/runner-protocol.test.ts` and `tests/store-sqlite.test.ts`.
+
+**70 is unchanged from master, and that is the honest reading of it.** This
+branch adds 73 unit tests and *no installed proof*, so what the green smoke
+establishes is that the workspace did not break the installed loop — not that
+the workspace works installed. The same distinction PROJECT_STATE drew when
+MAR-421 left the count at 67.
+
+One thing the run did observe, without a proof asserting it: the packaged shell
+created `workspaces/`, `artifacts/` and `quarantine/` under
+`%APPDATA%\orchestratedash` with owner-only ACLs applied and verified, at
+runner startup, on the real installed-style data directory. `openWorkspaceRoot`
+shells out to `icacls` three times on Windows and none of it hung or prompted.
+That is an observation about a directory listing, which is exactly the shape of
+evidence Wave 0's "artifact output" claim was corrected for overstating — so it
+is recorded as an observation and not as a proof.
+
+**MAR-434's acceptance criterion is therefore still not met**, and the missing
+piece is now small and specific: an installed proof covering select files →
+trigger → output → download, asserting that downloaded bytes and SHA-256 match
+the runner-registered artifact. That is the next session's work and it is the
+thing that would move this issue to `proven`.
+
+The smoke leaves its runner running on purpose — "closing DASH leaves agents
+running" is the point of it. An earlier attempt at this run *looked* like a hang
+and was not: the surviving runner holds the inherited stdout, so a caller that
+buffers the pipeline never sees EOF. Nothing was force-killed; the orphan was
+retired through the authenticated `/shutdown` route AGENTS.md prescribes, which
+worked first time.
+
+**What is not built, plainly.** Nothing renders any of this: file-backed
+artifacts have no artifact *kind*, because adding one to `RunArtifact` is a
+compile error in `app/_components/digest.tsx`'s exhaustive switch, and `app/` was
+out of this session's ownership. So the runner holds files, hashes them, indexes
+them and answers about them, and no page shows them yet. The Gmail draft handoff
+is untouched and was an explicit non-goal. Producer component stays unbuilt for
+the reason the design slice gave: the runner knows which agent and which task,
+not which step, and inferring it from event ordering would be a guess rendered as
+a fact.
 ## What a run produced, as a thing you own (MAR-434, design slice)
 
 **Open on PR #43, stacked behind #42 and #41, and half the issue is

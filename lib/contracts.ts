@@ -336,8 +336,58 @@ export interface AgentManifestV2 extends AgentManifestBody {
   agent_dom: {
     connections?: ManifestConnection[];
     permissions?: ManifestPermissions;
+    task_inputs?: TaskInputRole[];
     [key: string]: unknown;
   };
+}
+
+/**
+ * One kind of file a task accepts (MAR-434).
+ *
+ * Optional on the manifest, and its absence means the agent takes no files —
+ * which is every agent that existed before this block did. That reading has to
+ * be stated because the other one is available and wrong: an agent with no
+ * declared inputs is not an agent that accepts anything.
+ *
+ * The numeric fields are **narrowing requests, not grants**. `runner/workspace.ts`
+ * takes the minimum against its own ceilings, so nothing an agent author writes
+ * here can make DASH copy a larger file into its data directory than the runner
+ * was built to accept. That is why the type can afford to be this permissive
+ * about what a manifest may say.
+ */
+export interface TaskInputRole {
+  /** Technical vocabulary, carried in commands. Never rendered. */
+  id: string;
+  /** What a person reads: "Customer brief". */
+  label: string;
+  description?: string;
+  required: boolean;
+  min_count?: number;
+  max_count?: number;
+  /**
+   * As the runner sniffs them from the bytes, never as an extension claims.
+   * Absent means the runner does not narrow by type.
+   */
+  media_types?: string[];
+  max_file_bytes?: number;
+  max_total_bytes?: number;
+}
+
+/**
+ * The declared input roles, or an empty list.
+ *
+ * A helper rather than a property read at each call site, because `agent_dom` is
+ * an index signature and every caller would otherwise be casting `unknown`. It
+ * returns `[]` for a v1 manifest, for a v2 manifest with no block, and for a
+ * block that is not an array — three different documents that mean the same
+ * thing to a caller: this agent asked for no files.
+ */
+export function taskInputRoles(manifest: AnyAgentManifest): TaskInputRole[] {
+  if (!isManifestV2(manifest)) {
+    return [];
+  }
+  const declared = manifest.agent_dom["task_inputs"];
+  return Array.isArray(declared) ? (declared as TaskInputRole[]) : [];
 }
 
 /**

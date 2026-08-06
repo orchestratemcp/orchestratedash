@@ -47,6 +47,7 @@ import { executeCommand, type ChannelPrincipal } from "./execute";
 import { RUNNER_BUILD_ID, RUNNER_PROTOCOL_VERSION } from "./identity";
 import { buildAgentDomState, type ProcessReport } from "./state";
 import type { AdoptionResult, Supervisor } from "./supervisor";
+import type { TaskWorkspaceApi } from "./task-api";
 
 /** Generous for an envelope, far too small to be a useful memory attack. */
 export const MAX_REQUEST_BYTES = 262_144;
@@ -71,6 +72,14 @@ export interface RunnerServerOptions {
    * which keeps a runner built without it honest instead of silently useless.
    */
   reload?: () => ReloadSummary;
+  /**
+   * The task workspace (MAR-434), when this runner has one.
+   *
+   * Optional for the reason `reload` is: absent means the routes answer 501
+   * rather than pretending, which keeps a runner built without a data directory
+   * honest instead of silently accepting files it has nowhere to put.
+   */
+  workspace?: TaskWorkspaceApi;
   /** Graceful process shutdown, supplied only by the standalone runner. */
   shutdown?: () => void;
   now?: () => Date;
@@ -265,6 +274,76 @@ async function handle(
     return;
   }
 
+  // GET /workspace-artifacts — the file-backed index, with availability
+  // recomputed (MAR-434).
+  //
+  // A GET returning the whole current picture rather than a `drain` returning
+  // what is new, and the difference is the point. Telemetry, artifacts and
+  // broker requests are *events*: each one happens once, so a buffer that is
+  // emptied is a buffer that has been delivered. Availability is a *state* —
+  // a file that was there five seconds ago may not be now, and nothing emits an
+  // event when antivirus takes it. A drain would let DASH's picture be right
+  // once and stale forever after.
+  if (request.method === "GET" && segments.length === 1 && segments[0] === "workspace-artifacts") {
+    if (options.workspace === undefined) {
+      send(response, 501, { ok: false, detail: "This runner has no task workspace." });
+      return;
+    }
+    send(response, 200, { ok: true, ...options.workspace.index() });
+    return;
+  }
+
+  // GET  /artifacts/{id}/verify   re-hash the stored bytes (MAR-434)
+  // POST /artifacts/{id}/delete   explicit, audited removal of the bytes
+  //
+  // Not under `/agents/{id}` even though an artifact has one, because an
+  // artifact id is the thing a caller holds after a run has finished and
+  // requiring it to also remember which agent produced it would invite the
+  // caller to *supply* an agent — a field the runner would then have to
+  // disbelieve. The runner reads the agent off its own row.
+  //
+  // `delete` is a POST rather than a DELETE. A body-less DELETE is easy for an
+  // intermediary to retry, and this one destroys bytes.
+  if (segments[0] === "artifacts" && segments.length === 3) {
+    if (options.workspace === undefined) {
+      send(response, 501, { ok: false, detail: "This runner has no task workspace." });
+      return;
+    }
+    const artifactId = decodeURIComponent(segments[1] ?? "");
+
+    if (request.method === "GET" && segments[2] === "verify") {
+      const verified = options.workspace.verify(artifactId);
+      if (verified === null) {
+        send(response, 404, { ok: false, detail: "There is no such output." });
+        return;
+      }
+      send(response, 200, { ok: verified.ok, sha256: verified.sha256, expected: verified.expected });
+      return;
+    }
+
+    if (request.method === "POST" && segments[2] === "delete") {
+      const body = await readBody(request);
+      if (body === null) {
+        send(response, 413, { ok: false, detail: "The request body was too large." });
+        return;
+      }
+      let agent: unknown;
+      try {
+        ({ agent } = JSON.parse(body) as { agent?: unknown });
+      } catch {
+        send(response, 400, { ok: false, detail: "The request body was not JSON." });
+        return;
+      }
+      if (typeof agent !== "string" || agent.length === 0) {
+        send(response, 400, { ok: false, detail: "agent must be the name of the owning agent." });
+        return;
+      }
+      const removed = options.workspace.remove(agent, artifactId);
+      send(response, 200, removed);
+      return;
+    }
+  }
+
   if (segments[0] !== "agents" || segments[1] === undefined) {
     send(response, 404, { ok: false, detail: "No such route." });
     return;
@@ -366,8 +445,161 @@ async function handle(
     return;
   }
 
+  // GET  /agents/{id}/artifacts?run_id=…   what this run produced (MAR-434)
+  if (request.method === "GET" && segments.length === 3 && segments[2] === "artifacts") {
+    if (options.workspace === undefined) {
+      send(response, 501, { ok: false, detail: "This runner has no task workspace." });
+      return;
+    }
+    const runId = url.searchParams.get("run_id");
+    if (runId === null || runId.length === 0) {
+      send(response, 400, { ok: false, detail: "run_id is required." });
+      return;
+    }
+    send(response, 200, { ok: true, artifacts: options.workspace.artifacts(agentId, runId) });
+    return;
+  }
+
+  // The task workspace routes (MAR-434).
+  //
+  // POST /agents/{id}/tasks                    open a workspace
+  // GET  /agents/{id}/tasks/{taskId}           the task and what is in it
+  // POST /agents/{id}/tasks/{taskId}/inputs    admit one user-selected file
+  // POST /agents/{id}/tasks/{taskId}/dispatch  bind a run, close it, hand it over
+  //
+  // Note what has no route: reading an input back out. DASH admitted the bytes
+  // and does not need them again, the agent gets them through its own workspace,
+  // and a route that served them would be a route that turns an opaque id into a
+  // download for anything holding the channel token. The runner resolves ids to
+  // paths for exactly one consumer — the child the task belongs to.
+  if (segments.length >= 3 && segments[2] === "tasks") {
+    if (options.workspace === undefined) {
+      send(response, 501, { ok: false, detail: "This runner has no task workspace." });
+      return;
+    }
+    const workspace = options.workspace;
+
+    if (request.method === "POST" && segments.length === 3) {
+      send(response, 200, { ok: true, task: workspace.create(agentId) });
+      return;
+    }
+
+    const taskId = decodeURIComponent(segments[3] ?? "");
+    if (taskId.length === 0) {
+      send(response, 404, { ok: false, detail: "No such route." });
+      return;
+    }
+
+    if (request.method === "GET" && segments.length === 4) {
+      const task = workspace.describe(agentId, taskId);
+      if (task === null) {
+        send(response, 404, { ok: false, detail: "There is no such task." });
+        return;
+      }
+      send(response, 200, { ok: true, task });
+      return;
+    }
+
+    if (request.method === "POST" && segments.length === 5 && segments[4] === "inputs") {
+      const body = await readBody(request);
+      if (body === null) {
+        send(response, 413, { ok: false, detail: "The request body was too large." });
+        return;
+      }
+      let parsed: { role?: unknown; source_path?: unknown; limits?: unknown };
+      try {
+        parsed = JSON.parse(body) as typeof parsed;
+      } catch {
+        send(response, 400, { ok: false, detail: "The request body was not JSON." });
+        return;
+      }
+      if (typeof parsed.role !== "string" || parsed.role.length === 0) {
+        send(response, 400, { ok: false, detail: "role is required." });
+        return;
+      }
+      if (typeof parsed.source_path !== "string" || parsed.source_path.length === 0) {
+        send(response, 400, { ok: false, detail: "source_path is required." });
+        return;
+      }
+
+      const admitted = await workspace.admit(agentId, taskId, {
+        role: parsed.role,
+        source_path: parsed.source_path,
+        limits: parseDeclaredLimits(parsed.limits),
+      });
+      // 200 with `ok: false` for an adjudicated refusal, exactly as the command
+      // route does and for the same reason: "the runner considered this file and
+      // said no" is a result, and the caller has to tell it from "the request
+      // never arrived". The refusal code is what DASH renders a sentence from.
+      send(response, 200, admitted);
+      // The path is not logged. It is the one string on this channel that names
+      // something on the user's own disk.
+      log(
+        `[runner] input ${admitted.ok ? "admitted" : "refused"} agent=${agentId} task=${taskId}` +
+          (admitted.ok ? "" : ` reason=${admitted.refusal}`),
+      );
+      return;
+    }
+
+    if (request.method === "POST" && segments.length === 5 && segments[4] === "dispatch") {
+      const body = await readBody(request);
+      if (body === null) {
+        send(response, 413, { ok: false, detail: "The request body was too large." });
+        return;
+      }
+      let runId: unknown;
+      try {
+        ({ run_id: runId } = JSON.parse(body) as { run_id?: unknown });
+      } catch {
+        send(response, 400, { ok: false, detail: "The request body was not JSON." });
+        return;
+      }
+      if (typeof runId !== "string" || runId.length === 0) {
+        send(response, 400, { ok: false, detail: "run_id is required." });
+        return;
+      }
+      const dispatched = workspace.dispatch(agentId, taskId, runId);
+      send(response, 200, dispatched);
+      log(
+        `[runner] task ${dispatched.ok ? "dispatched" : "refused"} agent=${agentId} task=${taskId}` +
+          (dispatched.ok ? "" : ` reason=${dispatched.refusal}`),
+      );
+      return;
+    }
+  }
 
   send(response, 404, { ok: false, detail: "No such route." });
+}
+
+/**
+ * Narrow the optional `limits` block of an input request.
+ *
+ * Every field is dropped unless it is a finite positive number, and nothing here
+ * validates it *upwards*: `effectiveLimits` takes the minimum against the
+ * runner's own ceiling, so a caller sending `max_file_bytes: 1e18` gets the
+ * ceiling rather than an error. That asymmetry is deliberate — a limit block is
+ * a narrowing request, and a narrowing request that cannot widen anything does
+ * not need to be defended against, only ignored where it is nonsense.
+ */
+function parseDeclaredLimits(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const source = value as Record<string, unknown>;
+  const limits: Record<string, unknown> = {};
+  for (const key of ["max_file_bytes", "max_total_bytes", "max_count"]) {
+    const entry = source[key];
+    if (typeof entry === "number" && Number.isFinite(entry) && entry > 0) {
+      limits[key] = entry;
+    }
+  }
+  if (Array.isArray(source["media_types"])) {
+    const types = source["media_types"].filter((entry): entry is string => typeof entry === "string");
+    if (types.length > 0) {
+      limits["media_types"] = types;
+    }
+  }
+  return Object.keys(limits).length > 0 ? limits : undefined;
 }
 
 /**

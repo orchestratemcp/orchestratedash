@@ -105,7 +105,7 @@ export function ensureChannelSecret(dataDir: string): string {
     writeFileSync(file, `${randomBytes(32).toString("base64url")}\n`, { encoding: "utf8", mode: 0o600 });
   }
 
-  hardenAndVerify(file);
+  hardenOwnerOnly(file);
 
   const secret = readFileSync(file, "utf8").trim();
   if (!/^[A-Za-z0-9_-]{40,}$/.test(secret)) {
@@ -119,20 +119,41 @@ export function ensureChannelSecret(dataDir: string): string {
   return secret;
 }
 
-/** Apply the owner-only ACL, then prove it. @throws ChannelSecretError */
-function hardenAndVerify(file: string): void {
+/**
+ * Apply the owner-only ACL to one path, then prove it.
+ *
+ * Exported and generalised over files and directories by MAR-434, which needs
+ * the identical guarantee for the task workspace: a directory holding a
+ * customer's documents is protected by the same mechanism, verified the same
+ * way, or it is protected by a comment. Writing a second ACL implementation
+ * beside this one would have meant two places for the Swedish-`Administratör`
+ * bug to come back to.
+ *
+ * The directory case differs in exactly two ways and neither changes the rule.
+ * The POSIX mode is `0700` rather than `0600`, because a directory nobody may
+ * enter is a directory nobody may read a file out of. And the Windows grant
+ * carries `(OI)(CI)`, so the files the runner creates inside inherit the
+ * protection instead of each needing its own pass — which matters because those
+ * files are created in a hot path and shelling out to `icacls` per input file
+ * would be both slow and a new failure mode per file.
+ *
+ * @throws ChannelSecretError
+ */
+export function hardenOwnerOnly(target: string, options: { directory?: boolean } = {}): void {
+  const directory = options.directory ?? false;
+
   if (process.platform === "win32") {
-    hardenWindows(file);
+    hardenWindows(target, directory);
     return;
   }
 
-  chmodSync(file, 0o600);
-  const stats = statSync(file);
+  chmodSync(target, directory ? 0o700 : 0o600);
+  const stats = statSync(target);
   const uid = process.getuid?.();
   if (uid !== undefined && stats.uid !== uid) {
     throw new ChannelSecretError(
       "foreign_owner",
-      `${file} is owned by uid ${String(stats.uid)}, not by uid ${String(uid)}.`,
+      `${target} is owned by uid ${String(stats.uid)}, not by uid ${String(uid)}.`,
     );
   }
   // `chmod` reports success and the mode is what `stat` says, which are not
@@ -141,7 +162,7 @@ function hardenAndVerify(file: string): void {
   if ((stats.mode & 0o077) !== 0) {
     throw new ChannelSecretError(
       "acl_too_wide",
-      `${file} is mode ${(stats.mode & 0o777).toString(8)} after chmod 600. ` +
+      `${target} is mode ${(stats.mode & 0o777).toString(8)} after chmod ${directory ? "700" : "600"}. ` +
         `The filesystem holding the data directory does not enforce POSIX permissions.`,
     );
   }
@@ -165,9 +186,13 @@ function hardenAndVerify(file: string): void {
  *
  * @throws ChannelSecretError
  */
-function hardenWindows(file: string): void {
+function hardenWindows(file: string, directory = false): void {
   const sid = currentUserSid();
-  icacls(file, ["/inheritance:r", "/grant:r", `*${sid}:F`, `*S-1-5-18:F`]);
+  // `(OI)(CI)` on a directory so new children inherit the protected ACL. On a
+  // file the flags are meaningless and `icacls` rejects them, so they are only
+  // applied where they mean something.
+  const rights = directory ? "(OI)(CI)F" : "F";
+  icacls(file, ["/inheritance:r", "/grant:r", `*${sid}:${rights}`, `*S-1-5-18:${rights}`]);
 
   const first = inspectAcl(readAcl(file), sid, file);
   if (first.ok) {
