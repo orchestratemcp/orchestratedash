@@ -572,6 +572,126 @@ export function describeViewFailure(reason: "unreachable" | "refused"): Recovery
 }
 
 /* ---------------------------------------------------------------------- *
+ * The runner's own records (MAR-506)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The ways the runner's database can be unusable, as DASH words them.
+ *
+ * Declared here rather than in `runner/store-damage.ts` on purpose, and the
+ * direction is the point: the runner already imports `lib/contracts.ts`, so
+ * runner → lib is the established dependency, and putting the vocabulary in the
+ * copy module means the classification exists in order to be *said*. A runner
+ * that could classify a damage this file has no sentence for would be a runner
+ * inventing a state the product cannot explain.
+ *
+ * Three rather than one, for the reason `describeSecureStoreFailure` keeps five:
+ * they lead somewhere different. A malformed image is real damage to a real
+ * database. A file that is not a database at all is usually something else
+ * having been put there — a sync client's conflict copy, a restore from the
+ * wrong place — and blaming the disk for it would send somebody hunting a
+ * hardware fault that is not there. And a file DASH cannot read is a permission
+ * or a lock, which is not damage and must never be offered a repair that throws
+ * the file away.
+ */
+export type RunnerStoreDamageKind = "malformed" | "not_a_database" | "unreadable";
+
+/**
+ * The code the runner puts on the wire for this condition, and the one
+ * `lib/agent-dom/transport.ts` matches on before it trusts anything else in the
+ * body.
+ *
+ * Beside the vocabulary rather than in the runner for the same reason the union
+ * is: the string exists so that a sentence can be chosen, and the two drifting
+ * apart would mean a runner reporting a state DASH answers with a status code.
+ */
+export const STORE_DAMAGED_REASON = "store_damaged";
+
+/**
+ * What to say when the part of DASH that runs agents cannot read its own
+ * records.
+ *
+ * **The distinction this exists to make is against a status code.** Before
+ * MAR-506 the user was shown "The runner answered 500." — which names the
+ * transport, blames nothing, and leads nowhere. What is actually true is
+ * narrower and more useful: DASH reached the runner, the runner is running, and
+ * the file it keeps its own records in cannot be read.
+ *
+ * **And against `describeStoreDamage`, which is the same fault in a different
+ * database.** That one is about DASH's own store, where the loss is the user's
+ * history: agents, runs, events, the things the pages are made of. This one is
+ * about the runner's, which holds replay records, idempotency keys, approval
+ * decisions and the index of task files. The consequence is different in a way
+ * a user can feel — nothing they can see is missing, and nothing will run —
+ * so the two must not share a sentence.
+ *
+ * `can_retire` is what makes the next action honest. Setting the damaged file
+ * aside is a real repair and DASH can perform it, but only where a runner is
+ * there to be asked; when there is not, promising a button that is not on the
+ * screen would be worse than saying plainly that this one needs reporting.
+ */
+export function describeRunnerStoreDamage(
+  kind: RunnerStoreDamageKind,
+  context: { can_retire: boolean } = { can_retire: false },
+): Recovery {
+  /*
+   * Said in every case, and it is the sentence that separates this from the
+   * store damage above. A user who has just been told that records are damaged
+   * will assume the worst thing they can think of, which is their own history.
+   */
+  const yourRecordsAreFine =
+    "Your agents, runs and sign-ins are not affected — they are kept somewhere else and are intact.";
+
+  /*
+   * Also said in every case, because it is the consequence rather than the
+   * mechanism. The runner refuses to supervise anything on a store it cannot
+   * write, which is deliberate: replay protection and the approval record are
+   * what make a run safe to repeat, and an agent running without them would be
+   * an agent whose guarantees DASH is still printing and no longer keeping.
+   */
+  const nothingIsRunning = "No agent is running while this is true, and none will start.";
+
+  const retire =
+    "Set the damaged records aside. DASH keeps the old file rather than deleting it, and the runner starts a fresh one.";
+
+  switch (kind) {
+    case "malformed":
+      return {
+        headline: "The part of DASH that runs your agents cannot read its own records.",
+        meaning: `${yourRecordsAreFine} What is damaged is the runner's own file — the record of which requests it has already carried out, and which files it is holding for a task. ${nothingIsRunning}`,
+        next_action: context.can_retire
+          ? retire
+          : "Report this. Nothing here can be repaired by reopening DASH.",
+        actor: context.can_retire ? "user" : "dash",
+      };
+
+    case "not_a_database":
+      return {
+        // Deliberately not "corrupted". A file that was never a database was
+        // almost certainly put there by something else, and telling somebody
+        // their disk is failing would send them after the wrong problem.
+        headline: "The file the runner keeps its records in is not one of its records.",
+        meaning: `${yourRecordsAreFine} Something replaced the runner's file — a backup restored over it, or a sync tool's copy of a conflict. ${nothingIsRunning}`,
+        next_action: context.can_retire
+          ? retire
+          : "Report this. Nothing here can be repaired by reopening DASH.",
+        actor: context.can_retire ? "user" : "dash",
+      };
+
+    case "unreadable":
+      return {
+        // Never offered the repair, whatever `can_retire` says: setting aside a
+        // file DASH could not read is throwing away a file DASH could not read.
+        headline: "The runner is not allowed to open its own records.",
+        meaning: `${yourRecordsAreFine} The file is there and DASH could not open it, which is usually another program holding it or a permission that changed. Nothing has been lost. ${nothingIsRunning}`,
+        next_action:
+          "Close anything else that might be using DASH's folder, then open DASH again.",
+        actor: "user",
+      };
+  }
+}
+
+/* ---------------------------------------------------------------------- *
  * Hosting
  * ---------------------------------------------------------------------- */
 

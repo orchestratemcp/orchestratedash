@@ -38,7 +38,8 @@ import {
 import { DASH_LOCAL_PRINCIPAL } from "../runner/execute";
 import { RUNNER_BUILD_ID, RUNNER_PROTOCOL_VERSION } from "../runner/identity";
 import { createRunnerServer } from "../runner/server";
-import { openRunnerStore, readRunnerAudit, type RunnerStore } from "../runner/store";
+import { readRunnerAudit, type RunnerStore } from "../runner/store";
+import { openHealthyRunnerStore } from "./helpers/runner-store";
 import { Supervisor, type AgentRegistration } from "../runner/supervisor";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -131,7 +132,7 @@ async function startRunner(
   manifestPath: string = MANIFEST,
 ): Promise<Harness> {
   const dataDir = mkdtempSync(path.join(workDir, "store-"));
-  const store = openRunnerStore(dataDir);
+  const store = openHealthyRunnerStore(dataDir);
   const supervisor = new Supervisor([registration(env, manifestPath)], () => {
     // Quiet: assertions are on state and on the audit table.
   });

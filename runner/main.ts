@@ -48,7 +48,8 @@ import {
 import { DASH_LOCAL_PRINCIPAL } from "./execute";
 import { createRunnerServer } from "./server";
 import { RUNNER_BUILD_ID, RUNNER_PROTOCOL_VERSION } from "./identity";
-import { openRunnerStore } from "./store";
+import { RUNNER_STORE_FILE, openRunnerStore, type RunnerStore } from "./store";
+import { retireDamagedStore, type RunnerStoreDamage } from "./store-damage";
 import { Supervisor, loadRegistrations } from "./supervisor";
 import { createTaskWorkspaceApi, type TaskWorkspaceApi } from "./task-api";
 import { openWorkspaceRoot } from "./workspace";
@@ -100,9 +101,38 @@ async function main(): Promise<void> {
   const endpoint: RunnerEndpoint = runnerEndpoint(dataDir, endpointId);
   await prepareEndpoint(endpoint);
 
-  const store = openRunnerStore(dataDir);
+  /*
+   * MAR-506. The store either opens or names why it did not, and a runner whose
+   * records are unreadable **supervises nothing**.
+   *
+   * That is a decision rather than a consequence. Nothing here technically
+   * prevents spawning the children — the supervisor does not need the database
+   * to start a process. What it needs it for is replay protection, idempotency
+   * and the approval record, which is to say every guarantee DASH renders about
+   * a command being carried out once and having been approved by somebody. An
+   * agent running against a store that cannot record is an agent whose
+   * guarantees DASH is still printing and no longer keeping, and that is worse
+   * than an agent that is not running, because the second one is visible.
+   *
+   * It still listens. `/health` says so, `/store/retire` repairs it, and
+   * `/shutdown` stops it — a runner that exited here would leave DASH with
+   * "the runner did not start", which names nothing and offers no repair.
+   */
+  const opened = openRunnerStore(dataDir);
+  let storeDamage: RunnerStoreDamage | null = opened.ok ? null : opened.damage;
+  let store: RunnerStore | null = opened.ok ? opened.store : null;
+  if (storeDamage !== null) {
+    console.error(
+      `[runner] the runner's own records cannot be read (${storeDamage.kind}): ${storeDamage.detail}`,
+    );
+    console.error("[runner] supervising nothing until they are repaired or set aside");
+  }
+
   const registrationsDir = path.join(dataDir, "agents");
-  const { registrations, skipped } = loadRegistrations(registrationsDir);
+  const { registrations, skipped } =
+    storeDamage === null
+      ? loadRegistrations(registrationsDir)
+      : { registrations: [], skipped: [] };
   for (const failure of skipped) {
     console.warn(`[runner] ignoring registration ${failure.file}: ${failure.problem}`);
   }
@@ -130,11 +160,25 @@ async function main(): Promise<void> {
     workspace.onArtifactFile(agentId, message);
   });
 
-  workspace = createTaskWorkspaceApi({
-    database: store.database,
-    root: openWorkspaceRoot(dataDir),
-    dispatchToChild: (agentId, task) => supervisor.dispatchTask(agentId, task),
-  });
+  /**
+   * Attach the workspace to whatever store is currently open (MAR-506).
+   *
+   * A function rather than one expression because it happens twice: at startup,
+   * and again after a damaged store has been set aside. The workspace holds a
+   * database handle, so a retire that left the old one attached would leave the
+   * runner answering file questions out of a database it had just abandoned.
+   */
+  const attachWorkspace = (): void => {
+    workspace =
+      store === null
+        ? null
+        : createTaskWorkspaceApi({
+            database: store.database,
+            root: openWorkspaceRoot(dataDir),
+            dispatchToChild: (agentId, task) => supervisor.dispatchTask(agentId, task),
+          });
+  };
+  attachWorkspace();
 
   let server: ReturnType<typeof createRunnerServer>;
   let shuttingDown = false;
@@ -146,7 +190,7 @@ async function main(): Promise<void> {
     console.warn(`[runner] ${signal}: stopping agents`);
     supervisor.stopAll();
     const finish = (): never => {
-      store.close();
+      store?.close();
       releaseEndpoint(endpoint);
       process.exit(0);
     };
@@ -158,7 +202,46 @@ async function main(): Promise<void> {
 
   server = createRunnerServer({
     supervisor,
-    database: store.database,
+    database: () => store?.database ?? null,
+    workspace: () => workspace ?? undefined,
+    storeDamage: () => storeDamage,
+    /**
+     * MAR-506. The repair, and it is the reason the recovery copy ends in an
+     * action rather than in "report this".
+     *
+     * It renames rather than deletes (`retireDamagedStore` says why), and the
+     * runner then reopens: this is the one place `storeDamage` is cleared, so a
+     * repaired runner starts answering its ordinary routes without being
+     * restarted. Agents are deliberately **not** started here — the user asked
+     * for the records to be set aside, not for their fleet to be launched, and
+     * DASH re-registers them through the reload route it already has.
+     */
+    retireStore: () => {
+      if (storeDamage === null) {
+        return { ok: false as const, detail: "There is nothing to set aside." };
+      }
+      const outcome = retireDamagedStore(dataDir, RUNNER_STORE_FILE, new Date());
+      if (!outcome.ok) {
+        return { ok: false as const, detail: outcome.detail };
+      }
+      const reopened = openRunnerStore(dataDir);
+      if (!reopened.ok) {
+        // The old file moved and the new one is damaged too, which points at
+        // the disk rather than at the file. Reported as a failure with the new
+        // classification rather than as a success, because the user was about
+        // to be told this was fixed.
+        storeDamage = reopened.damage;
+        return {
+          ok: false as const,
+          detail: `The records were set aside and a fresh store could not be created: ${reopened.damage.detail}`,
+        };
+      }
+      store = reopened.store;
+      storeDamage = null;
+      attachWorkspace();
+      console.warn(`[runner] store set aside as ${outcome.retired.moved_to}; a fresh one is open`);
+      return { ok: true as const, ...outcome.retired };
+    },
     token: secret,
     principal: DASH_LOCAL_PRINCIPAL,
     /**
@@ -174,7 +257,6 @@ async function main(): Promise<void> {
       }
       return { ...supervisor.adopt(fresh.registrations), skipped: fresh.skipped };
     },
-    workspace,
     shutdown: () => {
       shutdown("control request");
     },
