@@ -1003,6 +1003,17 @@ export function artifactAvailability(
 
   if (stats !== null) {
     if (Number(stats.size) === record.byte_size && stats.mtimeMs === record.mtime_ms) {
+      // `stat` answers from the directory entry and succeeds on a file nothing
+      // may open — permissions and holds gate `open`, not `stat` — so a match
+      // here has not yet shown the bytes are reachable. Antivirus holds and
+      // stripped permissions both present exactly this way: the entry intact,
+      // the open refused.
+      if (openRefused(record.stored_path)) {
+        return {
+          state: "quarantined",
+          reason: "Something on this computer is holding that file and would not let DASH open it.",
+        };
+      }
       return { state: "available" };
     }
     // Right path, wrong file. Treated as the content search below rather than
@@ -1012,6 +1023,21 @@ export function artifactAvailability(
 
   const elsewhere = searchForMovedArtifact(root, record);
   return elsewhere === null ? { state: "missing" } : { state: "moved", found_at: elsewhere };
+}
+
+/**
+ * Whether opening the file for reading is refused by something on this
+ * computer. Only a refusal counts: a file that vanished between the `stat` and
+ * the `open` is a race for the caller's other branches, not a hold.
+ */
+function openRefused(storedPath: string): boolean {
+  try {
+    closeSync(openSync(storedPath, "r"));
+    return false;
+  } catch (error: unknown) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return code === "EACCES" || code === "EPERM" || code === "EBUSY";
+  }
 }
 
 /**
