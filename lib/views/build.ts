@@ -46,7 +46,7 @@ import {
 } from "../insights";
 import { listRegistrations, type ManagedRegistration } from "../registration";
 import {
-  artifactsForRun,
+  artifactRecordsForRun,
   latestArtifactForAgent,
   listAgents,
   listAgentNames,
@@ -55,6 +55,7 @@ import {
   readStore,
   type StoreShape,
 } from "../store";
+import { buildArtifactCards } from "./artifacts";
 import {
   availableControls,
   buildOverview,
@@ -185,7 +186,8 @@ export function runView(
   // Newest first, and the newest is the one judged. A run that revised its
   // digest corrected it; grading the superseded copy would report a finding the
   // user cannot see on the page in front of them.
-  const artifacts = artifactsForRun(agent, runId);
+  const artifactRecords = artifactRecordsForRun(agent, runId);
+  const artifacts = artifactRecords.map((record) => record.artifact);
 
   return {
     found: true,
@@ -197,6 +199,19 @@ export function runView(
     manifest_imported: manifest !== undefined,
     unplanned_component_ids: unplanned,
     artifacts,
+    /*
+     * The same artifacts, dressed for the Outputs panel (MAR-434).
+     *
+     * `artifacts` stays because `electron/smoke.ts` reads it as proof 6k — the
+     * installed check that a digest reached the run detail page — and a release
+     * gate must not be broken to tidy a field away. The two share the same
+     * artifact objects in memory; only a serialised view pays for both, which
+     * is a local channel and a price worth one working blocking proof.
+     *
+     * Availability is left at its honest default: nothing in DASH observes a
+     * file, so nothing here can claim one moved. See `lib/views/artifacts.ts`.
+     */
+    artifact_cards: buildArtifactCards(artifactRecords),
     // Only a digest is graded (MAR-458). A draft has no items and no
     // `sources_fetched`, so there is nothing to check its citations against —
     // and a null verdict renders as no chip, which is the honest outcome. The

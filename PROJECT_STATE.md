@@ -478,6 +478,67 @@ authenticated shutdown route on the identity mismatch and span a fresh one, whic
 is `runner-process.ts` doing exactly what it was written to do. Nothing was
 force-killed, and AGENTS.md's rule cost nothing.
 
+## What a run produced, as a thing you own (MAR-434, design slice)
+
+**Open on PR #43, stacked behind #42 and #41, and half the issue is
+deliberately unbuilt.** MAR-457 built the artifact seam and proved it; this
+dresses it and invents no contract.
+
+The defect underneath was small and quiet: the run detail page rendered
+`view.artifacts[0]` and nothing else, while the store kept every artifact a run
+sent. An agent that writes a digest *and* a reply had half its work invisible,
+with nothing on screen to say so.
+
+**Missing, moved, quarantined and deleted are four states because they lead
+somewhere different** — the argument `lib/copy/recovery.ts` already makes about
+credentials, applied to outputs. Moved is the one that decides it: re-running
+leaves the person with two outputs and the one they were hunting for is still
+wherever it went, so "run it again" is not a weaker recovery there but a wrong
+one. A quarantine sends them to the software holding it, because re-running
+produces another file taken the same way. A deletion is somebody's decision,
+usually theirs, so its next action is conditional and never reads as a fault.
+The test asserts the four *next actions* are four distinct strings, which is
+the assertion a collapse into "unavailable" would fail.
+
+**A receipt distinguishes the agent's claim from DASH's record.**
+`generated_at` is what the agent says; `received_at` is when DASH stored it.
+One "Created" row would quietly promote the first into the second — the same
+care `draft.placement` is worded with. Size is measured from the stored body
+because **there is no file**, and the receipt says so rather than implying a
+path. `ArtifactReceipt` carries no run id at all: the panel only ever renders
+on that run's page, and a field that exists is one a later renderer will print.
+A test holds it to that, and caught the field the first draft left in.
+
+`describeArtifactRole` takes a `string` rather than the `kind` union, because
+the JSON schema and the renderer's union are two authorities that can disagree
+across a version. An unknown kind now degrades to metadata plus a reveal;
+`RunOutput`'s `default` branch used to throw on a page a user was reading.
+
+`view.artifacts` is **kept** beside the new `artifact_cards`, because
+`electron/smoke.ts` reads it as proof 6k. A blocking release gate is not
+something to break for a tidier shape.
+
+Evidence: `pnpm typecheck` clean, `pnpm state:check` valid, `pnpm test` 67 files
+/ 1245 passed / 8 skipped / 0 failed including 43 new cases. **`pnpm
+verify:shell` was not run** — two Electron processes were live, AGENTS.md
+forbids force-killing them and DASH is single-instance by design, which is the
+call MAR-441 and MAR-421 made in the same situation. **No screenshot either**:
+the session was unattended and the Browser pane composites no frames when it is
+not displayed, so a render test took its place — repeatable, and in CI.
+
+**What is not built is the half that would populate the four states.** MAR-457
+stores the artifact *body* in DASH's own records rather than a reference to a
+file, so there is no file whose absence could be observed. The thing that would
+observe it is the runner-owned protected workspace — a separate feature with
+its own installed-MSIX proof, which this slice does not touch. So
+`resolveAvailability` is a parameter with an honest default: production passes
+nothing and every output is `available`, which is true, while tests drive all
+five states. That is the pattern `describeConnectionCondition`'s revoked
+sentence shipped under, written before anything could produce the condition.
+The receipt's **producer component** is unbuilt for a different reason: nothing
+links an artifact to the step that made it, and inferring it from event
+ordering would be a guess rendered as a fact.
+
 ## UX principle
 
 The home view answers three questions: what can I run, what is happening now, and what needs my decision? Connections are capabilities with scopes and receipts, not a wall of OAuth settings. Every run should make inputs, actions, outputs, gates, and failures inspectable.
