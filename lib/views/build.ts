@@ -26,7 +26,7 @@ import { isDigestArtifact } from "../contracts";
 import type { ManifestPermissions, PermissionGrant } from "../contracts";
 import { brokeredField, requestedOperations } from "../broker/grant";
 import { operationById, type BrokerOperation } from "../broker/operations";
-import { describeClientOwner, describeCustody } from "../broker/providers";
+import { describeClientOwner, describeCustody, describeDashClosedWindow } from "../broker/providers";
 import { listReceipts, readBrokerAudit, readBrokerLapses, type BrokerLapse } from "../broker/store";
 import { describeBrokerRefusal } from "../copy/recovery";
 import { heldCredentials } from "../connection-actions";
@@ -369,6 +369,13 @@ function brokerCard(
     // most needs to know that the permission behind the draft action also allows
     // sending, because they are the one who has not granted it yet.
     wider_permission_sentence: widerPermissionSentence(requested),
+    // Same before-the-grant reasoning, for time rather than breadth (MAR-482):
+    // an agent that runs around the clock can use this connection only while
+    // DASH is open, and the person deciding whether to connect is the one who
+    // needs that said. Gated on the manifest's own claim to keep running,
+    // because for an agent that stops with DASH the warning would describe a
+    // window in which the agent does not exist.
+    dash_closed_sentence: survivesDashClosing(manifest) ? describeDashClosedWindow(profile) : null,
     requested: requested.map((operation) => ({
       id: operation.id,
       label: operation.label,

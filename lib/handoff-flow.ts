@@ -46,6 +46,7 @@ import { readFileSync, statSync } from "node:fs";
 
 import { isManifestV2, validateManifest, type AnyAgentManifest } from "./contracts";
 import type { HandoffOutcome, HandoffRecord } from "./handoff-ledger";
+import { checkManifestConstraints } from "./manifest-constraints";
 import {
   parseHandoffUrl,
   readHandoff,
@@ -271,6 +272,20 @@ function readManifestFor(
       ok: false,
       headline: "That handoff does not match the agent's own plan, so DASH did not add it.",
       detail: "Build the agent again, then run “Open in DASH” from its folder.",
+    };
+  }
+
+  // The contradiction ADR 0006 refuses at import (MAR-482), refused at this
+  // door too — the same rule at the same moment, one step earlier than the
+  // store, because a refusal after the user approved the dialog is a dialog
+  // that wasted their time.
+  if (checkManifestConstraints(validation.value).length > 0) {
+    return {
+      ok: false,
+      headline: `“${handoff.display_name}” runs on another computer, but asks DASH to manage sign-ins for it.`,
+      detail:
+        "DASH can only manage a sign-in for an agent it runs on this computer. " +
+        "Build the agent again with its connections marked as the agent's own.",
     };
   }
 

@@ -200,6 +200,25 @@ export function describeCustody(profile: BrokerProviderProfile): string {
   }
 }
 
+/**
+ * ADR 0006's option-3 sentence: what a brokered connection is worth to an
+ * agent that keeps running while DASH is closed, said *before* the grant.
+ *
+ * The caller gates on `continues_when_dash_closed`, because for an agent that
+ * stops with DASH the sentence would warn about a window in which the agent
+ * does not exist. The shipped Gmail example is the shape this exists for: a
+ * local agent, running around the clock, whose mailbox access nonetheless
+ * begins and ends with DASH being open — legal, and until this sentence,
+ * discovered afterwards as a lapse row rather than said up front.
+ */
+export function describeDashClosedWindow(profile: BrokerProviderProfile): string {
+  return (
+    `This agent can use your ${profile.label} connection only while DASH is open on this ` +
+    "computer. When DASH is closed, the agent keeps running and its requests through this " +
+    "connection go unanswered."
+  );
+}
+
 /** Plain-language sentence about whose consent screen a user will see. */
 export function describeClientOwner(profile: BrokerProviderProfile): string | null {
   switch (profile.client_owner) {

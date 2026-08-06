@@ -655,6 +655,47 @@ The receipt's **producer component** is unbuilt for a different reason: nothing
 links an artifact to the step that made it, and inferring it from event
 ordering would be a guess rendered as a fact.
 
+## The import-time refusal ADR 0006 mandates (MAR-482)
+
+ADR 0006's second rule: "A manifest that asks for both is a contradiction DASH
+must refuse at import, not discover at runtime." Both meaning a runtime
+declared away from this computer (`agent_dom.locations.runtime.kind: "remote"`)
+beside a connection DASH would have to manage (`ownership: "dash_managed"`).
+Until this slice the combination was schema-legal, DASH shipped an example that
+did it, and a user found out afterwards as a lapse row.
+
+`lib/manifest-constraints.ts` is the check — constraints the schema cannot
+express, run at the two doors a manifest enters through: `importManifest` in
+`lib/store.ts` and the handoff flow's `readManifestFor`. Deliberately **not**
+in `validateManifest`, which `runner/supervisor.ts` and `lib/db.ts` also run
+over manifests imported long ago — a constraint that tightened retroactively
+would strand an already-imported agent in an unreadable row. And deliberately
+**copy, not gating**: the transport already decides who reaches the broker;
+this refusal only stops DASH accepting a promise it will never keep.
+
+The plain-language half lives in `lib/import-feedback.ts` as the
+`remote_agent_dash_connections` case. One structural lesson worth keeping: the
+distinctive phrase the recogniser keys on lives in `import-feedback.ts` and is
+imported by `manifest-constraints.ts`, not the other way around, because
+`import-feedback.ts` is bundled into the add-agent page's client component and
+the constraint module drags `lib/contracts.ts` and its `node:fs` schema reads
+in — the first draft pointed the import the obvious way and Turbopack refused
+the client chunk.
+
+The same slice adds ADR 0006's option-3 sentence to the permission card,
+**before** the grant: `BrokerRowView.dash_closed_sentence`, built by
+`describeDashClosedWindow` and gated on the manifest's own
+`continues_when_dash_closed` claim — for an agent that stops with DASH the
+warning would describe a window in which the agent does not exist, so its
+honest form is absence. The shipped Gmail example is exactly the shape this
+sentence exists for and is untouched, per the issue: it is legal, and it
+needed the sentence, not a change.
+
+`examples/dash-managed.manifest.v2.example.json` became a **local** worker in
+the same change: under the refusal, a contradictory file in `examples/` would
+be an example DASH itself refuses to import. Its purpose — the DASH-managed
+OAuth reconnect flow — never depended on being remote.
+
 ## The two follow-ups the merge order created, and the acceptance criterion (MAR-434)
 
 `docs/merge-order-2026-08-06.md` named two follow-ups PRs #43 and #46 could not
@@ -711,12 +752,16 @@ stale-but-registered git worktrees this machine still carries under
 default glob otherwise triples the file and test count by including them), is
 71 files / 1330 passed / 8 skipped / 0 failed.
 
-**So MAR-434 stays merged rather than proven**, for a third reason layered on
-the first two: the runner-half code (#46) is proven on an older installed run
-that predates this session's addition, this session's new code is new and
-green in its own unit tests, and the run that would prove the acceptance
-criterion itself is written but has not executed. Whoever runs it next needs
-only to confirm no Electron process is running, then `pnpm verify`.
+The paragraph this replaces said MAR-434 stays merged because proof 9 was
+written but unexecuted. **It has since executed, and MAR-434 is proven**:
+proof 9 (9a–9g) ran green on CI's installed shell (PR #48, run 31100798451),
+after two commits fixed what the run surfaced — the owner-only ACL proof was
+reading its own owner as a stranger on CI's RID-500 account, because `icacls
+/save` abbreviates that account's SID to `LA`, and the repair pass removed the
+"foreign" grant then proved owner-only on the lockout it had created.
+`inspectAcl` now requires the owner's own full-control ACE and admits `LA`/`LG`
+as owner spellings only for that exact account. The full story is in
+`.orchestrate/state.json`'s MAR-434 entry and PR #48's root-cause comment.
 
 ## UX principle
 
