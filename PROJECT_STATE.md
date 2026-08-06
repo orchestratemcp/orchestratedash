@@ -372,9 +372,11 @@ untouched. Fixed because `pnpm verify` could not go green on Windows without it.
 
 ## Wave 1 - the design pass, executed (MAR-440, MAR-436, MAR-420)
 
-**Merge-ready and not merged.** All three are `planned`. PRs [#41](https://github.com/orchestratemcp/orchestratedash/pull/41)
+**Both merged.** PRs [#41](https://github.com/orchestratemcp/orchestratedash/pull/41)
 (MAR-440, MAR-436) and [#42](https://github.com/orchestratemcp/orchestratedash/pull/42)
-(MAR-420, stacked on it) are `merge:human-gated`; nothing here promotes them.
+(MAR-420, stacked on it) are on master at `7d77e98` and `095a6da`. This paragraph
+said "merge-ready and not merged" until after they were, which is the smallest
+possible instance of what the rest of this file is careful about.
 
 The stack had **never been executed by an Electron shell** when it was written —
 the design session could measure the DOM at three widths and could not launch
@@ -436,6 +438,28 @@ and explicitly recorded that the chrome was fine; this is the chrome, it is a
 different finding, and it wants the same breakpoint decision rather than a patch.
 The page itself does not overflow at any of the three widths, which is the claim
 MAR-491 made and which still holds.
+
+**One defect reached master, and a comment was what hid it.** MAR-420's
+pre-paint script sets `data-density` on `<html>`, and `density-toggle.tsx`
+asserted that `suppressHydrationWarning` was therefore unnecessary — "this
+touches `<html>`'s attribute, not any element React rendered". `app/layout.tsx`
+renders `<html>`. So React hydrated it, found an attribute the build never
+produced, and logged a mismatch on every load for anybody who had chosen
+compact. `<html lang="en" suppressHydrationWarning>` is the fix and the comment
+is rewritten; `tests/density.test.ts` now fails if the flag leaves that element
+or spreads to any other.
+
+The interesting part is which gate could have caught it and none did. It is a
+**dev-mode console message** — production hydration does not warn, and React
+patches no attribute either way, so compact kept working and nothing on screen
+was wrong. The three new proofs photograph density by clicking the real control
+in a fresh window, which never has a stored preference to disagree about, and
+no test in this repository reads a console. The screenshots found the skip link;
+running the app found this. Evidence: typecheck clean, 65 test files, 1204 tests
+(the two new ones), `[state] valid` with the same 7 drift warnings, and a clean
+console on `/` and `/runs/detail` in `next dev` with `dash.density=compact`
+stored. `pnpm verify:shell` was **not** run — Electron was open, and AGENTS.md's
+rule is worth more than a proof this change cannot affect.
 
 MAR-420's fleet grid, sidebar and honesty pass are unbuilt and out of scope of
 #42 by its own description.

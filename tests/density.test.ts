@@ -24,6 +24,27 @@ import { describeRawIdentifiers, rawIdentifiersIn } from "../lib/copy/identifier
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+/**
+ * A file's source with its comments removed.
+ *
+ * The hydration assertions below are about what a file *renders*, and the thing
+ * they guard is heavily commented — necessarily so, since the defect they exist
+ * to prevent was a comment that contradicted the running app. Both assertions
+ * failed on their first run against prose: `/<html\b[^>]*>/` matched a
+ * backticked `<html>` in a comment, and the file that only *describes*
+ * `suppressHydrationWarning` was counted as carrying it.
+ *
+ * Stripping comments first is the whole fix. Nothing in `app/` has a `//` inside
+ * a string literal, so the line-comment rule is safe here — and if that ever
+ * changed, both assertions would go red rather than quiet, because each names
+ * the thing it failed to find.
+ */
+function renderedSource(file: string): string {
+  return readFileSync(file, "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "");
+}
+
 describe("density is calm by default", () => {
   it("defaults to comfortable", () => {
     // MAR-423's rule, and the one thing in this module that is a product
@@ -136,6 +157,70 @@ describe("density never changes what is on the page", () => {
     expect(DENSITY_ATTRIBUTE).toBe("data-density");
     const tokens = readFileSync(path.join(repoRoot, "app", "tokens.css"), "utf8");
     expect(tokens).toContain(`[${DENSITY_ATTRIBUTE}="compact"]`);
+  });
+
+  it("does not make React fight the pre-paint script", () => {
+    /*
+     * MAR-420 shipped asserting that `suppressHydrationWarning` was unnecessary
+     * "because this touches `<html>`'s attribute, not any element React
+     * rendered". `app/layout.tsx` renders `<html>`, so React hydrates it, and
+     * every load with compact chosen logged a mismatch the comment said could
+     * not happen.
+     *
+     * This is the half of that fix nothing else would catch. The symptom is a
+     * console message: no test reads the console, and the smoke does not open a
+     * page with a stored preference, so the defect was invisible to every gate
+     * this repository has.
+     */
+    // The premise of the assertion below, scoped to `DensityScript` rather than
+    // the whole file — the click handler writes the same attribute, but it runs
+    // long after hydration and is not what makes the suppression necessary. If
+    // the *pre-paint* script stops writing to `<html>`, the suppression is
+    // about the wrong element and somebody should come and re-read why.
+    const control = renderedSource(
+      path.join(repoRoot, "app", "_components", "density-toggle.tsx"),
+    );
+    const declaredAt = control.indexOf("export function DensityScript");
+    expect(
+      declaredAt,
+      "app/_components/density-toggle.tsx no longer exports DensityScript",
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      control.slice(declaredAt),
+      "the pre-paint script no longer writes to <html>",
+    ).toContain("document.documentElement.setAttribute");
+
+    const layout = renderedSource(path.join(repoRoot, "app", "layout.tsx"));
+    const opening = /<html\b[^>]*>/.exec(layout);
+    expect(opening, "app/layout.tsx no longer renders <html>").not.toBeNull();
+    expect(
+      opening?.[0],
+      "the density script sets data-density on <html> before React hydrates it",
+    ).toContain("suppressHydrationWarning");
+  });
+
+  it("suppresses hydration warnings on exactly one element", () => {
+    /*
+     * The flag turns off a real check, so its blast radius should be one
+     * element and one reason. Spreading it is how a genuine mismatch somewhere
+     * else — a locale-formatted date, a timestamp, a value read from a store
+     * that moved — stops being reported to the only person who could notice.
+     */
+    const appDir = path.join(repoRoot, "app");
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          return walk(full);
+        }
+        return entry.name.endsWith(".tsx") ? [full] : [];
+      });
+    const files = walk(appDir);
+    expect(files.length, "no components found — the scan would pass vacuously").toBeGreaterThan(0);
+    const carriers = files
+      .filter((file) => renderedSource(file).includes("suppressHydrationWarning"))
+      .map((file) => path.relative(repoRoot, file).split(path.sep).join("/"));
+    expect(carriers).toEqual(["app/layout.tsx"]);
   });
 
   it("keeps its preference out of the store", () => {

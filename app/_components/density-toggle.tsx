@@ -93,8 +93,20 @@ export function DensityToggle(): ReactNode {
  * — no value from storage is interpolated into it, only compared against a
  * literal — and it writes an attribute rather than markup.
  *
- * `suppressHydrationWarning` is not needed: this touches `<html>`'s attribute,
- * not any element React rendered.
+ * ## It does need `suppressHydrationWarning`, and that lives in `app/layout.tsx`
+ *
+ * This comment used to say the opposite — that the flag was unnecessary because
+ * the script touches `<html>`'s attribute rather than any element React
+ * rendered. `app/layout.tsx` renders `<html>`. React hydrates it, finds an
+ * attribute the build-time markup never had, and logs a mismatch on every load
+ * for anybody who has chosen compact. The running app said so from the day the
+ * feature landed, and the comment said it could not happen.
+ *
+ * So the flag is on `<html>` in `app/layout.tsx`, where the element is, and
+ * `tests/density.test.ts` fails if it stops being there or starts being
+ * everywhere. Rendering the attribute server-side instead is not on offer: the
+ * packaged renderer is a static export with no server to ask, which is the same
+ * reason this script exists.
  */
 export function DensityScript(): ReactNode {
   const script = [
