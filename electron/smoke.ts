@@ -3071,6 +3071,24 @@ async function proveProtectedWorkspaceDownload(recorded: {
       { availability },
     );
 
+    /* -- On failure, the runner's own log is the only witness --------------- */
+
+    // The runner is detached with its stdio on {dataDir}/runner.log, so a
+    // refusal's underlying error code never reaches this harness's output. On
+    // CI that file is discarded with the machine, which makes a proof-9
+    // failure undiagnosable from the one place it currently reproduces.
+    if (registered === null || availability !== "available") {
+      try {
+        const tail = readFileSync(path.join(dataDir, "runner.log"), "utf8")
+          .split(/\r?\n/)
+          .slice(-40)
+          .join("\n");
+        console.log(`[smoke] tail of runner.log, because proof 9 failed:\n${tail}`);
+      } catch {
+        console.log("[smoke] proof 9 failed and runner.log could not be read");
+      }
+    }
+
     /* -- Stop -------------------------------------------------------------- */
 
     await call(`${handle.origin}/agents/${encodeURIComponent(AGENT_ID)}/lifecycle`, {
