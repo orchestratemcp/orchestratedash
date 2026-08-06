@@ -85,9 +85,7 @@ const rootPackage = JSON.parse(readFileSync(path.join(repoRoot, "package.json"),
  * somewhere the installed app never opens. The harness asserts the answer
  * anyway, in check G0a, so a mistake here is loud rather than silent.
  */
-await build({
-  entryPoints: [path.join(repoRoot, "scripts", "google-proof", "main.ts")],
-  outfile: path.join(outDir, "main.mjs"),
+const shared = {
   bundle: true,
   platform: "node",
   target: "node24",
@@ -99,7 +97,38 @@ await build({
   // this proof reads it, but `runner/identity.ts` is reachable through the
   // imports, so the bundle would not build without a value for it.
   define: { __DASH_RUNNER_BUILD_ID__: JSON.stringify("attended-google-proof") },
-});
+};
+
+await Promise.all([
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "scripts", "google-proof", "main.ts")],
+    outfile: path.join(outDir, "main.mjs"),
+  }),
+
+  /*
+   * The runner, beside the harness, and this is not optional scaffolding.
+   *
+   * `electron/runner-process.ts` resolves the runner it spawns as
+   * `new URL("./runner.mjs", import.meta.url)` — relative to its own module.
+   * Bundled into `dist/google-proof/main.mjs`, that resolves to
+   * `dist/google-proof/runner.mjs`. `scripts/build-shell.mjs` puts the runner in
+   * `dist/electron/`, which is why `pnpm shell:smoke` finds one and this harness
+   * did not: it spawned a path that does not exist, Electron took a pid and died
+   * before it could log, and DASH reported `never_listened` — a runner that
+   * started and went quiet, which is the shape of a hung runner rather than of a
+   * missing file.
+   *
+   * So every check from `G7a` down was unreachable, in a way whose message named
+   * the wrong cause. Built here, from `runner/main.ts`, exactly as the shell
+   * build does it.
+   */
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "runner", "main.ts")],
+    outfile: path.join(outDir, "runner.mjs"),
+  }),
+]);
 
 /*
  * The real executable, resolved through the `electron` package's own export
