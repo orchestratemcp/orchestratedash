@@ -94,10 +94,15 @@ function decode(html: string): string {
 function render(
   resolve?: (record: RunArtifactRecord) => ArtifactAvailability,
   input: RunArtifactRecord[] = records(),
+  onDownload?: () => void,
 ): string {
   return decode(
     renderToStaticMarkup(
-      <OutputsPanel cards={buildArtifactCards(input, resolve)} grounding={null} />,
+      <OutputsPanel
+        cards={buildArtifactCards(input, resolve)}
+        grounding={null}
+        onDownload={onDownload}
+      />,
     ),
   );
 }
@@ -134,6 +139,49 @@ describe("every output is drawn", () => {
 
   it("says so plainly when a run produced nothing", () => {
     expect(render(undefined, [])).toContain(OUTPUTS_PANEL_COPY.empty);
+  });
+});
+
+/**
+ * MAR-434's acceptance criterion, at the point a person meets it.
+ *
+ * The interesting assertions are the negative ones. A surface that cannot act
+ * must not draw a dead button, and an output that is not there must not offer to
+ * fetch itself — the four unavailable states each have a next action and none of
+ * them is "download".
+ */
+describe("saving a copy", () => {
+  const noop = (): void => {};
+
+  it("offers the action on every output that is actually here", () => {
+    const html = render(undefined, records(), noop);
+    expect(html).toContain(OUTPUTS_PANEL_COPY.download);
+    expect(html.match(/Save a copy/g)).toHaveLength(2);
+  });
+
+  it("draws no button at all where the window cannot act", () => {
+    // Not a disabled button: a greyed-out Save beside a file that exists reads
+    // as a claim about the file rather than about the window.
+    expect(render()).not.toContain(OUTPUTS_PANEL_COPY.download);
+  });
+
+  it.each(["missing", "moved", "quarantined", "deleted"] as const)(
+    "does not offer to fetch an output that is %s",
+    (availability) => {
+      const html = render(() => availability, records(), noop);
+      expect(html).not.toContain(OUTPUTS_PANEL_COPY.download);
+      // The recovery is what is offered instead, and it still has a next action.
+      expect(html).toContain(
+        describeArtifactAvailability(availability, { title: "AI agent news for 5 August" })
+          ?.next_action ?? "",
+      );
+    },
+  );
+
+  it("keeps the vocabulary off the developer disclosure", () => {
+    // "Save a copy", not "Download": the file is already on this computer, and
+    // nothing crosses a network.
+    expect(guidedPathOf(render(undefined, records(), noop))).toContain("Save a copy");
   });
 });
 

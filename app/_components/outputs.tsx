@@ -40,9 +40,21 @@ import { DigestBody, DraftBody, DraftPlacementChip, GroundingChip } from "./dige
 export function OutputsPanel({
   cards,
   grounding,
+  onDownload,
 }: {
   cards: readonly ArtifactCardView[];
   grounding: GroundingAnalysis | null;
+  /**
+   * Save a copy of one output, or absent (MAR-434).
+   *
+   * Absent means the surface cannot act — a browser tab, or a page that has not
+   * been given the handler — and the button is then **not rendered** rather than
+   * rendered disabled. `lib/workspace.ts` makes that argument about dead
+   * controls generally, and it is sharper here: a greyed-out Download beside a
+   * file that exists reads as "this file cannot be saved", which is a claim
+   * about the output rather than about the window.
+   */
+  onDownload?: (card: ArtifactCardView) => void;
 }): ReactNode {
   return (
     <section className="section" aria-labelledby="outputs-heading">
@@ -62,6 +74,7 @@ export function OutputsPanel({
             <li key={`${card.reference.artifact_id}:${String(index)}`}>
               <OutputCard
                 card={card}
+                onDownload={onDownload}
                 /* Only the newest digest is graded, which is the rule
                    `lib/views/build.ts` already applies when it computes the
                    verdict. Hanging that chip on an older artifact would report
@@ -86,11 +99,25 @@ export function OutputsPanel({
 function OutputCard({
   card,
   grounding,
+  onDownload,
 }: {
   card: ArtifactCardView;
   grounding: GroundingAnalysis | null;
+  onDownload?: (card: ArtifactCardView) => void;
 }): ReactNode {
   const { artifact, role, receipt, recovery, reference } = card;
+
+  /*
+   * Offered only when the bytes are actually there.
+   *
+   * `recovery === null` is exactly `availability === "available"` — see
+   * `buildArtifactCards`, which sets one from the other. So this is the four
+   * unavailable states deciding the button, rather than the button deciding
+   * for itself: a moved output has a next action, and it is not "download",
+   * because the file the person is hunting for is still wherever it went.
+   * Offering Download there would send them to a dialog that ends in a refusal.
+   */
+  const downloadable = onDownload !== undefined && recovery === null;
 
   return (
     <article className={recovery === null ? "output-card" : "output-card is-unavailable"}>
@@ -142,6 +169,23 @@ function OutputCard({
           <dd className="value">{receipt.size}</dd>
         </div>
       </dl>
+
+      {/* On the receipt, not in the card heading. The receipt is the part of
+          this card that says what the thing *is* — who made it, when, how big
+          — and "give me a copy" is the action on that, whereas the heading is
+          the output's name. It also keeps the action next to the size, which is
+          the fact a person weighs before asking for a file. */}
+      {downloadable ? (
+        <div className="button-row">
+          <button
+            className="button-secondary"
+            onClick={() => onDownload?.(card)}
+            type="button"
+          >
+            {COPY.download}
+          </button>
+        </div>
+      ) : null}
 
       <OutputContent card={card} grounding={grounding} />
 

@@ -32,9 +32,11 @@ import { assertStoreLocation } from "./data-dir";
 // development tree and wrong in an install, which is the worst combination.
 import { assertContractsLocation } from "./resources";
 
-import { app, BrowserWindow, ipcMain, Menu, nativeTheme } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from "electron";
 
+import { writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -529,6 +531,19 @@ export function registerCommandChannel(
       // no provider. See `showApplicationMenu` for why the renderer cannot name
       // what it wants popped.
       showApplicationMenu,
+      // MAR-434. The only member so far is `download`, and the switch is
+      // exhaustive so a second workspace command cannot be added to the
+      // catalogue without being answered here.
+      workspaceAction: (action, target) => {
+        switch (action) {
+          case "download":
+            return workspaceDownload(runner, target.artifact_id);
+          default: {
+            const unreachable: never = action;
+            throw new Error(`Unhandled workspace action: ${String(unreachable)}`);
+          }
+        }
+      },
       // MAR-383. The vault is reachable from exactly this one entry in exactly
       // this one context object, and the value the user types never comes back
       // through it — see `lib/connection-actions.ts` for what does.
@@ -730,6 +745,97 @@ function assertNoBrokeredCredentials(
       );
     }
   }
+}
+
+/**
+ * Save one of an agent's outputs where the user asks (MAR-434).
+ *
+ * The last missing piece of MAR-434's acceptance criterion: the runner has
+ * served `GET /artifacts/{id}/download` since PR #48 and proof `9f` hashes what
+ * it returns, and nothing on any page could call it.
+ *
+ * The order here is the whole design. **Ask first, fetch second.** A download
+ * that streamed the bytes somewhere and then asked where to put them would have
+ * had to choose a place on its own, and a downloads folder DASH picked is a
+ * place the user has to go and find. Asking first also means a cancelled dialog
+ * costs a socket read that never happened.
+ *
+ * What does not cross back to the renderer: the path the user chose, the bytes,
+ * and the digest. The result is a sentence. `runner/workspace.ts` refuses to
+ * return `stored_path` for exactly this reason, and it would be a strange
+ * discipline to keep at the runner's boundary and drop at the window's.
+ *
+ * The suggested filename is the artifact's own `display_name`, which the runner
+ * sends in `x-artifact-name` — the name the agent gave its file, which is the
+ * name the person will be looking for.
+ */
+async function workspaceDownload(
+  runner: RunnerHandle | null,
+  artifactId: string,
+): Promise<{ ok: boolean; detail: string }> {
+  if (runner === null) {
+    return {
+      ok: false,
+      detail: "No bundled runner is available on this machine, so DASH cannot fetch this file.",
+    };
+  }
+
+  const window = appWindow();
+  const call = runnerFetch(runner);
+
+  // Ask the runner what it is called before asking the user where to put it, so
+  // the dialog can suggest the agent's own name for the file. A HEAD would be
+  // tidier; the route answers GET, and inventing a second one for a filename
+  // would be inventing contract for cosmetics.
+  let response: Response;
+  try {
+    response = await call(`${runner.origin}/artifacts/${encodeURIComponent(artifactId)}/download`, {
+      headers: { authorization: `Bearer ${runner.token}` },
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch {
+    return { ok: false, detail: "DASH could not reach the runner that is holding this file." };
+  }
+
+  if (!response.ok) {
+    // The runner distinguishes "no such artifact" from "the record is here and
+    // the bytes are not", and both arrive as a refusal with a sentence. Passing
+    // its own detail through keeps the four availability states meaningful all
+    // the way to the button.
+    const body = (await response.json().catch(() => ({}))) as { detail?: string };
+    return {
+      ok: false,
+      detail:
+        body.detail ??
+        "The runner would not hand over this file. It may have been moved or deleted since it was made.",
+    };
+  }
+
+  const suggested = response.headers.get("x-artifact-name") ?? "output";
+  // Parented to the app window when there is one, so the dialog is modal to
+  // DASH rather than a floating window the user can lose behind it.
+  const options = { defaultPath: suggested, title: "Save a copy of this output" };
+  const chosen =
+    window === null
+      ? await dialog.showSaveDialog(options)
+      : await dialog.showSaveDialog(window, options);
+  if (chosen.canceled || chosen.filePath === undefined || chosen.filePath === "") {
+    // Not a failure. The user answered the question, and the answer was no.
+    return { ok: true, detail: "" };
+  }
+
+  try {
+    writeFileSync(chosen.filePath, Buffer.from(await response.arrayBuffer()));
+  } catch (error: unknown) {
+    return {
+      ok: false,
+      detail: `DASH could not write the file there: ${error instanceof Error ? error.message : "unknown error"}`,
+    };
+  }
+
+  // The folder, not the full path — enough for a person to find it, and it is
+  // the folder they just chose in a dialog rather than anything DASH decided.
+  return { ok: true, detail: `Saved to ${path.dirname(chosen.filePath)}.` };
 }
 
 async function runnerLifecycle(

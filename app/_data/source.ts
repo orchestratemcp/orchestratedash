@@ -83,6 +83,15 @@ interface DashShellClient {
    * older than the title bar has a `dashShell` without it.
    */
   openAppMenu?(at?: { x: number; y: number }): Promise<CommandResult>;
+  /**
+   * Save one of an agent's outputs (MAR-434).
+   *
+   * Optional on top of the bridge already being optional, like `openAppMenu`
+   * above and for the same reason: a shell built before this command exists has
+   * a `dashShell` without it, and a page that assumed otherwise would throw in
+   * front of the user rather than refuse honestly.
+   */
+  downloadOutput?(args: { agent_id: string; artifact_id: string }): Promise<CommandResult>;
   connectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   testConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   disconnectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
@@ -257,6 +266,42 @@ export async function submitAgentCommand(
       throw new Error(`Unhandled agent command: ${String(unreachable)}`);
     }
   }
+}
+
+/**
+ * Ask DASH to save one of an agent's outputs (MAR-434).
+ *
+ * Three refusals rather than one, because they are three different things to
+ * learn. A browser tab has no bridge at all and never will. A shell older than
+ * this command has a bridge without the method — the same case `openAppMenu`
+ * is optional for — and telling that user to open the installed app would be
+ * advice they have already taken. Anything else is main's own sentence, passed
+ * through unchanged: main is where the runner's refusal is worded, and
+ * rewording it here would lose the distinction between a file that moved and
+ * one somebody deleted.
+ */
+export async function downloadOutput(args: {
+  agent_id: string;
+  artifact_id: string;
+}): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to save a copy of this output.",
+    };
+  }
+  if (bridge.downloadOutput === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "This version of the DASH app cannot save outputs yet.",
+    };
+  }
+  return bridge.downloadOutput(args);
 }
 
 /**
