@@ -35,8 +35,23 @@ code {
   font-family: var(--font-mono);
 }
 
+/*
+ * Hidden to the eye, present to a screen reader.
+ *
+ * `left: 0` is not decoration and is the part everyone leaves out. Absolute
+ * positioning resolves against the nearest *positioned* ancestor, and with no
+ * offsets the element keeps its static position — which, for anything inside a
+ * horizontally scrolled container, is a coordinate far off to the right. It
+ * then escapes that container (absolute descendants of a scroller are laid out
+ * against the positioned ancestor instead) and drags the page's scroll width
+ * out to wherever it landed.
+ *
+ * That is not a hypothetical either: it is why the whole app overflowed by 74px
+ * at 375, from a 1×1 pixel span nobody can see.
+ */
 .visually-hidden {
   position: absolute;
+  left: 0;
   width: 1px;
   height: 1px;
   margin: -1px;
@@ -127,7 +142,21 @@ main:focus {
   gap: var(--space-2);
   height: var(--titlebar-height);
   padding-left: var(--space-3);
-  padding-right: calc(var(--window-controls-inset) + var(--space-3));
+  /*
+   * `min()` caps the reserved room at half the bar (MAR-440).
+   *
+   * `--window-controls-inset` is measured from a browser API at runtime, and
+   * the first draft of `title-bar.tsx` could compute a whole viewport's worth
+   * of it when the overlay was absent. That bug is fixed at the source, but a
+   * layout that can be blown apart by one bad number from an API is a layout
+   * with a second bug in it. Windows' caption buttons are ~140px; half the bar
+   * is generous and is never wrong enough to overflow.
+   */
+  padding-right: calc(min(var(--window-controls-inset), 50%) + var(--space-3));
+  /* The bar clips rather than pushes. A title bar is chrome: nothing in it is
+     worth a horizontal scrollbar on the whole application. */
+  min-width: 0;
+  overflow: hidden;
   -webkit-app-region: drag;
   user-select: none;
 }
@@ -157,9 +186,15 @@ main:focus {
   background: var(--line-strong);
 }
 
+/* Truncates instead of pushing. The surface name is also in the nav below and
+   in the page's own heading, so an ellipsis here loses nothing. */
 .title-bar-surface {
   font-size: var(--text-sm);
   color: var(--text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .title-bar-menu {
@@ -219,6 +254,64 @@ main:focus {
   background: var(--surface-1);
 }
 
+/* Pushes the density control to the far end of the nav row. `margin-left: auto`
+   on the control itself would collapse in the scrolling flex row at 375px. */
+.app-nav-spacer {
+  flex: 1 1 auto;
+  min-width: var(--space-4);
+}
+
+/* ---------------------------------------------------------------------- *
+ * The density opt-in (MAR-420)
+ * ---------------------------------------------------------------------- */
+
+.density-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.density-toggle:hover {
+  background: var(--surface-1);
+  color: var(--text);
+}
+
+.density-glyph {
+  font-size: 12px;
+  line-height: 1;
+}
+
+/*
+ * Below 560px the label goes and the glyph stays.
+ *
+ * Deliberately the *label* rather than the control: density matters most on a
+ * narrow window, so hiding the button there would remove it exactly where it
+ * earns its keep. The accessible name survives — `title` carries the
+ * description, and the label is hidden visually rather than removed.
+ */
+@media (max-width: 560px) {
+  .density-label {
+    position: absolute;
+    /* See `.visually-hidden` — without this the span keeps its static position
+       inside the scrolled nav, escapes it, and widens the whole page. */
+    left: 0;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
 .app-nav-link.is-active::before {
   content: "";
   position: absolute;
@@ -266,7 +359,9 @@ table {
 th,
 td {
   text-align: left;
-  padding: 0.65rem 0.85rem;
+  /* MAR-420. The one place density is most worth having: a fleet of thirty
+     agents is a scroll in comfortable and a screen in compact. */
+  padding: var(--density-row-y) var(--density-row-x);
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
@@ -372,7 +467,7 @@ code {
 }
 
 .section {
-  margin-bottom: 1.75rem;
+  margin-bottom: var(--density-stack);
 }
 
 a.plain {
@@ -469,11 +564,11 @@ a.plain:hover {
 }
 
 .agent-connections {
-  margin-bottom: 2.5rem;
+  margin-bottom: calc(var(--density-stack) * 1.5);
 }
 
 .connection-group {
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--density-stack);
 }
 
 .connection-group h3 {
@@ -523,9 +618,9 @@ a.plain:hover {
 .workspace-overview {
   display: grid;
   grid-template-columns: minmax(15rem, 1fr) minmax(20rem, 1.4fr);
-  gap: 1.5rem;
-  margin: 1.25rem 0 2rem;
-  padding: 1.25rem;
+  gap: var(--density-stack);
+  margin: var(--density-gap) 0 var(--density-stack);
+  padding: var(--density-card-p);
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel);
@@ -566,7 +661,7 @@ a.plain:hover {
 .work-list,
 .card-grid {
   display: grid;
-  gap: 0.85rem;
+  gap: var(--density-gap);
 }
 
 .card-grid {
@@ -575,7 +670,7 @@ a.plain:hover {
 
 .work-card,
 .summary-card {
-  padding: 1rem;
+  padding: var(--density-card-p);
   border: 1px solid var(--line);
   border-radius: 9px;
   background: var(--panel);
