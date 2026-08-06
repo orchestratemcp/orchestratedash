@@ -299,6 +299,16 @@ any file a person handed to an agent — and refuses to start if it cannot prove
 the permissions. Default `~/.orchestratedash/runner`; `DASH_RUNNER_DATA_DIR`
 wins when it is set.
 
+**`dash:node` already means the right thing here**, which the sentinel's name
+does not suggest. `resolveSpawnCommand` returns the *spawning* process's own
+`execPath`, and on a host that process is this runner under the host's Node — so
+the sentinel resolves to the host's Node and `ELECTRON_RUN_AS_NODE=1` is a flag
+plain Node has no opinion about. No host-specific branch, and the reason the
+sentinel exists carries over: a registration must not name a real interpreter
+path, on a version-stamped install root or on a host. The sample agent is
+registered with exactly this sentinel and is the first thing anybody would
+deploy, so `tests/runner-standalone.test.ts` starts a real child through it.
+
 Nothing about this opens a port, ships a service unit, or restarts anything.
 Item 3 below is unchanged and deliberately so, and nothing in this section is
 proven against a real host — see ADR 0004.

@@ -41,6 +41,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { computeRunnerBuildId } from "../scripts/runner-build-id.mjs";
+import { BUNDLED_NODE_COMMAND } from "../lib/registration";
 
 import { ipcFetch, IPC_ORIGIN } from "../lib/agent-dom/ipc-fetch";
 import {
@@ -297,6 +298,71 @@ describe("the built artifact on a host that has only the artifact", () => {
     );
     expect(readBack.status).toBe(200);
   });
+
+  /**
+   * `"command": "dash:node"` on a machine with no Electron (MAR-497 scope).
+   *
+   * The sentinel reads as Electron-specific and is not. `resolveSpawnCommand`
+   * hands back **the spawning process's own `execPath`** plus
+   * `ELECTRON_RUN_AS_NODE=1`, and the spawning process here is the standalone
+   * runner under plain Node — so the sentinel resolves to the *host's* Node and
+   * the environment variable is a flag plain Node has no opinion about.
+   *
+   * That matters more than it looks. `dash:node` exists because the MSIX
+   * install root is version-stamped and a registration holding a real path
+   * stops working at the first update; the same argument is why a registration
+   * deployed to a host must not name one either. And the sample agent — the
+   * first thing anybody would deploy — is registered with exactly this
+   * sentinel, so if it meant nothing on a host, the first deploy would fail on
+   * the one agent DASH ships.
+   *
+   * Proven by starting a real child rather than by reading the resolver: the
+   * question is whether the process runs, and a pure test of the string answers
+   * a different one.
+   */
+  it("resolves `dash:node` to the host's own Node, with no Electron anywhere", async () => {
+    const manifest = path.join(host, "agent.manifest.json");
+    cpSync(
+      path.join(repoRoot, "examples", "gmail-meeting-assistant.manifest.v2.example.json"),
+      manifest,
+    );
+    mkdirSync(path.join(dataDir, "agents"), { recursive: true });
+    writeFileSync(
+      path.join(dataDir, "agents", "sentinel-agent.json"),
+      JSON.stringify({
+        agent_id: "sentinel-agent",
+        manifest_path: manifest,
+        command: BUNDLED_NODE_COMMAND,
+        args: [path.join(repoRoot, "tests", "fixtures", "protocol-agent.mjs")],
+      }),
+      "utf8",
+    );
+
+    const reloaded = await call(`${IPC_ORIGIN}/registrations/reload`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(reloaded.status).toBe(200);
+
+    const started = await call(`${IPC_ORIGIN}/agents/sentinel-agent/lifecycle`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: "start" }),
+    });
+    const outcome = (await started.json()) as { ok: boolean; detail: string; reason?: string };
+    expect(outcome.reason).toBeUndefined();
+    expect(outcome.ok).toBe(true);
+    expect(outcome.detail).toMatch(/^Started as pid \d+\.$/);
+
+    // Stopped here rather than left to the shutdown below, so a failure in this
+    // test cannot be mistaken for a runner that would not stop.
+    const stopped = await call(`${IPC_ORIGIN}/agents/sentinel-agent/lifecycle`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: "stop" }),
+    });
+    expect(((await stopped.json()) as { ok: boolean }).ok).toBe(true);
+  }, 60_000);
 
   it("stops through the authenticated route, not a signal", async () => {
     const response = await call(`${IPC_ORIGIN}/shutdown`, {

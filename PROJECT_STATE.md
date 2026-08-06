@@ -852,6 +852,19 @@ credential, the database and any file a person handed to an agent. The entry
 point applies `runner/channel-secret.ts`'s own `hardenOwnerOnly` and refuses to
 start if the permissions cannot be **proven**.
 
+**`dash:node` already means the right thing on a host**, which the sentinel's
+name does not suggest and which the issue listed as an open question.
+`resolveSpawnCommand` returns the *spawning* process's own `execPath` plus
+`ELECTRON_RUN_AS_NODE=1`; on a host the spawning process is the standalone
+runner under the host's own Node, so it resolves to that and the variable is a
+flag plain Node has no opinion about. No host-specific branch, and the reason
+the sentinel exists carries over intact — a registration must not name a real
+interpreter path, on a version-stamped MSIX root or on a host. It matters
+immediately rather than eventually: **the sample agent is registered with
+exactly this sentinel** and is the first thing anybody would deploy. Proven by
+starting a real child under the standalone runner rather than by reading the
+resolver.
+
 **One correction it forced, and it was load-bearing.** `runner_build` is what
 `electron/runner-process.ts` compares before adopting a runner, and the
 algorithm hashed `path.relative` output and raw file bytes — both

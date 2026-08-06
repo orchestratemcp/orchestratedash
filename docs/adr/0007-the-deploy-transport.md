@@ -440,6 +440,30 @@ not the number: a floor admitting a release where the module needs a
 command-line flag would make the documented start command wrong on a host that
 satisfies the floor.
 
+### `dash:node` already means the right thing on a host, and that was not obvious
+
+MAR-497's scope asked what `"command": "dash:node"` means on a machine with no
+Electron. The answer is better than the question expects and is worth writing
+down because the sentinel *reads* as Electron-specific.
+
+`resolveSpawnCommand` returns **the spawning process's own `execPath`** plus
+`ELECTRON_RUN_AS_NODE=1`. On this machine the spawning process is the runner
+inside the Electron binary, so the sentinel resolves to Electron-as-Node. On a
+host the spawning process is the standalone runner under the host's own Node, so
+it resolves to that — and the environment variable is a flag plain Node has no
+opinion about.
+
+So the sentinel needs no host-specific branch, and the reason it exists carries
+over intact: it was written because the MSIX install root is version-stamped and
+a registration holding a real path stops working at the first update, and a
+registration deployed to a host must not name one either. That matters
+immediately rather than eventually — **the sample agent is registered with
+exactly this sentinel**, and it is the first thing anybody would deploy.
+
+`tests/runner-standalone.test.ts` proves it by starting a real child under the
+standalone runner rather than by reading the resolver, because the question is
+whether the process runs.
+
 ### The host's data directory is hardened, and that is new rather than inherited
 
 On Windows the runner's data directory sits under a user profile whose ACL
