@@ -458,11 +458,16 @@ no test in this repository reads a console. The screenshots found the skip link;
 running the app found this. Evidence: typecheck clean, 65 test files, 1204 tests
 (the two new ones), `[state] valid` with the same 7 drift warnings, and a clean
 console on `/` and `/runs/detail` in `next dev` with `dash.density=compact`
-stored. `pnpm verify:shell` was **not** run — Electron was open, and AGENTS.md's
-rule is worth more than a proof this change cannot affect. MAR-492 was filed
-after the fix rather than before it, which is worth naming rather than tidying
-away: the work arrived as a bug report against master, and an issue written
-afterwards is a record, not intent.
+stored. `pnpm verify:shell` was **not** run locally — Electron was open, and
+AGENTS.md's rule is worth more than a proof this change cannot affect — but
+**CI's Windows `shell-smoke` ran it** on the branch tip `b26107b`: 70 proofs,
+zero failures, plus the advisory `6l` with all three live sources answering.
+Still 70, which is the right number: this change adds no proof, and one that
+moved the count would mean it had done something to the installed loop.
+
+MAR-492 was filed after the fix rather than before it, which is worth naming
+rather than tidying away: the work arrived as a bug report against master, and
+an issue written afterwards is a record, not intent.
 
 MAR-420's fleet grid, sidebar and honesty pass are unbuilt and out of scope of
 #42 by its own description.
