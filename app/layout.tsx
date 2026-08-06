@@ -22,7 +22,22 @@ export default function RootLayout({
   children: ReactNode;
 }): ReactNode {
   return (
-    <html lang="en">
+    /*
+      MAR-492, and the attribute is why `suppressHydrationWarning` is here.
+      `DensityScript` below runs before hydration and sets `data-density` on
+      this element, so React arrives to find an attribute the markup it built
+      never had and reports a mismatch — correctly, because `<html>` is an
+      element this layout renders and therefore an element React hydrates. The
+      attribute is meant to be there; the report is the only thing that is not
+      wanted. Suppressing it is React's own escape hatch for a preference
+      restored from storage before paint, and it works one level deep: this
+      element's own attributes, and nothing inside `<head>` or `<body>`.
+
+      There is no server-rendered alternative. The packaged renderer is a static
+      export built on a machine that has never met this user, which is the same
+      reason the script exists at all.
+    */
+    <html lang="en" suppressHydrationWarning>
       <head>
         {/*
           MAR-420. Before the body, so the first frame already has the user's
