@@ -107,6 +107,76 @@ const MIGRATIONS: readonly string[] = [
   CREATE INDEX runner_audit_by_correlation ON runner_audit (correlation_id);
   CREATE INDEX runner_audit_by_agent ON runner_audit (agent, decided_at);
   `,
+  // MAR-434. The task workspace's index.
+  //
+  // It is in the runner's database rather than DASH's for the reason the module
+  // header gives for there being two databases at all: the runner owns these
+  // files, so the runner owns the record of them. DASH holds a projection it
+  // renders, which it drains like telemetry — and a projection that disagrees
+  // with this table is a bug in the drain, not a second opinion.
+  //
+  // The whole point of persisting it is the issue's "restart preserves the
+  // artifact index. Missing, moved, quarantined, and deleted bytes remain
+  // distinguishable." An index held only in memory would make every restart
+  // report every artifact as missing, which is the one wrong answer that reads
+  // as a real one.
+  `
+  CREATE TABLE task_workspaces (
+    task_id    TEXT PRIMARY KEY,
+    agent      TEXT NOT NULL,
+    -- Null until the run starts. A user selects files before triggering, so the
+    -- workspace outlives its own runlessness by design; bindTaskRun fills it in
+    -- once and refuses to change it.
+    run_id     TEXT,
+    directory  TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    closed_at  TEXT
+  );
+
+  CREATE TABLE task_inputs (
+    input_id     TEXT PRIMARY KEY,
+    task_id      TEXT NOT NULL REFERENCES task_workspaces (task_id) ON DELETE CASCADE,
+    role         TEXT NOT NULL,
+    -- Display metadata. Deliberately NOT the path it came from: the contract
+    -- says absolute paths do not enter records, and a column holding one is a
+    -- column a later renderer will print.
+    display_name TEXT NOT NULL,
+    media_type   TEXT NOT NULL,
+    byte_size    INTEGER NOT NULL,
+    sha256       TEXT NOT NULL,
+    admitted_at  TEXT NOT NULL
+  );
+
+  CREATE INDEX task_inputs_by_task ON task_inputs (task_id, admitted_at);
+
+  CREATE TABLE workspace_artifacts (
+    artifact_id       TEXT PRIMARY KEY,
+    task_id           TEXT NOT NULL,
+    -- agent and run_id are written from the runner's own knowledge of which
+    -- child wrote the line and which task it belongs to. No child-supplied
+    -- value reaches either column, which is what "the runner binds source
+    -- agent/run identity" means in storage terms.
+    agent             TEXT NOT NULL,
+    run_id            TEXT NOT NULL,
+    role              TEXT NOT NULL,
+    display_name      TEXT NOT NULL,
+    media_type        TEXT NOT NULL,
+    byte_size         INTEGER NOT NULL,
+    sha256            TEXT NOT NULL,
+    stored_path       TEXT NOT NULL,
+    -- Size and mtime together are what availability compares against, so that a
+    -- list can answer "is this still the file we registered" without hashing
+    -- every artifact on every render. The hash is the download-time check.
+    mtime_ms          REAL NOT NULL,
+    registered_at     TEXT NOT NULL,
+    retention         TEXT NOT NULL,
+    quarantine_reason TEXT,
+    deleted_at        TEXT
+  );
+
+  CREATE INDEX workspace_artifacts_by_run ON workspace_artifacts (agent, run_id);
+  CREATE INDEX workspace_artifacts_by_task ON workspace_artifacts (task_id);
+  `,
 ];
 
 export interface RunnerStore {
