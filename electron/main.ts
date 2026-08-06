@@ -32,7 +32,7 @@ import { assertStoreLocation } from "./data-dir";
 // development tree and wrong in an install, which is the worst combination.
 import { assertContractsLocation } from "./resources";
 
-import { app, BrowserWindow, ipcMain, Menu, nativeTheme } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from "electron";
 
 import { userInfo } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -64,7 +64,10 @@ import {
   dispatchCommand,
   formatAuditLine,
   type RunnerLifecycleResult,
+  type WorkspaceAction,
+  type WorkspaceActionResult,
 } from "../lib/shell/ipc";
+import { declaredLimitsFor } from "../lib/views/inputs";
 import {
   SHELL_READ_CHANNEL,
   reviewRead,
@@ -562,8 +565,157 @@ export function registerCommandChannel(
               ),
           },
         }),
+      // MAR-507. The one entry in this object that can turn a click into a path
+      // on the user's own disk, and it is the only place in DASH that opens a
+      // file picker. What crosses back is a task id, a name and a size.
+      workspaceAction: (action, target) => workspaceAction(runner, action, target),
     });
   });
+}
+
+/**
+ * Open a task, admit one user-selected file, or hand the task over (MAR-507).
+ *
+ * The whole of the path handling lives here, and the reason is the same one
+ * `promptForSecret` exists for: the renderer asks main to *ask*. It names an
+ * agent and a role; main opens `dialog.showOpenDialog`, and the path the user
+ * chose goes straight to the runner over its authenticated socket without ever
+ * being returned to the page, written to a store, or put in an audit line.
+ *
+ * **The role is checked against the manifest here, not at the runner.** The
+ * runner would take any role string and admit the file under it — it has no
+ * manifest — so a renderer naming a role the agent never declared would get a
+ * file admitted under a name the agent will never look for. `declaredLimitsFor`
+ * answering null is that refusal, and it is also where the limits come from, so
+ * a payload cannot widen what the author declared.
+ */
+async function workspaceAction(
+  runner: RunnerHandle | null,
+  action: WorkspaceAction,
+  target: { agent_id: string; task_id?: string; role_id?: string; run_id?: string },
+): Promise<WorkspaceActionResult> {
+  if (runner === null) {
+    return {
+      ok: false,
+      refusal: "no_runner",
+      detail:
+        "This computer cannot run agents, so there is nowhere to put a file for one.",
+    };
+  }
+  const call = runnerFetch(runner);
+  const base = `${runner.origin}/agents/${encodeURIComponent(target.agent_id)}/tasks`;
+  const headers = {
+    "content-type": "application/json",
+    authorization: `Bearer ${runner.token}`,
+  };
+
+  try {
+    if (action === "open_task") {
+      const response = await call(base, {
+        method: "POST",
+        headers,
+        signal: AbortSignal.timeout(5_000),
+      });
+      const body = (await response.json()) as {
+        ok?: boolean;
+        task?: { task_id?: string };
+        detail?: string;
+      };
+      const taskId = body.task?.task_id ?? "";
+      return body.ok === true && taskId.length > 0
+        ? { ok: true, data: { task_id: taskId } }
+        : { ok: false, refusal: "task_not_opened", detail: body.detail };
+    }
+
+    if (target.task_id === undefined || target.task_id.length === 0) {
+      return { ok: false, refusal: "no_task", detail: "No place to put the file was open." };
+    }
+    const taskBase = `${base}/${encodeURIComponent(target.task_id)}`;
+
+    if (action === "select_input") {
+      const manifest = readAgentManifest(target.agent_id);
+      const limits =
+        target.role_id === undefined ? null : declaredLimitsFor(manifest, target.role_id);
+      if (limits === null) {
+        // The agent never said it takes this. Refused before a picker opens, so
+        // the user is not asked for a document that could not have been used.
+        return {
+          ok: false,
+          refusal: "undeclared_role",
+          detail: "This agent does not ask for that kind of file.",
+        };
+      }
+
+      // Modal to the app window when there is one. A picker that is not owned
+      // by the window it was opened from can end up behind it, which reads as
+      // DASH having frozen.
+      const window = appWindow();
+      const options = {
+        properties: ["openFile" as const],
+        title: "Choose a file for this agent",
+        buttonLabel: "Give to agent",
+      };
+      const chosen =
+        window === null
+          ? await dialog.showOpenDialog(options)
+          : await dialog.showOpenDialog(window, options);
+      const sourcePath = chosen.canceled ? undefined : chosen.filePaths[0];
+      if (sourcePath === undefined) {
+        // Cancelling is not a failure and must not read as one. The same call
+        // `describeAuthorizationFailure` makes about a cancelled sign-in.
+        return { ok: false, refusal: "cancelled" };
+      }
+
+      const response = await call(`${taskBase}/inputs`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ role: target.role_id, source_path: sourcePath, limits }),
+        signal: AbortSignal.timeout(60_000),
+      });
+      const body = (await response.json()) as {
+        ok?: boolean;
+        refusal?: string;
+        detail?: string;
+        input?: { display_name?: string; byte_size?: number };
+      };
+      if (body.ok !== true) {
+        // The runner's own code and the runner's own sentence, passed through
+        // untouched. `lib/copy/inputs.ts` says why DASH does not reword them.
+        return { ok: false, refusal: body.refusal, detail: body.detail };
+      }
+      return {
+        ok: true,
+        data: {
+          display_name: body.input?.display_name ?? "",
+          byte_size: body.input?.byte_size ?? 0,
+        },
+      };
+    }
+
+    const runId = target.run_id;
+    if (runId === undefined || runId.length === 0) {
+      return { ok: false, refusal: "no_run", detail: "No run was named for these files." };
+    }
+    const response = await call(`${taskBase}/dispatch`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ run_id: runId }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const body = (await response.json()) as { ok?: boolean; refusal?: string; detail?: string };
+    return body.ok === true
+      ? { ok: true }
+      : { ok: false, refusal: body.refusal, detail: body.detail };
+  } catch {
+    // The error is not quoted. A thrown fetch can carry the request URL, and
+    // this module's requests carry a bearer token — `describeTransportError`
+    // makes the same argument about the same class of leak.
+    return {
+      ok: false,
+      refusal: "unreachable",
+      detail: "DASH could not reach the part of itself that holds files for agents.",
+    };
+  }
 }
 
 /**

@@ -272,6 +272,62 @@ export const COMMANDS = {
     // irreversible: nothing new happens in the world on the second attempt.
     irreversible: false,
   },
+
+  /*
+   * MAR-507. The task workspace, as three commands.
+   *
+   * A fourth family, for the reason the third exists. These are not Agent DOM
+   * verbs — no manifest declares them and no envelope carries them — and they
+   * are not process lifecycle. They move a person's own files, which nothing
+   * else in this catalogue does.
+   *
+   * **The path is the whole design.** `workspace.selectInput` carries an agent
+   * and a role and no path in either direction: the renderer asks main to *ask*
+   * the user for a file, exactly as `connection.connect` asks main to ask for a
+   * credential without ever carrying one. Main opens `dialog.showOpenDialog`,
+   * reads the declared limits out of the manifest itself, and hands the runner a
+   * path the renderer never saw and could not have chosen. So a compromised
+   * renderer can ask for a file picker and cannot name a file.
+   *
+   * Nothing here can widen what the agent declared either. `role_id` is checked
+   * against the manifest in main and refused if it names a role the agent does
+   * not accept, and the limits travel from the manifest rather than from the
+   * payload — see `declaredLimitsFor`.
+   */
+  "workspace.openTask": {
+    effect:
+      "Open a place for this agent's next run to receive files. Copies nothing and starts nothing.",
+    payload_keys: ["agent_id"],
+    required_keys: ["agent_id"],
+    // It creates a directory the runner owns. Nothing of the user's moves and
+    // nothing runs, but a store row exists afterwards that did not before.
+    mutates: true,
+    irreversible: false,
+  },
+  "workspace.selectInput": {
+    effect:
+      "Ask for one of your files and copy it into this agent's task. The agent is not started.",
+    payload_keys: ["agent_id", "task_id", "role_id"],
+    required_keys: ["agent_id", "task_id", "role_id"],
+    mutates: true,
+    // A copy is made and the original is untouched. The runner refuses to
+    // remove an admitted input, so the copy stays until the task is cleaned up
+    // — which is a thing DASH can undo by not running the task, not a change in
+    // the world.
+    irreversible: false,
+  },
+  "workspace.dispatchTask": {
+    effect:
+      "Hand the files you chose to the agent and close the task to further changes.",
+    payload_keys: ["agent_id", "task_id", "run_id"],
+    required_keys: ["agent_id", "task_id"],
+    mutates: true,
+    // The task closes and cannot be reopened, and the agent receives the files.
+    // Not `irreversible` in this flag's sense — nothing leaves the machine and
+    // no second invitation or payment happens — but it is the point of no
+    // return for the *selection*, and the copy on the button says so.
+    irreversible: false,
+  },
 } as const satisfies Record<string, CommandSpec>;
 
 /**
@@ -335,6 +391,28 @@ export function isRunnerCommandName(value: CommandName): value is RunnerCommandN
  * keeping that a separate route means the one place a credential is reachable
  * is a place a reviewer can find by name.
  */
+/**
+ * The task-workspace commands, and what each one asks main to do (MAR-507).
+ *
+ * A fourth family for the reason the third exists: they are neither Agent DOM
+ * verbs nor process lifecycle, and the one thing they have in common is that
+ * they touch files a person chose. Keeping that its own route means the one
+ * place a user's own path is reachable is a place a reviewer can find by name —
+ * the same argument `CONNECTION_ACTIONS` makes about the vault.
+ */
+export const WORKSPACE_ACTIONS = {
+  "workspace.openTask": "open_task",
+  "workspace.selectInput": "select_input",
+  "workspace.dispatchTask": "dispatch_task",
+} as const;
+
+export type WorkspaceCommandName = keyof typeof WORKSPACE_ACTIONS;
+export type WorkspaceAction = (typeof WORKSPACE_ACTIONS)[WorkspaceCommandName];
+
+export function isWorkspaceCommandName(value: CommandName): value is WorkspaceCommandName {
+  return Object.hasOwn(WORKSPACE_ACTIONS, value);
+}
+
 export const CONNECTION_ACTIONS = {
   "connection.connect": "connect",
   "connection.test": "test",
@@ -381,6 +459,7 @@ type UnroutedCommand = Exclude<
   | RunnerCommandName
   | ConnectionCommandName
   | ShellUiCommandName
+  | WorkspaceCommandName
   | "shell.ping"
 >;
 const _allCommandsAreRouted: UnroutedCommand extends never ? true : never = true;
@@ -606,7 +685,10 @@ export function executeCommand(review: CommandReview): CommandResult {
     isAgentCommandName(review.command) ||
     isRunnerCommandName(review.command) ||
     isConnectionCommandName(review.command) ||
-    isShellUiCommandName(review.command)
+    isShellUiCommandName(review.command) ||
+    // MAR-507. In this list for the plainest reason of all: performing one
+    // opens a file picker, which this module cannot do and must not appear to.
+    isWorkspaceCommandName(review.command)
   ) {
     // Not a denial and not a result: a caller that reached here bypassed the
     // trusted side entirely. Throwing is the only honest answer — returning a
@@ -660,6 +742,28 @@ export interface RunnerLifecycleResult {
   data?: Record<string, string | number | boolean>;
 }
 
+/**
+ * What a task-workspace command answers with (MAR-507).
+ *
+ * `refusal` is the runner's own code and `detail` is the runner's own sentence,
+ * both passed through untouched. `lib/copy/inputs.ts` explains why DASH does not
+ * reword them: the runner is what decided, its limits are what moved, and a
+ * second vocabulary here is the thing that stays wrong when they change.
+ *
+ * `data` holds primitives only, like every other command result, and holds no
+ * path. What a person needs to see about an admitted file is its own name and
+ * its size — both facts about the copy the runner now owns, not about where it
+ * came from.
+ */
+export interface WorkspaceActionResult {
+  ok: boolean;
+  /** The runner's refusal code, for a caller that wants to branch. Never rendered. */
+  refusal?: string;
+  /** The runner's own plain sentence. Rendered verbatim. */
+  detail?: string;
+  data?: Record<string, string | number | boolean>;
+}
+
 export interface DispatchContext {
   runAgentCommand(input: AgentCommandInput): Promise<AgentCommandResult>;
   /**
@@ -700,6 +804,28 @@ export interface DispatchContext {
    * every consequence of the menu happens in main, where the handlers are.
    */
   showApplicationMenu(at: { x: number; y: number } | undefined): void;
+  /**
+   * Open a task, admit one user-selected file, or hand the task over (MAR-507).
+   *
+   * Injected like the others, and here the reason is the strongest of the four:
+   * the real implementation opens `dialog.showOpenDialog`, which is the one API
+   * in DASH that turns a click into a path on the user's own disk. Keeping it
+   * behind an injected function is what lets this module — importable from a
+   * sandboxed preload — describe the command without being able to perform it.
+   *
+   * The return type carries no path either way, and cannot: `data` is the same
+   * primitive record every other command result uses, and what it holds is a
+   * task id, a display name and a size.
+   */
+  workspaceAction(
+    action: WorkspaceAction,
+    target: {
+      agent_id: string;
+      task_id?: string;
+      role_id?: string;
+      run_id?: string;
+    },
+  ): Promise<WorkspaceActionResult>;
   /**
    * Where the IPC-level audit record goes.
    *
@@ -784,6 +910,32 @@ export async function dispatchCommand(
         : undefined;
     context.showApplicationMenu(at);
     return { ok: true, request_id: review.audit.request_id };
+  }
+
+  if (isWorkspaceCommandName(review.command)) {
+    /*
+     * MAR-507. Note what does *not* leave this function: a path.
+     *
+     * `select_input` carries an agent, a task and a role, and main is what opens
+     * the file picker, checks the role against the manifest and reads the
+     * declared limits out of it. The renderer names which kind of file it means
+     * and never which file — the same shape `connection.connect` has, and for a
+     * sharper reason: a credential the renderer could name would be one it
+     * already had, whereas a path the renderer could name is one nobody chose.
+     */
+    const result = await context.workspaceAction(WORKSPACE_ACTIONS[review.command], {
+      agent_id: String(review.payload["agent_id"]),
+      task_id: typeof review.payload["task_id"] === "string" ? review.payload["task_id"] : undefined,
+      role_id: typeof review.payload["role_id"] === "string" ? review.payload["role_id"] : undefined,
+      run_id: typeof review.payload["run_id"] === "string" ? review.payload["run_id"] : undefined,
+    });
+    return {
+      ok: result.ok,
+      request_id: review.audit.request_id,
+      reason: result.refusal,
+      detail: result.detail,
+      data: result.data,
+    };
   }
 
   if (isRunnerCommandName(review.command)) {

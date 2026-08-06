@@ -86,6 +86,28 @@ interface DashShellClient {
   connectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   testConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   disconnectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
+  /**
+   * The task-workspace commands (MAR-507).
+   *
+   * Optional on top of the bridge already being optional, like `openAppMenu`
+   * and for the same reason: a build of the shell older than this feature has a
+   * `dashShell` without them, and a renderer that assumed otherwise would throw
+   * rather than refuse.
+   *
+   * `selectAgentInput` carries no path and returns none — main opens the
+   * picker.
+   */
+  openAgentTask?(args: { agent_id: string }): Promise<CommandResult>;
+  selectAgentInput?(args: {
+    agent_id: string;
+    task_id: string;
+    role_id: string;
+  }): Promise<CommandResult>;
+  dispatchAgentTask?(args: {
+    agent_id: string;
+    task_id: string;
+    run_id: string;
+  }): Promise<CommandResult>;
   approve(args: AgentCommandArgs): Promise<CommandResult>;
   reject(args: AgentCommandArgs): Promise<CommandResult>;
   choose(args: AgentCommandArgs): Promise<CommandResult>;
@@ -255,6 +277,58 @@ export async function submitAgentCommand(
     default: {
       const unreachable: never = command;
       throw new Error(`Unhandled agent command: ${String(unreachable)}`);
+    }
+  }
+}
+
+/**
+ * Task-workspace commands (MAR-507).
+ *
+ * The same exhaustive switch over named methods as the two below, and the same
+ * honest refusal in a host that has no bridge. What is different is worth
+ * saying: `select` takes no path and returns none. The renderer names a role,
+ * main opens the picker, and what comes back is a name and a size — see
+ * `lib/shell/ipc.ts` for why the path never crosses in either direction.
+ */
+export async function submitWorkspaceCommand(
+  action: "open" | "select" | "dispatch",
+  args: { agent_id: string; task_id?: string; role_id?: string; run_id?: string },
+): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  // The three methods are checked individually, not just the bridge: an
+  // installed shell that predates this feature has a `dashShell` and none of
+  // them, and calling through would throw where a refusal is the honest answer.
+  if (
+    bridge?.openAgentTask === undefined ||
+    bridge.selectAgentInput === undefined ||
+    bridge.dispatchAgentTask === undefined
+  ) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to give an agent a file.",
+    };
+  }
+
+  switch (action) {
+    case "open":
+      return bridge.openAgentTask({ agent_id: args.agent_id });
+    case "select":
+      return bridge.selectAgentInput({
+        agent_id: args.agent_id,
+        task_id: args.task_id ?? "",
+        role_id: args.role_id ?? "",
+      });
+    case "dispatch":
+      return bridge.dispatchAgentTask({
+        agent_id: args.agent_id,
+        task_id: args.task_id ?? "",
+        run_id: args.run_id ?? "",
+      });
+    default: {
+      const unreachable: never = action;
+      throw new Error(`Unhandled workspace command: ${String(unreachable)}`);
     }
   }
 }
