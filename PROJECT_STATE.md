@@ -152,12 +152,55 @@ Unchanged and still true: **the provider is not Google.** MAR-468 owns that, and
 nothing here is proven against Gmail's API — including that a draft appears in a
 real Drafts folder.
 
-**MAR-468 is built and has not been run, and those are different things.** The
-attended harness (`scripts/google-proof/main.ts`), its launcher
-(`scripts/prove-google.mjs`) and the procedure
-(`docs/real-google-proof-runbook.md`) exist. Nobody has stood at the consent
-screen. **A runbook is not a run**, so MAR-458 and MAR-469 stay `merged`, and the
-promotion is a separate dated act with the rule written down in advance.
+**MAR-468 was run on 2026-08-06, for the first time, and it failed.** The
+sentence that stood here — that the harness was built and nobody had stood at the
+consent screen — is corrected by that run. MAR-458 and MAR-469 stay `merged`:
+the promotion rule says a run failing any check promotes nothing, and this one
+failed `G2`–`G5`.
+
+**It found a real defect in the product, which is what it exists for.**
+`lib/oauth/flow.ts` sends no `client_secret`, in either
+`exchangeAuthorizationCode` or `refreshAccessToken`. Google, asked directly with
+exactly the parameters DASH sends:
+
+```
+HTTP 400
+{ "error": "invalid_request", "error_description": "client_secret is missing." }
+```
+
+**DASH's Google OAuth has never worked against real Google and could not have.**
+Google requires a client secret for Desktop app clients; PKCE does not replace it.
+Proof 7 passes because the loopback provider's `/token` is a fixture that cannot
+refuse for the one reason the real server does — precisely the substitution ADR
+0002 amendment 1 named and this proof was filed to close. Filed as **MAR-508**,
+Urgent, blocking any further attempt.
+
+This falsifies **ADR 0002 amendment 3's point 2** in writing: that a green run
+would establish the OAuth flow works against Google. It does not. The amendment
+also guessed `G8b`, the projection over a real MIME tree, was "the single most
+likely thing here to have been wrong". The run never reached `G8b`, and the
+lesson is that the guess was one check-family too far down.
+
+Two further defects, in the harness rather than the product, were found by the
+attempt and fixed on a branch (**MAR-509**): the launcher never started Electron
+at all — `spawnSync` of a `.cmd` returns `EINVAL` on current Node and
+`result.error` was never checked, so two attempts printed a banner and did
+nothing while looking like a proof that ran quietly — and the harness spawned a
+runner that was never built into its own output directory, reported as
+`never_listened`, which reads as a hung runner rather than a missing file.
+
+**What the run does establish is narrow and worth keeping.** `G0b` passed twice,
+so this was genuinely against `https://gmail.googleapis.com` with no loopback
+substitution; `G7a` passed once fixed. Everything about the broker, the
+projection, the write, the negatives, the audit and the revocation is untouched —
+no brokered call was ever made, and nothing here is evidence for or against any
+of it.
+
+**The lesson, pointed one level up from this file's own words.** It said a
+runbook is not a run. A harness that builds is not a harness that runs either:
+everything about it reachable without a consent screen *had* been validated —
+typecheck, esbuild bundle, `node --check` on the generated agent — and all three
+defects lived strictly outside that set.
 
 Writing that rule in advance is the point of **ADR 0002 amendment 3**. Deciding
 afterwards, with a green log in hand, is how a proof comes to be read as
@@ -202,9 +245,12 @@ failures plus the one advisory note. 67 is unchanged from `c6c3406` and that is
 right — MAR-421 landed in between and added nine unit tests and no installed
 proof, which is why 1104 became 1113 and 67 stayed 67.
 
-Wave 2's remaining work: MAR-468's **run** (the dated attended pass that would
-promote MAR-458 and MAR-469 to `proven`), MAR-470 (MCP connectors through the same
-card), MAR-471 (bring-your-own Google client).
+Wave 2's remaining work, reordered by what the 2026-08-06 run found:
+**MAR-508** (the missing `client_secret` — now the blocker, and nothing about
+Google can be proven until it is decided and fixed), **MAR-509** (the harness
+fixes, on a branch and wanting a PR), MAR-468's **run** again once MAR-508 lands,
+MAR-470 (MCP connectors through the same card), MAR-471 (bring-your-own Google
+client, which MAR-508's decision may fold into or pull forward).
 
 ## The broker's reach (MAR-476, epic MAR-475)
 
