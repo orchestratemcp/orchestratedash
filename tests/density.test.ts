@@ -161,11 +161,11 @@ describe("density never changes what is on the page", () => {
 
   it("does not make React fight the pre-paint script", () => {
     /*
-     * MAR-420 shipped asserting that `suppressHydrationWarning` was unnecessary
-     * "because this touches `<html>`'s attribute, not any element React
-     * rendered". `app/layout.tsx` renders `<html>`, so React hydrates it, and
-     * every load with compact chosen logged a mismatch the comment said could
-     * not happen.
+     * MAR-492. MAR-420 shipped asserting that `suppressHydrationWarning` was
+     * unnecessary "because this touches `<html>`'s attribute, not any element
+     * React rendered". `app/layout.tsx` renders `<html>`, so React hydrates it,
+     * and every load with compact chosen logged a mismatch the comment said
+     * could not happen.
      *
      * This is the half of that fix nothing else would catch. The symptom is a
      * console message: no test reads the console, and the smoke does not open a

@@ -439,8 +439,8 @@ different finding, and it wants the same breakpoint decision rather than a patch
 The page itself does not overflow at any of the three widths, which is the claim
 MAR-491 made and which still holds.
 
-**One defect reached master, and a comment was what hid it.** MAR-420's
-pre-paint script sets `data-density` on `<html>`, and `density-toggle.tsx`
+**One defect reached master, and a comment was what hid it (MAR-492).**
+MAR-420's pre-paint script sets `data-density` on `<html>`, and `density-toggle.tsx`
 asserted that `suppressHydrationWarning` was therefore unnecessary — "this
 touches `<html>`'s attribute, not any element React rendered". `app/layout.tsx`
 renders `<html>`. So React hydrated it, found an attribute the build never
@@ -459,7 +459,10 @@ running the app found this. Evidence: typecheck clean, 65 test files, 1204 tests
 (the two new ones), `[state] valid` with the same 7 drift warnings, and a clean
 console on `/` and `/runs/detail` in `next dev` with `dash.density=compact`
 stored. `pnpm verify:shell` was **not** run — Electron was open, and AGENTS.md's
-rule is worth more than a proof this change cannot affect.
+rule is worth more than a proof this change cannot affect. MAR-492 was filed
+after the fix rather than before it, which is worth naming rather than tidying
+away: the work arrived as a bug report against master, and an issue written
+afterwards is a record, not intent.
 
 MAR-420's fleet grid, sidebar and honesty pass are unbuilt and out of scope of
 #42 by its own description.

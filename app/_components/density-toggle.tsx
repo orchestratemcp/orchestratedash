@@ -95,7 +95,7 @@ export function DensityToggle(): ReactNode {
  *
  * ## It does need `suppressHydrationWarning`, and that lives in `app/layout.tsx`
  *
- * This comment used to say the opposite — that the flag was unnecessary because
+ * MAR-492. This comment used to say the opposite — that the flag was unnecessary because
  * the script touches `<html>`'s attribute rather than any element React
  * rendered. `app/layout.tsx` renders `<html>`. React hydrates it, finds an
  * attribute the build-time markup never had, and logs a mismatch on every load

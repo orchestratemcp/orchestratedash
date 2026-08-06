@@ -23,7 +23,7 @@ export default function RootLayout({
 }): ReactNode {
   return (
     /*
-      MAR-420, and the attribute is why `suppressHydrationWarning` is here.
+      MAR-492, and the attribute is why `suppressHydrationWarning` is here.
       `DensityScript` below runs before hydration and sets `data-density` on
       this element, so React arrives to find an attribute the markup it built
       never had and reports a mismatch — correctly, because `<html>` is an
