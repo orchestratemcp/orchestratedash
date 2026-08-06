@@ -141,6 +141,12 @@
       "note": "No longer blocks MAR-457. Owned by the OrchestrateKit registry, so no DASH commit or lifecycle is claimed for it here. Open question it still owns: the registry route pairs public_feed_fetch with scheduled_trigger, which DASH deliberately omits while the agent is manual-only. See ADR 0003."
     },
     {
+      "id": "MAR-482",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "note": "PR #49 open from 000henrik/mar-482-refuse-remote-dash-managed-at-import (dc9799b, cut from master at d8f9989), merge left to Henrik per merge:human-gated. The refusal ADR 0006 mandates: a v2 manifest whose runtime location is remote and which declares any dash_managed connection is refused at both import doors (lib/store.ts importManifest and the handoff flow) by lib/manifest-constraints.ts, with plain-language copy in lib/import-feedback.ts - deliberately not in validateManifest, which the runner and lib/db.ts re-run over manifests imported long ago, and deliberately copy-not-gating since the transport already decides who reaches the broker. The same slice adds ADR 0006 option-3 pre-grant copy as BrokerRowView.dash_closed_sentence, gated on the manifest own continues_when_dash_closed claim, rendered on the permission card before a sign-in; the shipped Gmail example is untouched per the issue, and examples/dash-managed.manifest.v2.example.json became a local worker because a contradictory example would be one DASH itself refuses to import. Structural lesson recorded in PROJECT_STATE.md: the recogniser phrase lives in import-feedback (client-bundled) and is imported by the constraint module, never the reverse, or Turbopack refuses the client chunk over node:fs. Evidence on the branch: state:check valid, typecheck clean, full vitest 208 files / 3867 passed / 0 failed, verify:shell from PowerShell all installed proofs passed."
+    },
+    {
       "id": "MAR-465",
       "lifecycle": "proven",
       "linear_status": "Done",
