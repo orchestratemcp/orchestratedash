@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 
 import type { GroundingAnalysis } from "../../lib/analyze";
-import { isDigestArtifact } from "../../lib/contracts";
 import { OUTPUTS_PANEL_COPY as COPY } from "../../lib/copy/artifacts";
 import { canPreview, type ArtifactCardView } from "../../lib/views/artifacts";
 import { DigestBody, DraftBody, DraftPlacementChip, GroundingChip } from "./digest";
@@ -66,8 +65,15 @@ export function OutputsPanel({
                 /* Only the newest digest is graded, which is the rule
                    `lib/views/build.ts` already applies when it computes the
                    verdict. Hanging that chip on an older artifact would report
-                   a score against text this card is not showing. */
-                grounding={index === 0 && isDigestArtifact(card.artifact) ? grounding : null}
+                   a score against text this card is not showing.
+
+                   The kind is compared directly rather than through
+                   `isDigestArtifact`. That helper lives in `lib/contracts.ts`,
+                   which reads the JSON schemas off disk, and importing it as a
+                   *value* into a `"use client"` tree drags `node:fs` into the
+                   browser bundle and 500s the page. Types from that module
+                   erase and are safe; functions from it are not. */
+                grounding={index === 0 && card.artifact.kind === "digest" ? grounding : null}
               />
             </li>
           ))}
