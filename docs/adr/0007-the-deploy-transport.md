@@ -365,13 +365,9 @@ has no manifest to declare.
 - **The host helper's verb set is not specified here.** It belongs with the
   deploy bridge, where there is something to validate against, for the reason
   ADR 0006 gave for not building the import validator alone.
-- **What runs on the VPS is not fully decided.** This ADR assumes the remote
-  process is *this repository's runner*, which makes the evidence plane free and
-  is the reason the control plane costs one file. Whether the runner can be
-  shipped standalone — it is bundled into the Electron app as
-  `dist/electron/runner.mjs`, and a host needs a Node runtime the MSIX install
-  does not provide there — is unowned by any current issue and is named in the
-  breakdown rather than answered here.
+- ~~**What runs on the VPS is not fully decided.**~~ **Answered in amendment 1
+  (MAR-497).** The remote process is this repository's runner, shipped as a
+  standalone artifact, and the host supplies Node.
 - **Restart-on-boot is not decided.** `runner/README.md` item 3 records that
   there is no restart policy anywhere in DASH, deliberately. A host that
   restarts an agent DASH cannot see is a supervision claim DASH cannot make, and
@@ -379,3 +375,104 @@ has no manifest to declare.
 - **Retention on the host is not decided**, and item 4 already says nothing
   prunes anything. On a machine the user pays for by the gigabyte that stops
   being a deferred nicety.
+
+## Amendment 1 (MAR-497): what runs on the VPS, and who supplies Node
+
+Status: Accepted. Date: 2026-08-06.
+
+This ADR's third follow-up said the question was unowned. It is owned now, and
+the answer is two sentences plus the reason the second one is not obvious.
+
+> **The remote process is this repository's runner, built as a standalone
+> artifact. The host supplies the Node runtime; DASH does not ship one.**
+
+### The artifact, and the one file nobody would predict
+
+`pnpm build:runner-standalone` writes `dist/runner-standalone/`: an entry point,
+the runner bundle, the frozen contracts, a `package.json` and a README. Started
+with `node start.mjs`. Nothing else — no wrapper script, no service unit, no
+installer.
+
+The contracts directory is the part worth naming. `lib/contracts.ts` finds the
+schemas by walking up from its own module location, which resolves to the
+repository root in a development tree and to the resource directory in a
+package. On a host there is nothing above the artifact, so the schemas have to
+be **inside** it, and an artifact that omitted them would not fail at build time
+or at start time — it would fail the first time an agent was asked to run. That
+is why `tests/runner-standalone.test.ts` copies the artifact out of this
+repository before starting it: run in place, a missing `contracts/` is silently
+satisfied by the repository above, and the test would prove nothing.
+
+### Why the host supplies Node, and why that is a real choice rather than the lazy one
+
+The lazy reading is that the runner is "plain Node already", so there is nothing
+to decide. That is true about the *language* and false about the *runtime*.
+`runner/store.ts` opens its database with `DatabaseSync` from `node:sqlite` —
+standard library rather than a native driver, which is why the runner has no
+compiled addon to rebuild against each Electron ABI and is a trade this project
+should keep making. What it costs is a version floor. `node:sqlite` did not
+exist before Node 22.5 and spent its first releases behind
+`--experimental-sqlite`, so a host with an older Node fails deep inside module
+evaluation with a stack trace naming files its operator has never seen.
+
+The alternative was shipping a runtime, and it fails on ADR 0006's own terms
+rather than on size. Shipping Electron to a headless VPS means shipping a
+desktop GUI stack to run a process that draws nothing. Shipping a Node tarball
+per host architecture means **DASH owning a runtime it does not version, does not
+patch and cannot see** — on a machine the user pays for and is not watching,
+which is the exact phrase this ADR uses to reject option 2. A security release
+in a runtime DASH placed there and never updates is a worse arrangement than one
+the host's own package manager owns.
+
+So the host supplies it, and the artifact **probes and refuses** rather than
+discovering the problem later. `runner/host-runtime.ts` checks the major version
+against a floor and then actually resolves `node:sqlite`, because a version
+comparison alone would be this repository carrying a changelog fact it cannot
+verify on the machine it is refusing. The shape is `prepareEndpoint`'s and the
+argument is this ADR's own, made above about the `ssh` binary: probe for what the
+host must have and say so plainly. An unsuitable host exits **78** (`EX_CONFIG`),
+which a deploy verb can branch on without parsing English out of a log; the
+runner's own failures still exit 1.
+
+The floor is **Node 24**, and it is a support claim rather than the earliest
+version that might work. 22.5 is where the module appeared and is deliberately
+not the number: a floor admitting a release where the module needs a
+command-line flag would make the documented start command wrong on a host that
+satisfies the floor.
+
+### The host's data directory is hardened, and that is new rather than inherited
+
+On Windows the runner's data directory sits under a user profile whose ACL
+already excludes other principals. A VPS home directory is ordinarily
+world-readable, and this directory holds the channel credential, the database and
+any file a person handed to an agent. So the entry point creates it and applies
+`hardenOwnerOnly`, which is `runner/channel-secret.ts`'s existing proven-ACL
+discipline pointed at a directory, and **refuses to start if it cannot prove
+it** — the same rule, for the same reason, one machine over.
+
+### A correction this forced, and it was load-bearing
+
+`runner_build` is what DASH compares before adopting a runner. The algorithm
+hashed `path.relative` output and raw file bytes, both platform-dependent, which
+nothing had noticed because only one machine ever computed it. A standalone
+artifact built on Linux beside a shell built on Windows, from the identical
+commit, would have reported **different** identities — so "the host is running
+the build this DASH shipped" would have been false in the only situation anybody
+would ask it. `scripts/runner-build-id.mjs` is now the one implementation, and it
+folds path separators to `/` and CRLF to LF. Every input is TypeScript or JSON,
+so there is no binary to corrupt.
+
+### What this does not decide, still
+
+**Restart-on-boot remains undecided**, and the artifact deliberately ships no
+service unit. `runner/README.md` item 3 records that there is no restart policy
+anywhere in DASH on purpose, and a systemd file chosen in passing here would be
+DASH making a supervision claim about a machine it cannot see. **Retention on
+the host remains undecided**, and item 4 still says nothing prunes anything.
+
+**And nothing here is proven on a host.** The artifact starting under a plain
+Node, on a directory tree containing nothing but itself, serving a task over its
+own socket and stopping through the authenticated route, is proven in CI on
+every push. `ssh`, the deploy verbs and somebody's actual VPS are not, and under
+ADR 0004 they never can be by a blocking gate. MAR-489 owns that proof and it is
+attended and dated, permanently.

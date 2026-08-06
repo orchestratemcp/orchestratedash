@@ -21,45 +21,33 @@
  */
 
 import { build } from "esbuild";
-import { createHash } from "node:crypto";
 import {
   copyFileSync,
   cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
-  readdirSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { computeRunnerBuildId } from "./runner-build-id.mjs";
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = path.join(repoRoot, "dist", "electron");
 const rootPackage = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"));
 
-function sourceFiles(directory) {
-  return readdirSync(directory)
-    .flatMap((name) => {
-      const file = path.join(directory, name);
-      return statSync(file).isDirectory() ? sourceFiles(file) : [file];
-    })
-    .filter((file) => /\.(?:ts|json)$/.test(file))
-    .sort();
-}
-
-/** Exact identity of the runner bundle's source and contract inputs. */
-const runnerBuildHash = createHash("sha256");
-runnerBuildHash.update(String(rootPackage.version));
-for (const directory of ["runner", "lib", "contracts"]) {
-  for (const file of sourceFiles(path.join(repoRoot, directory))) {
-    runnerBuildHash.update(path.relative(repoRoot, file));
-    runnerBuildHash.update(readFileSync(file));
-  }
-}
-const runnerBuildId = runnerBuildHash.digest("hex").slice(0, 20);
+/**
+ * Exact identity of the runner bundle's source and contract inputs.
+ *
+ * Moved to `scripts/runner-build-id.mjs` by MAR-497, because the standalone
+ * host artifact must compute the *same* string from the same tree — and it is
+ * built on a different platform, which is what surfaced the two normalisations
+ * that module now applies.
+ */
+const runnerBuildId = computeRunnerBuildId(repoRoot, rootPackage.version);
 
 /**
  * The two Agent Kit files "Try a sample agent" needs (MAR-423).

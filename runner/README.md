@@ -9,6 +9,8 @@ The process that actually holds a running agent.
 | File | What it is |
 | --- | --- |
 | `main.ts` | Entry point. Config from the environment, endpoint, signals. Wiring only. |
+| `standalone.ts` | The *host's* entry point (MAR-497). Preflight, data directory, then `main.ts`. |
+| `host-runtime.ts` | What a host must provide before any of this can start. Pure. |
 | `endpoint.ts` | Where it listens: Unix socket or named pipe. Binding, stale recovery, modes. |
 | `channel-secret.ts` | The channel credential and the owner-only ACL that protects it. |
 | `server.ts` | The HTTP surface: the v0 profile plus `/lifecycle` and `/health`. |
@@ -260,6 +262,46 @@ route existed is left alone and requires one OS restart; DASH never maps a
 The endpoint path is not a secret: a Windows pipe name is enumerable by any
 local process anyway, and its value is that it could not be guessed
 *beforehand*.
+
+### Running it on a host DASH was never installed on (MAR-497)
+
+```sh
+pnpm build:runner-standalone      # writes dist/runner-standalone/
+node dist/runner-standalone/start.mjs
+```
+
+That directory is the whole artifact: `start.mjs`, `runner.mjs`, `contracts/`, a
+`package.json` and a README for whoever unpacks it on the host. ADR 0007
+amendment 1 is the decision; three things are worth knowing here.
+
+**The host supplies Node, and the artifact refuses rather than crashing.** The
+runner is plain Node in the sense that it needs no Electron, and *not* in the
+sense that any Node will do: `store.ts` uses `node:sqlite`, which is standard
+library and therefore carries a version floor rather than a package to install.
+The floor is Node 24. `host-runtime.ts` checks the version and then actually
+resolves the module, and an unsuitable host gets a sentence plus exit code **78**
+(`EX_CONFIG`) instead of a stack trace from inside SQLite. A runner that started
+and then failed still exits 1; the two codes mean different things to whoever is
+looking at them.
+
+**`contracts/` is in the artifact because the search would otherwise find the
+repository.** `lib/contracts.ts` walks up from its own module location, so an
+artifact carrying no schemas at all works perfectly under this repository and
+fails on a host at the first manifest. `tests/runner-standalone.test.ts` copies
+the artifact somewhere with nothing above it before starting it, which is the
+only arrangement in which that difference is visible.
+
+**The data directory is created and hardened here, not inherited.** On Windows
+it sits under a user profile whose ACL already excludes other principals; a VPS
+home directory does not. `standalone.ts` applies the same `hardenOwnerOnly` that
+protects `runner.key` to the directory holding the database, the credential and
+any file a person handed to an agent — and refuses to start if it cannot prove
+the permissions. Default `~/.orchestratedash/runner`; `DASH_RUNNER_DATA_DIR`
+wins when it is set.
+
+Nothing about this opens a port, ships a service unit, or restarts anything.
+Item 3 below is unchanged and deliberately so, and nothing in this section is
+proven against a real host — see ADR 0004.
 
 A crash leaves nothing wedged. A named pipe dies with the process holding it; a
 Unix socket can outlive one, so `prepareEndpoint` probes it first and unlinks it
