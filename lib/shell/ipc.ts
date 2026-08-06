@@ -177,6 +177,35 @@ export const COMMANDS = {
     irreversible: false,
   },
 
+  /*
+   * MAR-434. Hand one of this agent's outputs back to the person who owns it.
+   *
+   * The route is `GET /artifacts/{id}/download` on the runner, which MAR-434
+   * built and proof `9f` exercises against a real registered artifact. Nothing
+   * about the contract is new here; what is new is that a page can reach it.
+   *
+   * **No path crosses this boundary in either direction.** The renderer names an
+   * artifact by its opaque id, and main asks the *user* where to put the bytes
+   * through the operating system's own save dialog — so the destination is
+   * chosen in a window DASH does not draw, and the renderer neither supplies a
+   * path nor learns one. That is the same discipline `runner/workspace.ts` keeps
+   * when it refuses to return `stored_path`, extended to the surface that
+   * finally calls it: the runner is still the only process that resolves an
+   * opaque id to a location.
+   *
+   * `mutates` is false. This writes a file, and it writes it where the user just
+   * pointed, from bytes DASH already holds — it changes nothing about the agent,
+   * the store or the world the agent acts on, which is what this flag is for.
+   */
+  "workspace.download": {
+    effect:
+      "Save a copy of one output this agent produced, to a folder the user picks. Changes nothing about the agent.",
+    payload_keys: ["agent_id", "artifact_id"],
+    required_keys: ["agent_id", "artifact_id"],
+    mutates: false,
+    irreversible: false,
+  },
+
   // MAR-383. Three commands that name a connection and carry no credential.
   //
   // The secret is deliberately absent from every payload below, and there is no
@@ -368,6 +397,31 @@ export function isShellUiCommandName(value: CommandName): value is ShellUiComman
 }
 
 /**
+ * The task-workspace commands (MAR-434).
+ *
+ * A fifth family, for the reason the second, third and fourth exist: this is not
+ * an Agent DOM verb, not runner lifecycle, not a credential and not chrome. It
+ * addresses the runner's *task workspace* — the files a run consumed and
+ * produced — over routes the runner already serves and proof `9` already
+ * exercises.
+ *
+ * One member so far. `workspace.download` is the half of MAR-434's acceptance
+ * criterion that had a proven route and no way to reach it from a page; the
+ * input-selection commands belong in this family when they are built, which is
+ * the other reason it is a family rather than a stray entry.
+ */
+export const WORKSPACE_ACTIONS = {
+  "workspace.download": "download",
+} as const;
+
+export type WorkspaceCommandName = keyof typeof WORKSPACE_ACTIONS;
+export type WorkspaceAction = (typeof WORKSPACE_ACTIONS)[WorkspaceCommandName];
+
+export function isWorkspaceCommandName(value: CommandName): value is WorkspaceCommandName {
+  return Object.hasOwn(WORKSPACE_ACTIONS, value);
+}
+
+/**
  * Every command is local, an Agent DOM command, or runner lifecycle.
  *
  * This is a compile-time assertion, not a runtime one: adding an entry to
@@ -381,6 +435,7 @@ type UnroutedCommand = Exclude<
   | RunnerCommandName
   | ConnectionCommandName
   | ShellUiCommandName
+  | WorkspaceCommandName
   | "shell.ping"
 >;
 const _allCommandsAreRouted: UnroutedCommand extends never ? true : never = true;
@@ -606,7 +661,8 @@ export function executeCommand(review: CommandReview): CommandResult {
     isAgentCommandName(review.command) ||
     isRunnerCommandName(review.command) ||
     isConnectionCommandName(review.command) ||
-    isShellUiCommandName(review.command)
+    isShellUiCommandName(review.command) ||
+    isWorkspaceCommandName(review.command)
   ) {
     // Not a denial and not a result: a caller that reached here bypassed the
     // trusted side entirely. Throwing is the only honest answer — returning a
@@ -701,6 +757,22 @@ export interface DispatchContext {
    */
   showApplicationMenu(at: { x: number; y: number } | undefined): void;
   /**
+   * Save one of an agent's outputs where the user asks (MAR-434).
+   *
+   * Injected like the others, and this one has two reasons rather than one: the
+   * implementation reaches the runner over its socket *and* raises a native save
+   * dialog, and neither is available to a sandboxed preload.
+   *
+   * The result carries a sentence and nothing else — no path, no bytes, no
+   * digest. A renderer that learned where the file went would be a renderer that
+   * could print it, and the whole point of the workspace is that the runner owns
+   * the mapping from an opaque id to a place on disk.
+   */
+  workspaceAction(
+    action: WorkspaceAction,
+    target: { agent_id: string; artifact_id: string },
+  ): Promise<{ ok: boolean; detail: string }>;
+  /**
    * Where the IPC-level audit record goes.
    *
    * Injected rather than written to `console` here for the same reason as
@@ -784,6 +856,22 @@ export async function dispatchCommand(
         : undefined;
     context.showApplicationMenu(at);
     return { ok: true, request_id: review.audit.request_id };
+  }
+
+  if (isWorkspaceCommandName(review.command)) {
+    // Required keys guarantee both are non-empty strings. Neither is a path and
+    // neither can become one: main asks the user where to save through the
+    // operating system's own dialog, and the runner is the only process that
+    // resolves the artifact id to a location on disk.
+    const result = await context.workspaceAction(WORKSPACE_ACTIONS[review.command], {
+      agent_id: review.payload["agent_id"] as string,
+      artifact_id: review.payload["artifact_id"] as string,
+    });
+    return {
+      ok: result.ok,
+      request_id: review.audit.request_id,
+      detail: result.detail,
+    };
   }
 
   if (isRunnerCommandName(review.command)) {
