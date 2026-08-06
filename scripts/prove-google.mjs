@@ -36,6 +36,7 @@
 import { build } from "esbuild";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -100,14 +101,38 @@ await build({
   define: { __DASH_RUNNER_BUILD_ID__: JSON.stringify("attended-google-proof") },
 });
 
-const electronBinary = path.join(
-  repoRoot,
-  "node_modules",
-  ".bin",
-  process.platform === "win32" ? "electron.cmd" : "electron",
-);
-if (!existsSync(electronBinary)) {
-  console.error("[prove-google] no electron binary in node_modules — run `pnpm install` first.");
+/*
+ * The real executable, resolved through the `electron` package's own export
+ * rather than through the `node_modules/.bin` shim.
+ *
+ * On Windows that shim is `electron.cmd`, and since the fix for CVE-2024-27980
+ * Node refuses to spawn a `.cmd` or `.bat` without `shell: true`: `spawnSync`
+ * comes straight back with `EINVAL` having started nothing. Paired with the
+ * unchecked `result.error` below — now checked — the failure printed *nothing*.
+ * The banner above, the shell prompt back, exit 0, and an operator with every
+ * reason to believe Google had been asked something.
+ *
+ * `scripts/verify-shell.mjs` already avoids both halves of this: it spawns
+ * `process.execPath` rather than a shim, and it reports `result.error` before
+ * trusting `result.status`. This now matches its discipline.
+ *
+ * Found by running it. An unattended session validated everything about this
+ * harness that could be validated without a consent screen — the typecheck, the
+ * bundle, `node --check` on the generated agent — and the launch is precisely
+ * the step none of that reaches. A runbook is not a run.
+ */
+let electronBinary;
+try {
+  electronBinary = createRequire(import.meta.url)("electron");
+} catch {
+  console.error("[prove-google] no electron package in node_modules — run `pnpm install` first.");
+  process.exit(2);
+}
+if (typeof electronBinary !== "string" || !existsSync(electronBinary)) {
+  console.error(
+    `[prove-google] the electron package resolved to ${String(electronBinary)}, which is not an\n` +
+      "executable on this machine — run `pnpm install` first.",
+  );
   process.exit(2);
 }
 
@@ -131,5 +156,16 @@ const result = spawnSync(electronBinary, [path.join(outDir, "main.mjs")], {
     DASH_BROKER_PROOF_ORIGIN: undefined,
   },
 });
+
+/*
+ * Reported before `status` is trusted, for the reason this file's own launch bug
+ * demonstrated: a `spawnSync` that never started anything returns `status: null`
+ * and an `error`, and `status ?? 1` turns that into a bare exit code carrying no
+ * account of itself. The sibling `scripts/verify-shell.mjs` has always done this.
+ */
+if (result.error !== undefined) {
+  console.error(`[prove-google] could not launch the proof harness: ${result.error.message}`);
+  process.exit(1);
+}
 
 process.exit(result.status ?? 1);
