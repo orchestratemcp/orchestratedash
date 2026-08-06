@@ -127,44 +127,14 @@ function ConnectionRow({
   }
 
   return (
-    <tr>
-      <td>
-        <strong>{row.service}</strong>
-        {/* The user asked for a checklist, not an inventory: why it is needed
-            comes before what it is called. */}
-        <div className="wrap muted">{row.purpose}</div>
-        {/* The same three-part shape `ViewFailed` uses, and for the reason it
-            states: a surface that shows two of headline/meaning/next action
-            always drops the third, and the third is the one that helps. */}
-        {outcome !== null ? (
-          <div
-            className={outcome.ok ? "notice notice-ok" : "notice notice-err"}
-            role={outcome.ok ? undefined : "alert"}
-          >
-            {outcome.recovery !== undefined ? (
-              <>
-                <p>
-                  <strong>{outcome.recovery.headline}</strong>
-                </p>
-                <p>{outcome.recovery.meaning}</p>
-                <p>{outcome.recovery.next_action}</p>
-              </>
-            ) : (
-              <p>{outcome.detail}</p>
-            )}
-          </div>
-        ) : null}
-      </td>
-      <td className="wrap">
-        <ul className="capability-list">
-          {row.capabilities.map((capability) => (
-            <li key={capability.id}>
-              {capability.label} <span className="muted">({capability.access})</span>
-            </li>
-          ))}
-        </ul>
-      </td>
-      <td>
+    <article className="row-card">
+      <div className="section-heading">
+        <div>
+          <h3>{row.service}</h3>
+          {/* The user asked for a checklist, not an inventory: why it is needed
+              comes before what it is called. */}
+          <p className="wrap muted">{row.purpose}</p>
+        </div>
         <div className="chips">
           <SourceChip row={row} />
           {row.ownership_confirmed ? null : (
@@ -185,80 +155,110 @@ function ConnectionRow({
             <span className="chip chip-muted">needs a secret you enter</span>
           ) : null}
         </div>
+      </div>
 
-        {actionable ? (
-          <div className="button-row">
-            <button
-              type="button"
-              className={connected ? "button-secondary" : "button-primary"}
-              disabled={busy !== null}
-              onClick={() => void run("connect")}
-            >
-              {/* A sign-in and a typed key are different acts, and the button
-                  should say which one is about to happen — "Connect" on a row
-                  that opens a browser gives no warning that the user is about
-                  to leave DASH (MAR-446). */}
-              {busy === "connect"
-                ? "Waiting…"
-                : row.credential_kind === "oauth"
-                  ? connected
-                    ? "Sign in again"
-                    : "Sign in"
-                  : connected
-                    ? "Replace"
-                    : "Connect"}
-            </button>
-            {connected ? (
-              <>
-                <button
-                  type="button"
-                  className="button-secondary"
-                  disabled={busy !== null}
-                  onClick={() => void run("test")}
-                >
-                  {busy === "test" ? "Checking…" : "Check"}
-                </button>
-                <button
-                  type="button"
-                  className="button-danger"
-                  disabled={busy !== null}
-                  onClick={() => void run("disconnect")}
-                >
-                  {busy === "disconnect" ? "Removing…" : "Disconnect"}
-                </button>
-              </>
-            ) : null}
-          </div>
-        ) : null}
-
-        {/* Said once, on the row it is true of, rather than as a footnote
-            nobody reads. An OAuth row and an agent-managed row both have no
-            button, and they have no button for different reasons. */}
-        {row.dash_can_hold && row.delivered_to_agent ? null : row.dash_can_hold ? (
-          row.credential_kind === "oauth" ? (
-            <p className="muted wrap">
-              DASH holds this sign-in and keeps it current. The agent&rsquo;s
-              manifest does not say where to pass it, so the agent reaches it
-              another way.
-            </p>
+      {/* The same three-part shape `ViewFailed` uses, and for the reason it
+          states: a surface that shows two of headline/meaning/next action
+          always drops the third, and the third is the one that helps. */}
+      {outcome !== null ? (
+        <div
+          className={outcome.ok ? "notice notice-ok" : "notice notice-err"}
+          role={outcome.ok ? undefined : "alert"}
+        >
+          {outcome.recovery !== undefined ? (
+            <>
+              <p>
+                <strong>{outcome.recovery.headline}</strong>
+              </p>
+              <p>{outcome.recovery.meaning}</p>
+              <p>{outcome.recovery.next_action}</p>
+            </>
           ) : (
-            <p className="muted wrap">
-              DASH keeps this for you. The agent&rsquo;s manifest does not say where
-              to pass it, so the agent must fetch it another way.
-            </p>
-          )
-        ) : row.ownership === "dash" && row.source === "declared_connection" ? (
-          <p className="muted wrap">
-            {row.service} signs in through its own provider. DASH cannot do that
-            for you yet, so the agent handles this sign-in.
-          </p>
-        ) : null}
+            <p>{outcome.detail}</p>
+          )}
+        </div>
+      ) : null}
 
-        {row.broker === null ? null : (
-          <PermissionCard broker={row.broker} service={row.service} connected={connected} />
-        )}
-      </td>
-    </tr>
+      <ul className="capability-list">
+        {row.capabilities.map((capability) => (
+          <li key={capability.id}>
+            {capability.label} <span className="muted">({capability.access})</span>
+          </li>
+        ))}
+      </ul>
+
+      {actionable ? (
+        <div className="button-row">
+          <button
+            type="button"
+            className={connected ? "button-secondary" : "button-primary"}
+            disabled={busy !== null}
+            onClick={() => void run("connect")}
+          >
+            {/* A sign-in and a typed key are different acts, and the button
+                should say which one is about to happen — "Connect" on a row
+                that opens a browser gives no warning that the user is about
+                to leave DASH (MAR-446). */}
+            {busy === "connect"
+              ? "Waiting…"
+              : row.credential_kind === "oauth"
+                ? connected
+                  ? "Sign in again"
+                  : "Sign in"
+                : connected
+                  ? "Replace"
+                  : "Connect"}
+          </button>
+          {connected ? (
+            <>
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={busy !== null}
+                onClick={() => void run("test")}
+              >
+                {busy === "test" ? "Checking…" : "Check"}
+              </button>
+              <button
+                type="button"
+                className="button-danger"
+                disabled={busy !== null}
+                onClick={() => void run("disconnect")}
+              >
+                {busy === "disconnect" ? "Removing…" : "Disconnect"}
+              </button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Said once, on the row it is true of, rather than as a footnote
+          nobody reads. An OAuth row and an agent-managed row both have no
+          button, and they have no button for different reasons. */}
+      {row.dash_can_hold && row.delivered_to_agent ? null : row.dash_can_hold ? (
+        row.credential_kind === "oauth" ? (
+          <p className="muted wrap">
+            DASH holds this sign-in and keeps it current. The agent&rsquo;s
+            manifest does not say where to pass it, so the agent reaches it
+            another way.
+          </p>
+        ) : (
+          <p className="muted wrap">
+            DASH keeps this for you. The agent&rsquo;s manifest does not say where
+            to pass it, so the agent must fetch it another way.
+          </p>
+        )
+      ) : row.ownership === "dash" && row.source === "declared_connection" ? (
+        <p className="muted wrap">
+          {row.service} signs in through its own provider. DASH cannot do that
+          for you yet, so the agent handles this sign-in.
+        </p>
+      ) : null}
+
+      {row.broker === null ? null : (
+        <PermissionCard broker={row.broker} service={row.service} connected={connected} />
+      )}
+    </article>
   );
 }
 
@@ -492,27 +492,13 @@ export function ConnectionChecklist({
           <section key={section.ownership} className="connection-group">
             <h3>{section.heading}</h3>
             <p className="lede">{section.lede}</p>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Connection</th>
-                    <th>What the agent will do with it</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sectionRows.map((row) => (
-                    <ConnectionRow
-                      key={row.connection_id}
-                      row={row}
-                      act={act}
-                      canAct={canAct}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ol className="row-list">
+              {sectionRows.map((row) => (
+                <li key={row.connection_id}>
+                  <ConnectionRow row={row} act={act} canAct={canAct} />
+                </li>
+              ))}
+            </ol>
           </section>
         );
       })}

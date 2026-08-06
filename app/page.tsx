@@ -69,46 +69,54 @@ export default function AgentsPage(): ReactNode {
               </div>
             )
           ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Agent</th>
-                <th>Goal</th>
-                <th>Where it came from</th>
-                <th>Plan source</th>
-                <th>Build target</th>
-                <th>Planned steps</th>
-                <th>Clearance</th>
-                <th>Runs</th>
-                <th>Last {ROLLUP_RUN_COUNT} runs</th>
-              </tr>
-            </thead>
-            <tbody>
-              {state.data.agents.map((agent) => (
-                <tr key={agent.name}>
-                  <td>
+        <ol className="row-list">
+          {state.data.agents.map((agent) => (
+            <li key={agent.name}>
+              <article className="row-card">
+                <div className="section-heading">
+                  <h3>
                     <Link className="plain" href={agentWorkspaceHref(agent.name)}>
                       <code>{agent.name}</code>
                     </Link>
-                  </td>
-                  <td className="wrap">{agent.goal}</td>
-                  <td>
-                    <AgentOrigin origin={agent.origin} />
-                  </td>
-                  <td>{agent.plan_source}</td>
-                  <td>{agent.build_target}</td>
-                  <td>{agent.planned_steps}</td>
-                  <td>{agent.automation_clearance}</td>
-                  <td>{agent.run_count}</td>
-                  <td>
+                  </h3>
+                  <div>
+                    <p className="eyebrow">Last {ROLLUP_RUN_COUNT} runs</p>
                     <AgentComplianceChips compliance={agent.compliance} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </div>
+                </div>
+                <p className="muted wrap">{agent.goal}</p>
+                <dl className="facts">
+                  <div>
+                    <dt>Where it came from</dt>
+                    <dd>
+                      <AgentOrigin origin={agent.origin} />
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Plan source</dt>
+                    <dd>{agent.plan_source}</dd>
+                  </div>
+                  <div>
+                    <dt>Build target</dt>
+                    <dd>{agent.build_target}</dd>
+                  </div>
+                  <div>
+                    <dt>Planned steps</dt>
+                    <dd>{agent.planned_steps}</dd>
+                  </div>
+                  <div>
+                    <dt>Clearance</dt>
+                    <dd>{agent.automation_clearance}</dd>
+                  </div>
+                  <div>
+                    <dt>Runs</dt>
+                    <dd>{agent.run_count}</dd>
+                  </div>
+                </dl>
+              </article>
+            </li>
+          ))}
+        </ol>
           )}
         </>
       )}
