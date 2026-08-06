@@ -344,43 +344,39 @@ h1 {
   margin: 0 0 1.5rem;
 }
 
-.table-wrap {
-  overflow-x: auto;
+/*
+ * Every list of records is a card list, never a table (MAR-491).
+ *
+ * A table's columns are a fixed width DASH does not control the content of —
+ * an agent's own name, a correlation id, a plan's detail sentence — and at
+ * 375px wide that arithmetic always loses. The measured cost was a page
+ * 1425px wide scrolling inside a 375px window, on the fleet table alone.
+ * Cards reflow instead: `.facts` already collapses to one column under
+ * 760px, so nothing here needs its own breakpoint.
+ *
+ * `.row-list` and `.row-card` are the table's replacement and are folded into
+ * the same rules `.card-grid`/`.work-list` and `.summary-card`/`.work-card`
+ * already declare, rather than duplicated, so a change to card padding or
+ * list spacing cannot update three of the four places it applies.
+ */
+.work-list,
+.card-grid,
+.row-list {
+  display: grid;
+  gap: var(--density-gap);
+}
+
+.card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+}
+
+.work-card,
+.summary-card,
+.row-card {
+  padding: var(--density-card-p);
   border: 1px solid var(--line);
-  border-radius: 8px;
-}
-
-table {
-  border-collapse: collapse;
-  width: 100%;
-  min-width: 44rem;
-}
-
-th,
-td {
-  text-align: left;
-  /* MAR-420. The one place density is most worth having: a fleet of thirty
-     agents is a scroll in comfortable and a screen in compact. */
-  padding: var(--density-row-y) var(--density-row-x);
-  border-bottom: 1px solid var(--line);
-  white-space: nowrap;
-}
-
-th {
+  border-radius: 9px;
   background: var(--panel);
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-}
-
-tbody tr:last-child td {
-  border-bottom: none;
-}
-
-td.wrap {
-  white-space: normal;
-  min-width: 20rem;
 }
 
 code {
@@ -629,7 +625,8 @@ a.plain:hover {
 .workspace-overview h2,
 .work-card h2,
 .work-card h3,
-.summary-card h3 {
+.summary-card h3,
+.row-card h3 {
   margin: 0 0 0.45rem;
 }
 

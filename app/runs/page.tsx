@@ -50,52 +50,58 @@ export default function RunsPage(): ReactNode {
           </p>
         </div>
       ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Run</th>
-                <th>Agent</th>
-                <th>Plan-vs-actual</th>
-                <th>Status</th>
-                <th>Events</th>
-                <th>Started</th>
-                <th>Last event</th>
-                <th>Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {state.data.runs.map((run) => (
-                <tr key={`${run.agent} ${run.run_id}`}>
-                  <td>
-                    <a className="plain" href={runDetailHref(run.agent, run.run_id)}>
-                      <code>{run.run_id}</code>
-                    </a>
-                  </td>
-                  <td>
-                    <code>{run.agent}</code>
-                  </td>
-                  <td>
+        <ol className="row-list">
+          {state.data.runs.map((run) => (
+            <li key={`${run.agent} ${run.run_id}`}>
+              <article className="row-card">
+                <div className="section-heading">
+                  <div>
+                    <p className="eyebrow">
+                      <code>{run.agent}</code>
+                    </p>
+                    <h3>
+                      <a className="plain" href={runDetailHref(run.agent, run.run_id)}>
+                        <code>{run.run_id}</code>
+                      </a>
+                    </h3>
+                  </div>
+                  <div className="chips">
                     <RunVerdictChips analysis={run.analysis} />
-                  </td>
-                  <td className={`status-${run.status}`}>{run.status}</td>
-                  <td>{run.event_count}</td>
-                  <td>{run.started_at}</td>
-                  <td>{run.last_event_at}</td>
-                  <td>
-                    {run.has_sequence_gap ? (
-                      <span className="flag">sequence gap</span>
-                    ) : null}
-                    {run.has_sequence_gap && !run.known_agent ? " · " : null}
-                    {run.known_agent ? null : (
-                      <span className="flag">manifest not imported</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    <span className={`status-${run.status}`}>{run.status}</span>
+                  </div>
+                </div>
+                <dl className="facts">
+                  <div>
+                    <dt>Events</dt>
+                    <dd>{run.event_count}</dd>
+                  </div>
+                  <div>
+                    <dt>Started</dt>
+                    <dd>{run.started_at}</dd>
+                  </div>
+                  <div>
+                    <dt>Last event</dt>
+                    <dd>{run.last_event_at}</dd>
+                  </div>
+                  {run.has_sequence_gap || !run.known_agent ? (
+                    <div>
+                      <dt>Notes</dt>
+                      <dd>
+                        {run.has_sequence_gap ? (
+                          <span className="flag">sequence gap</span>
+                        ) : null}
+                        {run.has_sequence_gap && !run.known_agent ? " · " : null}
+                        {run.known_agent ? null : (
+                          <span className="flag">manifest not imported</span>
+                        )}
+                      </dd>
+                    </div>
+                  ) : null}
+                </dl>
+              </article>
+            </li>
+          ))}
+        </ol>
       )}
     </>
   );
