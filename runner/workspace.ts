@@ -509,6 +509,10 @@ export async function admitInput(
   try {
     copied = await copyAndHash(selection.path, destination, limits.max_file_bytes);
   } catch (error: unknown) {
+    // The refusal detail never names the path or the error; this line is for
+    // the runner's own log, where the code is the difference between a source
+    // a person can fix and a workspace defect only a release can.
+    console.error("[workspace] input copy failed:", describeCaught(error));
     rmSync(destination, { force: true });
     return {
       ok: false,
@@ -751,6 +755,9 @@ export async function registerArtifact(
   try {
     copied = await copyAndHash(resolved.path, stored, limit);
   } catch (error: unknown) {
+    // Same rule as the input side: the code goes to the runner's log, never
+    // into the refusal a person reads.
+    console.error("[workspace] output copy failed:", describeCaught(error));
     rmSync(stored, { force: true });
     return {
       ok: false,
@@ -1111,6 +1118,31 @@ export function verifyArtifact(record: WorkspaceArtifact): { ok: boolean; sha256
 }
 
 /**
+ * Open one artifact's stored bytes for a download, or say why not.
+ *
+ * A stream crosses this boundary and `stored_path` does not, for the reason
+ * `toView` in `runner/task-api.ts` already gives: a path in a returned value is
+ * a path a caller can log, and this one is reached over the same authenticated
+ * channel as everything else in this file. `deleted` is refused explicitly
+ * rather than left to `createReadStream` to fail on — the record already knows
+ * the bytes are gone, and answering from that fact is a route that fails for a
+ * reason rather than an errno.
+ */
+export function openArtifactForDownload(
+  record: WorkspaceArtifact,
+): { ok: true; stream: ReturnType<typeof createReadStream> } | { ok: false; detail: string } {
+  if (record.retention === "deleted") {
+    return { ok: false, detail: "That output has been deleted." };
+  }
+  try {
+    statSync(record.stored_path);
+  } catch {
+    return { ok: false, detail: "That output's bytes could not be found on this computer." };
+  }
+  return { ok: true, stream: createReadStream(record.stored_path) };
+}
+
+/**
  * Delete one artifact's bytes, explicitly and reversibly in the record.
  *
  * The row stays and the bytes go. That is the issue's "deleting an artifact is
@@ -1155,6 +1187,19 @@ class OversizeError extends Error {}
  * after — the file could be a pipe, a growing log, or a deliberate attempt to
  * spend the runner's disk.
  */
+/**
+ * One line of log per caught filesystem error: the code and the syscall,
+ * never the path. Codes are diagnosis; paths in logs are the leak the rest of
+ * this module is written to avoid.
+ */
+function describeCaught(error: unknown): string {
+  if (error instanceof Error) {
+    const errno = error as NodeJS.ErrnoException;
+    return `${errno.code ?? error.name}${errno.syscall === undefined ? "" : ` (${errno.syscall})`}`;
+  }
+  return typeof error;
+}
+
 async function copyAndHash(
   source: string,
   destination: string,

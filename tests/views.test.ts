@@ -421,6 +421,41 @@ describe("what a run produced", () => {
     expect(view.analysis).not.toHaveProperty("grounding");
   });
 
+  it("carries a real availability state onto the run view's artifact cards (MAR-434)", async () => {
+    /*
+     * `lib/views/build.ts` used to call `buildArtifactCards` with no resolver at
+     * all, so every card read `available` no matter what the runner had
+     * observed. This drives the actual producer — `syncWorkspaceArtifacts`
+     * writing a `workspace_artifacts` row, `resolveArtifactAvailability`
+     * reading it back — through `runView`, rather than a stub resolver passed
+     * straight to `buildArtifactCards`. A stub would prove the view model can
+     * represent "moved"; it would not prove production ever asks.
+     */
+    const { ingestArtifacts, syncWorkspaceArtifacts } = await import("../lib/store");
+    seedRun();
+    expect(ingestArtifacts(artifact).accepted).toBe(1);
+    expect(
+      syncWorkspaceArtifacts({
+        artifact_id: "digest-1",
+        agent: "email-lead-to-crm",
+        run_id: "run-artifact-1",
+        task_id: "task-1",
+        sha256: "a".repeat(64),
+        registered_at: "2026-08-01T09:00:01.000Z",
+        availability: "moved",
+        availability_detail: "found in a sibling folder",
+      }).accepted,
+    ).toBe(1);
+
+    const view = runView("email-lead-to-crm", "run-artifact-1");
+    expect(view.found).toBe(true);
+    if (!view.found) return;
+
+    expect(view.artifact_cards).toHaveLength(1);
+    expect(view.artifact_cards[0]!.availability).toBe("moved");
+    expect(view.artifact_cards[0]!.recovery).not.toBeNull();
+  });
+
   it("gives a run that produced nothing an empty list and no verdict", async () => {
     seedRun();
     const view = runView("email-lead-to-crm", "run-artifact-1");

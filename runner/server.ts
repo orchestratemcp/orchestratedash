@@ -293,8 +293,9 @@ async function handle(
     return;
   }
 
-  // GET  /artifacts/{id}/verify   re-hash the stored bytes (MAR-434)
-  // POST /artifacts/{id}/delete   explicit, audited removal of the bytes
+  // GET  /artifacts/{id}/verify    re-hash the stored bytes (MAR-434)
+  // GET  /artifacts/{id}/download  the bytes themselves (MAR-434)
+  // POST /artifacts/{id}/delete    explicit, audited removal of the bytes
   //
   // Not under `/agents/{id}` even though an artifact has one, because an
   // artifact id is the thing a caller holds after a run has finished and
@@ -318,6 +319,34 @@ async function handle(
         return;
       }
       send(response, 200, { ok: verified.ok, sha256: verified.sha256, expected: verified.expected });
+      return;
+    }
+
+    // Reached by the same bearer token as every other route here, which is
+    // this route's whole authorization model: anything holding the channel
+    // token may read an output's bytes, exactly as it may already read the
+    // receipt describing them.
+    if (request.method === "GET" && segments[2] === "download") {
+      const downloaded = options.workspace.download(artifactId);
+      if (downloaded === null) {
+        send(response, 404, { ok: false, detail: "There is no such output." });
+        return;
+      }
+      if (!downloaded.ok) {
+        send(response, 404, { ok: false, detail: downloaded.detail });
+        return;
+      }
+      response.writeHead(200, {
+        "content-type": downloaded.media_type,
+        "content-length": String(downloaded.byte_size),
+        "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(downloaded.display_name)}`,
+        "x-artifact-sha256": downloaded.sha256,
+        "cache-control": "no-store",
+      });
+      downloaded.stream.on("error", () => {
+        response.destroy();
+      });
+      downloaded.stream.pipe(response);
       return;
     }
 
