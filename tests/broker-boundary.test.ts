@@ -394,7 +394,12 @@ describe("the capability card", () => {
         }),
     );
     expect(new Set(custodies).size).toBe(3);
-    expect(custodies[1]).toContain("does not withdraw");
+    expect(custodies[1]).toContain("does not withdraw the server's own access");
+    // MAR-483: the clause ADR 0006 found missing. `hosted_broker` can only
+    // ever describe a third party's broker — DASH will not operate one — so a
+    // local Disconnect no more withdraws that service's access than a remote
+    // server's, and the sentence must not reassure otherwise.
+    expect(custodies[2]).toContain("does not withdraw the service's own access");
   });
 
   it("says nothing about a consent screen for a connection that has none", () => {

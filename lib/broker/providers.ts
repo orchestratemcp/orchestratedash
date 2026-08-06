@@ -196,7 +196,12 @@ export function describeCustody(profile: BrokerProviderProfile): string {
     case "remote_mcp_server":
       return "A remote server holds the sign-in for this connection, not DASH. Disconnecting here stops DASH using it and does not withdraw the server's own access.";
     case "hosted_broker":
-      return "A hosted service holds the sign-in for this connection, not this computer. Disconnecting here stops DASH using it.";
+      // Under ADR 0006 this value can only ever describe a third party's
+      // hosted broker — DASH will not operate one — so the closing clause is
+      // exactly as true here as for a remote server, and its absence was the
+      // one custody description that under-stated, in the direction of
+      // reassurance (MAR-483).
+      return "A hosted service holds the sign-in for this connection, not this computer. Disconnecting here stops DASH using it and does not withdraw the service's own access.";
   }
 }
 
