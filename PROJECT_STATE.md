@@ -518,18 +518,40 @@ and nothing emits an event when antivirus takes it. So `GET /workspace-artifacts
 returns the whole current picture on each poll, capped at 500 with `truncated`
 reported rather than silently applied.
 
-Evidence: `pnpm state:check` valid with the 7 recorded drift warnings, `pnpm
-typecheck` clean, `pnpm test` 68 files / 1275 passed / 8 skipped / 0 failed,
-including 73 new cases across `tests/path-guard.test.ts`,
+**`pnpm verify` is green end to end on Windows at `3a630ee`**: `[state] valid`
+with the 7 recorded drift warnings, typecheck clean, 68 test files, 1275 tests
+passed and 8 skipped, and **70 installed-shell proofs with no failures**. 73 of
+those tests are new, across `tests/path-guard.test.ts`,
 `tests/task-workspace.test.ts`, `tests/workspace-availability.test.ts` and
 additions to `tests/runner-protocol.test.ts` and `tests/store-sqlite.test.ts`.
 
-**`pnpm verify:shell` was not run, so the acceptance criterion is not met.**
-MAR-434's acceptance names a clean installed-MSIX proof and this has none. Two
-Electron processes were live on this machine — the same two the design slice
-found, started 2026-08-04 and 2026-08-05 — AGENTS.md forbids force-killing them
-and DASH is single-instance by design. Same call MAR-441, MAR-421 and the design
-slice made in this situation.
+**70 is unchanged from master, and that is the honest reading of it.** This
+branch adds 73 unit tests and *no installed proof*, so what the green smoke
+establishes is that the workspace did not break the installed loop — not that
+the workspace works installed. The same distinction PROJECT_STATE drew when
+MAR-421 left the count at 67.
+
+One thing the run did observe, without a proof asserting it: the packaged shell
+created `workspaces/`, `artifacts/` and `quarantine/` under
+`%APPDATA%\orchestratedash` with owner-only ACLs applied and verified, at
+runner startup, on the real installed-style data directory. `openWorkspaceRoot`
+shells out to `icacls` three times on Windows and none of it hung or prompted.
+That is an observation about a directory listing, which is exactly the shape of
+evidence Wave 0's "artifact output" claim was corrected for overstating — so it
+is recorded as an observation and not as a proof.
+
+**MAR-434's acceptance criterion is therefore still not met**, and the missing
+piece is now small and specific: an installed proof covering select files →
+trigger → output → download, asserting that downloaded bytes and SHA-256 match
+the runner-registered artifact. That is the next session's work and it is the
+thing that would move this issue to `proven`.
+
+The smoke leaves its runner running on purpose — "closing DASH leaves agents
+running" is the point of it. An earlier attempt at this run *looked* like a hang
+and was not: the surviving runner holds the inherited stdout, so a caller that
+buffers the pipeline never sees EOF. Nothing was force-killed; the orphan was
+retired through the authenticated `/shutdown` route AGENTS.md prescribes, which
+worked first time.
 
 **What is not built, plainly.** Nothing renders any of this: file-backed
 artifacts have no artifact *kind*, because adding one to `RunArtifact` is a
