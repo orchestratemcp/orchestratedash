@@ -763,6 +763,86 @@ reading its own owner as a stranger on CI's RID-500 account, because `icacls
 as owner spellings only for that exact account. The full story is in
 `.orchestrate/state.json`'s MAR-434 entry and PR #48's root-cause comment.
 
+## The plane that must not be generalised, made structural (MAR-484)
+
+**Open on a PR, not merged.** ADR 0007's load-bearing paragraph was a finding
+about a file that did not exist. It exists now:
+`lib/agent-dom/runner-channel.ts`.
+
+The failure it guards against is not an argument somebody wins. It is the
+obvious, correct-looking refactor — generalise the drains to take a channel so a
+remote runner's telemetry can be pulled the same way — with `/broker/drain`
+coming along **because it was in the same loop**, in a commit whose message says
+"pull remote run evidence".
+
+**What makes it impossible comes before any type says so.** A broker-capable
+channel is built on `ipcFetch`, and `ipcFetch` dials a `socketPath`: no host, no
+name to resolve, no route to a network, and a URL on the reserved `.invalid` TLD
+so a leak into a real `fetch` fails closed. The types are that fact made
+checkable in an editor. `RunnerChannel<Route>` takes a **route** rather than a
+URL, because `${origin}/broker/drain` is a string types cannot see into; and
+`call` is a **property with a function type, never a method**, because
+TypeScript checks method parameters bivariantly even under `strictFunctionTypes`
+and the method spelling would have made the whole module decoration.
+
+**Two guards, watched failing, and they are not the same guard.** Widening the
+remote channel's route set turns the call-site `@ts-expect-error` into TS2578.
+Removing the capability brand alone turns **nothing** red — parameter
+contravariance already excludes the assignment. Removing both turns both
+assertions red. So the phantom `unique symbol` brand earns its one cast by
+surviving somebody deciding the two route sets should be the same. A third guard
+scans `lib/` and `electron/` for the route strings *in code*, with comments
+stripped, which catches a hand-rolled `fetch` that bypassed the channel.
+
+`electron/broker-host.ts` is the one production change, and it is what makes the
+property load-bearing rather than decorative. **`electron/agent-adapters.ts` is
+untouched, deliberately**: generalising its drains is MAR-488's work, and it is
+now safe to do — which was the entire point.
+
+**The dialer is `ipcFetch`'s move a second time, and it is not an HTTP parser.**
+`node:http`'s client takes a `createConnection` that may return any duplex
+stream, so the request line, header encoding, chunked transfer and every edge
+case around them are Node's — byte for byte the code that serves the local
+runner. What `lib/agent-dom/ssh-fetch.ts` contributes is a duplex over a child's
+two pipes and the no-op socket methods the HTTP client calls. `setTimeout` is a
+no-op *on purpose*: the deadline that governs this transport is
+`transport.ts`'s `AbortSignal`, and a second timer would give a remote channel a
+different timeout story from a local one.
+
+**The deploy plane's version of "never what to run."** `ssh` takes its options
+as argv, and argv has no quoting layer to get wrong — an address of
+`-oProxyCommand=…` is not an address, it is a flag. `lib/hosts.ts` refuses any
+component reaching argv that begins with `-`, as its own named problem rather
+than folded into "malformed". `sshArgv`'s absences matter as much as its
+presences: no `-L`, `-R` or `-D`, because option 2 was rejected for MAR-430's
+reason and the way that stays true is that the flag is never passed.
+
+**Custody, stated as an absence.** `electron/ssh-host.ts` has **no function that
+returns a private key**. It can create one with the machine's own `ssh-keygen`,
+protect it with `runner/channel-secret.ts`'s own `hardenOwnerOnly`, prove it
+again immediately before every use, and name the path `ssh` should read. DASH
+cannot leak what it never reads, and a test asserts that over the module's
+exports rather than trusting a header — which is where somebody would add a
+reader, because the deploy plane will one day want to "just check" the key. Only
+the public half is returned, because that is the one thing that should travel.
+
+Evidence: `pnpm typecheck` clean; 75 test files / 1400 passed / 8 skipped / 0
+failed, 53 of them new. The compile-time exclusion was watched failing in all
+three directions above.
+
+**The one production change is covered by the installed shell.**
+`pnpm verify:shell` on this branch is 64 passed / 8 failed, and **proof 8
+(8a–8f) is among the passes** — the real Electron shell driving the refactored
+broker loop end to end: 200 requests sent by the agent, 64 adjudicated, 136
+dropped, drained through `/broker/drain` and answered through
+`/broker/responses` over the typed channel. The 8 failures are the same
+store-damage set that fails on master's own tree in the same session.
+
+**Nothing here has reached a host.** No `ssh` runs in any test, no host record is
+persisted, and no surface connects one — that is MAR-498. What is proven is the
+dialer, the record's refusals, the command's shape and the key's custody. ADR
+0004 keeps the rest attended and dated, permanently.
+
 ## UX principle
 
 The home view answers three questions: what can I run, what is happening now, and what needs my decision? Connections are capabilities with scopes and receipts, not a wall of OAuth settings. Every run should make inputs, actions, outputs, gates, and failures inspectable.
