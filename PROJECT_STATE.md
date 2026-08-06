@@ -823,49 +823,6 @@ MAR-506, which also names the product gap it exposed: a person is told "The
 runner answered 500", by an application that has an entire recovery vocabulary
 for damage to its *own* store and none for the runner's.
 
-## What a run produced, as a thing you can keep (MAR-434, the Outputs half)
-
-**Open on PR [#52](https://github.com/orchestratemcp/orchestratedash/pull/52),
-not merged, and half of the workspace UI is deliberately unbuilt.**
-
-The agent workspace rendered `latest_digest` and nothing else — one artifact, on
-a page whose agent may well have written two. That is the same defect MAR-434
-corrected on the run detail page and did not correct here. `WorkspaceView` now
-carries `outputs`, built by the same `buildArtifactCards` and resolved by the
-same `resolveArtifactAvailability` production already passes on the run detail
-page; a second resolver is how two surfaces come to disagree about whether a
-person's file is still there. It is one run's outputs and not an archive, and
-each card links to the run.
-
-**`workspace.download` is a fifth command family and its payload is the
-design.** Two opaque ids, no path in either direction: main asks the *user*
-where to put the bytes through the operating system's own save dialog, so the
-renderer neither supplies a location nor learns one. That is
-`runner/workspace.ts`'s discipline about `stored_path` kept at the surface that
-finally calls the route proof `9f` proves. `tests/shell.test.ts` refuses a
-payload carrying `path`, `destination`, `source_path`, `stored_path` or
-`directory`.
-
-The button is governed by the four unavailable states rather than governing
-itself: a moved output's next action is not "download", because the file is
-still wherever it went. Where the window cannot act it is **absent** rather than
-disabled — a greyed-out control beside a file that exists reads as a claim about
-the file. "Save a copy", not "Download": the file is already on this computer.
-
-Evidence: `pnpm typecheck` clean, 74 test files / 1390 passed / 8 skipped / 0
-failed. Rendered in the real app on the developer path — the workspace for
-`ai-agent-news` draws both outputs with their roles, receipts, the no-send
-safeguard and the digest body, and draws no Save button, which is a browser tab
-correctly reporting that it cannot act. **No screenshot**: the session was
-unattended and the Browser pane composites no frames when it is not displayed,
-so the render tests take its place, which is the call the MAR-434 design slice
-made in the same situation.
-
-**What is not built is Inputs, and it is MAR-507.** Selecting local files
-against the manifest's declared roles needs three more members of the family
-this change opens; the runner has served all three routes since PR #46 and proof
-9 drives them. MAR-434 stays open on that half.
-
 ## UX principle
 
 The home view answers three questions: what can I run, what is happening now, and what needs my decision? Connections are capabilities with scopes and receipts, not a wall of OAuth settings. Every run should make inputs, actions, outputs, gates, and failures inspectable.
