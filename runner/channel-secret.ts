@@ -42,6 +42,16 @@
  * en-US and fail in Swedish, which is the worst possible failure mode for a
  * security check.
  *
+ * One wrinkle inside "SIDs throughout": SDDL has two spellings for some SIDs.
+ * `whoami` always answers raw (`S-1-5-21-…`), but the SDDL that `icacls /save`
+ * emits abbreviates well-known accounts — including the *machine's own*
+ * built-in Administrator (RID 500) and Guest (RID 501), which come back as
+ * `LA` and `LG` rather than raw. A comparison that only knows the raw
+ * spelling reads its own owner's grant as a stranger's there. GitHub-hosted
+ * Windows runners run jobs as a renamed RID-500 account, which is how
+ * MAR-434's proof 9 found this: the repair pass removed "foreign trustee LA"
+ * — the owner — and then proved owner-only on the lockout it had created.
+ *
  * `/inheritance:r` matters more than it looks. The DASH data directory inherits
  * its ACL from the user profile, and inherited grants are added by things
  * outside this app — the machine this was developed on had a local group
@@ -305,6 +315,7 @@ export function inspectAcl(sddl: string, sid: string, file = "the secret"): AclI
   }
 
   const [, flags = "", aces = ""] = dacl;
+  const ownerSpellings = ownerSidSpellings(sid);
   const foreign: string[] = [];
   let ownerHoldsFullControl = false;
   for (const ace of aces.matchAll(/\(([^)]*)\)/g)) {
@@ -324,8 +335,11 @@ export function inspectAcl(sddl: string, sid: string, file = "the secret"): AclI
         foreign: [],
       };
     }
-    if (type === "A" && (trustee === sid || SYSTEM_SIDS.has(trustee) || ADMIN_SIDS.has(trustee))) {
-      if (trustee === sid && grantsFullControl(rights)) {
+    if (
+      type === "A" &&
+      (ownerSpellings.has(trustee) || SYSTEM_SIDS.has(trustee) || ADMIN_SIDS.has(trustee))
+    ) {
+      if (ownerSpellings.has(trustee) && grantsFullControl(rights)) {
         ownerHoldsFullControl = true;
       }
       continue;
@@ -371,6 +385,26 @@ export function inspectAcl(sddl: string, sid: string, file = "the secret"): AclI
   }
 
   return { ok: true };
+}
+
+/**
+ * Every SDDL spelling that denotes the owner's own account, and no other.
+ *
+ * `whoami` answers with a raw SID, but the SDDL `icacls /save` emits
+ * abbreviates the machine's built-in Administrator (RID 500) to `LA` and its
+ * Guest (RID 501) to `LG`. Those are the only two machine-relative aliases
+ * that name a *user* account, so they are the only two admitted — and each
+ * only when the caller's SID is that exact account, which is what keeps this
+ * a spelling table rather than a widening: `LA` for a RID-500 caller is the
+ * same principal, letter for letter in the kernel's terms.
+ */
+function ownerSidSpellings(sid: string): Set<string> {
+  const spellings = new Set([sid]);
+  const machineRelative = /^S-1-5-21-\d+-\d+-\d+-(500|501)$/.exec(sid);
+  if (machineRelative !== null) {
+    spellings.add(machineRelative[1] === "500" ? "LA" : "LG");
+  }
+  return spellings;
 }
 
 /**
