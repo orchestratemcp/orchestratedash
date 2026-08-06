@@ -19,8 +19,9 @@
     "test": "vitest run",
     "verify:shell": "node scripts/verify-shell.mjs",
     "state:check": "node scripts/check-project-state.mjs",
+    "brand:check": "node scripts/brand-check.mjs",
     "demo:violation": "node scripts/demo-violation.mjs",
-    "verify": "pnpm state:check && pnpm typecheck && pnpm test && pnpm verify:shell"
+    "verify": "pnpm state:check && pnpm typecheck && pnpm brand:check && pnpm test && pnpm verify:shell"
   },
   "devDependencies": {
     "@electron/packager": "^20.0.4",

@@ -74,11 +74,12 @@ describe("schema", () => {
     // command channel, 2 is MAR-428's handoff ledger, 3 is MAR-457's run
     // artifacts, 4 is MAR-464's decision-identity columns, 5 is MAR-458's
     // permission broker, 6 is MAR-467's lapse table and delivery column, 7 is
-    // MAR-434's projection of the runner's file-backed artifacts.
+    // MAR-434's projection of the runner's file-backed artifacts, 8 is MAR-500's
+    // avatar column and its backfill.
     // Asserted as a number rather than as MIGRATIONS.length so that appending a
     // migration is a deliberate edit here too.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(8);
+    expect(version.user_version).toBe(9);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -120,6 +121,10 @@ describe("schema", () => {
     first.db.db().exec("DROP TABLE broker_grants");
     first.db.db().exec("DROP TABLE broker_lapses");
     first.db.db().exec("DROP TABLE workspace_artifacts");
+    // And migration 8 (MAR-500), whose step is an ALTER rather than a
+    // CREATE: re-running it against a column that is still there fails on
+    // the duplicate rather than on anything this test is about.
+    first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -151,6 +156,10 @@ describe("schema", () => {
     expect(agentDom.putAgentDomState(workspaceState).ok).toBe(true);
     first.db.db().exec("PRAGMA user_version = 4");
     first.db.db().exec("DROP TABLE workspace_artifacts");
+    // And migration 8 (MAR-500), whose step is an ALTER rather than a
+    // CREATE: re-running it against a column that is still there fails on
+    // the duplicate rather than on anything this test is about.
+    first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
     first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN runner_observed_at");
     first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN decision_identity");
     first.db.db().exec("DROP TABLE broker_audit");
@@ -186,6 +195,10 @@ describe("schema", () => {
     first.store.importManifest(manifest);
     first.db.db().exec("PRAGMA user_version = 5");
     first.db.db().exec("DROP TABLE workspace_artifacts");
+    // And migration 8 (MAR-500), whose step is an ALTER rather than a
+    // CREATE: re-running it against a column that is still there fails on
+    // the duplicate rather than on anything this test is about.
+    first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
     first.db.db().exec("DROP TABLE broker_audit");
     first.db.db().exec("DROP TABLE broker_grants");
     // And migration 6 (MAR-467), which builds on migration 5's broker_audit and
@@ -216,6 +229,10 @@ describe("schema", () => {
     first.store.importManifest(manifest);
     first.db.db().exec("PRAGMA user_version = 6");
     first.db.db().exec("DROP TABLE workspace_artifacts");
+    // And migration 8 (MAR-500), whose step is an ALTER rather than a
+    // CREATE: re-running it against a column that is still there fails on
+    // the duplicate rather than on anything this test is about.
+    first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
     first.db.db().exec("DROP TABLE broker_lapses");
     first.db.db().exec("ALTER TABLE broker_audit DROP COLUMN delivered");
     first.db.closeDb();
@@ -252,6 +269,10 @@ describe("schema", () => {
     first.store.importManifest(manifest);
     first.db.db().exec("PRAGMA user_version = 7");
     first.db.db().exec("DROP TABLE workspace_artifacts");
+    // And migration 8 (MAR-500), whose step is an ALTER rather than a
+    // CREATE: re-running it against a column that is still there fails on
+    // the duplicate rather than on anything this test is about.
+    first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -373,7 +394,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(8);
+    ).toBe(9);
   });
 
   it("preserves pending tasks and approvals across a DASH restart", async () => {
