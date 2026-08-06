@@ -73,11 +73,12 @@ describe("schema", () => {
     // One per shipped migration: 0 is the MAR-416 store, 1 is MAR-417's
     // command channel, 2 is MAR-428's handoff ledger, 3 is MAR-457's run
     // artifacts, 4 is MAR-464's decision-identity columns, 5 is MAR-458's
-    // permission broker, 6 is MAR-467's lapse table and delivery column.
+    // permission broker, 6 is MAR-467's lapse table and delivery column, 7 is
+    // MAR-434's projection of the runner's file-backed artifacts.
     // Asserted as a number rather than as MIGRATIONS.length so that appending a
     // migration is a deliberate edit here too.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(7);
+    expect(version.user_version).toBe(8);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -96,6 +97,7 @@ describe("schema", () => {
     expect(tables).toContain("run_artifacts");
     expect(tables).toContain("broker_grants");
     expect(tables).toContain("broker_audit");
+    expect(tables).toContain("workspace_artifacts");
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -112,10 +114,12 @@ describe("schema", () => {
     // anything this test is about.
     first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN runner_observed_at");
     first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN decision_identity");
-    // And migration 5 (MAR-458), for the same reason, and 6 (MAR-467).
+    // And migration 5 (MAR-458), for the same reason, and 6 (MAR-467) and
+    // 7 (MAR-434).
     first.db.db().exec("DROP TABLE broker_audit");
     first.db.db().exec("DROP TABLE broker_grants");
     first.db.db().exec("DROP TABLE broker_lapses");
+    first.db.db().exec("DROP TABLE workspace_artifacts");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -146,6 +150,7 @@ describe("schema", () => {
     const agentDom = await import("../lib/agent-dom/store");
     expect(agentDom.putAgentDomState(workspaceState).ok).toBe(true);
     first.db.db().exec("PRAGMA user_version = 4");
+    first.db.db().exec("DROP TABLE workspace_artifacts");
     first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN runner_observed_at");
     first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN decision_identity");
     first.db.db().exec("DROP TABLE broker_audit");
@@ -180,6 +185,7 @@ describe("schema", () => {
     const first = await freshStore();
     first.store.importManifest(manifest);
     first.db.db().exec("PRAGMA user_version = 5");
+    first.db.db().exec("DROP TABLE workspace_artifacts");
     first.db.db().exec("DROP TABLE broker_audit");
     first.db.db().exec("DROP TABLE broker_grants");
     // And migration 6 (MAR-467), which builds on migration 5's broker_audit and
@@ -209,6 +215,7 @@ describe("schema", () => {
     const first = await freshStore();
     first.store.importManifest(manifest);
     first.db.db().exec("PRAGMA user_version = 6");
+    first.db.db().exec("DROP TABLE workspace_artifacts");
     first.db.db().exec("DROP TABLE broker_lapses");
     first.db.db().exec("ALTER TABLE broker_audit DROP COLUMN delivered");
     first.db.closeDb();
@@ -233,6 +240,72 @@ describe("schema", () => {
       .map((row) => String(row["name"]));
     expect(auditColumns).toContain("delivered");
     expect(store.listAgents()).toHaveLength(1);
+  });
+
+  it("adds the workspace artifact projection to a store that predates it", async () => {
+    // MAR-434, in the shape the four cases above use. Every existing
+    // installation's store was created before this table existed, and the
+    // issue's criterion is that "closing and reopening DASH preserves the task,
+    // output index, approvals, and recovery state" — which starts with the
+    // upgrade working at all.
+    const first = await freshStore();
+    first.store.importManifest(manifest);
+    first.db.db().exec("PRAGMA user_version = 7");
+    first.db.db().exec("DROP TABLE workspace_artifacts");
+    first.db.closeDb();
+
+    process.env.DASH_DATA_DIR = first.dataDir;
+    vi.resetModules();
+    const db = await import("../lib/db");
+    const store = await import("../lib/store");
+    opened.push({ dataDir: first.dataDir, closeDb: db.closeDb });
+
+    const tables = db
+      .db()
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+      .all()
+      .map((row) => String(row["name"]));
+    expect(tables).toContain("workspace_artifacts");
+    expect(store.listAgents()).toHaveLength(1);
+  });
+
+  /**
+   * `workspace_artifacts` holds metadata about files, and holds no file.
+   *
+   * The bytes live in the runner's data directory under an opaque name the
+   * child was never told. That is what makes a recorded SHA-256 still true
+   * later — see `runner/workspace.ts` — and it survives only as long as nothing
+   * adds a body, a blob or a path column here for the convenience of a renderer.
+   *
+   * A `stored_path` column in particular would undo the boundary quietly: DASH
+   * would then hold a filesystem path to every output, a view model would carry
+   * it, and a page would print it. This test failing is the intended
+   * conversation.
+   */
+  it("gives workspace_artifacts no column that could carry a file or a path", async () => {
+    const { db } = await freshStore();
+    const columns = db
+      .db()
+      .prepare("PRAGMA table_info(workspace_artifacts)")
+      .all()
+      .map((row) => String(row["name"]));
+
+    expect(columns).toEqual([
+      "artifact_id",
+      "agent",
+      "run_id",
+      "task_id",
+      "role",
+      "display_name",
+      "media_type",
+      "byte_size",
+      "sha256",
+      "registered_at",
+      "retention",
+      "availability",
+      "availability_detail",
+      "observed_at",
+    ]);
   });
 
   /**
@@ -300,7 +373,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(7);
+    ).toBe(8);
   });
 
   it("preserves pending tasks and approvals across a DASH restart", async () => {

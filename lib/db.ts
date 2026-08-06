@@ -490,6 +490,51 @@ const MIGRATIONS: readonly string[] = [
   CREATE INDEX broker_lapses_by_agent ON broker_lapses (agent, from_at);
   CREATE INDEX broker_lapses_by_kind ON broker_lapses (kind, from_at);
   `,
+  // MAR-434. DASH's projection of the runner's file-backed artifacts.
+  //
+  // **This table is a copy and is named as one.** The runner's own
+  // `workspace_artifacts` is the record; this is what DASH drained from it on
+  // the last poll so a page can render without opening a socket. Where the two
+  // disagree the runner is right, which is why `observed_at` is a column: an
+  // availability is a statement about a moment, and a row that could not say
+  // which moment would be read as a statement about now.
+  //
+  // It is a separate table from `run_artifacts` rather than columns added to it,
+  // and the reason is the one MAR-457's schema gives for artifacts not being
+  // events. A `run_artifacts` row is a *body an agent sent* — the digest itself,
+  // stored here because there is no file. A row here is *metadata about a file
+  // the runner holds*, whose bytes are deliberately not in this database. One
+  // table with both would have half its columns null in every row and a renderer
+  // deciding which half it was looking at.
+  `
+  CREATE TABLE workspace_artifacts (
+    artifact_id   TEXT PRIMARY KEY,
+    agent         TEXT NOT NULL,
+    run_id        TEXT NOT NULL,
+    task_id       TEXT NOT NULL,
+    role          TEXT NOT NULL,
+    display_name  TEXT NOT NULL,
+    media_type    TEXT NOT NULL,
+    byte_size     INTEGER NOT NULL,
+    sha256        TEXT NOT NULL,
+    registered_at TEXT NOT NULL,
+    retention     TEXT NOT NULL,
+    -- available | moved | quarantined | deleted | missing. The five states
+    -- lib/copy/artifacts.ts has vocabulary for, with the runner as the producer.
+    availability  TEXT NOT NULL,
+    -- Where the bytes were found when availability is "moved", and why DASH
+    -- cannot read them when it is "quarantined". Null otherwise: a column that
+    -- always held something would invite a renderer to print it in states where
+    -- it means nothing.
+    availability_detail TEXT,
+    -- When the runner last looked. Not when DASH wrote the row: the runner is
+    -- what stat'd the file, and attributing its observation to DASH's clock is
+    -- the same small promotion "received_at" exists to prevent for a digest.
+    observed_at   TEXT NOT NULL
+  );
+
+  CREATE INDEX workspace_artifacts_by_run ON workspace_artifacts (agent, run_id);
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *
