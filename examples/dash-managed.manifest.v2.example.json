@@ -32,9 +32,8 @@
   "agent_dom": {
     "dom_version": 1,
     "runtime": {
-      "class": "managed_worker",
-      "provider": "example worker provider",
-      "label": "Remote report worker",
+      "class": "local_process",
+      "label": "Local report worker",
       "availability": "always_on",
       "continues_when_dash_closed": true
     },
@@ -45,7 +44,7 @@
       "expected_interval_seconds": 259200
     },
     "locations": {
-      "runtime": { "id": "report-worker", "label": "Remote report worker", "kind": "remote", "offline_behavior": "Runs independently of DASH" },
+      "runtime": { "id": "report-worker", "label": "Local report worker", "kind": "local", "offline_behavior": "Runs independently of DASH" },
       "control": [
         { "id": "report-control", "label": "Report worker control endpoint", "kind": "remote", "uri": "https://agents.example.test/project-reporter/agent-dom", "offline_behavior": "DASH shows read-only state if the endpoint is unreachable" }
       ],

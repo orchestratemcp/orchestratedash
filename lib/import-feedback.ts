@@ -16,11 +16,24 @@
  * contract, here is what the validator said".
  */
 
+/**
+ * The distinctive phrase `lib/manifest-constraints.ts` puts in its error
+ * string and this module keys on. It lives HERE and is imported THERE, not
+ * the other way around: this module is bundled into the add-agent page's
+ * client component, so it must stay free of imports — the constraint module
+ * reaches `lib/contracts.ts`, which reads schema files with `node:fs`, and a
+ * client chunk cannot carry that. The round trip is asserted by test, so the
+ * two sides cannot drift.
+ */
+export const REMOTE_DASH_MANAGED_PHRASE =
+  "declares a remote runtime location and a DASH-managed connection";
+
 export type ImportFailureKind =
   | "not_json"
   | "unsupported_version"
   | "missing_agent_dom"
   | "missing_required_field"
+  | "remote_agent_dash_connections"
   | "schema_mismatch";
 
 export interface ImportFailureExplanation {
@@ -52,6 +65,24 @@ export function explainImportFailure(errors: string[]): ImportFailureExplanation
       headline: "This manifest declares a version DASH does not understand.",
       suggestion:
         "DASH reads manifest versions 1 and 2. Re-export the agent from a current OrchestrateKit, or check the manifest_version field.",
+      raw: errors,
+    };
+  }
+
+  if (joined.includes(REMOTE_DASH_MANAGED_PHRASE)) {
+    // MAR-482, the refusal ADR 0006 mandates. Unlike every other case here the
+    // manifest matched the schema perfectly — what it asks for is a
+    // contradiction: an agent on another computer can never reach a connection
+    // DASH manages, because DASH's reach ends at this machine. The suggestion
+    // names the honest alternative rather than a workaround, since no edit
+    // short of that changes what the transport allows.
+    return {
+      kind: "remote_agent_dash_connections",
+      headline: "This agent runs on another computer, but asks DASH to manage sign-ins for it.",
+      suggestion:
+        "DASH can only manage a sign-in for an agent it runs on this computer, while DASH is open. " +
+        "An agent that runs somewhere else holds its own sign-ins — re-export it with its " +
+        "connections marked as the agent's own, and DASH will say plainly what it cannot see or limit.",
       raw: errors,
     };
   }

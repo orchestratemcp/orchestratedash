@@ -9,6 +9,7 @@ import {
   type RunEvent,
 } from "./contracts";
 import { db, insertEventRow, readRowsTolerantly, transact } from "./db";
+import { checkManifestConstraints } from "./manifest-constraints";
 
 /**
  * The store's query layer.
@@ -280,6 +281,16 @@ export function importManifest(input: unknown): ImportResult {
   const result = validateManifest(input);
   if (!result.ok) {
     return { ok: false, errors: result.errors };
+  }
+
+  // Schema-valid is not importable (MAR-482). The contradiction ADR 0006
+  // refuses — a remote runtime asking DASH to manage its connections — is
+  // legal to the schema and checked here, at the door, rather than at
+  // re-read: `lib/manifest-constraints.ts` explains why the difference
+  // matters.
+  const contradictions = checkManifestConstraints(result.value);
+  if (contradictions.length > 0) {
+    return { ok: false, errors: contradictions };
   }
 
   const database = db();

@@ -516,6 +516,25 @@ describe("refusing a handoff", () => {
     assertNothingHappened();
   });
 
+  it("refuses a remote agent asking DASH to manage its sign-ins, before asking (MAR-482)", async () => {
+    // ADR 0006's import-time refusal, at this door too. The Gmail example's
+    // connections are DASH-managed; declaring its runtime remote makes it the
+    // contradiction — and it is refused before the consent dialog, because a
+    // refusal after the user approved is a dialog that wasted their time.
+    const project = makeProject({
+      manifestJson: v2Manifest((manifest) => {
+        const dom = manifest["agent_dom"] as { locations: { runtime: { kind: string } } };
+        dom.locations.runtime.kind = "remote";
+      }),
+    });
+
+    const report = await openHandoff(project.url, context.ports);
+
+    expect(report).toMatchObject({ ok: false, outcome: "refused" });
+    expect(report.headline).toMatch(/runs on another computer/);
+    assertNothingHappened();
+  });
+
   it("refuses a damaged manifest", async () => {
     const project = makeProject({ manifestJson: "{ not json" });
     expect(await openHandoff(project.url, context.ports)).toMatchObject({

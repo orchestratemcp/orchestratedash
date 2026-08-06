@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { closedWindow, MIN_CLOSED_WINDOW_MS } from "../lib/broker/uptime";
+import { expectPlainLanguage } from "./helpers/plain-language";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -343,6 +344,41 @@ describe("what the Connection Center shows", () => {
 
     const view = lapsesFor(AGENT).find((entry) => entry.kind === "dash_closed");
     expect(view?.qualifier).toContain("no record of whether this agent asked");
+  });
+
+  it("says before any grant that the connection only works while DASH is open (MAR-482)", () => {
+    // ADR 0006's option-3 copy, on the permission card rather than only in the
+    // ADR. The shipped Gmail example keeps running while DASH is closed, and
+    // the person deciding whether to connect a mailbox to it is told the
+    // window up front — not afterwards, as a lapse row.
+    const row = connectionsView()
+      .agents.find((entry) => entry.name === AGENT)
+      ?.rows.find((entry) => entry.connection_id === "gmail");
+    const sentence = row?.broker?.dash_closed_sentence ?? "";
+    expect(sentence).toContain("only while DASH is open on this computer");
+    expect(sentence).toContain("the agent keeps running");
+    expect(sentence).toContain("go unanswered");
+    expectPlainLanguage([sentence]);
+  });
+
+  it("says nothing about closed windows for an agent that stops with DASH", () => {
+    // Same manifest, one claim changed: the agent stops when DASH does. The
+    // warning would describe a window in which the agent does not exist, so
+    // its honest form is absence — the same derivation `lapseViews` makes for
+    // the dash_closed lapse itself.
+    const stops = example("gmail-meeting-assistant.manifest.v2.example.json") as {
+      agent: { name: string };
+      agent_dom: { runtime: { continues_when_dash_closed: boolean } };
+    };
+    stops.agent.name = "synthetic-stops-with-dash";
+    stops.agent_dom.runtime.continues_when_dash_closed = false;
+    expect(importManifest(stops).ok).toBe(true);
+
+    const row = connectionsView()
+      .agents.find((entry) => entry.name === "synthetic-stops-with-dash")
+      ?.rows.find((entry) => entry.connection_id === "gmail");
+    expect(row?.broker).not.toBeNull();
+    expect(row?.broker?.dash_closed_sentence).toBeNull();
   });
 
   it("marks an undelivered answer on the decision, inside the history", () => {

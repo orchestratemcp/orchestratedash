@@ -362,6 +362,18 @@ function PermissionCard({
         </p>
       )}
 
+      {/* The time-bounded twin of the disclosure above (MAR-482, ADR 0006).
+          The wider-permission notice says the grant is broader than the
+          actions; this one says the actions stop when DASH closes, even
+          though the agent does not. Both render before a sign-in, because
+          afterwards they are commentary and beforehand they are the
+          decision. */}
+      {broker.dash_closed_sentence === null ? null : (
+        <p className="notice wrap" role="note">
+          {broker.dash_closed_sentence}
+        </p>
+      )}
+
       {broker.receipt === null ? null : (
         <dl className="permission-receipt">
           <dt>Account</dt>

@@ -295,6 +295,20 @@ export interface BrokerRowView {
    * user has already granted the permission has told them nothing.
    */
   wider_permission_sentence: string | null;
+  /**
+   * When this agent keeps running while DASH is closed: what this connection
+   * is worth to it during that window, or null for an agent that stops with
+   * DASH (MAR-482, ADR 0006's option-3 copy).
+   *
+   * On the card before a sign-in as well as after, for the same reason as
+   * `wider_permission_sentence`: the person who has not yet granted anything
+   * is the one deciding, and a disclosure that appears only once they have is
+   * a lapse row wearing better clothes. Null is the honest absence — warning
+   * that requests will go unanswered while DASH is closed, about an agent
+   * that does not run then, would describe a window in which there is nobody
+   * to be warned about.
+   */
+  dash_closed_sentence: string | null;
   /** ADR 0002 invariant 4, once there is a grant to receipt. */
   receipt: {
     account_hint: string | null;
