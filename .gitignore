@@ -12,3 +12,10 @@ next-env.d.ts
 # committed template; everything scripts/package-msix.mjs writes is not.
 build/appx/packager-out/
 build/appx/*.msix
+
+# Claude Code's per-session state. `.claude/launch.json` is committed — it is a
+# repo fact (dev server on an auto-selected port, because 3000 belongs to LAB).
+# These two are one machine's, not the project's: `settings.local.json` holds
+# whatever that operator happened to approve, and `worktrees/` is scratch.
+.claude/settings.local.json
+.claude/worktrees/
