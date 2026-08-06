@@ -30,6 +30,7 @@
  * an idle machine is not paying for a busy one's latency.
  */
 
+import { localRunnerChannel } from "../lib/agent-dom/runner-channel";
 import { createBroker, type BrokerAuditRow, type CredentialRead } from "../lib/broker/execute";
 import {
   hasBrokerRequest,
@@ -49,7 +50,7 @@ import { parseOAuthCredential } from "../lib/oauth/credential";
 import { isSecureStoreError } from "../lib/secure-store";
 import { readAgentManifest } from "../lib/store";
 import { mintAccessToken } from "./oauth-session";
-import { runnerFetch, type RunnerHandle } from "./runner-process";
+import { type RunnerHandle } from "./runner-process";
 import { secureStore } from "./secure-store";
 
 /** How often the broker looks for work when it just found some. */
@@ -150,7 +151,23 @@ export function startBroker(
     return () => undefined;
   }
 
-  const call = runnerFetch(runner);
+  /**
+   * A **broker-capable** channel, and that adjective is load-bearing (MAR-484).
+   *
+   * `localRunnerChannel` is the only constructor of `LocalRunnerChannel`, it
+   * takes an OS-local endpoint, and it dials with `ipcFetch` — which speaks to
+   * a `socketPath` and therefore cannot leave this machine. A remote host's
+   * channel is a `RemoteRunnerChannel`, which is not assignable here, so the
+   * refactor ADR 0007 warns about — generalise the drains to take a channel, and
+   * `/broker/drain` comes along because it was in the same loop — stops
+   * compiling instead of quietly shipping. See
+   * `lib/agent-dom/runner-channel.ts` and
+   * `tests/broker-channel-exclusion.test.ts`.
+   *
+   * Routes are now named rather than concatenated onto an origin, which is what
+   * lets the type see them at all: `${origin}/broker/drain` is just a string.
+   */
+  const channel = localRunnerChannel(runner);
 
   /**
    * Every audit row this loop has written, in the order the broker wrote them
@@ -195,9 +212,8 @@ export function startBroker(
     written.length = 0;
     let drained: DrainedRequest[];
     try {
-      const response = await call(`${runner!.origin}/broker/drain`, {
+      const response = await channel.call("/broker/drain", {
         method: "POST",
-        headers: { authorization: `Bearer ${runner!.token}` },
         signal: AbortSignal.timeout(3_000),
       });
       if (!response.ok) {
@@ -303,9 +319,9 @@ export function startBroker(
 
     if (answers.length > 0) {
       try {
-        const delivery = await call(`${runner!.origin}/broker/responses`, {
+        const delivery = await channel.call("/broker/responses", {
           method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${runner!.token}` },
+          headers: { "content-type": "application/json" },
           body: JSON.stringify({ responses: answers }),
           signal: AbortSignal.timeout(3_000),
         });
