@@ -500,3 +500,127 @@ own socket and stopping through the authenticated route, is proven in CI on
 every push. `ssh`, the deploy verbs and somebody's actual VPS are not, and under
 ADR 0004 they never can be by a blocking gate. MAR-489 owns that proof and it is
 attended and dated, permanently.
+
+## Amendment 2 (MAR-484): the exclusion is structural now, and here is what breaks if it is undone
+
+Status: Accepted. Date: 2026-08-06.
+
+*(This amendment is numbered on the assumption that MAR-497's amendment 1 lands
+first. They are independent appends to this file.)*
+
+The load-bearing paragraph above is a finding about a file that did not exist.
+It exists now — `lib/agent-dom/runner-channel.ts` — and the mechanism is worth
+writing down, because the failure mode this ADR describes is somebody
+*simplifying* the guard rather than arguing against it.
+
+### What makes it impossible, before any type says so
+
+**A broker-capable channel is built on `ipcFetch`, and `ipcFetch` dials a
+`socketPath`.** There is no host in it, no name to resolve, and no route to a
+network: `node:http` given a `socketPath` reaches an OS-local endpoint or it
+reaches nothing, and the URL it carries uses the reserved `.invalid` TLD so a
+leak into a real `fetch` fails closed. That is a fact about where the bytes can
+physically go — the standard ADR 0002 amendment 1 set — and the types are that
+fact made checkable in an editor.
+
+### Two guards, and they are not the same guard
+
+`RunnerChannel<Route>` takes a **route** rather than a URL, because
+`${origin}/broker/drain` is a string and types cannot see into it. `call` is a
+property with a function type and never a method: TypeScript checks method
+parameters *bivariantly* even under `strictFunctionTypes`, so the method
+spelling would let a narrow-routed channel satisfy a wide-routed one and the
+whole module would be decoration.
+
+On top of that, `LocalRunnerChannel` carries a phantom `unique symbol` the
+module does not export, so no other module can produce the type without a
+deliberate cast, and `localRunnerChannel` — which takes an OS-local endpoint —
+is the only constructor.
+
+Both were watched failing, which is the standard MAR-465 set:
+
+| Change | What goes red |
+| --- | --- |
+| Widen the remote channel's route set | the call-site assertion (TS2578) |
+| Remove the capability brand alone | **nothing** — contravariance still excludes it |
+| Both | both assertions |
+
+So the brand earns its cast by surviving somebody deciding the two route sets
+should be the same. A third guard scans `lib/` and `electron/` for the route
+strings in code — comments are stripped, because the file explaining *why* it
+cannot carry them is the last place that should be punished — which catches a
+hand-rolled `fetch` that bypassed the channel entirely.
+
+### The deploy plane's version of "never what to run"
+
+`ssh` takes its options as argv, and argv has no quoting layer to get wrong. An
+address of `-oProxyCommand=…` is not an address; it is a flag, and `ssh` reads
+it as one however careful the surrounding code was. So `lib/hosts.ts` refuses
+any component reaching argv that begins with `-`, as its own named problem
+rather than folded into "malformed", and allowlists the rest.
+
+`sshArgv`'s options are each a decision and the absences matter as much as the
+presences. `BatchMode=yes`, because a prompt from a process with no terminal is
+a hang in the poll loop. `StrictHostKeyChecking=yes` against **DASH's own**
+`known_hosts` and never the user's — an entry DASH added to `~/.ssh` would
+outlive DASH and change how the person's own `ssh` behaves, and DASH cannot
+vouch for what is already in there. Not `accept-new`, which would silently trust
+a new key the first time an address changed. `IdentitiesOnly=yes` and
+`IdentityAgent=none`, so exactly one key is offered and the `ssh-agent` this ADR
+declined cannot be reintroduced by a config file elsewhere on the machine. And
+**no `-L`, `-R` or `-D`**: option 2 was rejected for MAR-430's reason, and the
+way that stays true is that the flag is never passed.
+
+**The verb set is closed and has exactly one member today.** This ADR said
+specifying it "belongs with the deploy bridge, where there is something to
+validate against", so `connect` — the control plane's, which is the plane
+MAR-484 builds — is the only one written. The other five would be vocabulary
+for an implementation that does not exist.
+
+### Key custody, stated as an absence
+
+The private key is created by the machine's own `ssh-keygen`, protected with
+`runner/channel-secret.ts`'s `hardenOwnerOnly` — the same function, not a second
+implementation, which is what keeps the Swedish-`Administratör` bug from coming
+back in a new file — and **proven again immediately before every use**, because
+an ACL that was right once is a property of a file at a moment.
+
+No passphrase, and the reason is that a passphrase on a key DASH uses unattended
+would have to be stored where DASH can read it: a second credential protecting
+the first one, kept beside it.
+
+The strongest claim available is an absence, so it is the one made:
+**`electron/ssh-host.ts` has no function that returns a private key.** It can
+create one, protect one, prove one, and name the path `ssh` should read. DASH
+cannot leak what it never reads, and a test asserts it over the module's own
+exports rather than trusting a header — which is where somebody would add a
+reader, because the deploy plane will one day want to "just check" the key.
+
+Only the **public** half is returned, because that is the one thing that should
+travel: the user pastes it into the host's `authorized_keys`.
+
+### One connection per request
+
+`ssh` is spawned per request rather than pooled and multiplexed. A pool would be
+faster and would make the failure model much worse — a half-dead `ssh` fails
+requests in ways that look like a runner problem, and a pool needs a health
+model DASH does not have for a machine it polls every few seconds anyway.
+
+### What is proven, and what is untouched
+
+`tests/ssh-fetch.test.ts` runs the real `httpAdapter` and `fetchAgentDomState`
+over a child that speaks HTTP on its own stdio: the byte ceiling, the abort
+path, the `unavailable`/`failed` split and the never-quote-the-error rule, all
+unchanged, because they hang off the injectable `fetch` this ADR predicted they
+would. **The only variable between that and the attended proof is which process
+is on the other end of the pipe.**
+
+`lib/agent-dom/transport.ts`, `runner/server.ts` and `runner/endpoint.ts` are
+untouched, as this ADR said they would be. `electron/agent-adapters.ts` is
+untouched too, and deliberately: generalising its drains is MAR-488's work, and
+it is now safe to do — which was the entire point.
+
+**Nothing here has reached a host.** No `ssh` runs in any test, no host record
+is persisted yet, and no surface connects one; that is MAR-498. What is proven
+is the dialer, the record's refusals, the command's shape and the key's custody.
+ADR 0004 keeps the rest attended, permanently.
