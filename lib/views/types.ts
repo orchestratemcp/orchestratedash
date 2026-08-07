@@ -35,6 +35,7 @@ import type { Recovery } from "../copy/recovery";
 import type { ConnectionRequirementRow } from "../connections";
 import type { ManifestPermissions, PermissionGrant, RunArtifact, RunEvent } from "../contracts";
 import type { AgentCompliance } from "../insights";
+import type { OName } from "../brand/o-cast";
 import type { RunSummary } from "../store";
 import type {
   AvailableControl,
@@ -78,6 +79,22 @@ export interface AgentRow {
   run_count: number;
   origin: AgentOriginView;
   compliance: AgentCompliance;
+  /**
+   * Which of the O's this agent wears (MAR-501).
+   *
+   * On the row rather than derived by the page, and that is the whole point of
+   * it being here: `oFor` is a pure function of the name and a renderer could
+   * call it, which is exactly why it must not. The character is a stored fact
+   * about the agent — assigned once at creation, unchanged when its author
+   * renames it — so it travels with the row like `origin` does, and a page that
+   * computed it would be a page whose avatars quietly disagree with the
+   * database the moment anything ever writes a different one.
+   *
+   * `OName` rather than `string`: the union is what stops a row reaching
+   * `OAvatar` with a character no build ships, and `storedAvatar` in
+   * `lib/store.ts` is where an unreadable column is already resolved.
+   */
+  avatar: OName;
 }
 
 export interface AgentsView {
@@ -506,6 +523,18 @@ export type WorkspaceView =
       agent: string;
       title: string;
       goal: string;
+      /**
+       * The agent's persisted character, for the portrait (MAR-502).
+       *
+       * Null for an agent whose row DASH cannot read — which is a real state
+       * here, because this view is built from the manifest and the manifest is
+       * a different column from the avatar. The page reserves the portrait's
+       * box either way, so a null costs no layout; inventing one from the name
+       * would put a character on screen that the fleet card beside it might not
+       * agree with, and the whole value of a costume is that it is the same one
+       * every time.
+       */
+      avatar: OName | null;
       snapshot: WorkspaceSnapshotView | null;
       /**
        * The most recent digest, across every run — and deliberately a sibling of

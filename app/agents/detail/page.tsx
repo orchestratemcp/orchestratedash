@@ -13,6 +13,7 @@ import {
 
 import { RunOutput } from "../../_components/digest";
 import { InputsPanel, type SelectedInput } from "../../_components/inputs";
+import { OAvatar } from "../../_components/o-avatar";
 import { OutputsPanel } from "../../_components/outputs";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import { AGENT_WORKSPACE_PARAMS, runDetailHref } from "../../_data/routes";
@@ -24,6 +25,7 @@ import {
 } from "../../_data/source";
 import { useCanAct, useHost, useLiveView } from "../../_data/use-view";
 import type { GroundingAnalysis } from "../../../lib/analyze";
+import type { OName } from "../../../lib/brand/o-cast";
 import type { PermissionGrant } from "../../../lib/contracts";
 import { INPUTS_PANEL_COPY } from "../../../lib/copy/inputs";
 import type { InputRoleView } from "../../../lib/views/inputs";
@@ -260,10 +262,20 @@ function AgentWorkspace(): ReactNode {
   return (
     <>
       <div className="workspace-title">
-        <div>
-          <p className="eyebrow">Agent workspace</p>
-          <h1>{view.title}</h1>
-          <p className="lede">{view.goal}</p>
+        {/*
+          MAR-502. The portrait belongs to the identity header and nowhere else
+          on this page: runs, verdicts, gates and outputs are all below, and a
+          character standing beside any of them would be a character implying it
+          had something to do with the finding. Here it is next to the agent's
+          own name, which is the one thing on the page it is genuinely about.
+        */}
+        <div className="agent-identity agent-portrait">
+          <AgentPortrait avatar={view.avatar} />
+          <div>
+            <p className="eyebrow">Agent workspace</p>
+            <h1>{view.title}</h1>
+            <p className="lede">{view.goal}</p>
+          </div>
         </div>
         <div>
           {/*
@@ -429,6 +441,32 @@ function OutputsArea({
       )}
     </>
   );
+}
+
+/**
+ * This agent's character, at 2x (MAR-502).
+ *
+ * 100px because a portrait is what this surface is — the one place in DASH
+ * where the character is closest to being the subject rather than a marker in a
+ * list. Never 1.5x and never a percentage: `image-rendering: pixelated`
+ * upscales by nearest neighbour, so a fractional ratio lands some source pixels
+ * on two screen pixels and some on three, and the sprite stops reading as pixel
+ * art and starts reading as a rendering fault.
+ *
+ * **The empty case reserves the box rather than collapsing it.** `avatar` is
+ * null only when DASH cannot read this agent's own row — the workspace is built
+ * from the manifest, which is a different column — and a header that reflowed
+ * when a database read came back short would move the agent's name under the
+ * user's cursor for a reason that has nothing to do with them. Nothing is drawn
+ * in the reserved space and nothing is announced: an invented character would
+ * be a costume this agent might not be wearing on the card it came from, and
+ * the whole value of one is that it is the same every time.
+ */
+export function AgentPortrait({ avatar }: { avatar: OName | null }): ReactNode {
+  if (avatar === null) {
+    return <span className="o-portrait-empty" aria-hidden="true" />;
+  }
+  return <OAvatar name={avatar} size={100} />;
 }
 
 /**

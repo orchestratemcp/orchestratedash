@@ -138,6 +138,30 @@ describe("every page that reads a view uses the marked loading state", () => {
   /** Windows main opens itself. Never the app window's first page. */
   const OTHER_WINDOWS = ["app/approval-popup/page.tsx", "app/credential-prompt/page.tsx"];
 
+  /**
+   * Chrome that reads a view and is silent until it has something to draw
+   * (MAR-503).
+   *
+   * A different exemption from `OTHER_WINDOWS` above, and it is listed
+   * separately rather than folded in because the reason is different and a
+   * shared list would let one reason cover a file the other was written for.
+   *
+   * The rule this test enforces is about the *page*: whatever the window opens
+   * on must say it is loading rather than showing a blank frame. The fleet
+   * strip is not what the window opens on — it renders beside every page, under
+   * the one that is already saying so. A placeholder there would be a second
+   * loading state on the same frame, and one that appears and vanishes along
+   * the bottom edge of a page that is itself busy loading. It renders nothing,
+   * its band collapses, and the page above it does the announcing.
+   *
+   * Same shape of argument as `approval-popup`'s: rendering null is the
+   * product decision, and satisfying this check with a placeholder would change
+   * the product to suit the check.
+   */
+  const SILENT_CHROME = ["app/_components/fleet-strip.tsx"];
+
+  const EXEMPT = [...OTHER_WINDOWS, ...SILENT_CHROME];
+
   function pages(dir: string): string[] {
     const found: string[] = [];
     for (const entry of readdirSync(dir)) {
@@ -158,7 +182,7 @@ describe("every page that reads a view uses the marked loading state", () => {
     const offenders: string[] = [];
     for (const file of pages(path.join(repoRoot, "app"))) {
       const relative = path.relative(repoRoot, file).split(path.sep).join("/");
-      if (OTHER_WINDOWS.includes(relative)) {
+      if (EXEMPT.includes(relative)) {
         continue;
       }
       const source = readFileSync(file, "utf8");
@@ -175,7 +199,7 @@ describe("every page that reads a view uses the marked loading state", () => {
    * is renamed, would otherwise leave a permanent hole nobody notices.
    */
   it("exempts only files that exist", () => {
-    for (const relative of OTHER_WINDOWS) {
+    for (const relative of EXEMPT) {
       expect(() => statSync(path.join(repoRoot, relative))).not.toThrow();
     }
   });
