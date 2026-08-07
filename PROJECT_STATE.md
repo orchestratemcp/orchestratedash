@@ -2382,9 +2382,38 @@ file, 20 passed / 0 failed**, with `pnpm exec vitest run tests` running
 concurrently in a second shell — and that concurrent full suite was itself
 green, 98 test files / 1809 passed / 8 skipped / 0 failed.
 
-**`tests/runner-store-damage.test.ts` is not fixed and is not claimed fixed.**
-The issue suspected one cause for both and gave the reason — *"both start real
-child processes"* — which is false for that file: it spawns nothing and drives
-in-process HTTP servers over named pipes. It passed inside the concurrent
-full-suite run above and did not reproduce here, so there is no signature to
-work from, and changing it blind would be a fix for a cause nobody has observed.
+**`tests/runner-store-damage.test.ts` reproduced later in the same session, and
+it is fixed — but it was never the same cause.** The paragraph that stood here
+said there was no signature to work from, which was true when written: the file
+had just passed inside a concurrent full-suite run. It failed on the next one,
+and the issue's stated reason for grouping the two — *"both start real child
+processes"* — is false for this file. It spawns nothing and drives in-process
+HTTP servers over named pipes.
+
+The signature is `Error: Test timed out in 5000ms`, on exactly the two cases
+that call `writeMalformedStore` and on no others. That is vitest's **default**
+`testTimeout`, so this is not a race at all: it is a fixture that costs more
+than the default budget on a loaded machine. Solo it takes under two seconds.
+
+**The cost is four hundred commits, not the corruption.** The fixture inserts
+400 rows one at a time, and every `run()` outside a transaction is its own
+commit — on `journal_mode = DELETE`, which this fixture sets deliberately so
+there is one file whose pages can be damaged, a commit means creating and
+deleting a rollback journal beside the database. Four hundred file-create /
+file-delete pairs is cheap on an idle machine and is not cheap on Windows with a
+filter driver watching the directory. Wrapping the loop in one transaction
+changes nothing about the file produced — the same rows land on the same pages —
+and it took the whole suite from 32.8s to 20.9s, which is how much of that time
+was journal round-trips in one fixture.
+
+The explicit 30s budget on those two cases is the issue's own third preference
+applied on top: sized from the observed worst case rather than the median, and
+said in a comment. It is roughly fifteen times the solo cost, and short enough
+that a genuine hang still fails the run rather than hanging it.
+
+The general lesson is worth more than the fix. **A test whose default timeout is
+load-bearing is a flake with a countdown on it**, and nothing in the suite
+distinguishes "this assertion is fast" from "this assertion has been fitting
+inside 5000ms so far". Both halves of MAR-537 are the same failure at one remove:
+a harness making a bet about time, where the thing under test was never in
+question.
