@@ -68,6 +68,22 @@ const nextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
 
   /**
+   * Next's own dev badge, off (MAR-503).
+   *
+   * It is a fixed circle in the bottom-left corner of the viewport, and the
+   * bottom-left corner of the viewport is now where the first of the O's
+   * stands. On the developer path it sits on top of the fleet strip: it covers
+   * a character in every screenshot the capture harness takes, and it covers
+   * one for anybody running `pnpm shell` against `next dev`.
+   *
+   * Development-only, like `allowedDevOrigins` above. The export has no dev
+   * server behind it and never had the badge, so what this changes is that the
+   * two paths now look the same in the one corner where they had stopped
+   * looking the same.
+   */
+  devIndicators: false,
+
+  /**
    * `.dev.ts` must come first: extensions are matched in order, and a
    * `route.dev.ts` seen as `route.dev` + `.ts` would be a route named
    * "route.dev" rather than a route handler.
