@@ -91,6 +91,9 @@ const SURFACES = [
   { name: "runs", path: "/runs", density: false, tall: false },
   { name: "connections", path: "/connections", density: false, tall: true },
   { name: "work", path: "/work", density: false, tall: false },
+  /* MAR-498. `tall` because the wizard's last step carries the deploy receipt
+     under the probe's own answer, and a viewport frame shows the probe. */
+  { name: "hosts", path: "/hosts", density: false, tall: true },
   { name: "workspace", path: null, density: true, tall: true },
 ] as const;
 
@@ -191,23 +194,84 @@ async function shoot(target: BrowserWindow, name: string): Promise<void> {
       `[capture]   retrying ${name} after ${error instanceof Error ? error.message : String(error)}`,
     );
     await settle(1000);
-    image = await within(`capturePage retry for ${name}`, 20_000, target.webContents.capturePage());
+    /*
+     * The retry has to check the window is still there, and this is not
+     * defensive — it is the failure that actually happened.
+     *
+     * The splash's whole lifetime ends on the app window's `ready-to-show`. A
+     * `UnknownVizError` on the first attempt costs a second of settling, and on
+     * a warm start that second is longer than the splash has left: the retry
+     * then throws `Object has been destroyed`, which nothing caught, and a run
+     * that had 47 images left to take ended on the first one.
+     *
+     * `shoot` returning without writing is right rather than a workaround. The
+     * caller for a destroyed splash already has a branch saying the start was
+     * warm; every other caller holds the app window, which is alive for the
+     * whole run by construction.
+     */
+    if (target.isDestroyed() || target.webContents.isDestroyed()) {
+      console.log(`[capture]   ${name} vanished before it could be photographed — skipping it`);
+      return;
+    }
+    try {
+      image = await within(
+        `capturePage retry for ${name}`,
+        20_000,
+        target.webContents.capturePage(),
+      );
+    } catch (retryError) {
+      /*
+       * The check above is not enough on its own, and the reason is a race
+       * rather than an oversight: the splash is closed by the app window's
+       * `ready-to-show` handler, which can run between `isDestroyed()`
+       * answering false and `capturePage()` reaching the compositor. The
+       * observed failure was `Object has been destroyed` thrown out of the
+       * retry, unhandled, ending a run that had 47 images left to take.
+       *
+       * A frame nobody could take is not a failed run. Every caller but one
+       * holds the app window, which is alive for the whole run by
+       * construction; the one that does not holds the splash, whose whole
+       * lifetime is the startup this is trying to photograph.
+       */
+      console.log(
+        `[capture]   gave up on ${name}: ` +
+          `${retryError instanceof Error ? retryError.message : String(retryError)}`,
+      );
+      return;
+    }
   }
   const file = path.join(OUT, `${name}.png`);
   writeFileSync(file, image.toPNG());
   const size = image.getSize();
-  const css = (await within(
-    `measure ${name}`,
-    10_000,
-    target.webContents.executeJavaScript(
-      `({ w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio })`,
-    ),
-  )) as { w: number; h: number; dpr: number };
   written.push(name);
-  console.log(
-    `[capture] ${name}.png ${String(size.width)}x${String(size.height)} ` +
-      `(css ${String(css.w)}x${String(css.h)} @${String(css.dpr)}x)`,
-  );
+
+  /*
+   * The image is already on disk, so nothing below may throw.
+   *
+   * The CSS size is printed because the image comes out at the display's device
+   * pixel ratio and a 1280-wide layout is a 2560-wide PNG — without it a reader
+   * concludes the window was twice the width it was reviewed at. It is a
+   * caption, not the evidence, and the splash is the one target that can close
+   * between its own photograph and its own measurement. That really happened,
+   * and it ended a run holding a written PNG it then threw away the rest of.
+   */
+  let caption = "";
+  try {
+    if (!target.isDestroyed() && !target.webContents.isDestroyed()) {
+      const css = (await within(
+        `measure ${name}`,
+        10_000,
+        target.webContents.executeJavaScript(
+          `({ w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio })`,
+        ),
+      )) as { w: number; h: number; dpr: number };
+      caption = ` (css ${String(css.w)}x${String(css.h)} @${String(css.dpr)}x)`;
+    }
+  } catch {
+    caption = " (the window closed before it could be measured)";
+  }
+
+  console.log(`[capture] ${name}.png ${String(size.width)}x${String(size.height)}${caption}`);
 }
 
 /**

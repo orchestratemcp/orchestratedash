@@ -948,6 +948,176 @@ a.plain:hover {
 }
 
 /* ---------------------------------------------------------------------- *
+ * The connect-a-server wizard (MAR-498)
+ *
+ * The concept's numbered rail and provider grid, drawn in the Bit-Command
+ * system. Everything here is 1px borders, zero corners and `label-caps`; the
+ * only colour that appears is the accent, and it appears exactly twice — on the
+ * current step and on the chosen provider.
+ * ---------------------------------------------------------------------- */
+
+/*
+ * `01 ── 02 ── 03 ── 04`, wrapping rather than scrolling.
+ *
+ * The connector is a `::after` rule on each item except the last, which means it
+ * disappears on its own when the rail wraps to a second row — a border-based
+ * connector would leave a line running off the end of row one and starting
+ * nowhere on row two. MAR-491's rule applies here as much as to the nav: a rail
+ * that hid a step behind a horizontal scrollbar would hide where you are.
+ */
+.step-rail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 0 var(--density-stack);
+  padding: 0;
+  list-style: none;
+}
+
+.step-rail-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.step-rail-item:not(:last-child)::after {
+  content: "";
+  width: var(--space-6);
+  height: 1px;
+  background: var(--line);
+}
+
+/* The boxed number, which is the concept's own device. */
+.step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  padding: 2px var(--space-1);
+  border: 1px solid currentColor;
+  font-size: var(--text-xs);
+}
+
+.step-rail-item.is-done {
+  color: var(--text-muted);
+}
+
+.step-rail-item.is-current {
+  color: var(--accent);
+}
+
+.step-rail-item.is-current > .step-number {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.wizard-card {
+  max-width: 56rem;
+}
+
+/*
+ * Provider cards. `auto-fit` rather than four fixed columns, so the grid becomes
+ * two-up and then one-up on its own — the same rule `.card-grid` uses, and for
+ * MAR-491's reason.
+ *
+ * They are `<button>`s and inherit the button reset, so the two declarations
+ * that matter here are the ones undoing it: a card is not a caps label and is
+ * not centred.
+ */
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--density-gap);
+  margin-bottom: var(--density-gap);
+}
+
+.provider-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--density-card-p);
+  text-align: left;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  background: var(--surface-2);
+}
+
+.provider-name {
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  font-weight: 700;
+}
+
+.provider-user {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* The concept's active-focus treatment: a 2px accent border and a lift. It is
+   the one place in the app where a border doubles, and it is doing what
+   `aria-pressed` says in the markup rather than instead of it. */
+.provider-card.is-chosen {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  background: var(--accent-bg);
+}
+
+.provider-card.is-chosen > .provider-name {
+  color: var(--accent);
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--density-gap);
+  margin-bottom: var(--density-gap);
+}
+
+/* The label wraps its own field, so the caps sit above it and the whole thing is
+   one click target. `.field-label` is already the caps rule; this only stacks
+   it. */
+.field-grid > .field-label {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/*
+ * The public half of the key, and the only place in DASH that draws a key at
+ * all.
+ *
+ * It scrolls inside its own box rather than wrapping: a public key broken across
+ * lines by a stylesheet is one somebody will paste broken, and the failure lands
+ * on a server they then cannot reach.
+ */
+.public-key {
+  margin: var(--density-gap) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-0);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.deploy-receipt {
+  margin-top: var(--density-stack);
+  padding-top: var(--density-gap);
+  border-top: 1px solid var(--line);
+}
+
+/* ---------------------------------------------------------------------- *
  * The capability card (MAR-533)
  *
  * One card per connection, answering four questions in order: what can this
