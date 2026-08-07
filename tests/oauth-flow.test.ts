@@ -40,6 +40,7 @@ import {
   describePermissions,
   oauthProviderById,
   oauthProviderFor,
+  type OAuthProvider,
 } from "../lib/oauth/providers";
 import { isMaskedAccountHint, maskAccount } from "../lib/secret-refs";
 import { expectPlainLanguage } from "./helpers/plain-language";
@@ -63,6 +64,32 @@ function respondingWith(status: number, body: unknown): typeof fetch {
         headers: { "content-type": "application/json" },
       }),
     )) as unknown as typeof fetch;
+}
+
+/**
+ * A fetch that answers once and remembers the form body it was sent.
+ *
+ * MAR-508's own note about why the loopback fixture could not catch the
+ * missing `client_secret`: it "does not care" what the request carries, so a
+ * test that only checks the fixture's response can never see this defect. This
+ * one reads the outgoing request instead — the same request Google reads, and
+ * Google is the one that cared.
+ */
+function capturingFetch(
+  status: number,
+  body: unknown,
+): { fetch: typeof fetch; requests: URLSearchParams[] } {
+  const requests: URLSearchParams[] = [];
+  const fetchImpl = ((_url: string, init?: RequestInit) => {
+    requests.push(new URLSearchParams(String(init?.body ?? "")));
+    return Promise.resolve(
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  }) as unknown as typeof fetch;
+  return { fetch: fetchImpl, requests };
 }
 
 describe("PKCE", () => {
@@ -258,6 +285,33 @@ describe("exchanging and refreshing", () => {
     ).rejects.toMatchObject({ code: "provider_refused" });
   });
 
+  /**
+   * MAR-508's own aftermath: a malformed token request — a missing
+   * `client_secret` classifies exactly this way — must not read to the user
+   * as their account being turned away. `provider_refused` is what
+   * `postForm` throws for any token-endpoint rejection other than
+   * `invalid_grant`, and every one of those (RFC 6749 §5.2's
+   * `invalid_request`, `invalid_client`, `unauthorized_client`,
+   * `unsupported_grant_type`) is the provider validating DASH's own request,
+   * not the account. `provider_error` is a different code entirely —
+   * `lib/oauth/loopback.ts`'s reading of the authorization *redirect*
+   * itself saying no — and keeps the account-level wording. The two used to
+   * share one case in `describeAuthorizationFailure` and one sentence; this
+   * pins that they no longer do.
+   */
+  it("blames DASH, not the account, for a request the token endpoint rejected", () => {
+    const rejected = describeAuthorizationFailure("provider_refused", { service: "Google" });
+    expect(rejected.actor).toBe("dash");
+    expect(rejected.headline.toLowerCase()).not.toContain("workplace");
+    expect(rejected.meaning.toLowerCase()).not.toContain("workplace");
+    expectPlainLanguage([rejected.headline, rejected.meaning, rejected.next_action]);
+
+    const redirectRefused = describeAuthorizationFailure("provider_error", { service: "Google" });
+    expect(redirectRefused.actor).toBe("user");
+    expect(redirectRefused.meaning.toLowerCase()).toContain("workplace");
+    expect(redirectRefused).not.toEqual(rejected);
+  });
+
   it("reports an unreachable provider as a network failure, not a revocation", async () => {
     const failing = (() => Promise.reject(new Error("getaddrinfo ENOTFOUND"))) as unknown as typeof fetch;
 
@@ -297,6 +351,72 @@ describe("exchanging and refreshing", () => {
     expect(accountFromIdToken("not-a-jwt")).toBeNull();
     expect(accountFromIdToken(undefined)).toBeNull();
     expect(accountFromIdToken("a.!!!not-base64!!!.c")).toBeNull();
+  });
+});
+
+/**
+ * MAR-508: Google refused DASH's token exchange outright —
+ * `{"error":"invalid_request","error_description":"client_secret is missing."}`
+ * — because `exchangeAuthorizationCode` and `refreshAccessToken` never sent
+ * one and `OAuthProvider` had no field to carry one. Every existing gate was
+ * blind to it: proof 7 drives this same code against a loopback fixture whose
+ * `/token` route does not ask for a secret, so the whole path passed with
+ * nothing sent that Google would have accepted. These tests read the request
+ * itself rather than trusting a fixture's response, which is the only way to
+ * pin "the provider declared a secret, so the request carries one."
+ */
+describe("the client secret (MAR-508)", () => {
+  const withSecret: OAuthProvider = { ...google, client_secret: "s3cr3t-value" };
+  const withoutSecret: OAuthProvider = { ...google, client_secret: undefined };
+
+  it("sends client_secret on the code exchange when the provider declares one", async () => {
+    const { fetch: capturing, requests } = capturingFetch(200, {
+      access_token: "a",
+      refresh_token: "r",
+      expires_in: 3599,
+    });
+
+    await exchangeAuthorizationCode(
+      withSecret,
+      { code: "c", verifier: "v", redirect_uri: "http://127.0.0.1:1/callback", scopes: GMAIL_SCOPES },
+      capturing,
+    );
+
+    expect(requests[0]?.get("client_secret")).toBe("s3cr3t-value");
+  });
+
+  it("sends client_secret on a refresh when the provider declares one", async () => {
+    const { fetch: capturing, requests } = capturingFetch(200, {
+      access_token: "a",
+      expires_in: 3599,
+    });
+
+    await refreshAccessToken(withSecret, storedCredential(), capturing);
+
+    expect(requests[0]?.get("client_secret")).toBe("s3cr3t-value");
+  });
+
+  /**
+   * The loopback proof provider's own shape: no `client_secret` declared, so
+   * none is sent. Not the same assertion as the two above with the value
+   * flipped — a provider that omits the field must never see the string
+   * `"undefined"` on the wire either, which `String(provider.client_secret)`
+   * would have produced.
+   */
+  it("sends no client_secret at all for a provider that declares none", async () => {
+    const { fetch: capturing, requests } = capturingFetch(200, {
+      access_token: "a",
+      refresh_token: "r",
+      expires_in: 3599,
+    });
+
+    await exchangeAuthorizationCode(
+      withoutSecret,
+      { code: "c", verifier: "v", redirect_uri: "http://127.0.0.1:1/callback", scopes: GMAIL_SCOPES },
+      capturing,
+    );
+
+    expect(requests[0]?.has("client_secret")).toBe(false);
   });
 });
 

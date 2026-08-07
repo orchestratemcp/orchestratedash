@@ -252,6 +252,74 @@ fixes, on a branch and wanting a PR), MAR-468's **run** again once MAR-508 lands
 MAR-470 (MCP connectors through the same card), MAR-471 (bring-your-own Google
 client, which MAR-508's decision may fold into or pull forward).
 
+**MAR-509 merged** in PR [#56](https://github.com/orchestratemcp/orchestratedash/pull/56)
+(merge commit `99fa58b`) on 2026-08-07, closing the "wanting a PR" line above.
+Both harness defects are fixed exactly as described: the launcher resolves the
+real `electron` executable rather than spawning a `.cmd` shim, and the proof's
+own runner is built into its own output directory rather than relying on
+`electron/runner-process.ts`'s module-relative resolution finding one that
+was never there. The third, non-blocking item — `G2` dropping `detail` and
+`recovery`, the only account of *why* a sign-in failed — is fixed in the same
+PR, and it is what let the 2026-08-06 run name its own cause in one line and
+led straight to MAR-508.
+
+**MAR-508 is fixed, on a PR, not merged.** Branch
+`000henrik/mar-508-google-oauth-client-secret`. This session picked **option
+2** of the issue's own three — supplied locally, never committed — over
+option 1 (compiled in beside the client id, which ADR 0002 already flags as a
+present-tense problem) and option 3 (bring-your-own client, MAR-471's larger
+and still-unbuilt answer). `DASH_GOOGLE_CLIENT_SECRET` is read fresh on every
+call by a new `googleClientSecret()` in `lib/oauth/providers.ts` — the same
+choice `loopbackProofOrigin()` already made and for the same reason: a
+module-load-time read is invisible to a test that sets the variable per case.
+`OAuthProvider` gained an optional `client_secret`; `exchangeAuthorizationCode`
+and `refreshAccessToken` in `lib/oauth/flow.ts` both send it in the token
+request when the provider declares one and omit the key — not an empty
+string — when it does not. The loopback proof provider declares none, so
+proof 7 is unchanged and unweakened.
+
+**The test the issue asked for reads the request, not the fixture's
+response.** `tests/oauth-flow.test.ts`'s new `capturingFetch` helper records
+the outgoing form body; the assertion that `client_secret` reaches the wire
+never touches what a server answers, which is the only way to pin a defect a
+fixture that "does not care" what it receives could never have caught.
+
+**Folded in: the issue's own "also worth revisiting."** `provider_error` and
+`provider_refused` shared one case in `lib/copy/recovery.ts`'s
+`describeAuthorizationFailure` and one sentence — "refused the sign-in...
+managed by a workplace or school" — so a missing `client_secret`, which
+`lib/oauth/flow.ts`'s `postForm` classifies as `provider_refused` for any
+token-endpoint rejection other than `invalid_grant`, read to the user as
+their employer blocking the app. Per RFC 6749 §5.2, every error that lands
+there (`invalid_request`, `invalid_client`, `unauthorized_client`,
+`unsupported_grant_type`) is the provider validating DASH's *request*, not
+the account, so `provider_refused` now reads "DASH's Google sign-in request
+was rejected... a fault in how DASH asked," actor `dash`. `provider_error` —
+`lib/oauth/loopback.ts`'s reading of the authorization *redirect* itself
+carrying an `error=` the provider put there — is a real signal about the
+account and keeps the original wording. Two codes that used to render
+identically now read as what actually happened.
+
+`docs/real-google-proof-runbook.md` gained step 1a: set
+`DASH_GOOGLE_CLIENT_SECRET` before running `node scripts/prove-google.mjs`,
+and its own status paragraph is corrected to say the fix has landed but the
+attended run has not been repeated — building the fix is not running the
+proof, the same distinction MAR-509's own note draws about a harness that
+builds.
+
+Evidence: `pnpm typecheck` clean; full vitest from PowerShell (Git Bash's
+`whoami` fakes channel-secret failures), 85 test files / 1611 passed / 8
+skipped / 0 failed, 4 of them new. `pnpm verify:shell` was **not** run this
+session: a runner from an earlier, unrelated, interrupted `prove-google.mjs`
+attempt (`dist/google-proof/runner.mjs`) was found still alive on this
+machine days after that run — nothing in the harness or the runbook tells an
+operator to retire it when a run is interrupted, which is worth its own
+follow-up — and starting the shell smoke alongside an unrelated live runner
+risked exactly the interference AGENTS.md's process-safety rule exists to
+avoid. It was left running rather than force-killed. **Nothing here is a
+claim that the fix works against real Google.** That is the next attended
+MAR-468 run, and MAR-508 is what it was blocked on.
+
 ## The broker's reach (MAR-476, epic MAR-475)
 
 **A decision, and nothing was implemented.** ADR 0006 answers the question ADR

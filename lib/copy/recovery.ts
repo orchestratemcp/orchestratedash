@@ -422,13 +422,36 @@ export function describeAuthorizationFailure(
     }
 
     case "provider_error":
-    case "provider_refused":
       return {
         headline: `${service} refused the sign-in.`,
         meaning:
           "Nothing was stored. This can happen when an account is managed by a workplace or school that restricts which apps may connect.",
         next_action: `Try again, and if it keeps happening check whether ${service} allows this account to connect other apps.`,
         actor: "user",
+      };
+
+    /*
+     * MAR-508 found what this used to share wording with `provider_error`
+     * hid: `postForm` in `lib/oauth/flow.ts` produces this code from the
+     * *token exchange*, and every response that lands here — RFC 6749 §5.2's
+     * `invalid_request`, `invalid_client`, `unauthorized_client`,
+     * `unsupported_grant_type` — is the provider validating DASH's own
+     * request and finding it malformed, not a person's account being turned
+     * away. A missing `client_secret` produced exactly this code, and the old
+     * copy told the user to go check their employer's app-restriction policy
+     * for a fault that was entirely DASH's. `provider_error`, by contrast, is
+     * `lib/oauth/loopback.ts`'s reading of an `error=` the provider put on
+     * the *authorization* redirect itself — org policy, disallowed user
+     * agent — which is a real signal about the account and keeps the
+     * sentence above.
+     */
+    case "provider_refused":
+      return {
+        headline: `DASH's ${service} sign-in request was rejected.`,
+        meaning:
+          "Nothing was stored. This is a fault in how DASH asked, not something wrong with your account or anything you did.",
+        next_action: "Try again. If it keeps happening, this needs reporting.",
+        actor: "dash",
       };
 
     case "prompt_unavailable":

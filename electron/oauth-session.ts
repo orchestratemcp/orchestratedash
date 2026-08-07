@@ -62,11 +62,18 @@ export interface AuthorizationSession {
  * Turn whatever went wrong into one of the codes `describeAuthorizationFailure`
  * has words for.
  *
- * The default is `provider_error` rather than a rethrow. An unclassified throw
- * escaping into the IPC dispatcher would surface as a command that failed with
- * no recovery at all, which is a worse answer than a slightly generic one — and
- * the two error types above cover every failure either of the modules below
- * actually produces.
+ * `OAuthError` and `LoopbackError` are returned as the specific code each
+ * already carries — `isOAuthError`'s `provider_refused` and
+ * `isLoopbackError`'s `provider_error` are deliberately not the same code
+ * since MAR-508: one is the token endpoint rejecting a request DASH built
+ * (a DASH fault), the other is the authorization redirect naming a provider
+ * or account-level reason (a real signal about the account), and
+ * `lib/copy/recovery.ts` reads different words for each.
+ *
+ * The default is `provider_error` rather than a rethrow, for a case neither
+ * error type produces: an unclassified throw escaping into the IPC dispatcher
+ * would surface as a command that failed with no recovery at all, which is a
+ * worse answer than a slightly generic one.
  */
 function classify(error: unknown): AuthorizationFailureCode {
   if (isOAuthError(error)) {
