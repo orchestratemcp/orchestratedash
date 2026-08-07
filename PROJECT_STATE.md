@@ -2590,3 +2590,52 @@ because Henrik agreed to DASH being closed for it; the app was closed with
 `WM_CLOSE`, the same signal the window's own close button sends, and not with
 the force-kill AGENTS.md forbids. 66 images and `cast-witness.json` in
 `qa-screenshots-mar-501-503/`.
+
+## The type pairing arrives (MAR-535, decided again and executed)
+
+**The dispute the coordinator recorded at the #77 merge is resolved: bundle.**
+Henrik's final answer sits on the issue itself, ~20:30Z on 2026-08-07 — the
+keep-the-rule chat answer was a menu mis-click by his own account, so the
+18:15Z bundle comment stands and the later one confirms it. This session
+executed it on PR [#81](https://github.com/orchestratemcp/orchestratedash/pull/81)
+(branch `000henrik/mar-535-bundle-the-fonts`, cut from master at `c3a953e`).
+The section above this one, and `app/tokens.css`'s paragraph, both said
+"keep the rule" while it was the record; both are corrected at the point
+somebody reads them rather than left to disagree with the issue.
+
+**What ships is 62 KB and two licences.** Space Grotesk and JetBrains Mono as
+SIL OFL 1.1 latin-subset **variable** woff2 in `public/fonts/`, their OFL texts
+beside them, declared in the new `app/fonts.css`: `local()` first so an
+installed copy wins, `font-display: swap` so an unreadable file costs a
+fallback rather than a blank, and weight ranges (300–700 / 100–800) because
+`.next-action` is weight 650 and a static pair could only synthesize it.
+
+**The guard was relaxed by zero lines, which is its own design vindicated.**
+`checkNoRemoteFonts` always forbade the *fetch*, never the file — the bundled
+faces are same-origin reads on both paths, `next dev` in development and
+`dash-app://ui/` packaged. Its "allows a bundled face" fixture went from
+describing a future to describing the product. `checkBundledFonts` is the new
+half of the contract: the woff2 bytes really begin `wOF2`, the licence rides
+beside each family — a missing licence fails nothing visible and is a licence
+violation, so it is checked as a fact about files the way the O's manifest is —
+and every `/fonts/` URL a stylesheet names resolves to a shipped file, because
+a deleted woff2 degrades silently through `local()` and the fallback stacks and
+nothing else would ever say so. Seven fixture cases drive each failure mode.
+
+**The verification is of the rendered app, not of CSS presence, on both
+paths.** On the dev origin, with neither family installed on this machine,
+`document.fonts` reports both faces `loaded` and `check()` answers true at
+weights 400, 650 and 700, over same-origin `GET /fonts/*.woff2 200` — so what
+loaded can only be the bundled files. On the packaged path, the capture harness
+photographed the full matrix over `dash-app://ui/`: Space Grotesk headlines
+over JetBrains Mono body in every image, **all 13 cast witnesses still green**,
+71 images in `qa-screenshots-mar535/`. Two screenshots are attached to the
+issue.
+
+Evidence: typecheck clean, `brand:check` green — 40 files scanned for remote
+fonts (`app/fonts.css` is the 40th), 4 bundled font files verified — full
+vitest from PowerShell 98 files / 1825 passed / 8 skipped / 0 failed,
+`build:renderer` green with `fonts/` in the export. `verify:shell` was not run
+on this branch: two runners were alive (the ordinary one the smoke leaves by
+design, and MAR-520's unretirable google-proof orphan), and CI runs the
+Windows smoke on the PR.
