@@ -52,6 +52,7 @@ import {
   listAgents,
   listAgentNames,
   listConnectionCapableAgents,
+  readAgentAvatar,
   readAgentManifest,
   readEvidencePulls,
   resolveArtifactAvailability,
@@ -129,6 +130,11 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
       run_count: agent.run_count,
       origin: agentOrigin(registrations.get(agent.name)),
       compliance: complianceForAgent(agent.name, store),
+      // MAR-501. Straight from the summary, which took it straight from the
+      // column. Three surfaces draw this agent now and they must draw the same
+      // character; the way to guarantee that is for all three to be reading one
+      // stored value rather than each deriving its own.
+      avatar: agent.avatar,
     })),
     // Composed here rather than in the page, so both hosts hand the renderer the
     // same sentence — the property this module exists to keep.
@@ -724,6 +730,18 @@ export function workspaceView(
     agent,
     title: workspaceManifest.agent.display_name ?? workspaceManifest.agent.name,
     goal: workspaceManifest.agent.goal,
+    /*
+     * MAR-502. Read from the store rather than from the manifest above, and
+     * that is the load-bearing line of this issue.
+     *
+     * `title` is the *author's* `display_name` and changes when they publish a
+     * new manifest. The character is DASH's own record, written once at import
+     * and deliberately omitted from the re-import path's `ON CONFLICT DO
+     * UPDATE` (`lib/store.ts`), so an author renaming their agent does not
+     * re-costume something the user has already learned to recognise. Deriving
+     * the portrait from anything on this manifest would undo that in one line.
+     */
+    avatar: readAgentAvatar(agent),
     snapshot: stored === null ? null : workspaceSnapshot(workspaceManifest, stored, now),
     latest_digest: digest,
     latest_digest_grounding:

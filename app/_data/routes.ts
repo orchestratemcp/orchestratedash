@@ -79,6 +79,29 @@ export function runDetailHref(agent: string, runId: string): string {
   return `/runs/detail?${params.toString()}`;
 }
 
+/**
+ * Routes that are their own operating-system window, not a page of the app
+ * (MAR-503).
+ *
+ * `electron/credential-prompt.ts` and `electron/approval-popup.ts` each open a
+ * separate `BrowserWindow` onto a route in this same static export. They are
+ * one question and one answer — a field to fill, a decision to take — and
+ * anything that belongs to the *application* rather than to that question is
+ * furniture in a dialog.
+ *
+ * Named here rather than guessed at each call site, and as a deny-list rather
+ * than an allow-list on purpose: a new page of the app must not have to be
+ * remembered into a list to be treated as one, and the failure of forgetting
+ * should be a missing strip rather than a strip inside a credential prompt.
+ */
+const SEPARATE_WINDOW_ROUTES: readonly string[] = ["/credential-prompt", "/approval-popup"];
+
+export function isSeparateWindowRoute(pathname: string): boolean {
+  return SEPARATE_WINDOW_ROUTES.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`),
+  );
+}
+
 /** Static-export-safe agent workspace route, for the same reason as run detail. */
 export const AGENT_WORKSPACE_PARAMS = { agent: "agent" } as const;
 

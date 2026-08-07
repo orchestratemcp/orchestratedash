@@ -22,8 +22,51 @@
   box-sizing: border-box;
 }
 
+/*
+ * The app shell: three bands, and the middle one is what scrolls (MAR-503).
+ *
+ * DASH is installed software, and this is the line where it stops laying itself
+ * out like a web page. The window is exactly one screen tall; the chrome is at
+ * the top of it, the fleet strip is on its bottom edge, and the page between
+ * them scrolls inside its own band. A document-scrolled layout would have put
+ * the cast at the bottom of the *content* — a footer somebody has to scroll a
+ * run's whole history to reach — which is a different thing from standing on
+ * the bottom edge of the window, and the bottom edge is what MAR-435 asks for.
+ *
+ * **It is still a row and never an overlay**, which is MAR-503's hard rule.
+ * `position: fixed` or `sticky` would have been the two-line version of this
+ * and both paint over `main` as it scrolls, so an approval card or a receipt
+ * would pass underneath the characters. Here the strip owns a track of the
+ * grid: nothing can be beneath it, because there is no space beneath it.
+ *
+ * `100dvh` rather than `100vh`: the dynamic unit is the one that is correct
+ * when a browser's own chrome collapses. The packaged renderer has no such
+ * chrome, so the two agree there and only the developer path notices.
+ *
+ * The skip link is `position: absolute` and takes no row of its own; the grid
+ * has three rows and four children by design.
+ */
 body {
   margin: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  /*
+   * `minmax(0, 1fr)`, never the implicit `auto` column, and this line is worth
+   * more than it looks. A grid item's default `min-width: auto` refuses to
+   * shrink below its own min-content, so an `auto` track sizes to the widest
+   * band — and `nav.app-nav`'s five links are 484px of min-content. The whole
+   * page silently laid out 574px wide inside a 375px window the first time this
+   * grid was tried, with the nav's own `overflow-x: auto` powerless to help,
+   * because the scroller was as wide as its content by then.
+   *
+   * The row track needs the same `minmax(0, …)` for the same reason in the
+   * other axis: `1fr` alone will not shrink below `main`'s content height, and
+   * a middle band taller than its track is a page that scrolls the window
+   * again with the strip pushed off the bottom of it.
+   */
+  grid-template-columns: minmax(0, 1fr);
+  height: 100dvh;
+  overflow: hidden;
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-ui);
@@ -323,7 +366,25 @@ main:focus {
   background: var(--accent);
 }
 
+/*
+ * The one scrolling region (MAR-503).
+ *
+ * `overflow-y: auto` here rather than on the document is what makes the chrome
+ * and the fleet strip bands of the *window* instead of ends of the *page*.
+ * `min-width: 0` because this is a grid item and the default `auto` minimum
+ * would let a wide child — a long unbroken agent name, a code block — push the
+ * whole band past the window rather than scroll inside it, which is the failure
+ * MAR-491 exists about arriving through a different door.
+ *
+ * `.app-chrome` keeps its `position: sticky` and it is now a no-op rather than
+ * a mistake: its band no longer scrolls, so there is nothing for it to stick
+ * against. It stays because removing it would be a second change in a diff that
+ * already moves the scroll container, and because it is what holds the chrome
+ * in place if this rule is ever reverted.
+ */
 main {
+  overflow-y: auto;
+  min-width: 0;
   padding: var(--density-stack) var(--space-5);
   max-width: var(--content-max);
 }
@@ -364,6 +425,21 @@ h1 {
 .row-list {
   display: grid;
   gap: var(--density-gap);
+  /*
+   * MAR-491, found by photographing the surface it shipped on rather than by
+   * measuring it. These are `<ol>` and `<ul>` elements, and the table-to-cards
+   * conversion left the browser's own markers on: a column of "1." "2." "3."
+   * in the page's left margin, outside every card, at every width and in both
+   * themes. Nothing overflowed and nothing was misplaced, so no measurement
+   * saw it — the same shape of defect as the skip link MAR-440 left visible.
+   *
+   * The list stays a list. Ordered markup is what says these are one agent's
+   * records in order to anything that is not looking at the screen; what goes
+   * is the decoration, which a card already replaces.
+   */
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
 }
 
 .card-grid {
@@ -1268,4 +1344,201 @@ button:disabled {
   width: var(--o-size);
   height: var(--o-size);
   flex: none;
+}
+
+/* ------------------------------------------------------------------------ *
+ * Where the O's stand (MAR-501, MAR-502)
+ *
+ * One class for both sizes. A card's 50px marker and a workspace's 100px
+ * portrait are the same arrangement — character, then who it is — and giving
+ * them two rules would be two places for the gap to drift apart.
+ *
+ * `align-items: center` rather than `flex-start`: the sprite is a fixed square
+ * beside a heading whose height depends on how long somebody's agent name is,
+ * and a 50px picture pinned to the top of a two-line name reads as a mistake.
+ * `min-width: 0` on both so a long name wraps instead of pushing the card wide,
+ * which is the whole failure MAR-491 is about.
+ * ------------------------------------------------------------------------ */
+.agent-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.agent-identity > div {
+  min-width: 0;
+}
+
+.agent-identity h1,
+.agent-identity h2,
+.agent-identity h3 {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.agent-portrait {
+  gap: var(--space-4);
+}
+
+/* The portrait's box, kept when there is no character to put in it. Reserved
+   rather than collapsed so a header does not reflow when a store read comes
+   back short — see `AgentPortrait`. Nothing is drawn: an outline here would be
+   a frame around an absence, which reads as an error rather than as a gap. */
+.o-portrait-empty {
+  display: block;
+  flex: none;
+  width: 100px;
+  height: 100px;
+}
+
+/* ------------------------------------------------------------------------ *
+ * The bottom-edge fleet strip (MAR-503)
+ *
+ * The concept direction's wordmark grammar, made into a surface: a rule across
+ * the bottom of the app with the O's standing on it, feet over the edge.
+ *
+ * The rule is `.fleet-strip-row::after` rather than a border, because the
+ * sprites have to cross it. A border on the row would be drawn under the
+ * sprites' box and the characters would sit *above* a line instead of *on* it,
+ * which is the difference between a brand and a divider.
+ *
+ * `position: sticky` is not used and could not be: this band is a layout row in
+ * `body`'s grid (`app/layout.tsx`), so it can never cover an approval card, a
+ * form or a receipt. That is MAR-435's hard non-goal enforced by where the
+ * element is rather than by what it promises.
+ * ------------------------------------------------------------------------ */
+.fleet-strip {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5) var(--space-2);
+  border-top: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.fleet-strip.is-hidden {
+  justify-content: flex-end;
+  padding-top: var(--space-1);
+  padding-bottom: var(--space-1);
+}
+
+.fleet-strip-row {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  /* `flex-basis: 0`, not `auto`, and it is load-bearing rather than tidy. The
+     row's capacity is measured from this element and decides how many
+     characters go in it; with an `auto` basis the row is only as wide as the
+     characters already in it, so a strip that started with one sprite would
+     measure room for one sprite and stay that way for ever. */
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+}
+
+/* The rule the cast stands on. Inset two pixels from the row's bottom, so the
+   last rows of each sprite — the feet — hang below it exactly as the concept
+   draws them.
+
+   The characters are lifted above it by `z-index: 1` below rather than the rule
+   being pushed behind by `-1`: a negative index would put it under
+   `.fleet-strip`'s own background and the line would simply not be there, which
+   is the quietest possible way for this to be wrong. */
+.fleet-strip-row::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 2px;
+  height: 1px;
+  background: var(--line-strong);
+}
+
+.fleet-strip-o {
+  position: relative;
+  z-index: 1;
+  display: block;
+  line-height: 0;
+  border-radius: var(--radius-sm);
+}
+
+/* The count, never a smaller sprite. Aligned to the rule like the characters
+   beside it, and quiet: it is an answer to "is that all of them?", not a
+   control. */
+.fleet-strip-more {
+  flex: none;
+  padding-bottom: var(--space-1);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+/* One line that never changes height, so a pointer crossing the row moves
+   nothing. `min-width: 0` and the ellipsis because an agent's name is the
+   user's own text and can be any length at all. */
+.fleet-strip-caption {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding-bottom: var(--space-1);
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fleet-strip-toggle {
+  flex: none;
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.fleet-strip-toggle:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/*
+ * The setting, applied before the first paint by `FleetStripScript`.
+ *
+ * On `<html>` rather than in React state for the reason `[data-density]` is:
+ * one attribute decides it, the first frame is already right, and no component
+ * has to be told. `display: none` on the whole band rather than on the row, so
+ * a hidden strip costs no space at all — except the collapsed control, which is
+ * the only way back and is exempt by being the element that survives.
+ */
+:root[data-fleet-strip="hidden"] .fleet-strip:not(.is-hidden) {
+  display: none;
+}
+
+/*
+ * Narrow windows keep the characters and drop the caption.
+ *
+ * The order things go in is the order they are worth: the cast is the strip,
+ * the toggle is how somebody gets rid of it, and the caption is a convenience
+ * that repeats what the controls already carry as their accessible names. A
+ * strip that dropped sprites to keep a label would have kept the label.
+ */
+@media (max-width: 560px) {
+  .fleet-strip {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+
+  .fleet-strip-caption {
+    display: none;
+  }
 }
