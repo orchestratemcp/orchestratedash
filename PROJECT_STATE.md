@@ -2072,6 +2072,57 @@ horizontal scroller inside a desktop application.
 taken 2026-08-05 — is committed beside the after-wave rather than deleted. A
 before-state a reader cannot see is an argument they have to take on trust.
 
+## The run that closed Communicate (MAR-468, MAR-458, MAR-469, MAR-523)
+
+**2026-08-07, 20:25–20:28Z. All sixteen checks passed.** The grant this evidence
+rests on expires **2026-08-14**, seven days after the run, because Testing-mode
+grants for restricted scopes always do. A reader after that date is reading a
+record, not a live claim.
+
+It was the **fourth** attended attempt, and the file keeps all four rather than
+only the one that worked. 2026-08-06 failed at `G2`: `lib/oauth/flow.ts` sent no
+`client_secret` and Google refused the exchange outright — MAR-508, a defect the
+loopback provider structurally could not see, because its `/token` never asked
+for one. 2026-08-07 ~10:26Z failed at `G9`: DASH's own broker refused a reply to
+a real display-name `From:`, and it was **right to** — MAR-523. 2026-08-07 20:14Z
+failed at `G2` again, this time on an operator shell slip rather than any defect,
+and promoted nothing; what it did produce is MAR-542, because a present-but-wrong
+client secret read as *"DASH's request was rejected… this needs reporting"* when
+the honest sentence names a configuration error.
+
+**`G8b` is the one worth stating plainly.** ADR 0002 amendment 3 guessed, before
+any run, that the projection over real Gmail MIME was the single most likely
+thing to be wrong. It reported `raw_from_had_display_name: true` and
+`from_address_is_bare: true` — Gmail served `Display Name <address>`, DASH's
+projection handed the composer a bare addr-spec, and the validator that refused
+the whole draft in October's run accepted it without being loosened by a
+character. `G9` returned a real draft id and `G10` filed it against the same
+thread the read came from.
+
+The negatives held against a credential that could really have done the thing:
+`G11` refused both send attempts as operations that do not exist, against a token
+genuinely carrying `gmail.compose`; `G12a` refused a CRLF-carrying recipient
+before any request reached Google; `G13` found no Google token anywhere in the
+agent's process or environment. `G15b` — the check that was a race last time —
+reported `allowed_before_revoked: true` and then `revoked`, in that order,
+established by construction rather than by winning a timing contest.
+
+**The preflight adopted a runner instead of demanding a restart.** MAR-520's fix,
+merged that morning, working in the field: the leftover runner from the 20:14Z
+attempt had recorded its own credential, so DASH could talk to it and took it
+over rather than starting a second writer over the same `runner.sqlite`.
+
+**What this promotes, and what it does not.** MAR-458, MAR-469, MAR-468 and
+MAR-523 move to `proven`. Every promoted note carries the runbook's four
+qualifications verbatim rather than by reference: the date and the seven-day
+expiry; that the regime was Testing mode with a named test user and not a
+verified public connection; that `G12b` is the weaker half of proof 7's `7n` and
+proof 7 is not superseded; and that ADR 0005's cases 1 and 3, along with
+MAR-469's durable replay memory meeting a real restart, remain unit tests only.
+
+The Communicate leg is closed. Cloud is what remains: MAR-487 and MAR-488 are
+merged, and MAR-489's attended VPS proof has not been performed.
+
 ## UX principle
 
 The home view answers three questions: what can I run, what is happening now, and what needs my decision? Connections are capabilities with scopes and receipts, not a wall of OAuth settings. Every run should make inputs, actions, outputs, gates, and failures inspectable.
