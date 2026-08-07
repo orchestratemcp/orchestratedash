@@ -2244,3 +2244,88 @@ Evidence: `pnpm typecheck` clean, `brand:check` green with **5** files using
 the cast (Connections is a fourth surface for MAR-501's grammar), 96 test files
 / 1778 passed / 8 skipped from PowerShell, 51 of them new. 48 images in
 `qa-screenshots-mar-533/`. `verify:shell` not run, for MAR-528's reason.
+
+## Connect a server, and the field DASH will not draw (MAR-498, MAR-536)
+
+**Open on a PR, not merged**, and it is the second half of an issue whose first
+half merged on 2026-08-06. MAR-498's design slice shipped `lib/host-connect.ts`
+— nine states and their sentences — with no surface, and its own state entry
+has said ever since that the issue's `merged` bar was deliberately not met.
+This is that bar.
+
+**The concept screen has an `SSH_PRIVATE_KEY` textarea on it, and DASH draws no
+such field.** MAR-484 made key custody structural rather than a policy:
+`electron/ssh-host.ts` has **no function that returns a private key**, and a
+test asserts that over the module's exports rather than trusting a comment —
+because that is exactly where somebody would add a reader the day the deploy
+plane wants to "just check" it.
+
+So the flow is inverted. DASH makes the key and keeps the private half; what
+the person is shown is the public half and where to put it. And the refusal is
+**said out loud, on the step where the asking would have happened**: somebody
+who has connected a server before *expects* to be asked, because every other
+tool asks, and a flow that quietly does not ask reads as one that forgot rather
+than as one that decided. The test for it checks the *markup*, not the copy —
+the failure mode is somebody adding an input, not somebody deleting a sentence.
+
+**The provider cards recommend nothing, rank nothing and link nowhere.**
+MAR-485 owns provider recommendations and affiliate links and is a named
+non-goal here. What they do is answer the one question a novice cannot get from
+the outside — *"it is asking for a user; what is my user?"* — and "Something
+else" is a first-class choice that says DASH does not know rather than guessing.
+
+**The deploy receipt renders somewhere at last.** `lib/deploy/bundle.ts` has
+built it since MAR-487 and nothing showed it. ADR 0007 requires the
+while-closed sentence *before the first deploy*, and the moment a server
+becomes reachable is the last point at which that is still true.
+`describeDeployArrangement` is the base and the agent-named version is the
+wrapper, not the other way round: two copies of a disclosure are two copies
+that can be softened independently, and the one that would get softened is the
+one somebody reads while deciding rather than while confirming.
+
+### The defect this branch introduced, and the guard that missed it
+
+Importing that receipt put `node:crypto` in the browser bundle. **The packaged
+renderer stopped hydrating altogether** — every page drew its background colour
+and nothing else: no chrome, no agents, no error on screen. It was found by
+looking at the screenshots.
+
+`tests/client-bundle.test.ts` exists for precisely this failure, and it passed.
+Its Node-only set was five strings somebody typed, and `lib/deploy/bundle` was
+not among them — a list nobody remembered to widen, which is the same shape as
+the surface allowlist MAR-500 deliberately refused to add.
+
+**The list is computed now.** `lib/` is walked, every module importing a
+`node:` builtin is marked, and the mark propagates up the import graph to a
+fixed point. A module written tomorrow that reads from disk is on the list the
+moment it exists. The five original names are kept as a floor and asserted,
+because a walk that broke and returned an empty set would pass that file
+forever — which is the failure being fixed, arriving through a different door.
+
+Two capture-harness fixes came out of the same session, both found by running
+it rather than by reading it: a splash that closes during a `capturePage` retry
+no longer ends a run holding 47 unwritten images, and a window that closes
+between its photograph and its measurement now loses the caption rather than
+the frame.
+
+### What is not wired, said on the surface (MAR-536)
+
+There is no host command family. `lib/shell/ipc.ts` has five and none of them
+reaches `electron/ssh-host.ts`, so nothing here mints a key, writes a record or
+runs a probe. The page says so **where the effect would have happened**, rather
+than presenting a Next button that does nothing — the same read-only honesty
+`useCanAct` already gives the developer path, extended to a capability missing
+from every build rather than from this window.
+
+The six unreachable states the surface therefore cannot reach are covered by
+`tests/host-wizard-render.test.tsx` instead, which is the more durable half of
+the issue's own bar: a screenshot proves a state was drawn once on one machine.
+
+Evidence: `pnpm typecheck` clean, `brand:check` green, 98 test files / 1810
+passed / 8 skipped from PowerShell, 30 of them new. 55 images in
+`qa-screenshots-mar-498/`, with `page_overflows: false` and
+`density_toggle.fully_visible: true` at every width — under **six** nav links,
+which is MAR-491's wrapping decision surviving a sixth destination.
+
+**Not proven, permanently so in CI.** `proven` here means attended and dated
+against a real host inside MAR-489, per ADR 0004's attended half.
