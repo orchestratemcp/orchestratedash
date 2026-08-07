@@ -2591,6 +2591,42 @@ because Henrik agreed to DASH being closed for it; the app was closed with
 the force-kill AGENTS.md forbids. 66 images and `cast-witness.json` in
 `qa-screenshots-mar-501-503/`.
 
+## The sidebar, decided (MAR-546)
+
+**Henrik overrode the reskin's own call.** MAR-528 kept the horizontal nav,
+citing MAR-440; Henrik wants the concept's fixed left sidebar, and MAR-546 is
+that decision executed — branch `000henrik/mar-546-sidebar`, cut from master
+after PR #81 merged so the sidebar is drawn in the bundled type pairing.
+
+The 240px left track `--sidebar-width` has been waiting for since MAR-420:
+identity block without the fiction (wordmark plus the adopted concept's own
+name, `aria-hidden` because the title bar already says DASH), six pixel glyphs
+drawn as `currentColor` SVG rects on a 12×12 grid rather than vendored as
+PNGs — the O's are audited artwork, these are glyphs that must survive the
+active block's `--accent-contrast` — and the density control at the bottom.
+
+**Below 900px it collapses to an icon rail, not a drawer.** A drawer needs a
+scrim and nothing in DASH may paint over an approval card; a drawer hides
+every destination behind a press, which was the horizontal nav's whole
+narrow-width failure; the rail costs 47px of a 375px window. MAR-491 is not
+regressed, measured rather than asserted: at 375 `main` keeps 328px,
+`page_overflows` false, `widest_scroller` null, the density toggle fully
+visible — for the first time at that width since MAR-440 shipped. The labels
+hide with the visually-hidden recipe, never `display: none`, so all six
+accessible names survive the collapse; a test pins that distinction.
+
+The grid stays honest when bands are absent: the sidebar column is `auto`, so
+on a dialog route the empty track collapses to zero and MAR-534's gate now
+removes six links and a rail from a password prompt. The chrome and the fleet
+strip span both columns — the drag strip and the bottom edge are facts about
+the window, not about a column of it.
+
+Evidence: typecheck clean, brand:check green over 41 files, 98 test files /
+1837 passed / 8 skipped from PowerShell (12 new in `tests/sidebar.test.tsx`),
+and the full capture matrix over `dash-app://ui/` in `qa-screenshots-mar546/`:
+66 images, 13/13 cast witnesses. MAR-440's note is revisited in the same PR,
+as the issue asks.
+
 ## The type pairing arrives (MAR-535, decided again and executed)
 
 **The dispute the coordinator recorded at the #77 merge is resolved: bundle.**
