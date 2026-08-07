@@ -149,6 +149,135 @@ describe("the message DASH composes", () => {
 });
 
 /* ---------------------------------------------------------------------- *
+ * Replying to a real sender (MAR-523)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The defect the first attended real-Google run found, driven end to end
+ * through the two operations that were disagreeing.
+ *
+ * Real Gmail's `From:` is `Display Name <addr@host>`. The loopback fixture's was
+ * a bare address, so the reply path handing the whole header value to `to` was
+ * correct against every fixture DASH had and wrong against every real mailbox.
+ * `gmail.draft.create` refused it, correctly, and the refusal read as DASH
+ * breaking its own draft.
+ *
+ * These tests are written the direction the fix goes: `project` first, then
+ * `compose` on what it produced, in one chain — because the bug lived in
+ * *neither* function and only in the join between them, which is exactly what a
+ * test of either one alone could not see. The validator is asserted to be as
+ * strict as it ever was, in the same file, so a future session that "fixes" this
+ * again by widening `ADDRESS` fails here rather than shipping.
+ */
+
+/** What `gmail.message.read` projects for a message with this `From:` header. */
+function projectFrom(fromHeader: string): Record<string, unknown> {
+  const operation = operationById("gmail.message.read");
+  expect(operation).not.toBeNull();
+  return operation!.project({
+    id: "18e0a1b2ff",
+    threadId: "18e0a1b2c0",
+    snippet: "Can we move Thursday?",
+    payload: {
+      mimeType: "multipart/alternative",
+      headers: [
+        { name: "From", value: fromHeader },
+        { name: "Subject", value: "Thursday" },
+      ],
+      parts: [
+        {
+          mimeType: "text/plain",
+          body: { data: Buffer.from("Can we move Thursday?").toString("base64url") },
+        },
+      ],
+    },
+  });
+}
+
+describe("a reply to a sender Gmail described with a display name", () => {
+  const REAL = '"Colleague, A." <colleague@example.com>';
+
+  it("keeps the raw header and parses the address beside it", () => {
+    const projected = projectFrom(REAL);
+    // The raw header survives untouched: it is what the provider said, and a
+    // projection that rewrote it would be lying about what arrived.
+    expect(projected["from"]).toBe(REAL);
+    expect(projected["from_address"]).toBe("colleague@example.com");
+  });
+
+  /** The whole bug, in one chain: projection out, compose in, and it works. */
+  it("composes a draft addressed to the person, not to the header", () => {
+    const to = projectFrom(REAL)["from_address"];
+    const message = compose({ ...VALID, to });
+
+    expect(message).toContain("To: colleague@example.com");
+    // No part of the provider's own grammar reaches a line DASH wrote.
+    expect(message).not.toContain("Colleague, A.");
+    expect(message).not.toContain("<");
+  });
+
+  /**
+   * The load-bearing negative, and the reason MAR-523 is not "loosen the
+   * validator". The raw header is still refused, by field name, with the same
+   * refusal it gave on 2026-08-07.
+   */
+  it("still refuses the raw header if anything hands it straight to `to`", () => {
+    const operation = operationById("gmail.draft.create");
+    expect(planCall(operation!, ORIGIN, { ...VALID, to: REAL })).toEqual({
+      ok: false,
+      refusal: "input_malformed",
+      field: "to",
+    });
+  });
+
+  /**
+   * The structural claim, stated as a property rather than as three examples:
+   * a `from_address` that exists is always one the write operation accepts.
+   *
+   * That is what makes the reply path safe to write in one line. If the parser
+   * ever produced something `ADDRESS` refuses, this fails on the header that did
+   * it rather than on an attended evening six weeks later.
+   */
+  it.each([
+    ["a bare address", "colleague@example.com"],
+    ["a display name", "Alex Colleague <colleague@example.com>"],
+    ["a quoted display name with a comma", '"Colleague, A." <colleague@example.com>'],
+    ["an RFC 2047 encoded display name", "=?UTF-8?B?w4VzZQ==?= <colleague@example.com>"],
+    ["leading and trailing whitespace", "   colleague@example.com   "],
+    ["a plus-addressed sender", "Alex <colleague+dash@example.com>"],
+  ])("parses %s into an address the write operation accepts", (_case, fromHeader) => {
+    const to = projectFrom(fromHeader)["from_address"];
+    expect(to).toBe(
+      fromHeader.includes("+") ? "colleague+dash@example.com" : "colleague@example.com",
+    );
+    expect(planCall(operationById("gmail.draft.create")!, ORIGIN, { ...VALID, to }).ok).toBe(true);
+  });
+
+  /**
+   * And where it cannot answer, it says nothing rather than guessing.
+   *
+   * The two-mailbox case is the one worth the line: `From:` may legally carry
+   * several authors, and picking one would be DASH quietly choosing who a reply
+   * goes to. A `from_address` of `undefined` leaves the agent with no recipient,
+   * which is a visible failure; the wrong recipient is not.
+   */
+  it.each([
+    ["two mailboxes", "A <a@example.com>, B <b@example.com>"],
+    ["two bare addresses", "a@example.com, b@example.com"],
+    ["an unterminated angle-addr", "Alex <colleague@example.com"],
+    ["a group with no address at all", "Undisclosed recipients:;"],
+    ["a header that is not an address", "Alex Colleague"],
+    ["an address carrying a newline", "Alex <a@example.com\r\nBcc: attacker@evil.example>"],
+  ])("declines to name a recipient for %s", (_case, fromHeader) => {
+    const projected = projectFrom(fromHeader);
+    // The raw header is still projected — the agent can see what arrived and
+    // say so. What is absent is a value anything would treat as a recipient.
+    expect(projected["from"]).toBe(fromHeader);
+    expect(projected["from_address"]).toBeUndefined();
+  });
+});
+
+/* ---------------------------------------------------------------------- *
  * The durable replay memory
  * ---------------------------------------------------------------------- */
 

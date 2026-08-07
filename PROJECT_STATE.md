@@ -1512,6 +1512,80 @@ corruption. MAR-523's harness work retires the proof **agent**, which is what
 raced the temporary-directory cleanup; the runner it leaves behind is still
 unretirable.
 
+## A reply to a real person (MAR-523)
+
+**Open on a PR, not merged.** The first attended run ever to pass `G2` found
+this on 2026-08-07 and it is one line of joining code, in the gap between two
+functions that were each correct.
+
+Real Gmail's `From:` is `Display Name <address>`. The loopback fixture's was a
+bare address. The reply path handed the whole header value to
+`gmail.draft.create`'s `to`, and DASH's own broker refused it `invalid_input`
+**before Google was asked** — so no draft was created and `G10`, `G12b` and
+`G14` were all downstream of one refusal.
+
+**The validator was never the bug, and it is not loosened by a character.**
+`ADDRESS` excludes `<`, `>` and `"` on purpose: a value passing it cannot carry
+a display name with structure, cannot become two recipients, cannot end the
+`To:` line. Widening it would put the whole RFC 5322 mailbox grammar back inside
+a header DASH writes, which is precisely what `composeRfc822` exists to avoid.
+
+**So the parse moved to where it happens once.** `gmail.message.read`'s
+projection exposes `from_address` beside the raw `from`, and
+`addressFromHeader` tests whatever it extracts against **the same `ADDRESS`**
+the composer uses. The projection therefore cannot emit a value the write
+operation would refuse — there is no third outcome, and that is the property
+`tests/broker-write.test.ts` pins over six header shapes rather than three
+examples. `ADDRESS` moved up beside the parser in the same change, because it
+stopped being a rule about writing headers and became the set of addresses this
+module will name at all.
+
+The rules are three lines and one of them is a refusal. No angle brackets: the
+whole trimmed value must be an address. Exactly one: the text to the next `>`
+is the address and the display name is discarded rather than interpreted. More
+than one: **nothing**. `From:` may legally carry several mailboxes, and picking
+one would be DASH quietly choosing who a reply goes to — no recipient is a
+visible failure, the wrong recipient is not.
+
+**The loopback fixture now serves the shape Google serves.** Proof 7's provider
+answers `"Colleague, A." <colleague@example.com>`, so the class is covered by
+the mandatory gate rather than only by an evening somebody stands at a consent
+screen. On unfixed code `7k` fails outright and `7l` — strengthened to assert
+the display name does *not* reach the composed `To:` line — never runs. That is
+the real accounting of how this survived three merged slices: every fixture DASH
+had was a shape real Gmail almost never produces.
+
+**Four harness papercuts from the same run are fixed here**, because they are
+what the re-run needs and they live in the same file. The
+`A REAL DRAFT EXISTS` banner printed unconditionally, with `draft id: unknown`,
+over a run that created no draft — it is gated on the same value the cleanup
+prints now, and `G16` is skipped rather than asked when there is nothing to
+delete. `G16` itself failed on `deleted === "deleted"` because the operator
+typed `delete`; it reads the answer now, negative branch first so `not deleted`
+can never pass, and re-asks once rather than losing an attended evening to a
+past participle. The end-of-run `rmSync` raced the still-running agent, whose
+`cwd` is the directory being removed, so the agent is retired first through the
+runner's own authenticated stop route and the removal is tolerated and named
+rather than allowed to decide the exit code of a proof about Gmail. And an
+`ENOENT` abort printed **"all checks passed"** over a half-run: there is a
+`catch` now, the abort is a recorded failure, every check it never reached is
+named as a skip, the stack prints above the summary, and the summary reserves
+that sentence for a run in which nothing was skipped either.
+
+**`G15b`'s `allowed_before_revoked: false` was a race, not a consequence of
+`G9`.** The agent slept five seconds before its first poll while the harness
+revoked about a second after the report said complete, so on a fast machine
+every recorded poll was *after* the withdrawal and the check reported a
+connection that had never worked rather than a transition. The first poll is
+immediate now, the harness waits for it before revoking, and the flag is read
+off that pre-revocation snapshot. The ordering is established by construction.
+
+Evidence: `pnpm typecheck` clean, `[state] valid` with the recorded drift
+warnings, and 86 test files / 1635 passed / 8 skipped / 0 failed from
+PowerShell, 15 of them new. **Nothing here is a claim that a draft reaches a
+real Drafts folder** — that is the MAR-468 re-run, and this is what it was
+blocked on.
+
 ## UX principle
 
 The home view answers three questions: what can I run, what is happening now, and what needs my decision? Connections are capabilities with scopes and receipts, not a wall of OAuth settings. Every run should make inputs, actions, outputs, gates, and failures inspectable.

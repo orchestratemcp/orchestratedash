@@ -888,6 +888,11 @@ describe("a hostile provider response", () => {
       "body_text",
       "date",
       "from",
+      // MAR-523. Derived from `from` by DASH rather than sent by the provider,
+      // and listed here for the same reason as everything else: this array is
+      // the whole of what an agent may see, and a field arriving without a line
+      // in this test is a field nobody decided to expose.
+      "from_address",
       "message_id",
       "snippet",
       "subject",
