@@ -43,6 +43,11 @@ import path from "node:path";
 
 import { remoteRunnerChannel, type RemoteRunnerChannel } from "../lib/agent-dom/runner-channel";
 import { stdioFetch, type StdioChannel } from "../lib/agent-dom/ssh-fetch";
+import {
+  checkDeployRequest,
+  type DeployAnswer,
+  type DeployRequest,
+} from "../lib/deploy/verbs";
 import { sshArgv, type HostRecord, type HostVerb } from "../lib/hosts";
 import { hardenOwnerOnly } from "../runner/channel-secret";
 
@@ -279,8 +284,9 @@ export function openSshChannel(
   record: HostRecord,
   verb: HostVerb,
   paths: { identity_file: string; known_hosts_file: string },
+  bundleId?: string,
 ): StdioChannel {
-  const child = spawn("ssh", sshArgv(record, verb, paths), {
+  const child = spawn("ssh", sshArgv(record, verb, paths, bundleId), {
     stdio: ["pipe", "pipe", "inherit"],
     windowsHide: true,
   });
@@ -296,6 +302,141 @@ export function openSshChannel(
       child.stdin.end();
       child.kill();
     },
+  };
+}
+
+/* ---------------------------------------------------------------------- *
+ * The deploy plane (MAR-487)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * How a deploy verb's child is started, so a test can supply one without `ssh`.
+ *
+ * The same seam `TransportOptions.fetch` and `StdioChannel` already are, and
+ * for ADR 0007's own stated reason: *"the only variable between the CI proof
+ * and the attended one is which process is on the other end of the pipe."* A
+ * test hands over the real host helper as a local child; production hands over
+ * `ssh`. Nothing between them differs.
+ */
+export type DeploySpawn = (verb: HostVerb, bundleId?: string) => StdioChannel;
+
+/**
+ * Send one verb and read one answer.
+ *
+ * The request is written to the child's stdin and the child's stdin is then
+ * **closed**, which is what makes the far end's `readStdin` return. Everything
+ * variable travels this way rather than on argv, and `lib/deploy/verbs.ts`
+ * explains at length why: argv is where option injection lives, and keeping all
+ * variable data off it means the set of strings `ssh` can be made to interpret
+ * is fixed when this repository is compiled.
+ *
+ * The request is checked **before** the child is spawned as well as by the
+ * helper on arrival. Two calls to one function, never two implementations — the
+ * helper's is the one that matters, because it is the side something other than
+ * DASH could talk to, and this one exists so a malformed request costs no
+ * process.
+ *
+ * A non-JSON answer is reported as a transport failure rather than parsed
+ * loosely. An `ssh` that could not authenticate writes its diagnostics to
+ * stderr and exits, so stdout holds nothing — and "the host said something I
+ * could not read" is a different fact from "the host refused", which is
+ * `describeTransportError`'s distinction applied one plane over.
+ */
+export async function runDeployVerb(
+  spawnChild: DeploySpawn,
+  request: DeployRequest,
+): Promise<DeployAnswer> {
+  const checked = checkDeployRequest(request);
+  if (!checked.ok) {
+    return { ok: false, problem: checked.problem, detail: checked.detail };
+  }
+
+  const channel = spawnChild(
+    request.verb,
+    // Only `connect` puts an id on the command line, and `connect` does not come
+    // through here — it is a channel, not a request/response. Passed anyway so
+    // the spawner has it, and ignored by every other verb's helper branch.
+    undefined,
+  );
+
+  return await new Promise<DeployAnswer>((resolve) => {
+    let body = "";
+    let settled = false;
+    const settle = (answer: DeployAnswer): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      channel.close();
+      resolve(answer);
+    };
+
+    channel.stdout.setEncoding("utf8");
+    channel.stdout.on("data", (chunk: string) => {
+      body += chunk;
+      if (body.length > MAX_ANSWER_BYTES) {
+        settle({
+          ok: false,
+          problem: "unreadable_answer",
+          detail: "The server's answer was too long to be one.",
+        });
+      }
+    });
+    channel.stdout.on("end", () => {
+      const line = body.trim();
+      if (line.length === 0) {
+        settle({
+          ok: false,
+          problem: "unreachable",
+          detail:
+            "The server did not answer. DASH could not sign in, or the helper is not installed there.",
+        });
+        return;
+      }
+      try {
+        settle(JSON.parse(line.split("\n").pop() ?? line) as DeployAnswer);
+      } catch {
+        settle({
+          ok: false,
+          problem: "unreadable_answer",
+          // The answer is never quoted back. It is whatever a machine DASH does
+          // not administer chose to write, and this string reaches a log.
+          detail: "The server answered with something DASH could not read.",
+        });
+      }
+    });
+    channel.stdout.on("error", () => {
+      settle({ ok: false, problem: "unreachable", detail: "The connection to the server failed." });
+    });
+
+    channel.stdin.on("error", () => {
+      settle({ ok: false, problem: "unreachable", detail: "The connection to the server failed." });
+    });
+    channel.stdin.end(`${JSON.stringify(request)}\n`);
+  });
+}
+
+/** An answer is a status line, not a payload. Evidence travels on the other plane. */
+const MAX_ANSWER_BYTES = 1024 * 1024;
+
+/**
+ * Spawn `ssh` for a deploy verb against one host.
+ *
+ * The key is proven protected on the way, for `sshHostChannel`'s reason: an ACL
+ * that was right once is a property of a file at a moment, and the moment that
+ * matters is the one `ssh` is about to read it in.
+ *
+ * @throws HostKeyError, ChannelSecretError
+ */
+export function sshDeploySpawn(record: HostRecord, dataDir: string): DeploySpawn {
+  return (verb, bundleId) => {
+    const identity = assertHostKeyProtected(dataDir, record.key_name);
+    return openSshChannel(
+      record,
+      verb,
+      { identity_file: identity, known_hosts_file: knownHostsPath(dataDir) },
+      bundleId,
+    );
   };
 }
 
