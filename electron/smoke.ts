@@ -1072,8 +1072,17 @@ if (recorded !== null) {
   } catch (error: unknown) {
     health = { error: error instanceof Error ? error.message : String(error) };
   }
+  /*
+   * MAR-518. Relabelled: `/health`'s `ok` has meant "and its own store is
+   * readable" since MAR-506 (`ok: damage === null`), not just "answered". The
+   * old name — "the runner is listening on its endpoint" — read as a
+   * connectivity check, so a damaged store failed it with a sentence that
+   * named the wrong fault: the runner really was listening on
+   * `recorded.transport`, and what was false was the second half nothing in
+   * the label admitted asking.
+   */
   check(
-    `4b. the runner is listening on its ${recorded.transport} endpoint`,
+    "4b. the runner is listening and its store answers",
     (health as { ok?: boolean } | null)?.ok === true,
     health,
   );

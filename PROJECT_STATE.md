@@ -1079,6 +1079,84 @@ new. `pnpm verify:shell` was **not run**: this machine's runner store is the
 damaged one the issue is about, so a shell smoke here would have been testing
 the fault rather than the fix.
 
+## The repair gets a button (MAR-518)
+
+**Open on a PR, not merged.** MAR-506's own child, and the half its PR
+deliberately left unbuilt: `POST /store/retire` existed and worked, and
+`can_retire` was hardcoded `false` because nothing in DASH asked for it yet.
+Branch `000henrik/mar-518-retire-store-surface`, cut from master independently
+of the MAR-508 branch above — stacked PRs get no CI here, so both are cut from
+the same tip rather than from each other.
+
+All five files the issue named: `lib/shell/ipc.ts` gains `runner.retireStore`,
+naming no agent — a damaged store is a fact about the runner, not about any one
+of the agents it supervises. `electron/main.ts`'s `runnerLifecycle` gains a
+`retireStore` branch reaching `POST /store/retire` directly, never an agent's
+`/lifecycle` route. `electron/preload.ts`, `app/_data/source.ts` and
+`app/page.tsx` carry it the rest of the way.
+
+**One thing the issue's file list didn't spell out turned out to be load-
+bearing.** `runner.status`, `runner.start`, `runner.stop` and `runner.remove`
+were wired end to end in the dispatcher and never once exposed through
+`dashShell` — no page has ever been able to ask the runner how it is. Without
+that, there was no way for `app/page.tsx` to learn a store was damaged in the
+first place, so `runnerStatus` was added beside `retireRunnerStore` in the
+preload bridge, following the same optional-method shape `downloadOutput` set.
+
+**The status branch was also wrong, not just unreached.** It called
+`response.json()` unconditionally, and `fetch` does not throw on a non-2xx
+status — only on a transport failure. So a damaged store's typed 503 parsed as
+`{agents: undefined}`, `(body.agents ?? []).length` was `0`, and `runner.status`
+reported `{ok: true, supervising: 0}`: a healthy, idle runner, which is the
+opposite of true. Fixed by checking `response.ok` first and classifying the
+body with `lib/agent-dom/transport.ts`'s own `readStoreDamage`, exported for
+this rather than reimplemented — one classifier, so the per-agent path and the
+home page cannot drift on what counts as damaged.
+
+**The surface, per the issue's own UX argument.** `app/page.tsx` is not about
+any single agent, and a damaged runner store is "nothing can run, and this
+needs your decision" — a fact about the whole runner. `useRunnerStoreDamage`
+checks once on mount, gated on `useCanAct`, matching `useHost`'s own pattern
+rather than adding a poller nothing else on this page has. The parsing —
+`data` is `Record<string, string | number | boolean>` on the wire and has to
+be narrowed by hand — is a pure `runnerStoreDamageFromStatus` function so it is
+testable without React, a bridge, or a runner, and it refuses to invent a kind
+the runner did not actually report. `RunnerStoreDamageNotice` renders
+`describeRunnerStoreDamage(kind, { can_retire: true })` as the three-part
+recovery **plus a real button** — the button the per-agent path can never have,
+because it has nowhere to put one.
+
+**The last line, done last.** `lib/agent-dom/transport.ts`'s `can_retire`
+flips from `false` to `true`, exactly as MAR-506's own comment said it would.
+That path's copy now reads as text what the home page's button lets somebody
+actually do.
+
+**The `4b` relabel, folded in.** `electron/smoke.ts`'s proof `4b` —
+"the runner is listening on its `{transport}` endpoint" — checks `/health`'s
+`ok` field, which has meant "and my store is readable" since MAR-506. The old
+name read as a connectivity check failing for a store fault; it now reads
+"the runner is listening and its store answers". The assertion is unchanged.
+
+**Not done, per the issue's own "Do not."** No automatic retirement anywhere —
+the click is the consent, and nothing here sets a store aside without a person
+pressing the button that says so.
+
+Evidence: `pnpm typecheck` clean, full vitest from PowerShell, 86 test files /
+1616 passed / 8 skipped / 0 failed, 9 of them new across `tests/shell.test.ts`
+(the `retireStore` dispatch, naming no agent), `tests/agent-dom-transport.test.ts`
+(`can_retire: true`) and the new `tests/runner-store-notice-render.test.tsx`
+(the parser's five cases and the rendered notice, including that a button
+exists and that no branch ever says "delete"). `pnpm verify:shell` was **not**
+run this session: an orphaned `dist/google-proof/runner.mjs` process from an
+unrelated, interrupted `prove-google.mjs` attempt was found still alive on this
+machine, and starting the shell smoke alongside a live, unrelated runner risked
+the interference AGENTS.md's process-safety rule exists to avoid.
+
+**Not proven installed.** The button has not been clicked in a real Electron
+shell against a genuinely damaged `runner.sqlite`. That is what would move this
+to `proven`, and it is also what the relabelled `4b` would now catch failing if
+the retire path regressed.
+
 ## The plane that must not be generalised, made structural (MAR-484)
 
 **Open on a PR, not merged.** ADR 0007's load-bearing paragraph was a finding

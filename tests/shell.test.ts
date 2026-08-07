@@ -133,6 +133,9 @@ describe("the audited command chokepoint", () => {
       // because removing an agent is a sequence of file, store and process
       // operations only the shell can order correctly.
       "runner.remove",
+      // MAR-518. Same family, and names no agent: a damaged store is a fact
+      // about the runner, not about any one of the agents it supervises.
+      "runner.retireStore",
       // MAR-434. A fifth family, addressing the runner's task workspace over
       // routes the runner already served and proof 9 already exercised. Note
       // the payload: two opaque ids, no path — main asks the *user* where to
@@ -569,6 +572,23 @@ describe("dispatch", () => {
 
     expect(result).toMatchObject({ ok: false, reason: "missing_payload_field" });
     expect(ctx.lifecycle).toHaveLength(0);
+  });
+
+  /**
+   * MAR-518. `runner.retireStore` is the one lifecycle command that must
+   * *not* be denied for naming no agent — a damaged store is a fact about
+   * the runner, not about any one agent it supervises, and `agentId` reaches
+   * `runnerLifecycle` as `undefined` rather than being refused upstream.
+   */
+  it("dispatches the store-retire command with no agent named", async () => {
+    const ctx = context();
+    const result = await dispatchCommand(
+      { command: "runner.retireStore", request_id: "req-h" },
+      ctx,
+    );
+
+    expect(result).toMatchObject({ ok: true, detail: "retireStore ok" });
+    expect(ctx.lifecycle).toEqual([{ action: "retireStore", agent_id: undefined }]);
   });
 
   it("refuses to execute a lifecycle command outside the dispatcher", () => {

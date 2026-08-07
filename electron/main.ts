@@ -45,6 +45,7 @@ import {
   runAgentCommand,
   type AgentCommandInput,
 } from "../lib/agent-dom/runner";
+import { readStoreDamage } from "../lib/agent-dom/transport";
 import { heldCredentials, performConnectionAction } from "../lib/connection-actions";
 import {
   deliverableFields,
@@ -1023,6 +1024,26 @@ async function runnerLifecycle(
         headers: { authorization: `Bearer ${runner.token}` },
         signal: AbortSignal.timeout(3_000),
       });
+      /*
+       * MAR-518. This used to read `response.json()` unconditionally, which
+       * does not throw on a non-2xx status — `fetch` only throws on a
+       * transport failure. So a damaged store's typed 503 parsed as `{agents:
+       * undefined}`, `(body.agents ?? []).length` was `0`, and `runner.status`
+       * reported `{ok: true, supervising: 0}`: a healthy, idle runner, not a
+       * damaged one. Nobody asked this route yet, which is why nothing had
+       * noticed.
+       */
+      if (!response.ok) {
+        const damage = await readStoreDamage(response);
+        if (damage !== null) {
+          return {
+            ok: false,
+            detail: "The runner cannot read its own records.",
+            data: { store_damaged: true, damage_kind: damage },
+          };
+        }
+        return { ok: false, detail: `The runner answered with status ${String(response.status)}.` };
+      }
       const body = (await response.json()) as { agents?: unknown[] };
       return {
         ok: true,
@@ -1030,6 +1051,47 @@ async function runnerLifecycle(
       };
     } catch {
       return { ok: false, detail: "The runner did not answer." };
+    }
+  }
+
+  if (action === "retireStore") {
+    /*
+     * MAR-518. Names no agent — see the `runner.retireStore` entry in
+     * `lib/shell/ipc.ts` for why this reaches `POST /store/retire` directly
+     * rather than an agent's `/lifecycle` route.
+     *
+     * The runner's own success body (`{ok: true, moved_to, moved}`) carries
+     * no sentence a person reads — `runner/server.ts` only writes one on
+     * failure — so it is composed here, once, rather than asking every future
+     * caller of this branch to remember to.
+     */
+    try {
+      const response = await call(`${runner.origin}/store/retire`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${runner.token}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      const body = (await response.json()) as
+        | { ok: true; moved_to?: unknown; moved?: unknown }
+        | { ok: false; detail?: unknown };
+      if (body.ok === true) {
+        const movedTo = typeof body.moved_to === "string" ? body.moved_to : "a renamed file";
+        const moved = typeof body.moved === "number" ? body.moved : 0;
+        return {
+          ok: true,
+          detail: `The damaged records were set aside as ${movedTo} (${String(moved)} file${moved === 1 ? "" : "s"}). A fresh store is open.`,
+          data: { moved_to: movedTo, moved },
+        };
+      }
+      return {
+        ok: false,
+        detail:
+          typeof body.detail === "string"
+            ? body.detail
+            : "The runner could not set its store aside.",
+      };
+    } catch {
+      return { ok: false, detail: "The runner could not be reached." };
     }
   }
 

@@ -92,6 +92,16 @@ interface DashShellClient {
    * front of the user rather than refuse honestly.
    */
   downloadOutput?(args: { agent_id: string; artifact_id: string }): Promise<CommandResult>;
+  /**
+   * The runner's own health, and its one repair (MAR-518).
+   *
+   * Optional on top of the bridge already being optional, like `openAppMenu`
+   * and for the same reason: a shell built before this feature has a
+   * `dashShell` without them, and a page that assumed otherwise would throw
+   * rather than refuse.
+   */
+  runnerStatus?(): Promise<CommandResult>;
+  retireRunnerStore?(): Promise<CommandResult>;
   connectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   testConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   disconnectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
@@ -376,6 +386,51 @@ export async function downloadOutput(args: {
     };
   }
   return bridge.downloadOutput(args);
+}
+
+/**
+ * Ask the runner how it is, including whether its own store is damaged
+ * (MAR-518).
+ *
+ * The one status check a page reads independently of any one agent — see
+ * `app/page.tsx`, the home view, for why this is the surface that asks it.
+ */
+export async function checkRunnerStatus(): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined || bridge.runnerStatus === undefined) {
+    return { ok: false, request_id: "", reason: "read_only_host", detail: "" };
+  }
+  return bridge.runnerStatus();
+}
+
+/**
+ * Ask DASH to set the runner's damaged store aside (MAR-518).
+ *
+ * The two refusals below are never shown as the reason a button did nothing:
+ * `app/page.tsx` only renders the button once `checkRunnerStatus` has already
+ * reported `store_damaged`, which itself required a bridge new enough to
+ * answer that question. They exist so this function is honest on its own,
+ * for any future caller that does not check first.
+ */
+export async function retireRunnerStore(): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to repair the runner's store.",
+    };
+  }
+  if (bridge.retireRunnerStore === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "This version of the DASH app cannot set a damaged store aside yet.",
+    };
+  }
+  return bridge.retireRunnerStore();
 }
 
 /**

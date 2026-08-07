@@ -300,7 +300,10 @@ describe("submitting a command", () => {
     const outcome = await httpAdapter(CHANNEL, { fetch: fetcher.fn }).submit(ENVELOPE);
     const detail = outcome.ok ? "" : (outcome.detail ?? "");
 
-    const recovery = describeRunnerStoreDamage("malformed", { can_retire: false });
+    // MAR-518: the repair has a caller now (app/page.tsx's retire button), so
+    // this reads can_retire: true — the same fact stated as text here, since
+    // this path has no button of its own to offer.
+    const recovery = describeRunnerStoreDamage("malformed", { can_retire: true });
     expect(detail).toContain(recovery.headline);
     expect(detail).toContain(recovery.meaning);
     expect(detail).toContain(recovery.next_action);

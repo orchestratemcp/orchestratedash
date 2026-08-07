@@ -275,20 +275,19 @@ async function request(
             ok: false,
             reason: "adapter_failed",
             /*
-           * `can_retire: false`, and it is the honest value today rather than a
-           * placeholder. The runner *can* set a damaged store aside — `POST
-           * /store/retire` is built and tested — but nothing in DASH asks it
-           * to yet: that wants a shell command, a preload method and a control
-           * on a surface, all in files another open PR owns.
-           *
-           * So the copy does not offer a button that is not on the screen.
-           * `describeStoreDamage` makes the same call for its unnamed case and
-           * says why: a next action the user cannot take is worse than one that
-           * admits DASH cannot fix this, because the first sends them looking.
-           * Flipping this to `true` is the last line of the follow-up that
-           * wires the control, and the copy is already written for it.
+           * `can_retire: true` (MAR-518). `POST /store/retire` now has a
+           * caller: `runner.retireStore`, reachable from `app/page.tsx`, the
+           * one place the runner's health is checked independently of any
+           * one agent. This path — a command against one agent, while its
+           * store happens to be damaged — has nowhere to put a button of its
+           * own, so the sentence stays text here; it is true regardless of
+           * which screen reads it, and the home page is where it is acted
+           * on. That is a weaker rendering than a button and a stronger one
+           * than "Report this. Nothing here can be repaired by reopening
+           * DASH," which is what this line said until the repair existed
+           * anywhere to point to.
            */
-          detail: recoverySentences(describeRunnerStoreDamage(damage, { can_retire: false })),
+          detail: recoverySentences(describeRunnerStoreDamage(damage, { can_retire: true })),
           },
         };
       }
@@ -396,8 +395,13 @@ async function readBounded(response: Response): Promise<string | null> {
  *
  * A body that is missing, oversized or not JSON returns null and the generic
  * sentence is used. Silence is not evidence of a damaged store.
+ *
+ * Exported for `electron/main.ts`'s `runner.status` handling (MAR-518), so the
+ * home page can learn the same fact this module already reads off a failed
+ * command — one classifier, not two that could drift on what counts as
+ * "damaged".
  */
-async function readStoreDamage(response: Response): Promise<RunnerStoreDamageKind | null> {
+export async function readStoreDamage(response: Response): Promise<RunnerStoreDamageKind | null> {
   const text = await readBounded(response);
   if (text === null || text === "") {
     return null;
