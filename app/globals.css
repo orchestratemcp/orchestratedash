@@ -60,20 +60,22 @@ body {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   /*
-   * `minmax(0, 1fr)`, never the implicit `auto` column, and this line is worth
-   * more than it looks. A grid item's default `min-width: auto` refuses to
-   * shrink below its own min-content, so an `auto` track sizes to the widest
-   * band — and `nav.app-nav`'s five links are 484px of min-content. The whole
-   * page silently laid out 574px wide inside a 375px window the first time this
-   * grid was tried, with the nav's own `overflow-x: auto` powerless to help,
-   * because the scroller was as wide as its content by then.
+   * Two columns since MAR-546: the sidebar's `auto` track and the content's
+   * `minmax(0, 1fr)`. The `minmax(0, …)` on the content column is load-bearing
+   * and predates the sidebar — a grid item's default `min-width: auto` refuses
+   * to shrink below its own min-content, and the first draft of this grid laid
+   * the whole page out 574px wide inside a 375px window because of exactly
+   * that. The sidebar column is `auto` on purpose: the nav names its own width
+   * (240px, or the rail below 900px), an empty `auto` track collapses to zero,
+   * and a dialog route — where the sidebar renders nothing — therefore gets the
+   * full window without a rule remembering to give it back.
    *
    * The row track needs the same `minmax(0, …)` for the same reason in the
    * other axis: `1fr` alone will not shrink below `main`'s content height, and
    * a middle band taller than its track is a page that scrolls the window
    * again with the strip pushed off the bottom of it.
    */
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   height: 100dvh;
   overflow: hidden;
   background: var(--bg);
@@ -214,6 +216,10 @@ main:focus {
  */
 .app-chrome {
   grid-row: 1;
+  /* The full width: the strip the window is dragged by and the room Windows'
+     caption buttons need are facts about the window, not about a column of it
+     (MAR-546). */
+  grid-column: 1 / -1;
   position: sticky;
   top: 0;
   z-index: 10;
@@ -323,34 +329,67 @@ main:focus {
   line-height: 1;
 }
 
-.app-nav {
+/* ---------------------------------------------------------------------- *
+ * The sidebar (MAR-546)
+ * ---------------------------------------------------------------------- */
+
+/*
+ * The left track of `body`'s grid, per the concept's fixed 240px sidebar —
+ * `--sidebar-width` has been waiting in `tokens.css` since MAR-420 planned
+ * this and MAR-528 declined it; MAR-546 is Henrik overriding that decline.
+ *
+ * The wrap-instead-of-scroll history the horizontal nav carried (MAR-491) is
+ * retired with it: a vertical list has no width to run out of. What survives
+ * from that lesson is the constraint itself — no destination may be off-screen
+ * at rest, at any window width — which is why the narrow answer below is a
+ * rail rather than a drawer.
+ *
+ * `overflow-y: auto` because the sidebar is a band of the window, like `main`:
+ * on a 375×400 window six destinations plus the density control are taller
+ * than the track, and a sidebar that pushes the strip off the bottom would be
+ * the row-axis version of the failure `minmax(0, 1fr)` exists to stop.
+ */
+.app-sidebar {
+  grid-row: 2;
+  grid-column: 1;
   display: flex;
+  flex-direction: column;
   gap: var(--space-1);
-  padding: 0 var(--space-3) var(--space-2);
-  /*
-   * It wraps. It used to scroll, and MAR-491 is where that decision is made
-   * properly rather than patched.
-   *
-   * The original reasoning was that a chrome which changes height by breakpoint
-   * moves the content under it, and that MAR-440's acceptance was about the
-   * *page* not overflowing horizontally. Both are true and neither is what a
-   * person at 375px experiences: `nav.app-nav` scrolled 484px of content
-   * through 359, so two of the five destinations and the density control were
-   * off-screen at rest, with a scrollbar as the only hint they existed. The
-   * capture measured `density_toggle.fully_visible: false` at 375px in every
-   * wave since MAR-440 shipped.
-   *
-   * A navigation bar that hides where you can go is worse than one that is two
-   * rows tall. The content under it does move — once, at one width, before
-   * anybody has read anything — and in exchange every destination is reachable
-   * without discovering a horizontal scroller inside a desktop application.
-   *
-   * PROJECT_STATE.md recorded this as "the chrome, a different finding from
-   * MAR-491's tables, wanting the same breakpoint decision rather than a
-   * patch". This is that decision, taken with the tables.
-   */
-  flex-wrap: wrap;
-  row-gap: var(--space-1);
+  width: var(--sidebar-width);
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3);
+  border-right: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+/*
+ * The concept's identity block, fiction removed: the wordmark, and the adopted
+ * concept's own name for the surface. No version string, no status line, no
+ * invented readout — a fact DASH does not have does not get a slot here.
+ */
+.sidebar-identity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: var(--space-2);
+}
+
+.sidebar-mark {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+.sidebar-tag {
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-faint);
 }
 
 /*
@@ -358,8 +397,10 @@ main:focus {
  * The words are `app/_data/routes.ts`'s own — "Work inbox" is still two English
  * words and is still what a screen reader says.
  */
-.app-nav-link {
-  position: relative;
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -373,9 +414,9 @@ main:focus {
   transition: color var(--motion-fast) linear, background-color var(--motion-fast) linear;
 }
 
-.app-nav-link:hover {
+.sidebar-link:hover {
   border-color: var(--line);
-  background: var(--surface-1);
+  background: var(--surface-2);
   color: var(--text);
 }
 
@@ -390,23 +431,74 @@ main:focus {
  * is in the markup, and it is what carries the state to anybody not looking at
  * the colour. A rule that had become invisible was never carrying it.
  */
-.app-nav-link.is-active {
+.sidebar-link.is-active {
   border-color: var(--accent);
   background: var(--accent);
   color: var(--accent-contrast);
 }
 
-.app-nav-link.is-active:hover {
+.sidebar-link.is-active:hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
   color: var(--accent-contrast);
 }
 
-/* Pushes the density control to the far end of the nav row. `margin-left: auto`
-   on the control itself would collapse in the scrolling flex row at 375px. */
-.app-nav-spacer {
+/* The glyph never flexes: a squeezed icon reads as a bug in pixel art. */
+.sidebar-icon {
+  flex: none;
+  display: block;
+}
+
+/* Pushes the density control to the bottom of the sidebar. */
+.sidebar-spacer {
   flex: 1 1 auto;
-  min-width: var(--space-4);
+  min-height: var(--space-4);
+}
+
+/*
+ * Below 900px the sidebar collapses to an icon rail (MAR-546).
+ *
+ * A rail rather than a drawer, and the reasons are DASH's own rather than
+ * taste: a drawer needs a scrim, and nothing in this app may paint over an
+ * approval card (the fleet strip's hard rule); a drawer hides every
+ * destination behind a press, and the horizontal nav's whole narrow-width
+ * failure (MAR-491) was destinations hidden at rest; and a rail costs 40px of
+ * a 375px window, which the record surfaces MAR-491 rebuilt as fluid rows
+ * absorb without regaining a reason to overflow — the capture matrix at 375 is
+ * what says that stayed true.
+ *
+ * The labels are hidden with the `.visually-hidden` recipe rather than
+ * removed, so every link keeps its accessible name and the `title` tooltip
+ * carries it for a sighted mouse. The identity block goes entirely: the title
+ * bar already says DASH, and a wordmark sideways in a 40px column is cosplay,
+ * not identity.
+ */
+@media (max-width: 900px) {
+  .app-sidebar {
+    width: auto;
+    padding: var(--space-2) var(--space-1);
+    align-items: stretch;
+  }
+
+  .sidebar-identity {
+    display: none;
+  }
+
+  .sidebar-link {
+    justify-content: center;
+    padding: var(--space-3) var(--space-2);
+  }
+
+  .sidebar-label {
+    position: absolute;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 /* ---------------------------------------------------------------------- *
@@ -442,18 +534,25 @@ main:focus {
 }
 
 /*
- * Below 560px the label goes and the glyph stays.
+ * In the rail the label goes and the glyph stays, at the sidebar's own
+ * breakpoint — the control lives in the sidebar now (MAR-546), so its label
+ * collapses when its container does, not at the 560px the horizontal nav
+ * needed.
  *
  * Deliberately the *label* rather than the control: density matters most on a
  * narrow window, so hiding the button there would remove it exactly where it
  * earns its keep. The accessible name survives — `title` carries the
  * description, and the label is hidden visually rather than removed.
  */
-@media (max-width: 560px) {
+@media (max-width: 900px) {
+  .density-toggle {
+    justify-content: center;
+  }
+
   .density-label {
     position: absolute;
     /* See `.visually-hidden` — without this the span keeps its static position
-       inside the scrolled nav, escapes it, and widens the whole page. */
+       inside the sidebar, escapes it, and widens the whole page. */
     left: 0;
     width: 1px;
     height: 1px;
@@ -482,8 +581,11 @@ main:focus {
  */
 main {
   /* Named, never auto-placed — see the note on `body`. This is the only track
-     that scrolls, and the two bands around it are conditional. */
+     that scrolls, and the three bands around it are conditional. Column 2:
+     when the sidebar renders nothing, column 1 is an empty `auto` track and
+     collapses to zero, so a dialog still gets the full window. */
   grid-row: 2;
+  grid-column: 2;
   overflow-y: auto;
   min-width: 0;
   /* The concept's 32px desktop margin, 16px on a phone (`DESIGN.md`, "Layout &
@@ -2132,6 +2234,9 @@ button:disabled {
  * ------------------------------------------------------------------------ */
 .fleet-strip {
   grid-row: 3;
+  /* The bottom edge of the window, under the sidebar too (MAR-546): the cast
+     stands on the window's edge, not on the content column's. */
+  grid-column: 1 / -1;
   display: flex;
   align-items: flex-end;
   gap: var(--space-4);
