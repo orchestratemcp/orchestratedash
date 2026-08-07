@@ -459,3 +459,43 @@ export function requestedOperations(
     operation.required_scopes.every((scope) => declared.has(scope)),
   );
 }
+
+/**
+ * The other half of the same list: every operation **DASH offers** for this
+ * connection's provider that the manifest did *not* ask for (MAR-533).
+ *
+ * `requestedOperations` above is already an intersection — DASH's operation set
+ * meets the manifest's declared scopes — so from a card's point of view two of
+ * the three parties in a grant are indistinguishable inside it. That is fine for
+ * a list of what an agent may do and useless for explaining *why* it may do it,
+ * which is what the Connections page now has to do for somebody who has never
+ * heard of OAuth.
+ *
+ * The difference is what makes the explanation checkable rather than a slogan.
+ * "Send an email" appearing here, on a Gmail connection, is DASH saying: this is
+ * an action we have never built, and it would still not happen if you granted
+ * every permission Google has. That is a stronger and more surprising statement
+ * than any reassurance, and it is one this repository can be held to — the list
+ * is `lib/broker/operations.ts` and nothing else.
+ *
+ * Complement rather than a second filter, so the two lists cannot overlap and
+ * cannot both miss an operation: every operation for the provider is in exactly
+ * one of them.
+ */
+export function unrequestedOperations(
+  manifest: ConnectionSourceManifest,
+  connectionId: string,
+): BrokerOperation[] {
+  const connection = findConnection(manifest, connectionId);
+  if (connection === undefined) {
+    return [];
+  }
+  const profile = brokerProfileFor(connection.provider);
+  if (profile === null) {
+    return [];
+  }
+  const asked = new Set(requestedOperations(manifest, connectionId).map((one) => one.id));
+  return operationsForProvider(operationProviderFor(profile)).filter(
+    (operation) => !asked.has(operation.id),
+  );
+}

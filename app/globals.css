@@ -943,12 +943,210 @@ a.plain:hover {
   margin-bottom: calc(var(--density-stack) * 1.5);
 }
 
-.connection-group {
-  margin-bottom: var(--density-stack);
+.agent-connections > .agent-identity {
+  margin-bottom: var(--density-gap);
 }
 
-.connection-group h3 {
-  margin-bottom: 0.2rem;
+/* ---------------------------------------------------------------------- *
+ * The capability card (MAR-533)
+ *
+ * One card per connection, answering four questions in order: what can this
+ * reach, on whose account, since when, and what has it actually been used for.
+ *
+ * Everything here is a stack with rules between the answers. There is no grid
+ * and no column: MAR-491's finding is that a table's widths are arithmetic DASH
+ * does not control the content of, and this card's content is a provider's
+ * account name, an agent author's sentence and DASH's own disclosure paragraphs —
+ * the three least predictable widths in the product. A stack reflows and a
+ * two-column receipt does not.
+ * ---------------------------------------------------------------------- */
+
+.page-summary {
+  margin: 0 0 var(--density-stack);
+  padding: var(--space-3) var(--space-4);
+  border-left: var(--active-bar) solid var(--accent);
+  background: var(--surface-1);
+}
+
+.connection-purpose {
+  margin: 0 0 var(--density-gap);
+  color: var(--text);
+}
+
+/* A rule above each answer rather than a box around it. Four boxes inside a box
+   is the shape a card acquires when nobody decides what it is; a rule says
+   "new question" for one pixel. */
+.capability-section {
+  margin-top: var(--density-gap);
+  padding-top: var(--density-gap);
+  border-top: 1px solid var(--line);
+}
+
+.capability-section > h4 {
+  /* `label-caps` already carries the type; this only re-states the colour,
+     because a section heading inside a card is quieter than the card's own. */
+  color: var(--text-faint);
+}
+
+.standing-list,
+.party-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+/*
+ * One action, and where it stands.
+ *
+ * The left bar is the state, and it is a bar rather than a fill for the reason
+ * `app/tokens.css` gives: a green row would join the emerald meaning system and
+ * a card of green rows would stop meaning "these can happen" and start meaning
+ * "this rendered". The chip beside the label carries the word, and the sentence
+ * under it carries the meaning — a chip alone is a term a novice has to guess.
+ */
+.standing {
+  padding-left: var(--space-3);
+  border-left: 3px solid var(--line);
+}
+
+.standing-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.standing-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.standing-meaning,
+.standing-consequence {
+  margin: var(--space-1) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* The only state that gets the accent. "This can happen right now" is the one
+   answer a person is scanning for, and everything else on this card is a
+   variation on "it cannot". */
+.standing-allowed {
+  border-left-color: var(--accent);
+}
+
+/* Two different "not yet"s, and they lead somewhere different — see
+   `describeStanding` in `lib/connection-card.ts`. They share a colour because
+   the *rank* is the same; the sentence is what separates them, and a second
+   neutral tone would be a distinction nobody could name. */
+.standing-awaiting_you,
+.standing-not_issued {
+  border-left-color: var(--line-strong);
+}
+
+/* Deliberately the quietest. "DASH can do this and nobody asked" is the most
+   reassuring line on the card and must not read as a warning. */
+.standing-not_asked_for {
+  border-left-color: var(--line);
+  opacity: 0.85;
+}
+
+/*
+ * A disclosure that must survive a redesign (MAR-469, MAR-482, ADR 0006).
+ *
+ * Given the warning tint and a bar, because both sentences here say the same
+ * kind of thing: the arrangement is wider or longer than the action, in a
+ * direction the user did not choose. Not `--err`: nothing has gone wrong, and a
+ * red panel on a working connection teaches people to ignore red panels.
+ */
+.disclosure {
+  margin: var(--density-gap) 0 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--warn);
+  border-left-width: 3px;
+  background: var(--warn-bg);
+}
+
+.account-line {
+  margin: 0 0 var(--space-2);
+}
+
+/*
+ * The three parties, drawn.
+ *
+ * A filled block for true and a hollow one for false — one pixel-block of the
+ * system's own vocabulary rather than a tick, which would be a glyph whose
+ * meaning depends on a font being present. Both marks are `aria-hidden` and the
+ * state is carried in words beside them.
+ */
+.party {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.party-mark {
+  flex: none;
+  font-size: var(--text-sm);
+  line-height: 1;
+}
+
+.party.is-true > .party-mark {
+  color: var(--accent);
+}
+
+.party.is-false > .party-mark {
+  color: var(--text-faint);
+}
+
+.party.is-false {
+  color: var(--text-muted);
+}
+
+.party-otherwise {
+  color: var(--text-muted);
+}
+
+.party-timing {
+  margin: var(--space-3) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/*
+ * What DASH cannot account for (MAR-467), now closed by default.
+ *
+ * It stays above the cards — somebody who opened this page because an agent did
+ * less than they expected is looking for exactly this — and it stops being the
+ * first paragraph a person reads. It carries no verdict-shaped chip and never
+ * will: a permission card's history is decisions DASH made, and these are
+ * requests DASH never adjudicated.
+ */
+.broker-lapses {
+  margin: 0 0 var(--density-gap);
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed var(--line-strong);
+  background: var(--surface-1);
+}
+
+.broker-lapses > summary {
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  width: fit-content;
+}
+
+.broker-lapses ul {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
 }
 
 /* Capabilities are a plain list of sentences; the bullets add nothing and the

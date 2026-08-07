@@ -334,6 +334,68 @@ describe("what the Connection Center shows", () => {
     expect(lapsesFor(stopsName).map((entry) => entry.kind)).not.toContain("dash_closed");
   });
 
+  it("shows a closed window only for an agent DASH actually stands in the middle of", () => {
+    /*
+     * MAR-533, and it was found by photographing the rebuilt page rather than by
+     * a gate — the same shape of finding as MAR-491's list markers.
+     *
+     * `ai-news-scout` declares no connections at all, and its card read "there
+     * are 5 periods DASH cannot account for" directly above "this agent asked to
+     * reach nothing outside this computer". Both sentences were true; together
+     * they were nonsense. A `dash_closed` lapse says the permission broker was
+     * not running to answer this agent's requests, and an agent with nothing
+     * DASH brokers has no such requests to have gone unanswered.
+     *
+     * The agent-managed example is the sharper case than a connectionless one:
+     * it *does* declare a connection and it *does* keep running through the
+     * window, and DASH is still not in the middle of it — so the old gate, which
+     * only asked whether the agent survives DASH closing, passed it.
+     */
+    recordClosedWindow({
+      last_alive_at: "2026-08-02T09:00:00.000Z",
+      now: "2026-08-02T10:00:00.000Z",
+      runner_adopted: true,
+      runner_started_at: "2026-08-02T08:00:00.000Z",
+    });
+
+    const managed = example("agent-managed.manifest.v2.example.json");
+    expect(importManifest(managed).ok).toBe(true);
+    const managedName = String(
+      (managed as { agent?: { name?: unknown } }).agent?.name ?? "agent-managed",
+    );
+
+    // It keeps running through the window, and none of its rows is brokered.
+    const view = connectionsView().agents.find((entry) => entry.name === managedName);
+    expect(view?.rows.every((row) => row.broker === null)).toBe(true);
+    expect(view?.lapses.map((entry) => entry.kind)).not.toContain("dash_closed");
+
+    // The Gmail agent shares the same window and is brokered, so it still gets
+    // it — this is a narrower gate, not a silenced one.
+    expect(lapsesFor(AGENT).map((entry) => entry.kind)).toContain("dash_closed");
+  });
+
+  it("still reports requests the runner destroyed, whether or not anything is brokered", () => {
+    // The gate above is deliberately not applied to this kind. These are
+    // observations of requests that really were discarded, and an agent with no
+    // brokered connection producing them is exactly the situation nobody should
+    // be able to hide by tidying this list.
+    const managed = example("agent-managed.manifest.v2.example.json");
+    expect(importManifest(managed).ok).toBe(true);
+    const managedName = String(
+      (managed as { agent?: { name?: unknown } }).agent?.name ?? "agent-managed",
+    );
+    recordBrokerLapse({
+      kind: "dropped_by_runner",
+      agent: managedName,
+      attempts: 2,
+      from_at: "2026-08-02T10:00:00.000Z",
+      until_at: "2026-08-02T10:00:02.000Z",
+      observed_by: "runner",
+    });
+
+    expect(lapsesFor(managedName).map((entry) => entry.kind)).toContain("dropped_by_runner");
+  });
+
   it("never claims the agent asked for something during a closed window", () => {
     recordClosedWindow({
       last_alive_at: "2026-08-02T09:00:00.000Z",
