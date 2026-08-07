@@ -37,6 +37,8 @@
  * into arbitrary remote execution.
  */
 
+import { DEPLOY_VERBS, type DeployVerb } from "./deploy/verbs";
+
 /* ---------------------------------------------------------------------- *
  * The record
  * ---------------------------------------------------------------------- */
@@ -175,20 +177,21 @@ export function checkHostRecord(candidate: HostRecord): HostRecordCheck {
 /**
  * Every verb DASH will ever send this host, as a closed set.
  *
- * ADR 0007 lists six the host helper will eventually carry — install, start,
- * stop, status, collect, connect — and says explicitly that specifying the set
- * "belongs with the deploy bridge, where there is something to validate
- * against". So exactly one is here: the control plane's, which is the plane
- * MAR-484 builds. Writing the other five now would be inventing vocabulary for
- * an implementation that does not exist, which is the failure ADR 0006 named
- * about building an import validator with nothing to validate.
+ * ADR 0007 listed six and specified none, saying that fixing the set "belongs
+ * with the deploy bridge, where there is something to validate against".
+ * MAR-484 wrote `connect` — the control plane's — and left the rest as
+ * vocabulary for an implementation that did not exist. MAR-487 is that
+ * implementation, so the set is `DEPLOY_VERBS` now and lives in
+ * `lib/deploy/verbs.ts` beside the arguments each verb carries and the check
+ * both ends run.
  *
- * Adding a verb is a change to this array *and* to the type derived from it,
- * in one file, reviewed as a widening — which is the whole point of the set
- * being closed.
+ * Re-exported under the old name rather than replaced, because what this
+ * module needs is *the set of strings that may reach argv*, and that is what
+ * this alias means here. Adding a verb is still a change to one closed array,
+ * reviewed as a widening — which is the whole point of the set being closed.
  */
-export const HOST_VERBS = ["connect"] as const;
-export type HostVerb = (typeof HOST_VERBS)[number];
+export { DEPLOY_VERBS as HOST_VERBS };
+export type HostVerb = DeployVerb;
 
 /**
  * The `ssh` argument vector for one verb against one host.
@@ -224,6 +227,18 @@ export function sshArgv(
   record: HostRecord,
   verb: HostVerb,
   paths: { identity_file: string; known_hosts_file: string },
+  /**
+   * The one caller-supplied string allowed on the command line, and only
+   * `connect` has one (MAR-487).
+   *
+   * Every other verb's arguments travel as JSON on the child's stdin, because
+   * argv is where option injection lives and because a bundle's file list could
+   * never have gone there. `connect` cannot use stdin — its stdin *is* the HTTP
+   * conversation — so its bundle id comes this way, having passed
+   * `checkDeployRequest`, whose alphabet cannot spell a path, a separator or a
+   * leading `-`.
+   */
+  bundleId?: string,
 ): string[] {
   return [
     "-o", "BatchMode=yes",
@@ -238,6 +253,9 @@ export function sshArgv(
     "-p", String(record.port),
     `${record.username}@${unbracket(record.address)}`,
     verb,
+    // Spread rather than pushed conditionally so the vector is one expression a
+    // reader can see the whole of. Nothing else is ever appended.
+    ...(bundleId === undefined ? [] : [bundleId]),
   ];
 }
 

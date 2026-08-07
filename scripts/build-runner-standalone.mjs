@@ -12,11 +12,12 @@
  *
  * ```
  * dist/runner-standalone/
- *   start.mjs      the entry point — preflight, data directory, handover
- *   runner.mjs     the runner itself, byte-for-byte the same source as the shell's
- *   contracts/     the frozen schemas, because the walk-up search must find them
- *   package.json   type, version, engines, and the runner build id
- *   README.md      the start command and what the host must already have
+ *   start.mjs        the entry point — preflight, data directory, handover
+ *   runner.mjs       the runner itself, byte-for-byte the same source as the shell's
+ *   host-helper.mjs  the deploy plane's closed verb set (MAR-487)
+ *   contracts/       the frozen schemas, because the walk-up search must find them
+ *   package.json     type, version, engines, and the runner build id
+ *   README.md        the start command and what the host must already have
  * ```
  *
  * **`contracts/` is the file nobody would predict.** `lib/contracts.ts` finds
@@ -98,6 +99,26 @@ await Promise.all([
     ...shared,
     entryPoints: [path.join(repoRoot, "runner", "main.ts")],
     outfile: path.join(outDir, "runner.mjs"),
+  }),
+
+  /**
+   * The host helper (MAR-487), in the bundle it operates on.
+   *
+   * ADR 0007: *"The bundle DASH pushes includes a small host helper with a
+   * closed verb set."* It ships **inside** the artifact rather than beside it
+   * for one reason worth writing down: `install` replaces a bundle's files, and
+   * a helper living outside would be a version of the deploy plane that could
+   * drift from the runner it starts. Here they are always the same build, and
+   * the `install` that replaced them is the one that replaced both.
+   *
+   * Its own bundle rather than part of `start.mjs`, because the two are
+   * different programs with different lifetimes: `start.mjs` becomes the
+   * runner and stays, and the helper answers one verb and exits.
+   */
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "scripts", "host-helper", "entry.ts")],
+    outfile: path.join(outDir, "host-helper.mjs"),
   }),
 ]);
 

@@ -1671,6 +1671,255 @@ installed shell *does* exercise is the local path through the same generalised
 code, so a regression in the refactor fails the mandatory gate rather than
 waiting for a VPS. MAR-489 owns the attended half.
 
+## A runner nobody could retire, and the repair nobody could reach (MAR-520)
+
+**Reproduced first-hand before a line was changed, and the reproduction shaped
+the fix.** The runner the 2026-08-07 morning proof left behind was still alive
+at 13:40: pid 28160 running `dist/google-proof/runner.mjs`, child agent pid
+2072, `GET /health` answering `200` with `supervising: 3`, and `GET /agents`
+answering **401** to the `runner.key` sitting in the same directory as its own
+`runner.json`. Two different `runner.key` files on this machine were tried and
+both were refused; they are byte-identical, so MSIX path virtualisation is
+excluded. Last boot was 2026-08-06 22:02, before either process started, so no
+restart had intervened. Every probe was a `GET` — nothing was shut down and
+nothing was force-killed.
+
+**The defect is not that the harness mints a secret per run.** It is that
+**nothing recorded which secret a running runner had resolved.** `runner.json`
+is deliberately secret-free and stays that way; its own header says why a file
+every process on the machine can read is not where a credential goes. The
+consequence nobody had drawn is that a runner whose secret diverges from the
+data directory's `runner.key` — for any reason at all — becomes permanently
+unauthenticable, with no evidence on disk saying so.
+
+`runner/session-key.ts` is the answer, and the distinction it draws is the whole
+of it: `runner.key` is what the **spawner** believes, and the session key is what
+the **runner** is using. The runner writes the secret it actually resolved, at
+the moment it resolved it, under `hardenOwnerOnly` — the same function, the same
+proven ACL, the same refusal to start when the ACL cannot be verified. It is
+written *before* the endpoint exists, so there is never a moment at which a
+runner is reachable and nothing says how to stop it, and cleared on graceful
+shutdown, so a session key on disk means a runner **is** alive rather than once
+was. In the ordinary case it holds the same bytes as `runner.key` and is
+redundant. In every case where they diverge it is the only thing that can retire
+the process.
+
+`runner.json` also gains `channel_secret_fingerprint`: SHA-256 truncated to 16
+hex characters, no preimage, pinned by a test that asserts the secret and the
+fingerprint share no substring. It turns a bare 401 — indistinguishable from a
+wedged runner, a foreign process on the pipe, or a bug in the caller — into a
+named answer *before* anything connects.
+
+### The load-bearing finding is in `adopt`, and it is why the orphan held the store
+
+`adopt` returned `RunnerCandidate | null`, and `null` covered three genuinely
+different worlds: nothing is listening; something is listening that we cannot
+authenticate to; the file is unreadable. `ensureRunner` reads `null` as
+permission to spawn.
+
+So **a live runner holding this data directory silently became a second runner
+writing the same `runner.sqlite`** — the two-writers-one-store pattern MAR-506's
+corruption is suspected to have come from, and worse than refusing to start,
+because the second runner works and nothing looks wrong until the store does.
+
+`retireLegacyRunner`'s own comment already names the rule this breaks — *"Two
+runners supervising one machine is precisely what the endpoint's exactly-one
+guarantee exists to prevent"* — and it only ever enforced it for the pre-MAR-430
+case where the recorded file carries a `port`. A modern-but-foreign runner sailed
+straight past it to `rmSync(runner.json)` and a spawn.
+
+`adopt` returns a discriminated `AdoptOutcome` now, and `ensureRunner` **refuses
+to spawn over a foreign live runner**: it first asks that runner to stop, using
+the credential the runner recorded for itself, and when that cannot be done it
+names the one remedy a person has — an ordinary machine restart. Never
+`Stop-Process`, per AGENTS.md, and the refusal says so in the user's own words.
+
+### The preflight
+
+`scripts/google-proof/preflight.ts`, bundled by `prove-google.mjs` from the same
+tree as everything else it builds, run **before** the build and long before an
+operator sits down at a consent screen. Under Electron rather than plain Node
+because `app.getPath("userData")` is the only honest answer to "which directory
+is this run about to write to", and a third spelling of that path would be a
+preflight guarding the wrong directory. Exit 0 clear, exit 3 held.
+
+It deliberately does **not** retire an *adoptable* runner. The shell will adopt
+it in a moment, and stopping it would be ending the fleet on startup, which is
+the failure `ensureRunner`'s own header refuses.
+
+### The quarantine directory, and why it holds no database
+
+**DASH did not make it.** `retireDamagedStore` renames to
+`runner.sqlite.damaged-<ISO>` *beside* the store and never into a subdirectory;
+`runner.log` contains no "store set aside" line anywhere; and there is no
+`*damaged*` file under the data directory at all. `runner-sqlite-malformed-20260806`
+is a hand-made `Move-Item` from 2026-08-06 20:24. The main database was never
+renamed and is gone — today's `runner.sqlite` dates from 23:03:45 the same
+evening and answers `quick_check: ok`. So MAR-506's renames-and-never-deletes
+rule was not violated by code. **It was never reached.**
+
+**And it could not have been**, which is the part that is fixed. Three defects,
+in the order a person would hit them:
+
+1. **The repair was unreachable.** MAR-506 built two detections because the
+   open-time probe cannot be complete, and only one was wired to anything.
+   `runner/server.ts` classified a mid-request throw, answered the caller
+   correctly — and dropped the finding, so `runner/main.ts`'s `storeDamage`
+   stayed `null` and `POST /store/retire` replied *"There is nothing to set
+   aside."* On the machine this happened to, the open-time probe **never fired
+   once** — `runner.log` has no "records cannot be read" line — and the runtime
+   path fired **twelve times**. The repair was unreachable through the only
+   route a person has, on exactly the machine it was written for.
+2. **It would not have worked if it had been.** Runtime damage does not close
+   the store, so `retireStore` ran with the file open, and `renameSync` on a
+   file SQLite has open answers `EBUSY` on Windows — measured with a probe on
+   this machine, not assumed. The main database is moved first, so the whole
+   repair failed on its first step. The store is closed and the workspace
+   detached before the move now, and reopened if the move fails.
+3. **A partial move was reachable** — the exact disaster `retireDamagedStore`'s
+   own header describes, produced by the function written to prevent it. A main
+   database moved away from its `-wal` leaves the fresh store a log referring to
+   pages it does not have; a `-wal` moved away from its database discards every
+   uncheckpointed transaction. It rolls its own moves back now, and reports a
+   rollback that itself fails as the mixture it is.
+
+**Watched failing**, per MAR-465. Both new store-damage guards were reverted and
+both went red; restored, both green.
+
+Evidence: `pnpm typecheck` clean, `brand:check` green, `[state] valid` with the
+recorded drift warnings, 89 test files / 1670 passed / 8 skipped / 0 failed from
+PowerShell with 26 new cases.
+
+**`pnpm verify:shell` was not run, and it is recorded as not run rather than
+skipped.** The orphan this issue is about was still alive on this machine, and
+starting the installed smoke beside it is the two-writers-one-store pattern the
+issue names. That is the failure MAR-520 is about rather than an excuse offered
+for it; CI's Windows `shell-smoke` is this PR's installed evidence. **Merged is
+the ceiling**: nothing here has been executed against a real leftover runner,
+because retiring the live one is precisely what this session was told not to do.
+The proven bar is the next attended MAR-468 run, whose preflight either reports
+clear or retires something.
+
+## The deploy bridge, and the verb set ADR 0007 deferred (MAR-487)
+
+**The plane is built and the set is fixed.** ADR 0007's first follow-up said the
+verb set "is not specified here… it belongs with the deploy bridge, where there
+is something to validate against". MAR-484 wrote `connect` and left the rest as
+vocabulary for an implementation that did not exist. This is that
+implementation: **`install`, `start`, `stop`, `status`, `collect`, `connect`**,
+in one closed array in `lib/deploy/verbs.ts`, beside the arguments each carries
+and the check both ends run.
+
+`tests/host-record.test.ts`'s by-value pin on `HOST_VERBS` **fired** when the set
+widened from `["connect"]`, which is that assertion doing its job: a closed set
+is only worth anything if adding to it is a change somebody has to make in one
+place and defend, rather than one that rides along in a commit about something
+else.
+
+### Nothing variable reaches argv, which is stronger than validating it
+
+ADR 0007's rule is *"DASH chooses which operation, never what to run."* The
+mechanism here is narrower and easier to check: **a verb's arguments do not go
+on the command line at all.** They travel as one JSON envelope on the child's
+stdin, so the only strings `ssh` can be made to interpret are the fixed options
+`sshArgv` composes, the destination, and a verb drawn from a closed array. The
+set of strings `ssh` sees is fixed when this repository is compiled.
+
+`connect` is the one exception and it is forced: its stdin **is** the HTTP
+conversation, so a helper that drained stdin first would consume DASH's first
+request and wait forever for an end that never comes.
+
+### An identifier is not a path, and the helper is what enforces that
+
+`bundle_id` and `agent_id` are opaque tokens over an alphabet that cannot spell
+a separator, a traversal, a drive letter or a leading `-`. The helper joins them
+to a root **it** chose and never receives a directory — MAR-507's rule (*the
+renderer names a kind of file and never a file*) pointed at a machine DASH does
+not administer, where the sharper version applies: a payload that could name a
+directory is a payload that could name `/etc`.
+
+File names *inside* a bundle are the one place a path travels, checked with
+`runner/path-guard.ts`'s `inspectComponent` **per segment**. Per-component
+rather than `inspectPathSyntax` on the whole string, because that one answers
+about a path a caller *chose* and so requires an absolute one — a bundle name is
+relative by construction and would be refused as `not_absolute` before any
+interesting rule ran. It is also the stronger question: `..`, a colon opening an
+alternate data stream, a trailing dot Windows silently strips, a control
+character truncating a name inside a native call, and every reserved device name
+at any depth are each properties of one segment.
+
+**Two guards, watched failing**, and the table is amendment 2's shape:
+
+| Change | What goes red |
+| --- | --- |
+| Remove the containment re-check alone | **nothing** — the component guard still refuses |
+| Remove the component guard alone | **nothing** — containment still refuses |
+| Both | the escape case |
+
+Checked on the **helper's** side rather than only in DASH, and that is the
+load-bearing word: a rule living only in the sender is a rule the host does not
+have.
+
+### What the helper is a boundary against, said without inflation
+
+Not the host. DASH holds a key that could run anything there. What the closed
+set rules out is **DASH itself** turning a deploy into arbitrary remote
+execution: `start` runs `node start.mjs` because the *helper* decided that, not
+because a request said so — `runner/README.md`'s sentence moved one machine
+over. A test asks the helper directly with three request shapes carrying a
+command, and every one is refused at the verb or ignored.
+
+### `stop` works because of MAR-520, which ADR 0007 could not have foreseen
+
+Every `ssh` session is a new process, so **every** stop on a host is by a
+stranger. Before MAR-520 the only thing on the far end of that would have been a
+signal — the force-kill AGENTS.md forbids, performed on a machine nobody is
+watching, against the process holding somebody's agent history. MAR-520 made the
+runner record the channel secret it actually resolved under an owner-only proven
+ACL, so the helper authenticates to the runner's own `POST /shutdown`. A runner
+that left no such record is **reported as running and unstoppable, with the
+reason**, and the helper stops there. Both branches are driven by tests against a
+real started process.
+
+### What comes off the unproven list
+
+ADR 0007 amendment 2 listed what stayed unproven: *"`ssh` itself: authentication,
+the far-side helper, and the host's socket."* **The far-side helper comes off
+it.** `tests/deploy-bridge.test.ts` runs the real helper — bundled from the same
+entry point `scripts/build-runner-standalone.mjs` ships — as a local child, and
+drives `runDeployVerb`, the production function, through install → start →
+status → collect → stop. The only substitution is `spawn("node", [helper, verb])`
+where production writes `spawn("ssh", sshArgv(…))`.
+
+The exclusion is also asserted in the **other** direction: the deploy plane is a
+second way to reach a host, and a door added there would not be a channel at
+all, so no type would have seen it. A test scans the helper's own source for both
+brokered route strings, comments stripped. The one route it reaches is the
+runner's own shutdown, on the host's own socket, with the host's own credential.
+
+MAR-482's refusal runs **before a byte ships**, and ADR 0006's option-1 receipt
+is built and shown **before** the push — three limits, each a statement about
+what DASH cannot do rather than about what the agent will do, which is what keeps
+them checkable.
+
+**What is not built, plainly.** Nothing in `app/` deploys anything and the
+receipt renders nowhere yet; MAR-498 owns the Connection Center half. No host
+record is persisted and no key is minted by this change — MAR-484 built both.
+Restart-on-boot and retention stay undecided and the helper ships no service unit
+and prunes nothing, which ADR 0007 and amendment 1 both leave open on purpose.
+
+Evidence: `pnpm typecheck` clean, `brand:check` green, `[state] valid`,
+`pnpm build:runner-standalone` green with `host-helper.mjs` in the artifact, and
+90 test files / 1689 passed / 8 skipped / 0 failed from PowerShell with 21 new
+cases. `pnpm verify:shell` was **not run**, and is recorded as not run rather
+than skipped: the MAR-520 orphan runner was alive on this machine. Nothing here
+touches the installed loop, so what a smoke would establish is that the deploy
+plane did not break it — which CI's Windows `shell-smoke` establishes on this PR.
+
+**Merged is the ceiling.** Nothing here has reached a host: no `ssh` runs in any
+test, no key is used, no `sshd` is contacted. MAR-489 owns the attended VPS run,
+and under ADR 0004 nothing about a remote host can ever have a blocking gate.
+
 ## The cast gets somewhere to stand (MAR-501, MAR-502, MAR-503)
 
 **Three surfaces from one design pass, in one branch, and the reason is that

@@ -220,11 +220,34 @@ describe("sshArgv", () => {
   });
 
   it("composes no command line: every verb comes from the closed set", () => {
-    expect([...HOST_VERBS]).toEqual(["connect"]);
+    /*
+     * Pinned by value, and this pin **fired** when MAR-487 widened the set from
+     * `["connect"]` to ADR 0007's six — which is the assertion doing its job.
+     * The set being closed is only worth anything if adding to it is a change
+     * somebody has to make here and defend, rather than one that rides along in
+     * a commit about something else.
+     */
+    expect([...HOST_VERBS]).toEqual(["install", "start", "stop", "status", "collect", "connect"]);
     for (const verb of HOST_VERBS) {
       const built = sshArgv(record(), verb, paths);
       expect(built[built.length - 1]).toBe(verb);
     }
+  });
+
+  it("appends nothing a request chose, except the one identifier connect needs", () => {
+    /*
+     * MAR-487's argv rule. Every verb's arguments travel as JSON on the child's
+     * stdin, so the command line carries fixed options, a destination and a
+     * verb — full stop. `connect` cannot use stdin, because its stdin *is* the
+     * HTTP conversation, so its bundle id rides here over an alphabet that
+     * cannot spell a separator, a traversal or a leading "-".
+     */
+    const withoutId = sshArgv(record(), "install", paths);
+    expect(withoutId[withoutId.length - 1]).toBe("install");
+
+    const withId = sshArgv(record(), "connect", paths, "news-scout");
+    expect(withId.slice(-2)).toEqual(["connect", "news-scout"]);
+    expect(withId).toHaveLength(withoutId.length + 1);
   });
 });
 
