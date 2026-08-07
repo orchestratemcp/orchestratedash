@@ -370,7 +370,7 @@
     {
       "id": "MAR-523",
       "lifecycle": "planned",
-      "linear_status": "Todo",
+      "linear_status": "In Review",
       "commit": null,
       "proof": {
         "command": "pnpm typecheck && pnpm test"
