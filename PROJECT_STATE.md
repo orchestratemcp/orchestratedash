@@ -882,6 +882,77 @@ from PowerShell. PowerShell deliberately: under Git Bash `whoami /user` fails
 and 43 unrelated channel-secret and task-workspace cases go red on code this
 branch does not touch.
 
+## "The runner answered 500." (MAR-506)
+
+**A malformed `runner.sqlite` was being reported to the user as a status code.**
+Found by a `pnpm verify:shell` run on 2026-08-06: eight smoke checks failed on
+it and nothing else, `runner.log` ended with `database disk image is malformed`,
+and what a person saw was a sentence naming the transport. Everything they
+needed was elsewhere — DASH reached the runner, the runner is running, nothing
+of theirs is lost, and no agent will start until it is fixed.
+
+**Detected twice, because once is not enough.** The issue asks whether the
+runner should detect `SQLITE_CORRUPT` at open *rather than* 500-ing per request.
+The honest answer is both, and the reported machine is the argument: **the store
+opened.** `journal_mode`, `synchronous`, `foreign_keys` and the migration check
+all succeeded, because a header page and a `user_version` live on pages that
+were intact; only the queries against damaged leaves threw. So `openRunnerStore`
+runs `PRAGMA quick_check`, which walks pages rather than the header, and the
+same classification runs again on whatever any route throws.
+
+The test that carries this builds that exact file — a real database with 400
+real rows, header and schema page untouched, every later page overwritten — and
+asserts the naive checks **still pass** on it before asserting that the probe
+does not. Remove the probe and that is the only test in the file that fails.
+
+**A runner whose records are unreadable supervises nothing**, and that is a
+decision rather than a consequence. The supervisor does not need the database to
+spawn a child; it needs it for replay protection, idempotency and the approval
+record — every guarantee DASH renders about a command happening once and having
+been approved. An agent running without them is an agent whose guarantees DASH
+is still printing and no longer keeping, which is worse than one that is not
+running, because the second is visible.
+
+It still listens: `/health` reports `store_damaged`, `/shutdown` stops it,
+`/store/retire` repairs it, and everything else answers one shape — 503 with
+`reason: "store_damaged"`. A runner that exited here would have left DASH with
+"the runner did not start", which names nothing and offers no repair.
+
+**The repair renames and never deletes.** The runner's database is the one place
+a user's free-text approval reason comes to rest, and a damaged database is
+frequently still readable by a recovery tool — so deleting it would destroy the
+only copy of a record DASH deliberately keeps nowhere else, in order to fix a
+fault the user did not cause. `/store/retire` sits above the damage guard and
+**below** the authentication check: a runner that could be made to abandon its
+replay records by anyone who reached its socket would have a way to make an
+executed command executable again.
+
+**Three kinds, not one**, for the reason `describeSecureStoreFailure` keeps
+five. Real damage; a file that was never a database, which is usually something
+else having been put there and where blaming the disk sends somebody after a
+fault that is not present; and one DASH could not open, which is a permission or
+a lock, is not damage, and is never offered a repair that throws the file away.
+
+**`can_retire` is false at the transport today, and that is the honest value.**
+The runner can set a damaged store aside and the route is proven against a
+genuinely corrupt file. Nothing in DASH asks it to yet: that wants a shell
+command, a preload method, a main-process dispatch and a control on a surface,
+four of which live in files PR #52 owns. `describeStoreDamage` makes the same
+call for its unnamed case and says why — a next action the user cannot take is
+worse than one admitting DASH cannot fix this, because the first sends them
+looking.
+
+One consequence worth naming: `/health`'s `ok` now means "and my store is
+readable", so smoke proof `4b` goes red on a damaged store where eight scattered
+checks used to. That is the better failure — one early, with `store_damaged` in
+the body it prints — and `4b`'s label now understates what it checks.
+
+Evidence: typecheck clean, `[state] valid` with the 8 recorded drift warnings,
+73 test files / 1378 passed / 8 skipped / 0 failed from PowerShell, 27 of them
+new. `pnpm verify:shell` was **not run**: this machine's runner store is the
+damaged one the issue is about, so a shell smoke here would have been testing
+the fault rather than the fix.
+
 ## The plane that must not be generalised, made structural (MAR-484)
 
 **Open on a PR, not merged.** ADR 0007's load-bearing paragraph was a finding

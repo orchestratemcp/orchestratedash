@@ -29,7 +29,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { openRunnerStore, readRunnerAudit, type RunnerStore } from "../runner/store";
+import { readRunnerAudit, type RunnerStore } from "../runner/store";
+import { openHealthyRunnerStore } from "./helpers/runner-store";
 import { createTaskWorkspaceApi, type TaskWorkspaceApi } from "../runner/task-api";
 import {
   admitInput,
@@ -90,7 +91,7 @@ beforeEach(() => {
   userFiles = path.join(scratch, "documents");
   mkdirSync(dataDir, { recursive: true });
   mkdirSync(userFiles, { recursive: true });
-  store = openRunnerStore(dataDir);
+  store = openHealthyRunnerStore(dataDir);
   root = openWorkspaceRoot(dataDir);
 });
 
