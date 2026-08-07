@@ -1,12 +1,15 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AgentComplianceChips } from "./_components/verdict";
 import { AgentOrigin } from "./_components/agent-origin";
 import { HostNotice, ViewFailed, ViewLoading } from "./_components/view-state";
-import { useHost, useView } from "./_data/use-view";
+import { checkRunnerStatus, retireRunnerStore } from "./_data/source";
+import { useCanAct, useHost, useView } from "./_data/use-view";
 import { agentWorkspaceHref } from "./_data/routes";
+import { describeRunnerStoreDamage, type RunnerStoreDamageKind } from "../lib/copy/recovery";
+import type { CommandResult } from "../lib/shell/ipc";
 import { ROLLUP_RUN_COUNT } from "../lib/views/rollup";
 
 /**
@@ -18,6 +21,8 @@ import { ROLLUP_RUN_COUNT } from "../lib/views/rollup";
 export default function AgentsPage(): ReactNode {
   const state = useView((source) => source.agents());
   const host = useHost();
+  const canAct = useCanAct();
+  const storeDamage = useRunnerStoreDamage(canAct);
 
   return (
     <>
@@ -26,6 +31,15 @@ export default function AgentsPage(): ReactNode {
         Every agent this DASH knows about, and where each one came from.
       </p>
       <HostNotice host={host} />
+      {/*
+        Above everything, including the loading state below: a damaged runner
+        store is a fact about the whole runner, unrelated to whether DASH's own
+        agents list has finished reading. AGENTS.md's UX principle names this
+        page for exactly this question — "what needs my decision" — and nothing
+        else asks it, since the runner supervises every agent and no per-agent
+        surface can say so on its behalf.
+      */}
+      {storeDamage !== null ? <RunnerStoreDamageNotice kind={storeDamage} /> : null}
 
       {state.status === "loading" ? (
         <ViewLoading what="your agents" />
@@ -168,5 +182,122 @@ function TryTheScout(): ReactNode {
         makes it, shows you what it will do, and asks before adding anything.
       </p>
     </section>
+  );
+}
+
+/**
+ * Read a `runner.status` reply for the one fact this page acts on.
+ *
+ * A pure function rather than inline in the effect below, so the parsing —
+ * `data` is `Record<string, string | number | boolean>` on the wire and has
+ * to be narrowed by hand — is testable without React, a bridge, or a runner.
+ * Anything short of an exact, recognised kind is "not damaged" rather than a
+ * guess: a status check that cannot fully explain itself must not put a
+ * button in front of a user for a fault it cannot name.
+ */
+export function runnerStoreDamageFromStatus(result: CommandResult): RunnerStoreDamageKind | null {
+  const damaged = result.data?.["store_damaged"] === true;
+  const reported = result.data?.["damage_kind"];
+  if (damaged && (reported === "malformed" || reported === "not_a_database" || reported === "unreadable")) {
+    return reported;
+  }
+  return null;
+}
+
+/**
+ * Ask, once, whether the runner's own store is damaged (MAR-518).
+ *
+ * Not `useView`/`useLiveView`: this is a command, not a document read, and it
+ * asks the runner directly rather than DASH's own store — there is nothing in
+ * `lib/store.ts` for a poller to have written, because the runner is a
+ * separate process with its own database. Checked once on mount, like
+ * `useHost` and `useCanAct` above it: this page does not otherwise poll, and a
+ * damaged store does not self-repair between one render and the next.
+ *
+ * `canAct` gates it because a browser tab has no `dashShell` bridge at all —
+ * `checkRunnerStatus` would refuse honestly either way, but there is no
+ * reason to make the read-only path wait on a call that can only fail.
+ */
+function useRunnerStoreDamage(canAct: boolean): RunnerStoreDamageKind | null {
+  const [kind, setKind] = useState<RunnerStoreDamageKind | null>(null);
+
+  useEffect(() => {
+    if (!canAct) {
+      return;
+    }
+    let current = true;
+    void checkRunnerStatus().then((result) => {
+      if (!current) {
+        return;
+      }
+      const reported = runnerStoreDamageFromStatus(result);
+      if (reported !== null) {
+        setKind(reported);
+      }
+    });
+    return () => {
+      current = false;
+    };
+  }, [canAct]);
+
+  return kind;
+}
+
+/**
+ * The runner-store recovery, with the one button that repairs it (MAR-518).
+ *
+ * `describeRunnerStoreDamage(kind, { can_retire: true })` is the same
+ * function `lib/agent-dom/transport.ts` calls for the per-agent case — one
+ * copy, never two that could disagree about what the same fault means. What
+ * differs here is that this surface has somewhere to put the button the other
+ * one does not.
+ *
+ * Rename-not-delete is final, and the copy says so before anything is
+ * clicked: there is no second, more drastic option beside this one.
+ */
+export function RunnerStoreDamageNotice({ kind }: { kind: RunnerStoreDamageKind }): ReactNode {
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<{ ok: boolean; detail?: string } | null>(null);
+  const recovery = describeRunnerStoreDamage(kind, { can_retire: true });
+
+  async function retire(): Promise<void> {
+    setBusy(true);
+    const result = await retireRunnerStore();
+    setBusy(false);
+    setOutcome({ ok: result.ok, detail: result.detail });
+  }
+
+  if (outcome?.ok === true) {
+    return (
+      <div className="notice notice-ok" role="status">
+        <p>
+          <strong>The damaged records are set aside.</strong>
+        </p>
+        <p>{outcome.detail ?? "A fresh store is open."}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="empty" role="alert">
+      <p>
+        <strong>{recovery.headline}</strong>
+      </p>
+      <p>{recovery.meaning}</p>
+      <p>{recovery.next_action}</p>
+      {outcome !== null && !outcome.ok ? (
+        <p className="muted">{outcome.detail ?? "The runner could not set its store aside."}</p>
+      ) : null}
+      <div className="button-row">
+        <button
+          type="button"
+          className="button-primary"
+          disabled={busy}
+          onClick={() => void retire()}
+        >
+          {busy ? "Setting aside…" : "Set records aside"}
+        </button>
+      </div>
+    </div>
   );
 }

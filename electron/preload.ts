@@ -200,6 +200,17 @@ const dashShell = {
   downloadOutput: (args: { agent_id: string; artifact_id: string }) =>
     send("workspace.download", { ...args }),
 
+  /**
+   * The runner's own health, and its one repair (MAR-518).
+   *
+   * `status` carries no payload — it is a fact about the runner as a whole,
+   * not about any one agent, which is also why `retireStore` carries no
+   * `agent_id`: `runner.retireStore` reaches `POST /store/retire` directly,
+   * never an agent's own `/lifecycle` route.
+   */
+  runnerStatus: () => send("runner.status", {}),
+  retireRunnerStore: () => send("runner.retireStore", {}),
+
   approve: (args: AgentCommandArgs) => send("agent.approve", fields(args, APPROVAL_FIELDS)),
   reject: (args: AgentCommandArgs) => send("agent.reject", fields(args, APPROVAL_FIELDS)),
   choose: (args: AgentCommandArgs) => send("agent.choose", fields(args, CHOICE_FIELDS)),

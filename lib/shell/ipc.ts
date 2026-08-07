@@ -176,6 +176,27 @@ export const COMMANDS = {
     // so the blast radius is bounded by ownership rather than by this flag.
     irreversible: false,
   },
+  /*
+   * MAR-518. Names no agent — a damaged store is a fact about the runner, not
+   * about any one of the agents it supervises, and `runnerLifecycle`'s
+   * `retireStore` branch reaches `POST /store/retire` directly rather than an
+   * agent's own `/lifecycle` route.
+   *
+   * `irreversible` is false in this flag's sense, the same call
+   * `connection.disconnect` and `workspace.dispatchTask` make: the runner
+   * renames the damaged file rather than deleting it (`retireDamagedStore`
+   * says why), so nothing that exists is destroyed. What is lost is DASH's
+   * *use* of the old records until somebody restores that file by hand, which
+   * is the sense the copy on the button is honest about rather than this flag.
+   */
+  "runner.retireStore": {
+    effect:
+      "Set the runner's damaged store aside and open a fresh one. The old file is kept, renamed, not deleted.",
+    payload_keys: [],
+    required_keys: [],
+    mutates: true,
+    irreversible: false,
+  },
 
   /*
    * MAR-434. Hand one of this agent's outputs back to the person who owns it.
@@ -403,6 +424,9 @@ export const RUNNER_LIFECYCLE = {
   // launched — and giving it a fourth command family would buy nothing but a
   // fourth place to forget the audit record.
   "runner.remove": "remove",
+  // MAR-518. A store-level repair, not a per-agent one — see the `COMMANDS`
+  // entry for why it carries no `agent_id`.
+  "runner.retireStore": "retireStore",
 } as const;
 
 export type RunnerCommandName = keyof typeof RUNNER_LIFECYCLE;
@@ -764,14 +788,18 @@ export interface RunnerLifecycleResult {
   ok: boolean;
   detail?: string;
   /**
-   * `runner.status` only, and primitives only — the same constraint every other
-   * command result carries.
+   * `runner.status` and `runner.retireStore` (MAR-518) only, and primitives
+   * only — the same constraint every other command result carries.
    *
    * Deliberately a summary rather than per-agent process facts. An agent's
    * status, pid and lifecycle belong in its Agent DOM state, which the poller
    * already writes to the store and the UI already renders; returning a second
    * copy down the IPC channel would be a parallel source of truth that drifts
    * the moment one of them is a poll interval behind the other.
+   *
+   * `runner.status` uses it for `store_damaged` and `damage_kind` as well as
+   * the ordinary supervising count — a fact about the runner as a whole, which
+   * is why `app/page.tsx` asks it rather than any per-agent surface.
    */
   data?: Record<string, string | number | boolean>;
 }
