@@ -1236,7 +1236,9 @@ button:disabled {
    point: MAR-491's rule is that no column is hidden and no fact is dropped. */
 .inputs-panel .button-secondary {
   justify-self: start;
+}
 
+/* ------------------------------------------------------------------------ *
  * The O's (MAR-500)
  *
  * One rule, and every line of it is a rule the brand check enforces.
