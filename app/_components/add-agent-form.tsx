@@ -117,8 +117,13 @@ export function AddAgentForm(): ReactNode {
           onChange={(event) => setText(event.target.value)}
           placeholder={'{\n  "manifest_version": 2,\n  ...\n}'}
         />
+        {/* MAR-528. The class is in the markup now rather than in a
+            `.add-agent button` rule that dressed every button on the page as the
+            primary one. This is the page's primary action and says so; anything
+            added beside it is a ghost by default, which is the right way round. */}
         <button
           type="button"
+          className="button-primary"
           disabled={text.trim() === "" || state.status === "importing"}
           onClick={() => {
             void submit(text);

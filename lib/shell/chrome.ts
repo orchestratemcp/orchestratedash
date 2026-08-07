@@ -30,14 +30,21 @@
  * which is the flash MAR-436 exists to remove.
  */
 export const SURFACE_0 = Object.freeze({
-  dark: "#0b0e14",
+  /* MAR-528. The Bit-Command deep navy, and it moved here in the same commit as
+     the token — `tests/chrome.test.ts` reads `app/tokens.css` and fails if these
+     two ever disagree, which is what stops the first frame from flashing the
+     previous palette's blue-black behind the new one. */
+  dark: "#051424",
   light: "#ffffff",
 });
 
 /** Title bar foreground and hover, for the native window controls Windows draws. */
 export const TITLE_BAR_SYMBOLS = Object.freeze({
-  dark: "#9aa5b8",
-  light: "#5a6474",
+  /* `--text-muted`, per theme. Windows draws its own glyphs into our overlay and
+     picks no colour for them, so these have to be the same rank of grey the bar's
+     own text takes or the close button reads as a different application's. */
+  dark: "#bbc9cf",
+  light: "#3d4d5e",
 });
 
 export type ThemeName = keyof typeof SURFACE_0;

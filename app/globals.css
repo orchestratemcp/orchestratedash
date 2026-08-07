@@ -45,6 +45,15 @@
  *
  * The skip link is `position: absolute` and takes no row of its own; the grid
  * has three rows and four children by design.
+ *
+ * **Two of those children are conditional** (MAR-534), and that is why every band
+ * below names its own row explicitly instead of being auto-placed. On a
+ * credential prompt or an approval popup the chrome and the strip both render
+ * nothing, and auto-placement would have put `main` in row 1 — the `auto` track —
+ * so a dialog taller than its own content height would be clipped by `body`'s
+ * `overflow: hidden` with no scroller anywhere. An empty `auto` row collapses to
+ * zero, so naming the rows costs a dialog nothing and guarantees the page always
+ * lands in the one track that scrolls.
  */
 body {
   margin: 0;
@@ -72,10 +81,41 @@ body {
   font-family: var(--font-ui);
   font-size: var(--text-base);
   line-height: var(--leading-normal);
+  /* `DESIGN.md`: "All text should feel like it was rendered by a system
+     console. Avoid italics." Enforced once here rather than asked for at each
+     surface, because the failure is a stray `<em>` nobody photographs. */
+  font-style: normal;
 }
 
 code {
   font-family: var(--font-mono);
+}
+
+/* ---------------------------------------------------------------------- *
+ * Headings (MAR-528)
+ *
+ * Every heading takes the display face. `text-transform: uppercase` is applied
+ * to `h1` alone, further down, and the split is the whole point.
+ *
+ * MAR-528's refusal list names UPPER_SNAKE cosplay — `SECURE_LINK_ESTABLISHED`,
+ * `ID 0XN1NJ4` — as marketing against a product whose brand is plain language.
+ * What the concept actually contributes is the *look* of a console heading, and
+ * `text-transform` is how a surface gets that without a single word changing:
+ * the DOM still says "Connections", so the copy tests, the accessible name and
+ * anything reading the page out loud are untouched.
+ *
+ * A page title is short and comes from one list (`app/_data/routes.ts`). An `h2`
+ * or an `h3` below it is frequently the user's own agent's name, and that is
+ * never shouted back at them — which is why the caps stop at `h1`.
+ * ---------------------------------------------------------------------- */
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-display);
 }
 
 /*
@@ -131,6 +171,10 @@ code {
   border-radius: var(--radius-sm);
   background: var(--accent);
   color: var(--accent-contrast);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
   text-decoration: none;
   transform: translateY(
     calc(-100% - var(--titlebar-height) - var(--space-2) - var(--space-1))
@@ -159,12 +203,22 @@ main:focus {
  * App chrome (MAR-440)
  * ---------------------------------------------------------------------- */
 
+/*
+ * MAR-528. `DESIGN.md`, "System Top Bar": *Dark Navy background with a 1px
+ * Electric Blue bottom border.*
+ *
+ * The accent line is the signature of the whole system and it is one pixel: it
+ * says where the application's own furniture stops and the page begins, which is
+ * a claim DASH's chrome should be making anyway. It replaces a `--line` border
+ * that said the same thing quietly enough that nobody could see it.
+ */
 .app-chrome {
+  grid-row: 1;
   position: sticky;
   top: 0;
   z-index: 10;
   background: var(--surface-0);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--accent);
 }
 
 /*
@@ -216,11 +270,14 @@ main:focus {
  * something that moves the window when they try. The bar has plenty of empty
  * space to drag by, which is what a title bar is mostly made of.
  */
+/* The wordmark, in the display face and the accent — the one place in the app
+   where DASH says its own name, and the concept draws it exactly here. */
 .title-bar-mark {
-  font-size: var(--text-sm);
+  font-family: var(--font-display);
+  font-size: var(--text-md);
   font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--text);
+  letter-spacing: 0.04em;
+  color: var(--accent);
 }
 
 .title-bar-divider {
@@ -233,6 +290,8 @@ main:focus {
    in the page's own heading, so an ellipsis here loses nothing. */
 .title-bar-surface {
   font-size: var(--text-sm);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
   color: var(--text-muted);
   min-width: 0;
   overflow: hidden;
@@ -294,26 +353,53 @@ main:focus {
   row-gap: var(--space-1);
 }
 
+/*
+ * A navigation label is a `label-caps` (MAR-528): 12px mono, bold, 0.1em, upper.
+ * The words are `app/_data/routes.ts`'s own — "Work inbox" is still two English
+ * words and is still what a screen reader says.
+ */
 .app-nav-link {
   position: relative;
   padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   color: var(--text-muted);
   font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
   text-decoration: none;
   white-space: nowrap;
+  transition: color var(--motion-fast) linear, background-color var(--motion-fast) linear;
 }
 
 .app-nav-link:hover {
+  border-color: var(--line);
   background: var(--surface-1);
   color: var(--text);
 }
 
-/* The design system's 2px bar on an active item. Paired with `aria-current` in
-   the markup, because colour and a rule alone are not a status. */
+/*
+ * The active surface is a solid block of electric blue, which is how the concept
+ * draws it and is the strongest thing this chrome can say.
+ *
+ * MAR-440's 2px left bar is **gone** rather than kept alongside: on a solid fill
+ * it is a bar the same colour as the thing it sits on, which is a marker nobody
+ * can see. Its comment argued that "colour and a rule alone are not a status",
+ * and the half of that which was load-bearing is untouched — `aria-current="page"`
+ * is in the markup, and it is what carries the state to anybody not looking at
+ * the colour. A rule that had become invisible was never carrying it.
+ */
 .app-nav-link.is-active {
-  color: var(--text);
-  background: var(--surface-1);
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.app-nav-link.is-active:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--accent-contrast);
 }
 
 /* Pushes the density control to the far end of the nav row. `margin-left: auto`
@@ -333,15 +419,19 @@ main:focus {
   gap: var(--space-2);
   flex: none;
   padding: var(--space-2) var(--space-3);
-  border: none;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
 .density-toggle:hover {
+  border-color: var(--line);
   background: var(--surface-1);
   color: var(--text);
 }
@@ -374,17 +464,6 @@ main:focus {
   }
 }
 
-.app-nav-link.is-active::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 20%;
-  bottom: 20%;
-  width: var(--active-bar);
-  border-radius: var(--radius-pill);
-  background: var(--accent);
-}
-
 /*
  * The one scrolling region (MAR-503).
  *
@@ -402,10 +481,41 @@ main:focus {
  * in place if this rule is ever reverted.
  */
 main {
+  /* Named, never auto-placed — see the note on `body`. This is the only track
+     that scrolls, and the two bands around it are conditional. */
+  grid-row: 2;
   overflow-y: auto;
   min-width: 0;
-  padding: var(--density-stack) var(--space-5);
+  /* The concept's 32px desktop margin, 16px on a phone (`DESIGN.md`, "Layout &
+     Spacing"). The vertical step stays on the density token, because that is the
+     one thing the compact opt-in is allowed to move. */
+  padding: var(--density-stack) var(--space-6);
   max-width: var(--content-max);
+  /*
+   * The graph-paper rule the concept draws behind its content column: two
+   * repeating linear gradients on a 32px pixel-block grid.
+   *
+   * `background-attachment: local` so it scrolls with the content rather than
+   * sitting still behind it — a fixed grid inside a scrolling band reads as a
+   * texture printed on the glass, which is the one thing a "physical digital
+   * hardware" system should not look like.
+   *
+   * The colour is a `--grid-*` token deliberately close to invisible. It is
+   * texture; the moment it competes with a 1px card border it has become a grid
+   * somebody has to read.
+   */
+  background-image:
+    repeating-linear-gradient(
+      to right,
+      var(--grid-line) 0 1px,
+      transparent 1px var(--grid-step)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      var(--grid-line) 0 1px,
+      transparent 1px var(--grid-step)
+    );
+  background-attachment: local;
 }
 
 @media (max-width: 480px) {
@@ -414,14 +524,32 @@ main {
   }
 }
 
+/*
+ * The page title, in the concept's `headline-lg` (MAR-528).
+ *
+ * Uppercased by CSS and not by copy — see the heading block near the top of this
+ * file. The accent is the concept's own choice for a page heading and it is
+ * carrying real weight here: it is the first thing on the page and the only
+ * place the accent appears without being a control.
+ */
 h1 {
-  font-size: 1.35rem;
-  margin: 0 0 0.35rem;
+  font-size: var(--text-2xl);
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 var(--space-2);
+}
+
+@media (max-width: 560px) {
+  /* `headline-lg-mobile` — 24px, the concept's own step down. */
+  h1 {
+    font-size: var(--text-xl);
+  }
 }
 
 .lede {
   color: var(--muted);
-  margin: 0 0 1.5rem;
+  max-width: 68ch;
+  margin: 0 0 var(--space-5);
 }
 
 /*
@@ -465,13 +593,54 @@ h1 {
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
 }
 
+/*
+ * Level 1 in the concept's elevation model (MAR-528): a tonal step up from the
+ * page and a 1px border, with no shadow and no radius. `DESIGN.md` is explicit
+ * that depth here is layering plus a crisp edge, and that overlays are opaque.
+ *
+ * The 9px radius that used to be here was the last hardcoded corner in the card
+ * system; `--radius-sm` is 0 and is the seam where a rounded exception would
+ * have to be argued for.
+ */
 .work-card,
 .summary-card,
 .row-card {
   padding: var(--density-card-p);
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   background: var(--panel);
+}
+
+/* ---------------------------------------------------------------------- *
+ * A card's header band (MAR-528)
+ *
+ * `DESIGN.md`, "Cards & Panels": *Header: a distinct top section of the card
+ * with a slightly lighter fill and bold monospace label.*
+ *
+ * It is a band that spans the card's full width, so it cancels the card's own
+ * padding with a negative margin rather than asking every card to be built
+ * without padding. A card that opts into a head keeps working if it never gets
+ * one, which is what stops this from becoming a required wrapper.
+ *
+ * The label is a `label-caps` and the right-hand slot is for exactly one status
+ * chip. Two would be a row of chips, which is `.chips` and belongs in the body.
+ * ---------------------------------------------------------------------- */
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: calc(var(--density-card-p) * -1) calc(var(--density-card-p) * -1)
+    var(--density-card-p);
+  padding: var(--space-2) var(--density-card-p);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.card-head > :is(h2, h3, h4, p) {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* ---------------------------------------------------------------------- *
@@ -544,16 +713,48 @@ code {
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  gap: var(--space-1);
 }
 
+/*
+ * Status chips, per `DESIGN.md`: *rectangular blocks with 1px borders.*
+ *
+ * The pill is gone with `--radius-pill`. What is kept from MAR-440 is the more
+ * important half — the border is `currentColor`, so a chip's outline and its
+ * text can never disagree about which status it is reporting, and every chip
+ * below sets exactly one property.
+ *
+ * `label-caps` typography and plain-English words: "not connected yet" reads
+ * as NOT CONNECTED YET and is still four ordinary words in the DOM.
+ */
 .chip {
   display: inline-block;
-  padding: 0.1rem 0.5rem;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid currentColor;
-  border-radius: 999px;
-  font-size: 0.78rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  line-height: var(--leading-tight);
   white-space: nowrap;
+}
+
+/*
+ * A value inside a chip is **not** uppercased, and this rule is a correctness
+ * guard rather than a refinement.
+ *
+ * The connected chip carries a masked hint — four real trailing characters of
+ * the user's own credential behind bullets. `text-transform` would have redrawn
+ * `••••a3f9` as `••••A3F9`, which is DASH showing somebody a credential fragment
+ * that is not the one they hold, on the one surface built to help them check it.
+ * Caps are typography for DASH's own vocabulary; anything that came from the
+ * user or from a provider keeps its own case.
+ */
+.chip .value {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
 }
 
 .chip-err {
@@ -578,7 +779,7 @@ code {
   padding: 1rem 1.15rem;
   border: 1px solid var(--line);
   border-left: 3px solid var(--err);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--panel);
 }
 
@@ -616,7 +817,7 @@ a.plain:hover {
 
 .empty {
   border: 1px dashed var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 1.5rem;
   color: var(--muted);
 }
@@ -625,38 +826,78 @@ a.plain:hover {
   overflow-x: auto;
   background: var(--panel);
   padding: 0.85rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--fg);
+}
+
+/* ---------------------------------------------------------------------- *
+ * Fields (MAR-528)
+ *
+ * `DESIGN.md`, "Input Fields": *inset look — darker navy fill than the
+ * background; 1px solid grey border; on focus the border turns electric blue
+ * with a "thick" 2px appearance.*
+ *
+ * The thick focus border is an `outline` rather than a `border-width` change, and
+ * that is the whole reason this is one rule instead of four. A field that grows a
+ * second pixel of border on focus reflows its own text by one pixel and nudges
+ * everything beside it — visible, on the one interaction where the user is
+ * looking straight at the field.
+ *
+ * It is `--accent` here and not `--focus`, which is the one deliberate exception
+ * to the app's single focus ring: `:focus-visible` draws for keyboard navigation,
+ * and this draws for a text cursor being *in* a field, which is a different fact
+ * and the concept gives it the accent. Both can be present at once and they
+ * stack rather than fight, because one is an outline and the other is a border.
+ * ---------------------------------------------------------------------- */
+.field,
+.add-agent textarea,
+.approval-controls textarea,
+.credential-prompt input {
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  /* Inset: one step *down* from the card it sits on, never up. */
+  background: var(--surface-0);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-base);
+}
+
+.field:focus,
+.add-agent textarea:focus,
+.approval-controls textarea:focus,
+.credential-prompt input:focus {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+  outline-offset: 0;
+}
+
+.field::placeholder,
+.add-agent textarea::placeholder,
+.credential-prompt input::placeholder {
+  color: var(--text-faint);
 }
 
 /* Add agent */
 
 .add-agent textarea {
-  width: 100%;
   font-family: var(--font-mono);
-  font-size: 0.85rem;
-  background: var(--panel);
-  color: var(--fg);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 0.7rem;
+  font-size: var(--text-sm);
 }
 
 .field-label {
   display: block;
-  font-weight: 600;
-  margin-bottom: 0.4rem;
+  margin-bottom: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
 }
 
 .add-agent button {
-  margin-top: 0.6rem;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  background: var(--accent);
-  color: #fff;
-  cursor: pointer;
-  font-size: 0.95rem;
+  margin-top: var(--space-3);
 }
 
 .add-agent button:disabled {
@@ -667,7 +908,7 @@ a.plain:hover {
 .notice {
   margin-top: 1.25rem;
   padding: 0.9rem 1rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--line);
 }
 
@@ -741,12 +982,16 @@ a.plain:hover {
   margin-bottom: 0;
 }
 
-.eyebrow {
-  margin: 0 0 0.3rem;
-  color: var(--muted);
-  font-size: 0.74rem;
+/* `label-caps` (MAR-528): 12px, 700, 0.1em, upper. The one typography token the
+   whole system leans on for metadata, status tags and section headers, and now
+   the same three declarations wherever it appears. */
+.eyebrow,
+.label-caps {
+  margin: 0 0 var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
 }
 
@@ -757,7 +1002,7 @@ a.plain:hover {
   margin: var(--density-gap) 0 var(--density-stack);
   padding: var(--density-card-p);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: var(--panel);
 }
 
@@ -794,23 +1039,11 @@ a.plain:hover {
   margin: 0.2rem 0 0;
 }
 
-.work-list,
-.card-grid {
-  display: grid;
-  gap: var(--density-gap);
-}
-
-.card-grid {
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-}
-
-.work-card,
-.summary-card {
-  padding: var(--density-card-p);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--panel);
-}
+/* The three rules that stood here — `.work-list`/`.card-grid`'s grid, the
+   auto-fit columns and a second copy of the card's own padding and border — were
+   byte-for-byte duplicates of the block above, and the second copy still carried
+   the 9px corner after the first had lost it. Removed rather than updated
+   twice. */
 
 .work-card.is-expired {
   border-style: dashed;
@@ -857,20 +1090,18 @@ a.plain:hover {
 
 .approval-controls label {
   display: block;
-  margin-bottom: 0.3rem;
-  color: var(--muted);
-  font-size: 0.8rem;
+  margin-bottom: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
 }
 
+/* The field's own rules are in the shared block above; only the one thing that
+   is specific to a free-text approval reason is left here. */
 .approval-controls textarea {
-  width: 100%;
   resize: vertical;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--bg);
-  color: var(--fg);
-  font: inherit;
-  padding: 0.55rem;
 }
 
 .button-row {
@@ -881,22 +1112,59 @@ a.plain:hover {
   margin-top: 0.65rem;
 }
 
+/* ---------------------------------------------------------------------- *
+ * Buttons (MAR-528)
+ *
+ * `DESIGN.md` gives two shapes and one behaviour: a solid electric-blue primary
+ * with dark text, a ghost with a 1px electric-blue border, and — on press — the
+ * whole content shifted 1px down and right to simulate a mechanical key.
+ *
+ * DASH's default button is the neutral ghost, and it *becomes* the concept's
+ * blue ghost on hover rather than starting there. That is deliberate: a page
+ * where every control is outlined in the accent has no primary action, which is
+ * the failure the accent exists to prevent. Hovering is the moment a control is
+ * about to be the one being pressed, and that is when it earns the colour.
+ * ---------------------------------------------------------------------- */
 button,
 .button-link {
   display: inline-block;
-  padding: 0.5rem 0.8rem;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--bg);
-  color: var(--fg);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
   cursor: pointer;
   font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
   text-decoration: none;
+  /* Colour only. Nothing here transitions a size or a position, so a control
+     cannot move under a pointer that is already on its way to it. */
+  transition: color var(--motion-fast) linear, border-color var(--motion-fast) linear,
+    background-color var(--motion-fast) linear;
 }
 
 button:hover:not(:disabled),
 .button-link:hover {
   border-color: var(--accent);
+  color: var(--accent);
+}
+
+/*
+ * The mechanical press: 1px down and 1px right, and no duration at all.
+ *
+ * A transition here would make the key spring back slowly after the pointer
+ * lifts, which reads as lag rather than as travel. `prefers-reduced-motion` is
+ * still honoured — `app/tokens.css` zeroes the `--motion-*` tokens the hover
+ * above spends, and this displacement is a state rather than an animation, so
+ * somebody who asked for stillness gets the pressed state instantly rather than
+ * not at all.
+ */
+button:active:not(:disabled),
+.button-link:active {
+  transform: translate(1px, 1px);
 }
 
 button:disabled {
@@ -904,10 +1172,27 @@ button:disabled {
   opacity: 0.55;
 }
 
+/* Solid fill, dark label, no border — `DESIGN.md`, "Buttons". `--accent-contrast`
+   is the palette's own `on-primary` rather than white; see `app/tokens.css` for
+   the 1.70:1 measurement that decided it. */
 .button-primary {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
+  /* Pixel-shading, and it is what makes the 1px travel above mean something: the
+     key sits one pixel proud of its own shade and presses flush into it. Zero
+     blur, so it is a hard offset line rather than a shadow. */
+  box-shadow: 1px 1px 0 var(--pixel-shade);
+}
+
+.button-primary:hover:not(:disabled) {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+  color: var(--accent-contrast);
+}
+
+.button-primary:active:not(:disabled) {
+  box-shadow: none;
 }
 
 .button-danger {
@@ -915,8 +1200,14 @@ button:disabled {
   color: var(--err);
 }
 
+.button-danger:hover:not(:disabled) {
+  border-color: var(--err);
+  background: var(--err-bg);
+  color: var(--err);
+}
+
 .button-secondary {
-  background: var(--panel);
+  background: var(--surface-2);
 }
 
 .step-list,
@@ -950,31 +1241,27 @@ button:disabled {
 .credential-prompt {
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
+  gap: var(--space-3);
 }
 
 .credential-prompt label {
-  font-weight: 600;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
 }
 
+/* The field's own rules are in the shared block above, including the electric
+   blue focus border. What is left is the one thing specific to a secret: it is
+   set in the mono face at the body size, because a person checking a paste is
+   counting characters. */
 .credential-prompt input {
-  width: 100%;
   font-family: var(--font-mono);
-  font-size: 0.9rem;
-  background: var(--panel);
-  color: var(--fg);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 0.6rem 0.7rem;
-}
-
-.credential-prompt input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
 }
 
 .credential-prompt .button-row {
-  margin-top: 0.35rem;
+  margin-top: var(--space-2);
 }
 
 /* The permissions a sign-in is about to grant (MAR-446).
@@ -998,14 +1285,17 @@ button:disabled {
   line-height: 1.45;
 }
 
+/* A 4px block rather than a dot (MAR-528). One pixel-block of electric blue is
+   this system's own bullet, and a circle is the one shape `DESIGN.md` rules
+   out. */
 .permission-list li::before {
   content: "";
   position: absolute;
   left: 0.35rem;
-  top: 0.55em;
-  width: 0.4rem;
-  height: 0.4rem;
-  border-radius: 50%;
+  top: 0.6em;
+  width: var(--space-1);
+  height: var(--space-1);
+  border-radius: var(--radius-sm);
   background: var(--accent);
 }
 
@@ -1072,7 +1362,7 @@ button:disabled {
 
 .try-sample {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 1.5rem;
   background: var(--panel);
 }
@@ -1120,7 +1410,7 @@ button:disabled {
   padding: 0.9rem 1rem;
   border: 1px solid var(--line);
   border-left: 3px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--panel);
 }
 
@@ -1194,7 +1484,7 @@ button:disabled {
 
 .draft-body {
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 0.9rem 1rem;
   background: var(--panel);
   white-space: pre-wrap;
@@ -1236,7 +1526,7 @@ button:disabled {
 .output-card {
   padding: var(--density-card-p);
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   background: var(--panel);
 }
 
@@ -1282,7 +1572,7 @@ button:disabled {
   margin: 0.6rem 0 0;
   padding: 0.75rem 0.85rem;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   white-space: pre-wrap;
   overflow-x: auto;
@@ -1473,10 +1763,11 @@ button:disabled {
  * element is rather than by what it promises.
  * ------------------------------------------------------------------------ */
 .fleet-strip {
+  grid-row: 3;
   display: flex;
   align-items: flex-end;
   gap: var(--space-4);
-  padding: var(--space-3) var(--space-5) var(--space-2);
+  padding: var(--space-3) var(--space-6) var(--space-2);
   border-top: 1px solid var(--line);
   background: var(--surface-1);
 }
