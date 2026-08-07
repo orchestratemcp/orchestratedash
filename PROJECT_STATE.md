@@ -2078,7 +2078,10 @@ The home view answers three questions: what can I run, what is happening now, an
 
 ## The Bit-Command reskin (MAR-528, MAR-534, MAR-535)
 
-**Open on a PR, not merged.** Henrik adopted the Stitch concept package as
+**Merged in PR [#73](https://github.com/orchestratemcp/orchestratedash/pull/73)
+(`7213e51`) on 2026-08-07.** The sentence this replaces said "open on a PR, not
+merged", which was true when it was written; ancestry was verified with
+`git merge-base --is-ancestor` before it was changed. Henrik adopted the Stitch concept package as
 DASH's visual system on 2026-08-07, and the adoption is a decision rather than
 a preference: 90s-terminal-brutalism, deep navy and electric blue, tonal
 layering with crisp 1px borders, zero corners, Space Grotesk and JetBrains
@@ -2172,7 +2175,9 @@ shell smoke beside a live unrelated runner is two writers on one store.
 
 ## "The current connection page makes no sense to me" (MAR-533)
 
-**Open on a PR, not merged.** That is Henrik, 2026-08-07, about the page the
+**Merged in PR [#74](https://github.com/orchestratemcp/orchestratedash/pull/74)
+(`e85218b`) on 2026-08-07**, correcting the same pre-merge sentence MAR-528's
+section above carries. That is Henrik, 2026-08-07, about the page the
 whole trust story runs through — a UX verdict from the product's own first
 user, and the reason this is a rebuild rather than a restyle.
 
@@ -2247,7 +2252,8 @@ the cast (Connections is a fourth surface for MAR-501's grammar), 96 test files
 
 ## Connect a server, and the field DASH will not draw (MAR-498, MAR-536)
 
-**Open on a PR, not merged**, and it is the second half of an issue whose first
+**Merged in PR [#75](https://github.com/orchestratemcp/orchestratedash/pull/75)
+(`ad2b1bd`) on 2026-08-07**, and it is the second half of an issue whose first
 half merged on 2026-08-06. MAR-498's design slice shipped `lib/host-connect.ts`
 — nine states and their sentences — with no surface, and its own state entry
 has said ever since that the issue's `merged` bar was deliberately not met.
@@ -2329,6 +2335,239 @@ which is MAR-491's wrapping decision surviving a sixth destination.
 
 **Not proven, permanently so in CI.** `proven` here means attended and dated
 against a real host inside MAR-489, per ADR 0004's attended half.
+
+## A red gate that meant nothing (MAR-537)
+
+**The flake was an ordering bug in the harness, not slowness in the artifact,
+and its own failure message pointed at the wrong file.**
+`tests/runner-standalone.test.ts` asserts on the runner's first four startup
+lines and reached them by polling for `runner.json`. That file is a **strictly
+earlier event than the lines**: `runner/main.ts` writes it the moment
+`listenOnEndpoint` resolves, and prints `listening on`, `store:` and
+`contracts:` afterwards. So the wait ended, by construction, at a moment when
+the child might not have printed any of them.
+
+Under load it is the *parent* that runs late — its own stdout `data` callbacks —
+which is why a 100ms poll usually won this race and occasionally did not. What
+it produced was `expected '[runner] standalone start: node=24.18…' to contain
+'[runner] listening on'`: a truncated string blaming the built artifact for a
+race in the thing observing it, on PR #75, against a commit that changed one
+block comment. That is the failure ADR 0004's whole argument is about — a
+blocking gate going red for a reason unrelated to the change teaches people to
+re-run it without reading, and this repository's evidence discipline is worth
+exactly as much as a red check is.
+
+**The fix subsumes the old wait rather than sitting beside it.** `waitForLine`
+reads the child's output until `[runner] contracts: …` appears, and because
+`runner.json` is written before that line is printed, the file is present
+whenever the line has arrived. The marker is `contracts:` rather than
+`listening on` because that is the line the *second* test reads — ending on an
+earlier one would leave that assertion racing exactly as the first pair used to.
+
+Both failure paths now carry the child's whole captured output, its exit code
+and its signal. A child that **exits** is reported the moment it exits rather
+than at the deadline, because the interesting cases — an unsuitable host exiting
+78, a missing module exiting 1 — are all fast, and spending sixty seconds on
+them would bury the cause under a timeout that reads like slowness. The hook
+timeout moved 90s → 150s for one reason: so a genuinely slow start is reported
+by the sentence that names the line rather than by vitest's own timeout, which
+names nothing and is the failure being fixed arriving through a different door.
+
+Not skipped and not retried in-process, per the issue: the artifact starting
+under plain Node on a tree containing only itself is MAR-497's whole proof.
+Assertions are unchanged and `runner/` is untouched.
+
+Evidence, exactly as the issue specifies it: **20 consecutive solo runs of the
+file, 20 passed / 0 failed**, with `pnpm exec vitest run tests` running
+concurrently in a second shell — and that concurrent full suite was itself
+green, 98 test files / 1809 passed / 8 skipped / 0 failed.
+
+**`tests/runner-store-damage.test.ts` reproduced later in the same session, and
+it is fixed — but it was never the same cause.** The paragraph that stood here
+said there was no signature to work from, which was true when written: the file
+had just passed inside a concurrent full-suite run. It failed on the next one,
+and the issue's stated reason for grouping the two — *"both start real child
+processes"* — is false for this file. It spawns nothing and drives in-process
+HTTP servers over named pipes.
+
+The signature is `Error: Test timed out in 5000ms`, on exactly the two cases
+that call `writeMalformedStore` and on no others. That is vitest's **default**
+`testTimeout`, so this is not a race at all: it is a fixture that costs more
+than the default budget on a loaded machine. Solo it takes under two seconds.
+
+**The cost is four hundred commits, not the corruption.** The fixture inserts
+400 rows one at a time, and every `run()` outside a transaction is its own
+commit — on `journal_mode = DELETE`, which this fixture sets deliberately so
+there is one file whose pages can be damaged, a commit means creating and
+deleting a rollback journal beside the database. Four hundred file-create /
+file-delete pairs is cheap on an idle machine and is not cheap on Windows with a
+filter driver watching the directory. Wrapping the loop in one transaction
+changes nothing about the file produced — the same rows land on the same pages —
+and it took the whole suite from 32.8s to 20.9s, which is how much of that time
+was journal round-trips in one fixture.
+
+The explicit 30s budget on those two cases is the issue's own third preference
+applied on top: sized from the observed worst case rather than the median, and
+said in a comment. It is roughly fifteen times the solo cost, and short enough
+that a genuine hang still fails the run rather than hanging it.
+
+The general lesson is worth more than the fix. **A test whose default timeout is
+load-bearing is a flake with a countdown on it**, and nothing in the suite
+distinguishes "this assertion is fast" from "this assertion has been fitting
+inside 5000ms so far". Both halves of MAR-537 are the same failure at one remove:
+a harness making a bet about time, where the thing under test was never in
+question.
+
+## The type pairing, and a decision recorded twice, differently (MAR-535)
+
+**This section's own heading used to say "decided". It is not, and the
+correction belongs at the top rather than in a footnote.** Two records of
+Henrik's answer exist, hours apart, and they disagree:
+
+- **2026-08-07T18:15:38Z, a comment on MAR-535 itself**, authored by Henrik:
+  *"yes — bundle the fonts… The currently-running DASH session's Task 1 is
+  conditional on exactly this comment — it is now unconditional."*
+- **Roughly 19:40Z, in chat**, the same session put the question to him directly
+  with three options and he chose **"Keep the rule, ship the guard only"**.
+
+The session that shipped this had read MAR-535's comments and found **none**,
+which is consistent rather than careless: it read them before 18:15Z. So the
+later answer is the one the code follows and the earlier answer is the one
+written down, and neither is safe to treat as settled.
+
+**Nothing here resolves it, deliberately.** A repository note is not an
+instruction channel, so the fonts were not bundled on the strength of a file —
+and they were not left unbundled on the strength of one either. MAR-535 stays
+open. The next session needs one sentence from Henrik rather than a choice
+between two records.
+
+**What shipped is compatible with either answer**, which is the one piece of
+luck in this: `checkNoRemoteFonts` forbids a *fetch* and not a font file, so
+vendoring the two OFL families later is an addition to the export that no rule
+has to be relaxed to permit.
+
+The paragraph that follows is what the shipping session recorded, kept verbatim
+because it is the reasoning behind what is currently on master.
+
+**Henrik decided it on 2026-08-07: keep the rule.** The two OFL families are not
+bundled, DASH renders in Segoe UI Variable Display and Consolas on a machine
+without them, and `app/tokens.css`'s paragraph about that is now the permanent
+record rather than a note about a pending decision. The section above this one
+described it as the gap MAR-528 "could not close and did not pretend to"; it is
+closed by a decision rather than by a commit, which is what the issue asked for.
+
+**What ships is the guard, and the rule it enforces is not the one it looks
+like.** `checkNoRemoteFonts` runs inside `pnpm brand:check` over every
+stylesheet and component under `app/` — 39 files — and refuses a remote
+`@font-face`, an off-machine `@import`, a `<link>` to a font host, and
+`next/font/google`. What it forbids is a **fetch**, not a font file. If MAR-535
+is ever revisited and the two families are vendored into the export, they are
+same-origin reads over `dash-app://` and **nothing here has to be relaxed to let
+them in**. That is the whole design of it: a rule written as "no font files"
+would have to be weakened by the very change it should tolerate, and a rule
+weakened once is a rule nobody trusts afterwards.
+
+`next/font/google` is refused for a different reason and says so in its own
+sentence, because it otherwise reads as a false positive: it self-hosts, so no
+page requests a remote font at runtime. What it moves is the fetch to **build
+time**, where an offline or firewalled build either fails or ships whatever the
+network answered that day. `next/font/local` is deliberately not refused — it is
+the supported way to do exactly what bundling would have done.
+
+The floor is the load-bearing line. A check that scanned nothing reports itself
+as broken rather than passing, which is MAR-498's client-bundle lesson applied
+before it could happen again: *a walk that broke and returned an empty set would
+pass that file forever.*
+
+## The cast, witnessed rather than photographed (MAR-501, MAR-502, MAR-503)
+
+**MAR-500's note said the proven bar — a witnessed render at 50px and 100px,
+both themes, `prefers-reduced-motion` honoured — "belongs to the first
+BRAND-03/04/05 slice". This is that bar, executed.** What it needed was not more
+pictures. Each of the three issues states clauses that a screenshot cannot
+answer, so `electron/capture.ts` now asks them and writes the answers to
+`cast-witness.json` beside the images: **13 witnesses, 13 passed**, in the real
+Electron shell against the packaged renderer over `dash-app://` on the
+installed-style store.
+
+**Reduced motion moves through the media engine, not through a stylesheet.**
+`Emulation.setEmulatedMedia` over the DevTools protocol is how the browser's own
+device mode does it, and it drives the identical code path — so what is under
+test is whether `app/tokens.css`'s `@media (prefers-reduced-motion: reduce)`
+block is *evaluated*. Writing `--motion-fast: 0ms` from the harness would have
+proven that CSS variables exist. There is no Electron API for this and no OS call
+either; on Windows the signal is a Settings toggle.
+
+It asserts a **pair**, and that is the point. Zero under `reduce` alone would
+also be true of a stylesheet that had lost its `not (prefers-reduced-motion:
+reduce)` block and was zeroing the tokens for everybody — a real regression that
+reads as a pass. The characters are counted on both sides for the same reason: a
+page that rendered nothing would report `0ms` very convincingly.
+
+**Three defects were found by writing the witnesses, and all three were in the
+witnesses.** The first compared the computed value against the string `"0ms"`
+and reported the product broken twice, in both themes, on a stylesheet doing
+exactly the right thing — `getComputedStyle` normalises `0ms` to `0s` and
+`160ms` to `.16s`. A witness that reads a normalised value as a failure is worse
+than no witness, because the next person deletes it instead of the defect. The
+second hardcoded `"dash.fleet-strip"` where the real key is `"dash.fleetStrip"`,
+so the off-switch witness would have read `null` and reported it — the harness
+disagreeing with the thing it measures, which is `firstAgentName`'s lesson
+arriving again, and the fix is to import the constants so a rename breaks the
+build. The third made the activation witness read whatever focus a *previous*
+witness had left behind: it worked until a workspace witness was added between
+them, and then failed because of the order the witnesses ran in, which is the
+least useful kind of red there is.
+
+**`DASH_SHELL_URL` turned out to be mandatory and the harness header omitted
+it.** Unpackaged, `main.ts` loads `http://127.0.0.1:3000` — so a session that has
+just closed DASH to free the single-instance lock has no dev server, every load
+fails `ERR_CONNECTION_REFUSED`, and the harness reports "no agents in this
+store", blaming the store for a missing server. `dash-app://ui/` is what
+`scripts/verify-shell.mjs` passes, for ADR 0004's reason.
+
+**MAR-501 and MAR-502 are proven. MAR-503 is not, and the two clauses it misses
+are named rather than rounded off.**
+
+MAR-501's bar is met in full: three agents, the persisted characters at 50×50 in
+both themes with `alt=""` and `aria-hidden`, both densities measured on every
+surface, reduced motion honoured, and a missing-asset simulation in which every
+sprite is genuinely fetched and empty — checked, not assumed, via
+`complete && naturalWidth === 0` — while the boxes, the control count, the
+accessible names, `main`'s height and the strip's height are all unchanged. A
+missing sprite costs a picture and never a position.
+
+MAR-502's is met for the same reasons plus its own: the portrait renders 100×100
+in both themes, carries the same character file as that agent's fleet card, and
+keeps its 100px box with the asset missing. The missing-asset witness runs on the
+workspace surface separately rather than being inferred from the fleet page —
+the fleet page's eight avatars are all 50px, so witnesses taken there say nothing
+about a different element at a different size in a different layout. The focus
+witness is deliberately not repeated on the portrait: it is decorative and is not
+a control, so a ring around it would be the defect rather than the evidence.
+
+**MAR-503 misses two.** Its bar asks for *10+ agents staying bounded with an
+overflow count*; this machine's store has three, and seeding seven more into a
+real user's records to take a screenshot would be a worse thing to do than
+leaving the claim unproven. What is witnessed is the **bound** — narrowing until
+the row cannot hold them, at which point the strip stands one and says "+2" with
+no scrolling — which exercises the same `fleetStripSlots` branch a large fleet
+would and is **not** the same claim. And its off-switch clause asks for the
+setting *surviving an app restart*; what is witnessed is survival across a
+document **reload**, which is the mechanism — `FleetStripScript` reading
+`localStorage` before the first paint — but is not a process restart. Its
+activation clause asks for click *and* keyboard; the keyboard half is driven
+with real `Tab` and `Return` input events and lands on the right workspace, and
+the click half is not driven.
+
+Evidence: `pnpm typecheck` clean, `brand:check` green over 39 files,
+`[state] valid`, 98 test files / 1818 passed / 8 skipped from PowerShell, and
+**`pnpm verify:shell` green — 78 installed-shell proofs, zero failures**, which
+is the first shell smoke run locally in several sessions. It became possible
+because Henrik agreed to DASH being closed for it; the app was closed with
+`WM_CLOSE`, the same signal the window's own close button sends, and not with
+the force-kill AGENTS.md forbids. 66 images and `cast-witness.json` in
+`qa-screenshots-mar-501-503/`.
 
 ## One conversation with the fleet, and the half of it that needs no model (MAR-419)
 
