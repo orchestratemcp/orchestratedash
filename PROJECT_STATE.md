@@ -1,6 +1,6 @@
 # DASH project state
 
-Updated: 2026-08-05 (the design pass executed; Wave 1 proven)
+Updated: 2026-08-07 (every open PR merged; the packet reconciled against master)
 
 Portfolio sequence and estimates: [`../orchestratekit-mcp/docs/PORTFOLIO_ROADMAP_2026-08-01.md`](../orchestratekit-mcp/docs/PORTFOLIO_ROADMAP_2026-08-01.md).
 
@@ -263,7 +263,10 @@ was never there. The third, non-blocking item — `G2` dropping `detail` and
 PR, and it is what let the 2026-08-06 run name its own cause in one line and
 led straight to MAR-508.
 
-**MAR-508 is fixed, on a PR, not merged.** Branch
+**MAR-508 is fixed and merged** — PR [#61](https://github.com/orchestratemcp/orchestratedash/pull/61),
+merge commit `6020a9e`, 2026-08-07. The sentence here said "on a PR, not
+merged", and the 2026-08-07 reconciliation pass corrects it along with ten
+others. Branch
 `000henrik/mar-508-google-oauth-client-secret`. This session picked **option
 2** of the issue's own three — supplied locally, never committed — over
 option 1 (compiled in beside the client id, which ADR 0002 already flags as a
@@ -710,9 +713,11 @@ not which step, and inferring it from event ordering would be a guess rendered a
 a fact.
 ## What a run produced, as a thing you own (MAR-434, design slice)
 
-**Open on PR #43, stacked behind #42 and #41, and half the issue is
-deliberately unbuilt.** MAR-457 built the artifact seam and proved it; this
-dresses it and invents no contract.
+**Merged in PR #43 (`958e95e`) on 2026-08-06, and half the issue was
+deliberately unbuilt here.** The sentence this replaces said "open on PR #43,
+stacked behind #42 and #41"; a later section already records the merge, and the
+reconciliation pass corrects the claim at the point somebody reads it. MAR-457
+built the artifact seam and proved it; this dresses it and invents no contract.
 
 The defect underneath was small and quiet: the run detail page rendered
 `view.artifacts[0]` and nothing else, while the store kept every artifact a run
@@ -881,8 +886,10 @@ as owner spellings only for that exact account. The full story is in
 
 **Select a file, against the roles the manifest declares, wired to the
 admission API proof 9 already drives.** Built against master rather than on PR
-#52, which is open behind the Actions outage; the overlap is recorded in
-`.orchestrate/state.json` rather than avoided.
+#52, which was open behind the Actions outage at the time; the overlap is
+recorded in `.orchestrate/state.json` rather than avoided. **Both are merged
+now** — #52 as `6515655`, this as `354c93c` — and #52 landed first, so the
+conflicts that note predicted were resolved by keeping both sides.
 
 **The renderer names a kind of file and never a file.** `workspace.selectInput`
 carries an agent, a task and a role, and no path in either direction. Main
@@ -1081,7 +1088,9 @@ the fault rather than the fix.
 
 ## The repair gets a button (MAR-518)
 
-**Open on a PR, not merged.** MAR-506's own child, and the half its PR
+**Merged** in PR [#63](https://github.com/orchestratemcp/orchestratedash/pull/63)
+(merge commit `96a70b8`) on 2026-08-07; this paragraph said "open on a PR, not
+merged" until the reconciliation pass. MAR-506's own child, and the half its PR
 deliberately left unbuilt: `POST /store/retire` existed and worked, and
 `can_retire` was hardcoded `false` because nothing in DASH asked for it yet.
 Branch `000henrik/mar-518-retire-store-surface`, cut from master independently
@@ -1159,8 +1168,11 @@ the retire path regressed.
 
 ## The plane that must not be generalised, made structural (MAR-484)
 
-**Open on a PR, not merged.** ADR 0007's load-bearing paragraph was a finding
-about a file that did not exist. It exists now:
+**Merged**, and in two parts from one branch: PRs
+[#54](https://github.com/orchestratemcp/orchestratedash/pull/54) (`9a150d7`) and
+[#57](https://github.com/orchestratemcp/orchestratedash/pull/57) (`7d1eb03`).
+This paragraph said "open on a PR, not merged". ADR 0007's load-bearing
+paragraph was a finding about a file that did not exist. It exists now:
 `lib/agent-dom/runner-channel.ts`.
 
 The failure it guards against is not an argument somebody wins. It is the
@@ -1239,8 +1251,10 @@ dialer, the record's refusals, the command's shape and the key's custody. ADR
 
 ## What a run produced, as a thing you can keep (MAR-434, the Outputs half)
 
-**Open on PR [#52](https://github.com/orchestratemcp/orchestratedash/pull/52),
-not merged, and half of the workspace UI is deliberately unbuilt.**
+**Merged** in PR [#52](https://github.com/orchestratemcp/orchestratedash/pull/52)
+(merge commit `6515655`) on 2026-08-06 — this said "not merged" until the
+reconciliation pass — **and half of the workspace UI was deliberately unbuilt
+here.** The other half is MAR-507 below, which merged as `354c93c`.
 
 The agent workspace rendered `latest_digest` and nothing else — one artifact, on
 a page whose agent may well have written two. That is the same defect MAR-434
@@ -1282,7 +1296,9 @@ this change opens; the runner has served all three routes since PR #46 and proof
 
 ## What actually runs on the VPS (MAR-497)
 
-**Open on a PR, not merged.** ADR 0007 chose this repository's runner as the
+**Merged** in PR [#53](https://github.com/orchestratemcp/orchestratedash/pull/53)
+(merge commit `b784df0`) on 2026-08-06; this paragraph said "open on a PR, not
+merged". ADR 0007 chose this repository's runner as the
 remote process and left one follow-up unowned: the runner is bundled into the
 Electron app and started by the Electron binary with `ELECTRON_RUN_AS_NODE=1`,
 and a host has no Electron binary to start it with. **ADR 0007 amendment 1
@@ -1372,7 +1388,8 @@ attended half; MAR-489 owns them.
 
 ## The developer path had no gate (MAR-505, MAR-506)
 
-**Open on PR [#51](https://github.com/orchestratemcp/orchestratedash/pull/51), not merged.**
+**Merged** in PR [#51](https://github.com/orchestratemcp/orchestratedash/pull/51)
+(merge commit `7f23d53`) on 2026-08-06; this said "not merged".
 `pnpm shell` showed a window that said "Reading your agents…" and never said
 anything else, and **the renderer was never at fault**: a freshly built export
 of the same source hydrates and renders real data in the real shell.
@@ -1429,6 +1446,145 @@ at all — `database disk image is malformed` — while `dash.sqlite` reports
 MAR-506, which also names the product gap it exposed: a person is told "The
 runner answered 500", by an application that has an entire recovery vocabulary
 for damage to its *own* store and none for the runner's.
+
+## The packet caught up with master (2026-08-07)
+
+**Every open pull request in this repository has merged.** `gh pr list
+--state all` reports #26 through #65 all `MERGED`, except #64, which was closed
+in favour of the #62 hotfix. The packet still described eleven of them as open,
+and two of the three sentences this file is proudest of — the ones about a
+pre-merge claim being corrected by the session after it — had stopped being
+written.
+
+Eleven entries moved from `planned` to `merged`, each with its **merge commit**
+rather than its branch tip, and each with `git merge-base --is-ancestor`
+executed before the lifecycle moved: MAR-482 (#49), MAR-492 (#44), MAR-483
+(#50), MAR-491 (#45), MAR-434's Outputs half (#52), MAR-505 (#51), MAR-497
+(#53), MAR-484 (#54 then #57), MAR-498 (#55), MAR-508 (#61) and MAR-518 (#63).
+MAR-506, MAR-507 and MAR-500 were already recorded `merged` and lose only the
+sentences claiming they were not on master.
+
+**`proven` was promoted for nothing, and that is the rule this pass ran on.**
+This session executed no installed run. Several of those entries contain prose
+that reads like proof — "proven in three directions", "green end to end" — and
+promoting on a previous session's prose is precisely what the lifecycle exists
+to stop. `merged` is asserted from git ancestry, which is implementation truth
+and checkable here; `proven` waits for somebody to execute something.
+
+The one exception is **MAR-434 → Done**, and it is an exception because it does
+not rely on prose: its entry has recorded `proven` since PR #48 against a
+citable CI run (`31100798451` at `cb9fe11`) of proof 9's acceptance criterion.
+
+Linear was moved to match, using this packet's own meanings rather than a
+board's: **In Review** means a PR is open, **In Progress** means merged and not
+proven, **Done** means finished. So MAR-492 and MAR-505 move In Review → In
+Progress — forward, not back, because their PRs merged and neither is proven —
+and MAR-498, MAR-500, MAR-506, MAR-507, MAR-508 and MAR-518 move out of
+Backlog/Todo. MAR-476 was stale in the other direction: Linear has said Done
+since 2026-08-04 and the packet said In Progress.
+
+**`state:check`'s drift count went from 11 to 17, and the increase is the
+point.** An entry recorded `planned` produces no drift warning at all, because
+the check only compares a *merged or proven* lifecycle against a Linear status
+that has not caught up. Eleven issues were merged on master and invisible to
+that check. Seventeen visible warnings, each explained in the entry it names,
+is a more honest number than eleven.
+
+**Unchanged deliberately:** MAR-458, MAR-467, MAR-468, MAR-469 and MAR-421 stay
+In Progress for the reasons already written above them. The Google trio in
+particular stays `merged`, because the 2026-08-07 attended run **failed** at
+`G9` and the runbook's promotion rule is that a run failing any check promotes
+nothing — including the fourteen checks it passed.
+
+**What that run does establish is recorded where it belongs and nowhere wider.**
+`G0a`–`G8b`, `G11`, `G12a`, `G12c`, `G13` and `G15a` passed against real Google
+for the first time: a real consent, a real token exchange carrying MAR-508's
+secret, a refresh token in the DPAPI vault, and the projection over real Gmail
+MIME that ADR 0002 amendment 3 guessed was likeliest to be wrong. MAR-508's
+entry says so and still does not claim `proven`.
+
+**MAR-520 is filed, open, and not fixed by anything in this pass.** A
+harness-spawned runner mints a channel secret kept nowhere, so after the harness
+exits `POST /shutdown` answers 401 and the runner cannot be retired by the
+route AGENTS.md prescribes — which is how the next run comes to open a second
+writer against the same `runner.sqlite`, the pattern suspected behind MAR-506's
+corruption. MAR-523's harness work retires the proof **agent**, which is what
+raced the temporary-directory cleanup; the runner it leaves behind is still
+unretirable.
+
+## A reply to a real person (MAR-523)
+
+**Open on a PR, not merged.** The first attended run ever to pass `G2` found
+this on 2026-08-07 and it is one line of joining code, in the gap between two
+functions that were each correct.
+
+Real Gmail's `From:` is `Display Name <address>`. The loopback fixture's was a
+bare address. The reply path handed the whole header value to
+`gmail.draft.create`'s `to`, and DASH's own broker refused it `invalid_input`
+**before Google was asked** — so no draft was created and `G10`, `G12b` and
+`G14` were all downstream of one refusal.
+
+**The validator was never the bug, and it is not loosened by a character.**
+`ADDRESS` excludes `<`, `>` and `"` on purpose: a value passing it cannot carry
+a display name with structure, cannot become two recipients, cannot end the
+`To:` line. Widening it would put the whole RFC 5322 mailbox grammar back inside
+a header DASH writes, which is precisely what `composeRfc822` exists to avoid.
+
+**So the parse moved to where it happens once.** `gmail.message.read`'s
+projection exposes `from_address` beside the raw `from`, and
+`addressFromHeader` tests whatever it extracts against **the same `ADDRESS`**
+the composer uses. The projection therefore cannot emit a value the write
+operation would refuse — there is no third outcome, and that is the property
+`tests/broker-write.test.ts` pins over six header shapes rather than three
+examples. `ADDRESS` moved up beside the parser in the same change, because it
+stopped being a rule about writing headers and became the set of addresses this
+module will name at all.
+
+The rules are three lines and one of them is a refusal. No angle brackets: the
+whole trimmed value must be an address. Exactly one: the text to the next `>`
+is the address and the display name is discarded rather than interpreted. More
+than one: **nothing**. `From:` may legally carry several mailboxes, and picking
+one would be DASH quietly choosing who a reply goes to — no recipient is a
+visible failure, the wrong recipient is not.
+
+**The loopback fixture now serves the shape Google serves.** Proof 7's provider
+answers `"Colleague, A." <colleague@example.com>`, so the class is covered by
+the mandatory gate rather than only by an evening somebody stands at a consent
+screen. On unfixed code `7k` fails outright and `7l` — strengthened to assert
+the display name does *not* reach the composed `To:` line — never runs. That is
+the real accounting of how this survived three merged slices: every fixture DASH
+had was a shape real Gmail almost never produces.
+
+**Four harness papercuts from the same run are fixed here**, because they are
+what the re-run needs and they live in the same file. The
+`A REAL DRAFT EXISTS` banner printed unconditionally, with `draft id: unknown`,
+over a run that created no draft — it is gated on the same value the cleanup
+prints now, and `G16` is skipped rather than asked when there is nothing to
+delete. `G16` itself failed on `deleted === "deleted"` because the operator
+typed `delete`; it reads the answer now, negative branch first so `not deleted`
+can never pass, and re-asks once rather than losing an attended evening to a
+past participle. The end-of-run `rmSync` raced the still-running agent, whose
+`cwd` is the directory being removed, so the agent is retired first through the
+runner's own authenticated stop route and the removal is tolerated and named
+rather than allowed to decide the exit code of a proof about Gmail. And an
+`ENOENT` abort printed **"all checks passed"** over a half-run: there is a
+`catch` now, the abort is a recorded failure, every check it never reached is
+named as a skip, the stack prints above the summary, and the summary reserves
+that sentence for a run in which nothing was skipped either.
+
+**`G15b`'s `allowed_before_revoked: false` was a race, not a consequence of
+`G9`.** The agent slept five seconds before its first poll while the harness
+revoked about a second after the report said complete, so on a fast machine
+every recorded poll was *after* the withdrawal and the check reported a
+connection that had never worked rather than a transition. The first poll is
+immediate now, the harness waits for it before revoking, and the flag is read
+off that pre-revocation snapshot. The ordering is established by construction.
+
+Evidence: `pnpm typecheck` clean, `[state] valid` with the recorded drift
+warnings, and 86 test files / 1635 passed / 8 skipped / 0 failed from
+PowerShell, 15 of them new. **Nothing here is a claim that a draft reaches a
+real Drafts folder** — that is the MAR-468 re-run, and this is what it was
+blocked on.
 
 ## The refactor the ADR predicted, done the way it said (MAR-488)
 
