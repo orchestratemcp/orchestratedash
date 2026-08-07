@@ -624,3 +624,122 @@ it is now safe to do — which was the entire point.
 is persisted yet, and no surface connects one; that is MAR-498. What is proven
 is the dialer, the record's refusals, the command's shape and the key's custody.
 ADR 0004 keeps the rest attended, permanently.
+
+## Amendment 3 (MAR-487): the verb set, and the helper stops being the unproven half
+
+Status: Accepted. Date: 2026-08-07.
+
+This ADR's first follow-up said the verb set "is not specified here… it belongs
+with the deploy bridge, where there is something to validate against". MAR-484
+wrote `connect` and left the rest. This is the bridge, so the set is fixed now:
+**`install`, `start`, `stop`, `status`, `collect`, `connect`** — the six named
+above, no more, in `lib/deploy/verbs.ts` beside the arguments each carries and
+the check both ends run.
+
+### Nothing variable reaches argv, and that is stronger than validating it
+
+The rule above is *"DASH chooses which operation, never what to run."* The
+mechanism this amendment adds is narrower and easier to check: **a verb's
+arguments do not go on the command line at all.** They travel as one JSON
+envelope on the child's stdin, so the only strings `ssh` can be made to
+interpret are the fixed options `sshArgv` composes, the destination, and a verb
+drawn from a closed array.
+
+That matters because argv is where option injection lives — `lib/hosts.ts`
+already refuses a leading `-` on every component for exactly that reason — and
+because a bundle's file list could never have gone there anyway. The set of
+strings `ssh` sees is now fixed when this repository is compiled.
+
+`connect` is the one exception and it is forced: its stdin **is** the HTTP
+conversation, so a helper that drained stdin first would consume DASH's first
+request and wait forever for an end that never comes. Its bundle id therefore
+rides on argv, having passed the same check as everything else — over an
+alphabet that cannot spell a separator, a traversal, a drive letter or a
+leading `-`.
+
+### An identifier is not a path, and the helper is what enforces it
+
+`bundle_id` and `agent_id` are opaque tokens. The helper joins them to a root
+**it** chose; it never receives a directory. This is MAR-507's rule — *the
+renderer names a kind of file and never a file* — pointed at a machine DASH does
+not administer, where the sharper version applies: a payload that could name a
+directory is a payload that could name `/etc`.
+
+The file names *inside* a bundle are the one place a path travels, and they are
+checked with `runner/path-guard.ts`'s `inspectComponent`, per segment — the
+function MAR-434 wrote for a child running as the same user as the runner.
+Per-component rather than `inspectPathSyntax` on the whole string, because that
+one answers about a path a caller *chose* and so requires an absolute one; a
+bundle name is relative by construction and would be refused as `not_absolute`
+before any interesting rule ran. Per-component is also the stronger question:
+`..`, a colon opening an alternate data stream, a trailing dot Windows silently
+strips, a control character truncating the name inside a native call, and every
+reserved device name at any depth are each properties of one segment.
+
+**Two guards, and the table is the same shape as amendment 2's**, which is what
+honest defence in depth looks like when it is measured rather than asserted:
+
+| Change | What goes red |
+| --- | --- |
+| Remove the containment re-check alone | **nothing** — the component guard still refuses |
+| Remove the component guard alone | **nothing** — containment still refuses |
+| Both | the escape case |
+
+Checked **on the helper's side** rather than only in DASH, and that is the load-
+bearing word. A rule living only in the sender is a rule the host does not have,
+and this program's whole job is to stand between an `ssh` session and a
+filesystem.
+
+### What the helper is a boundary against, restated because it is easy to inflate
+
+Not the host. DASH holds a key that could run anything there, and the paragraph
+above already refuses to pretend otherwise. What the closed set rules out is
+**DASH itself** turning a deploy into arbitrary remote execution. `start` runs
+`node start.mjs` because the helper decided that, not because a request said so.
+There is no verb that takes a command, no verb that takes a path, and no branch
+that passes a caller-supplied string to a shell.
+
+### `stop` works because of MAR-520, which was not foreseeable when this ADR was written
+
+A helper that did not start a runner still has to be able to stop one — every
+`ssh` session is a new process, so *every* stop is by a stranger. Before MAR-520
+the only thing on the far end of that would have been a signal, which is the
+force-kill AGENTS.md forbids, performed on a machine nobody is watching, against
+the process holding somebody's agent history.
+
+MAR-520 made the runner record the channel secret it actually resolved, under an
+owner-only proven ACL, beside its endpoint file. So the helper authenticates to
+the runner's own `POST /shutdown` — DASH's own Stop button's route, one machine
+over. A runner that left no such record is **reported as running and unstoppable
+with the reason**, and the helper stops there.
+
+### What this amendment lets the repository claim, and what it does not
+
+Amendment 2 said the seam was one file wide and that *"the only variable between
+the CI proof and the attended one is which process is on the other end of the
+pipe."* It also listed what stayed unproven: "`ssh` itself: authentication, the
+far-side helper, and the host's socket."
+
+**The far-side helper comes off that list.** `tests/deploy-bridge.test.ts` runs
+the real helper — bundled from the same entry point
+`scripts/build-runner-standalone.mjs` ships — as a local child, and drives
+`runDeployVerb`, the production function, through install → start → status →
+collect → stop, including a real process started by the helper and asked to stop
+through a real authenticated route. The only substitution is
+`spawn("node", [helper, verb])` where production writes
+`spawn("ssh", sshArgv(…))`.
+
+`ssh`, the key, `sshd` and somebody's actual VPS stay unproven and, under
+ADR 0004, permanently unprovable by a blocking gate. MAR-489 owns them.
+
+**And the deploy plane is a second way to reach a host, so the exclusion is
+asserted in the other direction too.** Amendment 2 made `/broker/drain` and
+`/broker/responses` unreachable on a remote *channel* by type. A test now also
+scans the helper's own source for both route strings, comments stripped, because
+a door added here would not be a channel at all and no type would have seen it.
+The one route the helper reaches is the runner's own shutdown, on the host's own
+socket, with the host's own credential.
+
+**Restart-on-boot and retention are still undecided**, and the helper ships no
+service unit and prunes nothing. Both remain follow-ups for the reasons this ADR
+and amendment 1 already gave.

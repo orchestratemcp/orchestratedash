@@ -20,7 +20,7 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -252,6 +252,71 @@ describe("setting a damaged store aside", () => {
       detail: "There is no runner store file to set aside.",
     });
   });
+
+  /* -------------------------------------------------------------------- *
+   * MAR-520: all three move, or none of them do
+   * -------------------------------------------------------------------- */
+
+  it("leaves nothing half-moved when one of the files cannot be renamed", () => {
+    /*
+     * The disaster this function's own header describes, produced by the
+     * function written to prevent it. The first draft renamed each file in turn
+     * and returned the first failure where it stood, so a main database moved
+     * away while its `-wal` stayed behind — and the header says exactly what
+     * that costs: "a log referring to pages the new file does not have".
+     *
+     * A directory standing where `runner.sqlite-shm` should be is the reachable
+     * way to make a rename fail on every platform, which matters because the
+     * real cause on Windows is `EBUSY` from a file SQLite still has open and
+     * that cannot be provoked on Linux. The point of the case is the *state
+     * afterwards*, and that is platform-independent.
+     */
+    const dir = freshDir();
+    writeNotADatabase(dir);
+    const main = path.join(dir, RUNNER_STORE_FILE);
+    const before = readFileSync(main);
+    writeFileSync(`${main}-wal`, "leftover", "utf8");
+    mkdirSync(`${main}-shm`);
+
+    const outcome = retireDamagedStore(dir, RUNNER_STORE_FILE, new Date());
+    expect(outcome.ok).toBe(false);
+
+    // Everything is back. Not "the failure was reported" — the directory is in
+    // the state it was in before the repair was attempted, because a caller
+    // that reads `ok: false` and retries must not be retrying against a
+    // half-moved store.
+    const listing = readdirSync(dir);
+    expect(listing).toContain(RUNNER_STORE_FILE);
+    expect(listing).toContain(`${RUNNER_STORE_FILE}-wal`);
+    expect(listing.filter((name) => name.includes(".damaged-"))).toEqual([]);
+    expect(readFileSync(main)).toEqual(before);
+    expect(readFileSync(`${main}-wal`, "utf8")).toBe("leftover");
+  });
+
+  it("never separates a database from its write-ahead log", () => {
+    // The property, rather than one arrangement of it: whatever the outcome,
+    // the main database and its `-wal` are on the same side of the move. This
+    // is what the observed quarantine directory on this machine violated — it
+    // held `runner.sqlite-wal` and `runner.sqlite-shm` and no database.
+    const dir = freshDir();
+    writeNotADatabase(dir);
+    const main = path.join(dir, RUNNER_STORE_FILE);
+    writeFileSync(`${main}-wal`, "leftover", "utf8");
+    writeFileSync(`${main}-shm`, "leftover", "utf8");
+
+    const outcome = retireDamagedStore(dir, RUNNER_STORE_FILE, new Date());
+    const listing = readdirSync(dir);
+    const setAside = listing.filter((name) => name.includes(".damaged-"));
+    const inPlace = listing.filter((name) => !name.includes(".damaged-"));
+
+    if (outcome.ok) {
+      expect(setAside).toHaveLength(3);
+      expect(inPlace).toEqual([]);
+    } else {
+      expect(setAside).toEqual([]);
+      expect(inPlace).toHaveLength(3);
+    }
+  });
 });
 
 /* ---------------------------------------------------------------------- *
@@ -309,6 +374,69 @@ describe("the runner's answer to DASH", () => {
     const body = (await response.json()) as Record<string, unknown>;
     expect(body["reason"]).toBe("store_damaged");
     expect(body["kind"]).toBe("malformed");
+  });
+
+  /*
+   * MAR-520. The half of MAR-506's two detections that was wired to nothing.
+   *
+   * This is the case that actually happened. The damaged store in this
+   * machine's installed data directory **passed `quick_check` at open** — the
+   * runner's log has no "records cannot be read" line anywhere — and then threw
+   * on twelve subsequent requests. Each throw produced the right answer to the
+   * caller and left `storeDamage()` saying null, so `/health` kept reporting
+   * `ok`, and `POST /store/retire` kept replying "There is nothing to set
+   * aside." to somebody looking at a page that had just offered to set their
+   * records aside.
+   *
+   * The repair was unreachable through the only route a person has, on exactly
+   * the machine it was written for.
+   */
+  it("reports damage it discovers mid-request, so the repair becomes reachable", async () => {
+    let observed: RunnerStoreDamage | null = null;
+    const dir = freshDir();
+    const endpoint = runnerEndpoint(dir, randomBytes(6).toString("hex"));
+    await prepareEndpoint(endpoint);
+    const server = createRunnerServer({
+      supervisor: new Supervisor([]),
+      token: TOKEN,
+      principal: DASH_LOCAL_PRINCIPAL,
+      // Null throughout: this is a store that opened cleanly and is about to
+      // throw, which is the shape the open-time probe cannot catch.
+      storeDamage: () => observed,
+      database: () => {
+        throw new Error("database disk image is malformed");
+      },
+      onStoreDamage: (damage) => {
+        observed = damage;
+      },
+      log: () => {
+        /* quiet */
+      },
+    });
+    await listenOnEndpoint(server, endpoint);
+    servers.push({ server, endpoint });
+    const call = ipcFetch(endpoint.path);
+
+    const before = (await (await call(`${IPC_ORIGIN}/health`)).json()) as Record<string, unknown>;
+    expect(before["store_damaged"]).toBe(false);
+
+    // A command is the route that reaches the database, and a command is what
+    // was being attempted on the machine this happened to.
+    const failed = await call(`${IPC_ORIGIN}/agents/scout/commands`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({ command: "run_now" }),
+    });
+    const failedBody = (await failed.json()) as Record<string, unknown>;
+    expect(failedBody["reason"]).toBe("store_damaged");
+
+    // The finding survived the request that produced it. Without this the
+    // runner forgets, `/health` keeps claiming `ok`, and the button is a
+    // dead end.
+    expect(observed).not.toBeNull();
+    const after = (await (await call(`${IPC_ORIGIN}/health`)).json()) as Record<string, unknown>;
+    expect(after["store_damaged"]).toBe(true);
+    expect(after["ok"]).toBe(false);
   });
 
   it("still answers /health, and says the store is damaged there", async () => {

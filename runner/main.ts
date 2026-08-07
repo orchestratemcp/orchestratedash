@@ -48,6 +48,7 @@ import {
 import { DASH_LOCAL_PRINCIPAL } from "./execute";
 import { createRunnerServer } from "./server";
 import { RUNNER_BUILD_ID, RUNNER_PROTOCOL_VERSION } from "./identity";
+import { channelSecretFingerprint, clearSessionKey, writeSessionKey } from "./session-key";
 import { RUNNER_STORE_FILE, openRunnerStore, type RunnerStore } from "./store";
 import { retireDamagedStore, type RunnerStoreDamage } from "./store-damage";
 import { Supervisor, loadRegistrations } from "./supervisor";
@@ -72,6 +73,20 @@ export interface RunnerEndpointFile {
   started_at: string;
   runner_protocol: number;
   runner_build: string;
+  /**
+   * SHA-256 over the channel secret this runner resolved, truncated (MAR-520).
+   *
+   * Not a secret, and the module that computes it says at length why. What it
+   * buys is that a caller holding a candidate key learns *before it connects*
+   * whether that key is this runner's — so "you have the wrong credential" stops
+   * being indistinguishable from "the runner is wedged", which is the state a
+   * live unretirable runner was left in on 2026-08-07.
+   *
+   * Optional because a runner from an earlier build wrote a file without it, and
+   * a reader that required it would decline to talk to exactly the stale runner
+   * this field exists to help retire.
+   */
+  channel_secret_fingerprint?: string;
 }
 
 export function endpointFilePath(dataDir: string): string {
@@ -98,6 +113,15 @@ async function main(): Promise<void> {
     process.env["DASH_RUNNER_ENDPOINT_ID"] ?? randomBytes(12).toString("hex");
 
   const secret = ensureChannelSecret(dataDir);
+  /*
+   * MAR-520. Written here, before the endpoint exists, so there is never a
+   * moment at which this runner is reachable and nothing on disk says how to
+   * stop it. `runner/session-key.ts` has the whole argument; the short version
+   * is that `runner.key` records what the *spawner* believes and this records
+   * what the *runner* is using, and a runner nobody can authenticate to is one
+   * only a machine restart can retire.
+   */
+  writeSessionKey(dataDir, secret);
   const endpoint: RunnerEndpoint = runnerEndpoint(dataDir, endpointId);
   await prepareEndpoint(endpoint);
 
@@ -192,6 +216,10 @@ async function main(): Promise<void> {
     const finish = (): never => {
       store?.close();
       releaseEndpoint(endpoint);
+      // MAR-520. A session key on disk means "a runner is alive with this
+      // credential". Removed last, beside the socket, so the claim stops being
+      // true at the same moment the runner does.
+      clearSessionKey(dataDir);
       process.exit(0);
     };
     server.close(finish);
@@ -205,6 +233,29 @@ async function main(): Promise<void> {
     database: () => store?.database ?? null,
     workspace: () => workspace ?? undefined,
     storeDamage: () => storeDamage,
+    /**
+     * MAR-520. The second half of MAR-506's two detections, connected.
+     *
+     * A store that passed `quick_check` at open and threw later is damage this
+     * runner has now observed, and recording it is what makes `/store/retire`
+     * reachable — it refuses outright while `storeDamage` is null. Everything
+     * downstream of `storeDamage()` follows from the same line: `/health` stops
+     * claiming `ok`, and the routes that need a database stop being tried.
+     *
+     * It is only ever set, never cleared here. Clearing belongs to
+     * `retireStore`, which is the one place that knows the damage was dealt
+     * with rather than merely not seen again.
+     */
+    onStoreDamage: (damage) => {
+      if (storeDamage !== null) {
+        return;
+      }
+      storeDamage = damage;
+      console.error(
+        `[runner] the runner's own records failed mid-request (${damage.kind}): ${damage.detail}`,
+      );
+      console.error("[runner] supervising nothing until they are repaired or set aside");
+    },
     /**
      * MAR-506. The repair, and it is the reason the recovery copy ends in an
      * action rather than in "report this".
@@ -220,8 +271,39 @@ async function main(): Promise<void> {
       if (storeDamage === null) {
         return { ok: false as const, detail: "There is nothing to set aside." };
       }
+      /*
+       * MAR-520. Closed before it is moved, and this is the difference between
+       * a repair and a repair that cannot run on Windows.
+       *
+       * `openRunnerStore` closes the handle itself when the *open-time* probe
+       * finds damage, so on that path there is nothing open and a rename
+       * succeeds. The runtime path is the opposite: a store that opened
+       * cleanly and threw later is still open, held by this process, and
+       * `renameSync` on a file SQLite has open answers `EBUSY` on Windows —
+       * measured, not assumed. Since the main database is moved first, the
+       * whole repair failed on its first step and reported the operating
+       * system's word for "no" to somebody who had asked DASH to fix their
+       * records.
+       *
+       * The workspace is detached with it: it holds a handle on the same
+       * database, so a close that left it attached would leave the runner
+       * answering file questions out of a closed store.
+       */
+      store?.close();
+      store = null;
+      attachWorkspace();
+
       const outcome = retireDamagedStore(dataDir, RUNNER_STORE_FILE, new Date());
       if (!outcome.ok) {
+        // The files are back where they were (`retireDamagedStore` rolls its
+        // own moves back), so the honest thing is to reopen what we closed.
+        // A runner left with no store after a failed repair would answer every
+        // route with "unreadable" for a reason that is no longer true.
+        const reopened = openRunnerStore(dataDir);
+        if (reopened.ok) {
+          store = reopened.store;
+          attachWorkspace();
+        }
         return { ok: false as const, detail: outcome.detail };
       }
       const reopened = openRunnerStore(dataDir);
@@ -274,6 +356,7 @@ async function main(): Promise<void> {
         started_at: new Date().toISOString(),
         runner_protocol: RUNNER_PROTOCOL_VERSION,
         runner_build: RUNNER_BUILD_ID,
+        channel_secret_fingerprint: channelSecretFingerprint(secret),
       } satisfies RunnerEndpointFile,
       null,
       2,

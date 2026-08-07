@@ -1,0 +1,328 @@
+/**
+ * The deploy plane's verb set, and the envelope a verb carries (MAR-487,
+ * ADR 0007).
+ *
+ * Pure: no `ssh`, no filesystem, no child process. `electron/ssh-host.ts` sends
+ * these and `scripts/host-helper/main.ts` answers them. The split is
+ * `lib/hosts.ts`'s and it is kept for that file's stated reason — everything
+ * decided here is decided on strings, so CI runs all of it on a machine with no
+ * host, no key and no network.
+ *
+ * ## The rule this file exists to enforce
+ *
+ * ADR 0007, on the plane that wants exactly the power `runner/README.md`
+ * declined to expose:
+ *
+ * > SSH exec is a general shell, which is the thing `runner/README.md` refused
+ * > to build. So DASH does not compose command lines. […] **DASH chooses which
+ * > operation, never what to run.** A verb takes arguments the helper
+ * > validates; it does not take a command.
+ *
+ * Two things follow, and both are structural rather than remembered.
+ *
+ * **A verb is a member of a closed array**, so the string that reaches `ssh`'s
+ * argv is drawn from a set a reader can count. Adding one is a change to
+ * `DEPLOY_VERBS` *and* to the argument type derived from it, in this file,
+ * reviewed as a widening.
+ *
+ * **A verb's arguments do not reach argv at all.** They travel as a JSON
+ * envelope on the child's stdin, and the only strings on the command line are
+ * the fixed options `sshArgv` composes and the verb itself. That is not a
+ * convenience: argv is where option injection lives — `lib/hosts.ts` refuses a
+ * leading `-` on every component for exactly that reason — and a bundle's file
+ * list could never have gone there anyway. Keeping *all* variable data off argv
+ * means the set of strings `ssh` can be made to interpret is fixed at compile
+ * time.
+ *
+ * ## What an identifier may be, and why it is not a path
+ *
+ * `bundle_id` and `agent_id` are opaque tokens over a narrow alphabet. The
+ * helper joins them to a root it chose; it never receives a path. This is
+ * MAR-507's rule pointed one machine over — *"the renderer names a kind of file
+ * and never a file"* — and the sharper version of it, because here the far end
+ * is a machine DASH does not administer: a payload that could name a directory
+ * would be a payload that could name `/etc`.
+ */
+
+/* ---------------------------------------------------------------------- *
+ * The set
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Every verb DASH will ever send a host, as a closed set.
+ *
+ * ADR 0007 named six and specified none, saying the set "belongs with the
+ * deploy bridge, where there is something to validate against". MAR-484 wrote
+ * `connect` — the control plane's — and left the other five as vocabulary for
+ * an implementation that did not exist. This is that implementation, so they
+ * are written now and not before.
+ *
+ * - `install` — put a bundle on the host. Files, validated, under an id.
+ * - `start` — run the installed bundle. **What** runs is the helper's decision.
+ * - `stop` — ask the running runner to stop, through its own authenticated route.
+ * - `status` — what is installed and what is alive.
+ * - `collect` — the host's own account of a bundle: log tail, endpoint identity.
+ * - `connect` — join the runner's socket to stdio. The control plane (MAR-484).
+ */
+export const DEPLOY_VERBS = [
+  "install",
+  "start",
+  "stop",
+  "status",
+  "collect",
+  "connect",
+] as const;
+
+export type DeployVerb = (typeof DEPLOY_VERBS)[number];
+
+export function isDeployVerb(candidate: string): candidate is DeployVerb {
+  return (DEPLOY_VERBS as readonly string[]).includes(candidate);
+}
+
+/* ---------------------------------------------------------------------- *
+ * What a verb carries
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Opaque identifiers, over an alphabet that cannot spell a path.
+ *
+ * No `/`, no `\`, no `.`, no `:`, no leading `-`. A value passing this cannot
+ * traverse, cannot name a drive, cannot become an `ssh` option and cannot be a
+ * Windows reserved device name — the last because a name that is only letters,
+ * digits, `_` and `-` and is at least three characters long is not `NUL`,
+ * `COM1` or `AUX`.
+ *
+ * Deliberately not "a safe path": `runner/path-guard.ts` exists for paths and
+ * is used by the helper on the *file names inside* a bundle. An id is a
+ * different thing and the difference is the point — the helper joins it to a
+ * root it chose.
+ */
+const IDENTIFIER = /^[a-z0-9][a-z0-9_-]{2,63}$/;
+
+/** A file inside a bundle, as it travels. */
+export interface BundleFile {
+  /**
+   * A relative path inside the bundle, `/`-separated.
+   *
+   * The one field here that is a path, and the helper is what validates it —
+   * with `runner/path-guard.ts`, the module MAR-434 wrote for a child that runs
+   * as the same user as the runner. It is checked on the receiving side rather
+   * than only here, because a check that lives only in the sender is a check a
+   * different sender does not perform.
+   */
+  path: string;
+  /** Base64. JSON has no bytes, and a bundle holds a compiled runner. */
+  content_base64: string;
+  /** SHA-256 of the decoded bytes, hex. Re-computed by the helper after writing. */
+  sha256: string;
+  /** POSIX mode. Only `0o644` and `0o755` are admitted — see `checkDeployRequest`. */
+  mode: number;
+}
+
+export interface InstallRequest {
+  verb: "install";
+  bundle_id: string;
+  agent_id: string;
+  /** What DASH believes it built, for the receipt and for the log. */
+  runner_build: string;
+  files: BundleFile[];
+}
+
+export interface StartRequest {
+  verb: "start";
+  bundle_id: string;
+}
+export interface StopRequest {
+  verb: "stop";
+  bundle_id: string;
+}
+export interface StatusRequest {
+  verb: "status";
+  /** Absent asks about every bundle, which is what a Connection Center row needs. */
+  bundle_id?: string;
+}
+export interface CollectRequest {
+  verb: "collect";
+  bundle_id: string;
+  /** How many trailing log lines to return, bounded below and above. */
+  lines?: number;
+}
+export interface ConnectRequest {
+  verb: "connect";
+  bundle_id: string;
+}
+
+export type DeployRequest =
+  | InstallRequest
+  | StartRequest
+  | StopRequest
+  | StatusRequest
+  | CollectRequest
+  | ConnectRequest;
+
+/* ---------------------------------------------------------------------- *
+ * The check, run on both ends
+ * ---------------------------------------------------------------------- */
+
+export type DeployRequestProblem =
+  | "unknown_verb"
+  | "malformed_identifier"
+  | "malformed_files"
+  | "malformed_mode"
+  | "too_large"
+  | "malformed_lines";
+
+export type DeployRequestCheck =
+  | { ok: true; request: DeployRequest }
+  | { ok: false; problem: DeployRequestProblem; detail: string };
+
+/**
+ * A bundle is a compiled runner plus an agent. Sixty-four megabytes is far more
+ * than one needs and far less than a way to fill somebody's disk.
+ */
+export const MAX_BUNDLE_BYTES = 64 * 1024 * 1024;
+/** One log read is an answer to a question, not a download. */
+export const MAX_COLLECT_LINES = 500;
+
+/**
+ * Check a candidate request, or say which part is wrong.
+ *
+ * Called by the sender before anything is spawned **and by the helper on
+ * whatever arrives**. Two calls to one function rather than two
+ * implementations: the helper is the side that matters, because it is the side
+ * that would be talked to by something other than DASH, and a rule that lived
+ * only in the sender would be a rule the host does not have.
+ *
+ * The first problem is returned rather than all of them, for
+ * `checkHostRecord`'s reason: the caller renders one sentence.
+ */
+export function checkDeployRequest(candidate: unknown): DeployRequestCheck {
+  if (typeof candidate !== "object" || candidate === null) {
+    return { ok: false, problem: "unknown_verb", detail: "The request was not an object." };
+  }
+  const request = candidate as Record<string, unknown>;
+  const verb = request["verb"];
+  if (typeof verb !== "string" || !isDeployVerb(verb)) {
+    return {
+      ok: false,
+      problem: "unknown_verb",
+      detail: `"${String(verb)}" is not an operation this helper performs.`,
+    };
+  }
+
+  // `status` is the one verb whose identifier is optional, because a
+  // Connection Center row asks about a host rather than about a bundle.
+  const bundleId = request["bundle_id"];
+  if (verb === "status") {
+    if (bundleId !== undefined && !isIdentifier(bundleId)) {
+      return identifierProblem("bundle_id");
+    }
+  } else if (!isIdentifier(bundleId)) {
+    return identifierProblem("bundle_id");
+  }
+
+  if (verb === "collect") {
+    const lines = request["lines"];
+    if (lines !== undefined && (!Number.isInteger(lines) || (lines as number) < 1 || (lines as number) > MAX_COLLECT_LINES)) {
+      return {
+        ok: false,
+        problem: "malformed_lines",
+        detail: `A log read is between 1 and ${String(MAX_COLLECT_LINES)} lines.`,
+      };
+    }
+  }
+
+  if (verb === "install") {
+    if (!isIdentifier(request["agent_id"])) {
+      return identifierProblem("agent_id");
+    }
+    if (typeof request["runner_build"] !== "string" || request["runner_build"].length === 0) {
+      return {
+        ok: false,
+        problem: "malformed_identifier",
+        detail: "The bundle did not say which runner build it holds.",
+      };
+    }
+    const files = request["files"];
+    if (!Array.isArray(files) || files.length === 0) {
+      return { ok: false, problem: "malformed_files", detail: "The bundle carried no files." };
+    }
+    let total = 0;
+    for (const entry of files as unknown[]) {
+      if (typeof entry !== "object" || entry === null) {
+        return { ok: false, problem: "malformed_files", detail: "A bundle entry was not an object." };
+      }
+      const file = entry as Record<string, unknown>;
+      if (
+        typeof file["path"] !== "string" ||
+        typeof file["content_base64"] !== "string" ||
+        typeof file["sha256"] !== "string" ||
+        !/^[0-9a-f]{64}$/.test(file["sha256"])
+      ) {
+        return {
+          ok: false,
+          problem: "malformed_files",
+          detail: "A bundle entry did not carry a name, its bytes and their digest.",
+        };
+      }
+      // Two values rather than a mask. A mode is a small closed choice here —
+      // a file is either readable or runnable — and admitting arbitrary bits
+      // would let a bundle ask for setuid on a machine DASH does not administer.
+      if (file["mode"] !== 0o644 && file["mode"] !== 0o755) {
+        return {
+          ok: false,
+          problem: "malformed_mode",
+          detail: "A bundle file asked for permissions DASH does not send.",
+        };
+      }
+      total += Math.ceil((file["content_base64"].length * 3) / 4);
+      if (total > MAX_BUNDLE_BYTES) {
+        return {
+          ok: false,
+          problem: "too_large",
+          detail: `A bundle is at most ${String(MAX_BUNDLE_BYTES / (1024 * 1024))} MB.`,
+        };
+      }
+    }
+  }
+
+  return { ok: true, request: request as unknown as DeployRequest };
+}
+
+function isIdentifier(candidate: unknown): candidate is string {
+  return typeof candidate === "string" && IDENTIFIER.test(candidate);
+}
+
+function identifierProblem(field: string): DeployRequestCheck {
+  return {
+    ok: false,
+    problem: "malformed_identifier",
+    detail:
+      `The ${field} must be 3-64 characters of lowercase letters, digits, "-" or "_". ` +
+      `It names a thing on the server and can never be a path.`,
+  };
+}
+
+/* ---------------------------------------------------------------------- *
+ * What comes back
+ * ---------------------------------------------------------------------- */
+
+/** One installed bundle, as the host describes it. */
+export interface HostBundleStatus {
+  bundle_id: string;
+  agent_id: string;
+  runner_build: string;
+  installed_at: string;
+  /** Whether the host still finds a live process for it. */
+  running: boolean;
+  /** The pid the host recorded, when it recorded one. Null once it has gone. */
+  pid: number | null;
+}
+
+export type DeployAnswer =
+  | { ok: true; verb: "install"; bundle_id: string; files: number; bytes: number }
+  | { ok: true; verb: "start"; bundle_id: string; pid: number }
+  | { ok: true; verb: "stop"; bundle_id: string; stopped: boolean; detail: string }
+  | { ok: true; verb: "status"; bundles: HostBundleStatus[] }
+  | { ok: true; verb: "collect"; bundle_id: string; log: string[]; truncated: boolean }
+  | { ok: false; problem: string; detail: string };

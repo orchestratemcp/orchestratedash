@@ -113,6 +113,39 @@ is stale on arrival.
 4. Confirm the tree is the one you mean to make a claim about:
    `git rev-parse HEAD`, and `pnpm verify` green on it.
 
+## The preflight, and why you no longer perform it by hand (MAR-520)
+
+`node scripts/prove-google.mjs` now runs a preflight before it builds anything.
+It asks one question — **is a runner already holding the data directory this run
+is about to write to** — and it exists because on 2026-08-07 the answer was yes
+and nobody found out until the session was over.
+
+That morning's run left a runner alive: `/health` answering, three agents
+supervised, `runner.json` naming its pid and its pipe, and `401` to the
+`runner.key` in that same directory. It was found by reading a process list. The
+next run would have started a **second** runner over the same `runner.sqlite` —
+the two-writers-one-store pattern MAR-506's corruption is suspected to have come
+from — and nothing would have looked wrong until the store did.
+
+The preflight prints one of three things and you do not have to do anything
+about the first two:
+
+- **nothing is holding it** — the ordinary case.
+- **a runner is running and DASH can talk to it** — it is adopted, exactly as
+  step 3 above says. Nothing is stopped.
+- **a leftover was retired** — a runner that did not accept DASH's credential was
+  asked to stop through *its own* authenticated shutdown route, using the
+  credential it recorded for itself when it started. Nothing is force-killed.
+
+If it **refuses** (exit 3), the run does not start, and the message names the
+pid and the one remedy: **restart this computer once.** That is the honest
+answer and not a workaround. Do not reach for `Stop-Process` — `AGENTS.md`
+forbids it because a force-killed runner corrupted this project's real store
+once already, and the runner it would kill is holding somebody's agent history.
+
+A runner started **before this change landed** recorded no credential of its
+own, so the preflight can only report it, not retire it. Those need the restart.
+
 ## Running it
 
 ```bash
