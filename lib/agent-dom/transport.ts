@@ -32,6 +32,12 @@
  *   safe formatting the easy formatting.
  */
 
+import {
+  STORE_DAMAGED_REASON,
+  describeRunnerStoreDamage,
+  type Recovery,
+  type RunnerStoreDamageKind,
+} from "../copy/recovery";
 import type { AgentCommandEnvelope } from "./envelope";
 import { ipcFetch } from "./ipc-fetch";
 import type { AdapterOutcome, AgentDomAdapter } from "./runner";
@@ -246,12 +252,60 @@ async function request(
       };
     }
     if (!response.ok) {
+      /*
+       * MAR-506. Read the body before deciding what to say.
+       *
+       * This branch used to answer `The runner answered ${status}.` without
+       * looking, and that sentence is what a user saw for four hours on a
+       * machine whose `runner.sqlite` was malformed. It names the transport. It
+       * does not say that DASH reached the runner, that the runner is running,
+       * that nothing of theirs is lost, or what to do — which is everything
+       * they needed.
+       *
+       * The runner now answers a damaged store with a typed 503, so the body is
+       * where the answer is. It is read with the same ceiling as a success
+       * body: a failing runner is not a reason to relax the one bound that
+       * keeps a hostile one from making DASH exit.
+       */
+      const damage = await readStoreDamage(response);
+      if (damage !== null) {
+        return {
+          ok: false,
+          outcome: {
+            ok: false,
+            reason: "adapter_failed",
+            /*
+           * `can_retire: false`, and it is the honest value today rather than a
+           * placeholder. The runner *can* set a damaged store aside — `POST
+           * /store/retire` is built and tested — but nothing in DASH asks it
+           * to yet: that wants a shell command, a preload method and a control
+           * on a surface, all in files another open PR owns.
+           *
+           * So the copy does not offer a button that is not on the screen.
+           * `describeStoreDamage` makes the same call for its unnamed case and
+           * says why: a next action the user cannot take is worse than one that
+           * admits DASH cannot fix this, because the first sends them looking.
+           * Flipping this to `true` is the last line of the follow-up that
+           * wires the control, and the copy is already written for it.
+           */
+          detail: recoverySentences(describeRunnerStoreDamage(damage, { can_retire: false })),
+          },
+        };
+      }
       return {
         ok: false,
         outcome: {
           ok: false,
           reason: "adapter_failed",
-          detail: `The runner answered ${String(response.status)}.`,
+          /*
+           * The generic case, and it is worded for a person rather than for a
+           * log because this string is rendered. The status code moves into the
+           * second sentence, where it is a detail somebody reporting the fault
+           * can quote, rather than being the whole of what they are told.
+           */
+          detail:
+            "DASH reached the part of itself that runs agents, and it could not carry out the request. " +
+            `Nothing was changed. If this keeps happening it needs reporting (status ${String(response.status)}).`,
         },
       };
     }
@@ -328,6 +382,59 @@ async function readBounded(response: Response): Promise<string | null> {
   }
 
   return Buffer.concat(chunks).toString("utf8");
+}
+
+/**
+ * The runner's "my own records are damaged" answer, or null (MAR-506).
+ *
+ * Matches on `reason` first and only then trusts `kind`, so a runner answering
+ * some other 5xx with a body that happens to have a `kind` field cannot steer
+ * DASH's copy. An unrecognised `kind` falls back to `malformed` rather than
+ * being rejected: the runner has said its store is damaged, which is the fact
+ * the user needs, and refusing to say anything because the classification is
+ * from a newer build would be losing the message over its label.
+ *
+ * A body that is missing, oversized or not JSON returns null and the generic
+ * sentence is used. Silence is not evidence of a damaged store.
+ */
+async function readStoreDamage(response: Response): Promise<RunnerStoreDamageKind | null> {
+  const text = await readBounded(response);
+  if (text === null || text === "") {
+    return null;
+  }
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (typeof body !== "object" || body === null) {
+    return null;
+  }
+  const record = body as { reason?: unknown; kind?: unknown };
+  if (record.reason !== STORE_DAMAGED_REASON) {
+    return null;
+  }
+  return record.kind === "not_a_database" || record.kind === "unreadable"
+    ? record.kind
+    : "malformed";
+}
+
+/**
+ * A `Recovery` flattened into the one field this channel has.
+ *
+ * `AdapterOutcome` carries a single `detail` string, and it is what
+ * `app/agents/detail/page.tsx` already renders — so the three sentences arrive
+ * on screen today, with no change to a surface another open PR owns.
+ *
+ * **This is a transitional shape and should not spread.** MAR-423's whole
+ * argument for `Recovery` being three fields is that a surface cannot then
+ * render two and drop the third, and a joined string gives that back. What
+ * saves it here is that all three are present and in order; what a later
+ * surface should take is the object.
+ */
+function recoverySentences(recovery: Recovery): string {
+  return `${recovery.headline} ${recovery.meaning} ${recovery.next_action}`;
 }
 
 /**

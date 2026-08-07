@@ -37,7 +37,7 @@ import {
 } from "../runner/endpoint";
 import { DASH_LOCAL_PRINCIPAL } from "../runner/execute";
 import { createRunnerServer } from "../runner/server";
-import { openRunnerStore } from "../runner/store";
+import { openHealthyRunnerStore } from "./helpers/runner-store";
 import { Supervisor, loadRegistrations } from "../runner/supervisor";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -178,7 +178,7 @@ describe("the reload route", () => {
     const registrationsDir = path.join(dataDir, "agents");
     mkdirSync(registrationsDir, { recursive: true });
 
-    const store = openRunnerStore(dataDir);
+    const store = openHealthyRunnerStore(dataDir);
     const supervisor = makeSupervisor(loadRegistrations(registrationsDir).registrations);
     const server: Server = createRunnerServer({
       supervisor,

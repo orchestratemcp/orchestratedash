@@ -8,7 +8,16 @@
  * POST /telemetry/drain        hosted-agent event candidates since the last poll
  * POST /artifacts/drain        hosted-agent artifact candidates since the last poll
  * GET  /health                 what this runner is supervising
+ * POST /store/retire           set a damaged store aside and open a fresh one
  * ```
+ *
+ * ## When the runner's own records cannot be read (MAR-506)
+ *
+ * Every route below `/health`, `/shutdown` and `/store/retire` reaches for the
+ * store, so when the store is damaged they answer one shape — 503 with
+ * `reason: "store_damaged"` — rather than the 500 a thrown query used to
+ * produce. `runner/store-damage.ts` explains why detection at open is not
+ * enough on its own and why this is checked twice.
  *
  * The first two are the profile verbatim, which is what makes a runner-hosted
  * agent and a remote one reachable by the same adapter: DASH hands the adapter
@@ -45,6 +54,11 @@ import type { DatabaseSync } from "node:sqlite";
 import { validateState } from "../lib/contracts";
 import { executeCommand, type ChannelPrincipal } from "./execute";
 import { RUNNER_BUILD_ID, RUNNER_PROTOCOL_VERSION } from "./identity";
+import {
+  STORE_DAMAGED_REASON,
+  classifyStoreError,
+  type RunnerStoreDamage,
+} from "./store-damage";
 import { buildAgentDomState, type ProcessReport } from "./state";
 import type { AdoptionResult, Supervisor } from "./supervisor";
 import type { TaskWorkspaceApi } from "./task-api";
@@ -59,7 +73,18 @@ export interface ReloadSummary extends AdoptionResult {
 
 export interface RunnerServerOptions {
   supervisor: Supervisor;
-  database: DatabaseSync;
+  /**
+   * The open store, or nothing when it is damaged (MAR-506).
+   *
+   * A value on the ordinary path and a function on the standalone runner's,
+   * because the answer changes: `POST /store/retire` sets a damaged file aside
+   * and opens a fresh one, and a server holding the handle it was constructed
+   * with would be a server whose repair repaired nothing until a restart.
+   *
+   * Absent rather than a closed handle: a caller that has been told its
+   * database is unusable must not be given one that merely throws later.
+   */
+  database?: DatabaseSync | (() => DatabaseSync | null);
   /** The channel credential. Compared, never logged, never echoed. */
   token: string;
   principal: ChannelPrincipal;
@@ -78,13 +103,39 @@ export interface RunnerServerOptions {
    * Optional for the reason `reload` is: absent means the routes answer 501
    * rather than pretending, which keeps a runner built without a data directory
    * honest instead of silently accepting files it has nowhere to put.
+   *
+   * A function for the reason `database` is one (MAR-506): the workspace is
+   * built on the store, so retiring a damaged store replaces it.
    */
-  workspace?: TaskWorkspaceApi;
+  workspace?: TaskWorkspaceApi | (() => TaskWorkspaceApi | undefined);
   /** Graceful process shutdown, supplied only by the standalone runner. */
   shutdown?: () => void;
+  /**
+   * Whether the runner's own store is unusable, asked on every request
+   * (MAR-506).
+   *
+   * A function rather than a value because the answer changes: `POST
+   * /store/retire` sets the damaged file aside and the runner comes back. A
+   * captured boolean would leave a repaired runner refusing every route until
+   * it was restarted, which is a repair that does not repair anything.
+   */
+  storeDamage?: () => RunnerStoreDamage | null;
+  /**
+   * Set the damaged store aside so a fresh one can be created (MAR-506).
+   *
+   * Supplied only by the standalone runner, for the same reason `reload` and
+   * `shutdown` are: this module serves what it was handed and has no idea where
+   * the data directory is. Absent answers 501 rather than pretending.
+   */
+  retireStore?: () => Promise<StoreRetirement> | StoreRetirement;
   now?: () => Date;
   log?: (line: string) => void;
 }
+
+/** What `POST /store/retire` reports back. */
+export type StoreRetirement =
+  | { ok: true; moved_to: string; moved: number }
+  | { ok: false; detail: string };
 
 export function createRunnerServer(options: RunnerServerOptions): Server {
   const log = options.log ?? ((line: string) => { console.warn(line); });
@@ -93,9 +144,23 @@ export function createRunnerServer(options: RunnerServerOptions): Server {
     void handle(request, response, options, log).catch((error: unknown) => {
       // A thrown handler must not take the runner down or hang the caller.
       log(`[runner] request failed: ${error instanceof Error ? error.message : String(error)}`);
-      if (!response.headersSent) {
-        send(response, 500, { ok: false, detail: "The runner failed to handle the request." });
+      if (response.headersSent) {
+        return;
       }
+      /*
+       * MAR-506. The open-time probe cannot be complete — a store can pass
+       * `quick_check` and then throw when a write reaches the page that is
+       * going — so the same classification runs here, on whatever a route
+       * threw. This is the line that used to produce the 500 the user was
+       * shown, and it is the reason detection at open was not enough on its
+       * own.
+       */
+      const damage = classifyStoreError(error);
+      if (damage !== null) {
+        sendStoreDamaged(response, damage);
+        return;
+      }
+      send(response, 500, { ok: false, detail: "The runner failed to handle the request." });
     });
   });
 }
@@ -116,11 +181,23 @@ async function handle(
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
   const segments = url.pathname.split("/").filter((segment) => segment.length > 0);
 
+  const damage = options.storeDamage?.() ?? null;
+  // Resolved once per request rather than captured at construction: both of
+  // these change when a damaged store is retired (MAR-506).
+  const liveWorkspace =
+    typeof options.workspace === "function" ? options.workspace() : options.workspace;
+
   // `/health` is the only unauthenticated route, and it says nothing an
   // unauthenticated caller could not learn by looking at the process list.
+  //
+  // MAR-506 adds `store_damaged` to it, which stays inside that rule: it is a
+  // liveness fact about this process, in the same category as how many agents
+  // it is supervising, and it carries no path and no detail. The classification
+  // itself is authenticated, below.
   if (request.method === "GET" && segments.length === 1 && segments[0] === "health") {
     send(response, 200, {
-      ok: true,
+      ok: damage === null,
+      store_damaged: damage !== null,
       supervising: options.supervisor.list().length,
       runner_protocol: RUNNER_PROTOCOL_VERSION,
       runner_build: RUNNER_BUILD_ID,
@@ -150,6 +227,70 @@ async function handle(
     }
     send(response, 202, { ok: true, detail: "The runner is shutting down gracefully." });
     setImmediate(options.shutdown);
+    return;
+  }
+
+  // POST /store/retire — set a damaged store aside so a fresh one can be made
+  // (MAR-506). The one repair DASH can offer for a fault the user did not
+  // cause, and the reason `describeRunnerStoreDamage`'s next action is an
+  // action rather than "report this".
+  //
+  // Above the damage guard, obviously — it is the route that exists because of
+  // it — but *below* the authentication check, which is the interesting
+  // ordering. This deletes nothing and renames a file inside DASH's own data
+  // directory, and it is still not something an unauthenticated local caller
+  // gets to trigger: a runner that could be made to abandon its replay records
+  // by anybody who could reach its socket would have a way to make a
+  // once-executed command executable again.
+  if (
+    request.method === "POST" &&
+    segments.length === 2 &&
+    segments[0] === "store" &&
+    segments[1] === "retire"
+  ) {
+    if (options.retireStore === undefined) {
+      send(response, 501, {
+        ok: false,
+        detail: "This runner cannot set its store aside through its control channel.",
+      });
+      return;
+    }
+    if (damage === null) {
+      // Refused rather than performed. Retiring a healthy store would throw
+      // away the replay records and the approval decisions of a runner that was
+      // working, in response to a request that can only have been a mistake.
+      send(response, 409, {
+        ok: false,
+        detail: "The runner's records are readable, so there is nothing to set aside.",
+      });
+      return;
+    }
+    const outcome = await options.retireStore();
+    send(response, outcome.ok ? 200 : 500, { ...outcome });
+    log(
+      outcome.ok
+        ? `[runner] store retired to ${outcome.moved_to} (${String(outcome.moved)} file(s))`
+        : `[runner] store could not be retired: ${outcome.detail}`,
+    );
+    return;
+  }
+
+  /*
+   * MAR-506. Everything below this line reaches for the store, and the store
+   * cannot answer.
+   *
+   * 503 rather than 500, and a typed body rather than a sentence:
+   * `lib/agent-dom/transport.ts` matches on `reason` and hands DASH's copy layer
+   * a `kind` it has words for. A status code is what the user was shown before
+   * this issue, and it named the transport rather than the fault.
+   *
+   * `/health`, `/shutdown` and `/store/retire` are above it deliberately — they
+   * are, respectively, how DASH learns this is happening, how it stops the
+   * runner, and how it repairs it. A guard that also refused those would leave a
+   * damaged runner with no way out except killing it, which AGENTS.md forbids.
+   */
+  if (damage !== null) {
+    sendStoreDamaged(response, damage);
     return;
   }
 
@@ -285,11 +426,11 @@ async function handle(
   // event when antivirus takes it. A drain would let DASH's picture be right
   // once and stale forever after.
   if (request.method === "GET" && segments.length === 1 && segments[0] === "workspace-artifacts") {
-    if (options.workspace === undefined) {
+    if (liveWorkspace === undefined) {
       send(response, 501, { ok: false, detail: "This runner has no task workspace." });
       return;
     }
-    send(response, 200, { ok: true, ...options.workspace.index() });
+    send(response, 200, { ok: true, ...liveWorkspace.index() });
     return;
   }
 
@@ -306,14 +447,14 @@ async function handle(
   // `delete` is a POST rather than a DELETE. A body-less DELETE is easy for an
   // intermediary to retry, and this one destroys bytes.
   if (segments[0] === "artifacts" && segments.length === 3) {
-    if (options.workspace === undefined) {
+    if (liveWorkspace === undefined) {
       send(response, 501, { ok: false, detail: "This runner has no task workspace." });
       return;
     }
     const artifactId = decodeURIComponent(segments[1] ?? "");
 
     if (request.method === "GET" && segments[2] === "verify") {
-      const verified = options.workspace.verify(artifactId);
+      const verified = liveWorkspace.verify(artifactId);
       if (verified === null) {
         send(response, 404, { ok: false, detail: "There is no such output." });
         return;
@@ -327,7 +468,7 @@ async function handle(
     // token may read an output's bytes, exactly as it may already read the
     // receipt describing them.
     if (request.method === "GET" && segments[2] === "download") {
-      const downloaded = options.workspace.download(artifactId);
+      const downloaded = liveWorkspace.download(artifactId);
       if (downloaded === null) {
         send(response, 404, { ok: false, detail: "There is no such output." });
         return;
@@ -367,7 +508,7 @@ async function handle(
         send(response, 400, { ok: false, detail: "agent must be the name of the owning agent." });
         return;
       }
-      const removed = options.workspace.remove(agent, artifactId);
+      const removed = liveWorkspace.remove(agent, artifactId);
       send(response, 200, removed);
       return;
     }
@@ -400,8 +541,18 @@ async function handle(
       return;
     }
 
+    // Unreachable while `storeDamage` answers honestly: the guard above returns
+    // before any route that needs a database. It is checked rather than asserted
+    // because "unreachable" is a claim about another function, and a runner that
+    // dereferenced an absent store would fail as a crash rather than as copy.
+    const database = openDatabase(options);
+    if (database === null) {
+      sendStoreDamaged(response, { kind: "unreadable", detail: "The runner has no open store." });
+      return;
+    }
+
     const result = await executeCommand(envelope, {
-      database: options.database,
+      database,
       supervisor: options.supervisor,
       principal: options.principal,
       now: options.now,
@@ -476,7 +627,7 @@ async function handle(
 
   // GET  /agents/{id}/artifacts?run_id=…   what this run produced (MAR-434)
   if (request.method === "GET" && segments.length === 3 && segments[2] === "artifacts") {
-    if (options.workspace === undefined) {
+    if (liveWorkspace === undefined) {
       send(response, 501, { ok: false, detail: "This runner has no task workspace." });
       return;
     }
@@ -485,7 +636,7 @@ async function handle(
       send(response, 400, { ok: false, detail: "run_id is required." });
       return;
     }
-    send(response, 200, { ok: true, artifacts: options.workspace.artifacts(agentId, runId) });
+    send(response, 200, { ok: true, artifacts: liveWorkspace.artifacts(agentId, runId) });
     return;
   }
 
@@ -502,11 +653,11 @@ async function handle(
   // download for anything holding the channel token. The runner resolves ids to
   // paths for exactly one consumer — the child the task belongs to.
   if (segments.length >= 3 && segments[2] === "tasks") {
-    if (options.workspace === undefined) {
+    if (liveWorkspace === undefined) {
       send(response, 501, { ok: false, detail: "This runner has no task workspace." });
       return;
     }
-    const workspace = options.workspace;
+    const workspace = liveWorkspace;
 
     if (request.method === "POST" && segments.length === 3) {
       send(response, 200, { ok: true, task: workspace.create(agentId) });
@@ -854,8 +1005,39 @@ async function readBody(request: IncomingMessage): Promise<string | null> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+/** The store as it is right now, which is not always as it was at construction. */
+function openDatabase(options: RunnerServerOptions): DatabaseSync | null {
+  const source = options.database;
+  if (source === undefined) {
+    return null;
+  }
+  return typeof source === "function" ? source() : source;
+}
+
 function send(response: ServerResponse, status: number, body: Record<string, unknown>): void {
   sendRaw(response, status, JSON.stringify(body));
+}
+
+/**
+ * The one shape a damaged store answers with (MAR-506).
+ *
+ * 503 because the condition is temporary in the only sense that matters: it is
+ * about this runner's own state and it has a repair, which is exactly what 503
+ * means and what 500 does not.
+ *
+ * `reason` is the field `lib/agent-dom/transport.ts` matches on, and `kind` is
+ * what `describeRunnerStoreDamage` switches on. `detail` is SQLite's own status
+ * sentence, carried for the log and a developer disclosure and never for the
+ * headline — the user gets a sentence about their agents, not one about a disk
+ * image.
+ */
+function sendStoreDamaged(response: ServerResponse, damage: RunnerStoreDamage): void {
+  send(response, 503, {
+    ok: false,
+    reason: STORE_DAMAGED_REASON,
+    kind: damage.kind,
+    detail: damage.detail,
+  });
 }
 
 function sendRaw(response: ServerResponse, status: number, body: string): void {
