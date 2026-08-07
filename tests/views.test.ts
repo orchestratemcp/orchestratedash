@@ -456,6 +456,62 @@ describe("what a run produced", () => {
     expect(view.artifact_cards[0]!.recovery).not.toBeNull();
   });
 
+  /**
+   * The same wiring, on the surface a person actually opens (MAR-434).
+   *
+   * The agent workspace rendered `latest_digest` and nothing else, so an agent
+   * that wrote a digest *and* a reply showed one of them — the defect MAR-434
+   * had already corrected on the run detail page and not here. And like the run
+   * view before it was wired, the workspace had no availability at all.
+   *
+   * This drives the real producer end to end for the same reason the test above
+   * does: a stub resolver would prove the view model can hold "moved", not that
+   * this view asks for it.
+   */
+  it("carries every output of the latest run onto the workspace, with real availability", async () => {
+    const { ingestArtifacts, syncWorkspaceArtifacts } = await import("../lib/store");
+    // `seedRun` imports the manifest, which is what the workspace needs before
+    // it will report `found` at all.
+    seedRun();
+    expect(ingestArtifacts(artifact).accepted).toBe(1);
+    expect(
+      syncWorkspaceArtifacts({
+        artifact_id: "digest-1",
+        agent: "email-lead-to-crm",
+        run_id: "run-artifact-1",
+        task_id: "task-1",
+        sha256: "a".repeat(64),
+        registered_at: "2026-08-01T09:00:01.000Z",
+        availability: "quarantined",
+        availability_detail: "held by this computer's security software",
+      }).accepted,
+    ).toBe(1);
+
+    const view = workspaceView("email-lead-to-crm");
+    expect(view.found).toBe(true);
+    if (!view.found) return;
+
+    expect(view.outputs).toHaveLength(1);
+    expect(view.outputs[0]!.availability).toBe("quarantined");
+    // A quarantined output's next action is not "run it again" — re-running
+    // produces another file taken the same way.
+    expect(view.outputs[0]!.recovery).not.toBeNull();
+    expect(view.outputs_run_id).toBe("run-artifact-1");
+  });
+
+  it("gives a workspace with no outputs an empty list rather than a missing one", () => {
+    seedRun();
+
+    const view = workspaceView("email-lead-to-crm");
+    expect(view.found).toBe(true);
+    if (!view.found) return;
+
+    // Empty, not absent: the panel says "this run produced nothing", which is a
+    // different thing to learn from a panel that is not drawn.
+    expect(view.outputs).toEqual([]);
+    expect(view.outputs_run_id).toBeNull();
+  });
+
   it("gives a run that produced nothing an empty list and no verdict", async () => {
     seedRun();
     const view = runView("email-lead-to-crm", "run-artifact-1");

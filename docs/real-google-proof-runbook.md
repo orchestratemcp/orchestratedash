@@ -1,6 +1,18 @@
 # Runbook: the attended real-Google proof (MAR-468)
 
-Status: written 2026-08-03. **Not yet executed.**
+Status: written 2026-08-03. **First executed 2026-08-06, and it failed at `G2`.**
+It promoted nothing, which is what the promotion rule at the bottom of this file
+requires of a run that fails any check.
+
+The cause is a defect in DASH rather than in the procedure below: `lib/oauth/flow.ts`
+sends no `client_secret`, and Google refuses the token exchange outright with
+`client_secret is missing.` — so no credential can reach the vault at all. **MAR-508
+owns that and blocks any further attempt.** Two defects in the harness itself were
+found by the same attempt and are fixed (MAR-509): it could not launch Electron,
+and it spawned a runner that was never built beside it.
+
+Read the run's record on MAR-468 before running this again. The procedure below is
+unchanged and was not at fault.
 
 This is the manual, dated proof that DASH's permission broker works against
 Google's real API rather than against the loopback provider `electron/smoke.ts`

@@ -21,45 +21,33 @@
  */
 
 import { build } from "esbuild";
-import { createHash } from "node:crypto";
 import {
   copyFileSync,
   cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
-  readdirSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { computeRunnerBuildId } from "./runner-build-id.mjs";
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = path.join(repoRoot, "dist", "electron");
 const rootPackage = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"));
 
-function sourceFiles(directory) {
-  return readdirSync(directory)
-    .flatMap((name) => {
-      const file = path.join(directory, name);
-      return statSync(file).isDirectory() ? sourceFiles(file) : [file];
-    })
-    .filter((file) => /\.(?:ts|json)$/.test(file))
-    .sort();
-}
-
-/** Exact identity of the runner bundle's source and contract inputs. */
-const runnerBuildHash = createHash("sha256");
-runnerBuildHash.update(String(rootPackage.version));
-for (const directory of ["runner", "lib", "contracts"]) {
-  for (const file of sourceFiles(path.join(repoRoot, directory))) {
-    runnerBuildHash.update(path.relative(repoRoot, file));
-    runnerBuildHash.update(readFileSync(file));
-  }
-}
-const runnerBuildId = runnerBuildHash.digest("hex").slice(0, 20);
+/**
+ * Exact identity of the runner bundle's source and contract inputs.
+ *
+ * Moved to `scripts/runner-build-id.mjs` by MAR-497, because the standalone
+ * host artifact must compute the *same* string from the same tree — and it is
+ * built on a different platform, which is what surfaced the two normalisations
+ * that module now applies.
+ */
+const runnerBuildId = computeRunnerBuildId(repoRoot, rootPackage.version);
 
 /**
  * The two Agent Kit files "Try a sample agent" needs (MAR-423).
@@ -187,6 +175,30 @@ await Promise.all([
     ...shared,
     entryPoints: [path.join(repoRoot, "electron", "smoke.ts")],
     outfile: path.join(outDir, "smoke.mjs"),
+    format: "esm",
+  }),
+
+  // The launch preflight. Runs under plain **Node**, before `electron .`, which
+  // is the whole point of it — see `electron/preflight.ts`. Bundled here rather
+  // than written as a `.mjs` script so that its rules can live in
+  // `lib/shell/preflight.ts` with the rest of the shell's rules and be
+  // unit-tested there, which a `scripts/*.mjs` file could not import.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "preflight.ts")],
+    outfile: path.join(outDir, "preflight.mjs"),
+    format: "esm",
+  }),
+
+  // The first-paint check (`pnpm shell:check`). Never on the `electron .` path,
+  // built here only so there is something to run — the same terms as the smoke
+  // and the screenshot harness below. It produces a verdict about the developer
+  // path, which ADR 0004 keeps out of the release gate because that path
+  // depends on a dev server somebody has to have started.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "first-paint.ts")],
+    outfile: path.join(outDir, "first-paint.mjs"),
     format: "esm",
   }),
 

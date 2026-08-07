@@ -71,6 +71,16 @@ export const OUTPUTS_PANEL_COPY = {
   heading: "Outputs",
   empty: "This run produced nothing.",
   reveal: "Show what arrived",
+  /*
+   * "Save a copy", not "Download" (MAR-434).
+   *
+   * Download is what a browser does from somewhere else. This file is already
+   * on this computer — the runner is holding it in a folder the agent cannot
+   * reach — and what the button does is put a copy where the person can get at
+   * it. Saying "download" would describe a journey across a network that is not
+   * happening, and would quietly suggest the output has been somewhere else.
+   */
+  download: "Save a copy",
   developer_summary: "Reference for developers",
   receipt: {
     agent: "Made by",
