@@ -33,7 +33,24 @@ import { RECORD_CARD_COPY } from "../lib/copy/record-card";
 import { expectPlainLanguage } from "./helpers/plain-language";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const globals = readFileSync(path.join(repoRoot, "app", "globals.css"), "utf8");
+
+/**
+ * The stylesheet with its comments removed, which is what the rules below scan.
+ *
+ * Not fussiness. `app/globals.css` is a heavily commented file, and this repo's
+ * comments quote the selectors and declarations they are about — a paragraph
+ * explaining why `[data-fleet-strip="hidden"]` uses `display: none` mentions
+ * `[data-density]` two lines earlier, and a scan over the raw text reads the
+ * prose between them as a rule body and fails. It did: the check below went red
+ * on a comment the first time these two branches were put together.
+ *
+ * `scripts/brand-rules.mjs` strips comments before every one of its scans for
+ * exactly this reason. Same one-liner, same reason.
+ */
+const globals = readFileSync(path.join(repoRoot, "app", "globals.css"), "utf8").replace(
+  /\/\*[\s\S]*?\*\//g,
+  "",
+);
 
 describe("the disclosure", () => {
   it("renders a native details, closed, with the label as its summary", () => {
