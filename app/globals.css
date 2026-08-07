@@ -268,11 +268,30 @@ main:focus {
   display: flex;
   gap: var(--space-1);
   padding: 0 var(--space-3) var(--space-2);
-  overflow-x: auto;
-  /* The bar scrolls at 375px rather than wrapping into two rows: a chrome that
-     changes height by breakpoint moves the content under it, and MAR-440's
-     acceptance is explicitly about no horizontal overflow of the *page*. */
-  scrollbar-width: thin;
+  /*
+   * It wraps. It used to scroll, and MAR-491 is where that decision is made
+   * properly rather than patched.
+   *
+   * The original reasoning was that a chrome which changes height by breakpoint
+   * moves the content under it, and that MAR-440's acceptance was about the
+   * *page* not overflowing horizontally. Both are true and neither is what a
+   * person at 375px experiences: `nav.app-nav` scrolled 484px of content
+   * through 359, so two of the five destinations and the density control were
+   * off-screen at rest, with a scrollbar as the only hint they existed. The
+   * capture measured `density_toggle.fully_visible: false` at 375px in every
+   * wave since MAR-440 shipped.
+   *
+   * A navigation bar that hides where you can go is worse than one that is two
+   * rows tall. The content under it does move — once, at one width, before
+   * anybody has read anything — and in exchange every destination is reachable
+   * without discovering a horizontal scroller inside a desktop application.
+   *
+   * PROJECT_STATE.md recorded this as "the chrome, a different finding from
+   * MAR-491's tables, wanting the same breakpoint decision rather than a
+   * patch". This is that decision, taken with the tables.
+   */
+  flex-wrap: wrap;
+  row-gap: var(--space-1);
 }
 
 .app-nav-link {
@@ -453,6 +472,50 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 9px;
   background: var(--panel);
+}
+
+/* ---------------------------------------------------------------------- *
+ * A record card's two halves (MAR-491)
+ *
+ * `.card-meta` is the one line of primary facts, and `.card-more` is the
+ * disclosure holding everything a person did not ask for. See
+ * `lib/copy/record-card.ts` for why the cut is by usefulness rather than by
+ * width, and why this may never be something the density toggle does.
+ * ---------------------------------------------------------------------- */
+.card-meta {
+  margin: var(--space-2) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* Values in mono, vocabulary never — `app/tokens.css` states the rule. A run
+   count is a value. */
+.card-meta .value {
+  font-family: var(--font-mono);
+}
+
+.card-more {
+  margin-top: var(--space-3);
+}
+
+/* The control is a control and looks like one: it is the only thing on a calm
+   card a person is invited to press, so it gets the accent and a pointer, and
+   the browser's own disclosure triangle stays because every platform draws the
+   one its users already recognise. */
+.card-more > summary {
+  color: var(--accent);
+  font-size: var(--text-sm);
+  cursor: default;
+  width: fit-content;
+  padding: var(--space-1) 0;
+}
+
+.card-more > summary:hover {
+  text-decoration: underline;
+}
+
+.card-more[open] > summary {
+  margin-bottom: var(--space-2);
 }
 
 code {

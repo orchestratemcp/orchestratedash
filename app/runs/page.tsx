@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import type { EvidenceNotice } from "../../lib/copy/evidence";
+import { TechnicalDetails } from "../_components/record-card";
 import { RunVerdictChips } from "../_components/verdict";
 import { HostNotice, ViewFailed, ViewLoading } from "../_components/view-state";
 import { useHost, useView } from "../_data/use-view";
@@ -42,6 +43,37 @@ function EvidenceRecordNotice({ notice }: { notice: EvidenceNotice | null }): Re
       </p>
     </aside>
   );
+}
+
+/**
+ * When a run started, as a person would say it (MAR-491).
+ *
+ * The stored value is an ISO-8601 instant — `2026-08-06T20:09:04.029Z` — which
+ * is exact, sortable and unreadable at a glance, and it was being rendered
+ * verbatim on a card whose whole job is to be scanned. This is the same string
+ * put through the machine's own locale, and the exact one is still on the card,
+ * under `Started`, inside the disclosure.
+ *
+ * Formatted at render rather than in `lib/views/`, and that is deliberate: a
+ * locale belongs to the machine looking at the screen, and a view built in main
+ * and cloned across a boundary would be formatting for whichever process
+ * happened to build it. The raw instant is what crosses; the reading is local.
+ *
+ * A value it cannot parse is returned unchanged. A run whose timestamp is
+ * malformed is a real thing DASH stores, and inventing "Unknown" for it would
+ * hide the one clue about what went wrong.
+ */
+export function describeRunStart(startedAt: string): string {
+  const at = new Date(startedAt);
+  if (Number.isNaN(at.getTime())) {
+    return startedAt;
+  }
+  return at.toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export default function RunsPage(): ReactNode {
@@ -96,6 +128,19 @@ export default function RunsPage(): ReactNode {
           {state.data.runs.map((run) => (
             <li key={`${run.agent} ${run.run_id}`}>
               <article className="row-card">
+                {/*
+                  MAR-491. The heading used to be the run id — a UUID, wrapped
+                  over two lines at 375px, as the largest thing on the card.
+                  That is DASH's handle for a run, not a person's: nobody scans
+                  a list by `52570734-ae5e-…`, and `lib/copy/identifiers.ts`
+                  spends a module on why internal vocabulary must not be the
+                  first thing a guided surface says.
+
+                  What names a run to a person is which agent did it and when.
+                  The id stays — it is how somebody reports a problem — as a
+                  value inside the disclosure, where it is findable and is not
+                  the headline.
+                */}
                 <div className="section-heading">
                   <div>
                     <p className="eyebrow">
@@ -103,7 +148,7 @@ export default function RunsPage(): ReactNode {
                     </p>
                     <h3>
                       <a className="plain" href={runDetailHref(run.agent, run.run_id)}>
-                        <code>{run.run_id}</code>
+                        {describeRunStart(run.started_at)}
                       </a>
                     </h3>
                   </div>
@@ -112,34 +157,46 @@ export default function RunsPage(): ReactNode {
                     <span className={`status-${run.status}`}>{run.status}</span>
                   </div>
                 </div>
-                <dl className="facts">
-                  <div>
-                    <dt>Events</dt>
-                    <dd>{run.event_count}</dd>
-                  </div>
-                  <div>
-                    <dt>Started</dt>
-                    <dd>{run.started_at}</dd>
-                  </div>
-                  <div>
-                    <dt>Last event</dt>
-                    <dd>{run.last_event_at}</dd>
-                  </div>
-                  {run.has_sequence_gap || !run.known_agent ? (
+                {/*
+                  The flags stay on the primary face. A sequence gap and a
+                  missing manifest are the two things on this card that are
+                  about whether the record can be trusted, and a caveat behind
+                  a disclosure is a caveat for the people who already suspected
+                  something.
+                */}
+                {run.has_sequence_gap || !run.known_agent ? (
+                  <p className="card-meta">
+                    {run.has_sequence_gap ? <span className="flag">sequence gap</span> : null}
+                    {run.has_sequence_gap && !run.known_agent ? (
+                      <span aria-hidden="true"> · </span>
+                    ) : null}
+                    {run.known_agent ? null : (
+                      <span className="flag">manifest not imported</span>
+                    )}
+                  </p>
+                ) : null}
+                <TechnicalDetails>
+                  <dl className="facts">
                     <div>
-                      <dt>Notes</dt>
+                      <dt>Run</dt>
                       <dd>
-                        {run.has_sequence_gap ? (
-                          <span className="flag">sequence gap</span>
-                        ) : null}
-                        {run.has_sequence_gap && !run.known_agent ? " · " : null}
-                        {run.known_agent ? null : (
-                          <span className="flag">manifest not imported</span>
-                        )}
+                        <code>{run.run_id}</code>
                       </dd>
                     </div>
-                  ) : null}
-                </dl>
+                    <div>
+                      <dt>Events</dt>
+                      <dd>{run.event_count}</dd>
+                    </div>
+                    <div>
+                      <dt>Started</dt>
+                      <dd>{run.started_at}</dd>
+                    </div>
+                    <div>
+                      <dt>Last event</dt>
+                      <dd>{run.last_event_at}</dd>
+                    </div>
+                  </dl>
+                </TechnicalDetails>
               </article>
             </li>
           ))}
