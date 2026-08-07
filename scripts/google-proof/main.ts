@@ -88,7 +88,23 @@ import { ensureChannelSecret } from "../../runner/channel-secret";
  * ---------------------------------------------------------------------- */
 
 const failures: string[] = [];
+/** Ids of checks that did not run. Never a failure, never silent either. */
+const skipped: string[] = [];
 const lines: string[] = [];
+
+/**
+ * Every check id this run has already said something about (`G9`, `G15b`, …).
+ *
+ * Kept so that a run which stops — for any reason, including one nobody wrote a
+ * branch for — can name what it did not reach without printing a second line
+ * about something it already reported. See `skipEverythingNotYetReported`.
+ */
+const reportedIds = new Set<string>();
+
+/** `G15b. the next request…` → `G15b`. The id, which is what a reader cites. */
+function checkId(label: string): string {
+  return label.split(".")[0] ?? label;
+}
 
 function say(line: string): void {
   console.log(line);
@@ -96,6 +112,7 @@ function say(line: string): void {
 }
 
 function check(label: string, passed: boolean, detail: unknown): void {
+  reportedIds.add(checkId(label));
   if (!passed) {
     failures.push(label);
   }
@@ -111,18 +128,35 @@ function check(label: string, passed: boolean, detail: unknown): void {
  * already did.
  */
 function skip(label: string, because: string): void {
+  reportedIds.add(checkId(label));
+  skipped.push(checkId(label));
   say(`SKIP  ${label}: not attempted — ${because}`);
 }
 
 /**
- * Every check from the write onwards, named once.
+ * Every check this proof makes, in order, named once.
  *
- * A run that stops early has not failed these; it has not run them, and a reader
- * counting PASS lines needs to see the difference. Listed rather than derived
- * because the alternative is a harness that knows its own check names only after
- * it has run them, which is exactly when it cannot say what it skipped.
+ * A run that stops early has not failed the rest; it has not run them, and a
+ * reader counting PASS lines needs to see the difference. Listed rather than
+ * derived because the alternative is a harness that knows its own check names
+ * only after it has run them, which is exactly when it cannot say what it
+ * skipped.
+ *
+ * The whole list rather than only the tail, because an abort is not polite
+ * enough to happen after the write. An `ENOENT` on 2026-08-07 stopped a run
+ * inside the first third of this list and the log still ended "all checks
+ * passed" — true of the checks that ran, and a lie about the run.
  */
-const CHECKS_AFTER_THE_WRITE = [
+const EVERY_CHECK = [
+  "G0a. the store is the one `electron .` uses",
+  "G0b. no loopback provider is in force",
+  "G1. the shipped manifest imports",
+  "G2. a real Google sign-in completed",
+  "G3. Google returned a refresh token",
+  "G4. the three-party intersection over a real credential",
+  "G5. the capability card admits the wider permission",
+  "G6. the proof agent this harness wrote is valid JavaScript",
+  "G7a. the runner wrote an endpoint file",
   "G7b. the runner started the proof agent",
   "G8a. Gmail answered both read operations",
   "G8b. the projection over real Gmail MIME",
@@ -138,6 +172,26 @@ const CHECKS_AFTER_THE_WRITE = [
   "G15b. the next request came back revoked",
   "G16. the operator deleted the real draft",
 ];
+
+/** The tail of `EVERY_CHECK` that a stop before the write cannot have reached. */
+const CHECKS_AFTER_THE_WRITE = EVERY_CHECK.slice(
+  EVERY_CHECK.findIndex((label) => checkId(label) === "G7b"),
+);
+
+/**
+ * Say `SKIP` for everything in `from` this run has not already reported on.
+ *
+ * The filter is the point: an abort after `G12b` must not print a second,
+ * contradictory line about `G12b`, and a reader must be able to trust that each
+ * id appears exactly once in the log.
+ */
+function skipEverythingNotYetReported(from: readonly string[], because: string): void {
+  for (const label of from) {
+    if (!reportedIds.has(checkId(label))) {
+      skip(label, because);
+    }
+  }
+}
 
 async function waitForValue<T>(
   read: () => Promise<T | null>,
@@ -214,6 +268,32 @@ function ask(question: string): Promise<string> {
       resolve(answer.trim());
     });
   });
+}
+
+/**
+ * Does this answer mean the operator deleted the draft?
+ *
+ * The 2026-08-07 run failed `G16` on `deleted === "deleted"` because the person
+ * at the machine typed `delete`. That is a harness defect and not an operator
+ * error: the run had already done everything it existed to do, and the last line
+ * of the record said FAILED because of a past participle.
+ *
+ * So it reads the answer rather than matching it. The negative branch comes
+ * first and is the one that matters — `not deleted`, `no`, `not yet` must never
+ * be read as confirmation just because the word `deleted` appears in them, and a
+ * naive `includes("delete")` would do exactly that. An answer this cannot
+ * classify is re-asked once rather than failed, because the question is worth
+ * asking twice and an attended evening is not worth losing to it.
+ */
+function readsAsDeleted(answer: string): boolean {
+  const normalised = answer.trim().toLowerCase().replace(/[.!]+$/, "");
+  if (normalised.length === 0) {
+    return false;
+  }
+  if (/^(no|not|n)\b/.test(normalised) || normalised === "n") {
+    return false;
+  }
+  return /^(deleted?\b|deletes\b|done\b|yes\b|yep\b|ok\b|y$)/.test(normalised);
 }
 
 /* ---------------------------------------------------------------------- *
@@ -350,6 +430,19 @@ async function run(): Promise<void> {
   let credential: OAuthCredential | null = null;
   let draftId: string | null = null;
   let revokedAtGoogle = false;
+  /**
+   * Ask the runner to stop the proof agent, once there is a runner to ask.
+   *
+   * Out here for the cleanup's sake (papercut 3). The child is still running
+   * when the run ends — it polls for the revocation and holds `setInterval`
+   * open — and its working directory is the one the cleanup removes, so
+   * `rmSync` raced a live process holding files inside it and produced EPERM
+   * noise at the end of an otherwise clean run. Retiring it first is the fix,
+   * and it goes through the runner's own authenticated `stop`, which is the
+   * route DASH's own Stop button uses. Nothing here force-kills anything, per
+   * AGENTS.md.
+   */
+  let retireAgent: (() => Promise<void>) | null = null;
 
   try {
     /* -- G1: the shipped manifest, imported as a proof agent -------------- */
@@ -616,7 +709,14 @@ async function run(): Promise<void> {
         record({ send_attempt });
 
         // The write. A real draft, in a real Drafts folder.
-        const replyTo = read.ok && read.result.from ? read.result.from : null;
+        //
+        // MAR-523: from_address, never from. Real Gmail's From: is
+        // "Display Name <addr@host>"; this line used to hand that whole header
+        // to \`to\`, DASH's own broker refused it as invalid_input before Google
+        // was asked, and the 2026-08-07 attended run died here with G10, G12b
+        // and G14 downstream of it. The parse now happens once, in the
+        // projection, where every reply flow gets it.
+        const replyTo = read.ok && read.result.from_address ? read.result.from_address : null;
         const drafted = replyTo === null
           ? { ok: false, refusal: "no_recipient" }
           : await askBroker("gmail.draft.create", {
@@ -686,18 +786,27 @@ async function run(): Promise<void> {
         // The revocation watch. The harness is about to withdraw this grant at
         // Google; the same request that is being answered now must come back
         // refused, and refused as "revoked" rather than as a generic failure.
-        // Five seconds apart, twelve times, which stays inside the broker's own
+        // Five seconds apart, which stays inside the broker's own
         // twenty-per-minute budget.
+        //
+        // The FIRST poll happens immediately, before any sleep, and that is the
+        // half G15b's evidence rests on. This loop used to sleep first, while
+        // the harness reached its revocation about a second after this report
+        // said "complete" — so on a fast machine every recorded poll was after
+        // the withdrawal, "allowed_before_revoked" was false, and the check
+        // reported a connection that had never worked rather than a transition.
+        // The harness now waits for this first poll before revoking, so the
+        // ordering is established by construction and not by winning a race.
         const polls = [];
         let sawRevoked = false;
-        for (let i = 0; i < 12 && !sawRevoked; i += 1) {
-          await sleep(5000);
+        for (let i = 0; i < 20 && !sawRevoked; i += 1) {
           const again = await askBroker("gmail.search", { query: ${JSON.stringify(SEARCH_QUERY)}, max_results: 1 });
           const outcome = again.ok ? "ALLOWED" : String(again.refusal);
           polls.push(outcome);
           if (outcome === "revoked") { sawRevoked = true; }
           note("poll " + String(i + 1) + " = " + outcome);
           writeFileSync(watchPath, JSON.stringify({ polls, saw_revoked: sawRevoked, finished: sawRevoked }), "utf8");
+          if (!sawRevoked) { await sleep(5000); }
         }
         writeFileSync(watchPath, JSON.stringify({ polls, saw_revoked: sawRevoked, finished: true }), "utf8");
       })().catch((e) => process.stdout.write("[agent] " + String(e) + "\\n"));
@@ -738,9 +847,10 @@ async function run(): Promise<void> {
       : null;
     if (recorded === null) {
       check("G7a. the runner wrote an endpoint file", false, "no runner.json — the shell did not start one");
-      for (const label of CHECKS_AFTER_THE_WRITE) {
-        skip(label, "the runner never wrote an endpoint file");
-      }
+      skipEverythingNotYetReported(
+        CHECKS_AFTER_THE_WRITE,
+        "the runner never wrote an endpoint file",
+      );
       return;
     }
     check("G7a. the runner wrote an endpoint file", true, {
@@ -758,6 +868,24 @@ async function run(): Promise<void> {
       started_at: null,
     };
     const call = runnerFetch(handle);
+
+    retireAgent = async (): Promise<void> => {
+      const stopped = await call(
+        `${handle.origin}/agents/${encodeURIComponent(AGENT_ID)}/lifecycle`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${handle.token}` },
+          body: JSON.stringify({ action: "stop" }),
+          signal: AbortSignal.timeout(10_000),
+        },
+      );
+      const body = (await stopped.json()) as { ok?: boolean; detail?: string };
+      say(
+        body.ok === true
+          ? "[proof] cleanup: the proof agent was stopped through the runner."
+          : `[proof] cleanup: the runner did not stop the proof agent (${String(body.detail ?? "no detail")}). It is not force-killed; retire it through DASH.`,
+      );
+    };
 
     writeRegistration(dataDir, {
       registration: {
@@ -799,9 +927,10 @@ async function run(): Promise<void> {
     const consent = await ask("[proof] Type 'draft' to continue, or anything else to stop: ");
     if (consent !== "draft") {
       say("[proof] stopped before the write, at the operator's request.");
-      for (const label of CHECKS_AFTER_THE_WRITE) {
-        skip(label, "the operator stopped the run before the write");
-      }
+      skipEverythingNotYetReported(
+        CHECKS_AFTER_THE_WRITE,
+        "the operator stopped the run before the write",
+      );
       // A failure rather than a clean exit, and deliberately: a run that stopped
       // is not a run that passed, and the difference must survive somebody
       // pasting the last line of the log into an issue.
@@ -880,13 +1009,24 @@ async function run(): Promise<void> {
      * case it feels like. `plainTextBody` walks that tree and `header` matches
      * case-insensitively, and until this run neither had ever been given a
      * document Google wrote.
+     *
+     * The 2026-08-07 run passed this and then failed `G9`, which is why the
+     * sender half is now two assertions rather than one (MAR-523). `from` being
+     * a string was true and useless: the string was
+     * `Display Name <addr@host>`, and the check that would have caught it is
+     * that the *parsed* address exists and carries no display name.
      */
     const readResult = (reported?.read?.result ?? {}) as Record<string, unknown>;
+    const fromAddress = readResult["from_address"];
     check(
       "G8b. DASH's projection found a subject, a sender and a plain-text body in real Gmail MIME",
       typeof readResult["subject"] === "string" &&
         (readResult["subject"] as string).includes(PROOF_SUBJECT) &&
         typeof readResult["from"] === "string" &&
+        typeof fromAddress === "string" &&
+        !fromAddress.includes("<") &&
+        !fromAddress.includes(" ") &&
+        fromAddress.includes("@") &&
         typeof readResult["body_text"] === "string" &&
         (readResult["body_text"] as string).length > 0,
       {
@@ -894,6 +1034,11 @@ async function run(): Promise<void> {
         // body. This log is pasted into a Linear comment.
         projected_fields: Object.keys(readResult).sort(),
         subject_matches: typeof readResult["subject"] === "string" ? (readResult["subject"] as string).includes(PROOF_SUBJECT) : false,
+        // Whether the raw header carried a display name, and whether the parse
+        // removed it. Both are shapes, not addresses: this log is pasted into a
+        // Linear comment and the operator's own address is not evidence.
+        raw_from_had_display_name: typeof readResult["from"] === "string" ? (readResult["from"] as string).includes("<") : null,
+        from_address_is_bare: typeof fromAddress === "string" ? !fromAddress.includes("<") && !fromAddress.includes(" ") : false,
         body_chars: typeof readResult["body_text"] === "string" ? (readResult["body_text"] as string).length : 0,
       },
     );
@@ -1024,10 +1169,40 @@ async function run(): Promise<void> {
 
     /* -- G15: revocation, which is also the cleanup ------------------------ */
 
+    /*
+     * Wait for the agent to have been allowed at least once *before* the
+     * withdrawal, rather than hoping it was.
+     *
+     * `G15b` is a check about a transition — allowed, then revoked — and a
+     * transition needs both ends recorded in that order. Revoking before the
+     * agent's first post-write poll leaves every poll refused, which is
+     * indistinguishable in the log from a connection that never worked. So the
+     * ordering is a step here rather than an accident of how long `G14` spent
+     * waiting for an artifact.
+     */
+    const beforeRevocation = await waitForValue(
+      async () => {
+        try {
+          if (!existsSync(watchPath)) {
+            return null;
+          }
+          const value = JSON.parse(readFileSync(watchPath, "utf8")) as { polls?: string[] };
+          return (value.polls ?? []).length > 0 ? value : null;
+        } catch {
+          return null;
+        }
+      },
+      "the agent's first request after the write, which must be allowed before anything is revoked",
+      30_000,
+    );
+
     say("");
     say("[proof] Withdrawing the grant at Google. The agent is still running and is");
     say("[proof] asking for the same search every five seconds; its next request after");
     say("[proof] this must come back refused as 'revoked'.");
+    say(
+      `[proof] before the withdrawal it was answered: ${JSON.stringify(beforeRevocation?.polls ?? [])}`,
+    );
 
     revokedAtGoogle =
       credential === null ? false : await providerOperations().revoke(credential);
@@ -1062,37 +1237,112 @@ async function run(): Promise<void> {
      * again will not help" rather than "something went wrong". Until this run
      * nothing had ever seen Google produce it.
      */
+    /*
+     * `allowed_before_revoked` is read off the polls recorded *before* the
+     * revocation, not off the whole list.
+     *
+     * The list is the same in practice — the loop stops at the first `revoked`,
+     * so nothing follows it — but the two are different claims and only one of
+     * them is the one this check makes. Reading the earlier snapshot means the
+     * evidence is "this poll was answered, and then DASH withdrew the grant",
+     * in that order, with both halves observed.
+     */
+    const allowedBeforeRevoked = (beforeRevocation?.polls ?? []).includes("ALLOWED");
     check(
       "G15b. the agent's next request after a real revocation was refused as revoked, not as a generic failure",
-      watched?.saw_revoked === true && (watched.polls ?? []).includes("ALLOWED"),
+      watched?.saw_revoked === true && allowedBeforeRevoked,
       {
         polls: watched?.polls ?? null,
+        polls_before_withdrawal: beforeRevocation?.polls ?? null,
         // An "ALLOWED" before the "revoked" is what makes this a transition
         // rather than a connection that never worked.
-        allowed_before_revoked: (watched?.polls ?? []).includes("ALLOWED"),
+        allowed_before_revoked: allowedBeforeRevoked,
       },
     );
 
     /* -- What only a person can do ---------------------------------------- */
 
+    /*
+     * The banner, and it is conditional now.
+     *
+     * It used to print unconditionally, with `draft_id: "unknown"` when there
+     * was none. On 2026-08-07 `G9` failed, no draft was ever created, and this
+     * told the operator in capitals that a real draft was sitting in their
+     * mailbox — then asked them to go and delete it. They went and looked. A
+     * harness whose whole subject is honesty about what happened must not
+     * announce a side effect it did not have.
+     *
+     * `draftId` rather than `reported?.draft_id`, because it is the value the
+     * cleanup will print too: one source for "is there a draft", so the banner
+     * and the cleanup can never disagree.
+     */
+    if (draftId === null) {
+      say("");
+      say("[proof] No draft was created in Gmail by this run, so there is nothing for");
+      say("[proof] you to delete. (If G9 above failed, that is why.) Your Drafts folder");
+      say("[proof] was not written to.");
+      skip(
+        "G16. the operator confirmed the real draft was inspected and deleted",
+        "no draft was created, so there was nothing to inspect or delete",
+      );
+    } else {
+      say("");
+      say("========================================================================");
+      say(`[proof] A REAL DRAFT EXISTS IN YOUR GMAIL DRAFTS FOLDER.`);
+      say(`[proof]   draft id: ${draftId}`);
+      say(`[proof]   subject:  Re: ${String(reported?.read_subject ?? PROOF_SUBJECT)}`);
+      say("[proof]");
+      say("[proof] DASH has no operation that deletes a draft, and this proof must not");
+      say("[proof] be the reason one gets built. Open Gmail, confirm the draft reads as");
+      say("[proof] DASH composed it — your own address in From, one recipient, no Bcc —");
+      say("[proof] and then DELETE it. Do not send it.");
+      say("========================================================================");
+      say("");
+
+      // Asked twice at most: an answer this cannot classify is far more likely
+      // to be a person phrasing it differently than a person refusing, and the
+      // cost of guessing wrong is a red line on a run that did everything right.
+      const answers: string[] = [];
+      answers.push(await ask("[proof] Type 'deleted' once you have deleted it in Gmail: "));
+      if (!readsAsDeleted(answers[0] ?? "")) {
+        say("[proof] That did not read as a confirmation. Asking once more —");
+        say("[proof] type the word deleted, or anything starting with 'no' if you have not.");
+        answers.push(await ask("[proof] Have you deleted the draft in Gmail? "));
+      }
+
+      check(
+        "G16. the operator confirmed the real draft was inspected and deleted",
+        answers.some((answer) => readsAsDeleted(answer)),
+        { answered: answers, draft_id: draftId },
+      );
+    }
+  } catch (unexpected: unknown) {
+    /*
+     * An abort must fail loudly, and this block is the whole of that (papercut 4).
+     *
+     * Before it, a throw anywhere in the body went straight past the `finally`,
+     * which printed "all checks passed" — true of the checks that had run, and a
+     * lie about the run — and only then reached the rejection handler at the
+     * bottom of this file, which printed the stack *after* the summary. An
+     * `ENOENT` on 2026-08-07 did exactly that over a run whose second half never
+     * executed, and the last line of the log is what people paste.
+     *
+     * So the abort becomes a recorded failure, every check it never reached is
+     * named as a skip, and the stack is printed above the summary rather than
+     * below it. Swallowed deliberately: `run()` resolving with `failures`
+     * non-empty exits 1 through the same path a failed check does, and the
+     * cleanup in `finally` still runs either way.
+     */
+    const described = unexpected instanceof Error ? unexpected.message : String(unexpected);
     say("");
     say("========================================================================");
-    say(`[proof] A REAL DRAFT EXISTS IN YOUR GMAIL DRAFTS FOLDER.`);
-    say(`[proof]   draft id: ${String(reported?.draft_id ?? "unknown")}`);
-    say(`[proof]   subject:  Re: ${String(reported?.read_subject ?? PROOF_SUBJECT)}`);
-    say("[proof]");
-    say("[proof] DASH has no operation that deletes a draft, and this proof must not");
-    say("[proof] be the reason one gets built. Open Gmail, confirm the draft reads as");
-    say("[proof] DASH composed it — your own address in From, one recipient, no Bcc —");
-    say("[proof] and then DELETE it. Do not send it.");
+    say(`[proof] THE RUN ABORTED: ${described}`);
+    say("[proof] Everything below this line is cleanup. Nothing above it is promoted:");
+    say("[proof] a run that did not finish establishes only the checks it printed.");
     say("========================================================================");
-    say("");
-    const deleted = await ask("[proof] Type 'deleted' once you have deleted it in Gmail: ");
-    check(
-      "G16. the operator confirmed the real draft was inspected and deleted",
-      deleted === "deleted",
-      { answered: deleted },
-    );
+    say(unexpected instanceof Error ? (unexpected.stack ?? described) : described);
+    skipEverythingNotYetReported(EVERY_CHECK, "the run aborted before this check");
+    failures.push(`the run aborted: ${described}`);
   } finally {
     /* -- Leaving the machine, and the Google account, as they were found ---- */
 
@@ -1118,12 +1368,37 @@ async function run(): Promise<void> {
       );
     }
 
+    /*
+     * Stop the child before deleting the directory it is running out of.
+     *
+     * Order, not politeness. The agent's cwd is `workDir` and its script lives
+     * there, so on Windows a live child makes that directory undeletable and
+     * `rmSync` spent its ten retries before throwing EPERM across the end of a
+     * clean run. Best-effort and never fatal: a stop that fails is reported and
+     * the run still finishes, because the alternative is a harness that turns a
+     * successful proof into a crash over a temporary directory.
+     */
+    if (retireAgent !== null) {
+      await retireAgent().catch((error: unknown) => {
+        say(`[proof] cleanup: stopping the proof agent failed: ${String(error)}`);
+      });
+    }
+
     await secureStore()
       .delete(secretName)
       .catch(() => undefined);
     removeRegistration(dataDir, AGENT_ID);
     forgetAgent(AGENT_ID);
-    rmSync(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    try {
+      rmSync(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch (error: unknown) {
+      // Tolerated and named, because it is litter rather than a result. What
+      // must not happen is this deciding the exit code of a proof about Gmail.
+      say(
+        `[proof] cleanup: could not remove the working directory (${String(error)}). ` +
+          `It is ${workDir} and holds only this harness's own generated agent — delete it when convenient.`,
+      );
+    }
 
     // Printed on every path, including the ones that died before `G16` could
     // ask. A draft this harness created and then failed to mention is the one
@@ -1134,8 +1409,23 @@ async function run(): Promise<void> {
 
     say("");
     say(`[proof] finished ${new Date().toISOString()}`);
+    /*
+     * "all checks passed" is only ever printed when every check ran.
+     *
+     * A skip is not a failure and must not be counted as one — but a summary
+     * saying everything passed over a run that never attempted four of its
+     * checks is the sentence this harness exists to not write. So the two
+     * numbers are both stated, and the reassuring wording is reserved for the
+     * one case that earns it.
+     */
     say(
-      `[proof] ${failures.length === 0 ? "all checks passed" : `FAILED: ${failures.join(", ")}`}`,
+      `[proof] ${
+        failures.length > 0
+          ? `FAILED: ${failures.join(", ")}`
+          : skipped.length === 0
+            ? "all checks passed"
+            : `every check that ran passed, and ${String(skipped.length)} did not run: ${skipped.join(", ")}`
+      }`,
     );
     say("");
     say("[proof] Paste everything above into the Linear issue and the state packet,");

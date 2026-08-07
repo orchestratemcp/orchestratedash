@@ -2225,7 +2225,17 @@ async function proveTheBroker(recorded: {
           payload: {
             mimeType: "text/plain",
             headers: [
-              { name: "From", value: "colleague@example.com" },
+              // A display-name sender, not a bare address (MAR-523).
+              //
+              // This fixture used to send `colleague@example.com`, which is a
+              // shape real Gmail almost never produces — and the difference is
+              // what let the reply path hand a whole `From:` header to `to` for
+              // three merged slices without a single check noticing. The first
+              // attended run against Google found it in one minute. Proof 7 now
+              // serves the shape Google serves, so the class stays covered here
+              // rather than only on an evening somebody stands at a consent
+              // screen.
+              { name: "From", value: '"Colleague, A." <colleague@example.com>' },
               { name: "Subject", value: "Thursday" },
             ],
             body: {
@@ -2338,8 +2348,11 @@ async function proveTheBroker(recorded: {
         // AFTER the send attempt on purpose: a run where the send was refused
         // because the whole connection was broken would then also fail here,
         // and 7h would be passing for the wrong reason.
+        // MAR-523: from_address, never from. The raw header is what the
+        // provider sent and carries a display name; the parsed one is the only
+        // thing gmail.draft.create will accept, by construction.
         const drafted = await ask(${JSON.stringify(CONNECTION_ID)}, "gmail.draft.create", {
-          to: read.ok && read.result.from ? read.result.from : "colleague@example.com",
+          to: read.ok && read.result.from_address ? read.result.from_address : "colleague@example.com",
           subject: read.ok ? "Re: " + read.result.subject : "Re:",
           body_text: "Thanks — the afternoon works.",
           thread_id: read.ok ? read.result.thread_id : undefined
@@ -2379,7 +2392,7 @@ async function proveTheBroker(recorded: {
             title: "Reply to " + (read.ok ? read.result.subject : "nothing"),
             generated_at: new Date().toISOString(),
             draft: {
-              to: read.ok && read.result.from ? [read.result.from] : [],
+              to: read.ok && read.result.from_address ? [read.result.from_address] : [],
               subject: read.ok ? "Re: " + read.result.subject : "Re:",
               body: read.ok ? "Thanks — the afternoon works. (Re: " + read.result.body_text + ")" : "no message",
               // MAR-469. The agent reports where the reply ended up, and this
@@ -2761,10 +2774,19 @@ async function proveTheBroker(recorded: {
      * token DASH presented, decided by Google. An agent cannot compose a reply
      * that looks like it came from somebody else, and DASH does not have to
      * check that it did not.
+     *
+     * The `To` line now carries MAR-523 as well. The provider served
+     * `"Colleague, A." <colleague@example.com>`, so a bare address here means
+     * the projection parsed it and the agent replied to a person rather than to
+     * a header — and the display name being absent means nothing of the
+     * provider's own grammar reached a line DASH wrote. On unfixed code this
+     * check never runs: `7k` fails first, because the broker refuses the whole
+     * draft.
      */
     check(
       "7l. DASH composed the message itself, with no From and no header the agent named",
       rawMessage.includes("To: colleague@example.com") &&
+        !rawMessage.includes("Colleague, A.") &&
         rawMessage.includes("Content-Transfer-Encoding: base64") &&
         !/^From:/im.test(rawMessage) &&
         !/^Bcc:/im.test(rawMessage) &&

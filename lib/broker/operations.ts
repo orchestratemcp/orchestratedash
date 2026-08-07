@@ -337,6 +337,90 @@ function header(payload: unknown, name: string): string | undefined {
   return undefined;
 }
 
+/* ---------------------------------------------------------------------- *
+ * Addresses — one allowlist, read side and write side (MAR-469, MAR-523)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * A single address, conservatively.
+ *
+ * Narrower than RFC 5322 permits, deliberately. The grammar allows quoted local
+ * parts containing almost anything, and a header builder that accepts the whole
+ * grammar is a header builder whose safety depends on getting the quoting right.
+ * This accepts the addresses people actually have and rejects the rest, which
+ * costs a small number of real users an operation and costs an attacker the
+ * entire class.
+ *
+ * Both halves are allowlists rather than exclusions, which is what makes the
+ * safety argument short: CR, LF and NUL are simply not in either character set,
+ * so a value passing this cannot end the `To:` line and start a `Bcc:` one. `,`
+ * and `;` are absent too, so it cannot become two recipients, and `<`, `>` and
+ * `"` are absent, so it cannot carry a display name with structure in it.
+ *
+ * ## Why it moved up here (MAR-523)
+ *
+ * It used to live beside `composeRfc822`, which read as though it were a rule
+ * about writing headers. It is not: it is **the set of addresses this module is
+ * willing to name at all**, and the projection below is now held to it too. That
+ * is what makes `from_address` safe to hand straight to `to` — the projection
+ * cannot emit a value the composer would refuse, because both ask this one
+ * question.
+ *
+ * The first attended run against real Google (2026-08-07) failed on exactly the
+ * gap this closes. Gmail's `From:` is `Display Name <addr@host>`; the reply path
+ * handed that whole header value to `to`; this pattern refused it, correctly,
+ * and the refusal read as DASH breaking its own draft. The validator was never
+ * the bug and is not loosened by a character.
+ */
+const ADDRESS = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]{1,64}@[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
+
+/**
+ * The bare addr-spec inside an RFC 5322 mailbox header, or undefined (MAR-523).
+ *
+ * DASH parses this **once, here**, rather than leaving every agent to do it. An
+ * agent that had to extract an address from a `From:` header would be an agent
+ * writing an RFC 5322 parser in an untrusted process and handing the result to a
+ * write operation — and the version of that which is one regex short is the
+ * version that puts a display name where a recipient goes.
+ *
+ * The rules are short on purpose:
+ *
+ * - **No angle brackets** — the whole trimmed value must be an address itself.
+ *   A bare `a@b.example` is the common case and passes through unchanged.
+ * - **Exactly one `<`** — the text between it and the next `>` is the address.
+ *   Any display name, quoted or encoded-word or otherwise, is discarded rather
+ *   than interpreted, because nothing downstream needs it. The raw header is
+ *   still projected beside this as `from`, for anything that wants to show a
+ *   human what the sender called themselves.
+ * - **More than one `<`** — undefined. `From:` may legally carry several
+ *   mailboxes, and picking one of them would be DASH quietly choosing who a
+ *   reply goes to. Better to have no recipient than the wrong one.
+ *
+ * Whatever comes out is then tested against `ADDRESS`, so the answer is either a
+ * value `gmail.draft.create` will accept or nothing at all. There is no third
+ * outcome, and that is the property `tests/broker-write.test.ts` pins.
+ */
+function addressFromHeader(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const opens = value.split("<").length - 1;
+  let candidate: string;
+  if (opens === 0) {
+    candidate = value.trim();
+  } else if (opens === 1) {
+    const start = value.indexOf("<") + 1;
+    const end = value.indexOf(">", start);
+    if (end === -1) {
+      return undefined;
+    }
+    candidate = value.slice(start, end).trim();
+  } else {
+    return undefined;
+  }
+  return ADDRESS.test(candidate) ? candidate : undefined;
+}
+
 /**
  * The plain-text body of a message, walked from Gmail's MIME tree.
  *
@@ -441,6 +525,13 @@ const GMAIL_SEARCH: ReadOperation = {
  * DASH label on it: five named headers, a snippet and the plain-text body, and
  * nothing else — no label ids, no raw MIME, no `historyId`, no attachment
  * handles that would name a second thing to fetch.
+ *
+ * `from_address` is the sixth field and the only derived one (MAR-523). `from`
+ * is what the provider sent, for showing a person; `from_address` is the bare
+ * addr-spec parsed out of it, for handing to `to`. They are separate fields
+ * rather than one cleaned-up value because the display name is real information
+ * a reply flow may want to render, and because a projection that silently
+ * rewrote a provider header would be lying about what arrived.
  */
 const GMAIL_MESSAGE_READ: ReadOperation = {
   id: "gmail.message.read",
@@ -473,10 +564,12 @@ const GMAIL_MESSAGE_READ: ReadOperation = {
     const message = (body ?? {}) as Record<string, unknown>;
     const payload = message["payload"];
     const text = plainTextBody(payload);
+    const from = header(payload, "From");
     return {
       message_id: readString(message, "id"),
       thread_id: readString(message, "threadId"),
-      from: header(payload, "From"),
+      from,
+      from_address: addressFromHeader(from),
       to: header(payload, "To"),
       subject: header(payload, "Subject"),
       date: header(payload, "Date"),
@@ -490,23 +583,11 @@ const GMAIL_MESSAGE_READ: ReadOperation = {
  * Writing a message (MAR-469)
  * ---------------------------------------------------------------------- */
 
-/**
- * A single address, conservatively.
- *
- * Narrower than RFC 5322 permits, deliberately. The grammar allows quoted local
- * parts containing almost anything, and a header builder that accepts the whole
- * grammar is a header builder whose safety depends on getting the quoting right.
- * This accepts the addresses people actually have and rejects the rest, which
- * costs a small number of real users an operation and costs an attacker the
- * entire class.
- *
- * Both halves are allowlists rather than exclusions, which is what makes the
- * safety argument short: CR, LF and NUL are simply not in either character set,
- * so a value passing this cannot end the `To:` line and start a `Bcc:` one. `,`
- * and `;` are absent too, so it cannot become two recipients, and `<`, `>` and
- * `"` are absent, so it cannot carry a display name with structure in it.
+/*
+ * `ADDRESS` used to be defined here. It is above, beside `addressFromHeader`,
+ * because it governs both what this composes and what the projection is willing
+ * to name — see the note there (MAR-523).
  */
-const ADDRESS = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]{1,64}@[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 
 /**
  * Anything that must never reach a header line.
@@ -641,6 +722,12 @@ const GMAIL_DRAFT_CREATE: WriteOperation = {
     "permission itself is wider than the action, and you can withdraw it in your Google account.",
 
   compose(input) {
+    // One bare address, held to the same `ADDRESS` the projection is held to.
+    // A reply flow gets its value from `gmail.message.read`'s `from_address`,
+    // never from `from` — the raw header carries a display name and is refused
+    // here, which is the refusal MAR-523 was filed for and the refusal that
+    // stays. Loosening this to accept `Display Name <addr>` would put the whole
+    // mailbox grammar back inside a header DASH writes.
     const to = requireString(input, "to", { max: 320, pattern: ADDRESS });
     if (!to.ok) {
       return to;
