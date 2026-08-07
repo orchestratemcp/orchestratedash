@@ -19,3 +19,9 @@ build/appx/*.msix
 # whatever that operator happened to approve, and `worktrees/` is scratch.
 .claude/settings.local.json
 .claude/worktrees/
+
+# `electron/capture.ts` prints a long, machine-specific transcript — window
+# sizes, pipe names, this operator's own store path. The images and
+# `layout.json` it writes are the evidence and are committed under
+# `qa-screenshots-*/`; the log of the run that produced them is not.
+capture-*.log
