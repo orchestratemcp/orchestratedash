@@ -312,6 +312,23 @@ export interface BrokerRowView {
    */
   requested: BrokerCapabilityView[];
   /**
+   * The complement: every action **DASH offers for this provider** that this
+   * agent's manifest did not ask for (MAR-533).
+   *
+   * `requested` is already an intersection of DASH's operation set with the
+   * manifest's declared scopes, so from a card's point of view two of the three
+   * parties in a grant are indistinguishable inside it. This is the list that
+   * separates them, and it is the one that lets the page make a checkable
+   * statement instead of a reassuring one: "send an email" sitting here, on a
+   * Gmail connection, says DASH has never built that action and granting every
+   * permission Google has would not create it.
+   *
+   * Empty for a manifest that asked for everything DASH offers, which is the
+   * honest absence — there is then nothing DASH could do that this agent did
+   * not ask for.
+   */
+  not_requested: BrokerCapabilityView[];
+  /**
    * How the provider permission behind a granted write is wider than the write
    * itself, or null when nothing on this connection writes (MAR-469).
    *
@@ -392,6 +409,21 @@ export interface BrokerLapseView {
 
 export interface AgentConnections {
   name: string;
+  /**
+   * The agent's own character, read from the store (MAR-533, MAR-502's rule).
+   *
+   * Read rather than derived, and that is the load-bearing part: the character
+   * is DASH's own record, written once at import and deliberately omitted from
+   * the re-import path's update, so an author renaming their agent does not
+   * re-costume something the user has already learned to recognise. Calling
+   * `oFor(name)` here would undo that in one line, and would agree with the
+   * stored value at creation — which is exactly why it would go unnoticed.
+   *
+   * Nullable, because `readAgentAvatar` is: an agent imported before migration 8
+   * and never re-read has no character, and drawing a guessed one would be the
+   * same defect the paragraph above is about. The card draws nothing.
+   */
+  avatar: OName | null;
   rows: ConnectionRowWithCredential[];
   /**
    * What the permission cards above cannot account for (MAR-467). Newest first,

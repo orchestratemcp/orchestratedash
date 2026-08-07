@@ -87,12 +87,29 @@ const THEMES = ["light", "dark"] as const;
  * machine but the one it was written on.
  */
 const SURFACES = [
-  { name: "agents", path: "/", density: true },
-  { name: "runs", path: "/runs", density: false },
-  { name: "connections", path: "/connections", density: false },
-  { name: "work", path: "/work", density: false },
-  { name: "workspace", path: null, density: true },
+  { name: "agents", path: "/", density: true, tall: false },
+  { name: "runs", path: "/runs", density: false, tall: false },
+  { name: "connections", path: "/connections", density: false, tall: true },
+  { name: "work", path: "/work", density: false, tall: false },
+  { name: "workspace", path: null, density: true, tall: true },
 ] as const;
+
+/**
+ * The height a `tall` surface gets one extra photograph at (MAR-533).
+ *
+ * Every image above is a *viewport*, which is the right unit for the question
+ * those PRs asked — what does the layout do as it narrows. It is the wrong unit
+ * for reviewing a card that is taller than a window: MAR-533's capability card
+ * answers four questions and a 860px frame shows one and a half of them, so the
+ * first review of it was of its header.
+ *
+ * So one extra frame per theme, at the widest viewport only, in a window tall
+ * enough to hold the whole thing. It is evidence rather than a measurement —
+ * nothing is asserted against this height, and `layout.json` still records only
+ * the three real viewports, because a 2200px-tall window is not a window anybody
+ * has.
+ */
+const TALL_HEIGHT = 2200;
 
 function settle(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -538,6 +555,28 @@ async function run(): Promise<void> {
         // Back to the default, so each viewport starts where the last one did.
         await pressDensityToggle(window);
         await settle(200);
+      }
+
+      /*
+       * The whole-surface frame, last and only where a card is taller than a
+       * window. After the viewport loop rather than inside it, so the three
+       * measured widths are untouched and this cannot be mistaken for one of
+       * them — the file name says `full` and the height is in the log.
+       */
+      if (surface.tall) {
+        try {
+          const wide = VIEWPORTS[0];
+          await resizeTo(window, wide.width, TALL_HEIGHT);
+          await shoot(window, `${surface.name}-${wide.name}-${theme}-full`);
+        } catch (error) {
+          // A window manager that refuses a 2200px-tall window is a machine that
+          // cannot produce this extra frame, not a failed run. Every measured
+          // image is already written.
+          console.log(
+            `[capture] no full-height frame for ${surface.name}/${theme}: ` +
+              `${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
       }
     }
   }

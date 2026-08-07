@@ -24,7 +24,7 @@
 import { analyzeGrounding } from "../analyze";
 import { isDigestArtifact } from "../contracts";
 import type { ManifestPermissions, PermissionGrant } from "../contracts";
-import { brokeredField, requestedOperations } from "../broker/grant";
+import { brokeredField, requestedOperations, unrequestedOperations } from "../broker/grant";
 import { operationById, type BrokerOperation } from "../broker/operations";
 import { describeClientOwner, describeCustody, describeDashClosedWindow } from "../broker/providers";
 import { listReceipts, readBrokerAudit, readBrokerLapses, type BrokerLapse } from "../broker/store";
@@ -411,6 +411,14 @@ function brokerCard(
       access: operation.access,
       consequence: operation.access === "write" ? operation.consequence : null,
     })),
+    // MAR-533. Everything DASH offers here that this agent did not ask for —
+    // the third party in the grant, made visible. See `unrequestedOperations`.
+    not_requested: unrequestedOperations(manifest, connectionId).map((operation) => ({
+      id: operation.id,
+      label: operation.label,
+      access: operation.access,
+      consequence: operation.access === "write" ? operation.consequence : null,
+    })),
     receipt:
       receipt === null
         ? null
@@ -492,10 +500,35 @@ function survivesDashClosing(manifest: ConnectionSourceManifest): boolean {
  * one says an agent asked for anything, because in neither case did DASH see a
  * request.
  */
-function lapseViews(agent: string, manifest: ConnectionSourceManifest): BrokerLapseView[] {
+/**
+ * @param brokered Whether this agent has any connection DASH actually stands in
+ *   the middle of. See the `dash_closed` gate below.
+ */
+function lapseViews(
+  agent: string,
+  manifest: ConnectionSourceManifest,
+  brokered: boolean,
+): BrokerLapseView[] {
+  /*
+   * A `dash_closed` lapse says the permission broker was not running to answer
+   * this agent's requests. Two things have to be true for that to mean anything,
+   * and until MAR-533 only the first was checked.
+   *
+   * The second was found by photographing the rebuilt page: `ai-news-scout`
+   * declares no connections at all, and its card read "there are 5 periods DASH
+   * cannot account for" directly above "this agent asked to reach nothing
+   * outside this computer". Both sentences were true and together they were
+   * nonsense — DASH apologising for not having adjudicated requests that could
+   * not have existed.
+   *
+   * `dropped_by_runner` is deliberately **not** gated the same way: those are
+   * observations of requests that really were discarded, and an agent with no
+   * declared connection that is somehow producing them is exactly the situation
+   * nobody should be able to hide by tidying this list.
+   */
   const survives = survivesDashClosing(manifest);
   const relevant = readBrokerLapses(agent, BROKER_LAPSE_LIMIT * 4).filter(
-    (lapse: BrokerLapse) => lapse.kind !== "dash_closed" || survives,
+    (lapse: BrokerLapse) => lapse.kind !== "dash_closed" || (survives && brokered),
   );
 
   return relevant.slice(0, BROKER_LAPSE_LIMIT).map((lapse) => {
@@ -541,21 +574,30 @@ export function connectionsView(store: StoreShape = readStore()): ConnectionsVie
       const audit = readBrokerAudit(name, BROKER_HISTORY_LIMIT * 4);
       const displayName = displayNameOf(manifest, name);
 
+      const rows = deriveConnectionRequirements(manifest).map((row) => {
+        const credential = status.get(row.connection_id);
+        return {
+          ...row,
+          dash_can_hold: credential !== undefined,
+          field_id: credential?.field_id ?? null,
+          masked_hint: credential?.masked_hint ?? null,
+          delivered_to_agent: credential?.deliverable ?? false,
+          credential_kind: credential?.kind ?? null,
+          broker: brokerCard(name, displayName, manifest, row.connection_id, receipts, audit),
+        };
+      });
+
       return {
         name,
-        rows: deriveConnectionRequirements(manifest).map((row) => {
-          const credential = status.get(row.connection_id);
-          return {
-            ...row,
-            dash_can_hold: credential !== undefined,
-            field_id: credential?.field_id ?? null,
-            masked_hint: credential?.masked_hint ?? null,
-            delivered_to_agent: credential?.deliverable ?? false,
-            credential_kind: credential?.kind ?? null,
-            broker: brokerCard(name, displayName, manifest, row.connection_id, receipts, audit),
-          };
-        }),
-        lapses: lapseViews(name, manifest),
+        // MAR-533, and read rather than derived for MAR-502's reason exactly —
+        // see the note on `AgentConnections.avatar`.
+        avatar: readAgentAvatar(name),
+        rows,
+        lapses: lapseViews(
+          name,
+          manifest,
+          rows.some((row) => row.broker !== null),
+        ),
       };
     }),
     older_agent_names: listAgents(store)
