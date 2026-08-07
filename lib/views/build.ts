@@ -31,6 +31,7 @@ import { listReceipts, readBrokerAudit, readBrokerLapses, type BrokerLapse } fro
 import { describeBrokerRefusal } from "../copy/recovery";
 import { heldCredentials } from "../connection-actions";
 import { connectableFields } from "../connection-credentials";
+import { describeEvidenceRecord } from "../copy/evidence";
 import { describeStoreDamage } from "../copy/recovery";
 import { deriveConnectionRequirements, type ConnectionSourceManifest } from "../connections";
 import {
@@ -52,8 +53,10 @@ import {
   listAgentNames,
   listConnectionCapableAgents,
   readAgentManifest,
+  readEvidencePulls,
   resolveArtifactAvailability,
   readStore,
+  type EvidencePullRecord,
   type StoreShape,
 } from "../store";
 import { buildArtifactCards, type ArtifactCardView } from "./artifacts";
@@ -133,8 +136,27 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
   };
 }
 
-export function runsView(store: StoreShape = readStore()): RunsView {
-  return { runs: listAnalyzedRuns(store) };
+/**
+ * Every run DASH holds, and how complete that list is (MAR-488).
+ *
+ * `evidence` is composed here for the reason `damage` is: both hosts must hand
+ * the renderer the same sentence, and a page that built its own would be a
+ * second place for the claim to be softened. It is normally null — the honest
+ * default, when the only source is the runner on this machine and nothing was
+ * lost — and `lib/copy/evidence.ts` owns exactly when it stops being.
+ *
+ * `pulls` is a parameter with a production default, the pattern
+ * `resolveArtifactAvailability` established: production passes the producer, and
+ * a test drives the states without a runner. It is read separately from `store`
+ * rather than folded into `StoreShape` because it is not a projection of any
+ * agent's work — it is DASH's record of its own reading, and the two are kept
+ * apart in the data model as well as in the copy.
+ */
+export function runsView(
+  store: StoreShape = readStore(),
+  pulls: readonly EvidencePullRecord[] = readEvidencePulls(),
+): RunsView {
+  return { runs: listAnalyzedRuns(store), evidence: describeEvidenceRecord(pulls) };
 }
 
 /**

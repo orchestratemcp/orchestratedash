@@ -1,10 +1,48 @@
 "use client";
 
 import type { ReactNode } from "react";
+import type { EvidenceNotice } from "../../lib/copy/evidence";
 import { RunVerdictChips } from "../_components/verdict";
 import { HostNotice, ViewFailed, ViewLoading } from "../_components/view-state";
 import { useHost, useView } from "../_data/use-view";
 import { runDetailHref } from "../_data/routes";
+
+/**
+ * How complete this list is, when DASH has something qualified to say
+ * (MAR-488).
+ *
+ * **Above the list, not beside a row**, because it is a statement about the
+ * list. A per-run badge would attach an uncertainty about *which runs exist* to
+ * runs that do — the opposite of what it means.
+ *
+ * `notice` rather than a red state, deliberately, and `standing` is what decides
+ * the wording rather than the colour: for a runner on a server the user owns
+ * this is a permanent property of the arrangement, and a permanent caveat
+ * rendered as a failure teaches people to ignore failures. The same argument
+ * PROJECT_STATE makes about grounding never rendering in the same red as an
+ * unapproved irreversible action.
+ */
+function EvidenceRecordNotice({ notice }: { notice: EvidenceNotice | null }): ReactNode {
+  if (notice === null) {
+    return null;
+  }
+  return (
+    <aside className="notice" data-evidence-standing={notice.standing ? "true" : "false"}>
+      <p>
+        <strong>{notice.headline}</strong>
+      </p>
+      <p>{notice.meaning}</p>
+      {notice.detail === null ? null : <p>{notice.detail}</p>}
+      <p>
+        DASH last collected{" "}
+        {/* A value, so mono — and the raw timestamp, because a relative one
+            ("2 hours ago") would be computed at render and go stale on a page
+            nobody reloaded, which is exactly the failure this notice is about. */}
+        <code>{notice.last_looked_at}</code>.
+      </p>
+    </aside>
+  );
+}
 
 export default function RunsPage(): ReactNode {
   const state = useView((source) => source.runs());
@@ -23,7 +61,11 @@ export default function RunsPage(): ReactNode {
         <ViewLoading what="your runs" />
       ) : state.status === "failed" ? (
         <ViewFailed recovery={state.recovery} />
-      ) : state.data.runs.length === 0 ? (
+      ) : (
+        <EvidenceRecordNotice notice={state.data.evidence} />
+      )}
+
+      {state.status !== "ready" ? null : state.data.runs.length === 0 ? (
         /**
          * MAR-432's one deliberate copy change.
          *

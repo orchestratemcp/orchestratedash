@@ -230,6 +230,10 @@ export function resetStore(): void {
     database.exec("DELETE FROM agent_handoffs");
     database.exec("DELETE FROM run_artifacts");
     database.exec("DELETE FROM workspace_artifacts");
+    // MAR-488. DASH's record of its own reading goes with the thing it was a
+    // reading of: a reset that kept it would leave the Runs page disclosing a
+    // gap in evidence that is no longer there.
+    database.exec("DELETE FROM evidence_pulls");
   });
 }
 
@@ -732,6 +736,78 @@ export function syncWorkspaceArtifacts(
   }
 
   return { accepted: accepted.length, rejected };
+}
+
+/* ---------------------------------------------------------------------- *
+ * How complete the record above is (MAR-488)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * When DASH last looked at one runner, and what had already gone.
+ *
+ * Deliberately not shaped like anything else in this file. Every other record
+ * here is *what an agent did*; this is **DASH's account of its own reading**, so
+ * it carries no agent, no run and no artifact id — the same structural
+ * separation ADR 0005 gives `broker_lapses`, for the same reason: a row that
+ * could be joined into a run would eventually be rendered as one.
+ */
+export interface EvidencePullRecord {
+  source: string;
+  kind: "this_machine" | "another_machine";
+  observed_at: string;
+  reached: boolean;
+  telemetry_dropped: number;
+  artifacts_dropped: number;
+  workspace_truncated: boolean;
+}
+
+/**
+ * Record one pass, overwriting the previous one for that source.
+ *
+ * A state and not a history — see the migration's own note. The number that
+ * matters is cumulative in the only sense a user cares about ("is what I am
+ * looking at everything?"), and a table of every five-second poll would answer
+ * that worse.
+ */
+export function recordEvidencePull(pull: EvidencePullRecord): void {
+  db()
+    .prepare(
+      "INSERT INTO evidence_pulls " +
+        "(source, kind, observed_at, reached, telemetry_dropped, artifacts_dropped, workspace_truncated) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?) " +
+        "ON CONFLICT (source) DO UPDATE SET " +
+        "kind = excluded.kind, " +
+        "observed_at = excluded.observed_at, " +
+        "reached = excluded.reached, " +
+        "telemetry_dropped = excluded.telemetry_dropped, " +
+        "artifacts_dropped = excluded.artifacts_dropped, " +
+        "workspace_truncated = excluded.workspace_truncated",
+    )
+    .run(
+      pull.source,
+      pull.kind,
+      pull.observed_at,
+      pull.reached ? 1 : 0,
+      pull.telemetry_dropped,
+      pull.artifacts_dropped,
+      pull.workspace_truncated ? 1 : 0,
+    );
+}
+
+/** Every source DASH has ever pulled from, newest look first. */
+export function readEvidencePulls(): EvidencePullRecord[] {
+  const rows = db()
+    .prepare("SELECT * FROM evidence_pulls ORDER BY observed_at DESC")
+    .all();
+  return rows.map((row) => ({
+    source: String(row["source"]),
+    kind: row["kind"] === "another_machine" ? "another_machine" : "this_machine",
+    observed_at: String(row["observed_at"]),
+    reached: Number(row["reached"]) === 1,
+    telemetry_dropped: Number(row["telemetry_dropped"] ?? 0),
+    artifacts_dropped: Number(row["artifacts_dropped"] ?? 0),
+    workspace_truncated: Number(row["workspace_truncated"] ?? 0) === 1,
+  }));
 }
 
 /**

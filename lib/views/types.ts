@@ -28,6 +28,7 @@
  */
 
 import type { GroundingAnalysis, RunAnalysis } from "../analyze";
+import type { EvidenceNotice } from "../copy/evidence";
 import type { ArtifactCardView } from "./artifacts";
 import type { InputRoleView } from "./inputs";
 import type { Recovery } from "../copy/recovery";
@@ -109,6 +110,17 @@ export interface RunRow extends RunSummary {
 
 export interface RunsView {
   runs: RunRow[];
+  /**
+   * How complete this list is, when DASH has something qualified to say
+   * (MAR-488).
+   *
+   * Null is the ordinary answer and means the record has nothing to disclose —
+   * not that it is guaranteed complete. `lib/copy/evidence.ts` owns the
+   * difference, and for a runner on another machine the notice is
+   * unconditional, because the evidence a user's own server has already
+   * discarded increments no counter.
+   */
+  evidence: EvidenceNotice | null;
 }
 
 /**
