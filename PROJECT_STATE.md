@@ -2075,3 +2075,97 @@ before-state a reader cannot see is an argument they have to take on trust.
 ## UX principle
 
 The home view answers three questions: what can I run, what is happening now, and what needs my decision? Connections are capabilities with scopes and receipts, not a wall of OAuth settings. Every run should make inputs, actions, outputs, gates, and failures inspectable.
+
+## The Bit-Command reskin (MAR-528, MAR-534, MAR-535)
+
+**Open on a PR, not merged.** Henrik adopted the Stitch concept package as
+DASH's visual system on 2026-08-07, and the adoption is a decision rather than
+a preference: 90s-terminal-brutalism, deep navy and electric blue, tonal
+layering with crisp 1px borders, zero corners, Space Grotesk and JetBrains
+Mono, a 4px grid — **without the fiction layer**, which the issue refuses by
+name. No invented metrics, no intrusion vocabulary, no `UPPER_SNAKE` cosplay
+copy, no private-key paste fields.
+
+**The semantic names did not move, which is the whole reason the token layer
+exists.** A surface that asked for `--surface-2` yesterday asks for it today
+and gets a different colour. `DESIGN.md`'s frontmatter maps onto the four
+surface steps without inventing anything between them: `background`,
+`surface-container-low`, `surface-container`, `surface-container-high`.
+
+**Three decisions worth reading in review.**
+
+`--accent-contrast` became a `light-dark()` pair rather than white. The
+concept's primary button is dark text on electric blue, and white on `#4cd6ff`
+measures **1.70:1** — the primary button is the control every guided path ends
+at, and it would have been the least readable word on the screen.
+`tests/tokens.test.ts` stopped hardcoding `#ffffff`, reads the declaration, and
+its floor moved from the non-text 3:1 to the text 4.5:1, which is what a button
+label always was.
+
+MAR-440's rule that *"the mono font is for content, never for vocabulary"* is
+**spent**, and nothing replaces it. The body face is mono now, so the typeface
+distinguishes nothing. That is the honest accounting rather than a gap: the
+rule was always enforced by `lib/copy/identifiers.ts` and the copy tests around
+it, and the typeface was a reminder. A reminder is not a check.
+
+`--text-faint` dark is the palette's own `outline` lightened three steps. At
+its published value it measures **4.54:1** on `--surface-3` — passing, with no
+headroom at all, which is the token that fails the next time a surface moves.
+
+**What is deliberately not here: the concept's 240px sidebar.** MAR-440 records
+that replacing the horizontal nav would make a chrome pass unreviewable because
+every screenshot changes for two reasons at once, and MAR-491 had just finished
+making that nav wrap correctly at 375px. This restyles the chrome. It does not
+re-architect it.
+
+**A dialog rendered the whole application inside itself (MAR-534).** The
+credential prompt and the approval popup each open a separate `BrowserWindow`
+onto a route in DASH's own export, and both drew a title bar naming a surface
+the window is not on, five links to places it cannot navigate to, a density
+control for a page with one field, and a skip link past all of it — which made
+"Skip to content" the first thing a keyboard user reached in a password prompt.
+`isSeparateWindowRoute` already existed and already did this job for the fleet
+strip; the chrome predates it by three issues and nobody joined them up.
+
+The skip link **moved into `AppChrome`** rather than being separately gated,
+because it exists precisely because the chrome sits between the window and the
+content. It stays outside the `<header>`: `.app-chrome` is `position: sticky`
+and therefore a positioned ancestor, and moving an absolutely-positioned
+element in would silently re-anchor it — the class of defect MAR-440 already
+shipped once with this exact element.
+
+The consequence, and the one thing the fix could have broken: `body` is a
+three-row grid and two of its children are now conditional, so auto-placement
+would have put `main` in the `auto` track and `body`'s own `overflow: hidden`
+would clip a prompt taller than its content with no scroller anywhere. All
+three bands name their row now; an empty `auto` row collapses to zero.
+
+`tests/dialog-chrome.test.tsx` is a render test rather than a screenshot,
+deliberately: the failure is **presence**, and a picture of a dialog with a
+navigation bar in it looks like a picture of a dialog. Its load-bearing
+assertion is written against the surface *labels* rather than the `app-nav`
+class name, because a chrome that kept the links and lost only its wrapper
+would pass a class-name check and the links are the user-visible defect.
+
+**The gap this could not close, stated rather than discovered later
+(MAR-535).** Neither Space Grotesk nor JetBrains Mono is installed on the
+development machine, and neither ships by default on any platform DASH targets
+— checked, not assumed. So of the three things the visual system is made of —
+the palette, the sharp shape language and the type pairing — the third does not
+arrive, and the product renders in Segoe UI Variable Display and Consolas.
+`app/tokens.css` says so at the top. The standing no-web-fonts rule is about a
+*network* fetch and may not cover a woff2 read off disk over `dash-app://`;
+deciding that is Henrik's, which is why it is an issue and not a commit.
+
+Evidence: `pnpm typecheck` clean, `brand:check` green, `[state] valid`, 93 test
+files / 1725 passed / 8 skipped / 0 failed from PowerShell. 43 images in
+`qa-screenshots-mar-528/` from the real Electron shell on the installed-style
+store at 1280/768/375 in both themes, every measurement reporting
+`page_overflows: false`, `density_toggle.fully_visible: true` and
+`fleet_strip.overlaps_main: false`.
+
+**Not proven, and `pnpm verify:shell` was NOT RUN.** The orphaned
+`dist/google-proof/runner.mjs` (pid 28160) and its child agent (pid 2072) from
+the interrupted MAR-468 attempt are still alive on this machine — MAR-520's own
+subject, and the reason AGENTS.md's process-safety rule exists. Starting the
+shell smoke beside a live unrelated runner is two writers on one store.
