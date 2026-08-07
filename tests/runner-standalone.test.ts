@@ -30,6 +30,30 @@
  * A test that skipped when `dist/` was missing would be a test that passes on
  * every machine that has never built the thing. It costs under a second: two
  * esbuild bundles and a directory copy.
+ *
+ * ## What this file waits for, and what it used to wait for (MAR-537)
+ *
+ * The startup assertions below read the runner's own first four lines. The
+ * harness used to reach them after polling for `runner.json`, and that file is
+ * **a strictly earlier event than the lines**: `runner/main.ts` writes it
+ * immediately after `listenOnEndpoint` resolves and prints `listening on`,
+ * `store:` and `contracts:` afterwards. So the wait ended, by construction, at a
+ * moment when the child might not have written a single one of them — and on a
+ * loaded machine, where the parent's own `data` callbacks are what run late, it
+ * regularly had not.
+ *
+ * That produced `expected '[runner] standalone start: node=24.18…' to contain
+ * '[runner] listening on'`: a truncated string blaming the artifact for a race
+ * in the thing observing it. It failed twice locally and once on CI, on PR #75,
+ * against a commit that changed one block comment.
+ *
+ * `waitForLine` waits for the line the test is actually about. It subsumes the
+ * old wait rather than sitting beside it — `runner.json` is written before
+ * `contracts:` is printed, so the file is present whenever the line has
+ * arrived — and it ends early, with the child's whole output and its exit code,
+ * when the process dies instead of listening. A host that refuses to start now
+ * says so in one line rather than after thirty seconds of polling for a file
+ * that was never coming.
  */
 
 import { execFileSync } from "node:child_process";
@@ -188,6 +212,47 @@ describe("the built artifact on a host that has only the artifact", () => {
   let token: string;
   let call: typeof globalThis.fetch;
 
+  /**
+   * Read the child's output until `marker` appears in it.
+   *
+   * Three ways to end, and the two failures both carry everything known about
+   * the child rather than a truncated `expected … to contain`. A process that
+   * exits is reported the moment it exits, with its code and signal, because
+   * the interesting cases — an unsuitable host exiting 78, a missing module
+   * exiting 1 — are all *fast*, and spending the whole deadline on them would
+   * bury the cause under a timeout that reads like slowness.
+   */
+  async function waitForLine(marker: string, timeoutMs: number): Promise<void> {
+    const started = Date.now();
+    const describeChild = (): string =>
+      `exit=${child?.exitCode === null ? "still running" : String(child?.exitCode)} ` +
+      `signal=${String(child?.signalCode ?? "none")} ` +
+      `waited=${String(Date.now() - started)}ms`;
+
+    while (Date.now() - started < timeoutMs) {
+      if (output.includes(marker)) {
+        return;
+      }
+      if (child !== null && child.exitCode !== null) {
+        // One last look: the exit and the final flush of its output are two
+        // separate events, and this order is the one that loses a line.
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        if (output.includes(marker)) {
+          return;
+        }
+        throw new Error(
+          `the standalone runner exited before printing ${JSON.stringify(marker)}. ` +
+            `${describeChild()}. Its whole output was:\n${output}`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error(
+      `the standalone runner never printed ${JSON.stringify(marker)}. ` +
+        `${describeChild()}. Its whole output was:\n${output}`,
+    );
+  }
+
   beforeAll(async () => {
     execFileSync(process.execPath, [path.join(repoRoot, "scripts", "build-runner-standalone.mjs")], {
       cwd: repoRoot,
@@ -217,19 +282,34 @@ describe("the built artifact on a host that has only the artifact", () => {
     child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString("utf8")));
     child.stderr?.on("data", (chunk: Buffer) => (output += chunk.toString("utf8")));
 
+    /**
+     * The last of the runner's four startup lines, which is therefore the one
+     * that establishes all of them. Waiting on a specific line rather than on a
+     * duration is MAR-537's first preference, and the reason it is `contracts:`
+     * rather than `listening on` is that this is the line the *second* test
+     * reads: a wait that ended on an earlier one would leave that assertion
+     * racing exactly as the first pair used to.
+     */
+    await waitForLine(`[runner] contracts: ${path.join(artifact, "contracts")}`, 60_000);
+
     const file = path.join(dataDir, "runner.json");
-    const deadline = Date.now() + 30_000;
-    while (Date.now() < deadline && !existsSync(file)) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
     if (!existsSync(file)) {
-      throw new Error(`the standalone runner never reported an endpoint. It said:\n${output}`);
+      // Unreachable unless `runner/main.ts` stops writing the endpoint file
+      // before it announces itself, in which case this sentence is the one that
+      // explains the change to whoever made it.
+      throw new Error(
+        `the standalone runner announced itself and wrote no endpoint file. It said:\n${output}`,
+      );
     }
     const recorded = JSON.parse(readFileSync(file, "utf8")) as { endpoint: string };
     endpoint = recorded.endpoint;
     token = readFileSync(path.join(dataDir, "runner.key"), "utf8").trim();
     call = ipcFetch(endpoint);
-  }, 90_000);
+    // Comfortably above the build plus `waitForLine`'s own 60s, so that a slow
+    // start is reported by the sentence above — which names the line, the exit
+    // code and the whole output — rather than by vitest's hook timeout, which
+    // names none of them and is the failure MAR-537 is about.
+  }, 150_000);
 
   afterAll(() => {
     // Whatever happened above, do not leave a runner behind — and stop it the

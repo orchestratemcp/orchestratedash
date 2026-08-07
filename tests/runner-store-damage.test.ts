@@ -101,9 +101,26 @@ function writeMalformedStore(directory: string): void {
   seed.exec("PRAGMA journal_mode = DELETE");
   seed.exec("CREATE TABLE wreckage (id INTEGER PRIMARY KEY, blob TEXT NOT NULL)");
   const insert = seed.prepare("INSERT INTO wreckage (blob) VALUES (?)");
+  /*
+   * One transaction, and it is a fix rather than a tidy-up (MAR-537).
+   *
+   * Each `run()` outside a transaction is its own commit, and on
+   * `journal_mode = DELETE` a commit means creating and deleting a rollback
+   * journal beside the database. Four hundred of those is four hundred
+   * file-create/file-delete pairs, which is cheap on an idle Linux box and is
+   * not cheap on Windows with a filter driver watching the directory: the two
+   * cases that build this fixture were killed by vitest's 5-second default
+   * under full-suite load, twice, while passing in under two seconds alone.
+   *
+   * Nothing about the file this produces changes. The same four hundred rows
+   * land on the same pages; what goes away is four hundred journal round-trips
+   * that were never part of what the test is about.
+   */
+  seed.exec("BEGIN");
   for (let index = 0; index < 400; index += 1) {
     insert.run(randomBytes(200).toString("hex"));
   }
+  seed.exec("COMMIT");
   seed.exec("PRAGMA user_version = 2");
   seed.close();
 
@@ -188,7 +205,18 @@ describe("opening a store that cannot be used", () => {
     if (!opened.ok) {
       expect(opened.damage.kind).toBe("malformed");
     }
-  });
+    /*
+     * Sized from the observed worst case rather than the median (MAR-537's own
+     * third preference), and stated rather than left as a number.
+     *
+     * What is slow here is deliberate: building a real multi-page database,
+     * overwriting every page after the first with noise, and then asking SQLite
+     * to walk a b-tree that is noise. Solo that is ~2s; under a full-suite run
+     * on Windows it was killed at vitest's 5s default. 30s is roughly fifteen
+     * times the solo cost, which is the room a loaded machine needs and is still
+     * short enough that a genuine hang fails the run rather than hanging it.
+     */
+  }, 30_000);
 });
 
 /* ---------------------------------------------------------------------- *
@@ -242,7 +270,9 @@ describe("setting a damaged store aside", () => {
       expect(tables).toContain("approval_decisions");
       reopened.store.close();
     }
-  });
+    // The same budget and the same reason as the case above: this one builds the
+    // damaged fixture, fails to open it, retires it, and opens a fresh one.
+  }, 30_000);
 
   it("refuses when there is nothing to set aside", () => {
     // Reporting a repair that did not happen would leave the runner in exactly
