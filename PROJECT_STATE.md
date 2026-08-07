@@ -2417,3 +2417,125 @@ distinguishes "this assertion is fast" from "this assertion has been fitting
 inside 5000ms so far". Both halves of MAR-537 are the same failure at one remove:
 a harness making a bet about time, where the thing under test was never in
 question.
+
+## The type pairing, decided (MAR-535)
+
+**Henrik decided it on 2026-08-07: keep the rule.** The two OFL families are not
+bundled, DASH renders in Segoe UI Variable Display and Consolas on a machine
+without them, and `app/tokens.css`'s paragraph about that is now the permanent
+record rather than a note about a pending decision. The section above this one
+described it as the gap MAR-528 "could not close and did not pretend to"; it is
+closed by a decision rather than by a commit, which is what the issue asked for.
+
+**What ships is the guard, and the rule it enforces is not the one it looks
+like.** `checkNoRemoteFonts` runs inside `pnpm brand:check` over every
+stylesheet and component under `app/` — 39 files — and refuses a remote
+`@font-face`, an off-machine `@import`, a `<link>` to a font host, and
+`next/font/google`. What it forbids is a **fetch**, not a font file. If MAR-535
+is ever revisited and the two families are vendored into the export, they are
+same-origin reads over `dash-app://` and **nothing here has to be relaxed to let
+them in**. That is the whole design of it: a rule written as "no font files"
+would have to be weakened by the very change it should tolerate, and a rule
+weakened once is a rule nobody trusts afterwards.
+
+`next/font/google` is refused for a different reason and says so in its own
+sentence, because it otherwise reads as a false positive: it self-hosts, so no
+page requests a remote font at runtime. What it moves is the fetch to **build
+time**, where an offline or firewalled build either fails or ships whatever the
+network answered that day. `next/font/local` is deliberately not refused — it is
+the supported way to do exactly what bundling would have done.
+
+The floor is the load-bearing line. A check that scanned nothing reports itself
+as broken rather than passing, which is MAR-498's client-bundle lesson applied
+before it could happen again: *a walk that broke and returned an empty set would
+pass that file forever.*
+
+## The cast, witnessed rather than photographed (MAR-501, MAR-502, MAR-503)
+
+**MAR-500's note said the proven bar — a witnessed render at 50px and 100px,
+both themes, `prefers-reduced-motion` honoured — "belongs to the first
+BRAND-03/04/05 slice". This is that bar, executed.** What it needed was not more
+pictures. Each of the three issues states clauses that a screenshot cannot
+answer, so `electron/capture.ts` now asks them and writes the answers to
+`cast-witness.json` beside the images: **13 witnesses, 13 passed**, in the real
+Electron shell against the packaged renderer over `dash-app://` on the
+installed-style store.
+
+**Reduced motion moves through the media engine, not through a stylesheet.**
+`Emulation.setEmulatedMedia` over the DevTools protocol is how the browser's own
+device mode does it, and it drives the identical code path — so what is under
+test is whether `app/tokens.css`'s `@media (prefers-reduced-motion: reduce)`
+block is *evaluated*. Writing `--motion-fast: 0ms` from the harness would have
+proven that CSS variables exist. There is no Electron API for this and no OS call
+either; on Windows the signal is a Settings toggle.
+
+It asserts a **pair**, and that is the point. Zero under `reduce` alone would
+also be true of a stylesheet that had lost its `not (prefers-reduced-motion:
+reduce)` block and was zeroing the tokens for everybody — a real regression that
+reads as a pass. The characters are counted on both sides for the same reason: a
+page that rendered nothing would report `0ms` very convincingly.
+
+**Three defects were found by writing the witnesses, and all three were in the
+witnesses.** The first compared the computed value against the string `"0ms"`
+and reported the product broken twice, in both themes, on a stylesheet doing
+exactly the right thing — `getComputedStyle` normalises `0ms` to `0s` and
+`160ms` to `.16s`. A witness that reads a normalised value as a failure is worse
+than no witness, because the next person deletes it instead of the defect. The
+second hardcoded `"dash.fleet-strip"` where the real key is `"dash.fleetStrip"`,
+so the off-switch witness would have read `null` and reported it — the harness
+disagreeing with the thing it measures, which is `firstAgentName`'s lesson
+arriving again, and the fix is to import the constants so a rename breaks the
+build. The third made the activation witness read whatever focus a *previous*
+witness had left behind: it worked until a workspace witness was added between
+them, and then failed because of the order the witnesses ran in, which is the
+least useful kind of red there is.
+
+**`DASH_SHELL_URL` turned out to be mandatory and the harness header omitted
+it.** Unpackaged, `main.ts` loads `http://127.0.0.1:3000` — so a session that has
+just closed DASH to free the single-instance lock has no dev server, every load
+fails `ERR_CONNECTION_REFUSED`, and the harness reports "no agents in this
+store", blaming the store for a missing server. `dash-app://ui/` is what
+`scripts/verify-shell.mjs` passes, for ADR 0004's reason.
+
+**MAR-501 and MAR-502 are proven. MAR-503 is not, and the two clauses it misses
+are named rather than rounded off.**
+
+MAR-501's bar is met in full: three agents, the persisted characters at 50×50 in
+both themes with `alt=""` and `aria-hidden`, both densities measured on every
+surface, reduced motion honoured, and a missing-asset simulation in which every
+sprite is genuinely fetched and empty — checked, not assumed, via
+`complete && naturalWidth === 0` — while the boxes, the control count, the
+accessible names, `main`'s height and the strip's height are all unchanged. A
+missing sprite costs a picture and never a position.
+
+MAR-502's is met for the same reasons plus its own: the portrait renders 100×100
+in both themes, carries the same character file as that agent's fleet card, and
+keeps its 100px box with the asset missing. The missing-asset witness runs on the
+workspace surface separately rather than being inferred from the fleet page —
+the fleet page's eight avatars are all 50px, so witnesses taken there say nothing
+about a different element at a different size in a different layout. The focus
+witness is deliberately not repeated on the portrait: it is decorative and is not
+a control, so a ring around it would be the defect rather than the evidence.
+
+**MAR-503 misses two.** Its bar asks for *10+ agents staying bounded with an
+overflow count*; this machine's store has three, and seeding seven more into a
+real user's records to take a screenshot would be a worse thing to do than
+leaving the claim unproven. What is witnessed is the **bound** — narrowing until
+the row cannot hold them, at which point the strip stands one and says "+2" with
+no scrolling — which exercises the same `fleetStripSlots` branch a large fleet
+would and is **not** the same claim. And its off-switch clause asks for the
+setting *surviving an app restart*; what is witnessed is survival across a
+document **reload**, which is the mechanism — `FleetStripScript` reading
+`localStorage` before the first paint — but is not a process restart. Its
+activation clause asks for click *and* keyboard; the keyboard half is driven
+with real `Tab` and `Return` input events and lands on the right workspace, and
+the click half is not driven.
+
+Evidence: `pnpm typecheck` clean, `brand:check` green over 39 files,
+`[state] valid`, 98 test files / 1818 passed / 8 skipped from PowerShell, and
+**`pnpm verify:shell` green — 78 installed-shell proofs, zero failures**, which
+is the first shell smoke run locally in several sessions. It became possible
+because Henrik agreed to DASH being closed for it; the app was closed with
+`WM_CLOSE`, the same signal the window's own close button sends, and not with
+the force-kill AGENTS.md forbids. 66 images and `cast-witness.json` in
+`qa-screenshots-mar-501-503/`.

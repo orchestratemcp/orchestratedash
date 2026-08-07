@@ -28,6 +28,7 @@ import {
   checkCast,
   checkCostume,
   checkEmerald,
+  checkNoRemoteFonts,
   checkSizeApi,
   emeraldClasses,
   readCastModule,
@@ -274,6 +275,130 @@ describe("the stylesheet's own half", () => {
       `.o-avatar { image-rendering: pixelated; } .o-avatar--tiny { --o-size: 30px; }`,
     );
     expect(failures.some((failure: string) => failure.includes("--o-size: 30px"))).toBe(true);
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * MAR-535 — where a font is allowed to come from
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Henrik decided MAR-535 on 2026-08-07: **keep the rule**. The fonts are not
+ * bundled and `app/tokens.css`'s note about the substitution is the permanent
+ * record rather than a pending one.
+ *
+ * A decision recorded only in prose is one the next reskin quietly reverses, so
+ * these are the cases that would reverse it. The pair that matters most is the
+ * last one: what the rule forbids is a **fetch**, not a font file, so a future
+ * session that revisits MAR-535 and vendors the two OFL faces into the export
+ * does not have to weaken anything here.
+ */
+describe("violation 5 — a page reaching off this machine for a font (MAR-535)", () => {
+  it("refuses an @font-face served from somewhere else", () => {
+    const failures = checkNoRemoteFonts([
+      {
+        name: "app/tokens.css",
+        source: `@font-face { font-family: "Space Grotesk"; src: url("https://fonts.gstatic.com/s/spacegrotesk.woff2") format("woff2"); }`,
+      },
+    ]);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain("fonts.gstatic.com");
+  });
+
+  it("refuses a protocol-relative one, which reads as local and is not", () => {
+    const failures = checkNoRemoteFonts([
+      {
+        name: "app/globals.css",
+        source: `@font-face { font-family: X; src: url(//cdn.example.com/x.woff2); }`,
+      },
+    ]);
+    expect(failures).toHaveLength(1);
+  });
+
+  it("refuses an off-machine @import, which is how a font usually arrives", () => {
+    const failures = checkNoRemoteFonts([
+      { name: "app/globals.css", source: `@import url("https://fonts.googleapis.com/css2?family=X");` },
+    ]);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain("fonts.googleapis.com");
+  });
+
+  it("refuses the preconnect that precedes one, which is the earliest visible sign", () => {
+    const failures = checkNoRemoteFonts([
+      {
+        name: "app/layout.tsx",
+        source: `<link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />`,
+      },
+    ]);
+    expect(failures).toHaveLength(1);
+  });
+
+  it("refuses next/font/google, and says why it is not the same failure", () => {
+    // It self-hosts, so no page requests a remote font at runtime. What moves is
+    // the fetch, to build time — where an offline build either fails or ships
+    // whatever the network answered. The sentence has to say that, or the next
+    // reader files it as a false positive and deletes the rule.
+    const failures = checkNoRemoteFonts([
+      { name: "app/layout.tsx", source: `import { Space_Grotesk } from "next/font/google";` },
+    ]);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain("build time");
+  });
+
+  it("allows a bundled face, because the rule is about a fetch and not about a font file", () => {
+    // The load-bearing pair. If MAR-535 is ever revisited and the two OFL
+    // families are vendored, they are same-origin reads over dash-app:// and
+    // nothing here has to be relaxed to let them in.
+    expect(
+      checkNoRemoteFonts([
+        {
+          name: "app/tokens.css",
+          source: `@font-face { font-family: "JetBrains Mono"; src: url("/fonts/jetbrains-mono.woff2") format("woff2"); font-display: swap; }`,
+        },
+        { name: "app/layout.tsx", source: `import localFont from "next/font/local";` },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("says nothing about the stacks the product actually ships", () => {
+    // Naming a family that the machine may or may not have installed is the
+    // decision itself, not a violation of it.
+    expect(
+      checkNoRemoteFonts([
+        {
+          name: "app/tokens.css",
+          source: `:root { --font-display: "Space Grotesk", "Segoe UI", sans-serif; --font-ui: "JetBrains Mono", Consolas, monospace; }`,
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("fails when it scanned nothing at all", () => {
+    /*
+     * The floor, and it is the point rather than defensive noise. MAR-498's
+     * client-bundle guard passed against a list nobody had widened, and its
+     * repair kept the original names as a floor because a walk that broke and
+     * returned an empty set would pass that file forever. A font rule that
+     * scanned nothing is that same failure wearing a different name.
+     */
+    const failures = checkNoRemoteFonts([]);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain("stopped looking");
+  });
+
+  it("is actually reached by the real check, over more than the token files", () => {
+    // `checkAvatarCss` reads two stylesheets. This rule has to see every file
+    // under app/, because a remote font arrives wherever somebody adds it — and
+    // a rule wired to the narrow list would be green for the wrong reason.
+    const result = spawnSync(process.execPath, [path.join(repoRoot, "scripts", "brand-check.mjs")], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    const scanned = /(\d+) file\(s\) checked for remote fonts/.exec(
+      `${result.stdout}${result.stderr}`,
+    );
+    expect(scanned).not.toBeNull();
+    expect(Number(scanned?.[1])).toBeGreaterThan(10);
   });
 });
 

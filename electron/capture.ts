@@ -31,9 +31,31 @@
  * whether or not the button worked at all.
  *
  * Run it with **`pnpm build:renderer` and then `pnpm build:shell`**, then
- * `electron dist/electron/capture.mjs`. It is never on the `electron .` path and
- * no `package.json` script names it, for ADR 0004's reason: this is evidence,
- * not a gate, and it must not be able to fail a release.
+ * `DASH_SHELL_URL=dash-app://ui/ electron dist/electron/capture.mjs`. It is
+ * never on the `electron .` path and no `package.json` script names it, for ADR
+ * 0004's reason: this is evidence, not a gate, and it must not be able to fail a
+ * release.
+ *
+ * **`DASH_SHELL_URL` is not optional and this line used to omit it.** Unpackaged,
+ * `main.ts` loads `http://127.0.0.1:3000` — so without it the run needs a dev
+ * server up, and a session that has just closed DASH to free the single-instance
+ * lock does not have one: every load fails `ERR_CONNECTION_REFUSED` and the
+ * harness reports "no agents in this store", blaming the store for a missing
+ * server. `dash-app://ui/` is the packaged renderer's own scheme and is what
+ * `scripts/verify-shell.mjs` passes for ADR 0004's reason — the evidence should
+ * depend on this repository and this machine, not on what a developer happens to
+ * have running.
+ *
+ * ## It answers questions as well as taking pictures (MAR-501, MAR-502, MAR-503)
+ *
+ * The three BRAND issues state `proven` bars that no wall of screenshots meets:
+ * reduced motion honoured, a missing sprite costing no layout and no
+ * information, a visible focus ring on every character, activation landing on
+ * the right workspace, the off switch surviving, and the bound holding. Each is
+ * a question with an answer, so each is asked after the image loop and the
+ * answers are written to `cast-witness.json`. A witness that fails does not fail
+ * the run — ADR 0004: evidence, never a verdict — but it is named in the last
+ * line so a run with a red one in it cannot be read as a promotion.
  *
  * **Both builds, in that order, and this line used to say only the second one.**
  * `build:shell` copies whatever is already in `out/`; it does not produce it. A
@@ -52,6 +74,17 @@ import { app, BrowserWindow, nativeTheme } from "electron";
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+
+/*
+ * The strip's own constants rather than this harness's copy of them.
+ *
+ * The first draft wrote `"dash.fleet-strip"` and the real key is
+ * `"dash.fleetStrip"`, so the off-switch witness would have read `null` from
+ * storage and reported it — a harness disagreeing with the thing it is
+ * measuring, which is `firstAgentName`'s lesson three functions down arriving
+ * again. Importing them means a rename breaks the build instead.
+ */
+import { FLEET_STRIP_ATTRIBUTE, FLEET_STRIP_STORAGE_KEY } from "../lib/views/fleet-strip";
 
 const OUT = path.resolve(
   process.cwd(),
@@ -511,6 +544,519 @@ async function resizeTo(target: BrowserWindow, width: number, height: number): P
   );
 }
 
+/* ---------------------------------------------------------------------- *
+ * The cast's own witnesses (MAR-501, MAR-502, MAR-503)
+ * ---------------------------------------------------------------------- *
+ *
+ * The three BRAND issues each state a `proven` bar that a wall of screenshots
+ * does not meet. MAR-500's note put it exactly: the witnessed render "belongs to
+ * the first BRAND-03/04/05 slice", and what it names is not more pictures — it
+ * is *reduced motion honoured*, *a missing asset costing no layout and no
+ * information*, *a visible focus ring on every character*, and *activation
+ * landing on the right workspace*.
+ *
+ * None of those is a picture. Each is a question with an answer, so each is
+ * asked here and the answers are written to `cast-witness.json` beside the
+ * images — which is the same argument `electron/capture.ts` already makes about
+ * being a script: a thing somebody checked once on a machine nobody else has is
+ * not evidence the next person can refresh.
+ *
+ * They run against the same window as everything above, after the image loop, so
+ * nothing they do to the page can reach a photograph that is already written.
+ */
+
+interface Witness {
+  name: string;
+  ok: boolean;
+  detail: string;
+}
+
+const witnesses: Witness[] = [];
+
+function record(name: string, ok: boolean, detail: string): void {
+  witnesses.push({ name, ok, detail });
+  console.log(`[capture] ${ok ? "witness" : "NOT WITNESSED"} ${name}: ${detail}`);
+}
+
+/**
+ * Ask the renderer what a media feature currently resolves to, having changed it
+ * the way the browser itself changes it.
+ *
+ * `Emulation.setEmulatedMedia` over the DevTools protocol, not a stylesheet
+ * override and not a class on `<html>`. That distinction is the same one this
+ * harness already makes about `nativeTheme`: what is under test is whether
+ * `app/tokens.css`'s `@media (prefers-reduced-motion: reduce)` block is
+ * *evaluated*, so the input to the media engine is what has to move. Writing
+ * `--motion-fast: 0ms` from the harness would prove that CSS variables exist.
+ *
+ * There is no Electron API for this and there is no OS call either — on Windows
+ * the signal is a Settings toggle. CDP is how the browser's own device-mode
+ * does it, and it drives the identical code path.
+ */
+async function underReducedMotion<T>(
+  target: BrowserWindow,
+  value: "reduce" | "no-preference",
+  work: () => Promise<T>,
+): Promise<T> {
+  const { debugger: cdp } = target.webContents;
+  if (!cdp.isAttached()) {
+    cdp.attach("1.3");
+  }
+  await cdp.sendCommand("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-reduced-motion", value }],
+  });
+  await settle(200);
+  try {
+    return await work();
+  } finally {
+    await cdp.sendCommand("Emulation.setEmulatedMedia", { features: [] });
+    await settle(150);
+  }
+}
+
+/**
+ * A CSS duration in milliseconds, whatever unit it came back in.
+ *
+ * The first draft of this witness compared the computed value against the
+ * string `"0ms"` and reported the product broken twice, in both themes, on a
+ * stylesheet that was doing exactly the right thing: `app/tokens.css` declares
+ * `0ms` and `160ms`, and `getComputedStyle` hands back `0s` and `.16s`. A
+ * witness that reads a normalised value as a failure is worse than no witness,
+ * because the next person deletes it instead of the defect.
+ */
+function millis(value: string): number | null {
+  const match = /^\s*([\d.]+)\s*(ms|s)\s*$/.exec(value);
+  if (match === null) {
+    return null;
+  }
+  return Number(match[1]) * (match[2] === "s" ? 1000 : 1);
+}
+
+/** The two durations the whole reduced-motion argument rests on. */
+async function motionTokens(target: BrowserWindow): Promise<{ fast: string; normal: string }> {
+  return (await within(
+    "read motion tokens",
+    10_000,
+    target.webContents.executeJavaScript(
+      `(() => {
+         const s = getComputedStyle(document.documentElement);
+         return { fast: s.getPropertyValue("--motion-fast").trim(),
+                  normal: s.getPropertyValue("--motion-normal").trim() };
+       })()`,
+    ),
+  )) as { fast: string; normal: string };
+}
+
+/**
+ * MAR-501/502/503's shared reduced-motion clause, and the honest reading of it.
+ *
+ * All three issues say the same thing in slightly different words: the cast is
+ * static, so there is nothing for `prefers-reduced-motion` to switch off, and
+ * what has to hold is that the tokens any future motion would spend are zeroed
+ * and that turning the preference on takes nothing away.
+ *
+ * So this asserts a **pair**. Zero under `reduce` alone would also be true of a
+ * stylesheet that had lost its `not (prefers-reduced-motion: reduce)` block and
+ * was zeroing the tokens for everybody — which is a real regression that reads
+ * as a pass. The characters are counted on both sides for the same reason: a
+ * page that rendered nothing would report `0ms` very convincingly.
+ */
+async function witnessReducedMotion(target: BrowserWindow, theme: string): Promise<void> {
+  const ordinary = await underReducedMotion(target, "no-preference", async () => ({
+    tokens: await motionTokens(target),
+    cast: await castCensus(target),
+  }));
+
+  const reduced = await underReducedMotion(target, "reduce", async () => {
+    const answer = { tokens: await motionTokens(target), cast: await castCensus(target) };
+    await shoot(target, `witness-reduced-motion-${theme}`);
+    return answer;
+  });
+
+  const zeroed = millis(reduced.tokens.fast) === 0 && millis(reduced.tokens.normal) === 0;
+  const movesWhenAsked =
+    (millis(ordinary.tokens.fast) ?? 0) > 0 && (millis(ordinary.tokens.normal) ?? 0) > 0;
+  const keptEverything =
+    reduced.cast.avatars === ordinary.cast.avatars &&
+    reduced.cast.standing === ordinary.cast.standing &&
+    reduced.cast.avatars > 0;
+
+  record(
+    `reduced-motion/${theme}`,
+    zeroed && movesWhenAsked && keptEverything,
+    `reduce → --motion-fast: ${reduced.tokens.fast}, --motion-normal: ${reduced.tokens.normal}; ` +
+      `no-preference → ${ordinary.tokens.fast} / ${ordinary.tokens.normal}; ` +
+      `${String(reduced.cast.avatars)} avatars and ${String(reduced.cast.standing)} standing under ` +
+      `reduce vs ${String(ordinary.cast.avatars)} / ${String(ordinary.cast.standing)} without it`,
+  );
+}
+
+/** Who is on screen, in the two counts every witness below compares. */
+async function castCensus(
+  target: BrowserWindow,
+): Promise<{ avatars: number; standing: number; boxes: string[] }> {
+  return (await within(
+    "cast census",
+    10_000,
+    target.webContents.executeJavaScript(
+      `(() => {
+         const all = [...document.querySelectorAll(".o-avatar")];
+         return {
+           avatars: all.length,
+           standing: document.querySelectorAll(".fleet-strip .o-avatar").length,
+           boxes: all.map((i) => i.clientWidth + "x" + i.clientHeight),
+         };
+       })()`,
+    ),
+  )) as { avatars: number; standing: number; boxes: string[] };
+}
+
+/**
+ * The missing-asset clause all three issues carry: no layout shift, no lost
+ * information.
+ *
+ * The sprites are pointed at a name that is not in the export, and the images
+ * genuinely fail to load — which is the condition under test rather than a
+ * drawing of it. That is checked rather than assumed: an `<img>` that is
+ * `complete` with `naturalWidth === 0` has been fetched and has no pixels, and
+ * if any image still has pixels this reports itself as not witnessed instead of
+ * quietly measuring an unbroken page.
+ *
+ * Layout shift is measured against `main`'s own rectangle and the strip's
+ * height, taken before and after. Information is measured by counting the
+ * controls and their accessible names — MAR-503's point is that a missing sprite
+ * must cost a picture and never a position, a name, or a way into the workspace.
+ */
+async function witnessMissingAsset(target: BrowserWindow, theme: string): Promise<void> {
+  const before = (await target.webContents.executeJavaScript(
+    `(() => {
+       const main = document.querySelector("main");
+       const strip = document.querySelector(".fleet-strip");
+       return {
+         main: main === null ? null : Math.round(main.getBoundingClientRect().height),
+         strip: strip === null ? null : Math.round(strip.getBoundingClientRect().height),
+         links: document.querySelectorAll(".fleet-strip-o").length,
+         names: [...document.querySelectorAll(".fleet-strip-o")].map((a) => (a.textContent ?? "").trim()),
+         boxes: [...document.querySelectorAll(".o-avatar")].map((i) => i.clientWidth + "x" + i.clientHeight),
+       };
+     })()`,
+  )) as Record<string, unknown>;
+
+  const after = (await target.webContents.executeJavaScript(
+    `(async () => {
+       const imgs = [...document.querySelectorAll(".o-avatar")];
+       for (const img of imgs) {
+         img.setAttribute("data-real-src", img.getAttribute("src"));
+         img.setAttribute("src", "/o/1x/__absent-for-this-witness__.png");
+       }
+       await new Promise((r) => setTimeout(r, 700));
+       const main = document.querySelector("main");
+       const strip = document.querySelector(".fleet-strip");
+       return {
+         main: main === null ? null : Math.round(main.getBoundingClientRect().height),
+         strip: strip === null ? null : Math.round(strip.getBoundingClientRect().height),
+         links: document.querySelectorAll(".fleet-strip-o").length,
+         names: [...document.querySelectorAll(".fleet-strip-o")].map((a) => (a.textContent ?? "").trim()),
+         boxes: imgs.map((i) => i.clientWidth + "x" + i.clientHeight),
+         really_broken: imgs.every((i) => i.complete && i.naturalWidth === 0),
+         any_pixels_left: imgs.some((i) => i.naturalWidth > 0),
+       };
+     })()`,
+  )) as Record<string, unknown>;
+
+  await shoot(target, `witness-missing-asset-${theme}`);
+
+  // Put the real sprites back before anything else looks at this page.
+  await target.webContents.executeJavaScript(
+    `(() => {
+       for (const img of document.querySelectorAll(".o-avatar[data-real-src]")) {
+         img.setAttribute("src", img.getAttribute("data-real-src"));
+         img.removeAttribute("data-real-src");
+       }
+     })()`,
+  );
+  await settle(500);
+
+  const sameBoxes = JSON.stringify(before["boxes"]) === JSON.stringify(after["boxes"]);
+  const sameNames = JSON.stringify(before["names"]) === JSON.stringify(after["names"]);
+  const noShift = before["main"] === after["main"] && before["strip"] === after["strip"];
+
+  record(
+    `missing-asset/${theme}`,
+    after["really_broken"] === true &&
+      after["any_pixels_left"] === false &&
+      sameBoxes &&
+      sameNames &&
+      noShift &&
+      before["links"] === after["links"],
+    `every sprite fetched and empty: ${String(after["really_broken"])}; ` +
+      `boxes unchanged: ${String(sameBoxes)} (${JSON.stringify(after["boxes"])}); ` +
+      `main ${String(before["main"])}→${String(after["main"])}px, ` +
+      `strip ${String(before["strip"])}→${String(after["strip"])}px; ` +
+      `${String(after["links"])} controls keeping their names: ${String(sameNames)}`,
+  );
+}
+
+/**
+ * A real focus ring, reached the way a keyboard reaches it.
+ *
+ * `element.focus()` is not this. Chromium only paints `:focus-visible` for
+ * focus it believes came from the keyboard, so a programmatic call would
+ * measure an outline the user will never see — the exact shape of the mistake
+ * MAR-440's skip link shipped, where the property held and the pixels did not.
+ * So Tab is sent as a real input event and the ring is measured off whatever the
+ * browser decided to focus.
+ */
+async function witnessFocusRing(target: BrowserWindow, theme: string): Promise<void> {
+  await target.webContents.executeJavaScript(
+    `(() => { document.body.focus(); if (document.activeElement) document.activeElement.blur(); })()`,
+  );
+
+  const total = (await target.webContents.executeJavaScript(
+    `document.querySelectorAll(".fleet-strip-o").length`,
+  )) as number;
+
+  const rings: string[] = [];
+  let reached = 0;
+  // A bounded sweep: enough Tabs to cross the chrome, the page and the strip.
+  for (let press = 0; press < 120 && reached < total; press += 1) {
+    target.webContents.sendInputEvent({ type: "keyDown", keyCode: "Tab" });
+    target.webContents.sendInputEvent({ type: "keyUp", keyCode: "Tab" });
+    await settle(40);
+    const focused = (await target.webContents.executeJavaScript(
+      `(() => {
+         const el = document.activeElement;
+         if (el === null || !el.classList.contains("fleet-strip-o")) return null;
+         const s = getComputedStyle(el);
+         return {
+           name: (el.textContent ?? "").trim(),
+           style: s.outlineStyle,
+           width: s.outlineWidth,
+           colour: s.outlineColor,
+           visible: s.outlineStyle !== "none" && parseFloat(s.outlineWidth) > 0,
+         };
+       })()`,
+    )) as { name: string; style: string; width: string; colour: string; visible: boolean } | null;
+    if (focused !== null) {
+      reached += 1;
+      if (focused.visible) {
+        rings.push(`${focused.name}: ${focused.width} ${focused.style}`);
+      } else {
+        rings.push(`${focused.name}: NO RING (${focused.style} ${focused.width})`);
+      }
+      if (reached === 1) {
+        await shoot(target, `witness-focus-ring-${theme}`);
+      }
+    }
+  }
+
+  record(
+    `focus-ring/${theme}`,
+    reached === total && total > 0 && rings.every((r) => !r.includes("NO RING")),
+    `${String(reached)} of ${String(total)} characters reached by Tab; ${rings.join("; ")}`,
+  );
+}
+
+/**
+ * Activation lands on the right workspace — by keyboard, which is the half a
+ * click test would not cover.
+ *
+ * The destination is compared against the agent the focused control actually
+ * names, rather than against a name written into this harness: the strip's order
+ * is `agents` order and a harness holding its own copy of that would agree with
+ * the strip on the day it was written and never again.
+ */
+async function witnessActivation(target: BrowserWindow, home: string): Promise<void> {
+  /*
+   * It focuses its own target, and that is a fix rather than a precaution.
+   *
+   * The first draft read whatever `witnessFocusRing` happened to leave focused,
+   * which worked until a workspace witness was added between them: the run
+   * navigated twice, the focus went with the old document, and this reported
+   * "no character was focused" — a witness failing because of the order the
+   * witnesses run in, which is the least useful kind of red there is.
+   */
+  await target.webContents.executeJavaScript(
+    `(() => { if (document.activeElement) document.activeElement.blur(); })()`,
+  );
+  for (let press = 0; press < 120; press += 1) {
+    const onOne = (await target.webContents.executeJavaScript(
+      `document.activeElement !== null && document.activeElement.classList.contains("fleet-strip-o")`,
+    )) as boolean;
+    if (onOne) {
+      break;
+    }
+    target.webContents.sendInputEvent({ type: "keyDown", keyCode: "Tab" });
+    target.webContents.sendInputEvent({ type: "keyUp", keyCode: "Tab" });
+    await settle(40);
+  }
+
+  const intended = (await target.webContents.executeJavaScript(
+    `(() => {
+       const el = document.activeElement;
+       if (el === null || !el.classList.contains("fleet-strip-o")) return null;
+       return { name: (el.textContent ?? "").replace(/^Open\\s+/, "").trim(), href: el.getAttribute("href") };
+     })()`,
+  )) as { name: string; href: string } | null;
+
+  if (intended === null) {
+    record("activation", false, "no character was focused when activation was attempted");
+    return;
+  }
+
+  target.webContents.sendInputEvent({ type: "keyDown", keyCode: "Return" });
+  target.webContents.sendInputEvent({ type: "keyUp", keyCode: "Return" });
+  await settle(1500);
+
+  const landed = target.webContents.getURL();
+  const shows = (await target.webContents.executeJavaScript(
+    `(() => {
+       const heading = document.querySelector("main h1, main h2");
+       return heading === null ? null : (heading.textContent ?? "").trim();
+     })()`,
+  )) as string | null;
+
+  const arrived = landed.includes(encodeURIComponent(intended.name)) || landed.includes(intended.name);
+  record(
+    "activation",
+    arrived,
+    `Enter on "${intended.name}" (href ${intended.href}) landed on ${landed}` +
+      `${shows === null ? "" : `, showing "${shows}"`}`,
+  );
+
+  await go(target, home);
+}
+
+/**
+ * The strip's off switch, and what this does and does not witness.
+ *
+ * The button is clicked — the real control, the same discipline the density
+ * toggle is driven with — and the document is then **reloaded**, so the setting
+ * has to survive by the only route it has: `FleetStripScript` reading
+ * `localStorage` before the first paint. That is the mechanism MAR-503's
+ * "remembered per user" clause names, and reloading is the honest way to test it
+ * inside one process.
+ *
+ * It is NOT an app restart, and this note is here so nobody reads it as one. A
+ * process restart witnesses the same pre-paint script over the same storage; the
+ * difference between the two is whether Chromium's storage layer was torn down
+ * in between, which is a Chromium property rather than a DASH one.
+ */
+async function witnessStripOff(target: BrowserWindow, home: string): Promise<void> {
+  const off = (await target.webContents.executeJavaScript(
+    `(() => {
+       const button = document.querySelector("button.fleet-strip-toggle");
+       if (button === null) return { found: false };
+       button.click();
+       return { found: true,
+                attribute: document.documentElement.getAttribute(${JSON.stringify(FLEET_STRIP_ATTRIBUTE)}),
+                stored: window.localStorage.getItem(${JSON.stringify(FLEET_STRIP_STORAGE_KEY)}) };
+     })()`,
+  )) as { found: boolean; attribute?: string | null; stored?: string | null };
+
+  if (!off.found) {
+    record("strip-off", false, "no fleet-strip toggle on the page");
+    return;
+  }
+
+  await settle(400);
+  await within("reload for strip-off", 20_000, target.webContents.reload() as unknown as Promise<void>);
+  await settle(1800);
+
+  const afterReload = (await target.webContents.executeJavaScript(
+    `(() => ({
+       attribute: document.documentElement.getAttribute(${JSON.stringify(FLEET_STRIP_ATTRIBUTE)}),
+       stored: window.localStorage.getItem(${JSON.stringify(FLEET_STRIP_STORAGE_KEY)}),
+       standing: document.querySelectorAll(".fleet-strip .o-avatar").length,
+       recoverable: document.querySelector("button.fleet-strip-toggle") !== null,
+     }))()`,
+  )) as { attribute: string | null; stored: string | null; standing: number; recoverable: boolean };
+
+  record(
+    "strip-off",
+    afterReload.attribute === "hidden" && afterReload.standing === 0 && afterReload.recoverable,
+    `clicked off (stored ${String(off.stored)}); after a reload the document says ` +
+      `${String(afterReload.attribute)} with ${String(afterReload.standing)} standing, ` +
+      `and the way back is ${afterReload.recoverable ? "still on screen" : "GONE"}`,
+  );
+
+  // Back on, so the machine is left as it was found.
+  await target.webContents.executeJavaScript(
+    `(() => { const b = document.querySelector("button.fleet-strip-toggle"); if (b !== null) b.click(); })()`,
+  );
+  await settle(400);
+  await go(target, home);
+}
+
+/**
+ * The bound, exercised rather than assumed — and it is the weakest witness here,
+ * so it says so in its own detail string.
+ *
+ * MAR-503's `proven` bar asks for **10+ agents** staying bounded with an
+ * overflow count. This machine's store has four, and seeding six more into a
+ * real user's records to take a screenshot would be a worse thing to do than
+ * leaving the claim unproven. What is reachable is the bound itself: narrow the
+ * row until four characters no longer fit and read the count that appears.
+ *
+ * That exercises the same `fleetStripSlots` branch a large fleet would, at the
+ * same 50px whole-number rule, and it is not the same claim. The distinction is
+ * recorded rather than smoothed over.
+ */
+async function witnessOverflow(target: BrowserWindow): Promise<void> {
+  /*
+   * The window's own floor is lifted first, because it is what stops this.
+   * `setContentSize` below a `BrowserWindow`'s `minWidth` is clamped silently,
+   * so a sweep down to 180px can spend every step at whatever the floor is and
+   * report that the bound was never reached — a fact about the window manager
+   * dressed up as a fact about the strip.
+   */
+  target.setMinimumSize(120, 300);
+  const widths = [340, 300, 260, 220, 180, 150];
+  for (const width of widths) {
+    try {
+      await resizeTo(target, width, 700);
+    } catch {
+      continue;
+    }
+    await settle(500);
+    const strip = (await target.webContents.executeJavaScript(
+      `(() => {
+         const s = document.querySelector(".fleet-strip");
+         if (s === null) return null;
+         const more = s.querySelector(".fleet-strip-more");
+         return {
+           standing: s.querySelectorAll(".o-avatar").length,
+           overflow: more === null ? null : (more.textContent ?? "").trim(),
+           row_overflows: (() => {
+             const row = s.querySelector(".fleet-strip-row");
+             return row === null ? false : row.scrollWidth > row.clientWidth + 1;
+           })(),
+         };
+       })()`,
+    )) as { standing: number; overflow: string | null; row_overflows: boolean } | null;
+
+    if (strip !== null && strip.overflow !== null) {
+      await shoot(target, `witness-overflow-${String(width)}`);
+      const fleetSize = strip.standing + Number(/\+(\d+)/.exec(strip.overflow)?.[1] ?? 0);
+      record(
+        "overflow-bound",
+        !strip.row_overflows,
+        `at ${String(width)}px the strip stands ${String(strip.standing)} and says "${strip.overflow}", ` +
+          `row scrolls: ${String(strip.row_overflows)}. NOTE: this exercises the bound with a ` +
+          `${String(fleetSize)}-agent store, which is NOT MAR-503's "10+ agents" clause`,
+      );
+      return;
+    }
+  }
+  const fleet = await castCensus(target);
+  record(
+    "overflow-bound",
+    false,
+    `${String(fleet.standing)} agents still fit at ${String(widths[widths.length - 1])}px — the ` +
+      `bound was never reached, so nothing here witnesses it`,
+  );
+}
+
 async function densityNow(target: BrowserWindow): Promise<string> {
   return (await within(
     "read density",
@@ -653,15 +1199,86 @@ async function run(): Promise<void> {
     }
   }
 
+  /*
+   * The witnesses, last and on the fleet page.
+   *
+   * After every image is written, because two of them deliberately break the
+   * page — a sprite that cannot load, a strip switched off — and a photograph
+   * taken afterwards would be a picture of the harness's own experiment. The
+   * fleet page is where all four surfaces the cast appears on are represented at
+   * once: cards, the strip, and a workspace one Enter away.
+   */
+  console.log("\n[capture] ── the cast's own witnesses ──");
+  await resizeTo(window, 1280, 860);
+  await go(window, "/");
+
+  for (const theme of THEMES) {
+    nativeTheme.themeSource = theme;
+    await settle(300);
+    await witnessReducedMotion(window, theme);
+    await witnessMissingAsset(window, theme);
+    await witnessFocusRing(window, theme);
+  }
+
+  /*
+   * The workspace portrait, on its own page (MAR-502).
+   *
+   * The fleet page carries eight avatars and every one of them is 50px, so the
+   * witnesses above establish MAR-501 and MAR-503's clause and say nothing at
+   * all about the 100px portrait — which is a different element, at a different
+   * size, in a different layout, and is the one MAR-502's own missing-asset
+   * clause is about. Repeating two of the three here is cheaper than a claim
+   * that quietly covers one surface and is written as if it covered two.
+   *
+   * The focus-ring witness is not repeated, deliberately: the portrait is
+   * decorative and is not a control, so there is nothing there to focus and a
+   * ring around it would be the defect rather than the evidence.
+   */
+  if (agent !== null) {
+    const workspace = `/agents/detail?agent=${encodeURIComponent(agent)}`;
+    for (const theme of THEMES) {
+      nativeTheme.themeSource = theme;
+      await settle(300);
+      await go(window, workspace);
+      await witnessReducedMotion(window, `workspace-${theme}`);
+      await witnessMissingAsset(window, `workspace-${theme}`);
+    }
+    await go(window, "/");
+  }
+
+  // Once, not per theme: these change where the window is or what it stores,
+  // and neither answer can differ by palette.
+  nativeTheme.themeSource = "dark";
+  await settle(200);
+  await witnessActivation(window, "/");
+  await witnessStripOff(window, "/");
+  await witnessOverflow(window);
+
   writeFileSync(
     path.join(OUT, "layout.json"),
     `${JSON.stringify({ captured_at: new Date().toISOString(), measurements }, null, 2)}\n`,
     "utf8",
   );
-
-  console.log(
-    `\n[capture] wrote ${String(written.length)} images and layout.json to ${OUT}`,
+  writeFileSync(
+    path.join(OUT, "cast-witness.json"),
+    `${JSON.stringify({ captured_at: new Date().toISOString(), witnesses }, null, 2)}\n`,
+    "utf8",
   );
+
+  const failed = witnesses.filter((w) => !w.ok);
+  console.log(
+    `\n[capture] wrote ${String(written.length)} images, layout.json and cast-witness.json to ${OUT}`,
+  );
+  console.log(
+    `[capture] ${String(witnesses.length - failed.length)}/${String(witnesses.length)} witnesses passed` +
+      (failed.length === 0 ? "" : ` — NOT witnessed: ${failed.map((w) => w.name).join(", ")}`),
+  );
+  /*
+   * A failed witness does not fail the run, and that is ADR 0004 rather than
+   * leniency: this harness produces evidence, never a verdict, and must not be
+   * able to fail a release. What it must do is say so loudly enough that nobody
+   * reads a run with a red witness in it as a promotion.
+   */
 }
 
 void run().then(
