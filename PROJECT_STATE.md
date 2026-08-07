@@ -1671,6 +1671,135 @@ installed shell *does* exercise is the local path through the same generalised
 code, so a regression in the refactor fails the mandatory gate rather than
 waiting for a VPS. MAR-489 owns the attended half.
 
+## A runner nobody could retire, and the repair nobody could reach (MAR-520)
+
+**Reproduced first-hand before a line was changed, and the reproduction shaped
+the fix.** The runner the 2026-08-07 morning proof left behind was still alive
+at 13:40: pid 28160 running `dist/google-proof/runner.mjs`, child agent pid
+2072, `GET /health` answering `200` with `supervising: 3`, and `GET /agents`
+answering **401** to the `runner.key` sitting in the same directory as its own
+`runner.json`. Two different `runner.key` files on this machine were tried and
+both were refused; they are byte-identical, so MSIX path virtualisation is
+excluded. Last boot was 2026-08-06 22:02, before either process started, so no
+restart had intervened. Every probe was a `GET` — nothing was shut down and
+nothing was force-killed.
+
+**The defect is not that the harness mints a secret per run.** It is that
+**nothing recorded which secret a running runner had resolved.** `runner.json`
+is deliberately secret-free and stays that way; its own header says why a file
+every process on the machine can read is not where a credential goes. The
+consequence nobody had drawn is that a runner whose secret diverges from the
+data directory's `runner.key` — for any reason at all — becomes permanently
+unauthenticable, with no evidence on disk saying so.
+
+`runner/session-key.ts` is the answer, and the distinction it draws is the whole
+of it: `runner.key` is what the **spawner** believes, and the session key is what
+the **runner** is using. The runner writes the secret it actually resolved, at
+the moment it resolved it, under `hardenOwnerOnly` — the same function, the same
+proven ACL, the same refusal to start when the ACL cannot be verified. It is
+written *before* the endpoint exists, so there is never a moment at which a
+runner is reachable and nothing says how to stop it, and cleared on graceful
+shutdown, so a session key on disk means a runner **is** alive rather than once
+was. In the ordinary case it holds the same bytes as `runner.key` and is
+redundant. In every case where they diverge it is the only thing that can retire
+the process.
+
+`runner.json` also gains `channel_secret_fingerprint`: SHA-256 truncated to 16
+hex characters, no preimage, pinned by a test that asserts the secret and the
+fingerprint share no substring. It turns a bare 401 — indistinguishable from a
+wedged runner, a foreign process on the pipe, or a bug in the caller — into a
+named answer *before* anything connects.
+
+### The load-bearing finding is in `adopt`, and it is why the orphan held the store
+
+`adopt` returned `RunnerCandidate | null`, and `null` covered three genuinely
+different worlds: nothing is listening; something is listening that we cannot
+authenticate to; the file is unreadable. `ensureRunner` reads `null` as
+permission to spawn.
+
+So **a live runner holding this data directory silently became a second runner
+writing the same `runner.sqlite`** — the two-writers-one-store pattern MAR-506's
+corruption is suspected to have come from, and worse than refusing to start,
+because the second runner works and nothing looks wrong until the store does.
+
+`retireLegacyRunner`'s own comment already names the rule this breaks — *"Two
+runners supervising one machine is precisely what the endpoint's exactly-one
+guarantee exists to prevent"* — and it only ever enforced it for the pre-MAR-430
+case where the recorded file carries a `port`. A modern-but-foreign runner sailed
+straight past it to `rmSync(runner.json)` and a spawn.
+
+`adopt` returns a discriminated `AdoptOutcome` now, and `ensureRunner` **refuses
+to spawn over a foreign live runner**: it first asks that runner to stop, using
+the credential the runner recorded for itself, and when that cannot be done it
+names the one remedy a person has — an ordinary machine restart. Never
+`Stop-Process`, per AGENTS.md, and the refusal says so in the user's own words.
+
+### The preflight
+
+`scripts/google-proof/preflight.ts`, bundled by `prove-google.mjs` from the same
+tree as everything else it builds, run **before** the build and long before an
+operator sits down at a consent screen. Under Electron rather than plain Node
+because `app.getPath("userData")` is the only honest answer to "which directory
+is this run about to write to", and a third spelling of that path would be a
+preflight guarding the wrong directory. Exit 0 clear, exit 3 held.
+
+It deliberately does **not** retire an *adoptable* runner. The shell will adopt
+it in a moment, and stopping it would be ending the fleet on startup, which is
+the failure `ensureRunner`'s own header refuses.
+
+### The quarantine directory, and why it holds no database
+
+**DASH did not make it.** `retireDamagedStore` renames to
+`runner.sqlite.damaged-<ISO>` *beside* the store and never into a subdirectory;
+`runner.log` contains no "store set aside" line anywhere; and there is no
+`*damaged*` file under the data directory at all. `runner-sqlite-malformed-20260806`
+is a hand-made `Move-Item` from 2026-08-06 20:24. The main database was never
+renamed and is gone — today's `runner.sqlite` dates from 23:03:45 the same
+evening and answers `quick_check: ok`. So MAR-506's renames-and-never-deletes
+rule was not violated by code. **It was never reached.**
+
+**And it could not have been**, which is the part that is fixed. Three defects,
+in the order a person would hit them:
+
+1. **The repair was unreachable.** MAR-506 built two detections because the
+   open-time probe cannot be complete, and only one was wired to anything.
+   `runner/server.ts` classified a mid-request throw, answered the caller
+   correctly — and dropped the finding, so `runner/main.ts`'s `storeDamage`
+   stayed `null` and `POST /store/retire` replied *"There is nothing to set
+   aside."* On the machine this happened to, the open-time probe **never fired
+   once** — `runner.log` has no "records cannot be read" line — and the runtime
+   path fired **twelve times**. The repair was unreachable through the only
+   route a person has, on exactly the machine it was written for.
+2. **It would not have worked if it had been.** Runtime damage does not close
+   the store, so `retireStore` ran with the file open, and `renameSync` on a
+   file SQLite has open answers `EBUSY` on Windows — measured with a probe on
+   this machine, not assumed. The main database is moved first, so the whole
+   repair failed on its first step. The store is closed and the workspace
+   detached before the move now, and reopened if the move fails.
+3. **A partial move was reachable** — the exact disaster `retireDamagedStore`'s
+   own header describes, produced by the function written to prevent it. A main
+   database moved away from its `-wal` leaves the fresh store a log referring to
+   pages it does not have; a `-wal` moved away from its database discards every
+   uncheckpointed transaction. It rolls its own moves back now, and reports a
+   rollback that itself fails as the mixture it is.
+
+**Watched failing**, per MAR-465. Both new store-damage guards were reverted and
+both went red; restored, both green.
+
+Evidence: `pnpm typecheck` clean, `brand:check` green, `[state] valid` with the
+recorded drift warnings, 89 test files / 1670 passed / 8 skipped / 0 failed from
+PowerShell with 26 new cases.
+
+**`pnpm verify:shell` was not run, and it is recorded as not run rather than
+skipped.** The orphan this issue is about was still alive on this machine, and
+starting the installed smoke beside it is the two-writers-one-store pattern the
+issue names. That is the failure MAR-520 is about rather than an excuse offered
+for it; CI's Windows `shell-smoke` is this PR's installed evidence. **Merged is
+the ceiling**: nothing here has been executed against a real leftover runner,
+because retiring the live one is precisely what this session was told not to do.
+The proven bar is the next attended MAR-468 run, whose preflight either reports
+clear or retires something.
+
 ## The deploy bridge, and the verb set ADR 0007 deferred (MAR-487)
 
 **The plane is built and the set is fixed.** ADR 0007's first follow-up said the

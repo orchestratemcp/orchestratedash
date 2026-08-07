@@ -46,6 +46,7 @@ import { fileURLToPath } from "node:url";
 
 import { IPC_ORIGIN, ipcFetch } from "../lib/agent-dom/ipc-fetch";
 import { ChannelSecretError, ensureChannelSecret } from "../runner/channel-secret";
+import { channelSecretFingerprint, readSessionKey } from "../runner/session-key";
 import { EndpointError } from "../runner/endpoint";
 import { RUNNER_BUILD_ID, RUNNER_PROTOCOL_VERSION } from "../runner/identity";
 import type { RunnerEndpointFile } from "../runner/main";
@@ -93,6 +94,38 @@ interface RunnerCandidate {
   observed_protocol?: number;
 }
 
+/**
+ * What `adopt` found, and the third answer is the one MAR-520 is about.
+ *
+ * It used to return `RunnerCandidate | null`, and `null` covered three
+ * genuinely different worlds: nothing is listening; something is listening and
+ * it is not a runner we may adopt; the file is unreadable. `ensureRunner` reads
+ * `null` as permission to spawn, so the middle case — **a live runner holding
+ * this data directory that DASH cannot authenticate to** — silently became a
+ * second runner writing to the same `runner.sqlite`.
+ *
+ * That is not a hypothetical. On 2026-08-07 a runner spawned by the attended
+ * Google proof was alive, healthy and supervising three agents while answering
+ * 401 to the on-disk `runner.key`; the next spawn would have gone straight past
+ * it. `retireLegacyRunner`'s own comment already names the rule this breaks —
+ * "Two runners supervising one machine is precisely what the endpoint's
+ * exactly-one guarantee exists to prevent" — and it only ever enforced it for
+ * the pre-MAR-430 case where the recorded file carries a `port`.
+ *
+ * So the cases are separated, and `foreign` is refused rather than driven over.
+ */
+type AdoptOutcome =
+  | { kind: "none" }
+  | { kind: "candidate"; candidate: RunnerCandidate }
+  | {
+      kind: "foreign";
+      pid: number;
+      endpoint: string;
+      observed_build?: string;
+      /** The fingerprint the runner published, when it published one. */
+      fingerprint?: string;
+    };
+
 export function runnerIdentityMatches(
   recorded: { runner_build?: unknown; runner_protocol?: unknown },
   health: { runner_build?: unknown; runner_protocol?: unknown },
@@ -125,20 +158,20 @@ export function runnerFetch(handle: RunnerHandle): typeof globalThis.fetch {
  * does not answer. The authenticated probe is kept anyway — a path under the
  * user's own control could still be occupied by something the user ran.
  */
-async function adopt(dataDir: string, token: string): Promise<RunnerCandidate | null> {
+async function adopt(dataDir: string, token: string): Promise<AdoptOutcome> {
   const file = endpointFilePath(dataDir);
   if (!existsSync(file)) {
-    return null;
+    return { kind: "none" };
   }
 
   let recorded: RunnerEndpointFile;
   try {
     recorded = JSON.parse(readFileSync(file, "utf8")) as RunnerEndpointFile;
   } catch {
-    return null;
+    return { kind: "none" };
   }
   if (typeof recorded.endpoint !== "string" || typeof recorded.pid !== "number") {
-    return null;
+    return { kind: "none" };
   }
 
   const call = ipcFetch(recorded.endpoint);
@@ -146,23 +179,40 @@ async function adopt(dataDir: string, token: string): Promise<RunnerCandidate | 
     runner_build?: unknown;
     runner_protocol?: unknown;
   } = {};
+  const fingerprint =
+    typeof recorded.channel_secret_fingerprint === "string"
+      ? recorded.channel_secret_fingerprint
+      : undefined;
+  const foreign = (): AdoptOutcome => ({
+    kind: "foreign",
+    pid: recorded.pid,
+    endpoint: recorded.endpoint,
+    observed_build:
+      typeof healthBody.runner_build === "string" ? healthBody.runner_build : undefined,
+    fingerprint,
+  });
+
   try {
     const health = await call(`${IPC_ORIGIN}/health`, { signal: AbortSignal.timeout(2_000) });
     if (!health.ok) {
-      return null;
+      return { kind: "none" };
     }
     healthBody = (await health.json()) as typeof healthBody;
     // Authenticated probe. A 401 means something is listening that does not
-    // share our secret, which is not a runner we may adopt.
+    // share our secret — which is not a runner we may adopt, **and not one we
+    // may ignore either**. It answered `/health`, so it is alive and holding
+    // this data directory; see `AdoptOutcome`.
     const probe = await call(`${IPC_ORIGIN}/agents/__probe__`, {
       headers: { authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(2_000),
     });
     if (probe.status === 401 || probe.status === 403) {
-      return null;
+      return foreign();
     }
   } catch {
-    return null;
+    // Nothing answered on the recorded endpoint: a dead runner's socket path or
+    // pipe name simply does not exist, which is the ordinary stale-file case.
+    return { kind: "none" };
   }
 
   const observedBuild =
@@ -170,18 +220,21 @@ async function adopt(dataDir: string, token: string): Promise<RunnerCandidate | 
   const observedProtocol =
     typeof healthBody.runner_protocol === "number" ? healthBody.runner_protocol : undefined;
   return {
-    handle: {
-      origin: IPC_ORIGIN,
-      endpoint: recorded.endpoint,
-      transport: recorded.transport === "pipe" ? "pipe" : "unix",
-      pid: recorded.pid,
-      token,
-      adopted: true,
-      started_at: typeof recorded.started_at === "string" ? recorded.started_at : null,
+    kind: "candidate",
+    candidate: {
+      handle: {
+        origin: IPC_ORIGIN,
+        endpoint: recorded.endpoint,
+        transport: recorded.transport === "pipe" ? "pipe" : "unix",
+        pid: recorded.pid,
+        token,
+        adopted: true,
+        started_at: typeof recorded.started_at === "string" ? recorded.started_at : null,
+      },
+      compatible: runnerIdentityMatches(recorded, healthBody),
+      observed_build: observedBuild,
+      observed_protocol: observedProtocol,
     },
-    compatible: runnerIdentityMatches(recorded, healthBody),
-    observed_build: observedBuild,
-    observed_protocol: observedProtocol,
   };
 }
 
@@ -212,21 +265,48 @@ export async function ensureRunner(dataDir: string): Promise<EnsureRunnerResult>
   }
 
   const existing = await adopt(dataDir, token);
-  if (existing !== null) {
-    if (existing.compatible) {
-      return { ok: true, handle: existing.handle };
+  if (existing.kind === "candidate") {
+    if (existing.candidate.compatible) {
+      return { ok: true, handle: existing.candidate.handle };
     }
 
-    const stopped = await stopRunner(existing.handle);
+    const stopped = await stopRunner(existing.candidate.handle);
     if (!stopped.ok) {
       return {
         ok: false,
         reason: "stale_runner",
         detail:
-          `DASH found runner pid ${String(existing.handle.pid)} from a different build ` +
-          `(${existing.observed_build ?? "identity unavailable"}) and did not adopt it. ` +
+          `DASH found runner pid ${String(existing.candidate.handle.pid)} from a different build ` +
+          `(${existing.candidate.observed_build ?? "identity unavailable"}) and did not adopt it. ` +
           `${stopped.detail} Restart Windows once to retire a runner built before graceful shutdown.`,
       };
+    }
+  }
+
+  /**
+   * A live runner this DASH cannot authenticate to (MAR-520).
+   *
+   * The old code reached this point with `null` and spawned. Two runners over
+   * one `runner.sqlite` is the two-writers-one-store pattern MAR-506's
+   * corruption is suspected to have come from, and it is worse than not
+   * starting: the second runner works, so nothing looks wrong until the store
+   * does.
+   *
+   * One attempt is made before refusing, and it is the whole point of
+   * `runner/session-key.ts`: the credential a runner is actually using is now
+   * recorded by the runner, so a DASH that finds a stranger's runner can still
+   * ask it to stop through the authenticated route AGENTS.md prescribes.
+   * Nothing is force-killed here or anywhere.
+   *
+   * When that fails the refusal names the one remedy a person has. It is a
+   * worse outcome than starting, and it is the honest one — the alternative is
+   * DASH quietly arranging the conditions for the corruption it has already
+   * spent an issue recovering from.
+   */
+  if (existing.kind === "foreign") {
+    const retired = await retireForeignRunner(dataDir, existing);
+    if (!retired.ok) {
+      return { ok: false, reason: "stale_runner", detail: retired.detail };
     }
   }
 
@@ -302,6 +382,118 @@ export async function ensureRunner(dataDir: string): Promise<EnsureRunnerResult>
       started_at: null,
     },
   };
+}
+
+/** What a preflight found holding the data directory (MAR-520). */
+export type LeftoverRunner =
+  | { state: "none" }
+  | { state: "adoptable"; pid: number; build?: string }
+  | { state: "retired"; pid: number; build?: string }
+  | { state: "held"; pid: number; build?: string; detail: string };
+
+/**
+ * Is anything holding this data directory, and can it be asked to stop?
+ *
+ * The preflight half of MAR-520, exported so an attended harness can ask the
+ * question **before** it builds anything and before an operator sits down at a
+ * consent screen. The alternative is what happened on 2026-08-07: a leftover
+ * runner discovered at the end of a session, by hand, from a process list.
+ *
+ * It deliberately does **not** retire an adoptable runner. A healthy runner
+ * this DASH can authenticate to is one the shell will adopt in a moment, and a
+ * preflight that stopped it would be ending the fleet on startup — the failure
+ * `ensureRunner`'s own header refuses. Only the unadoptable case is acted on,
+ * because that is the one that would otherwise become a second writer.
+ */
+export async function retireLeftoverRunner(dataDir: string): Promise<LeftoverRunner> {
+  let token: string;
+  try {
+    token = ensureChannelSecret(dataDir);
+  } catch {
+    // Without a channel credential this process cannot authenticate to
+    // anything. `ensureRunner` reports that properly; a preflight saying
+    // "nothing is here" would be a lie, so it says it found nothing it can act
+    // on and lets the real refusal come from the real place.
+    return { state: "none" };
+  }
+
+  const found = await adopt(dataDir, token);
+  if (found.kind === "none") {
+    return { state: "none" };
+  }
+  if (found.kind === "candidate") {
+    return {
+      state: "adoptable",
+      pid: found.candidate.handle.pid,
+      build: found.candidate.observed_build,
+    };
+  }
+
+  const retired = await retireForeignRunner(dataDir, found);
+  return retired.ok
+    ? { state: "retired", pid: found.pid, build: found.observed_build }
+    : { state: "held", pid: found.pid, build: found.observed_build, detail: retired.detail };
+}
+
+/**
+ * Ask a runner DASH cannot authenticate to, using the credential it recorded
+ * for itself (MAR-520).
+ *
+ * The sequence is deliberately the polite one all the way down. The session key
+ * is presented only after the published fingerprint says it is the right key,
+ * so a mismatch is reported as a mismatch rather than spent as a failed
+ * authentication attempt against a process somebody else may own. `stopRunner`
+ * is the same authenticated `POST /shutdown` DASH's own Stop uses.
+ *
+ * Every failure path ends in the same sentence, because there is only one thing
+ * a person can do about a runner nothing on this machine holds the credential
+ * for: restart the computer once. Saying it plainly is better than a technical
+ * refusal that reads as a bug, and much better than a `Stop-Process` suggestion
+ * — `AGENTS.md` forbids that for the reason a force-killed runner corrupted
+ * this project's real store once already.
+ */
+async function retireForeignRunner(
+  dataDir: string,
+  found: { pid: number; endpoint: string; observed_build?: string; fingerprint?: string },
+): Promise<{ ok: true } | { ok: false; detail: string }> {
+  const restart =
+    `Restart this computer once to clear it; DASH will not hard-terminate a runner that ` +
+    `is holding your agent history.`;
+  const found_it =
+    `DASH found runner pid ${String(found.pid)} ` +
+    `(${found.observed_build ?? "identity unavailable"}) already running against this data ` +
+    `directory, and it does not accept DASH's channel credential. DASH will not start a ` +
+    `second runner over the same records.`;
+
+  const session = readSessionKey(dataDir);
+  if (session === null) {
+    return {
+      ok: false,
+      detail: `${found_it} It recorded no credential of its own, so nothing here can ask it to stop. ${restart}`,
+    };
+  }
+  if (found.fingerprint !== undefined && channelSecretFingerprint(session) !== found.fingerprint) {
+    // The runner published which credential it is using and this is not it —
+    // a session key left by a *different* runner, most likely one that crashed.
+    return {
+      ok: false,
+      detail: `${found_it} The credential recorded beside it belongs to a different runner. ${restart}`,
+    };
+  }
+
+  const stopped = await stopRunner({
+    origin: IPC_ORIGIN,
+    endpoint: found.endpoint,
+    transport: found.endpoint.startsWith("\\\\") ? "pipe" : "unix",
+    pid: found.pid,
+    token: session,
+    adopted: true,
+    started_at: null,
+  });
+  if (!stopped.ok) {
+    return { ok: false, detail: `${found_it} ${stopped.detail} ${restart}` };
+  }
+  return { ok: true };
 }
 
 /**
