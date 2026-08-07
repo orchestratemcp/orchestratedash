@@ -57,6 +57,22 @@ export interface OAuthProvider {
   label: string;
   /** Public client id. Not a secret — see the note at the top of the file. */
   client_id: string;
+  /**
+   * The confidential half of the client, when the provider requires one
+   * (MAR-508).
+   *
+   * Google does: PKCE does not replace a client secret for Google's own
+   * Desktop app client type, and asked directly, with a deliberately invalid
+   * code and exactly the parameters `lib/oauth/flow.ts` sent before this
+   * field existed, Google refused with `client_secret is missing.` before it
+   * looked at the code at all.
+   *
+   * Undefined, never a required field: a provider that does not ask for one
+   * — the loopback proof provider, and any future provider that genuinely has
+   * none — must be able to say so by omission rather than by an empty string
+   * a careless caller could still send.
+   */
+  client_secret?: string;
   authorization_endpoint: string;
   token_endpoint: string;
   revocation_endpoint: string;
@@ -93,50 +109,69 @@ export interface OAuthProvider {
  * silently connect Calendar. That is deliberate — consenting to read mail is not
  * consenting to write calendar events, and one button that did both would be
  * DASH deciding the user meant more than they clicked.
+ *
+ * ## Where the client secret comes from (MAR-508)
+ *
+ * `DASH_GOOGLE_CLIENT_SECRET`, read fresh on every call rather than once at
+ * import — the same choice `loopbackProofOrigin` below makes, and for the same
+ * reason: a module-load-time read would be invisible to a test that sets the
+ * variable per case. It is never committed and never compiled in, unlike
+ * `client_id` — see the option this picked in MAR-508's own note: supplied
+ * locally, enough to execute the flow and the attended proof, prejudging
+ * neither the compiled-secret option ADR 0002 already flags as a present-tense
+ * problem nor the bring-your-own-client option MAR-471 owns.
+ * `docs/real-google-proof-runbook.md` documents the variable for whoever runs
+ * that proof next.
  */
-const GOOGLE: OAuthProvider = {
-  id: "google",
-  label: "Google",
-  client_id: "521961057282-69kbonobgup2vhhffqb2o6vds3figov7.apps.googleusercontent.com",
-  authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
-  token_endpoint: "https://oauth2.googleapis.com/token",
-  revocation_endpoint: "https://oauth2.googleapis.com/revoke",
-  permissions: {
-    "https://www.googleapis.com/auth/gmail.readonly": {
-      label: "Read the messages in your Gmail",
-      access: "read",
-    },
-    "https://www.googleapis.com/auth/gmail.compose": {
-      label: "Write and save Gmail drafts, and send them",
-      access: "write",
-    },
-    "https://www.googleapis.com/auth/calendar.readonly": {
-      label: "See the events in your calendar",
-      access: "read",
-    },
-    "https://www.googleapis.com/auth/calendar.events": {
-      label: "Create and change events in your calendar",
-      access: "write",
-    },
-  },
-  // `openid` and `email` together are what make the id token carry an address.
-  // Neither grants access to any user data beyond who the user is.
-  identity_scopes: ["openid", "email"],
-  authorization_params: {
-    // Without this Google returns a refresh token on the first authorization
-    // only, and never again for the same client and account. A user who
-    // disconnected and reconnected would get an access token that worked for an
-    // hour and then a connection that could never be renewed.
-    access_type: "offline",
-    // Forces the consent screen every time. The cost is a click on reconnect;
-    // the benefit is that `access_type: offline` reliably yields a refresh
-    // token, and that reconnecting is a moment the user actually sees what they
-    // are granting rather than being silently re-approved.
-    prompt: "consent",
-  },
-};
+function googleClientSecret(): string | undefined {
+  const value = process.env["DASH_GOOGLE_CLIENT_SECRET"];
+  return value !== undefined && value.length > 0 ? value : undefined;
+}
 
-const PROVIDERS: readonly OAuthProvider[] = [GOOGLE];
+function googleProvider(): OAuthProvider {
+  return {
+    id: "google",
+    label: "Google",
+    client_id: "521961057282-69kbonobgup2vhhffqb2o6vds3figov7.apps.googleusercontent.com",
+    client_secret: googleClientSecret(),
+    authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+    token_endpoint: "https://oauth2.googleapis.com/token",
+    revocation_endpoint: "https://oauth2.googleapis.com/revoke",
+    permissions: {
+      "https://www.googleapis.com/auth/gmail.readonly": {
+        label: "Read the messages in your Gmail",
+        access: "read",
+      },
+      "https://www.googleapis.com/auth/gmail.compose": {
+        label: "Write and save Gmail drafts, and send them",
+        access: "write",
+      },
+      "https://www.googleapis.com/auth/calendar.readonly": {
+        label: "See the events in your calendar",
+        access: "read",
+      },
+      "https://www.googleapis.com/auth/calendar.events": {
+        label: "Create and change events in your calendar",
+        access: "write",
+      },
+    },
+    // `openid` and `email` together are what make the id token carry an address.
+    // Neither grants access to any user data beyond who the user is.
+    identity_scopes: ["openid", "email"],
+    authorization_params: {
+      // Without this Google returns a refresh token on the first authorization
+      // only, and never again for the same client and account. A user who
+      // disconnected and reconnected would get an access token that worked for an
+      // hour and then a connection that could never be renewed.
+      access_type: "offline",
+      // Forces the consent screen every time. The cost is a click on reconnect;
+      // the benefit is that `access_type: offline` reliably yields a refresh
+      // token, and that reconnecting is a moment the user actually sees what they
+      // are granting rather than being silently re-approved.
+      prompt: "consent",
+    },
+  };
+}
 
 /* ---------------------------------------------------------------------- *
  * The loopback proof provider (MAR-458)
@@ -275,10 +310,10 @@ export function oauthProviderFor(manifestProvider: string): OAuthProvider | null
     return proofProvider();
   }
   const flowId = FLOW_BY_MANIFEST_PROVIDER[manifestProvider];
-  if (flowId === undefined) {
+  if (flowId !== "google") {
     return null;
   }
-  return PROVIDERS.find((provider) => provider.id === flowId) ?? null;
+  return googleProvider();
 }
 
 /** Look a flow up by its own id — used when reading a stored credential back. */
@@ -286,7 +321,7 @@ export function oauthProviderById(id: string): OAuthProvider | null {
   if (id === LOOPBACK_PROOF_PROVIDER_ID) {
     return proofProvider();
   }
-  return PROVIDERS.find((provider) => provider.id === id) ?? null;
+  return id === "google" ? googleProvider() : null;
 }
 
 /**

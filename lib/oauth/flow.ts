@@ -256,6 +256,7 @@ export async function exchangeAuthorizationCode(
     provider.token_endpoint,
     {
       client_id: provider.client_id,
+      ...(provider.client_secret !== undefined ? { client_secret: provider.client_secret } : {}),
       code: request.code,
       code_verifier: request.verifier,
       grant_type: "authorization_code",
@@ -312,6 +313,7 @@ export async function refreshAccessToken(
     provider.token_endpoint,
     {
       client_id: provider.client_id,
+      ...(provider.client_secret !== undefined ? { client_secret: provider.client_secret } : {}),
       refresh_token: credential.refresh_token,
       grant_type: "refresh_token",
     },
