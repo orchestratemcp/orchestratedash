@@ -1430,6 +1430,91 @@ MAR-506, which also names the product gap it exposed: a person is told "The
 runner answered 500", by an application that has an entire recovery vocabulary
 for damage to its *own* store and none for the runner's.
 
+## The refactor the ADR predicted, done the way it said (MAR-488)
+
+**Open on a PR, not merged, and it is one slice of the issue.** No pull
+scheduler, no host event-file contract, no reconstruction from a host, no
+artifact retrieval over `ssh`. What is built is the piece the ADR 0007 audit
+named as the highest risk in the epic.
+
+**The guarantee was being held by an accident of control flow.**
+`drainTelemetry`, `drainArtifacts` and `syncWorkspace` each opened with
+`if (runner === null) { return; }`, where `runner` is the *local*
+`RunnerHandle`. They were not written against a channel — they were hardcoded to
+the one runner this machine spawned. And `POST /broker/drain` is a neighbour of
+`/telemetry/drain` and `/artifacts/drain` in `runner/server.ts`, on the same
+authenticated channel, answering the same shape.
+
+The audit wrote the failure down before anybody could commit it: generalise the
+three to take a channel, and `/broker/drain` comes along **because it was in the
+same loop**, in a commit whose message says "pull remote run evidence". No line
+would say "extend the broker."
+
+**So the parameter type is the fix.** `lib/agent-dom/evidence.ts` takes a
+`RemoteRunnerChannel` — MAR-484's `RunnerChannel<EvidenceRoute>` — and
+`EvidenceRoute` carries neither brokered route, so `channel.call("/broker/drain")`
+inside that file is a **compile error** and the fourth drain cannot be written
+there at all.
+
+**Watched failing.** Adding exactly that line produces
+`TS2345: Argument of type '"/broker/drain"' is not assignable to parameter of
+type '"/health" | "/agents" | "/telemetry/drain" | …'`. The line was removed and
+typecheck is clean again. MAR-465's rule — a gate nobody has seen fail is not
+known to work — applied to a type.
+
+Three assertions, none of which reads a flag: a `@ts-expect-error` at a call
+site typed the way the drains are (an unused expected error is itself an error,
+so it cannot rot into a tautology); a whole pull recording every route it asked
+for and checking the set against `BROKER_ROUTES`, which is the capability
+observed absent rather than declared absent; and MAR-484's existing scan of
+`lib/` and `electron/` for the route strings in code, which already covers the
+new module.
+
+**The issue says `ControlChannel`, and that is the wrong vehicle** — worth
+saying rather than quietly substituting. `ControlChannel` is *per agent*: it
+carries a uri, a token and an optional socket path for one agent's own control
+route, while these three drains are per *runner*. More decisively it carries a
+**URI**, and a URI is a string types cannot see into — `${uri}/broker/drain`
+would compile anywhere. Generalising over it would have produced the exact
+refactor the audit warned about, while looking like the fix.
+
+**Honest Runs rows, and the argument is about zeros.** The `dropped` counts the
+runner reports were written to a console line and thrown away: the number that
+says the record is incomplete was the one number no surface could see. They are
+recorded now, in `evidence_pulls` — one row per source, overwritten, because
+this is a state and not a history — and `lib/copy/evidence.ts` turns them into
+the notice above the list.
+
+The asymmetry is the whole design. For a runner on a machine **the user
+administers**, the notice is **unconditional**: that host keeps working while
+DASH is closed, and the evidence it has already discarded increments no counter,
+so a zero is not evidence of completeness. For the runner on **this** machine it
+is conditional, because DASH spawned that process and a buffer overflowing is a
+real, bounded, reportable event. ADR 0005's distinction between a decision DASH
+made and an attempt nobody adjudicated, pointed at a record instead of a
+request.
+
+It quotes the **oldest** look across sources, because "DASH last looked" is only
+true of a list if it is true of every source in it, and the flattering answer
+would be the most recent. It never reads as a fault — the tests forbid *error*,
+*failed*, *problem*, *broken* and *corrupt* on every sentence the module can
+produce, and forbid "complete record" — because a permanent honest caveat
+rendered as a failure teaches people to ignore failures. And the table is shaped
+like `broker_lapses`: no agent, no run, no artifact id, so no row in it can be
+joined into something that reads like a run.
+
+Evidence: `pnpm typecheck` clean, `brand:check` green, `[state] valid`, 88 test
+files / 1644 passed / 8 skipped / 0 failed from PowerShell with 42 new cases,
+and `pnpm build:renderer` green for the one `app/` change.
+`tests/store-sqlite.test.ts`'s pinned migration count and table list were
+updated by hand, which is that test working.
+
+**Merged is the ceiling and nothing here has reached a host.** No `ssh` runs in
+any test; the remote path is exercised only by a scripted channel. What the
+installed shell *does* exercise is the local path through the same generalised
+code, so a regression in the refactor fails the mandatory gate rather than
+waiting for a VPS. MAR-489 owns the attended half.
+
 ## UX principle
 
 The home view answers three questions: what can I run, what is happening now, and what needs my decision? Connections are capabilities with scopes and receipts, not a wall of OAuth settings. Every run should make inputs, actions, outputs, gates, and failures inspectable.

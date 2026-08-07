@@ -575,6 +575,41 @@ const MIGRATIONS: readonly Migration[] = [
       assign.run(oFor(name), name);
     }
   },
+  // MAR-488. When DASH last looked at a runner, and what was already gone.
+  //
+  // **A table about DASH's own reading, not about any agent's work**, which is
+  // why it keys on the source rather than on an agent and holds no run id. Every
+  // other evidence table here answers "what happened"; this one answers "how
+  // complete is the answer above", and ADR 0005's argument for keeping
+  // `broker_lapses` structurally unmistakable applies unchanged — a row here
+  // must not be joinable into something that reads like a run.
+  //
+  // One row per source, overwritten, because this is a state and not a history.
+  // The question a Runs page asks is "when did DASH last look and what had the
+  // buffer already destroyed by then", and a log of every five-second poll on a
+  // machine that has been open for a week would answer it worse and cost more.
+  //
+  // `dropped` counts existed before this table and were written to a console
+  // line and thrown away. That is the defect: the number that says the record is
+  // incomplete was the one number no surface could see.
+  `
+  CREATE TABLE evidence_pulls (
+    source              TEXT PRIMARY KEY,
+    -- this_machine | another_machine. Not the transport: what the record is a
+    -- record OF. A host the user administers keeps running while DASH is closed
+    -- and can lose evidence before DASH ever asks; the runner DASH spawned
+    -- cannot do either without DASH noticing.
+    kind                TEXT NOT NULL,
+    -- DASH's own clock when it asked. Deliberately not the runner's
+    -- observed_at, which workspace_artifacts already carries and which answers a
+    -- different question.
+    observed_at         TEXT NOT NULL,
+    reached             INTEGER NOT NULL,
+    telemetry_dropped   INTEGER NOT NULL,
+    artifacts_dropped   INTEGER NOT NULL,
+    workspace_truncated INTEGER NOT NULL
+  );
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

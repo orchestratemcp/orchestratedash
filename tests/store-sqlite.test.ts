@@ -75,11 +75,12 @@ describe("schema", () => {
     // artifacts, 4 is MAR-464's decision-identity columns, 5 is MAR-458's
     // permission broker, 6 is MAR-467's lapse table and delivery column, 7 is
     // MAR-434's projection of the runner's file-backed artifacts, 8 is MAR-500's
-    // avatar column and its backfill.
+    // avatar column and its backfill, 9 is MAR-488's record of DASH's own
+    // reading.
     // Asserted as a number rather than as MIGRATIONS.length so that appending a
     // migration is a deliberate edit here too.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(9);
+    expect(version.user_version).toBe(10);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -99,6 +100,7 @@ describe("schema", () => {
     expect(tables).toContain("broker_grants");
     expect(tables).toContain("broker_audit");
     expect(tables).toContain("workspace_artifacts");
+    expect(tables).toContain("evidence_pulls");
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -125,6 +127,8 @@ describe("schema", () => {
     // CREATE: re-running it against a column that is still there fails on
     // the duplicate rather than on anything this test is about.
     first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
+    // And migration 9 (MAR-488), DASH's record of its own reading.
+    first.db.db().exec("DROP TABLE evidence_pulls");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -160,6 +164,8 @@ describe("schema", () => {
     // CREATE: re-running it against a column that is still there fails on
     // the duplicate rather than on anything this test is about.
     first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
+    // And migration 9 (MAR-488), DASH's record of its own reading.
+    first.db.db().exec("DROP TABLE evidence_pulls");
     first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN runner_observed_at");
     first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN decision_identity");
     first.db.db().exec("DROP TABLE broker_audit");
@@ -199,6 +205,8 @@ describe("schema", () => {
     // CREATE: re-running it against a column that is still there fails on
     // the duplicate rather than on anything this test is about.
     first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
+    // And migration 9 (MAR-488), DASH's record of its own reading.
+    first.db.db().exec("DROP TABLE evidence_pulls");
     first.db.db().exec("DROP TABLE broker_audit");
     first.db.db().exec("DROP TABLE broker_grants");
     // And migration 6 (MAR-467), which builds on migration 5's broker_audit and
@@ -233,6 +241,8 @@ describe("schema", () => {
     // CREATE: re-running it against a column that is still there fails on
     // the duplicate rather than on anything this test is about.
     first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
+    // And migration 9 (MAR-488), DASH's record of its own reading.
+    first.db.db().exec("DROP TABLE evidence_pulls");
     first.db.db().exec("DROP TABLE broker_lapses");
     first.db.db().exec("ALTER TABLE broker_audit DROP COLUMN delivered");
     first.db.closeDb();
@@ -273,6 +283,8 @@ describe("schema", () => {
     // CREATE: re-running it against a column that is still there fails on
     // the duplicate rather than on anything this test is about.
     first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
+    // And migration 9 (MAR-488), DASH's record of its own reading.
+    first.db.db().exec("DROP TABLE evidence_pulls");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -394,7 +406,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(9);
+    ).toBe(10);
   });
 
   it("preserves pending tasks and approvals across a DASH restart", async () => {

@@ -31,18 +31,14 @@
  */
 
 import { resolveControlLocation } from "../lib/agent-dom/control-location";
+import { pullEvidence } from "../lib/agent-dom/evidence";
 import { noAdapter, type AgentDomAdapter } from "../lib/agent-dom/runner";
+import { localRunnerChannel } from "../lib/agent-dom/runner-channel";
 import { putAgentDomState } from "../lib/agent-dom/store";
 import { fetchAgentDomState, httpAdapter, type ControlChannel } from "../lib/agent-dom/transport";
 import { isManifestV2 } from "../lib/contracts";
 import { isSecureStoreError, type SecureStore } from "../lib/secure-store";
-import {
-  ingestArtifacts,
-  ingestEvents,
-  listAgentNames,
-  readAgentManifest,
-  syncWorkspaceArtifacts,
-} from "../lib/store";
+import { listAgentNames, readAgentManifest, recordEvidencePull } from "../lib/store";
 import { runnerFetch, type RunnerHandle } from "./runner-process";
 
 /**
@@ -76,10 +72,16 @@ interface HostedAgent {
   agent_id: string;
 }
 
-interface HostedTelemetry {
-  agent_id: string;
-  event: unknown;
-}
+/**
+ * The source id DASH records its own reading of the local runner under
+ * (MAR-488).
+ *
+ * A constant rather than a derived name because there is exactly one runner on
+ * this machine, by design — `electron/runner-process.ts` adopts the running one
+ * rather than starting a second. A host gets its own id from its host record
+ * when MAR-498's surface can produce one.
+ */
+const LOCAL_SOURCE = "local";
 
 export function createAgentChannels(
   runner: RunnerHandle | null,
@@ -131,201 +133,42 @@ export function createAgentChannels(
   }
 
   /**
-   * Drain hosted telemetry on the same authenticated IPC channel as state.
+   * One pass over the local runner's evidence routes (MAR-488).
    *
-   * The runner only frames and buffers candidates. `ingestEvents` remains the
-   * one contract boundary, validates every item independently and binds each
-   * valid event to the supervisor identity carried beside it.
+   * The three drains this replaced lived here and each opened with
+   * `if (runner === null) { return; }`, hardcoded to the one runner this machine
+   * spawned. `lib/agent-dom/evidence.ts` holds them now, written against a
+   * channel — so a runner on a host is pulled by the same implementation, and
+   * `/broker/drain` cannot join them because the channel type they take does not
+   * carry it. ADR 0007's load-bearing paragraph is about exactly this refactor;
+   * the module's own header is where it is answered.
+   *
+   * The runner still resolves to `null` when this machine has none, and the
+   * check stays here rather than moving into the module: a source that does not
+   * exist has no reading to record, and writing "DASH looked and found nothing"
+   * about a runner that was never started would be the kind of false completeness
+   * this whole slice is against.
    */
-  async function drainTelemetry(): Promise<void> {
+  async function pullLocalEvidence(): Promise<void> {
     if (runner === null) {
       return;
     }
 
-    try {
-      const response = await runnerFetch(runner)(`${runner.origin}/telemetry/drain`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${runner.token}` },
-        signal: AbortSignal.timeout(3_000),
-      });
-      if (!response.ok) {
-        return;
-      }
-
-      const body = (await response.json()) as { events?: unknown; dropped?: unknown };
-      if (typeof body.dropped === "number" && body.dropped > 0) {
-        log(
-          `[dash-shell] runner telemetry buffer dropped ${String(body.dropped)} ` +
-            `candidate${body.dropped === 1 ? "" : "s"} before this poll`,
-        );
-      }
-      if (!Array.isArray(body.events) || body.events.length === 0) {
-        return;
-      }
-
-      const batch: HostedTelemetry[] = [];
-      body.events.forEach((candidate, index) => {
-        if (
-          typeof candidate !== "object" ||
-          candidate === null ||
-          typeof (candidate as { agent_id?: unknown }).agent_id !== "string" ||
-          !Object.hasOwn(candidate, "event")
-        ) {
-          log(
-            `[dash-shell] rejected runner telemetry envelope at index ${String(index)}: invalid provenance`,
-          );
-          return;
-        }
-        batch.push(candidate as HostedTelemetry);
-      });
-
-      const result = ingestEvents(
-        batch.map((candidate) => candidate.event),
-        { sourceAgents: batch.map((candidate) => candidate.agent_id) },
-      );
-      for (const rejection of result.rejected) {
-        log(
-          `[dash-shell] rejected runner-hosted telemetry event at index ${String(rejection.index)}: ` +
-            rejection.errors.slice(0, 3).join("; "),
-        );
-      }
-    } catch {
-      // Delivery is fire-and-forget. A failed drain must not stop the poll loop,
-      // and the agent's own events.jsonl remains the primary record.
-    }
-  }
-
-  /**
-   * Drain what hosted agents produced, on the same channel as their telemetry
-   * (MAR-457).
-   *
-   * Separate from `drainTelemetry` for the reason the runner keeps two routes:
-   * events and artifacts are validated against different schemas at different
-   * boundaries, and `ingestArtifacts` is the one for these. It binds each
-   * artifact to the supervisor identity carried beside it, so a hosted child
-   * cannot publish a digest under another agent's name.
-   *
-   * This function is the piece that was missing when the installed smoke first
-   * ran: the buffer existed, the ingest existed, the view existed, and nothing
-   * connected them. A unit test that called `drainArtifacts()` on the supervisor
-   * directly passed the whole time, because the gap was the absence of a caller
-   * rather than a fault in anything either side of it.
-   */
-  async function drainArtifacts(): Promise<void> {
-    if (runner === null) {
-      return;
-    }
+    const pull = await pullEvidence(localRunnerChannel(runner), {
+      source: LOCAL_SOURCE,
+      kind: "this_machine",
+      log,
+    });
 
     try {
-      const response = await runnerFetch(runner)(`${runner.origin}/artifacts/drain`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${runner.token}` },
-        signal: AbortSignal.timeout(3_000),
-      });
-      if (!response.ok) {
-        return;
-      }
-
-      const body = (await response.json()) as { artifacts?: unknown; dropped?: unknown };
-      if (typeof body.dropped === "number" && body.dropped > 0) {
-        log(
-          `[dash-shell] runner artifact buffer dropped ${String(body.dropped)} ` +
-            `candidate${body.dropped === 1 ? "" : "s"} before this poll`,
-        );
-      }
-      if (!Array.isArray(body.artifacts) || body.artifacts.length === 0) {
-        return;
-      }
-
-      const batch: Array<{ agent_id: string; artifact: unknown }> = [];
-      body.artifacts.forEach((candidate, index) => {
-        if (
-          typeof candidate !== "object" ||
-          candidate === null ||
-          typeof (candidate as { agent_id?: unknown }).agent_id !== "string" ||
-          !Object.hasOwn(candidate, "artifact")
-        ) {
-          log(
-            `[dash-shell] rejected runner artifact envelope at index ${String(index)}: invalid provenance`,
-          );
-          return;
-        }
-        batch.push(candidate as { agent_id: string; artifact: unknown });
-      });
-
-      const result = ingestArtifacts(
-        batch.map((candidate) => candidate.artifact),
-        { sourceAgents: batch.map((candidate) => candidate.agent_id) },
-      );
-      for (const rejection of result.rejected) {
-        log(
-          `[dash-shell] rejected runner-hosted artifact at index ${String(rejection.index)}: ` +
-            rejection.errors.slice(0, 3).join("; "),
-        );
-      }
+      // Recorded on every pass, including the ones with nothing to disclose:
+      // "when DASH last looked" is half the sentence the Runs page carries, and
+      // it is only true if it is written when the answer is boring.
+      recordEvidencePull(pull);
     } catch {
-      // Fire-and-forget, exactly as telemetry is. The digest in the agent's own
-      // reports folder remains the primary record, so a failed drain costs a
-      // rendering and not the user's data.
-    }
-  }
-
-  /**
-   * Take up the runner's picture of its file-backed artifacts (MAR-434).
-   *
-   * A GET of the whole index rather than a drain, because availability is a
-   * state and not an event — `runner/server.ts` says why at the route. So this
-   * runs on every poll and overwrites, and a poll that fails leaves the previous
-   * answer in place with its own `observed_at` rather than emptying the panel.
-   *
-   * The provenance binding is the same one `drainArtifacts` applies and is worth
-   * as much: `sourceAgents` comes from the record's own `agent` field here
-   * rather than from a transport envelope, because unlike a drained candidate
-   * this row was **written by the runner**, not forwarded by it. The runner is
-   * what bound the agent identity in the first place, at the moment the child
-   * published the file. Re-deriving it from the same field it came from would be
-   * a check that cannot fail, so it is not performed and this comment is here
-   * instead of one.
-   */
-  async function syncWorkspace(): Promise<void> {
-    if (runner === null) {
-      return;
-    }
-
-    try {
-      const response = await runnerFetch(runner)(`${runner.origin}/workspace-artifacts`, {
-        method: "GET",
-        headers: { authorization: `Bearer ${runner.token}` },
-        signal: AbortSignal.timeout(3_000),
-      });
-      if (!response.ok) {
-        // 501 is the ordinary answer from a runner built without a workspace,
-        // and is not worth a log line on every poll.
-        return;
-      }
-
-      const body = (await response.json()) as { artifacts?: unknown; truncated?: unknown };
-      if (body.truncated === true) {
-        log(
-          "[dash-shell] the runner's artifact index was truncated; the Outputs panel is not " +
-            "showing every file this installation has produced",
-        );
-      }
-      if (!Array.isArray(body.artifacts)) {
-        return;
-      }
-
-      const result = syncWorkspaceArtifacts(body.artifacts);
-      for (const rejection of result.rejected) {
-        log(
-          `[dash-shell] rejected runner workspace artifact at index ${String(rejection.index)}: ` +
-            rejection.errors.slice(0, 3).join("; "),
-        );
-      }
-    } catch {
-      // Fire and forget, as the two drains above are. The runner's own index is
-      // the record; this is a copy for rendering, and a failed refresh costs a
-      // page being five seconds behind.
+      // The store being unwritable is already reported by everything else that
+      // touches it. A poll that could not record its own reading must not be a
+      // poll that stops.
     }
   }
 
@@ -369,9 +212,7 @@ export function createAgentChannels(
 
     async poll(): Promise<void> {
       await refresh();
-      await drainTelemetry();
-      await drainArtifacts();
-      await syncWorkspace();
+      await pullLocalEvidence();
 
       for (const agentId of listAgentNames()) {
         // Warm the vault lookup so `channelFor` can stay synchronous on the
