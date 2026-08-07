@@ -188,6 +188,17 @@ const dashShell = {
     send("workspace.selectInput", { ...args }),
   dispatchAgentTask: (args: { agent_id: string; task_id: string; run_id: string }) =>
     send("workspace.dispatchTask", { ...args }),
+  /**
+   * Save one of an agent's outputs where the user asks (MAR-434).
+   *
+   * Two opaque ids and nothing else. There is no path in the payload and none in
+   * the reply: main raises the operating system's own save dialog, so the
+   * destination is chosen in a window this renderer did not draw and cannot
+   * read. A named method rather than a generic `workspace(action, target)`, for
+   * the reason the connection trio above are three methods.
+   */
+  downloadOutput: (args: { agent_id: string; artifact_id: string }) =>
+    send("workspace.download", { ...args }),
 
   approve: (args: AgentCommandArgs) => send("agent.approve", fields(args, APPROVAL_FIELDS)),
   reject: (args: AgentCommandArgs) => send("agent.reject", fields(args, APPROVAL_FIELDS)),

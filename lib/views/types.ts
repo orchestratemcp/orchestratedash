@@ -506,6 +506,28 @@ export type WorkspaceView =
        */
       latest_digest: RunArtifact | null;
       latest_digest_grounding: GroundingAnalysis | null;
+      /**
+       * Everything the run that produced `latest_digest` produced, with each
+       * output's availability resolved by the same producer the run detail page
+       * uses (MAR-434).
+       *
+       * **Not "every output this agent has ever made".** The workspace answers
+       * "what happened last time?", and a list that grew without bound would
+       * turn the page a person opens to check on an agent into an archive. The
+       * run detail page is where a specific run's outputs live, and every card
+       * here links there.
+       *
+       * Empty rather than absent when there are none, so the panel can say
+       * "nothing was produced" — which is a different thing to learn from a
+       * panel that is not shown, and is the distinction
+       * `app/_components/outputs.tsx` already argues for.
+       */
+      outputs: ArtifactCardView[];
+      /**
+       * The run those outputs belong to, for the link to its detail page. Null
+       * exactly when `outputs` is empty.
+       */
+      outputs_run_id: string | null;
       /** What the manifest declares it may do without an account. */
       permissions: PermissionGrant[];
       /**

@@ -365,13 +365,9 @@ has no manifest to declare.
 - **The host helper's verb set is not specified here.** It belongs with the
   deploy bridge, where there is something to validate against, for the reason
   ADR 0006 gave for not building the import validator alone.
-- **What runs on the VPS is not fully decided.** This ADR assumes the remote
-  process is *this repository's runner*, which makes the evidence plane free and
-  is the reason the control plane costs one file. Whether the runner can be
-  shipped standalone — it is bundled into the Electron app as
-  `dist/electron/runner.mjs`, and a host needs a Node runtime the MSIX install
-  does not provide there — is unowned by any current issue and is named in the
-  breakdown rather than answered here.
+- ~~**What runs on the VPS is not fully decided.**~~ **Answered in amendment 1
+  (MAR-497).** The remote process is this repository's runner, shipped as a
+  standalone artifact, and the host supplies Node.
 - **Restart-on-boot is not decided.** `runner/README.md` item 3 records that
   there is no restart policy anywhere in DASH, deliberately. A host that
   restarts an agent DASH cannot see is a supervision claim DASH cannot make, and
@@ -379,3 +375,252 @@ has no manifest to declare.
 - **Retention on the host is not decided**, and item 4 already says nothing
   prunes anything. On a machine the user pays for by the gigabyte that stops
   being a deferred nicety.
+
+## Amendment 1 (MAR-497): what runs on the VPS, and who supplies Node
+
+Status: Accepted. Date: 2026-08-06.
+
+This ADR's third follow-up said the question was unowned. It is owned now, and
+the answer is two sentences plus the reason the second one is not obvious.
+
+> **The remote process is this repository's runner, built as a standalone
+> artifact. The host supplies the Node runtime; DASH does not ship one.**
+
+### The artifact, and the one file nobody would predict
+
+`pnpm build:runner-standalone` writes `dist/runner-standalone/`: an entry point,
+the runner bundle, the frozen contracts, a `package.json` and a README. Started
+with `node start.mjs`. Nothing else — no wrapper script, no service unit, no
+installer.
+
+The contracts directory is the part worth naming. `lib/contracts.ts` finds the
+schemas by walking up from its own module location, which resolves to the
+repository root in a development tree and to the resource directory in a
+package. On a host there is nothing above the artifact, so the schemas have to
+be **inside** it, and an artifact that omitted them would not fail at build time
+or at start time — it would fail the first time an agent was asked to run. That
+is why `tests/runner-standalone.test.ts` copies the artifact out of this
+repository before starting it: run in place, a missing `contracts/` is silently
+satisfied by the repository above, and the test would prove nothing.
+
+### Why the host supplies Node, and why that is a real choice rather than the lazy one
+
+The lazy reading is that the runner is "plain Node already", so there is nothing
+to decide. That is true about the *language* and false about the *runtime*.
+`runner/store.ts` opens its database with `DatabaseSync` from `node:sqlite` —
+standard library rather than a native driver, which is why the runner has no
+compiled addon to rebuild against each Electron ABI and is a trade this project
+should keep making. What it costs is a version floor. `node:sqlite` did not
+exist before Node 22.5 and spent its first releases behind
+`--experimental-sqlite`, so a host with an older Node fails deep inside module
+evaluation with a stack trace naming files its operator has never seen.
+
+The alternative was shipping a runtime, and it fails on ADR 0006's own terms
+rather than on size. Shipping Electron to a headless VPS means shipping a
+desktop GUI stack to run a process that draws nothing. Shipping a Node tarball
+per host architecture means **DASH owning a runtime it does not version, does not
+patch and cannot see** — on a machine the user pays for and is not watching,
+which is the exact phrase this ADR uses to reject option 2. A security release
+in a runtime DASH placed there and never updates is a worse arrangement than one
+the host's own package manager owns.
+
+So the host supplies it, and the artifact **probes and refuses** rather than
+discovering the problem later. `runner/host-runtime.ts` checks the major version
+against a floor and then actually resolves `node:sqlite`, because a version
+comparison alone would be this repository carrying a changelog fact it cannot
+verify on the machine it is refusing. The shape is `prepareEndpoint`'s and the
+argument is this ADR's own, made above about the `ssh` binary: probe for what the
+host must have and say so plainly. An unsuitable host exits **78** (`EX_CONFIG`),
+which a deploy verb can branch on without parsing English out of a log; the
+runner's own failures still exit 1.
+
+The floor is **Node 24**, and it is a support claim rather than the earliest
+version that might work. 22.5 is where the module appeared and is deliberately
+not the number: a floor admitting a release where the module needs a
+command-line flag would make the documented start command wrong on a host that
+satisfies the floor.
+
+### `dash:node` already means the right thing on a host, and that was not obvious
+
+MAR-497's scope asked what `"command": "dash:node"` means on a machine with no
+Electron. The answer is better than the question expects and is worth writing
+down because the sentinel *reads* as Electron-specific.
+
+`resolveSpawnCommand` returns **the spawning process's own `execPath`** plus
+`ELECTRON_RUN_AS_NODE=1`. On this machine the spawning process is the runner
+inside the Electron binary, so the sentinel resolves to Electron-as-Node. On a
+host the spawning process is the standalone runner under the host's own Node, so
+it resolves to that — and the environment variable is a flag plain Node has no
+opinion about.
+
+So the sentinel needs no host-specific branch, and the reason it exists carries
+over intact: it was written because the MSIX install root is version-stamped and
+a registration holding a real path stops working at the first update, and a
+registration deployed to a host must not name one either. That matters
+immediately rather than eventually — **the sample agent is registered with
+exactly this sentinel**, and it is the first thing anybody would deploy.
+
+`tests/runner-standalone.test.ts` proves it by starting a real child under the
+standalone runner rather than by reading the resolver, because the question is
+whether the process runs.
+
+### The host's data directory is hardened, and that is new rather than inherited
+
+On Windows the runner's data directory sits under a user profile whose ACL
+already excludes other principals. A VPS home directory is ordinarily
+world-readable, and this directory holds the channel credential, the database and
+any file a person handed to an agent. So the entry point creates it and applies
+`hardenOwnerOnly`, which is `runner/channel-secret.ts`'s existing proven-ACL
+discipline pointed at a directory, and **refuses to start if it cannot prove
+it** — the same rule, for the same reason, one machine over.
+
+### A correction this forced, and it was load-bearing
+
+`runner_build` is what DASH compares before adopting a runner. The algorithm
+hashed `path.relative` output and raw file bytes, both platform-dependent, which
+nothing had noticed because only one machine ever computed it. A standalone
+artifact built on Linux beside a shell built on Windows, from the identical
+commit, would have reported **different** identities — so "the host is running
+the build this DASH shipped" would have been false in the only situation anybody
+would ask it. `scripts/runner-build-id.mjs` is now the one implementation, and it
+folds path separators to `/` and CRLF to LF. Every input is TypeScript or JSON,
+so there is no binary to corrupt.
+
+### What this does not decide, still
+
+**Restart-on-boot remains undecided**, and the artifact deliberately ships no
+service unit. `runner/README.md` item 3 records that there is no restart policy
+anywhere in DASH on purpose, and a systemd file chosen in passing here would be
+DASH making a supervision claim about a machine it cannot see. **Retention on
+the host remains undecided**, and item 4 still says nothing prunes anything.
+
+**And nothing here is proven on a host.** The artifact starting under a plain
+Node, on a directory tree containing nothing but itself, serving a task over its
+own socket and stopping through the authenticated route, is proven in CI on
+every push. `ssh`, the deploy verbs and somebody's actual VPS are not, and under
+ADR 0004 they never can be by a blocking gate. MAR-489 owns that proof and it is
+attended and dated, permanently.
+
+## Amendment 2 (MAR-484): the exclusion is structural now, and here is what breaks if it is undone
+
+Status: Accepted. Date: 2026-08-06.
+
+*(This amendment is numbered on the assumption that MAR-497's amendment 1 lands
+first. They are independent appends to this file.)*
+
+The load-bearing paragraph above is a finding about a file that did not exist.
+It exists now — `lib/agent-dom/runner-channel.ts` — and the mechanism is worth
+writing down, because the failure mode this ADR describes is somebody
+*simplifying* the guard rather than arguing against it.
+
+### What makes it impossible, before any type says so
+
+**A broker-capable channel is built on `ipcFetch`, and `ipcFetch` dials a
+`socketPath`.** There is no host in it, no name to resolve, and no route to a
+network: `node:http` given a `socketPath` reaches an OS-local endpoint or it
+reaches nothing, and the URL it carries uses the reserved `.invalid` TLD so a
+leak into a real `fetch` fails closed. That is a fact about where the bytes can
+physically go — the standard ADR 0002 amendment 1 set — and the types are that
+fact made checkable in an editor.
+
+### Two guards, and they are not the same guard
+
+`RunnerChannel<Route>` takes a **route** rather than a URL, because
+`${origin}/broker/drain` is a string and types cannot see into it. `call` is a
+property with a function type and never a method: TypeScript checks method
+parameters *bivariantly* even under `strictFunctionTypes`, so the method
+spelling would let a narrow-routed channel satisfy a wide-routed one and the
+whole module would be decoration.
+
+On top of that, `LocalRunnerChannel` carries a phantom `unique symbol` the
+module does not export, so no other module can produce the type without a
+deliberate cast, and `localRunnerChannel` — which takes an OS-local endpoint —
+is the only constructor.
+
+Both were watched failing, which is the standard MAR-465 set:
+
+| Change | What goes red |
+| --- | --- |
+| Widen the remote channel's route set | the call-site assertion (TS2578) |
+| Remove the capability brand alone | **nothing** — contravariance still excludes it |
+| Both | both assertions |
+
+So the brand earns its cast by surviving somebody deciding the two route sets
+should be the same. A third guard scans `lib/` and `electron/` for the route
+strings in code — comments are stripped, because the file explaining *why* it
+cannot carry them is the last place that should be punished — which catches a
+hand-rolled `fetch` that bypassed the channel entirely.
+
+### The deploy plane's version of "never what to run"
+
+`ssh` takes its options as argv, and argv has no quoting layer to get wrong. An
+address of `-oProxyCommand=…` is not an address; it is a flag, and `ssh` reads
+it as one however careful the surrounding code was. So `lib/hosts.ts` refuses
+any component reaching argv that begins with `-`, as its own named problem
+rather than folded into "malformed", and allowlists the rest.
+
+`sshArgv`'s options are each a decision and the absences matter as much as the
+presences. `BatchMode=yes`, because a prompt from a process with no terminal is
+a hang in the poll loop. `StrictHostKeyChecking=yes` against **DASH's own**
+`known_hosts` and never the user's — an entry DASH added to `~/.ssh` would
+outlive DASH and change how the person's own `ssh` behaves, and DASH cannot
+vouch for what is already in there. Not `accept-new`, which would silently trust
+a new key the first time an address changed. `IdentitiesOnly=yes` and
+`IdentityAgent=none`, so exactly one key is offered and the `ssh-agent` this ADR
+declined cannot be reintroduced by a config file elsewhere on the machine. And
+**no `-L`, `-R` or `-D`**: option 2 was rejected for MAR-430's reason, and the
+way that stays true is that the flag is never passed.
+
+**The verb set is closed and has exactly one member today.** This ADR said
+specifying it "belongs with the deploy bridge, where there is something to
+validate against", so `connect` — the control plane's, which is the plane
+MAR-484 builds — is the only one written. The other five would be vocabulary
+for an implementation that does not exist.
+
+### Key custody, stated as an absence
+
+The private key is created by the machine's own `ssh-keygen`, protected with
+`runner/channel-secret.ts`'s `hardenOwnerOnly` — the same function, not a second
+implementation, which is what keeps the Swedish-`Administratör` bug from coming
+back in a new file — and **proven again immediately before every use**, because
+an ACL that was right once is a property of a file at a moment.
+
+No passphrase, and the reason is that a passphrase on a key DASH uses unattended
+would have to be stored where DASH can read it: a second credential protecting
+the first one, kept beside it.
+
+The strongest claim available is an absence, so it is the one made:
+**`electron/ssh-host.ts` has no function that returns a private key.** It can
+create one, protect one, prove one, and name the path `ssh` should read. DASH
+cannot leak what it never reads, and a test asserts it over the module's own
+exports rather than trusting a header — which is where somebody would add a
+reader, because the deploy plane will one day want to "just check" the key.
+
+Only the **public** half is returned, because that is the one thing that should
+travel: the user pastes it into the host's `authorized_keys`.
+
+### One connection per request
+
+`ssh` is spawned per request rather than pooled and multiplexed. A pool would be
+faster and would make the failure model much worse — a half-dead `ssh` fails
+requests in ways that look like a runner problem, and a pool needs a health
+model DASH does not have for a machine it polls every few seconds anyway.
+
+### What is proven, and what is untouched
+
+`tests/ssh-fetch.test.ts` runs the real `httpAdapter` and `fetchAgentDomState`
+over a child that speaks HTTP on its own stdio: the byte ceiling, the abort
+path, the `unavailable`/`failed` split and the never-quote-the-error rule, all
+unchanged, because they hang off the injectable `fetch` this ADR predicted they
+would. **The only variable between that and the attended proof is which process
+is on the other end of the pipe.**
+
+`lib/agent-dom/transport.ts`, `runner/server.ts` and `runner/endpoint.ts` are
+untouched, as this ADR said they would be. `electron/agent-adapters.ts` is
+untouched too, and deliberately: generalising its drains is MAR-488's work, and
+it is now safe to do — which was the entire point.
+
+**Nothing here has reached a host.** No `ssh` runs in any test, no host record
+is persisted yet, and no surface connects one; that is MAR-498. What is proven
+is the dialer, the record's refusals, the command's shape and the key's custody.
+ADR 0004 keeps the rest attended, permanently.

@@ -12,6 +12,7 @@ that had never executed.
 | `data-dir.ts` | Points the store at `userData`. **Exists for its import position** — see below. |
 | `runner-process.ts` | Starts, adopts and stops the bundled runner (MAR-415). |
 | `agent-adapters.ts` | Which channel reaches which agent, and the state poller. |
+| `ssh-host.ts` | The key DASH holds for a host, and the `ssh` it holds it for (MAR-484). |
 | `smoke.ts` | The MAR-424 proof harness. Not part of the shipped shell. |
 | `smoke-identity.ts` | Gives the harness the app name a real launch would have. |
 

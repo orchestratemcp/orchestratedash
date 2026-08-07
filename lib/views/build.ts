@@ -56,7 +56,7 @@ import {
   readStore,
   type StoreShape,
 } from "../store";
-import { buildArtifactCards } from "./artifacts";
+import { buildArtifactCards, type ArtifactCardView } from "./artifacts";
 import { buildInputRoles } from "./inputs";
 import {
   availableControls,
@@ -663,6 +663,35 @@ export function workspaceView(
   const stored = readAgentDomState(agent);
   const digest = latestArtifactForAgent(agent);
 
+  /*
+   * Everything that run produced, not only the newest thing it produced.
+   *
+   * `latest_digest` is one artifact, and the workspace rendered exactly it —
+   * the same defect MAR-434 found on the run detail page, where an agent that
+   * writes a digest *and* a reply had half its work invisible with nothing on
+   * screen to say so. The run id comes from the digest rather than from the
+   * snapshot because the snapshot is the agent's own account of itself and is
+   * null whenever the agent is stopped, while DASH's record of what it made
+   * outlives the process. That is the same argument `latest_digest` is a
+   * sibling of `snapshot` for.
+   *
+   * The availability producer is `resolveArtifactAvailability`, which is the
+   * one production already passes on the run detail page. Building a second
+   * resolver here is how the two surfaces would come to disagree about whether
+   * a person's file is still there.
+   */
+  const outputsRunId = digest?.run_id ?? null;
+  let outputs: ArtifactCardView[] = [];
+  if (outputsRunId !== null) {
+    // Resolved once for the run, not once per record: it reads the whole
+    // workspace index for that run and returns a lookup, so calling it inside
+    // the map would query the store once per output.
+    const availabilityForArtifact = resolveArtifactAvailability(agent, outputsRunId);
+    outputs = buildArtifactCards(artifactRecordsForRun(agent, outputsRunId), (record) =>
+      availabilityForArtifact(record.artifact.artifact_id),
+    );
+  }
+
   // Outside the snapshot, deliberately. The snapshot is what the *agent*
   // published about itself and is null until it has published anything; a digest
   // from a run last week is DASH's own record and survives the agent being
@@ -677,6 +706,8 @@ export function workspaceView(
     latest_digest: digest,
     latest_digest_grounding:
       digest === null || !isDigestArtifact(digest) ? null : analyzeGrounding(digest),
+    outputs,
+    outputs_run_id: outputsRunId,
     permissions: declaredPermissions(manifest),
     // MAR-507. From the manifest, like `permissions` directly above and for the
     // same reason: this is what the agent's author declared, and a projection

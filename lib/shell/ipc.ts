@@ -177,6 +177,35 @@ export const COMMANDS = {
     irreversible: false,
   },
 
+  /*
+   * MAR-434. Hand one of this agent's outputs back to the person who owns it.
+   *
+   * The route is `GET /artifacts/{id}/download` on the runner, which MAR-434
+   * built and proof `9f` exercises against a real registered artifact. Nothing
+   * about the contract is new here; what is new is that a page can reach it.
+   *
+   * **No path crosses this boundary in either direction.** The renderer names an
+   * artifact by its opaque id, and main asks the *user* where to put the bytes
+   * through the operating system's own save dialog — so the destination is
+   * chosen in a window DASH does not draw, and the renderer neither supplies a
+   * path nor learns one. That is the same discipline `runner/workspace.ts` keeps
+   * when it refuses to return `stored_path`, extended to the surface that
+   * finally calls it: the runner is still the only process that resolves an
+   * opaque id to a location.
+   *
+   * `mutates` is false. This writes a file, and it writes it where the user just
+   * pointed, from bytes DASH already holds — it changes nothing about the agent,
+   * the store or the world the agent acts on, which is what this flag is for.
+   */
+  "workspace.download": {
+    effect:
+      "Save a copy of one output this agent produced, to a folder the user picks. Changes nothing about the agent.",
+    payload_keys: ["agent_id", "artifact_id"],
+    required_keys: ["agent_id", "artifact_id"],
+    mutates: false,
+    irreversible: false,
+  },
+
   // MAR-383. Three commands that name a connection and carry no credential.
   //
   // The secret is deliberately absent from every payload below, and there is no
@@ -404,6 +433,11 @@ export const WORKSPACE_ACTIONS = {
   "workspace.openTask": "open_task",
   "workspace.selectInput": "select_input",
   "workspace.dispatchTask": "dispatch_task",
+  // MAR-434's download joined this family first — the half of that issue's
+  // acceptance criterion that had a proven route and no way to reach it from a
+  // page. The input-selection commands landing beside it is what the family
+  // was made for.
+  "workspace.download": "download",
 } as const;
 
 export type WorkspaceCommandName = keyof typeof WORKSPACE_ACTIONS;
@@ -805,17 +839,22 @@ export interface DispatchContext {
    */
   showApplicationMenu(at: { x: number; y: number } | undefined): void;
   /**
-   * Open a task, admit one user-selected file, or hand the task over (MAR-507).
+   * The task-workspace actions: open a task, admit one user-selected file,
+   * hand the task over (MAR-507), or save one of an agent's outputs where the
+   * user asks (MAR-434).
    *
-   * Injected like the others, and here the reason is the strongest of the four:
-   * the real implementation opens `dialog.showOpenDialog`, which is the one API
-   * in DASH that turns a click into a path on the user's own disk. Keeping it
-   * behind an injected function is what lets this module — importable from a
-   * sandboxed preload — describe the command without being able to perform it.
+   * Injected like the others, and here the reason is the strongest of the
+   * families: the real implementation opens `dialog.showOpenDialog` or a native
+   * save dialog and reaches the runner over its socket — the APIs in DASH that
+   * turn a click into a path on the user's own disk — none of which a sandboxed
+   * preload may hold. Keeping them behind one injected function lets this
+   * module describe the commands without being able to perform them.
    *
-   * The return type carries no path either way, and cannot: `data` is the same
+   * The result carries no path either way, and cannot: `data` is the same
    * primitive record every other command result uses, and what it holds is a
-   * task id, a display name and a size.
+   * task id, a display name and a size. Which optional target fields a command
+   * requires is `reviewCommand`'s job; by the time this runs, the payload rules
+   * have already refused anything path-shaped.
    */
   workspaceAction(
     action: WorkspaceAction,
@@ -824,6 +863,7 @@ export interface DispatchContext {
       task_id?: string;
       role_id?: string;
       run_id?: string;
+      artifact_id?: string;
     },
   ): Promise<WorkspaceActionResult>;
   /**
@@ -914,20 +954,28 @@ export async function dispatchCommand(
 
   if (isWorkspaceCommandName(review.command)) {
     /*
-     * MAR-507. Note what does *not* leave this function: a path.
+     * Note what does *not* leave this function: a path.
      *
      * `select_input` carries an agent, a task and a role, and main is what opens
      * the file picker, checks the role against the manifest and reads the
-     * declared limits out of it. The renderer names which kind of file it means
-     * and never which file — the same shape `connection.connect` has, and for a
-     * sharper reason: a credential the renderer could name would be one it
-     * already had, whereas a path the renderer could name is one nobody chose.
+     * declared limits out of it (MAR-507). `download` carries an agent and an
+     * artifact id, and main asks the user where to save through the operating
+     * system's own dialog while the runner alone resolves the id to a location
+     * on disk (MAR-434). In both directions the renderer names which kind of
+     * thing it means and never which file — the same shape `connection.connect`
+     * has, and for a sharper reason: a credential the renderer could name would
+     * be one it already had, whereas a path the renderer could name is one
+     * nobody chose. Which fields each command requires is `reviewCommand`'s
+     * job, already done by here.
      */
+    const optionalField = (key: string): string | undefined =>
+      typeof review.payload[key] === "string" ? (review.payload[key] as string) : undefined;
     const result = await context.workspaceAction(WORKSPACE_ACTIONS[review.command], {
       agent_id: String(review.payload["agent_id"]),
-      task_id: typeof review.payload["task_id"] === "string" ? review.payload["task_id"] : undefined,
-      role_id: typeof review.payload["role_id"] === "string" ? review.payload["role_id"] : undefined,
-      run_id: typeof review.payload["run_id"] === "string" ? review.payload["run_id"] : undefined,
+      task_id: optionalField("task_id"),
+      role_id: optionalField("role_id"),
+      run_id: optionalField("run_id"),
+      artifact_id: optionalField("artifact_id"),
     });
     return {
       ok: result.ok,

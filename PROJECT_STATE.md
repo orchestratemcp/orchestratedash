@@ -152,12 +152,55 @@ Unchanged and still true: **the provider is not Google.** MAR-468 owns that, and
 nothing here is proven against Gmail's API — including that a draft appears in a
 real Drafts folder.
 
-**MAR-468 is built and has not been run, and those are different things.** The
-attended harness (`scripts/google-proof/main.ts`), its launcher
-(`scripts/prove-google.mjs`) and the procedure
-(`docs/real-google-proof-runbook.md`) exist. Nobody has stood at the consent
-screen. **A runbook is not a run**, so MAR-458 and MAR-469 stay `merged`, and the
-promotion is a separate dated act with the rule written down in advance.
+**MAR-468 was run on 2026-08-06, for the first time, and it failed.** The
+sentence that stood here — that the harness was built and nobody had stood at the
+consent screen — is corrected by that run. MAR-458 and MAR-469 stay `merged`:
+the promotion rule says a run failing any check promotes nothing, and this one
+failed `G2`–`G5`.
+
+**It found a real defect in the product, which is what it exists for.**
+`lib/oauth/flow.ts` sends no `client_secret`, in either
+`exchangeAuthorizationCode` or `refreshAccessToken`. Google, asked directly with
+exactly the parameters DASH sends:
+
+```
+HTTP 400
+{ "error": "invalid_request", "error_description": "client_secret is missing." }
+```
+
+**DASH's Google OAuth has never worked against real Google and could not have.**
+Google requires a client secret for Desktop app clients; PKCE does not replace it.
+Proof 7 passes because the loopback provider's `/token` is a fixture that cannot
+refuse for the one reason the real server does — precisely the substitution ADR
+0002 amendment 1 named and this proof was filed to close. Filed as **MAR-508**,
+Urgent, blocking any further attempt.
+
+This falsifies **ADR 0002 amendment 3's point 2** in writing: that a green run
+would establish the OAuth flow works against Google. It does not. The amendment
+also guessed `G8b`, the projection over a real MIME tree, was "the single most
+likely thing here to have been wrong". The run never reached `G8b`, and the
+lesson is that the guess was one check-family too far down.
+
+Two further defects, in the harness rather than the product, were found by the
+attempt and fixed on a branch (**MAR-509**): the launcher never started Electron
+at all — `spawnSync` of a `.cmd` returns `EINVAL` on current Node and
+`result.error` was never checked, so two attempts printed a banner and did
+nothing while looking like a proof that ran quietly — and the harness spawned a
+runner that was never built into its own output directory, reported as
+`never_listened`, which reads as a hung runner rather than a missing file.
+
+**What the run does establish is narrow and worth keeping.** `G0b` passed twice,
+so this was genuinely against `https://gmail.googleapis.com` with no loopback
+substitution; `G7a` passed once fixed. Everything about the broker, the
+projection, the write, the negatives, the audit and the revocation is untouched —
+no brokered call was ever made, and nothing here is evidence for or against any
+of it.
+
+**The lesson, pointed one level up from this file's own words.** It said a
+runbook is not a run. A harness that builds is not a harness that runs either:
+everything about it reachable without a consent screen *had* been validated —
+typecheck, esbuild bundle, `node --check` on the generated agent — and all three
+defects lived strictly outside that set.
 
 Writing that rule in advance is the point of **ADR 0002 amendment 3**. Deciding
 afterwards, with a green log in hand, is how a proof comes to be read as
@@ -202,9 +245,12 @@ failures plus the one advisory note. 67 is unchanged from `c6c3406` and that is
 right — MAR-421 landed in between and added nine unit tests and no installed
 proof, which is why 1104 became 1113 and 67 stayed 67.
 
-Wave 2's remaining work: MAR-468's **run** (the dated attended pass that would
-promote MAR-458 and MAR-469 to `proven`), MAR-470 (MCP connectors through the same
-card), MAR-471 (bring-your-own Google client).
+Wave 2's remaining work, reordered by what the 2026-08-06 run found:
+**MAR-508** (the missing `client_secret` — now the blocker, and nothing about
+Google can be proven until it is decided and fixed), **MAR-509** (the harness
+fixes, on a branch and wanting a PR), MAR-468's **run** again once MAR-508 lands,
+MAR-470 (MCP connectors through the same card), MAR-471 (bring-your-own Google
+client, which MAR-508's decision may fold into or pull forward).
 
 ## The broker's reach (MAR-476, epic MAR-475)
 
@@ -820,6 +866,279 @@ Evidence: typecheck clean, `[state] valid` with the 8 recorded drift warnings,
 `pnpm build:renderer` green — which is the check `tests/client-bundle.test.ts`
 exists because of, since a pure `lib/` module reaching a `"use client"` tree is
 exactly where `node:fs` got into the browser bundle once before.
+
+## The plane that must not be generalised, made structural (MAR-484)
+
+**Open on a PR, not merged.** ADR 0007's load-bearing paragraph was a finding
+about a file that did not exist. It exists now:
+`lib/agent-dom/runner-channel.ts`.
+
+The failure it guards against is not an argument somebody wins. It is the
+obvious, correct-looking refactor — generalise the drains to take a channel so a
+remote runner's telemetry can be pulled the same way — with `/broker/drain`
+coming along **because it was in the same loop**, in a commit whose message says
+"pull remote run evidence".
+
+**What makes it impossible comes before any type says so.** A broker-capable
+channel is built on `ipcFetch`, and `ipcFetch` dials a `socketPath`: no host, no
+name to resolve, no route to a network, and a URL on the reserved `.invalid` TLD
+so a leak into a real `fetch` fails closed. The types are that fact made
+checkable in an editor. `RunnerChannel<Route>` takes a **route** rather than a
+URL, because `${origin}/broker/drain` is a string types cannot see into; and
+`call` is a **property with a function type, never a method**, because
+TypeScript checks method parameters bivariantly even under `strictFunctionTypes`
+and the method spelling would have made the whole module decoration.
+
+**Two guards, watched failing, and they are not the same guard.** Widening the
+remote channel's route set turns the call-site `@ts-expect-error` into TS2578.
+Removing the capability brand alone turns **nothing** red — parameter
+contravariance already excludes the assignment. Removing both turns both
+assertions red. So the phantom `unique symbol` brand earns its one cast by
+surviving somebody deciding the two route sets should be the same. A third guard
+scans `lib/` and `electron/` for the route strings *in code*, with comments
+stripped, which catches a hand-rolled `fetch` that bypassed the channel.
+
+`electron/broker-host.ts` is the one production change, and it is what makes the
+property load-bearing rather than decorative. **`electron/agent-adapters.ts` is
+untouched, deliberately**: generalising its drains is MAR-488's work, and it is
+now safe to do — which was the entire point.
+
+**The dialer is `ipcFetch`'s move a second time, and it is not an HTTP parser.**
+`node:http`'s client takes a `createConnection` that may return any duplex
+stream, so the request line, header encoding, chunked transfer and every edge
+case around them are Node's — byte for byte the code that serves the local
+runner. What `lib/agent-dom/ssh-fetch.ts` contributes is a duplex over a child's
+two pipes and the no-op socket methods the HTTP client calls. `setTimeout` is a
+no-op *on purpose*: the deadline that governs this transport is
+`transport.ts`'s `AbortSignal`, and a second timer would give a remote channel a
+different timeout story from a local one.
+
+**The deploy plane's version of "never what to run."** `ssh` takes its options
+as argv, and argv has no quoting layer to get wrong — an address of
+`-oProxyCommand=…` is not an address, it is a flag. `lib/hosts.ts` refuses any
+component reaching argv that begins with `-`, as its own named problem rather
+than folded into "malformed". `sshArgv`'s absences matter as much as its
+presences: no `-L`, `-R` or `-D`, because option 2 was rejected for MAR-430's
+reason and the way that stays true is that the flag is never passed.
+
+**Custody, stated as an absence.** `electron/ssh-host.ts` has **no function that
+returns a private key**. It can create one with the machine's own `ssh-keygen`,
+protect it with `runner/channel-secret.ts`'s own `hardenOwnerOnly`, prove it
+again immediately before every use, and name the path `ssh` should read. DASH
+cannot leak what it never reads, and a test asserts that over the module's
+exports rather than trusting a header — which is where somebody would add a
+reader, because the deploy plane will one day want to "just check" the key. Only
+the public half is returned, because that is the one thing that should travel.
+
+Evidence: `pnpm typecheck` clean; 75 test files / 1400 passed / 8 skipped / 0
+failed, 53 of them new. The compile-time exclusion was watched failing in all
+three directions above.
+
+**The one production change is covered by the installed shell.**
+`pnpm verify:shell` on this branch is 64 passed / 8 failed, and **proof 8
+(8a–8f) is among the passes** — the real Electron shell driving the refactored
+broker loop end to end: 200 requests sent by the agent, 64 adjudicated, 136
+dropped, drained through `/broker/drain` and answered through
+`/broker/responses` over the typed channel. The 8 failures are the same
+store-damage set that fails on master's own tree in the same session.
+
+**Nothing here has reached a host.** No `ssh` runs in any test, no host record is
+persisted, and no surface connects one — that is MAR-498. What is proven is the
+dialer, the record's refusals, the command's shape and the key's custody. ADR
+0004 keeps the rest attended and dated, permanently.
+
+## What a run produced, as a thing you can keep (MAR-434, the Outputs half)
+
+**Open on PR [#52](https://github.com/orchestratemcp/orchestratedash/pull/52),
+not merged, and half of the workspace UI is deliberately unbuilt.**
+
+The agent workspace rendered `latest_digest` and nothing else — one artifact, on
+a page whose agent may well have written two. That is the same defect MAR-434
+corrected on the run detail page and did not correct here. `WorkspaceView` now
+carries `outputs`, built by the same `buildArtifactCards` and resolved by the
+same `resolveArtifactAvailability` production already passes on the run detail
+page; a second resolver is how two surfaces come to disagree about whether a
+person's file is still there. It is one run's outputs and not an archive, and
+each card links to the run.
+
+**`workspace.download` is a fifth command family and its payload is the
+design.** Two opaque ids, no path in either direction: main asks the *user*
+where to put the bytes through the operating system's own save dialog, so the
+renderer neither supplies a location nor learns one. That is
+`runner/workspace.ts`'s discipline about `stored_path` kept at the surface that
+finally calls the route proof `9f` proves. `tests/shell.test.ts` refuses a
+payload carrying `path`, `destination`, `source_path`, `stored_path` or
+`directory`.
+
+The button is governed by the four unavailable states rather than governing
+itself: a moved output's next action is not "download", because the file is
+still wherever it went. Where the window cannot act it is **absent** rather than
+disabled — a greyed-out control beside a file that exists reads as a claim about
+the file. "Save a copy", not "Download": the file is already on this computer.
+
+Evidence: `pnpm typecheck` clean, 74 test files / 1390 passed / 8 skipped / 0
+failed. Rendered in the real app on the developer path — the workspace for
+`ai-agent-news` draws both outputs with their roles, receipts, the no-send
+safeguard and the digest body, and draws no Save button, which is a browser tab
+correctly reporting that it cannot act. **No screenshot**: the session was
+unattended and the Browser pane composites no frames when it is not displayed,
+so the render tests take its place, which is the call the MAR-434 design slice
+made in the same situation.
+
+**What is not built is Inputs, and it is MAR-507.** Selecting local files
+against the manifest's declared roles needs three more members of the family
+this change opens; the runner has served all three routes since PR #46 and proof
+9 drives them. MAR-434 stays open on that half.
+
+## What actually runs on the VPS (MAR-497)
+
+**Open on a PR, not merged.** ADR 0007 chose this repository's runner as the
+remote process and left one follow-up unowned: the runner is bundled into the
+Electron app and started by the Electron binary with `ELECTRON_RUN_AS_NODE=1`,
+and a host has no Electron binary to start it with. **ADR 0007 amendment 1
+answers it — the host supplies Node; DASH does not ship a runtime** — and
+`pnpm build:runner-standalone` is the artifact. `dist/runner-standalone/` holds
+`start.mjs`, `runner.mjs`, `contracts/`, a `package.json` and a README, and is
+started with one command. `runner/main.ts`, `runner/server.ts` and
+`runner/endpoint.ts` are untouched.
+
+**The preflight is its own module and its own bundle, and that is the
+structural half.** `runner/store.ts` imports `node:sqlite` at the top level, so
+a check living in that module graph would run *after* the import it exists to
+check — on the host it is written for, it would never execute.
+`runner/host-runtime.ts` checks the major version against a floor and then
+actually **resolves** the module, because a version comparison alone would be
+this repository carrying a changelog fact it cannot verify on the machine it is
+refusing. An unsuitable host exits **78** (`EX_CONFIG`) with a sentence naming
+what it found; a runner that started and then failed still exits 1, and a deploy
+verb can branch on the difference without parsing English out of a log.
+
+The floor is Node 24 as a *support* claim rather than the earliest version that
+might work. `node:sqlite` appeared in 22.5 and spent its first releases behind
+`--experimental-sqlite`, and a floor admitting a release where the module needs
+a flag would make the documented start command wrong on a host that satisfies
+the floor.
+
+**`contracts/` is in the artifact because the search would otherwise find the
+repository.** `lib/contracts.ts` walks up from its own module location, so an
+artifact carrying no schemas at all works perfectly under this repository and
+fails on a host at the first manifest — not at build time and not at start time.
+`tests/runner-standalone.test.ts` copies the artifact to a temporary directory
+with nothing above it, strips `DASH_CONTRACTS_DIR` and `ELECTRON_RUN_AS_NODE`
+from the child's environment, and asserts that the runner's own `contracts:`
+line names the artifact's own directory. That is the only arrangement in which
+the difference is visible.
+
+**The data directory is created and hardened here rather than inherited.** On
+Windows it sits under a user profile whose ACL already excludes other
+principals; a VPS home directory does not, and this one holds the channel
+credential, the database and any file a person handed to an agent. The entry
+point applies `runner/channel-secret.ts`'s own `hardenOwnerOnly` and refuses to
+start if the permissions cannot be **proven**.
+
+**`dash:node` already means the right thing on a host**, which the sentinel's
+name does not suggest and which the issue listed as an open question.
+`resolveSpawnCommand` returns the *spawning* process's own `execPath` plus
+`ELECTRON_RUN_AS_NODE=1`; on a host the spawning process is the standalone
+runner under the host's own Node, so it resolves to that and the variable is a
+flag plain Node has no opinion about. No host-specific branch, and the reason
+the sentinel exists carries over intact — a registration must not name a real
+interpreter path, on a version-stamped MSIX root or on a host. It matters
+immediately rather than eventually: **the sample agent is registered with
+exactly this sentinel** and is the first thing anybody would deploy. Proven by
+starting a real child under the standalone runner rather than by reading the
+resolver.
+
+**One correction it forced, and it was load-bearing.** `runner_build` is what
+`electron/runner-process.ts` compares before adopting a runner, and the
+algorithm hashed `path.relative` output and raw file bytes — both
+platform-dependent, which nothing had noticed because only one machine ever
+computed it. A Linux-built artifact beside a Windows-built shell, from one
+commit, would have reported **different** identities, so "the host is running
+the build this DASH shipped" would have been false in the only situation
+anybody asks it. `scripts/runner-build-id.mjs` is now the one implementation and
+folds path separators to `/` and CRLF to LF. Every input is TypeScript or JSON,
+so there is no binary to corrupt.
+
+Evidence: `pnpm typecheck` clean, `pnpm state:check` valid with the 8 recorded
+drift warnings, 73 test files / 1383 passed / 8 skipped / 0 failed including 18
+new cases, and both build scripts reporting the same `runner_build` from this
+tree — which is the identity claim executed rather than asserted.
+
+**`pnpm verify:shell` is red on this machine and not because of this branch.**
+64 passed, 8 failed, 1 advisory; every failure is downstream of `[runner]
+request failed: database disk image is malformed`, and the identical 8 fail on
+master's own tree in the same session. MAR-506's quarantine of the malformed
+`runner.sqlite` **has not actually happened**: the quarantine directory exists
+and is empty, and a read-only open of the live store still answers "database
+disk image is malformed". Nothing was worked around and nothing was moved.
+
+**Nothing about a host is proven, and that is permanent rather than pending.**
+What CI proves is the artifact starting under plain Node on a tree containing
+only itself, serving a task over its own socket, and stopping through the
+authenticated route. `ssh`, the deploy verbs and a real VPS are ADR 0004's
+attended half; MAR-489 owns them.
+
+
+## The developer path had no gate (MAR-505, MAR-506)
+
+**Open on PR [#51](https://github.com/orchestratemcp/orchestratedash/pull/51), not merged.**
+`pnpm shell` showed a window that said "Reading your agents…" and never said
+anything else, and **the renderer was never at fault**: a freshly built export
+of the same source hydrates and renders real data in the real shell.
+
+`pnpm shell` builds the shell from the working tree and then loads whatever
+answers on `127.0.0.1:3000`. On this machine that was a `next dev` server 59
+hours and three merges old, serving a complete page whose client never
+hydrated — reproduced identically in an ordinary Chromium, which is what
+exonerated Electron, the preload and `dist/`. Editing `next.config.mjs` made
+that server restart itself and the page hydrated in 268ms: same code, same
+machine, same port.
+
+**Nobody noticed it had gone stale because hot reload had never worked on this
+origin.** Next blocks cross-origin access to its own dev resources for any host
+not in `allowedDevOrigins`, and the default list omits the literal loopback
+address `lib/shell/window.ts` deliberately requires — it refuses `localhost` on
+purpose, because a name resolves through DNS. Two individually correct
+decisions, whose intersection logged `Blocked cross-origin request to Next.js
+dev resource /_next/webpack-hmr from "127.0.0.1"` into
+`.next/dev/logs/next-development.log`, where nobody reads.
+
+**Why no gate caught it is the larger half.** `scripts/verify-shell.mjs` forces
+`DASH_SHELL_URL=dash-app://ui/` so the mandatory proof depends only on this
+repository and this machine (ADR 0004). That is right and is unchanged; its
+consequence is that **the gate has never once loaded the developer path**. And
+the two proofs that look like they would have caught it would not have: proof
+`1` counts headings the server had already delivered, and `2d` calls
+`window.dashData` from the harness, which is not the page. Both are the shape
+MAR-473 named when `6j` asserted only that *a* verdict existed.
+
+So the assertion is an **absence**, because a frozen shell is not missing
+anything on screen. Since MAR-432 every page opens in a loading state and leaves
+it in an effect, so `data-view-state="loading"` still present after the budget
+means no effect ever ran. `lib/shell/first-paint.ts` owns the rule; smoke proof
+`1f` and `pnpm shell:check` evaluate the same probe so they cannot drift into
+asking different questions under one name. `pnpm shell` also stops launching
+against a renderer it cannot vouch for — nothing listening, another application
+on the port, an error status, or an export older than the source it is built
+from — and `lib/shell/preflight.ts` says plainly that it cannot tell a healthy
+page from a frozen one, because no HTTP probe can.
+
+Proven in three directions on Windows: PASS against the restarted dev server
+(281ms, 2 polls), PASS against the packaged origin (`1f`, 3ms, 1 poll), and FAIL
+with exit 1 against a page that never hydrates (stuck after 20207ms over 78
+polls). The preflight's staleness refusal fired for real, naming the file.
+`pnpm typecheck` clean, `pnpm state:check` valid, 74 test files / 1372 passed /
+8 skipped / 0 failed.
+
+**`pnpm verify:shell` cannot pass on this machine, for a reason outside this
+change.** `runner.sqlite` in the installed-style data directory cannot be opened
+at all — `database disk image is malformed` — while `dash.sqlite` reports
+`integrity_check: ok`. All eight smoke failures need the runner's own database
+(`6f`, `6g`, `6h`, `9b`–`9e`, `9g`); the other 65 pass, including `1f`. That is
+MAR-506, which also names the product gap it exposed: a person is told "The
+runner answered 500", by an application that has an entire recovery vocabulary
+for damage to its *own* store and none for the runner's.
 
 ## UX principle
 

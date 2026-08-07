@@ -13,18 +13,21 @@ import {
 
 import { RunOutput } from "../../_components/digest";
 import { InputsPanel, type SelectedInput } from "../../_components/inputs";
+import { OutputsPanel } from "../../_components/outputs";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import { AGENT_WORKSPACE_PARAMS, runDetailHref } from "../../_data/routes";
 import {
-  dataSource,
+  downloadOutput,
   submitAgentCommand,
   submitWorkspaceCommand,
   type AgentCommandArgs,
 } from "../../_data/source";
 import { useCanAct, useHost, useLiveView } from "../../_data/use-view";
+import type { GroundingAnalysis } from "../../../lib/analyze";
 import type { PermissionGrant } from "../../../lib/contracts";
 import { INPUTS_PANEL_COPY } from "../../../lib/copy/inputs";
 import type { InputRoleView } from "../../../lib/views/inputs";
+import type { ArtifactCardView } from "../../../lib/views/artifacts";
 import type { InboxItem } from "../../../lib/workspace";
 import type {
   WorkspaceRunView,
@@ -315,12 +318,24 @@ function AgentWorkspace(): ReactNode {
 
       <PermissionReceipt permissions={view.permissions} />
 
-      {/* Outside the snapshot branch on purpose. The digest is DASH's own
-          record and outlives the process that made it, so a stopped or
-          unreachable agent still shows the last thing it found. */}
-      {view.latest_digest === null ? null : (
-        <RunOutput artifact={view.latest_digest} grounding={view.latest_digest_grounding} />
-      )}
+      {/* Outside the snapshot branch on purpose. Outputs are DASH's own record
+          and outlive the process that made them, so a stopped or unreachable
+          agent still shows what it last produced.
+
+          MAR-434: this used to be `RunOutput` on `latest_digest` alone — one
+          artifact, on a page whose agent may well have written two. The panel
+          draws every output of that run, each with its own receipt and its own
+          availability, which is the same correction MAR-434 made on the run
+          detail page. `latest_digest_grounding` still rides along because
+          grounding is a verdict about the newest digest specifically. */}
+      <OutputsArea
+        agent={view.agent}
+        canAct={canAct}
+        cards={view.outputs}
+        grounding={view.latest_digest_grounding}
+        runId={view.outputs_run_id}
+        setFeedback={setFeedback}
+      />
 
       {view.snapshot === null ? (
         <div className="empty">
@@ -343,6 +358,74 @@ function AgentWorkspace(): ReactNode {
           setReasons={setReasons}
           snapshot={view.snapshot}
         />
+      )}
+    </>
+  );
+}
+
+/**
+ * What this agent last produced, as things the person owns (MAR-434).
+ *
+ * A first-class area of the workspace rather than a footnote under the run
+ * cards: "what did it make for me?" is one of the three questions the home view
+ * exists to answer, and until now the workspace answered it with the single
+ * newest digest and no way to get the file.
+ *
+ * The link out is to the run detail page rather than to a list of every output
+ * this agent has ever made. `WorkspaceView.outputs` is deliberately one run's
+ * worth — see its comment — and pointing at the run is how somebody reaches the
+ * rest without this page becoming an archive.
+ *
+ * `onDownload` is passed only when the window can act. `OutputsPanel` renders no
+ * button at all in that case rather than a disabled one, which is why this is an
+ * absent prop and not a `false`.
+ */
+function OutputsArea({
+  agent,
+  canAct,
+  cards,
+  grounding,
+  runId,
+  setFeedback,
+}: {
+  agent: string;
+  canAct: boolean;
+  cards: ArtifactCardView[];
+  grounding: GroundingAnalysis | null;
+  runId: string | null;
+  setFeedback: Dispatch<SetStateAction<CommandFeedback>>;
+}): ReactNode {
+  async function save(card: ArtifactCardView): Promise<void> {
+    setFeedback(null);
+    const result = await downloadOutput({
+      agent_id: agent,
+      artifact_id: card.reference.artifact_id,
+    });
+    // A cancelled save dialog answers `ok` with no sentence. That is the user
+    // deciding not to, and reporting it as an outcome would be DASH narrating
+    // a choice back at the person who just made it.
+    if (result.ok && (result.detail ?? "") === "") {
+      return;
+    }
+    setFeedback({
+      ok: result.ok,
+      message: result.detail ?? "DASH could not save a copy of this output.",
+    });
+  }
+
+  return (
+    <>
+      <OutputsPanel
+        cards={cards}
+        grounding={grounding}
+        onDownload={canAct ? (card) => void save(card) : undefined}
+      />
+      {runId === null ? null : (
+        <p className="muted">
+          <Link href={runDetailHref(agent, runId)}>
+            Open the run these came from
+          </Link>
+        </p>
       )}
     </>
   );

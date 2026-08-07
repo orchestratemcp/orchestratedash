@@ -1,0 +1,209 @@
+/**
+ * The one exclusion ADR 0007 names, made structural (MAR-484).
+ *
+ * > `/broker/drain` and `/broker/responses` are never called on a remote
+ * > channel. Not conditionally, not behind a flag, not "only for agents that
+ * > declare `local`". The remote channel type does not carry the capability.
+ *
+ * The failure this guards against is not an argument somebody wins. It is the
+ * obvious, correct-looking refactor: generalise the drains to take a channel so
+ * a remote runner's telemetry can be pulled the same way, and `/broker/drain`
+ * comes along **because it was in the same loop**. ADR 0006 would be gone,
+ * silently, in a commit whose message says "pull remote run evidence".
+ *
+ * So three different things have to fail, at three different times:
+ *
+ * 1. **At typecheck**, via `@ts-expect-error`. This is the load-bearing one and
+ *    it is self-repairing in the direction that matters: if the remote channel
+ *    ever *gains* the capability, the expected error stops occurring, and an
+ *    unused `@ts-expect-error` is itself a compile error. The assertion cannot
+ *    rot into a tautology.
+ * 2. **At runtime**, so a cast, an `any`, or a JavaScript caller with no types
+ *    at all still cannot get through.
+ * 3. **At review**, via a scan of `lib/` and `electron/` for the route strings,
+ *    which is what catches somebody hand-rolling a `fetch` rather than going
+ *    through the channel at all.
+ */
+
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+
+import { IPC_ORIGIN } from "../lib/agent-dom/ipc-fetch";
+import {
+  BROKER_ROUTES,
+  EVIDENCE_ROUTES,
+  localRunnerChannel,
+  RemoteRouteRefused,
+  remoteRunnerChannel,
+  type LocalRunnerChannel,
+  type RemoteRunnerChannel,
+} from "../lib/agent-dom/runner-channel";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+/** Never dialled in this file: every test here is about the type or the guard. */
+const local = localRunnerChannel({
+  origin: IPC_ORIGIN,
+  token: "channel-secret-never-sent-anywhere",
+  endpoint: process.platform === "win32" ? String.raw`\\.\pipe\dash-test-none` : "/tmp/dash-test-none.sock",
+});
+
+const remote = remoteRunnerChannel({
+  token: "the-host-runners-own-channel-secret",
+  dial: () => Promise.reject(new Error("this test never dials")),
+});
+
+describe("the route sets", () => {
+  /**
+   * Pinned by value. Widening either list is then a change somebody wrote on
+   * purpose and a reviewer can see, rather than a line appearing in a constant
+   * nobody reads — which is precisely how the drains came to be neighbours in
+   * the first place.
+   */
+  it("names the two brokered-credential routes and no others", () => {
+    expect([...BROKER_ROUTES]).toEqual(["/broker/drain", "/broker/responses"]);
+  });
+
+  it("keeps every brokered route out of the set a remote runner answers", () => {
+    for (const route of BROKER_ROUTES) {
+      expect(EVIDENCE_ROUTES).not.toContain(route);
+    }
+  });
+
+  it("still lets a remote runner answer for evidence, which is the point of having it", () => {
+    expect(EVIDENCE_ROUTES).toContain("/telemetry/drain");
+    expect(EVIDENCE_ROUTES).toContain("/artifacts/drain");
+    expect(EVIDENCE_ROUTES).toContain("/workspace-artifacts");
+  });
+});
+
+describe("the exclusion, at compile time", () => {
+  /**
+   * Each directive sits on the line immediately above its code, with no comment
+   * in between. `@ts-expect-error` attaches to the *next line*, so a prose
+   * comment in the gap silently absorbs it and leaves an assertion that can
+   * neither pass nor fail — which is worse than no assertion, because it reads
+   * like one. The first draft of this file had exactly that.
+   *
+   * Both have been watched failing, and what each one caught is worth recording
+   * because they are not the same guard:
+   *
+   * - Widening `RemoteRunnerChannel` to carry `BrokerRoute` turns the **call
+   *   site** below into TS2578, and leaves the assignment above still excluded
+   *   — by the capability brand.
+   * - Removing the capability brand on its own turns **nothing** red: parameter
+   *   contravariance already stops a narrow-routed channel standing in for a
+   *   wide-routed one.
+   * - Removing both turns both lines into TS2578.
+   *
+   * So the exclusion has two independent mechanisms and the assignment is
+   * behind both. That is the reason the brand is worth its cast: it survives
+   * somebody deciding the route sets should be the same.
+   */
+  it("refuses a remote channel where a broker-capable one is required", () => {
+    // @ts-expect-error A remote channel does not carry the broker capability.
+    const forbidden: LocalRunnerChannel = remote;
+    expect(forbidden).toBeDefined();
+  });
+
+  it("refuses a brokered route at a remote call site", () => {
+    // @ts-expect-error "/broker/drain" is not a route a remote channel accepts.
+    const call = () => remote.call("/broker/drain", { method: "POST" });
+    expect(call).toBeTypeOf("function");
+  });
+
+  /**
+   * The direction that must keep working, asserted so that a future tightening
+   * cannot take it away by accident. Evidence code written once has to serve
+   * both kinds of runner, or MAR-488 has to write it twice — and two
+   * implementations of "pull what this agent did" is how the two come to
+   * disagree.
+   */
+  it("still lets the local channel stand in for a remote one, so evidence code is written once", () => {
+    const evidenceOnly: RemoteRunnerChannel = local;
+    expect(evidenceOnly.origin).toBe(IPC_ORIGIN);
+  });
+});
+
+describe("the exclusion, at runtime", () => {
+  it("rejects each brokered route on a remote channel, whatever the caller's types said", async () => {
+    for (const route of BROKER_ROUTES) {
+      // The cast is the point: this is what a JavaScript caller, an `any`, or a
+      // deliberate escape hatch looks like from here.
+      await expect(
+        (remote as unknown as { call: (route: string) => Promise<Response> }).call(route),
+      ).rejects.toBeInstanceOf(RemoteRouteRefused);
+    }
+  });
+
+  it("says why in a sentence about the rule rather than about the route", async () => {
+    let refused: unknown;
+    try {
+      await (remote as unknown as { call: (route: string) => Promise<Response> }).call("/broker/drain");
+    } catch (error: unknown) {
+      refused = error;
+    }
+    expect(refused).toBeInstanceOf(RemoteRouteRefused);
+    expect((refused as Error).message).toContain("stay on the computer DASH is installed on");
+  });
+
+  it("does not refuse the evidence routes it does carry", async () => {
+    // The dial itself rejects — this asserts the *guard* let it through, which
+    // is a different failure from the one above and has a different type.
+    await expect(
+      (remote as unknown as { call: (route: string) => Promise<Response> }).call("/telemetry/drain"),
+    ).rejects.not.toBeInstanceOf(RemoteRouteRefused);
+  });
+});
+
+describe("the exclusion, at review", () => {
+  /**
+   * Two files may name these routes: the module that defines the capability,
+   * and the one caller that holds it. `runner/server.ts` serves them and is
+   * deliberately outside the scan — the runner answering a route on its own
+   * authenticated local channel is not the thing being guarded.
+   */
+  const PERMITTED = new Set([
+    path.join("lib", "agent-dom", "runner-channel.ts"),
+    path.join("electron", "broker-host.ts"),
+  ]);
+
+  function sourceFiles(directory: string): string[] {
+    return readdirSync(directory).flatMap((name) => {
+      const file = path.join(directory, name);
+      return statSync(file).isDirectory() ? sourceFiles(file) : file.endsWith(".ts") ? [file] : [];
+    });
+  }
+
+  /**
+   * Comments are stripped before the search, deliberately.
+   *
+   * `electron/ssh-host.ts` names both routes in its header to explain why its
+   * channel cannot carry them, and that paragraph is the opposite of the thing
+   * being caught — a scan that punished it would push the explanation out of
+   * the file that needs it most. What is being looked for is a route reaching
+   * a request, which is code.
+   */
+  function withoutComments(source: string): string {
+    return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  }
+
+  it("finds the brokered routes named in code only where the capability is defined and held", () => {
+    const offenders: string[] = [];
+    for (const directory of ["lib", "electron"]) {
+      for (const file of sourceFiles(path.join(repoRoot, directory))) {
+        const relative = path.relative(repoRoot, file);
+        if (PERMITTED.has(relative)) {
+          continue;
+        }
+        const source = withoutComments(readFileSync(file, "utf8"));
+        if (BROKER_ROUTES.some((route) => source.includes(route))) {
+          offenders.push(relative);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
