@@ -370,7 +370,7 @@
     {
       "id": "MAR-488",
       "lifecycle": "planned",
-      "linear_status": "In Progress",
+      "linear_status": "In Review",
       "commit": null,
       "proof": {
         "command": "pnpm typecheck && pnpm test && pnpm build:renderer"
