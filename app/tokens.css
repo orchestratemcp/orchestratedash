@@ -60,31 +60,30 @@
  * without dragging code blocks and hashes with it. It is not a no-op waiting to be
  * deleted.
  *
- * ## Neither family is bundled, and that is now decided rather than pending
+ * ## Both families are bundled, and the no-fetch rule survives them
  *
- * DASH ships no web fonts: a local-first app that blocks its first paint on a font
- * file has chosen the wrong thing to be strict about. Space Grotesk and JetBrains
- * Mono lead the stacks and are used when the machine has them.
+ * **MAR-535 is decided: bundle.** Henrik's final answer (2026-08-07, ~20:30Z,
+ * on the issue — it supersedes an earlier "keep the rule" record that a menu
+ * mis-click produced) ships Space Grotesk and JetBrains Mono inside the app as
+ * OFL-licensed latin-subset woff2 files, declared in `app/fonts.css` with
+ * `local()` fallbacks and `font-display: swap`. The files and their licences
+ * live in `public/fonts/`.
  *
- * **On the development machine this was built on, neither is installed**, so the
- * system renders in Segoe UI Variable Display and Consolas. That is a real and
- * visible gap in the adopted system rather than a detail: the shape language, the
- * palette and the caps-label grammar all survive the substitution, and the type
- * pairing does not.
+ * MAR-440's sentence — a local-first app that blocks its first paint on a font
+ * file has chosen the wrong thing to be strict about — was an argument about a
+ * **network fetch on a cold start**, and it still stands as exactly that. A
+ * woff2 inside the static export is read off disk over `dash-app://` the same
+ * way `globals.css` is; no first paint waits on a network for it, because no
+ * network is involved on any path.
  *
- * **MAR-535 asked whether to bundle the two OFL faces and Henrik decided it on
- * 2026-08-07: keep the rule.** So this paragraph is the permanent record, not a
- * note about a pending decision, and the sentence it replaces said so the other
- * way round. The substitution above is what DASH looks like on a machine without
- * the families installed, which is most of them.
- *
- * The rule is now checkable rather than remembered. `scripts/brand-rules.mjs`'s
- * `checkNoRemoteFonts` runs inside `pnpm brand:check` over every stylesheet and
- * component under `app/`, and refuses a remote `@font-face`, an off-machine
- * `@import`, a `<link>` to a font host and `next/font/google`. What it forbids is
- * a **fetch**, not a font file: if this decision is ever revisited, a woff2
- * vendored into the export is a same-origin read over `dash-app://` and no rule
- * here has to be relaxed to allow it.
+ * So the rule survives its own exception, checkably: `scripts/brand-rules.mjs`'s
+ * `checkNoRemoteFonts` still runs inside `pnpm brand:check` over every
+ * stylesheet and component under `app/`, and still refuses a remote
+ * `@font-face`, an off-machine `@import`, a `<link>` to a font host and
+ * `next/font/google`. What it forbids is a **fetch**, not a font file — which is
+ * why bundling relaxed not one line of it. `checkBundledFonts` is the new half:
+ * the woff2 bytes are really woff2, the OFL licence rides beside each family,
+ * and every `/fonts/` URL the stylesheets name exists in the export.
  *
  * ## Calm by default, dense on request
  *
@@ -220,12 +219,15 @@
    * Type (MAR-528)
    *
    * Space Grotesk for headlines, JetBrains Mono for everything else, exactly as
-   * `DESIGN.md` specifies. Neither is bundled — see the note at the top of this
-   * file, including what that costs on a machine that has neither.
+   * `DESIGN.md` specifies. Both are bundled since MAR-535 — `app/fonts.css`
+   * declares them over `public/fonts/`, latin subset, so these stacks now
+   * resolve to their first name on every machine DASH ships to.
    *
-   * The fallbacks are chosen to lose as little of the system as possible rather
-   * than to match metrics: a geometric-leaning UI face for the display stack, and
-   * the platform's own programming mono for the body.
+   * The fallbacks still matter — a code point outside the latin subset, or a
+   * machine that cannot read the bundled file, falls through here — and they are
+   * chosen to lose as little of the system as possible rather than to match
+   * metrics: a geometric-leaning UI face for the display stack, and the
+   * platform's own programming mono for the body.
    * ------------------------------------------------------------------ */
   --font-display: "Space Grotesk", "Segoe UI Variable Display", "Segoe UI",
     ui-sans-serif, system-ui, -apple-system, sans-serif;

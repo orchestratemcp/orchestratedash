@@ -487,18 +487,17 @@ export function checkAvatarCss(css) {
 /**
  * No page may request a font from anywhere but this machine (MAR-535).
  *
- * Henrik decided MAR-535 on 2026-08-07: **keep the rule**. Space Grotesk and
- * JetBrains Mono are not bundled, DASH renders in the platform's own faces where
- * they are absent, and `app/tokens.css`'s note about that is now the permanent
- * record rather than a pending one.
+ * Henrik's final MAR-535 answer (2026-08-07, ~20:30Z, on the issue itself —
+ * superseding an earlier "keep the rule" record a menu mis-click produced) is
+ * **bundle**: Space Grotesk and JetBrains Mono ship inside the app as
+ * OFL-licensed woff2, declared in `app/fonts.css` over `public/fonts/`.
  *
- * A decision recorded only in prose is a decision the next reskin quietly
- * reverses, which is what this rule is for. The rule the issue actually settles
- * is about **where a font comes from**, so that is what is checked — not whether
- * a font file exists. If the decision is ever revisited and the two OFL families
- * are vendored into the export, they are same-origin reads over `dash-app://`
- * and every assertion here still passes. Nothing below has to be relaxed to
- * bundle a font; it only has to be relaxed to fetch one.
+ * This rule survives that decision without a line of it changing, and that was
+ * the design: what it checks is **where a font comes from**, not whether a font
+ * file exists. The bundled files are same-origin reads over `dash-app://` and
+ * every assertion below passes over them. Nothing here had to be relaxed to
+ * bundle a font; it only ever forbade fetching one. `checkBundledFonts` is the
+ * bundling's own half of the contract.
  *
  * That matters more here than in an ordinary web app. DASH is local-first and
  * offline by default: a stylesheet reaching `fonts.googleapis.com` does not
@@ -545,7 +544,7 @@ export function checkNoRemoteFonts(files) {
       for (const src of face[1].matchAll(/url\(\s*['"]?([^'")]+)['"]?\s*\)/g)) {
         if (REMOTE.test(src[1])) {
           failures.push(
-            `fonts: ${name} declares an @font-face whose src is ${src[1]} — DASH ships no web fonts (MAR-535, decided 2026-08-07: keep the rule), and a local-first app that blocks its first paint on a network font has chosen the wrong thing to be strict about`,
+            `fonts: ${name} declares an @font-face whose src is ${src[1]} — DASH fetches no fonts (MAR-535): the two bundled families are same-origin files under public/fonts/, and a local-first app that blocks its first paint on a network font has chosen the wrong thing to be strict about`,
           );
         }
       }
@@ -583,8 +582,92 @@ export function checkNoRemoteFonts(files) {
      */
     if (/from\s+['"]next\/font\/google['"]/.test(withoutComments)) {
       failures.push(
-        `fonts: ${name} imports next/font/google — it self-hosts, so no page requests a remote font at runtime, but the fetch moves to build time and an offline build then either fails or ships whatever the network answered. next/font/local is the supported way to bundle a face if MAR-535 is ever revisited`,
+        `fonts: ${name} imports next/font/google — it self-hosts, so no page requests a remote font at runtime, but the fetch moves to build time and an offline build then either fails or ships whatever the network answered. next/font/local or a plain @font-face over public/fonts/ (what app/fonts.css does) is the supported way to bundle a face`,
       );
+    }
+  }
+
+  return failures;
+}
+
+/**
+ * The bundled families arrive whole, licensed, and referenced truthfully
+ * (MAR-535, the bundling half).
+ *
+ * `checkNoRemoteFonts` is the fence — no font arrives over a network. This is
+ * the other half of the same decision: the two families Henrik chose to bundle
+ * actually ship. The failure modes it exists for are quiet ones. A deleted
+ * woff2 fails no build: the `@font-face` falls back through `local()` to the
+ * platform stacks and the reskin silently loses its type pairing on every
+ * machine — precisely the state MAR-535 was filed about, reachable again by one
+ * careless `public/` cleanup. A licence that goes missing fails nothing visible
+ * at all, and an OFL face shipped without its licence text is a licence
+ * violation. So both are checked the way the O's manifest is: as facts about
+ * files, not as prose.
+ *
+ * `fonts` is `[{ name, bytes }]` for everything in `public/fonts/`; `sources`
+ * is the same walked file list `checkNoRemoteFonts` reads, so the two halves
+ * can never disagree about which tree they cover.
+ */
+export const BUNDLED_FONTS = Object.freeze([
+  Object.freeze({
+    family: "Space Grotesk",
+    file: "space-grotesk-latin.woff2",
+    licence: "OFL-space-grotesk.txt",
+  }),
+  Object.freeze({
+    family: "JetBrains Mono",
+    file: "jetbrains-mono-latin.woff2",
+    licence: "OFL-jetbrains-mono.txt",
+  }),
+]);
+
+const WOFF2_MAGIC = Buffer.from("wOF2", "ascii");
+
+export function checkBundledFonts({ fonts, sources }) {
+  const failures = [];
+  const byName = new Map(fonts.map((font) => [font.name, font]));
+
+  for (const { family, file, licence } of BUNDLED_FONTS) {
+    const woff2 = byName.get(file);
+    if (woff2 === undefined) {
+      failures.push(
+        `fonts: public/fonts/${file} is missing — ${family} is a bundled family (MAR-535, decided 2026-08-07: bundle), and without the file every machine falls back to the substitution that issue was filed about`,
+      );
+    } else if (!woff2.bytes.subarray(0, 4).equals(WOFF2_MAGIC)) {
+      failures.push(
+        `fonts: public/fonts/${file} does not begin with the woff2 magic bytes — whatever this file is, it is not the ${family} face the @font-face in app/fonts.css promises`,
+      );
+    }
+
+    const text = byName.get(licence);
+    if (text === undefined) {
+      failures.push(
+        `fonts: public/fonts/${licence} is missing — ${family} is SIL OFL 1.1, and an OFL face shipped without its licence text is a licence violation, not a tidiness issue`,
+      );
+    } else if (!text.bytes.toString("utf8").includes("SIL Open Font License")) {
+      failures.push(
+        `fonts: public/fonts/${licence} does not contain the SIL Open Font License text — the licence file must be the licence, not a placeholder`,
+      );
+    }
+  }
+
+  /*
+   * Every same-origin /fonts/ URL a stylesheet names must exist. This is the
+   * generalisation of the pair above: a typo in app/fonts.css, or a third face
+   * added without its file, degrades silently through `local()` and the
+   * fallback stacks, so nothing but this line would ever say so.
+   */
+  for (const { name, source } of sources) {
+    const withoutComments = source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    for (const url of withoutComments.matchAll(/url\(\s*['"]?\/fonts\/([^'")]+)['"]?\s*\)/g)) {
+      if (!byName.has(url[1])) {
+        failures.push(
+          `fonts: ${name} references /fonts/${url[1]}, which does not exist in public/fonts/ — the @font-face degrades silently through its fallbacks, so this reference being dead would never be seen`,
+        );
+      }
     }
   }
 
