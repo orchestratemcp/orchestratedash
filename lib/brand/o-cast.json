@@ -1,0 +1,150 @@
+{
+  "$comment": "The audit record for the O's, vendored into DASH (MAR-500). Copied verbatim from orchestrateweb's apps/web/components/brand/o-cast.json apart from this comment and `source`; the hashes are the audited ones and must stay byte-for-byte identical to SITE's, because agreeing on the pixels is the whole point of a shared cast. Verified by `pnpm brand:check`, which is inside `pnpm verify`. A hash mismatch means a PNG in public/o/1x changed without this file changing with it. Provenance and the right to publish: orchestrateweb docs/BRAND_ASSETS.md. Rules of use: orchestrateweb docs/DESIGN_BRIEF.md, \"The O's\". DASH does not regenerate this file — a deliberate asset change is made in orchestrateweb, audited there with `pnpm brand:check --write`, and re-vendored here.",
+  "grid": 50,
+  "source": "public/o/1x",
+  "characters": {
+    "ninja": {
+      "bytes": 748,
+      "sha256": "910b5184c55186e1a87b29a9b68b8177aa8c3a178efbd8f1e883fccbff87ecb2",
+      "cornersTransparent": true,
+      "bounds": {
+        "left": 13,
+        "top": 13,
+        "right": 40,
+        "bottom": 39
+      },
+      "opaquePixels": 493,
+      "colors": 12
+    },
+    "nerd": {
+      "bytes": 887,
+      "sha256": "6960fbc105610c95ae6bdb92d23e6705685de46a2f1faca74f8f4f1c75abfbf0",
+      "cornersTransparent": true,
+      "bounds": {
+        "left": 13,
+        "top": 13,
+        "right": 36,
+        "bottom": 39
+      },
+      "opaquePixels": 472,
+      "colors": 32
+    },
+    "cowboy": {
+      "bytes": 675,
+      "sha256": "8146ef20d18b27e3978c7eb78ce36b12090851c9998badf64cc015963803d0a7",
+      "cornersTransparent": true,
+      "bounds": {
+        "left": 12,
+        "top": 8,
+        "right": 37,
+        "bottom": 39
+      },
+      "opaquePixels": 588,
+      "colors": 10
+    },
+    "wizard": {
+      "bytes": 905,
+      "sha256": "64b03b6b0f22d0b768d446df9fdb2d7acee0342230069615c1b273d6bc089219",
+      "cornersTransparent": true,
+      "bounds": {
+        "left": 13,
+        "top": 5,
+        "right": 36,
+        "bottom": 39
+      },
+      "opaquePixels": 590,
+      "colors": 17
+    },
+    "knight": {
+      "bytes": 776,
+      "sha256": "8e25d500ce1d9721127871c10d57732518d455a872e12e547370f475725d8806",
+      "cornersTransparent": true,
+      "bounds": {
+        "left": 13,
+        "top": 8,
+        "right": 36,
+        "bottom": 39
+      },
+      "opaquePixels": 502,
+      "colors": 15
+    },
+    "king": {
+      "bytes": 662,
+      "sha256": "74cec3a6f589406d05c804791914c316a4220ec23f4267ff1014adbfa921cc54",
+      "cornersTransparent": true,
+      "bounds": {
+        "left": 13,
+        "top": 7,
+        "right": 36,
+        "bottom": 39
+      },
+      "opaquePixels": 569,
+      "colors": 9
+    },
+    "chef": {
+      "bytes": 676,
+      "sha256": "a26b808aa3857fc33eac588f737bdb545dc33e52a2491f6d58c7e27bb4565e38",
+      "cornersTransparent": true,
+      "bounds": {
+        "left": 13,
+        "top": 5,
+        "right": 36,
+        "bottom": 39
+      },
+      "opaquePixels": 597,
+      "colors": 9
+    },
+    "viking": {
+      "bytes": 645,
+      "sha256": "004b3df049c4f23d33f029ee6bea036ec9cfda91c32faaf5d715e3490ee8fe1d",
+      "cornersTransparent": true,
+      "bounds": {
+        "left": 12,
+        "top": 8,
+        "right": 37,
+        "bottom": 39
+      },
+      "opaquePixels": 542,
+      "colors": 10
+    },
+    "medic": {
+      "bytes": 646,
+      "sha256": "8910d0146df0a1fda8d30b20f7eda8f7b3d50fa917f55a90a9d54c0d5f6368ad",
+      "cornersTransparent": true,
+      "bounds": {
+        "left": 13,
+        "top": 9,
+        "right": 36,
+        "bottom": 39
+      },
+      "opaquePixels": 553,
+      "colors": 10
+    },
+    "explorer": {
+      "bytes": 651,
+      "sha256": "6c6a59dfe40180b783ca0bea9cf3251b6ba48f38dc3ac1769b8dd0fe1603ffd6",
+      "cornersTransparent": true,
+      "bounds": {
+        "left": 13,
+        "top": 8,
+        "right": 36,
+        "bottom": 39
+      },
+      "opaquePixels": 574,
+      "colors": 10
+    },
+    "robot": {
+      "bytes": 656,
+      "sha256": "2ec0d8e414bc206fae54ffca86021f484d43f79c07e0cf6e3f5977b6ebddc9a4",
+      "cornersTransparent": true,
+      "bounds": {
+        "left": 13,
+        "top": 6,
+        "right": 36,
+        "bottom": 39
+      },
+      "opaquePixels": 519,
+      "colors": 10
+    }
+  }
+}

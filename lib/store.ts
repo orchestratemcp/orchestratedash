@@ -8,6 +8,7 @@ import {
   type RunArtifact,
   type RunEvent,
 } from "./contracts";
+import { isOName, oFor, type OName } from "./brand/o-cast";
 import { db, insertEventRow, readRowsTolerantly, transact } from "./db";
 import { checkManifestConstraints } from "./manifest-constraints";
 
@@ -33,6 +34,22 @@ export interface StoredAgent {
    */
   manifest: AnyAgentManifest;
   imported_at: string;
+  /**
+   * Which of the O's this agent wears (MAR-500).
+   *
+   * Read from the `avatar` column, which was written once when the agent was
+   * created. It is not recomputed here and must not be recomputed anywhere: a
+   * character derived on the render path is a character that changes when its
+   * seed does, and MAR-435 asks for one that does not.
+   *
+   * Falls back to `oFor(name)` for the two cases a column can be empty — a row
+   * a damaged page returned without it, and a value naming a character this
+   * build does not ship (a downgrade, a hand-edited store). Both are better
+   * answered with the character creation would have chosen than with a broken
+   * image, and neither is silent: the fallback is the same deterministic seed,
+   * so the answer is stable rather than merely present.
+   */
+  avatar: OName;
 }
 
 /**
@@ -94,6 +111,18 @@ function parseOrNull<T>(raw: string): T | null {
 }
 
 /**
+ * The stored character, or the one creation would have chosen (MAR-500).
+ *
+ * The column is the answer whenever it holds a character this build ships —
+ * including when it disagrees with `oFor(name)`, which is the case that proves
+ * nothing recomputes. `tests/o-cast.test.ts` writes a deliberately "wrong"
+ * character and asserts it comes back.
+ */
+function storedAvatar(value: unknown, name: string): OName {
+  return isOName(value) ? value : oFor(name);
+}
+
+/**
  * The whole store, materialised.
  *
  * Kept because four pages and routes take a `StoreShape` and hand it to the
@@ -134,8 +163,8 @@ export function readStore(): StoreShape {
   // handles the first; `readRowsTolerantly` handles the second.
   const agentRows = readRowsTolerantly(database, {
     table: "agents",
-    bulk: "SELECT rowid, name, manifest_json, imported_at FROM agents",
-    byRowid: "SELECT rowid, name, manifest_json, imported_at FROM agents WHERE rowid = ?",
+    bulk: "SELECT rowid, name, manifest_json, imported_at, avatar FROM agents",
+    byRowid: "SELECT rowid, name, manifest_json, imported_at, avatar FROM agents WHERE rowid = ?",
   });
   for (const row of agentRows.rows) {
     const name = text(row, "name");
@@ -144,7 +173,11 @@ export function readStore(): StoreShape {
       unreadable.agents.push(name);
       continue;
     }
-    agents[name] = { manifest, imported_at: text(row, "imported_at") };
+    agents[name] = {
+      manifest,
+      imported_at: text(row, "imported_at"),
+      avatar: storedAvatar(row["avatar"], name),
+    };
   }
 
   // Ordered by arrival, which is what the JSON store's array order meant. The
@@ -301,13 +334,29 @@ export function importManifest(input: unknown): ImportResult {
     const existing = database.prepare("SELECT 1 FROM agents WHERE name = ?").get(name);
     database
       .prepare(
-        "INSERT INTO agents (name, manifest_version, manifest_json, imported_at) " +
-          "VALUES (?, ?, ?, ?) ON CONFLICT (name) DO UPDATE SET " +
+        "INSERT INTO agents (name, manifest_version, manifest_json, imported_at, avatar) " +
+          "VALUES (?, ?, ?, ?, ?) ON CONFLICT (name) DO UPDATE SET " +
           "manifest_version = excluded.manifest_version, " +
           "manifest_json = excluded.manifest_json, " +
           "imported_at = excluded.imported_at",
       )
-      .run(name, manifest.manifest_version, JSON.stringify(manifest), new Date().toISOString());
+      .run(
+        name,
+        manifest.manifest_version,
+        JSON.stringify(manifest),
+        new Date().toISOString(),
+        // MAR-500. The insert assigns; the update clause above deliberately
+        // omits `avatar`, so re-importing a manifest never re-costumes an agent
+        // that already exists. That is the case worth protecting: `display_name`
+        // is what a person reads and is free to change, and an agent whose
+        // character moved because its author retitled it would be an agent the
+        // user has to learn to recognise twice.
+        //
+        // The seed is `agent.name` — the primary key, and the same string SITE
+        // seeds with — so the character DASH assigns on day one is the one SITE
+        // would have drawn for the same agent.
+        oFor(name),
+      );
     return { ok: true as const, agent: name, replaced: existing !== undefined };
   });
 }

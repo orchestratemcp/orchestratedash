@@ -30,6 +30,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+import { oFor } from "./brand/o-cast";
 import { validateEvent, validateManifest } from "./contracts";
 
 /* ---------------------------------------------------------------------- *
@@ -60,7 +61,21 @@ export const legacyJsonPath = path.join(dataDir, "dash.json");
  * and transcripts (DASH-15) actually means. Never edit an entry that has
  * shipped; add a new one.
  */
-const MIGRATIONS: readonly string[] = [
+/**
+ * One migration: SQL to execute, or a function to run against the database.
+ *
+ * The function form arrived with MAR-500 and exists for exactly one reason: that
+ * migration's data step is not expressible in SQL. It backfills each existing
+ * agent's avatar from `oFor`, a string hash SITE and DASH must compute
+ * identically, and reimplementing it in SQLite expressions would be a second
+ * copy of the one function whose whole job is to agree with another repository.
+ *
+ * Same rules either way — ordered, append-only, one transaction each, never
+ * edited after shipping.
+ */
+type Migration = string | ((database: DatabaseSync) => void);
+
+const MIGRATIONS: readonly Migration[] = [
   `
   -- Store-level facts: schema provenance, migration record. Not app data.
   CREATE TABLE store_meta (
@@ -535,6 +550,31 @@ const MIGRATIONS: readonly string[] = [
 
   CREATE INDEX workspace_artifacts_by_run ON workspace_artifacts (agent, run_id);
   `,
+  // MAR-500. The agent's costume, as a column on the agent.
+  //
+  // **Assigned once and never recomputed**, which is the whole point of storing
+  // it. MAR-435 asks for an avatar identifier independent of the agent's name
+  // and runtime state; `oFor(name)` is the *default* assignment and is not
+  // independent of the name, so a render path that called it would put the
+  // dependency back. Written on insert by `importManifest`, backfilled here for
+  // every agent imported before this column existed, and touched by nothing
+  // else — the `ON CONFLICT DO UPDATE` that re-imports a manifest deliberately
+  // leaves this column alone.
+  //
+  // Nullable rather than NOT NULL, and the reason is the store this repository
+  // has already had damaged twice: a NOT NULL column added to a live table is a
+  // migration that can fail on a row nobody can read. A null here is recoverable
+  // by anything that reads it (`lib/store.ts` falls back to the same seed); a
+  // failed migration is not.
+  (database) => {
+    database.exec("ALTER TABLE agents ADD COLUMN avatar TEXT");
+    const rows = database.prepare("SELECT name FROM agents").all();
+    const assign = database.prepare("UPDATE agents SET avatar = ? WHERE name = ?");
+    for (const row of rows) {
+      const name = String(row["name"]);
+      assign.run(oFor(name), name);
+    }
+  },
 ];
 
 /* ---------------------------------------------------------------------- *
@@ -715,12 +755,16 @@ function migrate(database: DatabaseSync): void {
   const applied = Number(row?.user_version ?? 0);
 
   for (let version = applied; version < MIGRATIONS.length; version += 1) {
-    const statements = MIGRATIONS[version];
-    if (statements === undefined) {
+    const step = MIGRATIONS[version];
+    if (step === undefined) {
       continue;
     }
     transact(database, () => {
-      database.exec(statements);
+      if (typeof step === "function") {
+        step(database);
+      } else {
+        database.exec(step);
+      }
       // Interpolated because SQLite does not accept a parameter in a PRAGMA.
       // The value is a loop index over a module constant, never caller input.
       database.exec(`PRAGMA user_version = ${version + 1}`);
@@ -837,14 +881,19 @@ function importLegacyJson(database: DatabaseSync): void {
       const manifest = validation.value;
       database
         .prepare(
-          "INSERT INTO agents (name, manifest_version, manifest_json, imported_at) " +
-            "VALUES (?, ?, ?, ?) ON CONFLICT (name) DO NOTHING",
+          "INSERT INTO agents (name, manifest_version, manifest_json, imported_at, avatar) " +
+            "VALUES (?, ?, ?, ?, ?) ON CONFLICT (name) DO NOTHING",
         )
         .run(
           manifest.agent.name,
           manifest.manifest_version,
           JSON.stringify(manifest),
           importedAt(stored?.imported_at, now),
+          // MAR-500. This is a creation, so it assigns — the same seed and the
+          // same function `importManifest` uses. An agent that arrives from
+          // dash.json has never had a character before, so there is nothing here
+          // to preserve and nothing to recompute.
+          oFor(manifest.agent.name),
         );
       result.agents += 1;
     }

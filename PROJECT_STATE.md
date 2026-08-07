@@ -809,6 +809,79 @@ reading its own owner as a stranger on CI's RID-500 account, because `icacls
 as owner spellings only for that exact account. The full story is in
 `.orchestrate/state.json`'s MAR-434 entry and PR #48's root-cause comment.
 
+## The avatar foundation, and nothing wearing it yet (MAR-500)
+
+**Built, green, and on no surface — the last part by the issue's own
+non-goals.** BRAND-03/04/05 are the surfaces; this is the component, the
+assignment rule and the enforcement all three will sit on.
+
+**The assets are vendored, and the manifest is what keeps the copy honest.**
+The eleven audited 50×50 PNGs and `o-cast.json` are copied out of
+orchestrateweb rather than referenced, because DASH must render with no network
+and no sibling checkout. A copy drifts; the per-file SHA-256 is what says so.
+DASH's brand check deliberately has **no `--write`** — a check that can
+regenerate its own audit record is a copy agreeing with itself about having
+changed. A deliberate asset change is made and audited in orchestrateweb and
+re-vendored here.
+
+**Assignment is persisted because MAR-435 asked for an identifier independent
+of the agent's name, and a function of the name is not.** `oFor(agent.name)` —
+byte-identical to SITE's, so both products draw the same agent the same way on
+day one — is the *default* assignment and runs exactly twice: on insert, and in
+migration 8's backfill for agents imported before the column existed. The
+re-import path's `ON CONFLICT DO UPDATE` omits `avatar` on purpose, so an
+author changing `display_name` does not re-costume an agent the user has
+already learned to recognise.
+
+The load-bearing test is **not** that the stored value equals `oFor(name)`. It
+does, at creation, so that assertion would pass just as happily against a store
+that recomputed on every read. `tests/o-cast.test.ts` writes a character the
+seed would never have chosen and asserts *that* comes back. Its SITE-parity
+pins were produced by executing orchestrateweb's own `oFor` body, not by
+running DASH's and writing down the answer.
+
+`MIGRATIONS` gains a function form for the first time, for one reason: this
+migration's data step is not expressible in SQL, and a string hash rewritten in
+SQLite expressions would be a second copy of the one function whose whole job
+is to agree with another repository.
+
+**Each violation class is demonstrated failing, in CI rather than in a
+transcript.** The issue asks for mutate-fail-restore with the transcript in the
+PR. That is something somebody did once on a machine nobody else has, so the
+rules live in `scripts/brand-rules.mjs` as pure functions over strings and
+`tests/brand-check.test.ts` drives each class with a fixture that must fail and
+a neighbour that must not — a rule loosened into always-passing fails there
+rather than passing silently forever. The last case runs the real script over
+the working tree.
+
+Six classes: a hash disagreeing with the manifest; a size that is not a whole
+multiple of 50; a character chosen by a condition or a status word, and an
+announced costume outside an empty allowlist; `--ok` reaching an avatar or
+anything enclosing it; `image-rendering: pixelated` going missing; and a
+literal duration where a `--motion-*` token belongs, because `app/tokens.css`
+zeroes those under `prefers-reduced-motion` and that is what makes stillness
+free of per-surface code.
+
+**One rule SITE has that DASH deliberately does not**: a surface allowlist.
+SITE's cast may appear on four files and nowhere else. DASH's surfaces are the
+point, and a list every BRAND issue has to widen is a gate edited into
+meaninglessness in three commits.
+
+**What is not proven, plainly.** The proven bar is a witnessed render at 50px
+and 100px in the installed shell, both themes, `prefers-reduced-motion`
+honoured — and that needs a surface. So this stays `merged`, and the promotion
+belongs to the first BRAND-03/04/05 slice. What was checked instead:
+`renderToStaticMarkup` over the attributes a screenshot is worst at (a picture
+of a decorative avatar looks exactly like a picture of an announced one), and a
+real `pnpm build:renderer` confirming all eleven files reach `out/o/1x/`
+byte-identical — ninja at `910b5184…`, the audited hash.
+
+Evidence: typecheck clean, `brand:check` green, `[state] valid` with the 8
+recorded drift warnings, and 75 test files / 1404 passed / 8 skipped / 0 failed
+from PowerShell. PowerShell deliberately: under Git Bash `whoami /user` fails
+and 43 unrelated channel-secret and task-workspace cases go red on code this
+branch does not touch.
+
 ## "The runner answered 500." (MAR-506)
 
 **A malformed `runner.sqlite` was being reported to the user as a status code.**
