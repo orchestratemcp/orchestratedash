@@ -2169,3 +2169,78 @@ store at 1280/768/375 in both themes, every measurement reporting
 the interrupted MAR-468 attempt are still alive on this machine — MAR-520's own
 subject, and the reason AGENTS.md's process-safety rule exists. Starting the
 shell smoke beside a live unrelated runner is two writers on one store.
+
+## "The current connection page makes no sense to me" (MAR-533)
+
+**Open on a PR, not merged.** That is Henrik, 2026-08-07, about the page the
+whole trust story runs through — a UX verdict from the product's own first
+user, and the reason this is a rebuild rather than a restyle.
+
+**The page it replaces was not badly built; it answered a different question.**
+MAR-383 asked for a *checklist* — what does this agent still need connecting —
+so rows are grouped by **who holds the credential**: "Connect through DASH",
+"Kept with the agent", "Managed elsewhere". Three headings of DASH's own
+taxonomy, above a list of things that are mostly already connected, with the
+permission card three scrolls down and underneath the buttons. That was the
+right page during a first install and the wrong page ever afterwards.
+
+Each connection is now one card answering, in order: **what can this reach, on
+whose account, since when, and what has it actually been used for** — with the
+receipt one click away.
+
+**The three-party intersection is drawn.** *"A grant is the intersection of
+three parties: DASH implements it, the manifest declared it, the provider
+issued it"* has been true in `lib/broker/execute.ts` since MAR-458 and had
+never once been on a screen.
+
+Drawing it honestly needed a new list upstream. `requestedOperations` is
+*already* an intersection of two of the three — DASH's operation set meets the
+manifest's declared scopes — so from a card's point of view two parties were
+indistinguishable inside it. `unrequestedOperations` is the complement, and it
+is what turns the explanation from a slogan into something this repository can
+be held to: **"send an email" listed as an action nobody asked for is DASH
+naming an action it has never built**, and granting every permission Google has
+would not create it. That is a stronger and more surprising statement than any
+reassurance.
+
+**Four capability standings, not two.** A partial consent — signed in, this one
+not issued — is a different situation from never having signed in, and merging
+them sends somebody to press a button that does not fix what they are looking
+at. The chip is on every row; the *explanation* prints once per run, because a
+reader who learns the small grey line never changes stops reading it, including
+on the card where the third row differs from the first two.
+
+**A connection DASH is not in the middle of gets the same headings with the
+answers missing**, and that contrast is the page's whole lesson. The old
+grouping stated its *cause* — custody — and left its *consequence* unsaid. Two
+connections can both read "connected" while one has a receipt of every call and
+the other has nothing at all, for ever. `handed_over` is the case worth being
+blunt about: DASH holds the credential *and gives it to the agent*, so it looks
+identical to the brokered case on every axis except the only one that matters.
+
+**`lib/copy/when.ts` closes a plain-language hole nothing was watching.** The
+page shipped `2026-08-07T13:58:28.037Z` onto the screen from five separate
+fields — four times per lapse row — and at 375px one window wrapped over four
+lines. A timestamp with a `T` and a `Z` in it is the same failure
+`lib/copy/identifiers.ts` exists to stop, and it slipped through because a
+timestamp is not an identifier and no rule was looking. Absolute and never
+relative: a relative phrase needs a clock at render, and these timestamps are
+evidence somebody can check against their provider's own account page.
+
+**Two defects the screenshots found and no measurement could.** That is now the
+fourth time on this surface family. An agent with no brokered connection was
+told *"there are 5 periods DASH cannot account for"* directly above *"this
+agent asked to reach nothing outside this computer"* — both sentences true,
+together nonsense, because a `dash_closed` lapse says the broker was not
+running to answer requests that could not have existed. And a three-action card
+printed one explanation three times in eleven lines.
+
+`electron/capture.ts` gains one full-height frame per `tall` surface. Every
+image it wrote was a **viewport**, which is the right unit for "what does this
+layout do as it narrows" and the wrong one for a card taller than a window —
+the first review of this card was of its header.
+
+Evidence: `pnpm typecheck` clean, `brand:check` green with **5** files using
+the cast (Connections is a fourth surface for MAR-501's grammar), 96 test files
+/ 1778 passed / 8 skipped from PowerShell, 51 of them new. 48 images in
+`qa-screenshots-mar-533/`. `verify:shell` not run, for MAR-528's reason.
