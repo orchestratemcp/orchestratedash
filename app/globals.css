@@ -1159,6 +1159,84 @@ button:disabled {
 }
 
 /* ------------------------------------------------------------------------ *
+ * The files a person gives an agent (MAR-507)
+ *
+ * Cards, and the rule they inherit is the one MAR-491 paid to establish:
+ * `.row-card` already carries the padding, border and background, so this adds
+ * only what is specific to a file list. A table here would be a 1425px
+ * scroller at 375px, which is the defect that made every other table in DASH
+ * into a card list.
+ *
+ * The three states get a left bar rather than a fill. A fill would be a colour
+ * with a meaning, and `app/tokens.css` reserves emerald for healthy and live
+ * things — a green "ready" file would join that system and dilute it. A bar is
+ * a position in a list, which is what these are.
+ * ------------------------------------------------------------------------ */
+.input-card {
+  display: grid;
+  gap: var(--density-gap);
+}
+
+.input-card h3 {
+  margin: 0;
+}
+
+.input-files {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.input-file {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.input-file-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.input-file p {
+  margin: var(--space-1) 0 0;
+}
+
+/* Copying is in progress and nothing has been decided, so it takes the neutral
+   line rather than a status colour it would have to give back. */
+.input-file.is-selected {
+  border-left-color: var(--line-strong);
+}
+
+/* Accent, not `--ok`: the file is here, which is a fact rather than a health
+   signal. See the note above and `app/tokens.css`. */
+.input-file.is-copied {
+  border-left-color: var(--accent);
+}
+
+.input-file.is-rejected {
+  border-left-color: var(--err);
+  background: var(--err-bg);
+}
+
+.input-size {
+  color: var(--text-faint);
+}
+
+/* The action sits under the file list on a narrow window and beside the card's
+   content on a wide one, which is what `.row-card`'s own grid already does for
+   every other card in DASH. Nothing here changes at any width, which is the
+   point: MAR-491's rule is that no column is hidden and no fact is dropped. */
+.inputs-panel .button-secondary {
+  justify-self: start;
+
  * The O's (MAR-500)
  *
  * One rule, and every line of it is a rule the brand check enforces.

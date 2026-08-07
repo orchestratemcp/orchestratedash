@@ -57,6 +57,7 @@ import {
   type StoreShape,
 } from "../store";
 import { buildArtifactCards, type ArtifactCardView } from "./artifacts";
+import { buildInputRoles } from "./inputs";
 import {
   availableControls,
   buildOverview,
@@ -708,6 +709,11 @@ export function workspaceView(
     outputs,
     outputs_run_id: outputsRunId,
     permissions: declaredPermissions(manifest),
+    // MAR-507. From the manifest, like `permissions` directly above and for the
+    // same reason: this is what the agent's author declared, and a projection
+    // DASH derived from anything else would be DASH describing somebody else's
+    // agent.
+    input_roles: buildInputRoles(manifest),
   };
 }
 

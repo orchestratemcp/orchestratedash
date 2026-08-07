@@ -11,17 +11,22 @@ import {
   type SetStateAction,
 } from "react";
 
+import { RunOutput } from "../../_components/digest";
+import { InputsPanel, type SelectedInput } from "../../_components/inputs";
 import { OutputsPanel } from "../../_components/outputs";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import { AGENT_WORKSPACE_PARAMS, runDetailHref } from "../../_data/routes";
 import {
   downloadOutput,
   submitAgentCommand,
+  submitWorkspaceCommand,
   type AgentCommandArgs,
 } from "../../_data/source";
 import { useCanAct, useHost, useLiveView } from "../../_data/use-view";
 import type { GroundingAnalysis } from "../../../lib/analyze";
 import type { PermissionGrant } from "../../../lib/contracts";
+import { INPUTS_PANEL_COPY } from "../../../lib/copy/inputs";
+import type { InputRoleView } from "../../../lib/views/inputs";
 import type { ArtifactCardView } from "../../../lib/views/artifacts";
 import type { InboxItem } from "../../../lib/workspace";
 import type {
@@ -47,6 +52,22 @@ function AgentWorkspace(): ReactNode {
   const [feedback, setFeedback] = useState<CommandFeedback>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [live, setLive] = useState(false);
+  /*
+   * MAR-507. The task and what has been put in it, held here rather than on the
+   * view, because neither is a fact DASH's store holds: the runner owns the task
+   * workspace, and what is in it is the answer to a command rather than a row.
+   *
+   * **The consequence is named rather than hidden.** Leaving this page before
+   * pressing Run now loses the task id, and the files already copied stay in the
+   * runner's workspace until it cleans them up. There is no route to list an
+   * agent's open tasks, so DASH cannot offer to pick one back up — and a page
+   * that silently opened a *second* task on return would quietly orphan the
+   * first one's files rather than reuse them. `INPUTS_PANEL_COPY.dispatch_note`
+   * is what tells a person the selection is waiting on the button.
+   */
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const [selectedInputs, setSelectedInputs] = useState<SelectedInput[]>([]);
+  const [busyRole, setBusyRole] = useState<string | null>(null);
   const state = useLiveView(
     (source) => source.workspace(agent),
     `${agent}:${String(refreshKey)}`,
@@ -94,6 +115,125 @@ function AgentWorkspace(): ReactNode {
     } finally {
       setPending(null);
     }
+  }
+
+  /**
+   * Ask for one file for one declared role, and record what came back
+   * (MAR-507).
+   *
+   * Opens a task on the first selection rather than on page load: an agent
+   * whose files a person never chooses should not leave a directory behind on
+   * the runner for having been looked at.
+   *
+   * The `selected` state is written three times on purpose — before the picker,
+   * and again with whichever answer arrived — because the copy is not instant
+   * for a large file and "nothing appears to have happened" is how a person
+   * clicks twice.
+   */
+  async function chooseInput(roleId: string): Promise<void> {
+    setBusyRole(roleId);
+    setFeedback(null);
+    const key = `${roleId}:${String(Date.now())}`;
+    try {
+      let task = taskId;
+      if (task === null) {
+        const opened = await submitWorkspaceCommand("open", { agent_id: agent });
+        const openedId = opened.data?.["task_id"];
+        if (!opened.ok || typeof openedId !== "string" || openedId.length === 0) {
+          setFeedback({
+            ok: false,
+            message: opened.detail ?? "DASH could not open a place to put a file for this agent.",
+          });
+          return;
+        }
+        task = openedId;
+        setTaskId(openedId);
+      }
+
+      setSelectedInputs((current) => [
+        ...current,
+        { role_id: roleId, state: "selected", display_name: "", byte_size: 0, key },
+      ]);
+
+      const result = await submitWorkspaceCommand("select", {
+        agent_id: agent,
+        task_id: task,
+        role_id: roleId,
+      });
+
+      if (result.reason === "cancelled") {
+        // Not a failure and must not read as one — the same call
+        // `describeAuthorizationFailure` makes about a cancelled sign-in. The
+        // placeholder row goes away rather than becoming a rejection.
+        setSelectedInputs((current) => current.filter((input) => input.key !== key));
+        setFeedback({ ok: true, message: INPUTS_PANEL_COPY.cancelled });
+        return;
+      }
+
+      setSelectedInputs((current) =>
+        current.map((input) =>
+          input.key === key
+            ? {
+                ...input,
+                state: result.ok ? "copied" : "rejected",
+                display_name: String(result.data?.["display_name"] ?? ""),
+                byte_size: Number(result.data?.["byte_size"] ?? 0),
+                // The runner's own sentence, verbatim. `lib/copy/inputs.ts` says
+                // why DASH does not reword it.
+                detail: result.detail,
+              }
+            : input,
+        ),
+      );
+    } catch {
+      setSelectedInputs((current) => current.filter((input) => input.key !== key));
+      setFeedback({
+        ok: false,
+        message: "DASH could not reach the command boundary. Nothing was copied.",
+      });
+    } finally {
+      setBusyRole(null);
+    }
+  }
+
+  /**
+   * Hand the chosen files to the agent, and say whether it worked (MAR-507).
+   *
+   * **This is the join, and its failure branch is the interesting half.** If
+   * dispatch fails, the agent must not be started: an agent triggered without
+   * the files a person just chose would run, finish, and produce an output
+   * derived from nothing they gave it — which is the same run as a successful
+   * one from the outside, and the one that would be believed.
+   *
+   * The run id is DASH's. `runner/task-api.ts` files whatever the agent writes
+   * against the run bound here, which is how proof 9 finds the output; the
+   * agent's own telemetry run id is its own and may differ. That seam is
+   * MAR-434's and is unchanged by this — what is new is that a person can now
+   * cause it from the page rather than from a script.
+   */
+  async function dispatchTask(): Promise<boolean> {
+    if (taskId === null) {
+      return true;
+    }
+    const runId = `run-${String(Date.now())}-${Math.random().toString(36).slice(2, 8)}`;
+    const result = await submitWorkspaceCommand("dispatch", {
+      agent_id: agent,
+      task_id: taskId,
+      run_id: runId,
+    });
+    if (!result.ok) {
+      setFeedback({
+        ok: false,
+        message:
+          result.detail ??
+          "DASH could not hand your files to the agent, so it was not started.",
+      });
+      return false;
+    }
+    // The task is closed to further changes now, so the next selection has to
+    // open a new one. Keeping the id would offer a picker the runner refuses.
+    setTaskId(null);
+    return true;
   }
 
   if (state.status === "loading") {
@@ -157,10 +297,21 @@ function AgentWorkspace(): ReactNode {
         </div>
       )}
 
+      {/* MAR-507. Above Run now, because it is the step before it. */}
+      <InputsPanel
+        busyRole={busyRole}
+        canAct={canAct}
+        onChoose={(roleId) => void chooseInput(roleId)}
+        roles={view.input_roles}
+        selected={selectedInputs}
+      />
+
       <RunNow
         agent={view.agent}
         canAct={canAct}
+        hasFiles={selectedInputs.some((input) => input.state === "copied")}
         issue={issue}
+        onDispatch={dispatchTask}
         pending={pending}
         snapshot={view.snapshot}
       />
@@ -311,17 +462,23 @@ function timeOnly(at: Date | null): string {
 function RunNow({
   agent,
   canAct,
+  hasFiles,
   issue,
+  onDispatch,
   pending,
   snapshot,
 }: {
   agent: string;
   canAct: boolean;
+  /** Whether the person has files waiting that this run should receive (MAR-507). */
+  hasFiles: boolean;
   issue: (
     key: string,
     command: Parameters<typeof submitAgentCommand>[0],
     args: AgentCommandArgs,
   ) => Promise<void>;
+  /** Binds the open task to a run. False means the agent must not be started. */
+  onDispatch: () => Promise<boolean>;
   pending: string | null;
   snapshot: WorkspaceSnapshotView | null;
 }): ReactNode {
@@ -361,16 +518,30 @@ function RunNow({
       <button
         className="button-primary"
         disabled={pending !== null}
-        onClick={() =>
-          void issue(`run:${taskId}`, "retry", {
-            agent_id: agent,
-            observed_at: observedAt,
-            task_id: taskId,
-          })
-        }
+        onClick={() => {
+          void (async () => {
+            /*
+             * MAR-507. The files go first, and a refusal here stops the run.
+             *
+             * The order is the whole point: an agent started before its task is
+             * bound would read an empty workspace, and an agent started after a
+             * dispatch that failed would produce an output derived from nothing
+             * the person gave it. Both look exactly like a successful run from
+             * outside, which is why neither may happen quietly.
+             */
+            if (!(await onDispatch())) {
+              return;
+            }
+            await issue(`run:${taskId}`, "retry", {
+              agent_id: agent,
+              observed_at: observedAt,
+              task_id: taskId,
+            });
+          })();
+        }}
         type="button"
       >
-        {pending === `run:${taskId}` ? "Starting…" : "Run now"}
+        {pending === `run:${taskId}` ? "Starting…" : hasFiles ? "Send files and run now" : "Run now"}
       </button>
       <p className="muted">
         It runs only when you ask. Nothing happens on a timer.

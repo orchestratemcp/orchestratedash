@@ -29,6 +29,7 @@
 
 import type { GroundingAnalysis, RunAnalysis } from "../analyze";
 import type { ArtifactCardView } from "./artifacts";
+import type { InputRoleView } from "./inputs";
 import type { Recovery } from "../copy/recovery";
 import type { ConnectionRequirementRow } from "../connections";
 import type { ManifestPermissions, PermissionGrant, RunArtifact, RunEvent } from "../contracts";
@@ -529,6 +530,17 @@ export type WorkspaceView =
       outputs_run_id: string | null;
       /** What the manifest declares it may do without an account. */
       permissions: PermissionGrant[];
+      /**
+       * The kinds of file this agent declares it accepts (MAR-507), in the
+       * author's own plain-language names.
+       *
+       * A projection of the manifest and nothing else. It carries no task, no
+       * admitted file and no path, because none of those are facts DASH holds:
+       * the runner owns the task workspace, and what is in it is the answer to a
+       * command rather than a field on a view. Empty means the agent takes no
+       * files, which is not the same as taking anything — see `buildInputRoles`.
+       */
+      input_roles: InputRoleView[];
     };
 
 export type WorkInboxRow = InboxItem & {

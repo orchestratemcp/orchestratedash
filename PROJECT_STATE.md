@@ -809,6 +809,64 @@ reading its own owner as a stranger on CI's RID-500 account, because `icacls
 as owner spellings only for that exact account. The full story is in
 `.orchestrate/state.json`'s MAR-434 entry and PR #48's root-cause comment.
 
+## Inputs, the half of the workspace UI that was still a sentence (MAR-507)
+
+**Select a file, against the roles the manifest declares, wired to the
+admission API proof 9 already drives.** Built against master rather than on PR
+#52, which is open behind the Actions outage; the overlap is recorded in
+`.orchestrate/state.json` rather than avoided.
+
+**The renderer names a kind of file and never a file.** `workspace.selectInput`
+carries an agent, a task and a role, and no path in either direction. Main
+opens `dialog.showOpenDialog`, reads the declared limits out of the manifest
+itself, and hands the runner a path the page never saw. That is
+`connection.connect`'s shape, and here the sharper version of it: a credential
+the renderer could name is one page script already held, while a path the
+renderer could name is one nobody chose. A payload carrying `source_path`,
+`path`, `file` or `directory` is refused outright rather than having the field
+dropped — exactly as a credential field on a connect is.
+
+Nothing can widen what the agent declared either. `role_id` is checked against
+the manifest in main and an undeclared role is refused **before a picker
+opens**, so a person is not asked for a document that could not have been used.
+The limits travel from the manifest, not the payload: a renderer-supplied limit
+block could only be obeyed — letting a page widen the author's declaration — or
+ignored, and an ignored field on the wire is one a later reader believes.
+
+**Cards, never a table** (MAR-491), and **selected / copied / rejected are per
+file rather than per role**. A rejection carries the runner's own sentence
+verbatim: the runner is what decided and its limits are what move, so a second
+vocabulary in DASH is the thing that stays wrong when they change. The copied
+state says the fact nobody would guess and the whole workspace design rests on
+— DASH took its own copy, so changing the original now changes nothing.
+
+There is no "remove" control, because the runner has no route that takes an
+admitted input back out. One that faked it by hiding the card would be worse:
+the file would still reach the agent.
+
+**Run now dispatches the task, and a refusal stops the run.** That branch is the
+interesting half. An agent started before its task is bound reads an empty
+workspace; one started after a failed dispatch produces an output derived from
+nothing the person gave it. Both look exactly like a successful run from
+outside, which is why neither may happen quietly.
+
+**Three things this does not do.** No shipped example manifest declares
+`task_inputs`, so the panel is invisible in the product until one does — a test
+asserts that of all five rather than leaving it to be discovered, and it is the
+same shape as `describeConnectionCondition`'s revoked sentence: vocabulary and
+surface built before a producer. The task id lives in page state, because DASH
+holds no such row and the runner has no route to list an agent's open tasks —
+leaving the page loses the selection, and reopening a *second* task would orphan
+the first one's files rather than reuse them. And the installed-shell proof the
+issue asks for is not written: proof 9 covers the runner's half, and adding one
+needs `electron/smoke.ts`, which PR #51 owns.
+
+Evidence: typecheck clean, `[state] valid` with the 8 recorded drift warnings,
+74 test files / 1392 passed / 8 skipped / 0 failed from PowerShell, and
+`pnpm build:renderer` green — which is the check `tests/client-bundle.test.ts`
+exists because of, since a pure `lib/` module reaching a `"use client"` tree is
+exactly where `node:fs` got into the browser bundle once before.
+
 ## The avatar foundation, and nothing wearing it yet (MAR-500)
 
 **Built, green, and on no surface — the last part by the issue's own

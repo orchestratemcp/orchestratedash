@@ -168,6 +168,27 @@ const dashShell = {
   disconnectConnection: (args: ConnectionArgs) => send("connection.disconnect", { ...args }),
 
   /**
+   * The three task-workspace commands (MAR-507).
+   *
+   * `selectInput` asks main to *ask* the user for a file. It does not carry a
+   * path, cannot be given one, and does not receive one back — the same shape
+   * `connectConnection` has and for a sharper reason: a credential this bridge
+   * could name is one page script already held, while a path it could name is
+   * one nobody chose.
+   *
+   * What comes back about an admitted file is its own display name and its
+   * size, both facts about the copy the runner now owns.
+   *
+   * Named methods, like everything above. Three a reviewer can count beats a
+   * `workspace(action, target)` that would let page script address whatever the
+   * fourth one turns out to be.
+   */
+  openAgentTask: (args: { agent_id: string }) => send("workspace.openTask", { ...args }),
+  selectAgentInput: (args: { agent_id: string; task_id: string; role_id: string }) =>
+    send("workspace.selectInput", { ...args }),
+  dispatchAgentTask: (args: { agent_id: string; task_id: string; run_id: string }) =>
+    send("workspace.dispatchTask", { ...args }),
+  /**
    * Save one of an agent's outputs where the user asks (MAR-434).
    *
    * Two opaque ids and nothing else. There is no path in the payload and none in

@@ -155,6 +155,13 @@ describe("the audited command chokepoint", () => {
       "agent.pause",
       "agent.resume",
       "agent.cancel",
+      // MAR-507. A fourth family, and the only one that reaches a file the user
+      // chose. Note what is *not* in any of their payloads: no key here could
+      // carry a path, which is what keeps "the renderer names a kind of file and
+      // never a file" true of the feature whose whole subject is files.
+      "workspace.openTask",
+      "workspace.selectInput",
+      "workspace.dispatchTask",
     ]);
     expect(COMMANDS["shell.ping"].mutates).toBe(false);
     expect(COMMANDS["runner.status"].mutates).toBe(false);
@@ -356,6 +363,11 @@ describe("dispatch", () => {
     const inputs: AgentCommandInput[] = [];
     const lifecycle: Array<{ action: string; agent_id: string | undefined }> = [];
     const connections: Array<{ action: string; target: Record<string, string> }> = [];
+    // MAR-507. Recorded rather than performed, for the sharpest version of the
+    // reason the others are: performing one would open a file picker, and the
+    // property these tests exist to hold is that whatever the renderer sent,
+    // no path was in it.
+    const workspaces: Array<{ action: string; target: Record<string, unknown> }> = [];
     // MAR-440. Where the menu was asked to appear, or `undefined` for "wherever
     // Electron would put it". Recorded rather than performed for the same
     // reason as everything else here: there is no `Menu` in this process.
@@ -369,14 +381,20 @@ describe("dispatch", () => {
       inputs,
       lifecycle,
       connections,
+      workspaces,
       menus,
       downloads,
-      workspaceAction: (
-        action: WorkspaceAction,
-        target: { agent_id: string; artifact_id: string },
-      ) => {
-        downloads.push({ action, target });
-        return Promise.resolve({ ok: true, detail: "Saved to C:\\Users\\someone\\Documents." });
+      workspaceAction: (action: WorkspaceAction, target: Record<string, unknown>) => {
+        if (action === "download") {
+          downloads.push({ action, target: target as Record<string, string> });
+          return Promise.resolve({ ok: true, detail: "Saved to C:\Users\someone\Documents." });
+        }
+        workspaces.push({ action, target });
+        return Promise.resolve({
+          ok: true,
+          detail: `${action} ok`,
+          data: { task_id: "task-fake-1" },
+        });
       },
       showApplicationMenu: (at: { x: number; y: number } | undefined) => {
         menus.push(at);
@@ -677,6 +695,127 @@ describe("dispatch", () => {
 
     it("refuses to execute one without the trusted side", () => {
       expect(() => executeCommand(reviewCommand(connect))).toThrowError(
+        /must go through dispatchCommand/,
+      );
+    });
+  });
+
+  /**
+   * The task workspace (MAR-507).
+   *
+   * The property worth a suite of its own is that **no path crosses this
+   * boundary in either direction**. `connection.connect` established the shape:
+   * the renderer asks main to *ask*. Here it is sharper — a credential the
+   * renderer could name is one page script already held, while a path the
+   * renderer could name is one nobody chose.
+   */
+  describe("workspace commands", () => {
+    const select = {
+      command: "workspace.selectInput",
+      request_id: "req-ws",
+      payload: { agent_id: "ledger-reporter", task_id: "task-1", role_id: "customer_brief" },
+    };
+
+    it("routes to the workspace side and not to the agent, runner or vault", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(select, ctx);
+
+      expect(result).toMatchObject({ ok: true, detail: "select_input ok" });
+      expect(ctx.workspaces).toEqual([
+        {
+          action: "select_input",
+          target: {
+            agent_id: "ledger-reporter",
+            task_id: "task-1",
+            role_id: "customer_brief",
+            run_id: undefined,
+          },
+        },
+      ]);
+      expect(ctx.inputs).toHaveLength(0);
+      expect(ctx.lifecycle).toHaveLength(0);
+      expect(ctx.connections).toHaveLength(0);
+    });
+
+    it.each(["source_path", "path", "file", "directory"])(
+      "refuses a selection that names a %s",
+      async (key) => {
+        /*
+         * The rule this feature exists under. `payload_keys` declares three
+         * fields and none of them can hold a location, so the boundary refuses
+         * the whole request rather than dropping the extra one — exactly as it
+         * does for a credential field on a connect.
+         */
+        const ctx = context();
+        const result = await dispatchCommand(
+          { ...select, payload: { ...select.payload, [key]: "C:\\Users\\henri\\secrets.txt" } },
+          ctx,
+        );
+
+        expect(result).toMatchObject({ ok: false, reason: "unexpected_payload_field" });
+        expect(ctx.workspaces).toHaveLength(0);
+      },
+    );
+
+    it("refuses a selection that does not name all three parts of its target", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(
+        { ...select, payload: { agent_id: "ledger-reporter", task_id: "task-1" } },
+        ctx,
+      );
+
+      expect(result).toMatchObject({ ok: false, reason: "missing_payload_field" });
+      expect(ctx.workspaces).toHaveLength(0);
+    });
+
+    it("opens a task with an agent and nothing else", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(
+        {
+          command: "workspace.openTask",
+          request_id: "req-ws-2",
+          payload: { agent_id: "ledger-reporter" },
+        },
+        ctx,
+      );
+
+      expect(result).toMatchObject({ ok: true, data: { task_id: "task-fake-1" } });
+      expect(ctx.workspaces[0]?.action).toBe("open_task");
+    });
+
+    it("dispatches a task by naming a run", async () => {
+      const ctx = context();
+      await dispatchCommand(
+        {
+          command: "workspace.dispatchTask",
+          request_id: "req-ws-3",
+          payload: { agent_id: "ledger-reporter", task_id: "task-1", run_id: "run-9" },
+        },
+        ctx,
+      );
+
+      expect(ctx.workspaces[0]).toMatchObject({
+        action: "dispatch_task",
+        target: { run_id: "run-9" },
+      });
+    });
+
+    it("audits the workspace command with keys only", async () => {
+      const ctx = context();
+      await dispatchCommand(select, ctx);
+
+      expect(ctx.audited[0]).toMatchObject({
+        command: "workspace.selectInput",
+        decision: "allowed",
+        payload_keys: ["agent_id", "task_id", "role_id"],
+        mutates: true,
+      });
+    });
+
+    it("refuses to execute one without the trusted side", () => {
+      // Performing one opens a file picker, which the pure module cannot do and
+      // must not appear to.
+      expect(() => executeCommand(reviewCommand(select))).toThrowError(
         /must go through dispatchCommand/,
       );
     });

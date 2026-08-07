@@ -301,6 +301,62 @@ export const COMMANDS = {
     // irreversible: nothing new happens in the world on the second attempt.
     irreversible: false,
   },
+
+  /*
+   * MAR-507. The task workspace, as three commands.
+   *
+   * A fourth family, for the reason the third exists. These are not Agent DOM
+   * verbs — no manifest declares them and no envelope carries them — and they
+   * are not process lifecycle. They move a person's own files, which nothing
+   * else in this catalogue does.
+   *
+   * **The path is the whole design.** `workspace.selectInput` carries an agent
+   * and a role and no path in either direction: the renderer asks main to *ask*
+   * the user for a file, exactly as `connection.connect` asks main to ask for a
+   * credential without ever carrying one. Main opens `dialog.showOpenDialog`,
+   * reads the declared limits out of the manifest itself, and hands the runner a
+   * path the renderer never saw and could not have chosen. So a compromised
+   * renderer can ask for a file picker and cannot name a file.
+   *
+   * Nothing here can widen what the agent declared either. `role_id` is checked
+   * against the manifest in main and refused if it names a role the agent does
+   * not accept, and the limits travel from the manifest rather than from the
+   * payload — see `declaredLimitsFor`.
+   */
+  "workspace.openTask": {
+    effect:
+      "Open a place for this agent's next run to receive files. Copies nothing and starts nothing.",
+    payload_keys: ["agent_id"],
+    required_keys: ["agent_id"],
+    // It creates a directory the runner owns. Nothing of the user's moves and
+    // nothing runs, but a store row exists afterwards that did not before.
+    mutates: true,
+    irreversible: false,
+  },
+  "workspace.selectInput": {
+    effect:
+      "Ask for one of your files and copy it into this agent's task. The agent is not started.",
+    payload_keys: ["agent_id", "task_id", "role_id"],
+    required_keys: ["agent_id", "task_id", "role_id"],
+    mutates: true,
+    // A copy is made and the original is untouched. The runner refuses to
+    // remove an admitted input, so the copy stays until the task is cleaned up
+    // — which is a thing DASH can undo by not running the task, not a change in
+    // the world.
+    irreversible: false,
+  },
+  "workspace.dispatchTask": {
+    effect:
+      "Hand the files you chose to the agent and close the task to further changes.",
+    payload_keys: ["agent_id", "task_id", "run_id"],
+    required_keys: ["agent_id", "task_id"],
+    mutates: true,
+    // The task closes and cannot be reopened, and the agent receives the files.
+    // Not `irreversible` in this flag's sense — nothing leaves the machine and
+    // no second invitation or payment happens — but it is the point of no
+    // return for the *selection*, and the copy on the button says so.
+    irreversible: false,
+  },
 } as const satisfies Record<string, CommandSpec>;
 
 /**
@@ -364,6 +420,33 @@ export function isRunnerCommandName(value: CommandName): value is RunnerCommandN
  * keeping that a separate route means the one place a credential is reachable
  * is a place a reviewer can find by name.
  */
+/**
+ * The task-workspace commands, and what each one asks main to do (MAR-507).
+ *
+ * A fourth family for the reason the third exists: they are neither Agent DOM
+ * verbs nor process lifecycle, and the one thing they have in common is that
+ * they touch files a person chose. Keeping that its own route means the one
+ * place a user's own path is reachable is a place a reviewer can find by name —
+ * the same argument `CONNECTION_ACTIONS` makes about the vault.
+ */
+export const WORKSPACE_ACTIONS = {
+  "workspace.openTask": "open_task",
+  "workspace.selectInput": "select_input",
+  "workspace.dispatchTask": "dispatch_task",
+  // MAR-434's download joined this family first — the half of that issue's
+  // acceptance criterion that had a proven route and no way to reach it from a
+  // page. The input-selection commands landing beside it is what the family
+  // was made for.
+  "workspace.download": "download",
+} as const;
+
+export type WorkspaceCommandName = keyof typeof WORKSPACE_ACTIONS;
+export type WorkspaceAction = (typeof WORKSPACE_ACTIONS)[WorkspaceCommandName];
+
+export function isWorkspaceCommandName(value: CommandName): value is WorkspaceCommandName {
+  return Object.hasOwn(WORKSPACE_ACTIONS, value);
+}
+
 export const CONNECTION_ACTIONS = {
   "connection.connect": "connect",
   "connection.test": "test",
@@ -394,31 +477,6 @@ export type ShellUiCommandName = keyof typeof SHELL_UI_ACTIONS;
 
 export function isShellUiCommandName(value: CommandName): value is ShellUiCommandName {
   return Object.hasOwn(SHELL_UI_ACTIONS, value);
-}
-
-/**
- * The task-workspace commands (MAR-434).
- *
- * A fifth family, for the reason the second, third and fourth exist: this is not
- * an Agent DOM verb, not runner lifecycle, not a credential and not chrome. It
- * addresses the runner's *task workspace* — the files a run consumed and
- * produced — over routes the runner already serves and proof `9` already
- * exercises.
- *
- * One member so far. `workspace.download` is the half of MAR-434's acceptance
- * criterion that had a proven route and no way to reach it from a page; the
- * input-selection commands belong in this family when they are built, which is
- * the other reason it is a family rather than a stray entry.
- */
-export const WORKSPACE_ACTIONS = {
-  "workspace.download": "download",
-} as const;
-
-export type WorkspaceCommandName = keyof typeof WORKSPACE_ACTIONS;
-export type WorkspaceAction = (typeof WORKSPACE_ACTIONS)[WorkspaceCommandName];
-
-export function isWorkspaceCommandName(value: CommandName): value is WorkspaceCommandName {
-  return Object.hasOwn(WORKSPACE_ACTIONS, value);
 }
 
 /**
@@ -662,6 +720,8 @@ export function executeCommand(review: CommandReview): CommandResult {
     isRunnerCommandName(review.command) ||
     isConnectionCommandName(review.command) ||
     isShellUiCommandName(review.command) ||
+    // MAR-507. In this list for the plainest reason of all: performing one
+    // opens a file picker, which this module cannot do and must not appear to.
     isWorkspaceCommandName(review.command)
   ) {
     // Not a denial and not a result: a caller that reached here bypassed the
@@ -716,6 +776,28 @@ export interface RunnerLifecycleResult {
   data?: Record<string, string | number | boolean>;
 }
 
+/**
+ * What a task-workspace command answers with (MAR-507).
+ *
+ * `refusal` is the runner's own code and `detail` is the runner's own sentence,
+ * both passed through untouched. `lib/copy/inputs.ts` explains why DASH does not
+ * reword them: the runner is what decided, its limits are what moved, and a
+ * second vocabulary here is the thing that stays wrong when they change.
+ *
+ * `data` holds primitives only, like every other command result, and holds no
+ * path. What a person needs to see about an admitted file is its own name and
+ * its size — both facts about the copy the runner now owns, not about where it
+ * came from.
+ */
+export interface WorkspaceActionResult {
+  ok: boolean;
+  /** The runner's refusal code, for a caller that wants to branch. Never rendered. */
+  refusal?: string;
+  /** The runner's own plain sentence. Rendered verbatim. */
+  detail?: string;
+  data?: Record<string, string | number | boolean>;
+}
+
 export interface DispatchContext {
   runAgentCommand(input: AgentCommandInput): Promise<AgentCommandResult>;
   /**
@@ -757,21 +839,33 @@ export interface DispatchContext {
    */
   showApplicationMenu(at: { x: number; y: number } | undefined): void;
   /**
-   * Save one of an agent's outputs where the user asks (MAR-434).
+   * The task-workspace actions: open a task, admit one user-selected file,
+   * hand the task over (MAR-507), or save one of an agent's outputs where the
+   * user asks (MAR-434).
    *
-   * Injected like the others, and this one has two reasons rather than one: the
-   * implementation reaches the runner over its socket *and* raises a native save
-   * dialog, and neither is available to a sandboxed preload.
+   * Injected like the others, and here the reason is the strongest of the
+   * families: the real implementation opens `dialog.showOpenDialog` or a native
+   * save dialog and reaches the runner over its socket — the APIs in DASH that
+   * turn a click into a path on the user's own disk — none of which a sandboxed
+   * preload may hold. Keeping them behind one injected function lets this
+   * module describe the commands without being able to perform them.
    *
-   * The result carries a sentence and nothing else — no path, no bytes, no
-   * digest. A renderer that learned where the file went would be a renderer that
-   * could print it, and the whole point of the workspace is that the runner owns
-   * the mapping from an opaque id to a place on disk.
+   * The result carries no path either way, and cannot: `data` is the same
+   * primitive record every other command result uses, and what it holds is a
+   * task id, a display name and a size. Which optional target fields a command
+   * requires is `reviewCommand`'s job; by the time this runs, the payload rules
+   * have already refused anything path-shaped.
    */
   workspaceAction(
     action: WorkspaceAction,
-    target: { agent_id: string; artifact_id: string },
-  ): Promise<{ ok: boolean; detail: string }>;
+    target: {
+      agent_id: string;
+      task_id?: string;
+      role_id?: string;
+      run_id?: string;
+      artifact_id?: string;
+    },
+  ): Promise<WorkspaceActionResult>;
   /**
    * Where the IPC-level audit record goes.
    *
@@ -859,18 +953,36 @@ export async function dispatchCommand(
   }
 
   if (isWorkspaceCommandName(review.command)) {
-    // Required keys guarantee both are non-empty strings. Neither is a path and
-    // neither can become one: main asks the user where to save through the
-    // operating system's own dialog, and the runner is the only process that
-    // resolves the artifact id to a location on disk.
+    /*
+     * Note what does *not* leave this function: a path.
+     *
+     * `select_input` carries an agent, a task and a role, and main is what opens
+     * the file picker, checks the role against the manifest and reads the
+     * declared limits out of it (MAR-507). `download` carries an agent and an
+     * artifact id, and main asks the user where to save through the operating
+     * system's own dialog while the runner alone resolves the id to a location
+     * on disk (MAR-434). In both directions the renderer names which kind of
+     * thing it means and never which file — the same shape `connection.connect`
+     * has, and for a sharper reason: a credential the renderer could name would
+     * be one it already had, whereas a path the renderer could name is one
+     * nobody chose. Which fields each command requires is `reviewCommand`'s
+     * job, already done by here.
+     */
+    const optionalField = (key: string): string | undefined =>
+      typeof review.payload[key] === "string" ? (review.payload[key] as string) : undefined;
     const result = await context.workspaceAction(WORKSPACE_ACTIONS[review.command], {
-      agent_id: review.payload["agent_id"] as string,
-      artifact_id: review.payload["artifact_id"] as string,
+      agent_id: String(review.payload["agent_id"]),
+      task_id: optionalField("task_id"),
+      role_id: optionalField("role_id"),
+      run_id: optionalField("run_id"),
+      artifact_id: optionalField("artifact_id"),
     });
     return {
       ok: result.ok,
       request_id: review.audit.request_id,
+      reason: result.refusal,
       detail: result.detail,
+      data: result.data,
     };
   }
 
