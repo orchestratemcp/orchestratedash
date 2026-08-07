@@ -34,6 +34,8 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+import { classifyStoreError, type RunnerStoreDamage } from "./store-damage";
+
 /**
  * Ordered, append-only, and independent of DASH's sequence. Migration 0 here
  * has nothing to do with migration 0 there; they are different databases with
@@ -185,26 +187,96 @@ export interface RunnerStore {
 }
 
 /**
+ * Opening the runner's store either works or names why it did not (MAR-506).
+ *
+ * A union rather than a throw, because a damaged store is not exceptional — it
+ * is a state the product has copy for (`describeRunnerStoreDamage`) and a repair
+ * for (`retireDamagedStore`). Throwing would leave every caller deciding what a
+ * SQLite message means, which is how the user came to be shown "The runner
+ * answered 500."
+ *
+ * Errors that are *not* about the store's integrity still throw. A caller who
+ * cannot create the directory has a different problem, and dressing it as damage
+ * would offer to set aside a file that is fine.
+ */
+export type RunnerStoreResult =
+  | { ok: true; store: RunnerStore }
+  | { ok: false; damage: RunnerStoreDamage };
+
+/** The name the runner's database has on disk, in one place. */
+export const RUNNER_STORE_FILE = "runner.sqlite";
+
+/**
  * Open the runner's database under `directory`, creating it if needed.
  *
  * The pragmas match DASH's store because the reasoning does: WAL so a crash
  * leaves a replayable log rather than a torn file, and `synchronous = FULL` so
  * a committed row is on disk before anything is told it happened. A runner that
  * acknowledged a command it then lost would be worse than one that was slow.
+ *
+ * ## The probe, and why the pragmas are not one
+ *
+ * `PRAGMA quick_check` is run before the migration and it is the only step here
+ * that reads a page it does not otherwise need. The machine that prompted
+ * MAR-506 is the argument for it: every line above it succeeded on a store whose
+ * data pages were unreadable, because a header and a `user_version` live on
+ * pages that were intact. Without the probe this function would go on returning
+ * a handle that answers `PRAGMA` and throws on `SELECT`, which is precisely the
+ * runner that 500s per request.
+ *
+ * A failing probe closes the handle before returning. A caller holding an open
+ * connection to a database it has been told is damaged is a caller that will
+ * eventually use it.
  */
-export function openRunnerStore(directory: string): RunnerStore {
+export function openRunnerStore(directory: string): RunnerStoreResult {
   mkdirSync(directory, { recursive: true });
-  const database = new DatabaseSync(path.join(directory, "runner.sqlite"));
 
-  database.exec("PRAGMA journal_mode = WAL");
-  database.exec("PRAGMA synchronous = FULL");
-  database.exec("PRAGMA foreign_keys = ON");
-  migrate(database);
+  let database: DatabaseSync;
+  try {
+    database = new DatabaseSync(path.join(directory, RUNNER_STORE_FILE));
+  } catch (error: unknown) {
+    const damage = classifyStoreError(error);
+    if (damage === null) {
+      throw error;
+    }
+    return { ok: false, damage };
+  }
+
+  try {
+    database.exec("PRAGMA journal_mode = WAL");
+    database.exec("PRAGMA synchronous = FULL");
+    database.exec("PRAGMA foreign_keys = ON");
+
+    const probe = database.prepare("PRAGMA quick_check(1)").get();
+    // `quick_check` answers with the string "ok" on a healthy database and with
+    // a description of the first problem otherwise. It is read rather than
+    // relied on to throw, because on some damage it reports rather than raises —
+    // and a check that only noticed the raising kind would be a check that
+    // passed on the store this exists for.
+    const verdict = String(probe?.["quick_check"] ?? "ok");
+    if (verdict !== "ok") {
+      database.close();
+      return { ok: false, damage: { kind: "malformed", detail: verdict } };
+    }
+
+    migrate(database);
+  } catch (error: unknown) {
+    const damage = classifyStoreError(error);
+    if (damage === null) {
+      database.close();
+      throw error;
+    }
+    database.close();
+    return { ok: false, damage };
+  }
 
   return {
-    database,
-    close(): void {
-      database.close();
+    ok: true,
+    store: {
+      database,
+      close(): void {
+        database.close();
+      },
     },
   };
 }

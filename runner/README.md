@@ -19,6 +19,7 @@ The process that actually holds a running agent.
 | `protocol.ts` | The runner ↔ agent wire format. Pure. |
 | `state.ts` | Builds the Agent DOM state document. Pure. |
 | `store.ts` | The runner's own SQLite: nonces, idempotency, approvals, audit. |
+| `store-damage.ts` | What to do when that database cannot be read: classify, refuse, set aside. |
 
 ## What this is, in one paragraph
 

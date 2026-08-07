@@ -1236,4 +1236,34 @@ button:disabled {
    point: MAR-491's rule is that no column is hidden and no fact is dropped. */
 .inputs-panel .button-secondary {
   justify-self: start;
+
+ * The O's (MAR-500)
+ *
+ * One rule, and every line of it is a rule the brand check enforces.
+ *
+ * `image-rendering: pixelated` is the whole reason a 700-byte 50x50 file can
+ * be drawn at 100px: nearest-neighbour upscaling is exact, so the 2x copy in
+ * the authoring folder buys nothing on screen. Smooth resampling here would
+ * make the cast look like low-resolution photographs of itself.
+ *
+ * Width and height come from `--o-size`, set inline by `OAvatar` from a union
+ * of whole multiples of 50. Declaring them here rather than inline keeps the
+ * numbers in one place the check can read.
+ *
+ * `flex: none` is defensive: an avatar inside a flex row must never be the
+ * thing that shrinks, because a squashed 50px sprite is off its own grid.
+ *
+ * What is deliberately absent: any colour, any border, any focus ring, any
+ * animation. Colour would make a costume mean something (`--ok` above all --
+ * `app/tokens.css` reserves emerald for healthy and live, and a fleet of green
+ * avatars would stop meaning the agents are healthy and start meaning the page
+ * rendered). A focus ring belongs to whatever makes the avatar clickable.
+ * Motion belongs to BRAND-05 and, when it comes, moves on `var(--motion-*)`
+ * so `prefers-reduced-motion` is honoured at the token layer.
+ * ------------------------------------------------------------------------ */
+.o-avatar {
+  image-rendering: pixelated;
+  width: var(--o-size);
+  height: var(--o-size);
+  flex: none;
 }

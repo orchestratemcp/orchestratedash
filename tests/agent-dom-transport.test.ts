@@ -20,6 +20,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { checkControlUrl, resolveControlLocation } from "../lib/agent-dom/control-location";
+import { describeRunnerStoreDamage } from "../lib/copy/recovery";
 import type { AgentManifestV2 } from "../lib/contracts";
 import type { AgentCommandEnvelope } from "../lib/agent-dom/envelope";
 import { IPC_ORIGIN } from "../lib/agent-dom/ipc-fetch";
@@ -269,10 +270,73 @@ describe("submitting a command", () => {
     expect(outcome.ok ? "" : outcome.detail).toContain("re-enrolled");
   });
 
-  it("reports a server error with its status", async () => {
+  it("reports a server error as something a person can read, with the status kept", async () => {
+    /*
+     * MAR-506. This assertion used to be `detail: "The runner answered 503."`,
+     * and that sentence is what a user saw for four hours on a machine whose
+     * runner store was malformed. It names the transport and nothing else: not
+     * that DASH reached the runner, not that nothing of theirs was lost, not
+     * what to do. The status is still here, in the clause somebody reporting the
+     * fault can quote.
+     */
     const fetcher = fakeFetch(() => jsonResponse({}, 503));
     const outcome = await httpAdapter(CHANNEL, { fetch: fetcher.fn }).submit(ENVELOPE);
-    expect(outcome).toMatchObject({ ok: false, reason: "adapter_failed", detail: "The runner answered 503." });
+    expect(outcome).toMatchObject({ ok: false, reason: "adapter_failed" });
+    const detail = outcome.ok ? "" : (outcome.detail ?? "");
+    expect(detail).toContain("Nothing was changed.");
+    expect(detail).toContain("status 503");
+    expect(detail).not.toBe("The runner answered 503.");
+  });
+
+  it("turns the runner's damaged-store answer into a recovery", async () => {
+    // MAR-506. The typed 503 the runner now sends, and the three sentences
+    // `describeRunnerStoreDamage` produces for it.
+    const fetcher = fakeFetch(() =>
+      jsonResponse(
+        { ok: false, reason: "store_damaged", kind: "malformed", detail: "database disk image is malformed" },
+        503,
+      ),
+    );
+    const outcome = await httpAdapter(CHANNEL, { fetch: fetcher.fn }).submit(ENVELOPE);
+    const detail = outcome.ok ? "" : (outcome.detail ?? "");
+
+    const recovery = describeRunnerStoreDamage("malformed", { can_retire: false });
+    expect(detail).toContain(recovery.headline);
+    expect(detail).toContain(recovery.meaning);
+    expect(detail).toContain(recovery.next_action);
+    // Nothing about a status code or a disk image reaches the person.
+    expect(detail).not.toMatch(/503|disk image/);
+  });
+
+  it("keeps the runner's own classification when it sends one", async () => {
+    const fetcher = fakeFetch(() =>
+      jsonResponse({ ok: false, reason: "store_damaged", kind: "not_a_database" }, 503),
+    );
+    const outcome = await httpAdapter(CHANNEL, { fetch: fetcher.fn }).submit(ENVELOPE);
+    expect(outcome.ok ? "" : (outcome.detail ?? "")).toContain(
+      describeRunnerStoreDamage("not_a_database").headline,
+    );
+  });
+
+  it("does not let an unrelated 5xx steer the copy", async () => {
+    // `reason` is matched before `kind` is trusted, so a body that happens to
+    // carry a `kind` cannot choose DASH's sentence for it.
+    const fetcher = fakeFetch(() => jsonResponse({ ok: false, kind: "malformed" }, 500));
+    const outcome = await httpAdapter(CHANNEL, { fetch: fetcher.fn }).submit(ENVELOPE);
+    expect(outcome.ok ? "" : (outcome.detail ?? "")).toContain("status 500");
+  });
+
+  it("falls back to a classification it has words for", async () => {
+    // A newer runner naming a damage this build does not know. The fact the user
+    // needs is that the store is damaged; refusing to say anything because the
+    // label is unfamiliar would lose the message over its name.
+    const fetcher = fakeFetch(() =>
+      jsonResponse({ ok: false, reason: "store_damaged", kind: "shredded_by_gremlins" }, 503),
+    );
+    const outcome = await httpAdapter(CHANNEL, { fetch: fetcher.fn }).submit(ENVELOPE);
+    expect(outcome.ok ? "" : (outcome.detail ?? "")).toContain(
+      describeRunnerStoreDamage("malformed").headline,
+    );
   });
 
   it("refuses a response that is not JSON", async () => {

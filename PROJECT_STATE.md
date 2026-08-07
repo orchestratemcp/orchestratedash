@@ -867,6 +867,150 @@ Evidence: typecheck clean, `[state] valid` with the 8 recorded drift warnings,
 exists because of, since a pure `lib/` module reaching a `"use client"` tree is
 exactly where `node:fs` got into the browser bundle once before.
 
+## The avatar foundation, and nothing wearing it yet (MAR-500)
+
+**Built, green, and on no surface — the last part by the issue's own
+non-goals.** BRAND-03/04/05 are the surfaces; this is the component, the
+assignment rule and the enforcement all three will sit on.
+
+**The assets are vendored, and the manifest is what keeps the copy honest.**
+The eleven audited 50×50 PNGs and `o-cast.json` are copied out of
+orchestrateweb rather than referenced, because DASH must render with no network
+and no sibling checkout. A copy drifts; the per-file SHA-256 is what says so.
+DASH's brand check deliberately has **no `--write`** — a check that can
+regenerate its own audit record is a copy agreeing with itself about having
+changed. A deliberate asset change is made and audited in orchestrateweb and
+re-vendored here.
+
+**Assignment is persisted because MAR-435 asked for an identifier independent
+of the agent's name, and a function of the name is not.** `oFor(agent.name)` —
+byte-identical to SITE's, so both products draw the same agent the same way on
+day one — is the *default* assignment and runs exactly twice: on insert, and in
+migration 8's backfill for agents imported before the column existed. The
+re-import path's `ON CONFLICT DO UPDATE` omits `avatar` on purpose, so an
+author changing `display_name` does not re-costume an agent the user has
+already learned to recognise.
+
+The load-bearing test is **not** that the stored value equals `oFor(name)`. It
+does, at creation, so that assertion would pass just as happily against a store
+that recomputed on every read. `tests/o-cast.test.ts` writes a character the
+seed would never have chosen and asserts *that* comes back. Its SITE-parity
+pins were produced by executing orchestrateweb's own `oFor` body, not by
+running DASH's and writing down the answer.
+
+`MIGRATIONS` gains a function form for the first time, for one reason: this
+migration's data step is not expressible in SQL, and a string hash rewritten in
+SQLite expressions would be a second copy of the one function whose whole job
+is to agree with another repository.
+
+**Each violation class is demonstrated failing, in CI rather than in a
+transcript.** The issue asks for mutate-fail-restore with the transcript in the
+PR. That is something somebody did once on a machine nobody else has, so the
+rules live in `scripts/brand-rules.mjs` as pure functions over strings and
+`tests/brand-check.test.ts` drives each class with a fixture that must fail and
+a neighbour that must not — a rule loosened into always-passing fails there
+rather than passing silently forever. The last case runs the real script over
+the working tree.
+
+Six classes: a hash disagreeing with the manifest; a size that is not a whole
+multiple of 50; a character chosen by a condition or a status word, and an
+announced costume outside an empty allowlist; `--ok` reaching an avatar or
+anything enclosing it; `image-rendering: pixelated` going missing; and a
+literal duration where a `--motion-*` token belongs, because `app/tokens.css`
+zeroes those under `prefers-reduced-motion` and that is what makes stillness
+free of per-surface code.
+
+**One rule SITE has that DASH deliberately does not**: a surface allowlist.
+SITE's cast may appear on four files and nowhere else. DASH's surfaces are the
+point, and a list every BRAND issue has to widen is a gate edited into
+meaninglessness in three commits.
+
+**What is not proven, plainly.** The proven bar is a witnessed render at 50px
+and 100px in the installed shell, both themes, `prefers-reduced-motion`
+honoured — and that needs a surface. So this stays `merged`, and the promotion
+belongs to the first BRAND-03/04/05 slice. What was checked instead:
+`renderToStaticMarkup` over the attributes a screenshot is worst at (a picture
+of a decorative avatar looks exactly like a picture of an announced one), and a
+real `pnpm build:renderer` confirming all eleven files reach `out/o/1x/`
+byte-identical — ninja at `910b5184…`, the audited hash.
+
+Evidence: typecheck clean, `brand:check` green, `[state] valid` with the 8
+recorded drift warnings, and 75 test files / 1404 passed / 8 skipped / 0 failed
+from PowerShell. PowerShell deliberately: under Git Bash `whoami /user` fails
+and 43 unrelated channel-secret and task-workspace cases go red on code this
+branch does not touch.
+
+## "The runner answered 500." (MAR-506)
+
+**A malformed `runner.sqlite` was being reported to the user as a status code.**
+Found by a `pnpm verify:shell` run on 2026-08-06: eight smoke checks failed on
+it and nothing else, `runner.log` ended with `database disk image is malformed`,
+and what a person saw was a sentence naming the transport. Everything they
+needed was elsewhere — DASH reached the runner, the runner is running, nothing
+of theirs is lost, and no agent will start until it is fixed.
+
+**Detected twice, because once is not enough.** The issue asks whether the
+runner should detect `SQLITE_CORRUPT` at open *rather than* 500-ing per request.
+The honest answer is both, and the reported machine is the argument: **the store
+opened.** `journal_mode`, `synchronous`, `foreign_keys` and the migration check
+all succeeded, because a header page and a `user_version` live on pages that
+were intact; only the queries against damaged leaves threw. So `openRunnerStore`
+runs `PRAGMA quick_check`, which walks pages rather than the header, and the
+same classification runs again on whatever any route throws.
+
+The test that carries this builds that exact file — a real database with 400
+real rows, header and schema page untouched, every later page overwritten — and
+asserts the naive checks **still pass** on it before asserting that the probe
+does not. Remove the probe and that is the only test in the file that fails.
+
+**A runner whose records are unreadable supervises nothing**, and that is a
+decision rather than a consequence. The supervisor does not need the database to
+spawn a child; it needs it for replay protection, idempotency and the approval
+record — every guarantee DASH renders about a command happening once and having
+been approved. An agent running without them is an agent whose guarantees DASH
+is still printing and no longer keeping, which is worse than one that is not
+running, because the second is visible.
+
+It still listens: `/health` reports `store_damaged`, `/shutdown` stops it,
+`/store/retire` repairs it, and everything else answers one shape — 503 with
+`reason: "store_damaged"`. A runner that exited here would have left DASH with
+"the runner did not start", which names nothing and offers no repair.
+
+**The repair renames and never deletes.** The runner's database is the one place
+a user's free-text approval reason comes to rest, and a damaged database is
+frequently still readable by a recovery tool — so deleting it would destroy the
+only copy of a record DASH deliberately keeps nowhere else, in order to fix a
+fault the user did not cause. `/store/retire` sits above the damage guard and
+**below** the authentication check: a runner that could be made to abandon its
+replay records by anyone who reached its socket would have a way to make an
+executed command executable again.
+
+**Three kinds, not one**, for the reason `describeSecureStoreFailure` keeps
+five. Real damage; a file that was never a database, which is usually something
+else having been put there and where blaming the disk sends somebody after a
+fault that is not present; and one DASH could not open, which is a permission or
+a lock, is not damage, and is never offered a repair that throws the file away.
+
+**`can_retire` is false at the transport today, and that is the honest value.**
+The runner can set a damaged store aside and the route is proven against a
+genuinely corrupt file. Nothing in DASH asks it to yet: that wants a shell
+command, a preload method, a main-process dispatch and a control on a surface,
+four of which live in files PR #52 owns. `describeStoreDamage` makes the same
+call for its unnamed case and says why — a next action the user cannot take is
+worse than one admitting DASH cannot fix this, because the first sends them
+looking.
+
+One consequence worth naming: `/health`'s `ok` now means "and my store is
+readable", so smoke proof `4b` goes red on a damaged store where eight scattered
+checks used to. That is the better failure — one early, with `store_damaged` in
+the body it prints — and `4b`'s label now understates what it checks.
+
+Evidence: typecheck clean, `[state] valid` with the 8 recorded drift warnings,
+73 test files / 1378 passed / 8 skipped / 0 failed from PowerShell, 27 of them
+new. `pnpm verify:shell` was **not run**: this machine's runner store is the
+damaged one the issue is about, so a shell smoke here would have been testing
+the fault rather than the fix.
+
 ## The plane that must not be generalised, made structural (MAR-484)
 
 **Open on a PR, not merged.** ADR 0007's load-bearing paragraph was a finding

@@ -62,7 +62,7 @@ const {
 } = await import("../runner/endpoint");
 const { DASH_LOCAL_PRINCIPAL } = await import("../runner/execute");
 const { createRunnerServer } = await import("../runner/server");
-const { openRunnerStore } = await import("../runner/store");
+const { openHealthyRunnerStore } = await import("./helpers/runner-store");
 const { loadRegistrations, Supervisor, childEnvironment } = await import("../runner/supervisor");
 const { MemorySecureStore } = await import("./fakes/memory-secure-store");
 
@@ -119,13 +119,13 @@ async function waitFor(
 
 let supervisor: SupervisorInstance;
 let server: Server;
-let runnerStore: ReturnType<typeof openRunnerStore>;
+let runnerStore: ReturnType<typeof openHealthyRunnerStore>;
 let endpoint: ReturnType<typeof runnerEndpoint>;
 let handle: RunnerHandle;
 
 beforeAll(async () => {
   mkdirSync(dashDataDir, { recursive: true });
-  runnerStore = openRunnerStore(dashDataDir);
+  runnerStore = openHealthyRunnerStore(dashDataDir);
   supervisor = new Supervisor([], (line) => {
     logs.push(line);
   });
