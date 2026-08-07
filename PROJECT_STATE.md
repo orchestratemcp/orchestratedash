@@ -1671,6 +1671,75 @@ installed shell *does* exercise is the local path through the same generalised
 code, so a regression in the refactor fails the mandatory gate rather than
 waiting for a VPS. MAR-489 owns the attended half.
 
+## The narrow window, finished (MAR-491)
+
+**PR #45 stopped the scroll and did not make the cut.** It turned every data
+table into a card list, which is why nothing overflows at 375px any more. What
+it left is what the pictures show: the nine columns became nine stacked rows.
+One agent card was over 700px tall at 375px — Where it came from, Plan source,
+Build target, Planned steps, Clearance, Runs, one after another — so a person
+reached the second agent by scrolling past four facts written in DASH's own
+vocabulary. The sideways scroll became a downward one and the usability ceiling
+stayed exactly where the issue found it.
+
+**The cut is by usefulness, not by width, and that goes one step past what the
+issue proposed.** MAR-491 offers two answers and prefers the second — a subset
+primary, the rest behind a disclosure — *below a breakpoint*. This applies it at
+every width. A width-conditional card is two interfaces, and the one a person
+learns on a laptop is not the one they get when they narrow the window; and room
+is not a reason to show something, because `Build target: code` answers no
+question a novice has on a 27-inch monitor either. The concept direction's own
+fleet card is a character, a name, a status and **one** line of meta.
+
+`app/_components/record-card.tsx` is the one affordance and
+`lib/copy/record-card.ts` is the one label. "Technical details" rather than
+"More" or "Show all": the label names what is behind it, which is the only thing
+that makes hiding it honest — somebody who does not want technical details can
+decide not to open it. A native `<details>` is the whole implementation:
+keyboard reachable, correctly announced, drawn by each platform in its own way,
+working before hydration, and deliberately not remembered, because a disclosure
+that reopened itself would be a preference nobody set.
+
+**The trap the issue names is pinned by test rather than by care.**
+`data-density="compact"` may not hide anything, so whatever hides facts must be
+a control the user can see. `tests/record-card.test.ts` asserts that no
+`[data-density]` rule declares `display: none` or `visibility: hidden`, and
+separately that **no `@media` block mentions `.card-more`** — the second is what
+fails if somebody later turns this back into a breakpoint.
+
+Two faces, and the run card's is the sharper edit. The agent card keeps its
+character, name, verdict chips and goal, and gains one meta line: how often it
+has worked, and where it came from. `describeRunCount` says "Not run yet" /
+"Run once" / "Run 34 times", because `0` under a `Runs` label is a fact a person
+has to assemble and "1 runs" is the smallest possible way for a surface to look
+unfinished. **The run card's heading was a UUID** — wrapped over two lines at
+375px, as the largest thing on the card — which is what `lib/copy/identifiers.ts`
+spends a module arguing against. It is now which agent and when.
+`describeRunStart` reads the stored instant in the machine's own locale, at
+render rather than in `lib/views/`, because a locale belongs to the screen
+looking at it and a view cloned across a boundary would format for whichever
+process happened to build it. An unparseable value comes back unchanged rather
+than becoming "Unknown": a malformed timestamp is the one clue about what went
+wrong. The id keeps its place as the link's destination and as a labelled value
+inside the disclosure — it is how somebody reports a problem.
+
+Card heights at 375px: the agent card 700px+ → **284px**; the run card 740px →
+**165px** closed, 397px open.
+
+**The chrome finding is closed here too.** PROJECT_STATE recorded it as separate
+from MAR-491's tables and "wanting the same breakpoint decision rather than a
+patch"; this is that decision, taken with the tables. `nav.app-nav` scrolled
+484px of content through 359 at 375px, so two of the five destinations and the
+density control were off-screen at rest with a scrollbar as the only hint they
+existed — every capture wave since MAR-440 shipped measured
+`density_toggle.fully_visible: false`. It wraps now. The chrome is 40px taller
+at 375px, and in exchange every destination is reachable without discovering a
+horizontal scroller inside a desktop application.
+
+`qa-screenshots-wave1/` — the untracked before-state this session inherited,
+taken 2026-08-05 — is committed beside the after-wave rather than deleted. A
+before-state a reader cannot see is an argument they have to take on trust.
+
 ## UX principle
 
 The home view answers three questions: what can I run, what is happening now, and what needs my decision? Connections are capabilities with scopes and receipts, not a wall of OAuth settings. Every run should make inputs, actions, outputs, gates, and failures inspectable.

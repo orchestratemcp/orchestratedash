@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AgentComplianceChips } from "./_components/verdict";
 import { AgentOrigin } from "./_components/agent-origin";
+import { TechnicalDetails } from "./_components/record-card";
 import { HostNotice, ViewFailed, ViewLoading } from "./_components/view-state";
 import { checkRunnerStatus, retireRunnerStore } from "./_data/source";
 import { useCanAct, useHost, useView } from "./_data/use-view";
@@ -99,34 +100,45 @@ export default function AgentsPage(): ReactNode {
                   </div>
                 </div>
                 <p className="muted wrap">{agent.goal}</p>
-                <dl className="facts">
-                  <div>
-                    <dt>Where it came from</dt>
-                    <dd>
-                      <AgentOrigin origin={agent.origin} />
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Plan source</dt>
-                    <dd>{agent.plan_source}</dd>
-                  </div>
-                  <div>
-                    <dt>Build target</dt>
-                    <dd>{agent.build_target}</dd>
-                  </div>
-                  <div>
-                    <dt>Planned steps</dt>
-                    <dd>{agent.planned_steps}</dd>
-                  </div>
-                  <div>
-                    <dt>Clearance</dt>
-                    <dd>{agent.automation_clearance}</dd>
-                  </div>
-                  <div>
-                    <dt>Runs</dt>
-                    <dd>{agent.run_count}</dd>
-                  </div>
-                </dl>
+                {/*
+                  MAR-491. One line of meta, and it is the two facts a person
+                  can do something with: has this agent ever worked, and where
+                  did it come from. The other four — plan source, build target,
+                  planned steps, clearance — are DASH's own vocabulary and are
+                  behind the disclosure below.
+
+                  The cut is the issue's second option ("keep a subset primary,
+                  with the rest behind a disclosure"), applied at every width
+                  rather than under a breakpoint. `lib/copy/record-card.ts` has
+                  the argument; the short version is that a width-conditional
+                  card is two interfaces, and room is not a reason to show
+                  something.
+                */}
+                <p className="card-meta">
+                  <span className="value">{describeRunCount(agent.run_count)}</span>
+                  <span aria-hidden="true"> · </span>
+                  <AgentOrigin origin={agent.origin} />
+                </p>
+                <TechnicalDetails>
+                  <dl className="facts">
+                    <div>
+                      <dt>Plan source</dt>
+                      <dd>{agent.plan_source}</dd>
+                    </div>
+                    <div>
+                      <dt>Build target</dt>
+                      <dd>{agent.build_target}</dd>
+                    </div>
+                    <div>
+                      <dt>Planned steps</dt>
+                      <dd>{agent.planned_steps}</dd>
+                    </div>
+                    <div>
+                      <dt>Clearance</dt>
+                      <dd>{agent.automation_clearance}</dd>
+                    </div>
+                  </dl>
+                </TechnicalDetails>
               </article>
             </li>
           ))}
@@ -136,6 +148,22 @@ export default function AgentsPage(): ReactNode {
       )}
     </>
   );
+}
+
+/**
+ * How many times this agent has worked, in a sentence rather than a number
+ * (MAR-491).
+ *
+ * `0` under a `Runs` label is a fact a person has to assemble; "Not run yet" is
+ * the same fact already assembled, and it is the one that belongs on a card
+ * whose other line is what the agent is for. The plural is spelled out because
+ * "1 runs" is the smallest possible way for a surface to look unfinished.
+ */
+export function describeRunCount(runs: number): string {
+  if (runs <= 0) {
+    return "Not run yet";
+  }
+  return runs === 1 ? "Run once" : `Run ${String(runs)} times`;
 }
 
 /**

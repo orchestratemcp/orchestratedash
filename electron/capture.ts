@@ -347,9 +347,18 @@ async function go(target: BrowserWindow, route: string): Promise<void> {
  * because it looks like a finding.
  */
 async function firstAgentName(target: BrowserWindow): Promise<string | null> {
+  /*
+   * `.row-card h3 code` and not the identity row the avatars added. The first
+   * version of this read `.row-card .agent-identity code`, which is MAR-501's
+   * markup, and on a branch without it the harness reported "no agents in this
+   * store" and skipped the whole workspace surface — twelve missing images and
+   * a sentence blaming the store for a selector. A harness that photographs
+   * whatever this repository currently renders must key on the oldest thing on
+   * the card that names the agent, which is its heading.
+   */
   return (await target.webContents.executeJavaScript(
     `(() => {
-       const first = document.querySelector(".row-card .agent-identity code");
+       const first = document.querySelector(".row-card h3 code");
        return first === null ? null : first.textContent;
      })()`,
   )) as string | null;
