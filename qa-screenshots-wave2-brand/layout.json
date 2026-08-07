@@ -1,0 +1,1699 @@
+{
+  "captured_at": "2026-08-07T14:01:14.090Z",
+  "measurements": [
+    {
+      "surface": "agents",
+      "viewport": 1279,
+      "theme": "light",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1118,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 1279,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1094,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 767,
+      "theme": "light",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 606,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 767,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 582,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 374,
+      "theme": "light",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 472,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 484
+      },
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 374,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 470,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 482
+      },
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 1279,
+      "theme": "light",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1118,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 1279,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1094,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 767,
+      "theme": "light",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 606,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 767,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 582,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 374,
+      "theme": "light",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 472,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 484
+      },
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 374,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 470,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 482
+      },
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 1279,
+      "theme": "light",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1118,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 1279,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1094,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 767,
+      "theme": "light",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 606,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 767,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 582,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 374,
+      "theme": "light",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 472,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 484
+      },
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 374,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 470,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 482
+      },
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 1279,
+      "theme": "light",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1118,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 1279,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1094,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 767,
+      "theme": "light",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 606,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 767,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 582,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 374,
+      "theme": "light",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 472,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 484
+      },
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 374,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 470,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 482
+      },
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 1279,
+      "theme": "light",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1118,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 1279,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1094,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 767,
+      "theme": "light",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 606,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 767,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 582,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 374,
+      "theme": "light",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 472,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 484
+      },
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 374,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 470,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 482
+      },
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 1279,
+      "theme": "dark",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1118,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 1279,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1094,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 767,
+      "theme": "dark",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 606,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 767,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 582,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 374,
+      "theme": "dark",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 472,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 484
+      },
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 374,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 470,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 482
+      },
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 1279,
+      "theme": "dark",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1118,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 1279,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1094,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 767,
+      "theme": "dark",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 606,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 767,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 582,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 374,
+      "theme": "dark",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 472,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 484
+      },
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 374,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 470,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 482
+      },
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 1279,
+      "theme": "dark",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1118,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 1279,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1094,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 767,
+      "theme": "dark",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 606,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 767,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 582,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 374,
+      "theme": "dark",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 472,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 484
+      },
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 374,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 470,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 482
+      },
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 1279,
+      "theme": "dark",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1118,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 1279,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1094,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 767,
+      "theme": "dark",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 606,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 767,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 582,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 374,
+      "theme": "dark",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 472,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 484
+      },
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 374,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 470,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 482
+      },
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 1279,
+      "theme": "dark",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1118,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 1279,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1094,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 767,
+      "theme": "dark",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 606,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 767,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 582,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 374,
+      "theme": "dark",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 472,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 484
+      },
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 374,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 470,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 482
+      },
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 4,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    }
+  ]
+}

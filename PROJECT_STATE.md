@@ -1920,6 +1920,89 @@ plane did not break it — which CI's Windows `shell-smoke` establishes on this 
 test, no key is used, no `sshd` is contacted. MAR-489 owns the attended VPS run,
 and under ADR 0004 nothing about a remote host can ever have a blocking gate.
 
+## The cast gets somewhere to stand (MAR-501, MAR-502, MAR-503)
+
+**Three surfaces from one design pass, in one branch, and the reason is that
+they are one screenshot matrix.** MAR-500 built the component, the assignment
+and the enforcement and put them on nothing; its own note says the proven bar —
+a witnessed render at 50px and 100px, both themes, `prefers-reduced-motion`
+honoured — "belongs to the first BRAND-03/04/05 slice". Reviewing the three
+apart would have meant photographing the same three widths in the same two
+themes three times, with the second and third waves showing the first two
+issues' work as unexplained background.
+
+**The projections carry the character; nothing on a render path computes one.**
+`AgentRow.avatar` and `WorkspaceView.avatar` are new, read from the `avatar`
+column through `listAgents` and a new targeted `readAgentAvatar`. That is the
+whole of the plumbing, and the reason it is plumbing rather than a call to
+`oFor` in three components is that `oFor` is a pure function of the agent's
+name and any of those components could have called it. It would have agreed
+with the store on every machine, until the day something wrote a different
+value — which is precisely the day MAR-435's "identifier independent of the
+agent's name" would have stopped being true, silently, on three surfaces at
+once. `tests/brand-surfaces.test.tsx` writes a character the seed would never
+have chosen and asserts *that* is what each projection hands out.
+
+The workspace reads the store rather than the manifest it is otherwise built
+from, and that is the load-bearing line of MAR-502: `title` is the author's
+`display_name` and moves whenever they publish, while the character is DASH's
+own record and must not. A test renames an agent and asserts the portrait
+does not move.
+
+**The strip is presence, and it declines the one thing MAR-503 allowed it.**
+That issue permits a textual state on hover. Nothing about an agent's condition
+reaches the row — not the pose, not a colour, not the caption. The fleet cards
+already say how each agent is; a row of characters that changed with them would
+be a status display a person reads at a glance and cannot act on, and
+`app/tokens.css` reserves emerald for live and healthy things specifically so
+that a second, cuter status bar cannot grow underneath the real one. What the
+caption says is who is here.
+
+Static is the design rather than a first version of it. The cast has one frame
+per character, so idle/working/waiting loops would be motion invented from a
+single frame — the costume-as-status mistake arriving through the other door.
+There is consequently nothing for `prefers-reduced-motion` to switch off, which
+is what static-first buys.
+
+**The app shell changed, and a picture is what asked for it.** `body` is now a
+three-row grid — chrome, page, strip — one window tall, with `main` as the only
+scrolling region. The first draft let the document scroll, and the 1280px
+capture showed the result: the cast at the bottom of the *content*, a footer
+somebody scrolls a run's whole history to reach, which is a different thing
+from the bottom edge of the window MAR-435 asks for. `position: fixed` or
+`sticky` would have been the two-line version and both paint over `main` as it
+scrolls, so an approval card would pass under the characters — MAR-503's own
+hard rule. A grid track has nothing beneath it.
+
+Two grid lines are load-bearing and both were found by measuring. The column is
+`minmax(0, 1fr)` because a grid item's default `min-width: auto` refuses to
+shrink below min-content, and `nav.app-nav`'s five links are 484px of it: the
+whole page silently laid out **574px wide inside a 375px window** the first
+time this grid was tried, with the nav's own `overflow-x: auto` powerless,
+because by then the scroller was as wide as its content. The middle row needs
+`minmax(0, 1fr)` for the same reason in the other axis.
+
+**Two defects found by photographing rather than by measuring**, which is the
+lesson MAR-440's skip link already recorded and this repeats. `.row-list` and
+`.work-list` are `<ol>`/`<ul>` and MAR-491's table-to-cards conversion left the
+browser's markers on — a column of "1." "2." "3." in the left margin, outside
+every card, at every width and in both themes, overflowing nothing and
+misplacing nothing. And the strip's capacity was measured by a `ResizeObserver`
+alone, which delivers inside the browser's rendering loop: in a window that is
+not compositing it never fires, and the strip stood one character in a row a
+thousand pixels wide. It listens to `resize` as well now, and holds its row in
+state rather than a ref — the row does not exist until the agents arrive, so a
+mount effect was measuring an element that was not there.
+
+`electron/capture.ts` grew to match. It walks five surfaces instead of one,
+because MAR-491's report names three record lists and the first wave
+photographed one of them; it resolves the workspace's agent from the fleet
+page's own markup rather than hardcoding a name no other machine has; and every
+await is bounded by `within(…)`, after a run spent ten minutes producing a
+splash and no explanation. `layout.json` now carries `widest_scroller` per
+surface per width — MAR-491's hand-taken 341-inside-1425 measurement, in the
+form a later session can re-take.
+
 ## The narrow window, finished (MAR-491)
 
 **PR #45 stopped the scroll and did not make the cut.** It turned every data

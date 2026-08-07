@@ -5,13 +5,26 @@ import Link from "next/link";
 import { AgentComplianceChips } from "./_components/verdict";
 import { AgentOrigin } from "./_components/agent-origin";
 import { TechnicalDetails } from "./_components/record-card";
+import { OAvatar } from "./_components/o-avatar";
 import { HostNotice, ViewFailed, ViewLoading } from "./_components/view-state";
 import { checkRunnerStatus, retireRunnerStore } from "./_data/source";
 import { useCanAct, useHost, useView } from "./_data/use-view";
 import { agentWorkspaceHref } from "./_data/routes";
+import { oFor } from "../lib/brand/o-cast";
 import { describeRunnerStoreDamage, type RunnerStoreDamageKind } from "../lib/copy/recovery";
 import type { CommandResult } from "../lib/shell/ipc";
 import { ROLLUP_RUN_COUNT } from "../lib/views/rollup";
+
+/**
+ * The folder name `lib/sample-agent.ts` gives the sample agent, and therefore
+ * the seed its character is assigned from.
+ *
+ * A literal here because that module imports `node:fs` and would drag it into
+ * the renderer bundle. `tests/fleet-strip.test.ts` asserts this equals
+ * `SAMPLE_AGENT_ID`, which is the only thing that keeps the teaser's character
+ * and the created agent's character the same one.
+ */
+export const SAMPLE_AGENT_SEED = "ai-news-scout";
 
 /**
  * The agents list.
@@ -89,11 +102,22 @@ export default function AgentsPage(): ReactNode {
             <li key={agent.name}>
               <article className="row-card">
                 <div className="section-heading">
-                  <h3>
-                    <Link className="plain" href={agentWorkspaceHref(agent.name)}>
-                      <code>{agent.name}</code>
-                    </Link>
-                  </h3>
+                  {/*
+                    MAR-501. The character sits beside the name — recognition
+                    next to identity — and not in the block on the right, which
+                    is where this card keeps its verdict. That placement is the
+                    rule rather than a preference: a costume aligned with a
+                    compliance chip reads as one unit, and then the costume is
+                    saying something about how the agent behaved.
+                  */}
+                  <div className="agent-identity">
+                    <OAvatar name={agent.avatar} size={50} />
+                    <h3>
+                      <Link className="plain" href={agentWorkspaceHref(agent.name)}>
+                        <code>{agent.name}</code>
+                      </Link>
+                    </h3>
+                  </div>
                   <div>
                     <p className="eyebrow">Last {ROLLUP_RUN_COUNT} runs</p>
                     <AgentComplianceChips compliance={agent.compliance} />
@@ -182,8 +206,29 @@ export function describeRunCount(runs: number): string {
 function TryTheScout(): ReactNode {
   return (
     <section className="section try-sample" aria-labelledby="try-sample-heading">
-      <p className="eyebrow">Start here</p>
-      <h2 id="try-sample-heading">AI News Scout</h2>
+      <div className="agent-identity">
+        {/*
+          MAR-501's optional case, taken. This is the one card a person with an
+          empty DASH sees, and the character introduces the cast before there is
+          a fleet to recognise anybody in.
+
+          It is the character this agent *will* wear, not a decoration: `oFor`
+          is the same default assignment `lib/store.ts` runs at creation, so the
+          O standing here is the O that appears on the first card and in the
+          bottom strip a minute later. That is the whole argument for showing
+          one — it is a promise the next screen keeps.
+
+          The seed is written out rather than imported from `lib/sample-agent.ts`,
+          which reaches `node:fs` and cannot enter the client bundle
+          (`tests/client-bundle.test.ts`). `tests/fleet-strip.test.ts` pins this
+          literal against `SAMPLE_AGENT_ID` so the two cannot drift.
+        */}
+        <OAvatar name={oFor(SAMPLE_AGENT_SEED)} size={50} />
+        <div>
+          <p className="eyebrow">Start here</p>
+          <h2 id="try-sample-heading">AI News Scout</h2>
+        </div>
+      </div>
       <p className="lede">
         It reads the news sources you choose and writes you a short summary of
         what is new, with a link to where each item came from.

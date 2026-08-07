@@ -3,6 +3,7 @@ import "./tokens.css";
 import "./globals.css";
 import { AppChrome } from "./_components/app-chrome";
 import { DensityScript } from "./_components/density-toggle";
+import { FleetStrip, FleetStripScript } from "./_components/fleet-strip";
 import { RENDERER_TITLE } from "../lib/shell/preflight";
 
 export const metadata = {
@@ -54,7 +55,26 @@ export default function RootLayout({
           page visibly jumps once on a slow paint.
         */}
         <DensityScript />
+        {/*
+          MAR-503, beside `DensityScript` and for its reason exactly: a person
+          who turned the fleet strip off would otherwise watch it appear and
+          leave again on every navigation, because a static export's first
+          render was built on a machine that never met them.
+        */}
+        <FleetStripScript />
       </head>
+      {/*
+        Three bands: the chrome, the page, and the fleet strip along the bottom
+        edge (MAR-503).
+
+        A grid rather than normal flow because the strip has to sit at the
+        bottom of the *window* on a short page and at the bottom of the
+        *content* on a long one, and `1fr` on the middle row is what makes those
+        the same rule. It is deliberately not a fixed or floating element: an
+        overlay would cover approvals, forms and receipts — the surfaces DASH
+        exists for — and MAR-435's whole non-goal here is that nothing is drawn
+        over anything it does not own.
+      */}
       <body>
         {/*
           A skip link, because the chrome now sits between the window and the
@@ -69,6 +89,7 @@ export default function RootLayout({
         <main id="main" tabIndex={-1}>
           {children}
         </main>
+        <FleetStrip />
       </body>
     </html>
   );

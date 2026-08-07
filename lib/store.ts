@@ -296,6 +296,27 @@ export function readAgentManifest(name: string): AnyAgentManifest | null {
 }
 
 /**
+ * One agent's persisted character (MAR-502).
+ *
+ * A targeted read for the reason `readAgentManifest` above is one: the agent
+ * workspace is built from the manifest and a snapshot, and materialising every
+ * manifest and every event to learn one string would make a poll on that page
+ * cost the size of the whole store.
+ *
+ * Null when there is no such row — not a character. The workspace already
+ * answers `found: false` for an agent DASH has never imported, and inventing a
+ * costume for one would be the render path assigning an avatar, which is the
+ * one thing `storedAvatar`'s own note says must never happen. A row that exists
+ * with an empty or unrecognised column still falls back to the creation seed,
+ * because that is a stored agent whose column is unreadable rather than an
+ * agent that is not there.
+ */
+export function readAgentAvatar(name: string): OName | null {
+  const row = db().prepare("SELECT avatar FROM agents WHERE name = ?").get(name);
+  return row === undefined ? null : storedAvatar(row["avatar"], name);
+}
+
+/**
  * Every imported agent's name, and nothing else.
  *
  * A targeted read for the same reason `readAgentManifest` is one: MAR-415's
@@ -942,6 +963,15 @@ export interface AgentSummary {
   automation_clearance: string;
   imported_at: string;
   run_count: number;
+  /**
+   * Which of the O's this agent wears (MAR-500, surfaced by MAR-501/502/503).
+   *
+   * Carried through from `StoredAgent.avatar`, which is the column, rather than
+   * recomputed from `name` here. A summary that recomputed it would be a second
+   * assignment rule sitting on the render path, and it would agree with the
+   * stored one for exactly as long as nobody ever changed an agent's character.
+   */
+  avatar: OName;
 }
 
 export function listAgents(store: StoreShape = readStore()): AgentSummary[] {
@@ -953,7 +983,7 @@ export function listAgents(store: StoreShape = readStore()): AgentSummary[] {
   }
 
   return Object.values(store.agents)
-    .map(({ manifest, imported_at }) => ({
+    .map(({ manifest, imported_at, avatar }) => ({
       name: manifest.agent.name,
       manifest_version: manifest.manifest_version,
       goal: manifest.agent.goal,
@@ -963,6 +993,7 @@ export function listAgents(store: StoreShape = readStore()): AgentSummary[] {
       automation_clearance: manifest.safety_contract.automation_clearance,
       imported_at,
       run_count: runsByAgent.get(manifest.agent.name)?.size ?? 0,
+      avatar,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
