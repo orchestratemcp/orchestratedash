@@ -4,15 +4,20 @@ Status: written 2026-08-03. **First executed 2026-08-06, and it failed at `G2`.*
 It promoted nothing, which is what the promotion rule at the bottom of this file
 requires of a run that fails any check.
 
-The cause is a defect in DASH rather than in the procedure below: `lib/oauth/flow.ts`
-sends no `client_secret`, and Google refuses the token exchange outright with
-`client_secret is missing.` — so no credential can reach the vault at all. **MAR-508
-owns that and blocks any further attempt.** Two defects in the harness itself were
-found by the same attempt and are fixed (MAR-509): it could not launch Electron,
-and it spawned a runner that was never built beside it.
+The cause was a defect in DASH rather than in the procedure below: `lib/oauth/flow.ts`
+sent no `client_secret`, and Google refused the token exchange outright with
+`client_secret is missing.` — so no credential could reach the vault at all.
+**MAR-508 is fixed**: `OAuthProvider` carries an optional `client_secret`, both
+`exchangeAuthorizationCode` and `refreshAccessToken` send it when the provider
+declares one, and it is supplied locally through `DASH_GOOGLE_CLIENT_SECRET` —
+see step 1a below — never committed. The two harness defects found by the same
+attempt (MAR-509) were fixed and merged first: it could not launch Electron, and
+it spawned a runner that was never built beside it. **This run has not been
+repeated yet.** The next attempt is the one that tells you whether the fix
+actually works against Google, and step 1a is new since the run that failed.
 
 Read the run's record on MAR-468 before running this again. The procedure below is
-unchanged and was not at fault.
+otherwise unchanged and was not at fault.
 
 This is the manual, dated proof that DASH's permission broker works against
 Google's real API rather than against the loopback provider `electron/smoke.ts`
@@ -84,6 +89,19 @@ is stale on arrival.
    - both scopes above are added to the consent screen's scope list;
    - the client is a **Desktop app** client. A Web client rejects the ephemeral
      `http://127.0.0.1:<port>/callback` redirect this flow uses.
+1a. **Set `DASH_GOOGLE_CLIENT_SECRET` in your shell, before you run anything below.**
+   MAR-508: Google requires a client secret for this client type even though
+   PKCE covers the rest of the flow, and DASH sends the token exchange without
+   one until this variable is set. It is the client's own secret from the same
+   Cloud console page as the client id above — never commit it, and it does not
+   belong in any file this repository tracks:
+   ```bash
+   export DASH_GOOGLE_CLIENT_SECRET="the client secret from Cloud console"
+   ```
+   `lib/oauth/providers.ts` reads it fresh on every call, so setting it in the
+   same shell you run `node scripts/prove-google.mjs` from is enough — nothing
+   else needs restarting. Leaving it unset reproduces the exact MAR-508 failure:
+   `client_secret is missing.` at `G2`.
 2. **Send yourself a message** whose subject contains exactly
    `DASH real-Google proof`, with a line or two of plain-text body. The agent
    searches for that subject, reads that message, and replies to it. A planted
