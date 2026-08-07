@@ -41,6 +41,16 @@ export const SURFACES: readonly Surface[] = [
   { href: "/work", label: "Work inbox" },
   { href: "/runs", label: "Runs" },
   { href: "/connections", label: "Connections" },
+  /*
+   * MAR-498. A sixth destination, and the nav can take it: MAR-491 made
+   * `.app-nav` wrap rather than scroll, so a narrow window gets a second row of
+   * links instead of two destinations hidden behind a scrollbar. The capture at
+   * 375 is what says this stayed true.
+   *
+   * "Servers" rather than "Hosts": a host is what the record is called and a
+   * server is what a person rents.
+   */
+  { href: "/hosts", label: "Servers" },
   { href: "/agents/add", label: "Add agent" },
 ];
 
