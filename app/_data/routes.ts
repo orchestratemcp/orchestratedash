@@ -94,7 +94,10 @@ export function runDetailHref(agent: string, runId: string): string {
  * remembered into a list to be treated as one, and the failure of forgetting
  * should be a missing strip rather than a strip inside a credential prompt.
  */
-const SEPARATE_WINDOW_ROUTES: readonly string[] = ["/credential-prompt", "/approval-popup"];
+export const SEPARATE_WINDOW_ROUTES: readonly string[] = [
+  "/credential-prompt",
+  "/approval-popup",
+];
 
 export function isSeparateWindowRoute(pathname: string): boolean {
   return SEPARATE_WINDOW_ROUTES.some(

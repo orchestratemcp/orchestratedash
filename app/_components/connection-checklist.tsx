@@ -147,7 +147,13 @@ function ConnectionRow({
           )}
           {connected ? (
             <span className="chip chip-ok" title="DASH holds a credential for this connection">
-              connected {hint}
+              {/* MAR-528. The hint is the user's own credential's last four
+                  characters, and `.chip` uppercases its text — so the hint is
+                  marked as a value, which `app/globals.css` exempts. Redrawing
+                  `••••a3f9` as `••••A3F9` would show somebody a fragment that is
+                  not the one they hold, on the surface built to help them check
+                  it. */}
+              connected <span className="value">{hint}</span>
             </span>
           ) : row.dash_can_hold ? (
             <span className="chip chip-muted">not connected yet</span>

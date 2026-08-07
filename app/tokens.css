@@ -1,49 +1,84 @@
 /*
  * The design system, as tokens.
  *
- * MAR-440, MAR-436, MAR-420, MAR-434 and MAR-435 are one design pass, not five.
- * This file is the part they share: every colour, space, size and radius any of
- * them uses is named here, and a surface that needs a value not in this file is
- * a surface that should change this file in review.
+ * MAR-528: this file is now **Bit-Command Retro Terminal** — the Stitch concept
+ * package Henrik adopted on 2026-08-07, whose `DESIGN.md` frontmatter is the
+ * source of every dark value below. The fusion rule the issue records is *a 1994
+ * command center that tells the truth*: the visual language is adopted whole and
+ * the fiction layer is refused whole. Nothing here invents a metric, and no
+ * token exists to dress a number DASH does not have.
+ *
+ * What changed from MAR-440's palette, and what deliberately did not:
+ *
+ * - **Changed.** Every surface, every line, the accent, the type stacks, and the
+ *   shape language. Deep navy replaces the neutral blue-black; electric blue
+ *   replaces the mid blue; corners go to zero everywhere.
+ * - **Kept.** The semantic *names*. A surface that asked for `--surface-2` before
+ *   asks for it now and gets a different colour, which is the whole reason this
+ *   file exists as a layer. Emerald stays reserved for healthy and live things
+ *   (see `--ok`), density still changes nothing but air, and light is still
+ *   measured rather than inverted.
  *
  * ## Dark is the designed base; light is not a courtesy
  *
- * MAR-420 specifies an obsidian blue-black base from the Stitch designs. DASH
- * shipped light-default with a dark variant. Both are kept, and the reason is
- * not politeness: DASH is a local-first product whose whole argument is that it
- * behaves like software you installed rather than a site you visited, and an app
- * that ignores the operating system's own light/dark preference is doing the
- * opposite of that on the very first frame.
+ * `DESIGN.md` is a dark palette and says so: "The palette is anchored in a deep,
+ * cinematic dark mode." DASH still ships both, and the reason is unchanged from
+ * MAR-440 — DASH is a local-first product whose whole argument is that it behaves
+ * like software you installed rather than a site you visited, and an app that
+ * ignores the operating system's own light/dark preference is doing the opposite
+ * of that on the very first frame.
  *
- * So dark is what the palette is *designed* against — it is what the demo, the
- * screenshots and the brand assume — and light is generated from the same
- * semantic names with its own contrast checked, not by inverting the dark one.
+ * So dark is what the palette is *designed* against — it is what the concept
+ * screens, the demo and the brand assume — and light is generated from the same
+ * semantic names with its own contrast checked. `tests/tokens.test.ts` measures
+ * every pair; two values below moved because it refused them, and both are
+ * named where they sit.
  *
  * `light-dark()` is what keeps that from doubling the file. Each token is
  * declared once with both values; `color-scheme` on `:root` decides which is
  * live, and the two `[data-theme]` rules at the bottom are the whole of the
- * user's override. There is no second palette block to keep in sync, which is
- * the failure mode a themed stylesheet always eventually has.
+ * user's override.
+ *
+ * ## The typeface rule MAR-440 wrote, and why it is spent
+ *
+ * MAR-440 scoped `--font-mono` to *values* — a count, a duration, a timestamp —
+ * and never to DASH's own vocabulary, on the argument that giving a design system
+ * a slot for a raw identifier is how one comes to appear in it.
+ *
+ * Bit-Command makes JetBrains Mono the **body** face: `DESIGN.md`'s `body-lg` and
+ * `body-md` are both mono, and a terminal system whose prose is not monospaced is
+ * a dark theme wearing the name. So the typographic half of that argument is
+ * spent — mono no longer distinguishes anything, because everything is mono.
+ *
+ * Nothing replaces it, and that is the honest accounting rather than a gap. The
+ * rule was always enforced by `lib/copy/identifiers.ts` and the copy tests around
+ * it, which refuse a component id, an environment variable name or a raw scope in
+ * a rendered string. That gate is untouched and is the load-bearing half; the
+ * typeface was a reminder, and a reminder is not a check.
+ *
+ * `--font-mono` survives as a distinct name so that a future body face can change
+ * without dragging code blocks and hashes with it. It is not a no-op waiting to be
+ * deleted.
+ *
+ * ## Neither family is bundled, and on most machines neither is present
+ *
+ * DASH ships no web fonts: a local-first app that blocks its first paint on a font
+ * file has chosen the wrong thing to be strict about. Space Grotesk and JetBrains
+ * Mono lead the stacks and are used when the machine has them.
+ *
+ * **On the development machine this was built on, neither is installed**, so the
+ * system renders in Segoe UI Variable Display and Consolas. That is a real and
+ * visible gap in the adopted system rather than a detail: the shape language, the
+ * palette and the caps-label grammar all survive the substitution, and the type
+ * pairing does not. Bundling the two OFL faces into the static export is a
+ * decision with its own trade-off — see MAR-535 — and is deliberately not taken
+ * here, because it is a change to what DASH ships rather than to how it looks.
  *
  * ## Calm by default, dense on request
  *
  * The spacing scale is fixed. What varies is `--density-*`, and only that: a
  * compact DASH is the same layout with less air, never a different layout or a
- * different amount of truth. `[data-density="compact"]` is the opt-in, and the
- * default is the calm one because a novice with three agents does not have a
- * density problem.
- *
- * ## The mono font is for content, never for vocabulary
- *
- * MAR-420 asks for JetBrains Mono on "agent IDs, logs, terminal input, telemetry
- * values". Two of those four are things `lib/copy/identifiers.ts` forbids on the
- * guided path, and a monospace style is exactly the invitation to start printing
- * them: give a design system a slot for a raw identifier and one will appear in
- * it. So `--font-mono` is scoped to *values* — a count, a duration, a timestamp,
- * a name the user typed, an agent's own log line — and never to DASH's internal
- * vocabulary, which does not get a typeface because it does not get shown.
- *
- * The copy system is a tested product feature. The type scale designs around it.
+ * different amount of truth.
  */
 
 :root {
@@ -54,24 +89,34 @@
   color-scheme: light dark;
 
   /* ------------------------------------------------------------------ *
-   * Surfaces — depth by tonal layering, not by shadow (MAR-420)
+   * Surfaces — tonal layering, crisp borders, no shadows (MAR-528)
    *
-   * Four steps, each a lift rather than a drop shadow. A shadow implies a
-   * light source and a physical stack, which is a metaphor DASH's content
-   * does not have; a lighter surface just reads as nearer.
+   * `DESIGN.md`, "Elevation & Depth": depth is communicated through tonal
+   * layering and 1px borders, never through soft shadows or blur, and every
+   * overlay is opaque — no glassmorphism.
+   *
+   * The four steps map straight onto the frontmatter's container ramp:
+   * `background` → 0, `surface-container-low` → 1, `surface-container` → 2,
+   * `surface-container-high` → 3. Nothing between them was invented.
    *
    * `--surface-0` is load-bearing beyond CSS: it is also the Electron window's
    * `backgroundColor`, the Windows title bar overlay colour and the splash's
    * background. Those three are set in Node from `lib/shell/chrome.ts`, and
-   * `tests/chrome.test.ts` asserts this file still agrees with it.
+   * `tests/chrome.test.ts` asserts this file still agrees with it — which is
+   * why that module moved to the deep navy in the same commit as this line.
    * ------------------------------------------------------------------ */
-  --surface-0: light-dark(#ffffff, #0b0e14);
-  --surface-1: light-dark(#f6f8fb, #12161f);
-  --surface-2: light-dark(#eef2f7, #181d28);
-  --surface-3: light-dark(#e4eaf2, #202634);
+  --surface-0: light-dark(#ffffff, #051424);
+  --surface-1: light-dark(#f4f7fb, #0d1c2d);
+  --surface-2: light-dark(#eaf0f7, #122131);
+  --surface-3: light-dark(#dfe7f1, #1c2b3c);
 
-  --line: light-dark(#dfe4ec, #232a36);
-  --line-strong: light-dark(#c3ccda, #313a4a);
+  /*
+   * `outline-variant` and `outline` from the frontmatter. A 1px line is the whole
+   * of this system's elevation vocabulary, so the weak one has to be visible on
+   * every surface above rather than merely present.
+   */
+  --line: light-dark(#c8d3e0, #3c494e);
+  --line-strong: light-dark(#93a3b5, #859399);
 
   /* ------------------------------------------------------------------ *
    * Text
@@ -79,120 +124,189 @@
    * Three weights of emphasis and no more. `--text-faint` is for text that is
    * still text — a timestamp, a unit — and never for text that matters and has
    * been greyed to make a layout calmer.
+   *
+   * Dark: `on-surface` and `on-surface-variant` straight from the frontmatter.
+   * `--text-faint` is the frontmatter's `outline` (`#859399`, the prose's "scaled
+   * grey for supporting text"), **lightened three steps**: at its published value
+   * it measures 4.54:1 on `--surface-3`, which passes AA with no headroom at all,
+   * and a faint token with no headroom is the one that fails the next time a
+   * surface moves. At #8c9aa1 it measures 4.96:1.
+   *
+   * Light is generated and measured, never inverted. `--text` is the navy itself,
+   * which is what ties the light theme to the same brand rather than making it a
+   * second product.
    * ------------------------------------------------------------------ */
-  --text: light-dark(#131722, #e8ecf3);
-  --text-muted: light-dark(#5a6474, #9aa5b8);
-  /*
-   * Measured against `--surface-2`, not against `--surface-0`.
-   *
-   * The first values written here were #7c8698 and #6b7688, chosen by eye
-   * against the page background, and they measured 3.67:1 and 4.21:1 — both
-   * below AA for body text, and the light one worse than the dark one, which is
-   * the giveaway that neither was measured at all. On `--surface-2`, which is
-   * where faint text most often sits (a timestamp inside a card inside a
-   * panel), they were 3.45:1 and 3.67:1.
-   *
-   * These pass on every surface a token can legitimately be drawn on, and the
-   * worst case is `--surface-3` rather than the page background: 4.52:1 light
-   * and 4.66:1 dark. "Faint" is a rank in a hierarchy, not a licence to fall
-   * under the floor.
-   */
-  --text-faint: light-dark(#616a77, #8290a4);
+  --text: light-dark(#051424, #d4e4fa);
+  --text-muted: light-dark(#3d4d5e, #bbc9cf);
+  --text-faint: light-dark(#4e5f70, #8c9aa1);
 
   /* ------------------------------------------------------------------ *
    * Meaning colours
    *
-   * MAR-420's rule, kept exactly: electric blue is primary and active, emerald
-   * is reserved for healthy/active *only*, amber warns, red errors.
+   * `DESIGN.md`: electric blue is primary and active. MAR-420's rule that emerald
+   * is reserved for healthy/active *only* is kept, and it is kept against the
+   * concept rather than from it — the Stitch palette has no green at all, and its
+   * status chips propose blue/red/grey. Adopting that would have deleted the one
+   * distinction DASH's fleet surfaces are built on: if success green is also used
+   * for "done", "saved" and "connected", a fleet of green cards stops meaning the
+   * agents are healthy and starts meaning the page rendered. `--ok` is for a live,
+   * healthy thing; a finished neutral thing takes `--text-muted`.
    *
-   * "Emerald reserved" is a constraint on us, not decoration. If success green
-   * is also used for "done", "saved" and "connected", then a fleet of green
-   * cards stops meaning the agents are healthy and starts meaning the page
-   * rendered. `--ok` is for a live, healthy thing; a finished neutral thing
-   * takes `--text-muted`.
+   * Amber is absent from the concept palette for the same reason and is kept for
+   * the same one: a warning that renders in the error colour is a warning nobody
+   * can rank.
    *
-   * Every pair below passes AA against `--surface-0` and `--surface-1` in both
-   * themes; the `-bg` tints are backgrounds only and never carry text at their
-   * own hue.
+   * Every pair passes AA against all four surfaces in both themes; the `-bg`
+   * tints are backgrounds only and never carry text at their own hue.
    * ------------------------------------------------------------------ */
-  --accent: light-dark(#1d5fd6, #4d8dff);
-  --accent-hover: light-dark(#1a52ba, #6d9fff);
-  --accent-contrast: #ffffff;
-  --accent-bg: light-dark(#eaf0fd, #16233a);
 
-  /* Darkened from #0f7a4a, which measured 4.45:1 on `--surface-3` — a green
-     that passes on the page and fails inside a card is worse than one that
-     fails everywhere, because it is the healthy-agent colour and nobody would
-     ever have looked at it twice. */
+  /*
+   * `surface-tint` / `primary-fixed-dim` in the frontmatter — the system's own
+   * answer to "the brand colour, drawn on a surface". Light takes
+   * `inverse-primary`, which is the palette's own light-mode primary rather than
+   * a darkened guess.
+   */
+  --accent: light-dark(#00677f, #4cd6ff);
+  --accent-hover: light-dark(#004e60, #a4e6ff);
+  /*
+   * **Not white in dark.** `DESIGN.md`, "Buttons": *Primary: solid electric blue
+   * background, black text*. On #4cd6ff white text measures 1.70:1 — the primary
+   * button is the one control every guided path ends at, and it would have been
+   * the least readable word on the screen. `on-primary` from the frontmatter is
+   * 7.77:1 on the same fill.
+   *
+   * This token is why `tests/tokens.test.ts` stopped hardcoding `#ffffff` and
+   * started reading the declaration, at the text floor rather than the non-text
+   * one. Button text is text.
+   */
+  --accent-contrast: light-dark(#ffffff, #003543);
+  --accent-bg: light-dark(#e3f2f7, #0a2c3a);
+
   --ok: light-dark(#0d7145, #34d399);
-  --ok-bg: light-dark(#e6f5ed, #0e2a20);
+  --ok-bg: light-dark(#e4f3ec, #0b2b21);
 
   --warn: light-dark(#8a5a00, #f5b544);
-  --warn-bg: light-dark(#fdf3e0, #2c2110);
+  --warn-bg: light-dark(#fbf1de, #2b2110);
 
-  --err: light-dark(#b3261e, #ff6b5e);
-  --err-bg: light-dark(#fdecea, #331614);
+  /* `error` from the frontmatter in dark. `error-container` (#93000a) is not
+     used as `--err-bg`: it is a fill loud enough to carry white text, and this
+     token's whole job is to tint a band behind text that is already red. */
+  --err: light-dark(#b3261e, #ffb4ab);
+  --err-bg: light-dark(#fbeae8, #3a1411);
 
   /*
    * Focus is its own colour and never `--accent`. A focus ring that matches the
    * primary button is invisible on the primary button, which is the one control
-   * a keyboard user most needs to find.
+   * a keyboard user most needs to find — and under this palette the accent is a
+   * bright cyan that would disappear into its own fill completely. Dark takes
+   * `tertiary`, which is the palette's one hue that is neither the accent nor a
+   * status.
    */
-  --focus: light-dark(#1d5fd6, #8fb6ff);
+  --focus: light-dark(#1a3a7a, #d0dcfe);
 
   /* ------------------------------------------------------------------ *
-   * Type
+   * Type (MAR-528)
    *
-   * Neither family is bundled: DASH ships no web fonts, because a local-first
-   * app that blocks its first paint on a font file has chosen the wrong thing
-   * to be strict about. Inter and JetBrains Mono lead the stacks and are used
-   * when the machine has them; the fallbacks are the platform faces the app
-   * has always rendered in, so nothing regresses on a machine that has neither.
+   * Space Grotesk for headlines, JetBrains Mono for everything else, exactly as
+   * `DESIGN.md` specifies. Neither is bundled — see the note at the top of this
+   * file, including what that costs on a machine that has neither.
+   *
+   * The fallbacks are chosen to lose as little of the system as possible rather
+   * than to match metrics: a geometric-leaning UI face for the display stack, and
+   * the platform's own programming mono for the body.
    * ------------------------------------------------------------------ */
-  --font-ui: Inter, "Segoe UI Variable Text", "Segoe UI", ui-sans-serif, system-ui,
-    -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", "SF Mono", Menlo,
+  --font-display: "Space Grotesk", "Segoe UI Variable Display", "Segoe UI",
+    ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-ui: "JetBrains Mono", ui-monospace, "Cascadia Mono", "SF Mono", Menlo,
     Consolas, monospace;
+  --font-mono: var(--font-ui);
 
-  --text-xs: 0.75rem;
-  --text-sm: 0.8125rem;
-  --text-base: 0.9375rem;
-  --text-md: 1rem;
+  /*
+   * The scale, from `DESIGN.md`'s typography block. Monospace runs wider than a
+   * proportional face at the same size, so the body step is the concept's 14px
+   * rather than MAR-440's 15px — the same measure in fewer pixels, not a smaller
+   * interface.
+   */
+  --text-xs: 0.6875rem; /* 11px */
+  --text-sm: 0.75rem; /* 12px — also `label-caps` */
+  --text-base: 0.875rem; /* 14px — body-md */
+  --text-md: 1rem; /* 16px — body-lg */
   --text-lg: 1.125rem;
-  --text-xl: 1.375rem;
-  --text-2xl: 1.75rem;
+  --text-xl: 1.5rem; /* 24px — headline-md */
+  --text-2xl: 2rem; /* 32px — headline-lg */
 
-  --leading-tight: 1.3;
-  --leading-normal: 1.55;
+  --leading-tight: 1.2; /* headline-lg / headline-md */
+  --leading-normal: 1.5; /* body-lg / body-md */
   --leading-loose: 1.7;
 
-  --tracking-eyebrow: 0.06em;
+  /* `headline-lg`'s -0.02em, and `label-caps`'s 0.1em. Two numbers, named, so a
+     heading and a caps label cannot drift apart across surfaces. */
+  --tracking-display: -0.02em;
+  --tracking-caps: 0.1em;
 
   /* ------------------------------------------------------------------ *
-   * Space — a 4px base, and nothing between the steps
+   * Space — a 4px "pixel-block" unit, and nothing between the steps
    *
-   * The scale is deliberately short. Every ad-hoc `0.65rem` and `0.85rem` in a
-   * stylesheet is a decision someone made once at 2am, and eight steps is
-   * enough to lay out anything DASH shows.
+   * `DESIGN.md`: "Every spacing value must be a multiple of the 4px pixel-block
+   * unit." The scale is unchanged from MAR-440 because it already was that.
    * ------------------------------------------------------------------ */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
-  --space-4: 16px;
+  --space-4: 16px; /* the concept's gutter, and its mobile margin */
   --space-5: 24px;
-  --space-6: 32px;
+  --space-6: 32px; /* the concept's desktop margin */
   --space-7: 48px;
   --space-8: 64px;
 
   /* ------------------------------------------------------------------ *
-   * Radius — 4px on components, pill on status badges (MAR-420)
+   * Shape — sharp, everywhere (MAR-528)
+   *
+   * `DESIGN.md`, "Shapes": *do not use border-radii on any component. Buttons,
+   * inputs, and cards must have perfectly square corners.*
+   *
+   * Three names and one value, and the names survive on purpose: they are where
+   * an exception would have to be declared, and a rounded thing in this system
+   * should have to name itself in this file rather than in a stylesheet nobody
+   * re-reads. `--radius-pill` is **gone** rather than set to zero — a token whose
+   * name says pill and whose value says square is the exact silent disagreement
+   * this file exists to prevent.
    * ------------------------------------------------------------------ */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
-  --radius-pill: 999px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
 
-  /* The 2px left bar on an active list item, per the design system. */
+  /*
+   * "Pixel-shading": a 1px offset line of a darker shade, which is this system's
+   * whole answer to a drop shadow. Spent as a zero-blur `box-shadow`, so it is a
+   * hard edge and never a gradient.
+   *
+   * One user today, and it is the primary button: the key sits one pixel proud of
+   * its own shade and presses flush into it. `DESIGN.md` asks for the 1px travel
+   * and offers pixel-shading "if necessary" — the travel is what makes it
+   * necessary, because a key that moves and leaves nothing behind has moved for
+   * no reason.
+   *
+   * The stepped-pixel corner `DESIGN.md` prescribes for avatars is deliberately
+   * **not** here. The O's are 50×50 sprites whose artwork runs to their own
+   * edges, and notching their corners would clip a hat or a pair of feet —
+   * MAR-500's rule that a costume is recognition means the one thing a frame may
+   * not do is eat part of the character. It arrives with a surface that has a box
+   * of its own to notch.
+   */
+  --pixel-shade: light-dark(rgba(5, 20, 36, 0.16), rgba(0, 0, 0, 0.55));
+
+  /*
+   * The faint graph-paper rule the concept draws behind its content column. One
+   * pixel-block short of invisible on purpose: it is texture, and the moment it
+   * competes with a 1px card border it has become a grid somebody has to read.
+   */
+  --grid-line: light-dark(rgba(0, 103, 127, 0.05), rgba(76, 214, 255, 0.045));
+  --grid-step: 32px;
+
+  /* The 2px left bar on an active list item, and the 2px focus border the
+     concept's input fields take. One number, because they are the same idea:
+     this element is the one being acted on. */
   --active-bar: 2px;
 
   /* ------------------------------------------------------------------ *
@@ -212,8 +326,8 @@
   /* ------------------------------------------------------------------ *
    * Layout
    * ------------------------------------------------------------------ */
-  --sidebar-width: 260px;
-  --content-max: 72rem;
+  --sidebar-width: 240px;
+  --content-max: 90rem; /* the concept's 1440px container */
 
   /* ------------------------------------------------------------------ *
    * Density — the only thing the compact opt-in is allowed to change
@@ -251,8 +365,12 @@
 
 /*
  * Reduced motion is honoured at the token layer so no surface has to remember.
- * MAR-435's sprites will read this too; it is here rather than there because
- * the rule is the app's, not the mascot's.
+ * MAR-435's sprites read this too; it is here rather than there because the rule
+ * is the app's, not the mascot's.
+ *
+ * `DESIGN.md` asks buttons to shift 1px down and right on press. That shift is a
+ * transform and stays; what is zeroed here is the time it takes, so a person who
+ * asked for stillness gets the pressed state instantly rather than not at all.
  */
 @media (prefers-reduced-motion: reduce) {
   :root {

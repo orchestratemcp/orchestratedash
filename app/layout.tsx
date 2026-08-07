@@ -77,14 +77,13 @@ export default function RootLayout({
       */}
       <body>
         {/*
-          A skip link, because the chrome now sits between the window and the
-          content on every page. Six navigation links is not much to tab past
-          once; it is a lot to tab past on every navigation, which is what a
-          keyboard user actually does.
+          The skip link moved into `AppChrome` (MAR-534), and it moved for a
+          reason rather than for tidiness: it exists because the chrome sits
+          between the window and the content, so on a route that has no chrome —
+          the credential prompt, the approval popup — it is a shortcut past
+          nothing and would be the first thing a keyboard user reaches in a
+          one-question dialog. One check now removes both.
         */}
-        <a className="skip-link" href="#main">
-          Skip to content
-        </a>
         <AppChrome />
         <main id="main" tabIndex={-1}>
           {children}

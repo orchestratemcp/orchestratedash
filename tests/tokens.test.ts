@@ -128,16 +128,53 @@ describe("contrast", () => {
     }
   });
 
-  it("white text on the accent is readable, since that is the primary button", () => {
-    // `--accent-contrast` is `#ffffff` in both themes, and a primary button is
-    // the one control every guided path ends at. Getting this wrong makes the
-    // most important word on the screen the least readable one.
+  it("the primary button's own label is readable on its own fill", () => {
+    /*
+     * This used to hardcode `#ffffff` and measure it at the non-text floor, and
+     * MAR-528 broke both halves of that on purpose.
+     *
+     * Bit-Command's primary button is *solid electric blue with black text*
+     * (`DESIGN.md`, "Buttons"), so `--accent-contrast` is a `light-dark()` pair
+     * rather than white — white on #4cd6ff measures 1.70:1, and a test asserting
+     * white would have failed correctly and been "fixed" by dimming the accent
+     * away from the palette.
+     *
+     * The floor moved from 3:1 to 4.5:1 because a button's label is text. It was
+     * the non-text floor for no reason anybody wrote down, and a primary button
+     * is the one control every guided path ends at.
+     */
     for (const theme of themes) {
-      const ratio = contrast("#ffffff", colours.get("accent")?.[theme] as string);
+      const label = colours.get("accent-contrast")?.[theme];
+      expect(label, `--accent-contrast must be a light-dark() declaration`).toBeDefined();
+      const ratio = contrast(label as string, colours.get("accent")?.[theme] as string);
       expect(Number(ratio.toFixed(2)), `accent button text in ${theme}`).toBeGreaterThanOrEqual(
-        AA_NON_TEXT,
+        AA_NORMAL,
       );
     }
+  });
+
+  it("no rounded corner survives the sharp shape language", () => {
+    /*
+     * MAR-528. `DESIGN.md`, "Shapes": *do not use border-radii on any
+     * component.* The radius tokens are kept as the place an exception would
+     * have to be declared and argued for, so the assertion is on their values
+     * rather than on their absence — and `--radius-pill` is gone entirely,
+     * because a token whose name says pill and whose value says square is the
+     * silent disagreement `app/tokens.css` exists to prevent.
+     */
+    /*
+     * Comments stripped first, which MAR-491 already paid to learn on this
+     * repository's other stylesheet scanner: the paragraph in `app/tokens.css`
+     * explaining *why* `--radius-pill` was deleted contains the token's name,
+     * and a check that reads the raw file fails on its own explanation.
+     */
+    const declarations = tokens.replace(/\/\*[\s\S]*?\*\//g, "");
+    const radii = [...declarations.matchAll(/--radius-([\w-]+):\s*([^;]+);/g)];
+    expect(radii.length).toBeGreaterThan(0);
+    for (const [, name, value] of radii) {
+      expect((value as string).trim(), `--radius-${String(name)}`).toBe("0px");
+    }
+    expect(declarations).not.toMatch(/--radius-pill/);
   });
 });
 
