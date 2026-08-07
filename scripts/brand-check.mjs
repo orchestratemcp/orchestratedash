@@ -31,6 +31,7 @@ import { fileURLToPath } from "node:url";
 import {
   auditSprite,
   checkAvatarCss,
+  checkBundledFonts,
   checkCast,
   checkCostume,
   checkEmerald,
@@ -140,6 +141,22 @@ const fontScanned = [
 ].map((file) => ({ name: rel(file), source: fs.readFileSync(file, "utf8") }));
 failures.push(...checkNoRemoteFonts(fontScanned));
 
+/* ── 3b. The bundled families (MAR-535, decided: bundle) ─────────────────── *
+ *
+ * The other half of the same decision: no font is fetched, and the two that
+ * were chosen actually ship — bytes, licence, and every /fonts/ reference
+ * resolving. The scanned file list is shared with `checkNoRemoteFonts` so the
+ * two halves cannot disagree about which tree they cover.
+ */
+const FONT_DIR = path.join(ROOT, "public", "fonts");
+const bundledFonts = fs.existsSync(FONT_DIR)
+  ? fs.readdirSync(FONT_DIR).map((name) => ({
+      name,
+      bytes: fs.readFileSync(path.join(FONT_DIR, name)),
+    }))
+  : [];
+failures.push(...checkBundledFonts({ fonts: bundledFonts, sources: fontScanned }));
+
 let surfaces = 0;
 for (const file of walk(APP_DIR)) {
   const source = fs.readFileSync(file, "utf8");
@@ -156,7 +173,8 @@ if (failures.length === 0) {
   console.log(
     `✓ brand:check passed — ${names.length} characters audited against the vendored manifest, ` +
       `${sizes.length} rendered sizes, ${surfaces} file(s) using the cast, ` +
-      `${fontScanned.length} file(s) checked for remote fonts`,
+      `${fontScanned.length} file(s) checked for remote fonts, ` +
+      `${bundledFonts.length} bundled font file(s) verified`,
   );
   process.exit(0);
 }

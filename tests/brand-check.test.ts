@@ -17,14 +17,16 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
   auditSprite,
+  BUNDLED_FONTS,
   checkAvatarCss,
+  checkBundledFonts,
   checkCast,
   checkCostume,
   checkEmerald,
@@ -283,15 +285,16 @@ describe("the stylesheet's own half", () => {
  * ---------------------------------------------------------------------- */
 
 /**
- * Henrik decided MAR-535 on 2026-08-07: **keep the rule**. The fonts are not
- * bundled and `app/tokens.css`'s note about the substitution is the permanent
- * record rather than a pending one.
+ * Henrik's final MAR-535 answer (2026-08-07, ~20:30Z): **bundle**. The two OFL
+ * families ship in `public/fonts/`, declared by `app/fonts.css` — and this rule
+ * survived that decision without a line changing, because what it forbids is a
+ * **fetch**, not a font file. The bundled faces are same-origin reads over
+ * `dash-app://`, which is the case the "allows a bundled face" fixture below
+ * always covered; it went from describing a future to describing the product.
  *
  * A decision recorded only in prose is one the next reskin quietly reverses, so
- * these are the cases that would reverse it. The pair that matters most is the
- * last one: what the rule forbids is a **fetch**, not a font file, so a future
- * session that revisits MAR-535 and vendors the two OFL faces into the export
- * does not have to weaken anything here.
+ * these are the cases that would reverse it — a CDN @font-face, an off-machine
+ * @import, a font-host <link>, next/font/google.
  */
 describe("violation 5 — a page reaching off this machine for a font (MAR-535)", () => {
   it("refuses an @font-face served from somewhere else", () => {
@@ -399,6 +402,86 @@ describe("violation 5 — a page reaching off this machine for a font (MAR-535)"
     );
     expect(scanned).not.toBeNull();
     expect(Number(scanned?.[1])).toBeGreaterThan(10);
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * MAR-535 — the bundling half: the chosen families actually ship
+ * ---------------------------------------------------------------------- */
+
+describe("violation 6 — a bundled family that does not truthfully ship (MAR-535)", () => {
+  /** A minimal in-memory public/fonts/ that satisfies every rule. */
+  const wholeShipment = () =>
+    BUNDLED_FONTS.flatMap(({ file, licence }) => [
+      { name: file, bytes: Buffer.from("wOF2....rest-of-a-font") },
+      { name: licence, bytes: Buffer.from("SIL Open Font License, Version 1.1") },
+    ]);
+
+  it("passes when both families ship with their licences", () => {
+    expect(checkBundledFonts({ fonts: wholeShipment(), sources: [] })).toEqual([]);
+  });
+
+  it("fails when a woff2 is missing — the silent regression MAR-535 was filed about", () => {
+    // Deleting the file fails no build: @font-face degrades through local()
+    // and the fallback stacks, and the reskin quietly loses its type pairing.
+    const fonts = wholeShipment().filter((f) => f.name !== "space-grotesk-latin.woff2");
+    const failures = checkBundledFonts({ fonts, sources: [] });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain("space-grotesk-latin.woff2 is missing");
+  });
+
+  it("fails when the bytes are not a woff2", () => {
+    const fonts = wholeShipment().map((f) =>
+      f.name === "jetbrains-mono-latin.woff2" ? { ...f, bytes: Buffer.from("<html>...") } : f,
+    );
+    const failures = checkBundledFonts({ fonts, sources: [] });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain("magic bytes");
+  });
+
+  it("fails when a licence is missing, and names it as a licence violation", () => {
+    const fonts = wholeShipment().filter((f) => f.name !== "OFL-jetbrains-mono.txt");
+    const failures = checkBundledFonts({ fonts, sources: [] });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain("licence violation");
+  });
+
+  it("fails when the licence file is not the licence", () => {
+    const fonts = wholeShipment().map((f) =>
+      f.name === "OFL-space-grotesk.txt" ? { ...f, bytes: Buffer.from("TODO") } : f,
+    );
+    const failures = checkBundledFonts({ fonts, sources: [] });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain("not a placeholder");
+  });
+
+  it("fails when a stylesheet names a /fonts/ file that does not exist", () => {
+    const failures = checkBundledFonts({
+      fonts: wholeShipment(),
+      sources: [
+        {
+          name: "app/fonts.css",
+          source: `@font-face { font-family: X; src: url("/fonts/typo-name.woff2") format("woff2"); }`,
+        },
+      ],
+    });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain("/fonts/typo-name.woff2");
+  });
+
+  it("holds against the real shipment: app/fonts.css references resolve and both licences ride along", () => {
+    // The fixture cases above prove the rule can fail; this proves the actual
+    // public/fonts/ directory and the actual stylesheet satisfy it, which is
+    // the claim the @font-face declarations make to every installed machine.
+    const fontDir = path.join(repoRoot, "public", "fonts");
+    const fonts = readdirSync(fontDir).map((name) => ({
+      name,
+      bytes: readFileSync(path.join(fontDir, name)),
+    }));
+    const fontsCss = readFileSync(path.join(repoRoot, "app", "fonts.css"), "utf8");
+    expect(
+      checkBundledFonts({ fonts, sources: [{ name: "app/fonts.css", source: fontsCss }] }),
+    ).toEqual([]);
   });
 });
 

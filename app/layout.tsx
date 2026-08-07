@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import "./fonts.css";
 import "./tokens.css";
 import "./globals.css";
 import { AppChrome } from "./_components/app-chrome";

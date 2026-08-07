@@ -1,0 +1,62 @@
+/*
+ * The two bundled faces (MAR-535).
+ *
+ * Henrik decided MAR-535 on 2026-08-07: **bundle both families.** Space Grotesk
+ * and JetBrains Mono ship inside the app as OFL-licensed woff2 files — the type
+ * pairing is one of the three things the Bit-Command system is made of, and it
+ * was the one that did not arrive on any machine DASH ships to.
+ *
+ * This does not overturn the rule `scripts/brand-rules.mjs` enforces, and the
+ * distinction is the whole point: what `checkNoRemoteFonts` forbids is a
+ * **fetch**, not a font file. These are same-origin reads — `/fonts/…` off the
+ * `next dev` server on the developer path, off `dash-app://ui/` from the static
+ * export on the packaged path — read from disk exactly as `globals.css` itself
+ * is. No network request exists on either path, which is why the guard passes
+ * over this file without a line of it being relaxed.
+ *
+ * ## The shape of each declaration
+ *
+ * - **`local()` first.** A machine that has the family installed uses its own
+ *   copy and never opens ours; the bundled file is the floor, not an override.
+ * - **Variable weight ranges** (300–700 and 100–800), because the stylesheets
+ *   use weights a static pair could only fake — `.next-action` is 650, and a
+ *   browser synthesizing 650 from a static 400 is exactly the "competent
+ *   substitution that is not the system" this issue exists to end.
+ * - **Latin subset only**, ~62 KB for both files together, with the honest
+ *   `unicode-range` to say so. A code point outside it falls through to the
+ *   platform stacks in `tokens.css`, which is where it fell before this file
+ *   existed.
+ * - **`font-display: swap`**, so a machine that somehow cannot read the file
+ *   falls back rather than showing nothing.
+ *
+ * The files sit in `public/fonts/` beside their OFL licence texts, and
+ * `pnpm brand:check` (`checkBundledFonts`) holds the pairing together: the
+ * woff2 bytes are really woff2, the licence rides beside them, and every URL
+ * below names a file that exists in the export.
+ */
+
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src:
+    local("Space Grotesk"),
+    url("/fonts/space-grotesk-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src:
+    local("JetBrains Mono"),
+    url("/fonts/jetbrains-mono-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
