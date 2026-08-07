@@ -2078,7 +2078,10 @@ The home view answers three questions: what can I run, what is happening now, an
 
 ## The Bit-Command reskin (MAR-528, MAR-534, MAR-535)
 
-**Open on a PR, not merged.** Henrik adopted the Stitch concept package as
+**Merged in PR [#73](https://github.com/orchestratemcp/orchestratedash/pull/73)
+(`7213e51`) on 2026-08-07.** The sentence this replaces said "open on a PR, not
+merged", which was true when it was written; ancestry was verified with
+`git merge-base --is-ancestor` before it was changed. Henrik adopted the Stitch concept package as
 DASH's visual system on 2026-08-07, and the adoption is a decision rather than
 a preference: 90s-terminal-brutalism, deep navy and electric blue, tonal
 layering with crisp 1px borders, zero corners, Space Grotesk and JetBrains
@@ -2172,7 +2175,9 @@ shell smoke beside a live unrelated runner is two writers on one store.
 
 ## "The current connection page makes no sense to me" (MAR-533)
 
-**Open on a PR, not merged.** That is Henrik, 2026-08-07, about the page the
+**Merged in PR [#74](https://github.com/orchestratemcp/orchestratedash/pull/74)
+(`e85218b`) on 2026-08-07**, correcting the same pre-merge sentence MAR-528's
+section above carries. That is Henrik, 2026-08-07, about the page the
 whole trust story runs through — a UX verdict from the product's own first
 user, and the reason this is a rebuild rather than a restyle.
 
@@ -2247,7 +2252,8 @@ the cast (Connections is a fourth surface for MAR-501's grammar), 96 test files
 
 ## Connect a server, and the field DASH will not draw (MAR-498, MAR-536)
 
-**Open on a PR, not merged**, and it is the second half of an issue whose first
+**Merged in PR [#75](https://github.com/orchestratemcp/orchestratedash/pull/75)
+(`ad2b1bd`) on 2026-08-07**, and it is the second half of an issue whose first
 half merged on 2026-08-06. MAR-498's design slice shipped `lib/host-connect.ts`
 — nine states and their sentences — with no surface, and its own state entry
 has said ever since that the issue's `merged` bar was deliberately not met.
@@ -2329,3 +2335,85 @@ which is MAR-491's wrapping decision surviving a sixth destination.
 
 **Not proven, permanently so in CI.** `proven` here means attended and dated
 against a real host inside MAR-489, per ADR 0004's attended half.
+
+## A red gate that meant nothing (MAR-537)
+
+**The flake was an ordering bug in the harness, not slowness in the artifact,
+and its own failure message pointed at the wrong file.**
+`tests/runner-standalone.test.ts` asserts on the runner's first four startup
+lines and reached them by polling for `runner.json`. That file is a **strictly
+earlier event than the lines**: `runner/main.ts` writes it the moment
+`listenOnEndpoint` resolves, and prints `listening on`, `store:` and
+`contracts:` afterwards. So the wait ended, by construction, at a moment when
+the child might not have printed any of them.
+
+Under load it is the *parent* that runs late — its own stdout `data` callbacks —
+which is why a 100ms poll usually won this race and occasionally did not. What
+it produced was `expected '[runner] standalone start: node=24.18…' to contain
+'[runner] listening on'`: a truncated string blaming the built artifact for a
+race in the thing observing it, on PR #75, against a commit that changed one
+block comment. That is the failure ADR 0004's whole argument is about — a
+blocking gate going red for a reason unrelated to the change teaches people to
+re-run it without reading, and this repository's evidence discipline is worth
+exactly as much as a red check is.
+
+**The fix subsumes the old wait rather than sitting beside it.** `waitForLine`
+reads the child's output until `[runner] contracts: …` appears, and because
+`runner.json` is written before that line is printed, the file is present
+whenever the line has arrived. The marker is `contracts:` rather than
+`listening on` because that is the line the *second* test reads — ending on an
+earlier one would leave that assertion racing exactly as the first pair used to.
+
+Both failure paths now carry the child's whole captured output, its exit code
+and its signal. A child that **exits** is reported the moment it exits rather
+than at the deadline, because the interesting cases — an unsuitable host exiting
+78, a missing module exiting 1 — are all fast, and spending sixty seconds on
+them would bury the cause under a timeout that reads like slowness. The hook
+timeout moved 90s → 150s for one reason: so a genuinely slow start is reported
+by the sentence that names the line rather than by vitest's own timeout, which
+names nothing and is the failure being fixed arriving through a different door.
+
+Not skipped and not retried in-process, per the issue: the artifact starting
+under plain Node on a tree containing only itself is MAR-497's whole proof.
+Assertions are unchanged and `runner/` is untouched.
+
+Evidence, exactly as the issue specifies it: **20 consecutive solo runs of the
+file, 20 passed / 0 failed**, with `pnpm exec vitest run tests` running
+concurrently in a second shell — and that concurrent full suite was itself
+green, 98 test files / 1809 passed / 8 skipped / 0 failed.
+
+**`tests/runner-store-damage.test.ts` reproduced later in the same session, and
+it is fixed — but it was never the same cause.** The paragraph that stood here
+said there was no signature to work from, which was true when written: the file
+had just passed inside a concurrent full-suite run. It failed on the next one,
+and the issue's stated reason for grouping the two — *"both start real child
+processes"* — is false for this file. It spawns nothing and drives in-process
+HTTP servers over named pipes.
+
+The signature is `Error: Test timed out in 5000ms`, on exactly the two cases
+that call `writeMalformedStore` and on no others. That is vitest's **default**
+`testTimeout`, so this is not a race at all: it is a fixture that costs more
+than the default budget on a loaded machine. Solo it takes under two seconds.
+
+**The cost is four hundred commits, not the corruption.** The fixture inserts
+400 rows one at a time, and every `run()` outside a transaction is its own
+commit — on `journal_mode = DELETE`, which this fixture sets deliberately so
+there is one file whose pages can be damaged, a commit means creating and
+deleting a rollback journal beside the database. Four hundred file-create /
+file-delete pairs is cheap on an idle machine and is not cheap on Windows with a
+filter driver watching the directory. Wrapping the loop in one transaction
+changes nothing about the file produced — the same rows land on the same pages —
+and it took the whole suite from 32.8s to 20.9s, which is how much of that time
+was journal round-trips in one fixture.
+
+The explicit 30s budget on those two cases is the issue's own third preference
+applied on top: sized from the observed worst case rather than the median, and
+said in a comment. It is roughly fifteen times the solo cost, and short enough
+that a genuine hang still fails the run rather than hanging it.
+
+The general lesson is worth more than the fix. **A test whose default timeout is
+load-bearing is a flake with a countdown on it**, and nothing in the suite
+distinguishes "this assertion is fast" from "this assertion has been fitting
+inside 5000ms so far". Both halves of MAR-537 are the same failure at one remove:
+a harness making a bet about time, where the thing under test was never in
+question.
