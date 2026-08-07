@@ -79,6 +79,12 @@ import {
   serializeOAuthCredential,
 } from "../lib/oauth/credential";
 import { closeDb, dataDir } from "../lib/db";
+import {
+  FIRST_PAINT_BUDGET_MS,
+  FIRST_PAINT_PROBE,
+  readFirstPaint,
+  type FirstPaintObservation,
+} from "../lib/shell/first-paint";
 import { RENDERER_ORIGIN } from "../lib/shell/renderer-scheme";
 import { connectionsView } from "../lib/views/build";
 import {
@@ -427,6 +433,46 @@ check(
   "1e. the skip link is off-screen until it is focused",
   skipLink !== null && skipLink.hidden_bottom <= 0 && skipLink.shown_top > 0,
   skipLink,
+);
+
+/**
+ * `1f`. The first page stopped saying it was loading.
+ *
+ * **Proof `1` above passes on a window whose renderer never ran**, and that is
+ * not a hypothetical: a `pnpm shell` launch spent an afternoon showing "Reading
+ * your agents…" and nothing else, while `1` counted the two headings the server
+ * had delivered and reported that the UI renders. `2d` was equally green,
+ * because it asks `window.dashData` directly and the harness is not the page.
+ * Both are the shape MAR-473 named — a check satisfied by the failure it exists
+ * to exclude.
+ *
+ * The distinguishing fact is an absence, so the assertion is one: since MAR-432
+ * every page opens in a loading state and leaves it in an effect, so a
+ * placeholder that is still there after the budget means no effect ever ran. See
+ * `lib/shell/first-paint.ts`, which owns the rule; this proof and
+ * `electron/first-paint.ts` evaluate the same probe so the two cannot drift into
+ * asking different questions under the same name.
+ *
+ * What this proof does **not** cover is the developer path, which is where the
+ * failure happened. `scripts/verify-shell.mjs` forces the packaged origin so the
+ * gate depends only on this repository and this machine (ADR 0004), and that
+ * stays true. `pnpm shell:check` is the same assertion pointed at the other
+ * host, and it is deliberately not a gate.
+ */
+const firstPaint = await waitForObserved(
+  async () => {
+    const seen = (await window.webContents.executeJavaScript(
+      FIRST_PAINT_PROBE,
+    )) as FirstPaintObservation;
+    return { value: readFirstPaint(seen) === "stuck" ? null : seen, seen };
+  },
+  "1f. the first page to leave its loading state",
+  FIRST_PAINT_BUDGET_MS,
+);
+check(
+  "1f. the first page left its loading state",
+  firstPaint.value !== null && readFirstPaint(firstPaint.value) === "ready",
+  firstPaint,
 );
 
 /* -- Proof 2: shell.ping round trip ------------------------------------ */

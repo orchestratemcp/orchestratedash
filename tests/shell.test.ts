@@ -8,7 +8,7 @@ import {
   isCommandName,
   reviewCommand,
 } from "../lib/shell/ipc";
-import type { CommandAuditRecord, ConnectionAction } from "../lib/shell/ipc";
+import type { CommandAuditRecord, ConnectionAction, WorkspaceAction } from "../lib/shell/ipc";
 import type { AgentCommandInput } from "../lib/agent-dom/runner";
 import {
   SHELL_WEB_PREFERENCES,
@@ -133,6 +133,14 @@ describe("the audited command chokepoint", () => {
       // because removing an agent is a sequence of file, store and process
       // operations only the shell can order correctly.
       "runner.remove",
+      // MAR-434. A fifth family, addressing the runner's task workspace over
+      // routes the runner already served and proof 9 already exercised. Note
+      // the payload: two opaque ids, no path — main asks the *user* where to
+      // save through the operating system's own dialog, so the renderer neither
+      // supplies a location nor learns one. `mutates: false` for the same
+      // reason `shell.menu` is: it changes nothing about the agent, the store,
+      // or the world the agent acts on.
+      "workspace.download",
       // MAR-383. A third family, and the only one that reaches the OS vault.
       // Note what is *not* in any of their payloads: no key here could carry a
       // credential, which is what keeps "no secrets cross this boundary" true
@@ -352,12 +360,24 @@ describe("dispatch", () => {
     // Electron would put it". Recorded rather than performed for the same
     // reason as everything else here: there is no `Menu` in this process.
     const menus: Array<{ x: number; y: number } | undefined> = [];
+    // MAR-434. Recorded rather than performed, like everything else here: the
+    // real one reaches the runner over a socket and raises a native save
+    // dialog, and neither exists in this process.
+    const downloads: Array<{ action: string; target: Record<string, string> }> = [];
     return {
       audited,
       inputs,
       lifecycle,
       connections,
       menus,
+      downloads,
+      workspaceAction: (
+        action: WorkspaceAction,
+        target: { agent_id: string; artifact_id: string },
+      ) => {
+        downloads.push({ action, target });
+        return Promise.resolve({ ok: true, detail: "Saved to C:\\Users\\someone\\Documents." });
+      },
       showApplicationMenu: (at: { x: number; y: number } | undefined) => {
         menus.push(at);
       },
@@ -657,6 +677,87 @@ describe("dispatch", () => {
 
     it("refuses to execute one without the trusted side", () => {
       expect(() => executeCommand(reviewCommand(connect))).toThrowError(
+        /must go through dispatchCommand/,
+      );
+    });
+  });
+
+  /**
+   * MAR-434's `workspace.download`, and the property worth pinning is what its
+   * payload *cannot* say.
+   *
+   * The runner is the only process that resolves an opaque artifact id to a
+   * place on disk — `runner/workspace.ts` refuses to return `stored_path` for
+   * that reason — and this is the surface that finally calls it. A path in
+   * either direction would undo the argument at the point it starts to matter.
+   */
+  describe("saving an output (MAR-434)", () => {
+    const download = {
+      command: "workspace.download",
+      request_id: "req-dl-1",
+      payload: { agent_id: "ai-news-scout", artifact_id: "artifact-9f2c" },
+    };
+
+    it("routes to the workspace side and not to the agent, the runner or a connection", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(download, ctx);
+
+      expect(result).toMatchObject({ ok: true });
+      expect(ctx.downloads).toEqual([
+        {
+          action: "download",
+          target: { agent_id: "ai-news-scout", artifact_id: "artifact-9f2c" },
+        },
+      ]);
+      expect(ctx.inputs).toHaveLength(0);
+      expect(ctx.lifecycle).toHaveLength(0);
+      expect(ctx.connections).toHaveLength(0);
+    });
+
+    it.each(["path", "destination", "source_path", "stored_path", "directory"])(
+      "refuses a download carrying a %s field",
+      async (key) => {
+        const ctx = context();
+        const result = await dispatchCommand(
+          { ...download, payload: { ...download.payload, [key]: "C:\\Users\\someone\\Desktop" } },
+          ctx,
+        );
+
+        expect(result).toMatchObject({ ok: false, reason: "unexpected_payload_field" });
+        expect(ctx.downloads).toHaveLength(0);
+      },
+    );
+
+    it("refuses a download that names no artifact", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(
+        { command: "workspace.download", request_id: "req-dl-2", payload: { agent_id: "a" } },
+        ctx,
+      );
+
+      expect(result).toMatchObject({ ok: false, reason: "missing_payload_field" });
+      expect(ctx.downloads).toHaveLength(0);
+    });
+
+    /**
+     * Audited like everything else on this channel, and recorded as changing
+     * nothing — which is true of the agent, the store and the world the agent
+     * acts on. The file it writes goes where the user just pointed.
+     */
+    it("is audited, with keys only, and recorded as changing nothing", async () => {
+      const ctx = context();
+      await dispatchCommand(download, ctx);
+
+      expect(ctx.audited[0]).toMatchObject({
+        command: "workspace.download",
+        decision: "allowed",
+        payload_keys: ["agent_id", "artifact_id"],
+        mutates: false,
+      });
+    });
+
+    it("refuses to execute one without the trusted side", () => {
+      expect(() => executeCommand(reviewCommand(download))).toThrowError(
         /must go through dispatchCommand/,
       );
     });
