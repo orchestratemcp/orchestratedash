@@ -1800,6 +1800,126 @@ because retiring the live one is precisely what this session was told not to do.
 The proven bar is the next attended MAR-468 run, whose preflight either reports
 clear or retires something.
 
+## The deploy bridge, and the verb set ADR 0007 deferred (MAR-487)
+
+**The plane is built and the set is fixed.** ADR 0007's first follow-up said the
+verb set "is not specified here… it belongs with the deploy bridge, where there
+is something to validate against". MAR-484 wrote `connect` and left the rest as
+vocabulary for an implementation that did not exist. This is that
+implementation: **`install`, `start`, `stop`, `status`, `collect`, `connect`**,
+in one closed array in `lib/deploy/verbs.ts`, beside the arguments each carries
+and the check both ends run.
+
+`tests/host-record.test.ts`'s by-value pin on `HOST_VERBS` **fired** when the set
+widened from `["connect"]`, which is that assertion doing its job: a closed set
+is only worth anything if adding to it is a change somebody has to make in one
+place and defend, rather than one that rides along in a commit about something
+else.
+
+### Nothing variable reaches argv, which is stronger than validating it
+
+ADR 0007's rule is *"DASH chooses which operation, never what to run."* The
+mechanism here is narrower and easier to check: **a verb's arguments do not go
+on the command line at all.** They travel as one JSON envelope on the child's
+stdin, so the only strings `ssh` can be made to interpret are the fixed options
+`sshArgv` composes, the destination, and a verb drawn from a closed array. The
+set of strings `ssh` sees is fixed when this repository is compiled.
+
+`connect` is the one exception and it is forced: its stdin **is** the HTTP
+conversation, so a helper that drained stdin first would consume DASH's first
+request and wait forever for an end that never comes.
+
+### An identifier is not a path, and the helper is what enforces that
+
+`bundle_id` and `agent_id` are opaque tokens over an alphabet that cannot spell
+a separator, a traversal, a drive letter or a leading `-`. The helper joins them
+to a root **it** chose and never receives a directory — MAR-507's rule (*the
+renderer names a kind of file and never a file*) pointed at a machine DASH does
+not administer, where the sharper version applies: a payload that could name a
+directory is a payload that could name `/etc`.
+
+File names *inside* a bundle are the one place a path travels, checked with
+`runner/path-guard.ts`'s `inspectComponent` **per segment**. Per-component
+rather than `inspectPathSyntax` on the whole string, because that one answers
+about a path a caller *chose* and so requires an absolute one — a bundle name is
+relative by construction and would be refused as `not_absolute` before any
+interesting rule ran. It is also the stronger question: `..`, a colon opening an
+alternate data stream, a trailing dot Windows silently strips, a control
+character truncating a name inside a native call, and every reserved device name
+at any depth are each properties of one segment.
+
+**Two guards, watched failing**, and the table is amendment 2's shape:
+
+| Change | What goes red |
+| --- | --- |
+| Remove the containment re-check alone | **nothing** — the component guard still refuses |
+| Remove the component guard alone | **nothing** — containment still refuses |
+| Both | the escape case |
+
+Checked on the **helper's** side rather than only in DASH, and that is the
+load-bearing word: a rule living only in the sender is a rule the host does not
+have.
+
+### What the helper is a boundary against, said without inflation
+
+Not the host. DASH holds a key that could run anything there. What the closed
+set rules out is **DASH itself** turning a deploy into arbitrary remote
+execution: `start` runs `node start.mjs` because the *helper* decided that, not
+because a request said so — `runner/README.md`'s sentence moved one machine
+over. A test asks the helper directly with three request shapes carrying a
+command, and every one is refused at the verb or ignored.
+
+### `stop` works because of MAR-520, which ADR 0007 could not have foreseen
+
+Every `ssh` session is a new process, so **every** stop on a host is by a
+stranger. Before MAR-520 the only thing on the far end of that would have been a
+signal — the force-kill AGENTS.md forbids, performed on a machine nobody is
+watching, against the process holding somebody's agent history. MAR-520 made the
+runner record the channel secret it actually resolved under an owner-only proven
+ACL, so the helper authenticates to the runner's own `POST /shutdown`. A runner
+that left no such record is **reported as running and unstoppable, with the
+reason**, and the helper stops there. Both branches are driven by tests against a
+real started process.
+
+### What comes off the unproven list
+
+ADR 0007 amendment 2 listed what stayed unproven: *"`ssh` itself: authentication,
+the far-side helper, and the host's socket."* **The far-side helper comes off
+it.** `tests/deploy-bridge.test.ts` runs the real helper — bundled from the same
+entry point `scripts/build-runner-standalone.mjs` ships — as a local child, and
+drives `runDeployVerb`, the production function, through install → start →
+status → collect → stop. The only substitution is `spawn("node", [helper, verb])`
+where production writes `spawn("ssh", sshArgv(…))`.
+
+The exclusion is also asserted in the **other** direction: the deploy plane is a
+second way to reach a host, and a door added there would not be a channel at
+all, so no type would have seen it. A test scans the helper's own source for both
+brokered route strings, comments stripped. The one route it reaches is the
+runner's own shutdown, on the host's own socket, with the host's own credential.
+
+MAR-482's refusal runs **before a byte ships**, and ADR 0006's option-1 receipt
+is built and shown **before** the push — three limits, each a statement about
+what DASH cannot do rather than about what the agent will do, which is what keeps
+them checkable.
+
+**What is not built, plainly.** Nothing in `app/` deploys anything and the
+receipt renders nowhere yet; MAR-498 owns the Connection Center half. No host
+record is persisted and no key is minted by this change — MAR-484 built both.
+Restart-on-boot and retention stay undecided and the helper ships no service unit
+and prunes nothing, which ADR 0007 and amendment 1 both leave open on purpose.
+
+Evidence: `pnpm typecheck` clean, `brand:check` green, `[state] valid`,
+`pnpm build:runner-standalone` green with `host-helper.mjs` in the artifact, and
+90 test files / 1689 passed / 8 skipped / 0 failed from PowerShell with 21 new
+cases. `pnpm verify:shell` was **not run**, and is recorded as not run rather
+than skipped: the MAR-520 orphan runner was alive on this machine. Nothing here
+touches the installed loop, so what a smoke would establish is that the deploy
+plane did not break it — which CI's Windows `shell-smoke` establishes on this PR.
+
+**Merged is the ceiling.** Nothing here has reached a host: no `ssh` runs in any
+test, no key is used, no `sshd` is contacted. MAR-489 owns the attended VPS run,
+and under ADR 0004 nothing about a remote host can ever have a blocking gate.
+
 ## UX principle
 
 The home view answers three questions: what can I run, what is happening now, and what needs my decision? Connections are capabilities with scopes and receipts, not a wall of OAuth settings. Every run should make inputs, actions, outputs, gates, and failures inspectable.
