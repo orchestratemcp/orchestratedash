@@ -139,6 +139,27 @@ export type RetireOutcome =
  * The suffix carries the moment rather than a counter, so two attempts on the
  * same day cannot collide and the order they happened in is readable from the
  * directory listing.
+ *
+ * ## All three move, or none of them do (MAR-520)
+ *
+ * The first draft of this function renamed each file in turn and returned the
+ * first failure, leaving whatever had already moved where it had moved to. That
+ * is the disaster the paragraph above describes, produced by the function
+ * written to prevent it: a main database renamed away while its `-wal` stays
+ * behind leaves the fresh store to find a log referring to pages it does not
+ * have, and a `-wal` renamed away while the main database stays behind silently
+ * discards every transaction that had not been checkpointed.
+ *
+ * Both halves were reachable. A rename can fail part-way through for reasons
+ * that have nothing to do with the caller — a virus scanner holding a handle, a
+ * file the operating system has open, `EBUSY` on Windows for a database
+ * something still has open — and "part-way through" was a state this function
+ * could reach and report as a plain failure, as though nothing had happened.
+ *
+ * So the moves are undone on the way out. A rollback that itself fails is
+ * reported as what it is, because at that point the directory holds a mixture
+ * only a person can sort out and telling them it is fine would be worse than
+ * telling them it is not.
  */
 export function retireDamagedStore(
   directory: string,
@@ -156,30 +177,50 @@ export function retireDamagedStore(
     return { ok: false, detail: "There is no runner store file to set aside." };
   }
 
-  let moved = 0;
-  try {
-    for (const sibling of ["", "-wal", "-shm"]) {
-      const from = `${main}${sibling}`;
-      if (!existsSync(from)) {
-        continue;
+  const done: Array<{ from: string; to: string }> = [];
+  /** Put back everything this call moved, and say so if that cannot be done. */
+  const rollback = (detail: string): RetireOutcome => {
+    const stranded: string[] = [];
+    for (const move of done.reverse()) {
+      try {
+        renameSync(move.to, move.from);
+      } catch {
+        stranded.push(path.basename(move.to));
       }
-      // A directory where a database should be is not something to rename over.
-      if (!statSync(from).isFile()) {
-        return { ok: false, detail: "The runner's store is not a file." };
-      }
-      // `runner.sqlite.damaged-…` and `runner.sqlite.damaged-….-wal`, rather
-      // than suffixing each name where it sits. The point is that a recovery
-      // tool opening the set-aside database finds its log where SQLite looks
-      // for it: `runner.sqlite-wal.damaged-…` would be an orphan.
-      renameSync(from, `${main}${suffix}${sibling}`);
-      moved += 1;
     }
-  } catch (error: unknown) {
-    return {
-      ok: false,
-      detail: error instanceof Error ? error.message : String(error),
-    };
+    if (stranded.length > 0) {
+      return {
+        ok: false,
+        detail:
+          `${detail} Some of the runner's store files were set aside and could not be put ` +
+          `back (${stranded.join(", ")}), so the directory now holds part of a move. ` +
+          `Close DASH and restart this computer before using it again.`,
+      };
+    }
+    return { ok: false, detail };
+  };
+
+  for (const sibling of ["", "-wal", "-shm"]) {
+    const from = `${main}${sibling}`;
+    if (!existsSync(from)) {
+      continue;
+    }
+    // A directory where a database should be is not something to rename over.
+    if (!statSync(from).isFile()) {
+      return rollback("The runner's store is not a file.");
+    }
+    // `runner.sqlite.damaged-…` and `runner.sqlite.damaged-….-wal`, rather
+    // than suffixing each name where it sits. The point is that a recovery
+    // tool opening the set-aside database finds its log where SQLite looks
+    // for it: `runner.sqlite-wal.damaged-…` would be an orphan.
+    const to = `${main}${suffix}${sibling}`;
+    try {
+      renameSync(from, to);
+    } catch (error: unknown) {
+      return rollback(error instanceof Error ? error.message : String(error));
+    }
+    done.push({ from, to });
   }
 
-  return { ok: true, retired: { moved_to: `${storeFileName}${suffix}`, moved } };
+  return { ok: true, retired: { moved_to: `${storeFileName}${suffix}`, moved: done.length } };
 }
