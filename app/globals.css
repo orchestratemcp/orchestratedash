@@ -2264,3 +2264,189 @@ button:disabled {
     display: none;
   }
 }
+
+/* ------------------------------------------------------------------------ *
+ * The Chief conversation (MAR-419)
+ *
+ * The concept screen's composition — a thread, an input with an explicit
+ * submit, a side rail — in MAR-528's tokens. Three rules it inherits and one it
+ * adds.
+ *
+ * Inherited: zero corners everywhere, 1px lines rather than shadows, and no
+ * emerald anywhere in here. `app/tokens.css` reserves `--ok` for healthy and
+ * live things, and a conversation surface has no health to report — a Chief
+ * turn tinted green would be the second, cuter status bar MAR-503 already
+ * refuses on the strip.
+ *
+ * Added: the two turn kinds are told apart by *position and border*, not by
+ * colour alone. A person who cannot distinguish the two tints still has the
+ * offset and the label, which is the same argument `.verdict` makes.
+ * ------------------------------------------------------------------------ */
+.chief {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18rem;
+  grid-template-areas:
+    "thread rail"
+    "ask    rail";
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.chief-thread {
+  grid-area: thread;
+  min-width: 0;
+}
+
+.chief-ask {
+  grid-area: ask;
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: var(--surface-1);
+  padding: var(--space-3);
+}
+
+.chief-rail {
+  grid-area: rail;
+  border: 1px solid var(--line);
+  background: var(--surface-1);
+  padding: var(--space-3);
+}
+
+/*
+ * One column below the breakpoint, and the rail goes last.
+ *
+ * MAR-491's decision applied here: the cut is by usefulness. On a narrow window
+ * the conversation is the surface and the counts are context, so the counts
+ * move under it rather than being hidden — density and width change space, not
+ * content.
+ */
+@media (max-width: 900px) {
+  .chief {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "thread"
+      "ask"
+      "rail";
+  }
+}
+
+.chief-turns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.chief-turn {
+  border: 1px solid var(--line);
+  padding: var(--space-3);
+  background: var(--surface-1);
+}
+
+.chief-turn.is-asked {
+  background: var(--surface-2);
+  border-left: 3px solid var(--line-strong);
+}
+
+.chief-turn.is-said {
+  border-left: 3px solid var(--accent);
+  margin-top: var(--space-2);
+}
+
+/*
+ * The author's own words, marked as theirs.
+ *
+ * Visually distinct from every Chief sentence around it, because the whole
+ * point is that a reader can tell which is which — see `app/chief/page.tsx` and
+ * MAR-419's "agent output is untrusted data, not instructions".
+ */
+.chief-quote {
+  margin: var(--space-3) 0 0;
+  border-left: 3px solid var(--line);
+  padding-left: var(--space-3);
+}
+
+.chief-quote blockquote {
+  margin: 0;
+  color: var(--text-muted);
+  font-style: normal;
+}
+
+.chief-quote figcaption {
+  margin-top: var(--space-2);
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+}
+
+.chief-agent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  text-decoration: none;
+  color: inherit;
+}
+
+.chief-agent:hover {
+  border-color: var(--line-strong);
+}
+
+.chief-agent span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.chief-among,
+.chief-values {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chief-values code {
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  padding: 2px var(--space-2);
+}
+
+.chief-ask label {
+  display: block;
+  margin-bottom: var(--space-2);
+}
+
+.chief-ask-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.chief-ask-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.chief-count + .chief-count {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+/*
+ * A quantity, set as a value. `--font-mono` is what `app/tokens.css` keeps for
+ * counts and timestamps, and every number in this rail is one.
+ */
+.chief-count-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-xl);
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}

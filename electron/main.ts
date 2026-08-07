@@ -85,6 +85,7 @@ import {
   workInboxView,
   workspaceView,
 } from "../lib/views/build";
+import { chiefFleet } from "../lib/views/chief";
 import { createAgentChannels, startPolling, type AgentChannels } from "./agent-adapters";
 import { startApprovalNotifier } from "./approval-notifier";
 import {
@@ -778,6 +779,11 @@ export function registerReadChannel(): void {
           ok: true,
           data: workspaceView(review.params["agent"] ?? ""),
         } satisfies ReadResponse<ReadResults["view.workspace"]>;
+      case "view.chief":
+        return {
+          ok: true,
+          data: chiefFleet(),
+        } satisfies ReadResponse<ReadResults["view.chief"]>;
       default: {
         const unreachable: never = review.read;
         throw new Error(`Unhandled read: ${String(unreachable)}`);

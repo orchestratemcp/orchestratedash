@@ -96,6 +96,13 @@ const THEMES = ["light", "dark"] as const;
  */
 const SURFACES = [
   { name: "agents", path: "/", density: true, tall: false },
+  /*
+   * MAR-419. `tall` because the conversation, the input and the side rail
+   * stack into one column below 900px, and a viewport frame at 768 and 375
+   * shows the thread with the rail somewhere below the fold — which is the
+   * layout question this surface actually raises.
+   */
+  { name: "chief", path: "/chief", density: false, tall: true },
   { name: "runs", path: "/runs", density: false, tall: false },
   { name: "connections", path: "/connections", density: false, tall: true },
   { name: "work", path: "/work", density: false, tall: false },

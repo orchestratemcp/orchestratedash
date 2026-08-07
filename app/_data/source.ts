@@ -35,6 +35,7 @@ import type { RenderHost } from "../../lib/copy/host";
 import type { CommandResult } from "../../lib/shell/ipc";
 import type { DashReadApi } from "../../lib/shell/read";
 import type { AgentCommand } from "../../lib/workspace";
+import type { ChiefFleet } from "../../lib/chief/route";
 import type {
   AgentsView,
   ConnectionsView,
@@ -171,6 +172,13 @@ export interface DashDataSource {
   connections(): Promise<ViewResult<ConnectionsView>>;
   inbox(): Promise<ViewResult<WorkInboxView>>;
   workspace(agent: string): Promise<ViewResult<WorkspaceView>>;
+  /**
+   * MAR-419. Optional on the bridge because an installed shell older than the
+   * Chief has a `dashData` without it — the same reason every other late
+   * addition here is optional — and the page refuses honestly rather than
+   * throwing.
+   */
+  chief(): Promise<ViewResult<ChiefFleet>>;
 }
 
 /**
@@ -203,6 +211,16 @@ function shellSource(bridge: DashReadApi): DashDataSource {
     connections: () => fromBridge(() => bridge.connections()),
     inbox: () => fromBridge(() => bridge.inbox()),
     workspace: (agent) => fromBridge(() => bridge.workspace(agent)),
+    /*
+     * The method is checked, not just the bridge. An installed shell built
+     * before MAR-419 has a `dashData` without `chief`, and calling through
+     * would throw where "this build does not offer that document" is both true
+     * and already the sentence `describeViewFailure("refused")` gives.
+     */
+    chief: () =>
+      bridge.chief === undefined
+        ? Promise.resolve({ ok: false as const, recovery: describeViewFailure("refused") })
+        : fromBridge(() => bridge.chief?.() ?? Promise.resolve({ ok: false as const })),
   };
 }
 
@@ -241,6 +259,7 @@ function browserSource(): DashDataSource {
     inbox: () => fromHttp("/api/views/inbox"),
     workspace: (agent) =>
       fromHttp(`/api/views/workspace?agent=${encodeURIComponent(agent)}`),
+    chief: () => fromHttp("/api/views/chief"),
   };
 }
 

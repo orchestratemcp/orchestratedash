@@ -50,6 +50,7 @@
  * can run no Node built-ins and resolve no imports at runtime.
  */
 
+import type { ChiefFleet } from "../chief/route";
 import type {
   AgentsView,
   ConnectionsView,
@@ -111,6 +112,18 @@ export const READS = {
     returns: "One agent's safe live state, capability-driven controls, memory and audit history.",
     params: ["agent"],
   },
+  /*
+   * MAR-419. What each agent's author DECLARED it is for, plus three counts.
+   *
+   * Deliberately not `view.agents` with a field added: the Chief needs the
+   * declared route as a set and needs nothing an agent has produced, and a read
+   * that carries only what routing may look at is a boundary rather than a
+   * convention. Nothing here is telemetry, which is the rule MAR-419 states.
+   */
+  "view.chief": {
+    returns: "What each agent declares it is for, and the three fleet counts the Chief shows.",
+    params: [],
+  },
 } as const satisfies Record<string, ReadSpec>;
 
 export type ReadName = keyof typeof READS;
@@ -133,6 +146,7 @@ export interface ReadResults {
   "view.connections": ConnectionsView;
   "view.inbox": WorkInboxView;
   "view.workspace": WorkspaceView;
+  "view.chief": ChiefFleet;
 }
 
 type UntypedRead = Exclude<ReadName, keyof ReadResults>;
@@ -228,6 +242,13 @@ export interface DashReadApi {
   connections(): Promise<ReadResponse<ReadResults["view.connections"]>>;
   inbox(): Promise<ReadResponse<ReadResults["view.inbox"]>>;
   workspace(agent: string): Promise<ReadResponse<ReadResults["view.workspace"]>>;
+  /**
+   * Optional, like `openAppMenu` on the command bridge and for the same reason:
+   * an installed shell built before MAR-419 has a `dashData` without it, and a
+   * page that assumed otherwise would throw in front of the user rather than
+   * refuse honestly.
+   */
+  chief?(): Promise<ReadResponse<ReadResults["view.chief"]>>;
 }
 
 /**

@@ -255,6 +255,7 @@ const dashData = {
   run: (agent: string, runId: string) => read("view.run", { agent, run_id: runId }),
   connections: () => read("view.connections"),
   inbox: () => read("view.inbox"),
+  chief: () => read("view.chief"),
   workspace: (agent: string) => read("view.workspace", { agent }),
   // `satisfies`, so the pages and this bridge cannot drift: the shape is
   // declared in `lib/shell/read.ts`, which a client component may import and

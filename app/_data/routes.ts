@@ -38,6 +38,18 @@ export interface Surface {
 
 export const SURFACES: readonly Surface[] = [
   { href: "/", label: "Agents" },
+  /*
+   * MAR-419. Second, not last: it is the surface that answers "who does this?",
+   * which is the question somebody has before they have picked an agent — so it
+   * sits next to the fleet rather than at the end of a row of destinations they
+   * would reach only after already knowing.
+   *
+   * A seventh destination, and MAR-491's wrapping decision is what makes that
+   * affordable: `.app-nav` wraps at 375px rather than scrolling, so this costs a
+   * second row on a narrow window instead of a link behind a scrollbar. The
+   * capture at 375 is what says that stayed true.
+   */
+  { href: "/chief", label: "Chief" },
   { href: "/work", label: "Work inbox" },
   { href: "/runs", label: "Runs" },
   { href: "/connections", label: "Connections" },
