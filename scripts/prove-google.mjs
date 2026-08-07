@@ -128,6 +128,16 @@ await Promise.all([
     entryPoints: [path.join(repoRoot, "runner", "main.ts")],
     outfile: path.join(outDir, "runner.mjs"),
   }),
+
+  /*
+   * The preflight (MAR-520), built from the same tree for the same reason
+   * everything else here is.
+   */
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "scripts", "google-proof", "preflight.ts")],
+    outfile: path.join(outDir, "preflight.mjs"),
+  }),
 ]);
 
 /*
@@ -168,6 +178,38 @@ if (typeof electronBinary !== "string" || !existsSync(electronBinary)) {
 console.log(`[prove-google] version ${String(rootPackage.version)}`);
 console.log("[prove-google] close DASH before continuing: the shell is single-instance,");
 console.log("[prove-google] and this harness starts a real one.\n");
+
+/* ---------------------------------------------------------------------- *
+ * Preflight: is anything already holding the data directory? (MAR-520)
+ * ---------------------------------------------------------------------- */
+
+/*
+ * Before the operator invests an evening. The 2026-08-07 run ended with a
+ * runner from *that morning's* run still alive, still supervising three agents,
+ * and unauthenticable — the next run would have put a second writer on the same
+ * `runner.sqlite`. A check nobody is told to perform is a check nobody performs,
+ * so this is the harness's own first step rather than a line in the runbook.
+ *
+ * `stdio: "inherit"` because its whole output is for the person reading this
+ * terminal, and its exit code is the branch: 3 means something is in the way.
+ */
+const preflight = spawnSync(electronBinary, [path.join(outDir, "preflight.mjs")], {
+  cwd: repoRoot,
+  stdio: "inherit",
+  env: { ...process.env, DASH_BROKER_PROOF_ORIGIN: undefined },
+});
+if (preflight.error !== undefined) {
+  console.error(`[prove-google] could not run the preflight: ${preflight.error.message}`);
+  process.exit(1);
+}
+if (preflight.status !== 0) {
+  console.error(
+    "\n[prove-google] not starting. The preflight above names what is holding this\n" +
+      "[prove-google] machine's data directory and what to do about it.",
+  );
+  process.exit(preflight.status ?? 1);
+}
+console.log("");
 
 /*
  * `stdio: "inherit"` for all three, because the harness reads from the terminal.

@@ -128,6 +128,27 @@ export interface RunnerServerOptions {
    * the data directory is. Absent answers 501 rather than pretending.
    */
   retireStore?: () => Promise<StoreRetirement> | StoreRetirement;
+  /**
+   * Damage this server classified while handling a request (MAR-520).
+   *
+   * MAR-506 built two detections on purpose, because the open-time probe cannot
+   * be complete. Only one of them was wired to anything. The runtime half below
+   * turned a throw into the right *answer* — `sendStoreDamaged` rather than a
+   * 500 — and then dropped the finding on the floor, so the runner's own
+   * `storeDamage()` kept saying null and `POST /store/retire` kept replying
+   * "There is nothing to set aside." to a user looking at a page that had just
+   * told them their records were damaged and offered to set them aside.
+   *
+   * That is the case that actually happened: the damaged store on this
+   * machine's installed data directory passed `quick_check` at open and threw
+   * on twelve subsequent requests, so the open-time probe never fired once and
+   * the repair was unreachable through the only route a person has.
+   *
+   * Optional for the same reason the others are — this module serves what it is
+   * handed — and a runner that supplies no callback keeps the previous
+   * behaviour, which is a 503 with the right words and no repair.
+   */
+  onStoreDamage?: (damage: RunnerStoreDamage) => void;
   now?: () => Date;
   log?: (line: string) => void;
 }
@@ -157,6 +178,11 @@ export function createRunnerServer(options: RunnerServerOptions): Server {
        */
       const damage = classifyStoreError(error);
       if (damage !== null) {
+        // MAR-520. Reported to the runner before it is reported to the caller,
+        // so that by the time the user reads "your records are damaged" and
+        // presses the button beside it, the repair that button reaches knows
+        // there is something to repair.
+        options.onStoreDamage?.(damage);
         sendStoreDamaged(response, damage);
         return;
       }
