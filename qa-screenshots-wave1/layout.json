@@ -1,0 +1,85 @@
+{
+  "captured_at": "2026-08-05T21:14:35.464Z",
+  "measurements": [
+    {
+      "viewport": 1279,
+      "theme": "light",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1118,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null
+    },
+    {
+      "viewport": 767,
+      "theme": "light",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 606,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null
+    },
+    {
+      "viewport": 374,
+      "theme": "light",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 472,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 484
+      }
+    },
+    {
+      "viewport": 1279,
+      "theme": "dark",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1118,
+        "right": 1267,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null
+    },
+    {
+      "viewport": 767,
+      "theme": "dark",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 606,
+        "right": 755,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null
+    },
+    {
+      "viewport": 374,
+      "theme": "dark",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 437,
+        "right": 472,
+        "fully_visible": false
+      },
+      "density_toggle_scroller": {
+        "element": "nav.app-nav",
+        "client_width": 374,
+        "scroll_width": 484
+      }
+    }
+  ]
+}
