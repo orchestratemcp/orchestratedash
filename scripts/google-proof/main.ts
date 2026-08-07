@@ -57,7 +57,7 @@ import { collectSpawnCredentials } from "../../electron/main.js";
 import { app, BrowserWindow } from "electron";
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdtempSync, openSync, read, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
@@ -167,6 +167,46 @@ async function waitForValue<T>(
  * end, because deleting the draft is a step only a person can perform.
  */
 function ask(question: string): Promise<string> {
+  if (process.platform === "win32") {
+    /*
+     * Electron on Windows is a GUI-subsystem executable, and the stdin handle
+     * it inherits from the launching console never delivers keystrokes to
+     * Node's stream layer — a readline over `process.stdin` waits forever
+     * while the operator types into nothing. Found live on 2026-08-07, the
+     * first time an attended run ever reached this question with something to
+     * answer. `CONIN$` is the console's own input device and answers the way
+     * stdin should have. `fs.read` rather than `readSync`, so the wait parks
+     * on the threadpool and the shell's own loops keep breathing while a
+     * human decides.
+     */
+    process.stdout.write(question);
+    return new Promise((resolve) => {
+      // The NT device path, not the bare name: Electron's `fs` resolves a bare
+      // `CONIN$` against the working directory and answers ENOENT for a file
+      // that was never meant to be one.
+      const fd = openSync("\\\\.\\CONIN$", "r");
+      let collected = "";
+      const buffer = Buffer.alloc(1024);
+      const takeMore = (): void => {
+        read(fd, buffer, 0, buffer.length, null, (error, bytesRead) => {
+          if (error !== null || bytesRead === 0) {
+            closeSync(fd);
+            resolve(collected.trim());
+            return;
+          }
+          collected += buffer.toString("utf8", 0, bytesRead);
+          if (collected.includes("\n") || collected.includes("\r")) {
+            closeSync(fd);
+            resolve(collected.trim());
+            return;
+          }
+          takeMore();
+        });
+      };
+      takeMore();
+    });
+  }
+
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((resolve) => {
     rl.question(question, (answer) => {
