@@ -1,0 +1,2069 @@
+{
+  "captured_at": "2026-08-07T19:40:27.837Z",
+  "measurements": [
+    {
+      "surface": "agents",
+      "viewport": 1280,
+      "theme": "light",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1074,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 1280,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1053,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 768,
+      "theme": "light",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 206,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 768,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 227,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 375,
+      "theme": "light",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 50,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 375,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 46,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 1280,
+      "theme": "light",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1074,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 1280,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1053,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 768,
+      "theme": "light",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 206,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 768,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 227,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 375,
+      "theme": "light",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 50,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 375,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 46,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 1280,
+      "theme": "light",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1074,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": {
+        "element": "span.visually-hidden",
+        "client_width": 1,
+        "scroll_width": 33,
+        "overflow_by": 32
+      },
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 1280,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1053,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": {
+        "element": "span.visually-hidden",
+        "client_width": 1,
+        "scroll_width": 33,
+        "overflow_by": 32
+      },
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 768,
+      "theme": "light",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 206,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": {
+        "element": "span.visually-hidden",
+        "client_width": 1,
+        "scroll_width": 33,
+        "overflow_by": 32
+      },
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 768,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 227,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": {
+        "element": "span.visually-hidden",
+        "client_width": 1,
+        "scroll_width": 33,
+        "overflow_by": 32
+      },
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 375,
+      "theme": "light",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 50,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": {
+        "element": "span.visually-hidden",
+        "client_width": 1,
+        "scroll_width": 33,
+        "overflow_by": 32
+      },
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 375,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 46,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": {
+        "element": "span.visually-hidden",
+        "client_width": 1,
+        "scroll_width": 33,
+        "overflow_by": 32
+      },
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 1280,
+      "theme": "light",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1074,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 1280,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1053,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 768,
+      "theme": "light",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 206,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 768,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 227,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 375,
+      "theme": "light",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 50,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 375,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 46,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "hosts",
+      "viewport": 1280,
+      "theme": "light",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1074,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "hosts",
+      "viewport": 1280,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1053,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "hosts",
+      "viewport": 768,
+      "theme": "light",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 206,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "hosts",
+      "viewport": 768,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 227,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "hosts",
+      "viewport": 375,
+      "theme": "light",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 50,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "hosts",
+      "viewport": 375,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 46,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 1280,
+      "theme": "light",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1074,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 1280,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1053,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 768,
+      "theme": "light",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 206,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 768,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 227,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 375,
+      "theme": "light",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 50,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 375,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 46,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 1280,
+      "theme": "dark",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1074,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 1280,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1053,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 768,
+      "theme": "dark",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 206,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 768,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 227,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 375,
+      "theme": "dark",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 50,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "agents",
+      "viewport": 375,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 46,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 1280,
+      "theme": "dark",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1074,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 1280,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1053,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 768,
+      "theme": "dark",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 206,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 768,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 227,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 375,
+      "theme": "dark",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 50,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "runs",
+      "viewport": 375,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 46,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 1280,
+      "theme": "dark",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1074,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": {
+        "element": "span.visually-hidden",
+        "client_width": 1,
+        "scroll_width": 33,
+        "overflow_by": 32
+      },
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 1280,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1053,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": {
+        "element": "span.visually-hidden",
+        "client_width": 1,
+        "scroll_width": 33,
+        "overflow_by": 32
+      },
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 768,
+      "theme": "dark",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 206,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": {
+        "element": "span.visually-hidden",
+        "client_width": 1,
+        "scroll_width": 33,
+        "overflow_by": 32
+      },
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 768,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 227,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": {
+        "element": "span.visually-hidden",
+        "client_width": 1,
+        "scroll_width": 33,
+        "overflow_by": 32
+      },
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 375,
+      "theme": "dark",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 50,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": {
+        "element": "span.visually-hidden",
+        "client_width": 1,
+        "scroll_width": 33,
+        "overflow_by": 32
+      },
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "connections",
+      "viewport": 375,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 46,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": {
+        "element": "span.visually-hidden",
+        "client_width": 1,
+        "scroll_width": 33,
+        "overflow_by": 32
+      },
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/viking.png",
+          "rendered": "50x50",
+          "decorative": true
+        },
+        {
+          "src": "/o/1x/nerd.png",
+          "rendered": "50x50",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 1280,
+      "theme": "dark",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1074,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 1280,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1053,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 768,
+      "theme": "dark",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 206,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 768,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 227,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 375,
+      "theme": "dark",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 50,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "work",
+      "viewport": 375,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 46,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "hosts",
+      "viewport": 1280,
+      "theme": "dark",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1074,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "hosts",
+      "viewport": 1280,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1053,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "hosts",
+      "viewport": 768,
+      "theme": "dark",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 206,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "hosts",
+      "viewport": 768,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 227,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "hosts",
+      "viewport": 375,
+      "theme": "dark",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 50,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "hosts",
+      "viewport": 375,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 46,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 1280,
+      "theme": "dark",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1074,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 1280,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 1280,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 1053,
+        "right": 1268,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 768,
+      "theme": "dark",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 206,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 768,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 768,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 227,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 375,
+      "theme": "dark",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 50,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    },
+    {
+      "surface": "workspace",
+      "viewport": 375,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 375,
+      "page_overflows": false,
+      "density_toggle": {
+        "left": 12,
+        "right": 46,
+        "fully_visible": true
+      },
+      "density_toggle_scroller": null,
+      "widest_scroller": null,
+      "avatars": [
+        {
+          "src": "/o/1x/king.png",
+          "rendered": "100x100",
+          "decorative": true
+        }
+      ],
+      "fleet_strip": {
+        "height": 71,
+        "standing": 3,
+        "overflow": null,
+        "overlaps_main": false
+      }
+    }
+  ]
+}

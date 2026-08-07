@@ -60,7 +60,7 @@
  * without dragging code blocks and hashes with it. It is not a no-op waiting to be
  * deleted.
  *
- * ## Neither family is bundled, and on most machines neither is present
+ * ## Neither family is bundled, and that is now decided rather than pending
  *
  * DASH ships no web fonts: a local-first app that blocks its first paint on a font
  * file has chosen the wrong thing to be strict about. Space Grotesk and JetBrains
@@ -70,9 +70,21 @@
  * system renders in Segoe UI Variable Display and Consolas. That is a real and
  * visible gap in the adopted system rather than a detail: the shape language, the
  * palette and the caps-label grammar all survive the substitution, and the type
- * pairing does not. Bundling the two OFL faces into the static export is a
- * decision with its own trade-off — see MAR-535 — and is deliberately not taken
- * here, because it is a change to what DASH ships rather than to how it looks.
+ * pairing does not.
+ *
+ * **MAR-535 asked whether to bundle the two OFL faces and Henrik decided it on
+ * 2026-08-07: keep the rule.** So this paragraph is the permanent record, not a
+ * note about a pending decision, and the sentence it replaces said so the other
+ * way round. The substitution above is what DASH looks like on a machine without
+ * the families installed, which is most of them.
+ *
+ * The rule is now checkable rather than remembered. `scripts/brand-rules.mjs`'s
+ * `checkNoRemoteFonts` runs inside `pnpm brand:check` over every stylesheet and
+ * component under `app/`, and refuses a remote `@font-face`, an off-machine
+ * `@import`, a `<link>` to a font host and `next/font/google`. What it forbids is
+ * a **fetch**, not a font file: if this decision is ever revisited, a woff2
+ * vendored into the export is a same-origin read over `dash-app://` and no rule
+ * here has to be relaxed to allow it.
  *
  * ## Calm by default, dense on request
  *

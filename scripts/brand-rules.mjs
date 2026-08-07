@@ -481,3 +481,112 @@ export function checkAvatarCss(css) {
 
   return failures;
 }
+
+/* ── Fonts ────────────────────────────────────────────────────────────────── */
+
+/**
+ * No page may request a font from anywhere but this machine (MAR-535).
+ *
+ * Henrik decided MAR-535 on 2026-08-07: **keep the rule**. Space Grotesk and
+ * JetBrains Mono are not bundled, DASH renders in the platform's own faces where
+ * they are absent, and `app/tokens.css`'s note about that is now the permanent
+ * record rather than a pending one.
+ *
+ * A decision recorded only in prose is a decision the next reskin quietly
+ * reverses, which is what this rule is for. The rule the issue actually settles
+ * is about **where a font comes from**, so that is what is checked — not whether
+ * a font file exists. If the decision is ever revisited and the two OFL families
+ * are vendored into the export, they are same-origin reads over `dash-app://`
+ * and every assertion here still passes. Nothing below has to be relaxed to
+ * bundle a font; it only has to be relaxed to fetch one.
+ *
+ * That matters more here than in an ordinary web app. DASH is local-first and
+ * offline by default: a stylesheet reaching `fonts.googleapis.com` does not
+ * merely leak that the app was opened, it renders in a fallback anyway on the
+ * machines this product is *for*, having waited for a timeout first.
+ *
+ * `next/font/google` is refused for a different reason from the rest, and it is
+ * worth naming because it looks like a false positive: it self-hosts, so no page
+ * requests a remote font at runtime. What it moves is the fetch to **build
+ * time** — an offline or firewalled build fails, or worse, silently produces an
+ * export whose fonts came from whatever the network answered that day.
+ * `next/font/local` is deliberately NOT refused: it is the supported way to do
+ * exactly what MAR-535 would have done.
+ */
+export function checkNoRemoteFonts(files) {
+  const failures = [];
+
+  /*
+   * The floor, and it is the load-bearing line rather than defensive noise.
+   *
+   * MAR-498's client-bundle guard passed against a list nobody had widened, and
+   * the repair kept the original names as a floor precisely because a walk that
+   * broke and returned an empty set would pass that file forever. A font rule
+   * that scanned nothing is that same failure: green, permanently, from the
+   * moment somebody moves a stylesheet.
+   */
+  if (files.length === 0) {
+    failures.push(
+      "fonts: nothing was scanned for remote font requests — the walk found no stylesheets or components, which is the shape of a check that has stopped looking rather than of a codebase with no CSS in it",
+    );
+    return failures;
+  }
+
+  /** Absolute, protocol-relative, or any scheme that is not this app's own. */
+  const REMOTE = /^\s*(?:https?:)?\/\/|^\s*[a-z][a-z0-9+.-]*:\/\//i;
+
+  for (const { name, source } of files) {
+    const withoutComments = source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+
+    /* 1. An @font-face whose bytes come from somewhere else. */
+    for (const face of withoutComments.matchAll(/@font-face\s*\{([^{}]*)\}/g)) {
+      for (const src of face[1].matchAll(/url\(\s*['"]?([^'")]+)['"]?\s*\)/g)) {
+        if (REMOTE.test(src[1])) {
+          failures.push(
+            `fonts: ${name} declares an @font-face whose src is ${src[1]} — DASH ships no web fonts (MAR-535, decided 2026-08-07: keep the rule), and a local-first app that blocks its first paint on a network font has chosen the wrong thing to be strict about`,
+          );
+        }
+      }
+    }
+
+    /* 2. A stylesheet pulled in from off-machine, which is how a font usually arrives. */
+    for (const imported of withoutComments.matchAll(
+      /@import\s+(?:url\(\s*)?['"]?([^'");\s]+)/g,
+    )) {
+      if (REMOTE.test(imported[1])) {
+        failures.push(
+          `fonts: ${name} @imports ${imported[1]} — an off-machine stylesheet is the ordinary way a remote font arrives, and DASH's export must read every byte it paints with from this machine`,
+        );
+      }
+    }
+
+    /* 3. The markup half: a <link> to a font host, including the preconnect
+       that usually precedes one and is the earliest visible sign of it. */
+    for (const link of withoutComments.matchAll(/<link\b[^>]*>/g)) {
+      const tag = link[0];
+      const href = /href\s*=\s*['"]([^'"]+)['"]/.exec(tag);
+      if (href === null || !REMOTE.test(href[1])) {
+        continue;
+      }
+      if (/rel\s*=\s*['"](?:stylesheet|preconnect|dns-prefetch|preload)['"]/i.test(tag)) {
+        failures.push(
+          `fonts: ${name} links ${href[1]} — DASH's renderer makes no network request for anything it paints with`,
+        );
+      }
+    }
+
+    /*
+     * 4. The build-time fetch. Not a runtime request, which is why it needs its
+     * own sentence rather than being folded into the ones above.
+     */
+    if (/from\s+['"]next\/font\/google['"]/.test(withoutComments)) {
+      failures.push(
+        `fonts: ${name} imports next/font/google — it self-hosts, so no page requests a remote font at runtime, but the fetch moves to build time and an offline build then either fails or ships whatever the network answered. next/font/local is the supported way to bundle a face if MAR-535 is ever revisited`,
+      );
+    }
+  }
+
+  return failures;
+}

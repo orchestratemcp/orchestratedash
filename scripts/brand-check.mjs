@@ -34,6 +34,7 @@ import {
   checkCast,
   checkCostume,
   checkEmerald,
+  checkNoRemoteFonts,
   checkSizeApi,
   readCastModule,
 } from "./brand-rules.mjs";
@@ -111,17 +112,33 @@ const css = STYLESHEETS.filter((file) => fs.existsSync(file))
 
 failures.push(...checkAvatarCss(css));
 
-function* walk(dir) {
+function* walk(dir, match = /\.tsx?$/) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (["node_modules", ".next", "dist", "out", ".git"].includes(entry.name)) continue;
-      yield* walk(full);
-    } else if (/\.tsx?$/.test(entry.name)) {
+      yield* walk(full, match);
+    } else if (match.test(entry.name)) {
       yield full;
     }
   }
 }
+
+/* ── 3. Where a font may come from (MAR-535) ─────────────────────────────── *
+ *
+ * Every stylesheet and every component under `app/`, rather than the two token
+ * files `checkAvatarCss` reads. The avatar rules are about declarations that
+ * only ever appear in one place; a remote font arrives wherever somebody adds
+ * it, and the whole value of the rule is that it is not looking at a list.
+ *
+ * `walk` is reused with a wider pattern rather than a second traversal, so a
+ * directory excluded from one is excluded from both — the two checks disagreeing
+ * about which tree they cover is exactly the drift this file exists to stop.
+ */
+const fontScanned = [
+  ...walk(APP_DIR, /\.(?:css|tsx?)$/),
+].map((file) => ({ name: rel(file), source: fs.readFileSync(file, "utf8") }));
+failures.push(...checkNoRemoteFonts(fontScanned));
 
 let surfaces = 0;
 for (const file of walk(APP_DIR)) {
@@ -138,7 +155,8 @@ for (const file of walk(APP_DIR)) {
 if (failures.length === 0) {
   console.log(
     `✓ brand:check passed — ${names.length} characters audited against the vendored manifest, ` +
-      `${sizes.length} rendered sizes, ${surfaces} file(s) using the cast`,
+      `${sizes.length} rendered sizes, ${surfaces} file(s) using the cast, ` +
+      `${fontScanned.length} file(s) checked for remote fonts`,
   );
   process.exit(0);
 }
