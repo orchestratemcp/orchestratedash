@@ -30,10 +30,18 @@
  * harness that set the attribute itself would produce identical-looking output
  * whether or not the button worked at all.
  *
- * Run it with `pnpm build:shell` first, then
+ * Run it with **`pnpm build:renderer` and then `pnpm build:shell`**, then
  * `electron dist/electron/capture.mjs`. It is never on the `electron .` path and
  * no `package.json` script names it, for ADR 0004's reason: this is evidence,
  * not a gate, and it must not be able to fail a release.
+ *
+ * **Both builds, in that order, and this line used to say only the second one.**
+ * `build:shell` copies whatever is already in `out/`; it does not produce it. A
+ * run after `build:shell` alone photographs the *previous* export, and the
+ * failure is silent in the worst way — MAR-498 added a route, ran only
+ * `build:shell`, and got a full set of images of a page that did not exist yet:
+ * 1280×2200 of background colour, no error anywhere. Every surface in `SURFACES`
+ * is a page in the export, so this is not a hazard peculiar to new routes.
  */
 
 import "./smoke-identity.js";
