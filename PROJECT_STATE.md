@@ -2923,3 +2923,165 @@ that migrated standing still runs, imported a folder-carrying handoff, proved
 that changing the original source cannot change stored code, and produced the
 sample's reports from that stored `code/`. No renderer, panel schema, MCP
 emitter, or MAR-556 bundle work is part of this slice.
+
+## The panel gets drawn (MAR-554, ADR 0008 slice 3)
+
+MAR-552 made the panel a contract. This draws it, and the shape of the
+renderer is the ADR's rather than an implementation choice: `buildPanelView`
+takes the **manifest**, calls `resolvePanel`, switches on the resolution's
+`kind`, and only then switches on each section's `type`. A signature that
+accepted a `PanelResolution` would let a caller build one some other way, and
+the one thing ADR 0008 asks the renderer never to do is draw part of a panel it
+does not understand.
+
+Three new modules and nothing else on the product path: `lib/copy/panel.ts`
+holds every fixed string, `lib/views/panel.ts` holds the bindings over
+MAR-434's `buildArtifactCards`, and `app/_components/panel.tsx` is one `switch`
+over a closed union with five small renderers under it. The view module imports
+no value from anything that reaches a Node builtin, which is what lets it ship
+in the renderer bundle — `tests/client-bundle.test.ts` records at length what
+happens when that rule is broken.
+
+**The version-skew card is structural rather than remembered.** `PanelView`'s
+`newer_version` case carries no sections, inherited from `PanelResolution`'s.
+There is no array to iterate, so "never partially, because a half-drawn panel
+is a guess rendered as a fact" cannot be violated by a later edit without
+widening a type first. A declaration DASH cannot read renders a second stated
+card — damage surfaced, never silently repaired — with the typed errors kept
+off the guided path because they are technical register and this is not a
+technical surface. Both cards keep the author's title and the region's frame;
+what is missing is only the part DASH cannot draw.
+
+**The absences are the argument, and one of them cost something.** There is no
+control anywhere in the panel — no button, no input, no form — and that
+includes, deliberately, the Outputs area's own "Save a copy". It is DASH's own
+control and it would have been handy. A box the author frames is the one place
+a control could be made to look like it belonged to something it does not, and
+the workspace's Outputs area offers the same action three inches away. The
+second absence goes further than the surface it was inherited from: **no raw
+identifier reaches the panel at all**, not behind a disclosure the way the
+Outputs area allows. `PanelSectionView` carries no section id and
+`PanelMetricView` no metric id, so there is nothing for a component to print by
+accident, and those values stay reachable on the run detail page where a
+disclosure already exists and is already tested.
+
+**The one call ADR 0008 left open is named rather than buried.** The ADR says a
+`table` draws "the newest JSON artifact of `source_role` whose body is an array
+of objects", and under `contracts/run-artifact.schema.json` an artifact is
+always an object whose root cannot be an array — so taken literally the
+component could never draw anything. `ARTIFACT_BODY_MEMBERS` resolves the body
+through a by-value pin mirroring that schema's own `allOf` branches (`digest` →
+`items`, `draft` → `draft`). Adding a kind to the schema already requires
+adding a branch; this is the render side of the same obligation, in one line a
+reviewer can check against the schema. It also still accepts an artifact that
+*is* an array, which is the ADR's literal reading, so neither reading is
+foreclosed.
+
+**The one table in DASH, and why it is allowed to be one.** MAR-491 removed
+every table in this product after measuring one at 1425px inside a 341px
+window. A panel table is a different population — at most eight columns, each
+named by the author, of small declared values read across — and the 375px
+problem is answered by containment rather than by hoping: the wrapper scrolls
+and the page does not. `layout.json` reads `client_width: 244`,
+`scroll_width: 331`, `scrolls_inside_its_own_box: true` at 375px, with
+`page_overflows: false` and the wrapper as the only horizontal scroller on the
+page, in all 32 frames.
+
+**Render tests in both themes, without a browser.** Theme and density are one
+attribute on `<html>` re-declaring custom properties, and MAR-420's rule is
+that neither may change what is on the page — so the assertion is that the
+panel's markup is byte-identical across all four combinations, which is the
+strongest thing a static render can say and exactly the regression worth
+catching. The half a render cannot see is checked by reading the stylesheet:
+every colour in the panel's block must be a token, because a token is what
+carries a value for both themes and a hardcoded hex would render identically in
+a test and be wrong in one of the two palettes.
+
+**TWO DEFECTS THE SCREENSHOTS FOUND THAT NO MEASUREMENT COULD**, which is the
+fifth entry in this project's own running list of exactly that. The first was
+fixed here: an absent metric rendered through the value's own class, so at the
+display step an agent that had never run drew three metrics shouting their own
+emptiness in type twice the size of the one real number beside them.
+`.agent-panel-metric-absent` is the fix and a test pins it. The second is
+recorded and not fixed, because it is in a file this slice does not own:
+`app/_components/digest.tsx` prints a digest item's `published_at` straight
+into its source line, so a raw instant reaches the guided path — on the run
+detail page and the workspace Outputs area as well as inside the panel. That is
+MAR-533's own defect surviving a fix that named the class of it;
+`tests/panel-render.test.tsx` scopes its "words a moment" assertion to the
+panel's own table because of it, says so in a comment, and can be widened the
+day it is fixed.
+
+**Two exceptions to this session's stated ownership, declared rather than
+hidden**, both purely additive and neither touching an existing line: one
+appended block at the end of `app/globals.css`, because the panel needs styles
+and this repository has no component-CSS idiom that a CSS module would not have
+introduced; and `electron/capture-panel.ts` plus a six-line build entry in
+`scripts/build-shell.mjs`, because `electron/capture.ts` walks *routes* and the
+panel has none yet.
+
+That harness deliberately does **not** import `electron/smoke-identity.ts`,
+which is the mirror image of why the smoke and the surface capture do. Those
+two are proofs about the store. This one reads nothing from it — every panel is
+a fixture — so taking the app's name would take its single-instance lock and
+its user-data directory for no reason, and would mean the run could only happen
+with DASH closed. Launched as a bare file it gets a name and a store of its
+own, and this session's 32 images were taken beside three live Electron
+instances without touching Henrik's records.
+
+**What is not claimed: the renderer is not wired to any page.** `merged` is the
+ceiling until a real manifest declares a panel, which arrives with MAR-548. The
+screenshots are the packaged renderer's compiled stylesheet, its bundled faces,
+its tokens, a theme moved by the operating system's own signal and a density
+set by pressing the real control — over the exact markup the components emit,
+with that markup mounted into `<main>` by the harness. They are **not** evidence
+that the workspace renders a panel, because it does not yet, and
+`electron/capture-panel.ts`'s header says so at length rather than leaving a
+reader of the PNGs to work it out. MAR-553's folder store had not merged when
+this branch was cut from `3666459`, so integration is the recorded next step
+rather than something performed here.
+
+Evidence: `typecheck` clean; `brand:check` green; full vitest from PowerShell
+103 files / 2015 passed / 8 skipped / 0 failed, 77 of them new. `verify:shell`
+NOT RUN — three Electron instances were live on this machine (two from the
+coordinator's checkout, one from the MAR-553 worktree) and `AGENTS.md` forbids
+force-killing them; CI's shell-smoke gate on PR #88 is the check for this
+branch.
+
+### MAR-553 merged mid-session, so this branch integrates it
+
+The folder store landed on master while this was in flight — PR #87 as
+`2b3801e`, with MAR-536's host commands behind it as `34d2b49` — and both were
+verified with `git merge-base --is-ancestor` against `origin/master` before
+anything here moved. `origin/master` was merged in; `.orchestrate/state.json`
+and `PROJECT_STATE.md` were the only conflicts, both being two branches
+appending an entry at the same position, and both were resolved by keeping both
+sides. MAR-553's own entry moves `planned → merged` with its merge commit,
+because implementation truth is git and the ancestry was checked; its prose is
+left as that session wrote it, and this paragraph is the correction rather than
+a rewrite of somebody else's sentence.
+
+**What integration meant here, and what it deliberately did not.** There are now
+two copies of every author document: `agents/{name}/agent.manifest.json`, which
+ADR 0008 makes authoritative, and the row's `manifest_json`, which is a
+projection of it. They can disagree, and the ADR's rule is decided — the folder
+wins, and the disagreement is surfaced, never silently repaired. So the
+renderer's contract is now explicit about which one it must be given:
+`lib/views/panel.ts` names `readAgentFolderManifest` as the source and the row
+as a **fallback rather than an equal**, since a row-indexed agent with no folder
+— every agent predating the migration, and any whose name failed the component
+guard — must still render its panel.
+
+That rule is written and not enforced by a type, and the reason is the
+client-bundle guard: `lib/agent-folders.ts` reaches `node:fs`, so importing it
+here for its value would put a Node builtin in the renderer bundle, which is the
+exact failure `tests/client-bundle.test.ts` was written for. It is also why
+`buildPanelView` takes a document rather than an agent name — it renders for
+both stores and names neither.
+
+**The wiring itself is still the next step**, unchanged by the merge:
+`workspaceView` in `lib/views/build.ts` is where the store is already read and
+where two lines join `readAgentFolderManifest` to `buildPanelView`, and
+`app/agents/detail/page.tsx` is where the region is placed. Both are outside
+this session's ownership, and neither is worth doing before a manifest declares
+a panel — which arrives with MAR-548.

@@ -214,6 +214,17 @@ await Promise.all([
     format: "esm",
   }),
 
+  // The panel's own screenshot harness (MAR-554), on exactly the terms above.
+  // Separate from `capture.ts` because that one walks routes and the declarative
+  // panel has none yet — a real manifest declaring one arrives with MAR-548. See
+  // `electron/capture-panel.ts` on what its images are and are not evidence of.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-panel.ts")],
+    outfile: path.join(outDir, "capture-panel.mjs"),
+    format: "esm",
+  }),
+
   // MAR-423. "Try a sample agent" scaffolds a project, and a scaffold needs the
   // same `scripts/open-in-dash.mjs` the Agent Kit copies in, so the user can
   // re-add their agent later from their own folder without DASH.
