@@ -337,6 +337,8 @@ export interface AgentManifestV2 extends AgentManifestBody {
     connections?: ManifestConnection[];
     permissions?: ManifestPermissions;
     task_inputs?: TaskInputRole[];
+    /** ADR 0008's declarative panel. Omitted when undeclared — never an empty object. */
+    panel?: PanelSpec;
     [key: string]: unknown;
   };
 }
@@ -388,6 +390,68 @@ export function taskInputRoles(manifest: AnyAgentManifest): TaskInputRole[] {
   }
   const declared = manifest.agent_dom["task_inputs"];
   return Array.isArray(declared) ? (declared as TaskInputRole[]) : [];
+}
+
+/**
+ * The panel types live in `lib/panel-spec.ts` and are re-exported here, beside
+ * `TaskInputRole`, rather than being declared in both places.
+ *
+ * The direction is forced and worth stating: that module has **no imports at
+ * all**, because the panel renderer is a client component and this module reads
+ * schema files with `node:fs`. Declaring the types here and importing them
+ * there would be fine for the types themselves — `import type` is erased — but
+ * the closed vocabularies are values, and a value import from here would drag
+ * Ajv and the filesystem into a browser chunk. So the pure module owns them and
+ * this one re-exports, the same way `lib/manifest-constraints.ts` takes its
+ * phrase from `lib/import-feedback.ts` rather than the reverse.
+ */
+export type {
+  PanelSpec,
+  PanelResolution,
+  PanelSectionV1,
+  PanelSectionTypeV1,
+  PanelReportSection,
+  PanelOutputsSection,
+  PanelTableSection,
+  PanelMetricsSection,
+  PanelNoteSection,
+  PanelTableColumn,
+  PanelColumnKind,
+  PanelMetricItem,
+  PanelMetricSource,
+  PanelDashFact,
+  PanelSpecError,
+  PanelSpecErrorCode,
+  PanelValidation,
+} from "./panel-spec";
+
+import type { PanelSpec } from "./panel-spec";
+
+/**
+ * The panel this agent declared, or null (ADR 0008, MAR-552).
+ *
+ * The same shape and the same three-way honesty as `taskInputRoles`: null for a
+ * v1 manifest, null for a v2 manifest with no `panel` block, and null for a
+ * block that is not an object — three different documents that mean one thing
+ * to a caller, *this author declared no panel*. Absence is never "render
+ * something anyway", which is why the schema omits the block when undeclared
+ * rather than emitting an empty object.
+ *
+ * This returns the declared document. `resolvePanel` in `lib/panel-spec.ts` is
+ * what turns it into something narrowed enough to render, and it is the one a
+ * renderer should call — this exists so a caller that only needs to know
+ * *whether* a panel was declared does not have to run the version rules to find
+ * out.
+ */
+export function agentPanel(manifest: AnyAgentManifest): PanelSpec | null {
+  if (!isManifestV2(manifest)) {
+    return null;
+  }
+  const declared = manifest.agent_dom["panel"];
+  if (typeof declared !== "object" || declared === null || Array.isArray(declared)) {
+    return null;
+  }
+  return declared as PanelSpec;
 }
 
 /**

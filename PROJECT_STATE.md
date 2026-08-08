@@ -2732,6 +2732,82 @@ on this branch: two runners were alive (the ordinary one the smoke leaves by
 design, and MAR-520's unretirable google-proof orphan), and CI runs the
 Windows smoke on the PR.
 
+## The panel becomes a contract (MAR-552, ADR 0008 slice 1)
+
+**This is the slice that blocks the other four.** The MCP repo's drift check
+pins DASH's schema copy by design, so DASH authors `$defs.panel` first and
+orchestratekit-mcp mirrors it in slice 4 — the order `pnpm dash:schema:check`
+enforces. Shipped on PR [#85](https://github.com/orchestratemcp/orchestratedash/pull/85)
+(branch `000henrik/mar-552-panel-spec-schema`, cut from master at `341e210`),
+open and unmerged, so `planned` with a null commit is where it sits.
+
+**What ships is a schema, four types, a pure reader and a corpus.**
+`$defs.panel`, `$defs.panelSectionV1`, `$defs.panelSectionOpaque` and
+`$defs.roleName` in `contracts/agent.manifest.v2.schema.json`, referenced from
+`agent_dom.properties.panel` — optional, and **omitted when undeclared, never
+an empty object**, the exact rule `task_inputs` shipped with and for the same
+reason: absence must never be read as "render something anyway". The closed
+five-component vocabulary is `report`, `outputs`, `table`, `metrics`, `note`,
+and the absences are still the argument — no component takes a URL, markup, a
+path, an image or another agent's name, none asks the user for anything, and no
+event vocabulary exists.
+
+**The versioning rule is structural rather than a convention anybody has to
+keep.** The schema's `if/then/else` on `panel_version` validates version 1
+strictly against the closed enum — a section typed `reprot` refuses the import,
+loudly — and sends every other version to `panelSectionOpaque` for structure
+only, so an agent never becomes un-importable because its author moved first.
+The same split reaches TypeScript: `resolvePanel`'s `newer_version` case
+**carries no sections at all**, which turns the ADR's "never partially, because
+a half-drawn panel is a guess rendered as a fact" from a rule a renderer must
+remember into a shape it cannot violate. There is no array to iterate.
+
+**One mechanical departure from the ADR's abridged JSON**, recorded because a
+later reader will diff the two: Ajv's `strict: true` requires `"type": "array"`
+beside `items` in the `then`/`else` branches or the schema does not compile
+(strictTypes). Nothing about the shape changed. `contract.lock.json` is
+untouched — it locks the frozen telemetry v1 pair, and v2 was never in it.
+
+**A pure reader exists beside the schema for two reasons a schema cannot
+serve.** `lib/contracts.ts` finds and compiles schema files with `node:fs`, so
+Ajv cannot reach the client-side renderer slice 3 needs; and Ajv's account of a
+failed `oneOf` is five copies of `must be equal to constant`, which names
+nothing an author can act on. So `lib/panel-spec.ts` has **no imports at all**,
+carries the vocabularies by value, and returns typed errors. The obvious cost
+is a second source of truth, and it is paid rather than waved at: all 62 corpus
+cases in `tests/panel-spec.test.ts` run through both the compiled schema and
+the pure reader and must return the same verdict, so a rule added to one and
+not the other turns the file red.
+
+**The refusal says the right sentence, and the wrong door was left alone.**
+`lib/import-feedback.ts` gains an `invalid_panel` case ordered *before* the
+missing-property branch, because a `report` section that forgot `artifact_role`
+produces Ajv's ordinary "must have required property" and read by that branch
+becomes "this manifest is missing a required section" — sending an author to
+the top of their manifest to look for something wrong inside their panel. It
+takes the vocabulary from `panel-spec` rather than restating it as prose, which
+is what keeps the sentence honest on the day a sixth component lands. It is
+deliberately **not** wired into `checkManifestConstraints`: the handoff door
+renders that function's result with a hardcoded ADR 0006 sentence about remote
+runtimes, so a panel failure routed through it would answer the wrong question
+in the user's face. Both doors already refuse through the `validateManifest`
+they share.
+
+**Non-goals held.** No renderer, no folder, no emitter, and no shipped example
+declares a panel — asserted rather than assumed, the MAR-507 pattern. What the
+next slices consume: MAR-554 calls `resolvePanel(manifest)` and gets
+`none` / `v1` narrowed / `newer_version` / `unreadable`; MAR-555 mirrors
+`$defs.panel` as a `.strict()` zod input and pins `PANEL_SECTION_TYPES_V1`;
+MAR-553 needs nothing new, because the panel travels inside the manifest that
+was already going.
+
+Evidence: `pnpm typecheck` clean, `[state] valid`, `brand:check` green, full
+vitest from PowerShell **99 files / 1910 passed / 8 skipped / 0 failed**, 85 of
+them new. `pnpm verify:shell` was **not** run from this worktree — a parallel
+visual session may have DASH open and the smoke hangs silently if it is — and
+CI runs verify plus the Windows shell smoke on the PR, which is the gate.
+Nothing installed changes in this slice, so `merged` is its ceiling.
+
 ## The config error stops reading as DASH's own bug (MAR-542)
 
 A wrong or missing Google client secret reached the user as `DASH's Google
