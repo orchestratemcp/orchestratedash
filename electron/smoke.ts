@@ -1800,7 +1800,27 @@ if (recorded !== null) {
           const canWitnessPanel = completed !== null;
           try {
             if (!canWitnessPanel) throw new Error("no completed run to witness a panel against");
-            await window.loadURL(workspaceUrl);
+            /*
+             * Retried, because a single `loadURL` here is a navigation race and
+             * not an assertion about the panel. 6k has just loaded the run
+             * detail page and that page reads its view in an effect; a second
+             * navigation arriving while the first is still settling comes back
+             * `ERR_ABORTED (-3)`, which would fail this proof for a reason it
+             * is not named after — MAR-473's lesson, which cost three red lines
+             * blaming the things they were named after once already.
+             */
+            for (let attempt = 0; ; attempt += 1) {
+              try {
+                await window.loadURL(workspaceUrl);
+                break;
+              } catch (error: unknown) {
+                if (attempt >= 2) throw error;
+                console.warn(
+                  `[smoke] the workspace navigation was superseded, retrying: ${String(error)}`,
+                );
+                await new Promise((resolve) => setTimeout(resolve, 750));
+              }
+            }
             panel = await waitForValue(async () => {
               const seen = (await window.webContents.executeJavaScript(
                 `(() => {
