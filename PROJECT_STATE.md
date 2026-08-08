@@ -2675,3 +2675,52 @@ vitest from PowerShell 98 files / 1825 passed / 8 skipped / 0 failed,
 on this branch: two runners were alive (the ordinary one the smoke leaves by
 design, and MAR-520's unretirable google-proof orphan), and CI runs the
 Windows smoke on the PR.
+
+## The config error stops reading as DASH's own bug (MAR-542)
+
+A wrong or missing Google client secret reached the user as `DASH's Google
+sign-in request was rejected... this needs reporting` — MAR-508 made the
+token exchange send the secret correctly, but never taught `postForm` in
+`lib/oauth/flow.ts` to say anything different when Google refused it.
+`invalid_client`, RFC 6749 §5.2's own name for client authentication
+failing, was collapsed into the same `provider_refused` bucket as every
+other malformed-request code, actor `dash`, "report this". A config error a
+person could fix in a minute was dressed as a defect worth filing.
+
+**The fix is one new code, drawn narrowly.** `client_misconfigured` fires
+only when `parsed.error === "invalid_client"`. `invalid_request` (which
+covers a missing parameter, a duplicate, or any other malformed field —
+including MAR-508's own `client_secret is missing.` shape),
+`unauthorized_client` and `unsupported_grant_type` all stay under
+`provider_refused`: none of them names the client credentials specifically
+the way `invalid_client` does, and narrowing them too would be a guess
+dressed as a diagnosis. `describeAuthorizationFailure` in
+`lib/copy/recovery.ts` gained the matching case — headline `DASH's Google
+client secret is wrong or missing.`, meaning says plainly the account was
+never reached, actor `user` because the fix is concrete. The next action
+names *what* to fix — the Google client secret DASH is configured with —
+without the literal `DASH_GOOGLE_CLIENT_SECRET`: MAR-423's rule that no raw
+identifier reaches a guided-path surface applies here as much as anywhere
+else, and `expectPlainLanguage` enforces it on the new copy rather than
+trusting a read-through.
+
+**The test drives Google's real error shape, not the loopback fixture's.**
+`electron/smoke.ts`'s `/token` route answers every POST with `200`
+unconditionally and structurally cannot produce an `invalid_client` body —
+the same blindness MAR-508 found the fixture had for a missing
+`client_secret`. `tests/oauth-flow.test.ts` instead builds a fetch
+returning `{error: "invalid_client", error_description: "Unauthorized"}`
+and Google's `"The OAuth client was not found."` variant, against both
+`exchangeAuthorizationCode` and `refreshAccessToken`. A neighbouring case
+pins that `invalid_request` and `unauthorized_client` still classify as
+`provider_refused`, guarding the narrowness against a later change
+reclassifying too much.
+
+Only `lib/oauth/flow.ts`, `lib/copy/recovery.ts` and
+`tests/oauth-flow.test.ts` changed — no layout or visual file, respecting
+the running visual session's ownership of look-and-feel. Evidence:
+typecheck clean; full vitest from PowerShell (Git Bash's `whoami` fakes
+channel-secret-adjacent failures on this machine, unrelated to this change)
+98 files / 1827 passed / 8 skipped / 0 failed; `state:check` valid;
+`brand:check` green, unaffected. `verify:shell` not run locally — CI's
+shell-smoke gate is the check for this branch.

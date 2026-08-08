@@ -434,16 +434,16 @@ export function describeAuthorizationFailure(
      * MAR-508 found what this used to share wording with `provider_error`
      * hid: `postForm` in `lib/oauth/flow.ts` produces this code from the
      * *token exchange*, and every response that lands here — RFC 6749 §5.2's
-     * `invalid_request`, `invalid_client`, `unauthorized_client`,
-     * `unsupported_grant_type` — is the provider validating DASH's own
-     * request and finding it malformed, not a person's account being turned
-     * away. A missing `client_secret` produced exactly this code, and the old
-     * copy told the user to go check their employer's app-restriction policy
-     * for a fault that was entirely DASH's. `provider_error`, by contrast, is
-     * `lib/oauth/loopback.ts`'s reading of an `error=` the provider put on
-     * the *authorization* redirect itself — org policy, disallowed user
-     * agent — which is a real signal about the account and keeps the
-     * sentence above.
+     * `invalid_request`, `unauthorized_client`, `unsupported_grant_type` (and,
+     * before MAR-542, `invalid_client` too) — is the provider validating
+     * DASH's own request and finding it malformed, not a person's account
+     * being turned away. A missing `client_secret` produced exactly this
+     * code, and the old copy told the user to go check their employer's
+     * app-restriction policy for a fault that was entirely DASH's.
+     * `provider_error`, by contrast, is `lib/oauth/loopback.ts`'s reading of
+     * an `error=` the provider put on the *authorization* redirect itself —
+     * org policy, disallowed user agent — which is a real signal about the
+     * account and keeps the sentence above.
      */
     case "provider_refused":
       return {
@@ -452,6 +452,28 @@ export function describeAuthorizationFailure(
           "Nothing was stored. This is a fault in how DASH asked, not something wrong with your account or anything you did.",
         next_action: "Try again. If it keeps happening, this needs reporting.",
         actor: "dash",
+      };
+
+    /*
+     * MAR-542: split out of `provider_refused` above. `invalid_client` is
+     * RFC 6749 §5.2's own name for client authentication failing, and for
+     * this flow that has one cause — the client secret DASH sent (or failed
+     * to send) does not match what Google has on file for
+     * `lib/oauth/providers.ts`'s client id. That is a config error dressed as
+     * DASH's defect until it is named as one: "report this" sends a person
+     * looking for a bug, when the actual fix is a value they can set
+     * themselves in the minute it takes to read the console page it came
+     * from.
+     */
+    case "client_misconfigured":
+      return {
+        headline: `DASH's ${service} client secret is wrong or missing.`,
+        meaning:
+          "Nothing was stored, and this is not about your account — it never got that far. Every sign-in to " +
+          `${service} needs DASH to prove which app it is, and the secret it used to prove that was rejected.`,
+        next_action:
+          "Set the Google client secret DASH is configured with to the value from the Google Cloud console, then try connecting again.",
+        actor: "user",
       };
 
     case "prompt_unavailable":
