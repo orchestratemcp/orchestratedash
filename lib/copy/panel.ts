@@ -164,13 +164,22 @@ export interface PanelEmptyState {
  * Said about the agent, never about the person reading it: an agent that has not
  * produced its output yet is not a user who has done something wrong, and the
  * commonest reason to be looking at this box is that the agent has not been run.
+ *
+ * **`scoped` is not a nicety.** A `report` is always bound to one named role and
+ * an `outputs` section declaring no `artifact_role` is bound to *every* role, so
+ * one sentence covering both would tell the reader of an unscoped section that
+ * the author picked a kind of output — which they did not, and which sends
+ * somebody looking for a filter that is not there. The distinction costs a
+ * boolean and the wrong version of it is a small lie on the surface DASH's whole
+ * argument is about not telling.
  */
-export function describeEmptyOutputSection(): PanelEmptyState {
+export function describeEmptyOutputSection(scoped: boolean): PanelEmptyState {
   return {
     kind: "no_artifact",
     headline: "Nothing has arrived for this section yet.",
-    meaning:
-      "The author bound it to one kind of output, and this agent has not produced that kind yet. It fills in the next time it does.",
+    meaning: scoped
+      ? "The author bound it to one kind of output, and this agent has not produced that kind yet. It fills in the next time it does."
+      : "It shows everything this agent makes, and it has not made anything yet. It fills in the first time it does.",
   };
 }
 

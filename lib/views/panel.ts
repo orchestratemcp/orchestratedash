@@ -294,7 +294,8 @@ function buildSection(
         at,
         label: section.label,
         card: record === null ? null : (buildArtifactCards([record])[0] ?? null),
-        empty: describeEmptyOutputSection(),
+        // Always scoped: `artifact_role` is required on a `report`.
+        empty: describeEmptyOutputSection(true),
       };
     }
 
@@ -319,7 +320,10 @@ function buildSection(
         label: section.label,
         cards: buildArtifactCards(shown),
         capped: describeOutputsCap(shown.length, matching.length),
-        empty: describeEmptyOutputSection(),
+        // Scoped only when the author named a role. An unscoped section shows
+        // everything, and telling its reader the author picked a kind of output
+        // would send them looking for a filter that is not there.
+        empty: describeEmptyOutputSection(section.artifact_role !== undefined),
       };
     }
 

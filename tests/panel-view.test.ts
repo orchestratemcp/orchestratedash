@@ -24,6 +24,7 @@ import {
   PANEL_METRIC_EMPTY,
   PANEL_NEWER_VERSION,
   PANEL_UNREADABLE,
+  describeEmptyOutputSection,
   describeEmptyTable,
   describeOutputsCap,
   describeRowCap,
@@ -288,6 +289,32 @@ describe("an outputs section", () => {
     const section = view.sections[0];
     expect(section?.kind === "outputs" && section.cards).toHaveLength(0);
     expect(section?.kind === "outputs" && section.empty.headline.length).toBeGreaterThan(0);
+  });
+
+  it("does not tell an unscoped section's reader that the author picked a kind", () => {
+    /*
+     * A `report` is always bound to one named role; an `outputs` section
+     * declaring no `artifact_role` is bound to every role. One sentence for both
+     * would tell the second reader the author chose a kind of output, which they
+     * did not, and would send somebody looking for a filter that is not there.
+     */
+    const unscoped = declared(build(panelV1([{ id: "all", type: "outputs", label: "Everything" }])));
+    const scoped = declared(
+      build(panelV1([{ id: "few", type: "outputs", label: "Replies", artifact_role: "draft" }])),
+    );
+    const unscopedEmpty = unscoped.sections[0];
+    const scopedEmpty = scoped.sections[0];
+    expect(unscopedEmpty?.kind === "outputs" && unscopedEmpty.empty.meaning).toBe(
+      describeEmptyOutputSection(false).meaning,
+    );
+    expect(scopedEmpty?.kind === "outputs" && scopedEmpty.empty.meaning).toBe(
+      describeEmptyOutputSection(true).meaning,
+    );
+    expect(describeEmptyOutputSection(false).meaning).not.toBe(
+      describeEmptyOutputSection(true).meaning,
+    );
+    // The claim the unscoped sentence must not make.
+    expect(describeEmptyOutputSection(false).meaning).not.toContain("one kind");
   });
 });
 
