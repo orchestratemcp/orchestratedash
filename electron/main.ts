@@ -61,6 +61,7 @@ import {
 } from "../lib/broker/store";
 import { closeDb, dataDir } from "../lib/db";
 import { checkHostRecord, type HostRecord } from "../lib/hosts";
+import { produceAgentFolderBundle } from "../lib/deploy/folder-bundle";
 import type { HandoffPorts } from "../lib/handoff-flow";
 import { findDeepLink } from "../lib/shell/deep-link";
 import { applicationMenu, type MenuAction, type MenuItemSpec } from "../lib/shell/menu";
@@ -139,6 +140,7 @@ import {
   openSshChannel,
   probeSshTools,
   runDeployVerb,
+  sshDeploySpawn,
 } from "./ssh-host";
 
 /**
@@ -1016,7 +1018,8 @@ async function hostAction(
   action: HostAction,
   target:
     | { label: string; address: string; username: string; port: number }
-    | { host_id: string },
+    | { host_id: string }
+    | { host_id: string; agent_id: string },
 ): Promise<HostActionResult> {
   if (action === "create") {
     if (!("label" in target)) {
@@ -1106,6 +1109,28 @@ async function hostAction(
     return { ok: true, action: "forget", host_id: record.host_id, label: record.label };
   }
 
+  let produced: ReturnType<typeof produceAgentFolderBundle> | null = null;
+  if (action === "deploy") {
+    if (!("agent_id" in target)) {
+      return { ok: false, detail: "DASH did not receive the agent it should deploy." };
+    }
+    produced = produceAgentFolderBundle({
+      data_dir: dataDir,
+      agent_id: target.agent_id,
+      bundle_id: target.agent_id,
+      // `build-shell.mjs` stages MAR-497's artifact beside `main.mjs`, and
+      // @electron/packager copies that whole directory unchanged. The same
+      // relative location therefore works in `electron .` and an MSIX.
+      runner_artifact_dir: path.join(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "runner-standalone",
+      ),
+    });
+  }
+  if (produced !== null && !produced.ok) {
+    return { ok: false, detail: produced.detail };
+  }
+
   const tools = probeSshTools();
   if (!tools.present) {
     return {
@@ -1117,6 +1142,31 @@ async function hostAction(
 
   let answer: Awaited<ReturnType<typeof runDeployVerb>>;
   try {
+    if (produced !== null && produced.ok) {
+      const spawn = sshDeploySpawn(record, dataDir);
+      const installed = await runDeployVerb(spawn, produced.request);
+      if (!installed.ok) {
+        return { ok: false, detail: installed.detail };
+      }
+      const started = await runDeployVerb(spawn, {
+        verb: "start",
+        bundle_id: produced.request.bundle_id,
+      });
+      if (!started.ok) {
+        return { ok: false, detail: started.detail };
+      }
+      return {
+        ok: true,
+        action: "deploy",
+        host_id: record.host_id,
+        label: record.label,
+        agent_id: produced.request.agent_id,
+        bundle_id: produced.request.bundle_id,
+        runner_build: produced.runner_build,
+        detail: `The agent is running on ${record.label}.`,
+      };
+    }
+
     const identity = assertHostKeyProtected(dataDir, record.key_name);
     // `status` is the host helper's read-only operation: it proves the SSH
     // channel reaches the server without selecting a bundle or deploying one.

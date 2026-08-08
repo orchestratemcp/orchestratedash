@@ -3085,3 +3085,68 @@ where two lines join `readAgentFolderManifest` to `buildPanelView`, and
 `app/agents/detail/page.tsx` is where the region is placed. Both are outside
 this session's ownership, and neither is worth doing before a manifest declares
 a panel — which arrives with MAR-548.
+
+## The folder becomes the deploy bundle (MAR-556, ADR 0008 slice 5)
+
+`lib/deploy/folder-bundle.ts` is the production caller `assembleBundle` was
+missing. It reads a `complete` MAR-553 folder through
+`inspectAgentFolderStanding` and the four public folder-path helpers, maps that
+folder under `agent/`, puts MAR-497's standalone runner at bundle root, and
+generates the one file that makes those two trees live together:
+`data/agents/{agent_id}.json`.
+
+The generated registration is relative to its own directory. Its manifest is
+`../../agent/agent.manifest.json`, its working directory is
+`../../agent/code`, and its command, arguments and environment are preserved.
+In particular `dash:node` is not resolved on the DASH computer and is not
+rewritten into a path; the standalone runner resolves it to the host's Node at
+spawn time. `scripts/build-runner-standalone.mjs` exports the existing MAR-497
+recipe, and `scripts/build-shell.mjs` uses that one recipe to stage the artifact
+beside `main.mjs` at `dist/electron/runner-standalone`, which the existing
+packager copies as part of the Electron build.
+
+The migration boundary is first. A `manifest_only` folder returns
+`MANIFEST_ONLY_DEPLOY_REFUSAL` verbatim before the producer reads the runner or
+calls `assembleBundle`. The sentence therefore reaches the audited command
+result and there is no half-bundle to accidentally send. An unreadable or
+invalid complete folder likewise produces a stated local refusal; neither the
+SQLite projection nor the author's source project is consulted.
+
+The host action is `host.deploy`, added to the same named MAR-536 path as
+create, probe and forget. The renderer supplies only a saved `host_id` and a
+stored `agent_id`; preload exposes one named method; the audited dispatcher
+records the action; Electron main resolves the saved host and protected key,
+produces the bundle locally, and sends only MAR-487's closed `install` and
+`start` verbs through `sshDeploySpawn`. Producer failures, including the exact
+manifest-only sentence, are returned as renderable command detail. Per the
+parallel ownership split, `lib/views/build.ts` and
+`app/agents/detail/page.tsx` remain untouched; MAR-548's page action consumes
+the now-live `submitHostCommand("deploy", { host_id, agent_id })` seam when the
+coordinator composes the branches. No contracts schema file changed because
+MAR-569 owns that block.
+
+The layout equivalence is an executed integration test. The test builds the
+real standalone artifact, writes a complete authoritative folder, sends the
+produced request through the real host helper, starts the installed runner,
+observes the generated registration in its initial supervised set, starts the
+folder agent through the lifecycle route, and records that the process used the
+host Node, the bundle's `agent/code` working directory and the stored
+environment. Agent and runner are stopped over their authenticated routes.
+There are **zero changes under `runner/`**.
+
+Local PowerShell evidence: typecheck and brand check green; full Vitest **105
+files / 2,050 passed / 8 skipped / 0 failed**; focused folder/deploy/shell
+suite **119 passed**; both `pnpm build:shell` (with the artifact staged) and
+`pnpm build:runner-standalone` green. `verify:shell` was not run locally: four
+pre-existing Electron runner processes from the main, MAR-553 and MAR-554
+worktrees were live, while this task requires DASH closed and `AGENTS.md`
+forbids force-killing them. The PR's Windows shell-smoke is the installed gate.
+
+What MAR-489 may now assume after this PR merges is precise: a complete folder
+plus a saved reachable host with its far-side helper already installed yields a
+self-contained runner + folder + live registration, installed and started so
+the unchanged standalone runner supervises the agent; a manifest-only folder
+refuses locally with the recorded sentence and sends nothing. The attended
+runbook must still establish real SSH authentication and `sshd`, initial helper
+installation, Hostinger's Node 24 / `node:sqlite` suitability, and the actual
+remote execution evidence. Restart-on-boot and retention remain undecided.

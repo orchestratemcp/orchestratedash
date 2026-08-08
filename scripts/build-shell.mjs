@@ -34,9 +34,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { computeRunnerBuildId } from "./runner-build-id.mjs";
+import { buildStandaloneRunner } from "./build-runner-standalone.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = path.join(repoRoot, "dist", "electron");
+const standaloneRunnerDir = path.join(outDir, "runner-standalone");
 const rootPackage = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"));
 
 /**
@@ -124,6 +126,13 @@ writeFileSync(
 );
 
 await Promise.all([
+  // MAR-556. The folder-bundle producer runs in Electron main and reads the
+  // standalone artifact beside that bundle. Staging it here makes the same
+  // location work under `electron .` and after @electron/packager copies this
+  // whole directory into the immutable install root. The exported builder is
+  // MAR-497's one recipe, not a second shell-specific copy.
+  buildStandaloneRunner({ repoRoot, outDir: standaloneRunnerDir }),
+
   // The main process. ESM, so `import.meta.url` resolves to this file and the
   // preload beside it.
   build({

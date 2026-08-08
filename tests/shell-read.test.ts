@@ -177,13 +177,14 @@ describe("the preload's exposed surface", () => {
     }
   });
 
-  it("exposes the three host actions by name, with no private-key or path argument", () => {
+  it("exposes the host actions by name, with no private-key or path argument", () => {
     const start = source.indexOf("const dashShell = {");
     const end = source.indexOf("\n};", start);
     const body = source.slice(start, end);
 
     expect(body).toContain("createHost:");
     expect(body).toContain("probeHost:");
+    expect(body).toContain("deployAgentToHost:");
     expect(body).toContain("forgetHost:");
     expect(body).not.toContain("private_key");
     expect(body).not.toContain("key_path");
