@@ -3395,32 +3395,49 @@ meant keeping the defect to satisfy a test. What the receipt protects is *whose*
 claim each row is, which the two labels carry; the replacement assertion drives
 a gap big enough to mean something and requires the rendered values to differ.
 
-### CI's shell-smoke cannot say which proof failed, and that is the blocker
+### Three CI reds, three different causes, and only the first was a product defect
 
-**`shell-smoke` is RED at `283d3b6` and which proof fails is not known.** That
-is a property of the gate rather than a hedge: its log stops at proof 6a in the
-failing run *and in the last green one alike*, so the job reports pass/fail
-without ever saying which proof decided it. It deserves its own issue.
+**CI is green at `19848eb`: `verify` and `shell-smoke` both pass**, so 6n and 6o
+executed on a Windows installed shell and the declared panel was witnessed there
+— the author's three labels by value, a table with rows, zero controls, zero raw
+instants. Getting there took three red runs and they are worth separating,
+because only one of them was a bug in the product.
 
-Three candidates were addressed in order. The receipt — certainly 6o's failure
-on the first red run. 6n/6o failing rather than skipping when 6g produced no
-run, fixed to MAR-473's discipline. And the workspace navigation racing 6k's,
-reproduced locally as `ERR_ABORTED (-3)` and now retried — **unconfirmed**.
+1. **The receipt's raw instants** — real, and the reason 6o exists. Fixed above.
+2. **A navigation race.** 6k loads the run detail page immediately before 6n
+   loads the workspace, and a navigation arriving while a page is still settling
+   comes back `ERR_ABORTED (-3)`. Retried now, so the proof fails when the panel
+   is wrong rather than when Chromium cancelled a load — MAR-473's lesson.
+3. **6n was asking the wrong question.** It read section labels with
+   `.agent-panel-section h3`, a *descendant* selector, and `DigestBody` renders
+   each digest item's headline as an `h3` inside the report section. A panel with
+   three author labels and a two-item digest returned five, so
+   `labels.length === 3` was false about a panel that was entirely correct. The
+   selector is `:scope > h3` now, and the assertion moved from a count to the
+   three declared strings **by value** — which is what would have caught it on
+   the first run rather than the third.
 
-A throwaway Electron probe, deleted rather than committed, established the
-useful half: skipping `smoke-identity` gave it its own app name, user-data
-directory and single-instance lock, so it ran beside the live DASH without
-opening Henrik's records, and against its own store it showed that **the
-scaffolded manifest imports with its panel, the panel draws on the real
-`/agents/detail` route in the packaged renderer, and the region contains no raw
-instant.** So neither proof's assertions are known to be wrong. The remaining red
-is undiagnosed rather than explained, and the next session's first act is
-`pnpm verify:shell` from PowerShell with DASH closed, redirected to a file —
-which prints the failing proof's own line and detail object, the thing CI
-structurally cannot show.
+**The gate could not say which of them it was**, and that is the finding worth
+keeping: `shell-smoke`'s log stops at proof 6a in a failing run *and in a green
+one alike*, so it reports pass/fail without ever naming the proof that decided
+it. Three CI round-trips were spent on what one readable log would have answered
+at once. It deserves its own issue.
+
+What broke the deadlock was a throwaway Electron probe, deleted rather than
+committed. Skipping `smoke-identity` gave it its own app name, user-data
+directory and single-instance lock, so it ran **beside** the live DASH without
+opening Henrik's records — the same trick `electron/capture-panel.ts` uses and
+for the same reason. Against its own store it printed exactly what 6n reads, and
+the five-element `labels` array in that output is what named the defect.
 
 One thing was left on this machine and is named rather than left to be found: an
 orphan runner from that probe, **pid 44632**, holding the *scratch* store at
 `%APPDATA%\Electron` and not DASH's own at `%APPDATA%\orchestratedash`. It was
-not force-killed, per AGENTS.md, and it should not affect `verify:shell` —
-different data directory, different pipe.
+not force-killed, per AGENTS.md.
+
+**What is still not done, and it is the whole gap to `proven`:** `pnpm verify`
+locally from PowerShell, and the `electron/capture.ts` re-run. A live DASH held
+the single-instance lock for this entire session. CI's `shell-smoke` is a
+genuine installed-shell witness — it is what MAR-492 leaned on for the same
+reason — but it runs on CI's machine and against CI's store, and the workspace
+screenshots showing a real declared panel on a real route do not exist yet.
