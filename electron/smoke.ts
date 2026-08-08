@@ -1829,7 +1829,18 @@ if (recorded !== null) {
                    return {
                      heading: document.querySelector("#agent-panel-heading")?.textContent ?? "",
                      sections: region.querySelectorAll(".agent-panel-section").length,
-                     labels: [...region.querySelectorAll(".agent-panel-section h3")].map((h) => h.textContent ?? ""),
+                     /*
+                      * ":scope > h3" — a section's OWN label, not every h3 under
+                      * it. A descendant selector here returned five, because
+                      * DigestBody renders each digest item's headline as an h3
+                      * inside the report section, so the author's three labels
+                      * arrived mixed with the agent's own headlines. That is the
+                      * defect this proof reported on its first two CI runs, and
+                      * it was in the query rather than in the panel.
+                      */
+                     labels: [...region.querySelectorAll(".agent-panel-section")].map(
+                       (s) => s.querySelector(":scope > h3")?.textContent ?? "",
+                     ),
                      table_rows: region.querySelectorAll("tbody tr").length,
                      controls_inside: region.querySelectorAll("button, input, select, textarea").length,
                      raw_instants: (region.textContent ?? "").split(/\\d{4}-\\d{2}-\\d{2}T[\\d:.]+Z/).length - 1,
@@ -1859,7 +1870,15 @@ if (recorded !== null) {
               "6n. the workspace draws the panel the sample's manifest declared",
               panel !== null &&
                 panel.heading === "What the scout found" &&
-                panel.labels.length === 3 &&
+                // The author's three labels, in the order they were declared.
+                // By value rather than by count, which is what would have caught
+                // the descendant-selector defect above on the first run.
+                JSON.stringify(panel.labels) ===
+                  JSON.stringify([
+                    "The latest digest",
+                    "How this agent has been doing",
+                    "Every headline in the latest digest",
+                  ]) &&
                 // The table binds `digest`, so rows exist only because the run
                 // above actually produced one and the role resolved against it.
                 panel.table_rows > 0,
