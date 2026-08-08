@@ -10,6 +10,7 @@ import {
 } from "../lib/shell/ipc";
 import type { CommandAuditRecord, ConnectionAction, HostAction, WorkspaceAction } from "../lib/shell/ipc";
 import type { AgentCommandInput } from "../lib/agent-dom/runner";
+import { MANIFEST_ONLY_DEPLOY_REFUSAL } from "../lib/agent-folders";
 import {
   SHELL_WEB_PREFERENCES,
   assertHardenedWebPreferences,
@@ -141,6 +142,7 @@ describe("the audited command chokepoint", () => {
       // the public key, while probe and forget take the opaque host id.
       "host.create",
       "host.probe",
+      "host.deploy",
       "host.forget",
       // MAR-434. A fifth family, addressing the runner's task workspace over
       // routes the runner already served and proof 9 already exercised. Note
@@ -432,7 +434,8 @@ describe("dispatch", () => {
         action: HostAction,
         target:
           | { label: string; address: string; username: string; port: number }
-          | { host_id: string },
+          | { host_id: string }
+          | { host_id: string; agent_id: string },
       ) => {
         hosts.push({ action, target });
         switch (action) {
@@ -452,6 +455,17 @@ describe("dispatch", () => {
               host_id: "host-fake-1",
               label: "My server",
               runner_build: "fixture",
+            });
+          case "deploy":
+            return Promise.resolve({
+              ok: true as const,
+              action,
+              host_id: "host-fake-1",
+              label: "My server",
+              agent_id: "fixture-agent",
+              bundle_id: "fixture-agent",
+              runner_build: "fixture",
+              detail: "The agent is running on My server.",
             });
           case "forget":
             return Promise.resolve({
@@ -709,13 +723,66 @@ describe("dispatch", () => {
       expect(JSON.stringify(result.data)).not.toContain("PRIVATE KEY");
     });
 
-    it("requires a host id to probe or forget", async () => {
+    it("requires a host id to probe, deploy or forget", async () => {
       const ctx = context();
-      for (const command of ["host.probe", "host.forget"] as const) {
+      for (const command of ["host.probe", "host.deploy", "host.forget"] as const) {
         const result = await dispatchCommand({ command, request_id: `${command}-missing` }, ctx);
         expect(result).toMatchObject({ ok: false, reason: "missing_payload_field" });
       }
       expect(ctx.hosts).toHaveLength(0);
+    });
+
+    it("routes a deploy with only the two stored identities and renders its result", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(
+        {
+          command: "host.deploy",
+          request_id: "req-host-deploy",
+          payload: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        },
+        ctx,
+      );
+
+      expect(ctx.hosts).toEqual([
+        {
+          action: "deploy",
+          target: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        },
+      ]);
+      expect(result).toMatchObject({
+        ok: true,
+        detail: "The agent is running on My server.",
+        data: {
+          host_id: "host-fake-1",
+          agent_id: "fixture-agent",
+          bundle_id: "fixture-agent",
+          runner_build: "fixture",
+        },
+      });
+    });
+
+    it("renders the manifest-only refusal verbatim", async () => {
+      const ctx = context();
+
+      const result = await dispatchCommand(
+        {
+          command: "host.deploy",
+          request_id: "req-host-manifest-only",
+          payload: { host_id: "host-fake-1", agent_id: "manifest-only-agent" },
+        },
+        {
+          ...ctx,
+          hostAction: () =>
+            Promise.resolve({ ok: false as const, detail: MANIFEST_ONLY_DEPLOY_REFUSAL }),
+        },
+      );
+
+      expect(result).toEqual({
+        ok: false,
+        request_id: "req-host-manifest-only",
+        detail: MANIFEST_ONLY_DEPLOY_REFUSAL,
+        data: undefined,
+      });
     });
   });
 

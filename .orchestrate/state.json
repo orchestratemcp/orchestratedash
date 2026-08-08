@@ -587,6 +587,16 @@
       "note": "MERGED as 9c7c72d (PR #88), verified with git merge-base --is-ancestor against origin/master. The entry this replaces said planned with no commit claimed, which was true when that session wrote it and is the same pre-merge-sentence correction MAR-473, MAR-467, MAR-441, MAR-469, MAR-476, MAR-509 and MAR-553 each received from the session after them. STILL NOT proven, and the merge does not change the ceiling: the renderer was wired to no page and no manifest declared a panel, so its 32 screenshots are the packaged renderer drawing the panel's markup mounted into <main> by a harness - evidence about the components, explicitly not evidence that the workspace renders a panel. MAR-548 is what lifts it, by declaring panels on both sample agents, doing the integration MAR-554 left (workspaceView -> buildPanelView, AgentPanel on app/agents/detail/page.tsx) and witnessing the result on the installed shell as smoke proofs 6n and 6o. PRIOR NOTE stands in substance: resolvePanel is the single door, buildPanelView takes the manifest rather than a resolution so a caller cannot build one some other way, the newer_version card carries no sections and is therefore structurally un-half-drawable, and the section vocabulary is pinned by value in both test files."
     },
     {
+      "id": "MAR-556",
+      "lifecycle": "merged",
+      "linear_status": "In Review",
+      "commit": "04275d6",
+      "proof": {
+        "command": "pnpm typecheck && pnpm brand:check && pnpm test && pnpm build:shell && pnpm build:runner-standalone (PowerShell)"
+      },
+      "note": "MERGED as 04275d6 (PR #90), verified with git merge-base --is-ancestor against origin/master from the MAR-548 branch while resolving the merge. The entry this replaces said the PR was open; that was true when written, and this is the same pre-merge-sentence correction every predecessor in this packet has received from the session after it. Its own prose is left as that session wrote it. PRIOR NOTE, unchanged in substance: lib/deploy/folder-bundle.ts is the production caller assembleBundle was missing - it reads a complete MAR-553 folder through inspectAgentFolderStanding and the four public folder-path helpers, and a manifest-only folder is refused with the honest sentence ADR 0008 wrote for it rather than deployed missing its own program."
+    },
+    {
       "id": "MAR-571",
       "lifecycle": "merged",
       "linear_status": "In Review",

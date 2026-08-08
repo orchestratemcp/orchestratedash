@@ -53,9 +53,22 @@ import { fileURLToPath } from "node:url";
 
 import { computeRunnerBuildId } from "./runner-build-id.mjs";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const outDir = path.join(repoRoot, "dist", "runner-standalone");
-const rootPackage = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+const defaultRepoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * Build the artifact either at its canonical developer location or into a
+ * caller-owned staging directory.
+ *
+ * MAR-556's installed deploy action needs these exact bytes beside the bundled
+ * Electron main process. Exporting the builder keeps that staged copy and
+ * `pnpm build:runner-standalone` on one implementation; a second build recipe
+ * would eventually make DASH upload a runner different from the one MAR-497's
+ * tests exercise.
+ */
+export async function buildStandaloneRunner(options = {}) {
+  const repoRoot = options.repoRoot ?? defaultRepoRoot;
+  const outDir = options.outDir ?? path.join(repoRoot, "dist", "runner-standalone");
+  const rootPackage = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"));
 
 /**
  * The same fingerprint the shell's bundled runner carries.
@@ -149,11 +162,26 @@ writeFileSync(
   "utf8",
 );
 
-writeFileSync(path.join(outDir, "README.md"), hostReadme(runnerBuildId), "utf8");
+writeFileSync(
+  path.join(outDir, "README.md"),
+  hostReadme(rootPackage, runnerBuildId),
+  "utf8",
+);
 
 console.log(
   `[build-runner-standalone] wrote ${path.relative(repoRoot, outDir)} runner_build=${runnerBuildId}`,
 );
+
+  return { outDir, runnerBuildId };
+}
+
+const invokedPath = process.argv[1];
+if (
+  invokedPath !== undefined &&
+  path.resolve(invokedPath) === path.resolve(fileURLToPath(import.meta.url))
+) {
+  await buildStandaloneRunner();
+}
 
 /**
  * The README that travels with the artifact.
@@ -164,7 +192,7 @@ console.log(
  * update it. `docs/runner-standalone.md` is the durable document; this is the
  * label on the box.
  */
-function hostReadme(buildId) {
+function hostReadme(rootPackage, buildId) {
   return `# OrchestrateDASH agent runner — standalone
 
 Version ${rootPackage.version}, runner build \`${buildId}\`.
