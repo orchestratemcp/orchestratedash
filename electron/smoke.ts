@@ -3447,11 +3447,6 @@ async function proveProtectedWorkspaceDownload(recorded: {
       { availability },
     );
 
-    // TEMPORARY — MAR-575 before/after demonstration only. Remove before merge.
-    check("9h. TEMPORARY MAR-575 demo: deliberately forced failure", false, {
-      note: "if this line and the final [smoke] summary line are missing from the CI log, the truncation reproduced",
-    });
-
     /* -- On failure, the runner's own log is the only witness --------------- */
 
     // The runner is detached with its stdio on {dataDir}/runner.log, so a
