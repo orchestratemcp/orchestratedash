@@ -524,15 +524,41 @@ describe("the declared panel", () => {
     expect(panel?.sections).toHaveLength(1);
   });
 
-  it("no shipped example declares one, and that is the honest answer today", () => {
-    // The MAR-507 pattern, recorded rather than assumed: the panel is invisible
-    // in the product until a manifest declares the block, and a test that
-    // quietly passed on an example that had grown one would hide the day that
-    // changed.
+  it("the shipped sample declares one DASH can draw (MAR-548)", () => {
+    /*
+     * This assertion used to read "no shipped example declares one, and that is
+     * the honest answer today" — the MAR-507 pattern, recorded so a test would
+     * notice the day it stopped being true. MAR-548 is that day, and the test is
+     * inverted rather than deleted: what it now holds is that the sample which
+     * is meant to draw a panel actually does, resolved through the same
+     * `resolvePanel` a render goes through rather than by reading the JSON.
+     */
+    const resolved = resolvePanel(example("gmail-meeting-assistant.manifest.v2.example.json"));
+    expect(resolved.kind).toBe("v1");
+    if (resolved.kind !== "v1") return;
+    expect(resolved.sections.map((section) => section.type)).toEqual([
+      "note",
+      "report",
+      "outputs",
+      "metrics",
+    ]);
+  });
+
+  it("the examples that are not sample agents still declare none", () => {
+    /*
+     * The other half, and the reason the loop survives the inversion above. A
+     * panel arriving on a contract example by accident — a copy-paste, a merge —
+     * would put an author's box on a document whose whole job is to exercise one
+     * schema branch, and nothing else would say so.
+     *
+     * These four are not a retired cast. They never shipped: `examples/` is in
+     * no package, nothing seeds them into a fleet, and no surface offers them.
+     * They are fixtures with a directory that flatters them, which is the
+     * finding MAR-548 records rather than the churn it performs.
+     */
     for (const file of [
       "agent.manifest.example.json",
       "agent-managed.manifest.v2.example.json",
-      "gmail-meeting-assistant.manifest.v2.example.json",
       "dash-managed.manifest.v2.example.json",
       "dash-managed-secret.manifest.v2.example.json",
     ]) {

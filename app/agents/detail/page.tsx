@@ -15,6 +15,7 @@ import { RunOutput } from "../../_components/digest";
 import { InputsPanel, type SelectedInput } from "../../_components/inputs";
 import { OAvatar } from "../../_components/o-avatar";
 import { OutputsPanel } from "../../_components/outputs";
+import { AgentPanel } from "../../_components/panel";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import { WorkingLine } from "../../_components/working";
 import { AGENT_WORKSPACE_PARAMS, runDetailHref } from "../../_data/routes";
@@ -350,6 +351,14 @@ function AgentWorkspace(): ReactNode {
         runId={view.outputs_run_id}
         setFeedback={setFeedback}
       />
+
+      {/* MAR-548, ADR 0008 slice 3. Below DASH's own surfaces on purpose: the
+          permission receipt and the Outputs area are DASH's record and DASH's
+          controls, and the panel is somebody else's box. Putting the author's
+          region above them would let a `note` sit where a person has learned to
+          read DASH's own voice. It renders nothing at all for the agents that
+          declare no panel, which is most of them — see `AgentPanel`. */}
+      <AgentPanel view={view.panel} />
 
       {view.snapshot === null ? (
         <div className="empty">

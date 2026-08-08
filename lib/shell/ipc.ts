@@ -229,6 +229,14 @@ export const COMMANDS = {
     mutates: false,
     irreversible: false,
   },
+  "host.deploy": {
+    effect:
+      "Put one stored agent folder and DASH's standalone runner on one saved server, then start that runner.",
+    payload_keys: ["host_id", "agent_id"],
+    required_keys: ["host_id", "agent_id"],
+    mutates: true,
+    irreversible: false,
+  },
   "host.forget": {
     effect:
       "Stop using one server and remove DASH's key for it. Anything already running there keeps running.",
@@ -535,6 +543,7 @@ export function isConnectionCommandName(value: CommandName): value is Connection
 export const HOST_ACTIONS = {
   "host.create": "create",
   "host.probe": "probe",
+  "host.deploy": "deploy",
   "host.forget": "forget",
 } as const;
 
@@ -909,6 +918,16 @@ export type HostActionResult =
       key_name: string;
     }
   | { ok: true; action: "probe"; host_id: string; label: string; runner_build: string | null }
+  | {
+      ok: true;
+      action: "deploy";
+      host_id: string;
+      label: string;
+      agent_id: string;
+      bundle_id: string;
+      runner_build: string;
+      detail: string;
+    }
   | { ok: true; action: "forget"; host_id: string; label: string }
   | { ok: false; detail: string; problem?: HostReachProblem };
 
@@ -949,7 +968,8 @@ export interface DispatchContext {
     action: HostAction,
     target:
       | { label: string; address: string; username: string; port: number }
-      | { host_id: string },
+      | { host_id: string }
+      | { host_id: string; agent_id: string },
   ): Promise<HostActionResult>;
   /**
    * Show the application menu at a point in the window (MAR-440).
@@ -1073,7 +1093,12 @@ export async function dispatchCommand(
             username: String(review.payload["username"]),
             port: Number(review.payload["port"]),
           })
-        : await context.hostAction(action, { host_id: String(review.payload["host_id"]) });
+        : action === "deploy"
+          ? await context.hostAction(action, {
+              host_id: String(review.payload["host_id"]),
+              agent_id: String(review.payload["agent_id"]),
+            })
+          : await context.hostAction(action, { host_id: String(review.payload["host_id"]) });
 
     if (!result.ok) {
       return {
@@ -1106,6 +1131,19 @@ export async function dispatchCommand(
             host_id: result.host_id,
             label: result.label,
             runner_build: result.runner_build ?? "",
+          },
+        };
+      case "deploy":
+        return {
+          ok: true,
+          request_id: review.audit.request_id,
+          detail: result.detail,
+          data: {
+            host_id: result.host_id,
+            label: result.label,
+            agent_id: result.agent_id,
+            bundle_id: result.bundle_id,
+            runner_build: result.runner_build,
           },
         };
       case "forget":

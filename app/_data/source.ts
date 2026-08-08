@@ -85,6 +85,10 @@ export interface HostCommandTarget {
   host_id: string;
 }
 
+export interface HostDeployCommandTarget extends HostCommandTarget {
+  agent_id: string;
+}
+
 interface DashShellClient {
   /**
    * Show the application menu (MAR-440).
@@ -129,6 +133,7 @@ interface DashShellClient {
    */
   createHost?(args: HostCreateCommandArgs): Promise<CommandResult>;
   probeHost?(args: HostCommandTarget): Promise<CommandResult>;
+  deployAgentToHost?(args: HostDeployCommandTarget): Promise<CommandResult>;
   forgetHost?(args: HostCommandTarget): Promise<CommandResult>;
   /**
    * The task-workspace commands (MAR-507).
@@ -513,8 +518,12 @@ export async function submitHostCommand(
   target: HostCommandTarget,
 ): Promise<CommandResult>;
 export async function submitHostCommand(
-  action: "create" | "probe" | "forget",
-  target: HostCreateCommandArgs | HostCommandTarget,
+  action: "deploy",
+  target: HostDeployCommandTarget,
+): Promise<CommandResult>;
+export async function submitHostCommand(
+  action: "create" | "probe" | "deploy" | "forget",
+  target: HostCreateCommandArgs | HostCommandTarget | HostDeployCommandTarget,
 ): Promise<CommandResult> {
   const bridge = typeof window === "undefined" ? undefined : window.dashShell;
   if (bridge === undefined) {
@@ -547,6 +556,16 @@ export async function submitHostCommand(
         };
       }
       return bridge.probeHost(target as HostCommandTarget);
+    case "deploy":
+      if (bridge.deployAgentToHost === undefined) {
+        return {
+          ok: false,
+          request_id: "",
+          reason: "read_only_host",
+          detail: "This version of the DASH app cannot put an agent on a server yet.",
+        };
+      }
+      return bridge.deployAgentToHost(target as HostDeployCommandTarget);
     case "forget":
       if (bridge.forgetHost === undefined) {
         return {

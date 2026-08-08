@@ -345,6 +345,180 @@ describe("workspaceView", () => {
   });
 });
 
+/* ---------------------------------------------------------------------- *
+ * The declared panel reaches the workspace (MAR-548, ADR 0008 slice 3)
+ * ---------------------------------------------------------------------- */
+
+describe("the panel on the workspace view", () => {
+  const AGENT = "synthetic-gmail-meeting-assistant";
+
+  /** One artifact of a kind, at a moment. Enough to bind a role against. */
+  function draft(runId: string, artifactId: string, generatedAt: string): unknown {
+    return {
+      artifact_version: 1,
+      agent: AGENT,
+      run_id: runId,
+      artifact_id: artifactId,
+      kind: "draft",
+      title: "A reply",
+      generated_at: generatedAt,
+      draft: {
+        subject: "Two times that work",
+        body: "Either Tuesday or Thursday suits.",
+        placement: { where: "dash_only" },
+      },
+    };
+  }
+
+  function seedRun(runId: string, ts: string): void {
+    ingestEvents([
+      { event_version: 1, agent: AGENT, run_id: runId, seq: 0, ts, type: "run_started" },
+      { event_version: 1, agent: AGENT, run_id: runId, seq: 1, ts, type: "run_completed" },
+    ]);
+  }
+
+  it("draws the panel the shipped sample declares", () => {
+    importManifest(workspaceManifest);
+
+    const view = workspaceView(AGENT, BEFORE_WORK_EXPIRY);
+    expect(view.found).toBe(true);
+    if (!view.found) return;
+
+    expect(view.panel.kind).toBe("declared");
+    if (view.panel.kind !== "declared") return;
+    expect(view.panel.title).toBe("Replies this assistant has drafted");
+    expect(view.panel.sections.map((section) => section.kind)).toEqual([
+      "note",
+      "report",
+      "outputs",
+      "metrics",
+    ]);
+  });
+
+  it("renders nothing for an agent whose author declared none", () => {
+    /*
+     * `{ kind: "none" }` rather than a null field, and the distinction is the
+     * one `AgentPanel` turns on: absence renders nothing at all, not an empty
+     * frame. A view that omitted the field would make the page decide what a
+     * missing panel meant, which is exactly where a default one gets invented.
+     */
+    importManifest(v2Manifest);
+    const view = workspaceView("synthetic-project-reporter", BEFORE_WORK_EXPIRY);
+    expect(view.found && view.panel).toEqual({ kind: "none" });
+  });
+
+  it("reads the folder's document, not the row's, when the two disagree", async () => {
+    /*
+     * ADR 0008's authority rule, driven rather than asserted about. The row is
+     * left exactly as `importManifest` wrote it and the *folder* is rewritten
+     * with a different panel title; the view must show the folder's.
+     *
+     * This is the load-bearing test of `panelDocument`. Both documents are
+     * present, both are readable, and both declare a legal panel — so a wiring
+     * that reached for `readAgentManifest`'s value would pass every other
+     * assertion in this file and be wrong in the one case ADR 0008 wrote a rule
+     * for.
+     */
+    const { writeAgentFolder } = await import("../lib/agent-folders");
+    importManifest(workspaceManifest);
+
+    const edited = structuredClone(workspaceManifest) as {
+      agent_dom: { panel: { title: string } };
+    };
+    edited.agent_dom.panel.title = "Edited on disk";
+    writeAgentFolder({ dataDir, agent: AGENT, manifestJson: JSON.stringify(edited) });
+
+    const view = workspaceView(AGENT, BEFORE_WORK_EXPIRY);
+    expect(view.found && view.panel.kind === "declared" && view.panel.title).toBe("Edited on disk");
+  });
+
+  it("still draws a panel for a row-indexed agent with no folder at all", async () => {
+    /*
+     * The fallback MAR-553 keeps supported on purpose: every agent that predates
+     * the folder migration, and any whose name failed the component guard. The
+     * folder is removed after import, so the row is the only document left.
+     */
+    const { rmSync: remove } = await import("node:fs");
+    importManifest(workspaceManifest);
+    remove(path.join(dataDir, "agents", AGENT), { recursive: true, force: true });
+
+    const view = workspaceView(AGENT, BEFORE_WORK_EXPIRY);
+    expect(view.found && view.panel.kind).toBe("declared");
+  });
+
+  it("reports the runs it has seen in DASH's own voice", async () => {
+    const { ingestArtifacts } = await import("../lib/store");
+    importManifest(workspaceManifest);
+    seedRun("run-a", "2026-07-15T09:00:00.000Z");
+    seedRun("run-b", "2026-07-15T10:00:00.000Z");
+    expect(ingestArtifacts(draft("run-b", "draft-b", "2026-07-15T10:05:00.000Z")).accepted).toBe(1);
+
+    const view = workspaceView(AGENT, BEFORE_WORK_EXPIRY);
+    if (!view.found || view.panel.kind !== "declared") throw new Error("expected a drawn panel");
+
+    const metrics = view.panel.sections.find((section) => section.kind === "metrics");
+    if (metrics?.kind !== "metrics") throw new Error("expected the metrics section");
+
+    // Two runs, the later one named, and every value attributed to DASH rather
+    // than to the agent — the split ADR 0008 refuses to let collapse.
+    expect(metrics.items[0]?.value).toBe("2");
+    expect(metrics.items[1]?.value).toContain("July 2026");
+    expect(new Set(metrics.items.map((item) => item.attribution))).toEqual(
+      new Set(["DASH’s record"]),
+    );
+  });
+
+  it("finds a role's newest artifact even when newer artifacts of another kind buried it", async () => {
+    /*
+     * The hole `artifactRecordsForAgent`'s second query exists to close, driven
+     * end to end rather than unit-tested against the query.
+     *
+     * `PANEL_ARTIFACT_LIMIT` drafts are ingested *after* the one digest, so a
+     * newest-first window of that size contains no digest at all. A `report`
+     * bound to `digest` that rendered its stated empty state here would be the
+     * surface saying "nothing yet" about a record DASH is holding — a silent
+     * wrong answer, and the one this codebase keeps paying for.
+     *
+     * The panel this manifest declares binds `draft`, so the digest is reached
+     * through the `outputs` section: it is unscoped by role in neither case, so
+     * what is asserted is the store read, one layer down.
+     */
+    const { ingestArtifacts, artifactRecordsForAgent, PANEL_ARTIFACT_LIMIT } = await import(
+      "../lib/store"
+    );
+    importManifest(workspaceManifest);
+    seedRun("run-a", "2026-07-15T09:00:00.000Z");
+
+    expect(
+      ingestArtifacts({
+        artifact_version: 1,
+        agent: AGENT,
+        run_id: "run-a",
+        artifact_id: "digest-buried",
+        kind: "digest",
+        title: "Buried",
+        generated_at: "2026-07-15T09:00:00.000Z",
+        items: [{ headline: "Still here" }],
+      }).accepted,
+    ).toBe(1);
+
+    for (let index = 0; index < PANEL_ARTIFACT_LIMIT; index += 1) {
+      const minute = String(index).padStart(2, "0");
+      expect(
+        ingestArtifacts(draft("run-a", `draft-${minute}`, `2026-07-15T10:${minute}:00.000Z`))
+          .accepted,
+      ).toBe(1);
+    }
+
+    const records = artifactRecordsForAgent(AGENT);
+    const kinds = records.map((record) => record.artifact.kind);
+    expect(kinds.filter((kind) => kind === "draft")).toHaveLength(PANEL_ARTIFACT_LIMIT);
+    expect(kinds).toContain("digest");
+    // Newest first over the merged set, and the buried digest is oldest.
+    expect(kinds[kinds.length - 1]).toBe("digest");
+  });
+});
+
 describe("every view", () => {
   it("survives the boundary it has to cross", () => {
     importManifest(manifest);

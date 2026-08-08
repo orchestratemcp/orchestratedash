@@ -31,6 +31,7 @@ import type { GroundingAnalysis, RunAnalysis } from "../analyze";
 import type { EvidenceNotice } from "../copy/evidence";
 import type { ArtifactCardView } from "./artifacts";
 import type { InputRoleView } from "./inputs";
+import type { PanelView } from "./panel";
 import type { Recovery } from "../copy/recovery";
 import type { ConnectionRequirementRow } from "../connections";
 import type { ManifestPermissions, PermissionGrant, RunArtifact, RunEvent } from "../contracts";
@@ -614,6 +615,21 @@ export type WorkspaceView =
        * files, which is not the same as taking anything — see `buildInputRoles`.
        */
       input_roles: InputRoleView[];
+      /**
+       * The panel this agent's author declared, bound to what the agent has
+       * produced (MAR-548, ADR 0008 slice 3).
+       *
+       * Built from the *folder's* `agent.manifest.json` where there is one, the
+       * row's copy otherwise — `panelDocument` in `lib/views/build.ts` owns that
+       * choice, because it is the half of ADR 0008's authority rule that needs a
+       * disk and `lib/views/panel.ts` must stay free of one.
+       *
+       * `{ kind: "none" }` for an agent that declared no panel, which is every
+       * agent until its author declares one, and which renders nothing at all —
+       * not an empty frame and not a placeholder. This field is never absent, so
+       * a page cannot have to decide what a missing panel means.
+       */
+      panel: PanelView;
     };
 
 export type WorkInboxRow = InboxItem & {

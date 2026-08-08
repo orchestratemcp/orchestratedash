@@ -90,6 +90,11 @@ interface HostTarget {
   host_id: string;
 }
 
+/** The page chooses two stored identities and no file, command or path. */
+interface HostDeployTarget extends HostTarget {
+  agent_id: string;
+}
+
 function send(command: string, payload: Record<string, string>): Promise<CommandResult> {
   return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
     command,
@@ -205,7 +210,7 @@ const dashShell = {
   disconnectConnection: (args: ConnectionArgs) => send("connection.disconnect", { ...args }),
 
   /**
-   * The three host actions (MAR-536), one named method each.
+   * The host actions (MAR-536/MAR-556), one named method each.
    *
    * `createHost` receives only ordinary connection facts and returns only the
    * public half of a newly minted key. The private half never enters this
@@ -215,6 +220,8 @@ const dashShell = {
   createHost: ({ label, address, username, port }: HostCreateArgs) =>
     sendHostCreate({ label, address, username, port }),
   probeHost: ({ host_id }: HostTarget) => send("host.probe", { host_id }),
+  deployAgentToHost: ({ host_id, agent_id }: HostDeployTarget) =>
+    send("host.deploy", { host_id, agent_id }),
   forgetHost: ({ host_id }: HostTarget) => send("host.forget", { host_id }),
 
   /**

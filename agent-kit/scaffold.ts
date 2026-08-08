@@ -263,6 +263,76 @@ function manifest(request: ScaffoldRequest): Record<string, unknown> {
         commands: ["retry", "pause", "resume", "cancel"],
       },
       memory: [],
+      /*
+       * The panel this agent asks DASH to draw for it (MAR-548, ADR 0008).
+       *
+       * Three sections, and the reason there are three is that a digest is
+       * three different questions. `report` is "what did it find?", rendered
+       * through the same digest machinery the run detail page uses. `metrics`
+       * is "is it still working?", which is DASH's question about the agent
+       * rather than the agent's about the news — every item here is a
+       * `dash_fact`, so every value on it renders attributed to DASH. `table`
+       * is "show me everything at once", which the prose digest deliberately
+       * does not do.
+       *
+       * The bindings name roles and nothing else. `digest` is the artifact
+       * kind this agent's own `artifact()` call emits, and the three column
+       * keys are members of the digest item shape
+       * `contracts/run-artifact.schema.json` defines — `headline`,
+       * `source_name` and `published_at`. A key that names nothing renders as
+       * an absent cell rather than as an error, which is what makes this safe
+       * to declare before the first run has produced anything.
+       *
+       * `published_at` is declared `timestamp` rather than `text`, and that is
+       * the load-bearing word: it is the author telling DASH the value is a
+       * moment, which is the licence DASH needs to render it in its own words
+       * instead of shipping `2026-08-05T09:00:00.000Z` onto a guided surface.
+       */
+      panel: {
+        panel_version: 1,
+        title: "What the scout found",
+        sections: [
+          {
+            id: "latest_digest",
+            type: "report",
+            label: "The latest digest",
+            artifact_role: "digest",
+          },
+          {
+            id: "activity",
+            type: "metrics",
+            label: "How this agent has been doing",
+            items: [
+              {
+                id: "run_count",
+                label: "Times it has run",
+                source: { kind: "dash_fact", fact: "run_count" },
+              },
+              {
+                id: "last_run_at",
+                label: "Last checked",
+                source: { kind: "dash_fact", fact: "last_run_at" },
+              },
+              {
+                id: "last_run_verdict",
+                label: "How the last run ended",
+                source: { kind: "dash_fact", fact: "last_run_verdict" },
+              },
+            ],
+          },
+          {
+            id: "headlines",
+            type: "table",
+            label: "Every headline in the latest digest",
+            source_role: "digest",
+            columns: [
+              { key: "headline", label: "Headline", kind: "text" },
+              { key: "source_name", label: "Source", kind: "text" },
+              { key: "published_at", label: "Published", kind: "timestamp" },
+            ],
+          },
+        ],
+      },
     },
   };
 }

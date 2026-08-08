@@ -3290,3 +3290,293 @@ valid with 19 pre-existing drift warnings, none from this branch.
 `verify:shell` NOT RUN locally — CI's shell-smoke gate on PR #91 is the check
 for this branch, cut directly from `origin/master` at `9c7c72d` rather than
 stacked. No UI, no MCP change, no broker change.
+
+## The folder becomes the deploy bundle (MAR-556, ADR 0008 slice 5)
+
+PR #90 is open against `master` from `000henrik/mar-556-bundle-producer`.
+
+`lib/deploy/folder-bundle.ts` is the production caller `assembleBundle` was
+missing. It reads a `complete` MAR-553 folder through
+`inspectAgentFolderStanding` and the four public folder-path helpers, maps that
+folder under `agent/`, puts MAR-497's standalone runner at bundle root, and
+generates the one file that makes those two trees live together:
+`data/agents/{agent_id}.json`.
+
+The generated registration is relative to its own directory. Its manifest is
+`../../agent/agent.manifest.json`, its working directory is
+`../../agent/code`, and its command, arguments and environment are preserved.
+In particular `dash:node` is not resolved on the DASH computer and is not
+rewritten into a path; the standalone runner resolves it to the host's Node at
+spawn time. `scripts/build-runner-standalone.mjs` exports the existing MAR-497
+recipe, and `scripts/build-shell.mjs` uses that one recipe to stage the artifact
+beside `main.mjs` at `dist/electron/runner-standalone`, which the existing
+packager copies as part of the Electron build.
+
+The migration boundary is first. A `manifest_only` folder returns
+`MANIFEST_ONLY_DEPLOY_REFUSAL` verbatim before the producer reads the runner or
+calls `assembleBundle`. The sentence therefore reaches the audited command
+result and there is no half-bundle to accidentally send. An unreadable or
+invalid complete folder likewise produces a stated local refusal; neither the
+SQLite projection nor the author's source project is consulted.
+
+The host action is `host.deploy`, added to the same named MAR-536 path as
+create, probe and forget. The renderer supplies only a saved `host_id` and a
+stored `agent_id`; preload exposes one named method; the audited dispatcher
+records the action; Electron main resolves the saved host and protected key,
+produces the bundle locally, and sends only MAR-487's closed `install` and
+`start` verbs through `sshDeploySpawn`. Producer failures, including the exact
+manifest-only sentence, are returned as renderable command detail. Per the
+parallel ownership split, `lib/views/build.ts` and
+`app/agents/detail/page.tsx` remain untouched; MAR-548's page action consumes
+the now-live `submitHostCommand("deploy", { host_id, agent_id })` seam when the
+coordinator composes the branches. No contracts schema file changed because
+MAR-569 owns that block.
+
+The layout equivalence is an executed integration test. The test builds the
+real standalone artifact, writes a complete authoritative folder, sends the
+produced request through the real host helper, starts the installed runner,
+observes the generated registration in its initial supervised set, starts the
+folder agent through the lifecycle route, and records that the process used the
+host Node, the bundle's `agent/code` working directory and the stored
+environment. Agent and runner are stopped over their authenticated routes.
+There are **zero changes under `runner/`**.
+
+Local PowerShell evidence: typecheck and brand check green; full Vitest **105
+files / 2,050 passed / 8 skipped / 0 failed**; focused folder/deploy/shell
+suite **119 passed**; both `pnpm build:shell` (with the artifact staged) and
+`pnpm build:runner-standalone` green. `verify:shell` was not run locally: four
+pre-existing Electron runner processes from the main, MAR-553 and MAR-554
+worktrees were live, while this task requires DASH closed and `AGENTS.md`
+forbids force-killing them. The PR's Windows shell-smoke is the installed gate.
+
+What MAR-489 may now assume after this PR merges is precise: a complete folder
+plus a saved reachable host with its far-side helper already installed yields a
+self-contained runner + folder + live registration, installed and started so
+the unchanged standalone runner supervises the agent; a manifest-only folder
+refuses locally with the recorded sentence and sends nothing. The attended
+runbook must still establish real SSH authentication and `sshd`, initial helper
+installation, Hostinger's Node 24 / `node:sqlite` suitability, and the actual
+remote execution evidence. Restart-on-boot and retention remain undecided.
+
+### Master advanced while MAR-556 was in review
+
+After PR #90 opened, PR #89 moved `origin/master` from the recorded cut point
+`9c7c72d` to `0816f0c`. This branch merged that tip rather than rewriting its
+history. The only conflict was the append position in `.orchestrate/state.json`;
+both MAR-556 and MAR-571 are retained intact. `PROJECT_STATE.md` merged as two
+appended sections, and MAR-571's product files are unchanged from master.
+
+Post-merge PowerShell evidence is green: typecheck; full Vitest **105 files /
+2,054 passed / 8 skipped / 0 failed**; `pnpm build:shell` with the staged
+standalone artifact; `pnpm build:runner-standalone`; and `pnpm state:check`.
+
+**PR #90 merged as `04275d6`**, verified with `git merge-base --is-ancestor` against `origin/master`. The sentence above called it open, which was true when that session wrote it; this is the same pre-merge-sentence correction every predecessor in this file has received from the session after it, and the prose it corrects is left as written.
+
+## The panel gets declared, and the workspace draws it (MAR-548, ADR 0008 slice 3's integration)
+
+**PR #88 merged as `9c7c72d`, and the sentence above is now history rather than
+a plan.** MAR-554's entry moves `planned → merged` with its commit, checked with
+`git merge-base --is-ancestor`; MAR-571's moves the same way at `0816f0c`. Both
+are the pre-merge-sentence correction seven predecessors in this file have each
+received from the session after them, and neither rewrites the prose its own
+session wrote.
+
+**What MAR-554 built had no caller and no author.** The renderer was complete,
+tested in both themes at three widths, and reachable from nothing: no page
+mounted it, and no manifest in the repository declared the block it renders. So
+its ceiling was `merged` by construction, and its own exit note named the two
+things that would lift it. This is both of them.
+
+### The wiring is two joins and a field
+
+`workspaceView` passes the **folder's** `agent.manifest.json` to
+`buildPanelView`, falling back to the row's `manifest_json`, and
+`app/agents/detail/page.tsx` renders the region. `panelDocument` is where ADR
+0008's authority rule finally has a caller: `lib/views/panel.ts` states it in
+prose and *cannot* state it in a type, because that module has to stay clear of
+`node:fs` to reach the renderer bundle, so the choice is made where the disk is
+already open.
+
+**A folder that is present and unreadable falls back to the row, and that is not
+the silent repair the ADR forbids.** `reconcileAgentFolders` has already
+recorded it as a `folder_unreadable` issue at startup and routed it through the
+same damage surface `readStore`'s unreadable rows use. The disagreement is
+surfaced by the thing that observed both documents, rather than guessed at again
+by a view builder holding one of them.
+
+The region sits **below** the permission receipt and the Outputs area. Those are
+DASH's record and DASH's controls; the panel is somebody else's box, and an
+author's `note` placed above them would occupy the part of the page a person has
+learned to read DASH's own voice in.
+
+### Two panels, five section types between them
+
+The **AI News Scout** — the manifest `agent-kit/scaffold.ts` generates, which is
+what *Try a sample agent* actually creates — declares `report(digest)`,
+`metrics`, and a `table` over the digest's items. Two choices on it are worth
+more than the JSON:
+
+- **Every metric is a `dash_fact`.** The scout emits no top-level numeric field,
+  so an `artifact_field` metric could only ever render absent while *looking*
+  like a number the agent had stood behind. The vocabulary offers both sources;
+  this manifest uses the one it can honour.
+- **`published_at` is declared `timestamp`, not `text`.** That is the author
+  telling DASH the value is a moment, which is the licence DASH needs to run it
+  through `plainMoment` rather than shipping the machine's spelling of it. The
+  same column typed `text` would be a legal panel drawing a legal string, and
+  nothing else would notice.
+
+The **Gmail meeting assistant** declares `note`, `report(draft)`, `outputs` and
+`metrics`. Its note says what the assistant does and **makes no safety claim**:
+"nothing is sent" is DASH's sentence, rendered by `DraftBody` outside the
+author's voice, and an author's note repeating it is precisely what the
+attribution rule exists to prevent.
+
+### The second query is not an optimisation
+
+`artifactRecordsForAgent` is new because a panel binds by **role across every
+run**, which the Outputs area beside it deliberately does not. A newest-first
+window alone has a hole: an agent that has written `PANEL_ARTIFACT_LIMIT` drafts
+since its last digest pushes that digest out, and a `report` bound to `digest`
+renders its stated empty state — the surface saying *nothing yet* about a record
+DASH is holding. That is a silent wrong answer, which is the failure this
+project keeps paying for. A second query takes the newest artifact of **every
+kind** whatever its position and closes it by construction.
+
+The limit is 20 because that is `max_items`' own maximum in the schema. Setting
+DASH's fetch bound to exactly the largest bound the vocabulary can request means
+a truncation a person sees is always the *author's* cap biting, never DASH's, so
+`describeOutputsCap`'s sentence can never be quietly wrong about whose choice
+hid something.
+
+### Both load-bearing tests were demonstrated failing first
+
+A gate nobody has seen fail is not known to work. Pointing `panelDocument` at
+the row turns the folder-wins test red — expected `Edited on disk`, received the
+row's title — and it is the only assertion in the file that could catch it,
+because both documents are present, both readable, and both declare a legal
+panel. Dropping the second query turns the buried-role test red: twenty drafts,
+no digest. Both pass on the code as committed.
+
+### The installed witness MAR-554 could not write
+
+`electron/smoke.ts` gains **6n** and **6o**, on the workspace route of the agent
+proof 6 has just created through the real handoff. 6n asserts the author's
+title, three drawn sections, and a table with rows — and the rows exist only
+because the run above really produced a digest and the role really resolved
+against it. 6o measures ADR 0008's strongest claim where it can be refused:
+**zero controls inside the region, and zero raw instants.** MAR-554's 32
+screenshots were the panel's markup mounted into `<main>` by a harness, and that
+file's header says at length that they are not evidence the workspace renders a
+panel. These are.
+
+### The trim is a finding, not a change
+
+MAR-548 asks to stop shipping the rest of the cast, and **there is no cast being
+shipped.** `examples/` is in no package, nothing seeds a fleet, no surface offers
+those manifests, and the only sample a user can meet is the one the menu
+scaffolds — one agent, since MAR-457 replaced the folder digest rather than
+shipping beside it. The four non-sample manifests in `examples/` are fixtures
+with a directory that flatters them, and `tests/panel-spec.test.ts` now records
+that where a reader will meet it.
+
+Moving them into `tests/fixtures/` was the alternative and was declined on a
+live collision: **MAR-569 is dirty in its own worktree editing
+`contracts/agent.manifest.v2.schema.json`**, and connection-requirement work
+will land on exactly those connection-declaring examples. What did change is the
+half of MAR-548 that was a product change rather than a directory move: the
+sample set is two agents and both declare a panel.
+
+### Evidence, and the gap that is left
+
+`state:check` **valid** (19 pre-existing drift warnings, none from this branch),
+`typecheck` clean, `brand:check` green, full vitest from PowerShell **104 files
+/ 2056 passed / 8 skipped / 0 failed**, 12 of them new, and `build:renderer`
+green — which is the check that the new client import of
+`app/_components/panel` did not drag a Node builtin into the browser bundle.
+
+**`verify:shell` was NOT run, and neither was the `electron/capture.ts`
+re-run.** A live DASH held the single-instance lock for this entire session,
+`AGENTS.md` forbids force-killing it, and closing another session's window is
+not this session's call — the same judgment MAR-441, MAR-421, MAR-434 and
+MAR-554 each recorded in turn. Both remaining evidence items need the same
+thing, so **`proven` is exactly one attended run away**: `pnpm verify` from
+PowerShell with DASH closed, then the capture harness. Until then CI's Windows
+`shell-smoke` gate on the PR is what executes 6n and 6o.
+
+One prompt premise was wrong and is recorded rather than quietly worked around:
+**orchestratekit-mcp holds no per-agent panel fixtures.** At `01e3f8a` the only
+panel-shaped things in that repository are the pinned DASH schema and the
+`.strict()` boundary tests in `tests/tools/exportBuildBrief.test.ts`, so both
+panels were designed against the schema. `$defs.panel` was diffed against that
+pinned fixture and is byte-identical, which is what makes "no schema edit" a
+checked claim rather than an intention.
+
+### The receipt was shipping raw instants, and a proof found it
+
+6o went red on its first CI run, and the cause was a real defect rather than a
+bad proof. `buildArtifactCards` interpolated `stated_at` and `received_at`
+exactly as stored, so a receipt read `2026-08-05T21:14:02.000Z` beside a `Size
+stored` that `describeRecordSize` has worded since MAR-434. One field in a
+struct being raw while its sibling is worded is an oversight, not a decision.
+
+Three surfaces from one place: the run detail page, the workspace Outputs area,
+and the panel. It is **MAR-571's fix pointed at the other value in the same
+card** — that one was the digest item's `published_at`, this is the receipt
+around it — and both are MAR-533's rule.
+
+**What wording costs is pinned rather than discovered.** `plainMoment` renders
+to the minute, so an artifact DASH received in the minute the agent made it now
+shows the same value on both rows. The assertion that used to sit in
+`tests/outputs-panel.test.ts` — `stated_at` differs from `received_at` — was
+true only because both were raw to the millisecond, and keeping it would have
+meant keeping the defect to satisfy a test. What the receipt protects is *whose*
+claim each row is, which the two labels carry; the replacement assertion drives
+a gap big enough to mean something and requires the rendered values to differ.
+
+### Three CI reds, three different causes, and only the first was a product defect
+
+**CI is green at `19848eb`: `verify` and `shell-smoke` both pass**, so 6n and 6o
+executed on a Windows installed shell and the declared panel was witnessed there
+— the author's three labels by value, a table with rows, zero controls, zero raw
+instants. Getting there took three red runs and they are worth separating,
+because only one of them was a bug in the product.
+
+1. **The receipt's raw instants** — real, and the reason 6o exists. Fixed above.
+2. **A navigation race.** 6k loads the run detail page immediately before 6n
+   loads the workspace, and a navigation arriving while a page is still settling
+   comes back `ERR_ABORTED (-3)`. Retried now, so the proof fails when the panel
+   is wrong rather than when Chromium cancelled a load — MAR-473's lesson.
+3. **6n was asking the wrong question.** It read section labels with
+   `.agent-panel-section h3`, a *descendant* selector, and `DigestBody` renders
+   each digest item's headline as an `h3` inside the report section. A panel with
+   three author labels and a two-item digest returned five, so
+   `labels.length === 3` was false about a panel that was entirely correct. The
+   selector is `:scope > h3` now, and the assertion moved from a count to the
+   three declared strings **by value** — which is what would have caught it on
+   the first run rather than the third.
+
+**The gate could not say which of them it was**, and that is the finding worth
+keeping: `shell-smoke`'s log stops at proof 6a in a failing run *and in a green
+one alike*, so it reports pass/fail without ever naming the proof that decided
+it. Three CI round-trips were spent on what one readable log would have answered
+at once. It deserves its own issue.
+
+What broke the deadlock was a throwaway Electron probe, deleted rather than
+committed. Skipping `smoke-identity` gave it its own app name, user-data
+directory and single-instance lock, so it ran **beside** the live DASH without
+opening Henrik's records — the same trick `electron/capture-panel.ts` uses and
+for the same reason. Against its own store it printed exactly what 6n reads, and
+the five-element `labels` array in that output is what named the defect.
+
+One thing was left on this machine and is named rather than left to be found: an
+orphan runner from that probe, **pid 44632**, holding the *scratch* store at
+`%APPDATA%\Electron` and not DASH's own at `%APPDATA%\orchestratedash`. It was
+not force-killed, per AGENTS.md.
+
+**What is still not done, and it is the whole gap to `proven`:** `pnpm verify`
+locally from PowerShell, and the `electron/capture.ts` re-run. A live DASH held
+the single-instance lock for this entire session. CI's `shell-smoke` is a
+genuine installed-shell witness — it is what MAR-492 leaned on for the same
+reason — but it runs on CI's machine and against CI's store, and the workspace
+screenshots showing a real declared panel on a real route do not exist yet.
