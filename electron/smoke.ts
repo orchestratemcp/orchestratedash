@@ -507,7 +507,14 @@ check(
   "2c. the preload exposes only the named read methods",
   dataBridge.present &&
     JSON.stringify(dataBridge.methods) ===
-      JSON.stringify(["agents", "connections", "inbox", "run", "runs", "workspace"]) &&
+      /*
+       * MAR-574 adds `hosts`, the seventh read. This list is written out by
+       * value rather than derived from `READS` on purpose: widening what a
+       * renderer may ask for should have to be typed here, in a blocking gate,
+       * by whoever widened it. This line going red on the first push is the
+       * gate doing its job, not a maintenance chore.
+       */
+      JSON.stringify(["agents", "connections", "hosts", "inbox", "run", "runs", "workspace"]) &&
     dataBridge.leaks.length === 0,
   dataBridge,
 );
