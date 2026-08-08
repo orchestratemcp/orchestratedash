@@ -2591,6 +2591,62 @@ because Henrik agreed to DASH being closed for it; the app was closed with
 the force-kill AGENTS.md forbids. 66 images and `cast-witness.json` in
 `qa-screenshots-mar-501-503/`.
 
+## The living fleet (MAR-544, first slice)
+
+**All three of the issue's asks are built, shaped around its own hard rule:
+motion signals real state, or it doesn't run.** Branch
+`000henrik/mar-544-living-fleet`, cut from master after PR #81.
+
+**The O's move, and their behaviour is the fleet's state.**
+`lib/views/fleet-motion.ts` derives each character's behaviour purely from
+store rows: a decision waiting in the inbox (or a stalled agent) *beckons* —
+and outranks work, because the person is what the agent is blocked on — a
+running run *hops*, activity within the last hour *paces*, and a quiet agent
+**sleeps by standing still**, the one state whose honest animation is none; a
+test refuses any `.is-sleeping` rule arriving with an animation. No randomness
+anywhere. The strip's "presence, not telemetry" header (MAR-503) is rewritten
+to record Henrik's override rather than silently contradicted; what survives
+is that no meaning colour reaches the row and the caption states the same
+facts in words. The strip is now DASH's one always-on live read (runs + inbox
+at the adapters' own five-second cadence), argued in place: its job is to
+*notice* something coming into flight, which a poll gated on already knowing
+about it cannot do. A failed read degrades to every agent standing still —
+the pre-MAR-544 strip — never to invention. Five new `--motion-*` tokens,
+zeroed under reduced motion, `steps()` timing throughout because eased
+subpixel motion on pixel art reads as a rendering fault.
+
+**Progress feedback, with an honesty gate.** `app/_components/working.tsx` is
+the shared pips-beside-a-participle affordance; `lib/copy/working.ts` grants a
+phase only to genuinely in-flight states ("Working…", "Waiting to start…") and
+returns null for the waits-on-you and finished states, because a pulse on
+"waiting for approval" would claim the system is working when the truth is
+that it is waiting for you — the exact inverse of the fleet's
+waiting-outranks-working priority, and the two vocabularies must not disagree.
+Wired on the runs list — which now follows running work live, with
+`agents/detail`'s disclosure line — and the workspace's current-run card.
+
+**The boot sequence.** `ViewLoading` is now a Bit-Command boot: an
+eight-piece pixel O with a clockwise dim-chase, the sentence that was already
+there, a blinking cursor. `data-view-state="loading"` still stamps, so the
+first-paint gate's absence-assertion is unmoved, and the state resolves the
+moment real data is ready because it always did — the same genuinely-loading
+state, dressed. Under reduced motion the glyph is a still, whole O.
+
+**Verified in the rendered app** with a real running run in the dev store:
+the strip carried `is-working` with `o-hop` applied at 0.64s, the caption read
+"5 agents · 1 working · 4 not shown", and `/runs` showed "Working…" with the
+pips pulsing over "Following the running work. Last updated …".
+
+Evidence: typecheck clean, brand:check green (`checkAvatarCss` holds the new
+avatar animations to the token rule by construction), 99 test files / 1840
+passed / 8 skipped from PowerShell (15 new in `tests/fleet-motion.test.tsx`),
+capture matrix in `qa-screenshots-mar544/`. **Not built, plainly:** the Chief
+chat surface (MAR-419's own parked work), richer per-step phases — a
+"Searching…" derived from component ids would be identifier vocabulary
+guessed into English, so richer honesty needs a runner-side phase field
+first — and a run-detail indicator, because `RunView` carries no status field
+and adding one is a view change this slice deliberately did not smuggle in.
+
 ## The sidebar, decided (MAR-546)
 
 **Henrik overrode the reskin's own call.** MAR-528 kept the horizontal nav,
