@@ -610,6 +610,31 @@ const MIGRATIONS: readonly Migration[] = [
     workspace_truncated INTEGER NOT NULL
   );
   `,
+  // MAR-536. One server DASH may reach, and never its credential.
+  //
+  // `key_name` is a stable identifier resolved by electron/ssh-host.ts inside
+  // the per-user data directory. It is deliberately not a path: moving the
+  // data directory must not change the record, and a row this renderer can
+  // eventually read must have no field that names a private-key location.
+  // `host_fingerprint` begins null; the future enrollment flow must make the
+  // first pin explicit rather than teaching SSH to accept a new identity.
+  // `IF NOT EXISTS` is intentional: a downgrade test, and a restored backup,
+  // can retain this independent table while reporting an older schema version.
+  // Reapplying the same shape is safe; changing it needs a new migration.
+  `
+  CREATE TABLE IF NOT EXISTS hosts (
+    host_id          TEXT PRIMARY KEY,
+    label            TEXT NOT NULL,
+    address          TEXT NOT NULL,
+    port             INTEGER NOT NULL,
+    username         TEXT NOT NULL,
+    key_name         TEXT NOT NULL UNIQUE,
+    host_fingerprint TEXT,
+    added_at         TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS hosts_by_added_at ON hosts (added_at);
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

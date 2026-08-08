@@ -76,11 +76,11 @@ describe("schema", () => {
     // permission broker, 6 is MAR-467's lapse table and delivery column, 7 is
     // MAR-434's projection of the runner's file-backed artifacts, 8 is MAR-500's
     // avatar column and its backfill, 9 is MAR-488's record of DASH's own
-    // reading.
+    // reading, and 10 is MAR-536's saved hosts.
     // Asserted as a number rather than as MIGRATIONS.length so that appending a
     // migration is a deliberate edit here too.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(10);
+    expect(version.user_version).toBe(11);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -101,6 +101,7 @@ describe("schema", () => {
     expect(tables).toContain("broker_audit");
     expect(tables).toContain("workspace_artifacts");
     expect(tables).toContain("evidence_pulls");
+    expect(tables).toContain("hosts");
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -129,6 +130,8 @@ describe("schema", () => {
     first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
     // And migration 9 (MAR-488), DASH's record of its own reading.
     first.db.db().exec("DROP TABLE evidence_pulls");
+    // And migration 10 (MAR-536), saved servers.
+    first.db.db().exec("DROP TABLE hosts");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -171,6 +174,7 @@ describe("schema", () => {
     first.db.db().exec("DROP TABLE broker_audit");
     first.db.db().exec("DROP TABLE broker_grants");
     first.db.db().exec("DROP TABLE broker_lapses");
+    first.db.db().exec("DROP TABLE hosts");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -212,6 +216,7 @@ describe("schema", () => {
     // And migration 6 (MAR-467), which builds on migration 5's broker_audit and
     // would otherwise fail creating a table that is still there.
     first.db.db().exec("DROP TABLE broker_lapses");
+    first.db.db().exec("DROP TABLE hosts");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -245,6 +250,7 @@ describe("schema", () => {
     first.db.db().exec("DROP TABLE evidence_pulls");
     first.db.db().exec("DROP TABLE broker_lapses");
     first.db.db().exec("ALTER TABLE broker_audit DROP COLUMN delivered");
+    first.db.db().exec("DROP TABLE hosts");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -285,6 +291,7 @@ describe("schema", () => {
     first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
     // And migration 9 (MAR-488), DASH's record of its own reading.
     first.db.db().exec("DROP TABLE evidence_pulls");
+    first.db.db().exec("DROP TABLE hosts");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -339,6 +346,34 @@ describe("schema", () => {
       "availability_detail",
       "observed_at",
     ]);
+  });
+
+  /**
+   * MAR-536. The table names a key by the stable name main resolves, never by
+   * path and never by its contents. This is the storage half of the same
+   * private-key boundary `tests/shell.test.ts` pins at the IPC edge.
+   */
+  it("stores host connection facts but no private key or key path", async () => {
+    const { db } = await freshStore();
+    const columns = db
+      .db()
+      .prepare("PRAGMA table_info(hosts)")
+      .all()
+      .map((row) => String(row["name"]));
+
+    expect(columns).toEqual([
+      "host_id",
+      "label",
+      "address",
+      "port",
+      "username",
+      "key_name",
+      "host_fingerprint",
+      "added_at",
+    ]);
+    for (const forbidden of ["private_key", "key_path", "path", "public_key", "channel_secret"]) {
+      expect(columns, `hosts must not carry ${forbidden}`).not.toContain(forbidden);
+    }
   });
 
   /**
@@ -406,7 +441,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(10);
+    ).toBe(11);
   });
 
   it("preserves pending tasks and approvals across a DASH restart", async () => {
