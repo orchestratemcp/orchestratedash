@@ -32,6 +32,31 @@
  * is what lets a panel render for a row-indexed agent with no folder anywhere,
  * which is the whole reason MAR-554 is unblocked by the schema alone.
  *
+ * ## Which manifest, now that there are two (MAR-553)
+ *
+ * The folder store landed while this slice was in flight, so there are now two
+ * copies of every author document: `agents/{name}/agent.manifest.json`, which
+ * ADR 0008 makes **authoritative**, and the `agents` row's `manifest_json`,
+ * which is a projection of it. They can disagree — a folder edited on disk
+ * while DASH is running is drift DASH discovers late — and the ADR's rule for
+ * that is decided rather than left to a bug report: **the folder wins, and the
+ * disagreement is surfaced, never silently repaired.**
+ *
+ * So a caller wiring this to a page must pass `readAgentFolderManifest`'s
+ * document, not the row's. `manifest: unknown` cannot enforce that, and it
+ * deliberately does not try: `lib/agent-folders.ts` reaches `node:fs`, and
+ * importing it here for its *value* would drag a Node builtin into the renderer
+ * bundle — the failure `tests/client-bundle.test.ts` exists for. The rule lives
+ * in this paragraph and in the wiring, which is `lib/views/build.ts`'s
+ * `workspaceView`, where the store is already read.
+ *
+ * **The row's copy is a fallback, not an equal.** A row-indexed agent with no
+ * folder — every agent that predates MAR-553's migration, and any whose name
+ * failed the component guard — still renders its panel from `manifest_json`,
+ * which is the standing MAR-553 keeps supported on purpose. That is why this
+ * module takes a document rather than an agent name: it renders for both
+ * stores, and neither one is named here.
+ *
  * ## What "newest" means, and who decides it
  *
  * Every binding resolves against records the caller passes in **newest first**,

@@ -35,6 +35,7 @@ import { assertContractsLocation } from "./resources";
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from "electron";
 
 import { writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { userInfo } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -59,6 +60,7 @@ import {
   writeDashLastAlive,
 } from "../lib/broker/store";
 import { closeDb, dataDir } from "../lib/db";
+import { checkHostRecord, type HostRecord } from "../lib/hosts";
 import type { HandoffPorts } from "../lib/handoff-flow";
 import { findDeepLink } from "../lib/shell/deep-link";
 import { applicationMenu, type MenuAction, type MenuItemSpec } from "../lib/shell/menu";
@@ -66,6 +68,8 @@ import {
   SHELL_COMMAND_CHANNEL,
   dispatchCommand,
   formatAuditLine,
+  type HostAction,
+  type HostActionResult,
   type RunnerLifecycleResult,
   type WorkspaceAction,
   type WorkspaceActionResult,
@@ -105,7 +109,7 @@ import {
   serveRenderer,
 } from "./renderer-host";
 import { RENDERER_ENTRY_URL, RENDERER_ORIGIN } from "../lib/shell/renderer-scheme";
-import { readAgentManifest } from "../lib/store";
+import { forgetHost, readAgentManifest, readHost, saveHost } from "../lib/store";
 import {
   promptForAuthorization,
   promptForSecret,
@@ -127,6 +131,15 @@ import { appWindow, clearAppWindow, setAppWindow } from "./app-window";
 import { openSplash, type SplashWindow } from "./splash";
 import type { StartupStepId } from "../lib/shell/splash";
 import { secureStore } from "./secure-store";
+import {
+  assertHostKeyProtected,
+  createHostKey,
+  forgetHostKey,
+  knownHostsPath,
+  openSshChannel,
+  probeSshTools,
+  runDeployVerb,
+} from "./ssh-host";
 
 /**
  * Where the renderer loads from.
@@ -568,6 +581,10 @@ export function registerCommandChannel(
               ),
           },
         }),
+      // MAR-536. Main owns host keys, the host store and the SSH child. The
+      // preload can name only an ordinary draft or an opaque host id; it never
+      // reaches a key file, and this action returns only the public half.
+      hostAction,
       // MAR-507 + MAR-434. The one entry in this object that can turn a click
       // into a path on the user's own disk: the workspace helper is the only
       // place in DASH that opens a file picker, and `download` the only action
@@ -981,6 +998,174 @@ async function workspaceDownload(
   // The folder, not the full path — enough for a person to find it, and it is
   // the folder they just chose in a dialog rather than anything DASH decided.
   return { ok: true, detail: `Saved to ${path.dirname(chosen.filePath)}.` };
+}
+
+/* ---------------------------------------------------------------------- *
+ * Saved servers (MAR-536)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Make, check or forget one host from the audited command dispatcher.
+ *
+ * This is intentionally the only main-process path from a renderer action to
+ * `electron/ssh-host.ts`. It mints identifiers, owns the key file, and returns
+ * the create result field-by-field so a private key or filesystem path has no
+ * route back through the IPC result.
+ */
+async function hostAction(
+  action: HostAction,
+  target:
+    | { label: string; address: string; username: string; port: number }
+    | { host_id: string },
+): Promise<HostActionResult> {
+  if (action === "create") {
+    if (!("label" in target)) {
+      return { ok: false, detail: "DASH did not receive the server details it needs." };
+    }
+
+    // The renderer does not choose either name. An address is not an identity,
+    // and a caller-selected key name would reintroduce a path-shaped input at
+    // the point it is about to become a filename.
+    const hostId = randomUUID();
+    const record: HostRecord = {
+      host_id: hostId,
+      label: target.label.trim(),
+      address: target.address.trim(),
+      username: target.username.trim(),
+      port: target.port,
+      key_name: `host-${hostId}`,
+      host_fingerprint: null,
+      added_at: new Date().toISOString(),
+    };
+    const checked = checkHostRecord(record);
+    if (!checked.ok) {
+      return { ok: false, detail: checked.detail };
+    }
+
+    const tools = probeSshTools();
+    if (!tools.present) {
+      return {
+        ok: false,
+        detail: tools.detail ?? "This computer cannot create a server key.",
+        problem: "no_ssh_on_this_computer",
+      };
+    }
+
+    let publicKey: string;
+    try {
+      // `createHostKey` returns the public half and has no private-key reader.
+      publicKey = createHostKey(dataDir, record.key_name);
+    } catch {
+      // Error objects from filesystem ACLs can name a local path. The renderer
+      // needs the fact that creation failed, not a diagnostic that could name
+      // the location of the credential.
+      return { ok: false, detail: "DASH could not make a protected key for this server." };
+    }
+
+    try {
+      saveHost(record);
+    } catch {
+      // Do not leave a usable key behind when its record was not saved. The
+      // cleanup itself reads neither key half and reports no path.
+      try {
+        forgetHostKey(dataDir, record.key_name);
+      } catch {
+        // The store failure is the result that matters to this action; a later
+        // startup cannot use this orphan because it has no host record.
+      }
+      return { ok: false, detail: "DASH could not save this server." };
+    }
+
+    return {
+      ok: true,
+      action: "create",
+      host_id: record.host_id,
+      label: record.label,
+      public_key: publicKey,
+      key_name: record.key_name,
+    };
+  }
+
+  if (!("host_id" in target)) {
+    return { ok: false, detail: "DASH did not receive the server it should use." };
+  }
+  const record = readHost(target.host_id);
+  if (record === null) {
+    return { ok: false, detail: "DASH no longer has this server." };
+  }
+
+  if (action === "forget") {
+    try {
+      // Remove the credential first. If this fails, keep the record so DASH
+      // does not report a server forgotten while it can still sign in to it.
+      forgetHostKey(dataDir, record.key_name);
+      forgetHost(record.host_id);
+    } catch {
+      return { ok: false, detail: "DASH could not forget this server safely." };
+    }
+    return { ok: true, action: "forget", host_id: record.host_id, label: record.label };
+  }
+
+  const tools = probeSshTools();
+  if (!tools.present) {
+    return {
+      ok: false,
+      detail: tools.detail ?? "This computer cannot check a server.",
+      problem: "no_ssh_on_this_computer",
+    };
+  }
+
+  let answer: Awaited<ReturnType<typeof runDeployVerb>>;
+  try {
+    const identity = assertHostKeyProtected(dataDir, record.key_name);
+    // `status` is the host helper's read-only operation: it proves the SSH
+    // channel reaches the server without selecting a bundle or deploying one.
+    // The only variable between this and the fixture proof is which process
+    // answers on the other end of the ssh pipes.
+    answer = await runDeployVerb(
+      (verb, bundleId) =>
+        openSshChannel(
+          record,
+          verb,
+          { identity_file: identity, known_hosts_file: knownHostsPath(dataDir) },
+          bundleId,
+        ),
+      { verb: "status" },
+    );
+  } catch {
+    // Do not surface SSH or ACL diagnostics: either can name this machine's key
+    // location. `runDeployVerb` already returns a safe sentence for answers it
+    // could classify, so this is only the pre-channel safeguard above.
+    return { ok: false, detail: "DASH could not prepare the key for this server." };
+  }
+
+  if (!answer.ok) {
+    // `openSshChannel` deliberately does not parse ssh's stderr: those messages
+    // can name the account, address, port and local key path. The safe answer is
+    // therefore the transport's own generic sentence, not a guessed one of the
+    // sign-in or identity-change states.
+    return { ok: false, detail: answer.detail };
+  }
+  if (answer.verb !== "status") {
+    return { ok: false, detail: "The server did not answer the check DASH sent." };
+  }
+
+  const running = answer.bundles.find((bundle) => bundle.running);
+  if (running === undefined) {
+    return {
+      ok: false,
+      detail: "DASH reached this server, and it has no agent runner running there yet.",
+      problem: "no_runner_there",
+    };
+  }
+
+  return {
+    ok: true,
+    action: "probe",
+    host_id: record.host_id,
+    label: record.label,
+    runner_build: running.runner_build,
+  };
 }
 
 async function runnerLifecycle(

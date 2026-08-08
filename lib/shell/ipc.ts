@@ -39,6 +39,7 @@ import type {
 } from "../agent-dom/runner";
 import type { ConnectionActionResult } from "../connection-actions";
 import type { Recovery } from "../copy/recovery";
+import type { HostReachProblem } from "../host-connect";
 import type { AgentCommand } from "../workspace";
 
 /** The single IPC channel. Everything audited goes through it. */
@@ -60,6 +61,13 @@ export interface CommandSpec {
    * should be reviewed on their own merits rather than by loosening this.
    */
   payload_keys: readonly string[];
+  /**
+   * A stricter primitive type for a payload key. Omitted keys stay any primitive
+   * for compatibility with the original command catalogue; the one numeric
+   * host field declares itself here so a port cannot be smuggled through as a
+   * string that later code has to parse differently.
+   */
+  payload_types?: Readonly<Record<string, "string" | "number" | "boolean">>;
   /**
    * Keys without which the command is meaningless. Absent ones are a denial,
    * not a default.
@@ -194,6 +202,38 @@ export const COMMANDS = {
       "Set the runner's damaged store aside and open a fresh one. The old file is kept, renamed, not deleted.",
     payload_keys: [],
     required_keys: [],
+    mutates: true,
+    irreversible: false,
+  },
+
+  /*
+   * MAR-536. A host is not an agent's property: it is a server DASH reaches
+   * with a key DASH keeps on this computer. The renderer can name the four
+   * ordinary connection facts, but not the host id, the key name, a key path
+   * or either half of the private key. Main mints the two names and is the only
+   * process that calls `electron/ssh-host.ts`.
+   */
+  "host.create": {
+    effect:
+      "Make a key for one server and save how DASH reaches it. Returns only the public half to copy onto the server.",
+    payload_keys: ["label", "address", "username", "port"],
+    payload_types: { port: "number" },
+    required_keys: ["label", "address", "username", "port"],
+    mutates: true,
+    irreversible: false,
+  },
+  "host.probe": {
+    effect: "Check whether DASH can reach one saved server. Changes nothing.",
+    payload_keys: ["host_id"],
+    required_keys: ["host_id"],
+    mutates: false,
+    irreversible: false,
+  },
+  "host.forget": {
+    effect:
+      "Stop using one server and remove DASH's key for it. Anything already running there keeps running.",
+    payload_keys: ["host_id"],
+    required_keys: ["host_id"],
     mutates: true,
     irreversible: false,
   },
@@ -485,6 +525,27 @@ export function isConnectionCommandName(value: CommandName): value is Connection
 }
 
 /**
+ * The server commands, and what each one asks main to do (MAR-536).
+ *
+ * Deliberately a sixth family rather than runner lifecycle: a runner is a
+ * process DASH launched, while a host is somebody else's server DASH may later
+ * deploy to. The three names are kept here, not derived from a string prefix,
+ * so the trusted-side switch and the named preload methods are both exhaustive.
+ */
+export const HOST_ACTIONS = {
+  "host.create": "create",
+  "host.probe": "probe",
+  "host.forget": "forget",
+} as const;
+
+export type HostCommandName = keyof typeof HOST_ACTIONS;
+export type HostAction = (typeof HOST_ACTIONS)[HostCommandName];
+
+export function isHostCommandName(value: CommandName): value is HostCommandName {
+  return Object.hasOwn(HOST_ACTIONS, value);
+}
+
+/**
  * The window-chrome commands (MAR-440).
  *
  * A fourth family for the reason the second and third exist: it is not an Agent
@@ -516,6 +577,7 @@ type UnroutedCommand = Exclude<
   | AgentCommandChannelName
   | RunnerCommandName
   | ConnectionCommandName
+  | HostCommandName
   | ShellUiCommandName
   | WorkspaceCommandName
   | "shell.ping"
@@ -664,10 +726,12 @@ export function reviewCommand(request: unknown): CommandReview {
   }
 
   for (const required of spec.required_keys) {
-    // Required keys must be non-empty strings. Presence alone is not enough:
-    // every required field names something (an agent, an approval, a snapshot)
-    // and a number cannot name any of them.
-    if (typeof (payload as Record<string, unknown> | undefined)?.[required] !== "string") {
+    // Required ids are strings by default. `host.create.port` is the deliberate
+    // exception: a port is a number, and declaring it as one keeps a string
+    // representation from becoming a second parser between the renderer and
+    // `checkHostRecord`.
+    const requiredType = spec.payload_types?.[required] ?? "string";
+    if (typeof (payload as Record<string, unknown> | undefined)?.[required] !== requiredType) {
       return denied("missing_payload_field", safeCommand, safeId, keys);
     }
   }
@@ -743,6 +807,7 @@ export function executeCommand(review: CommandReview): CommandResult {
     isAgentCommandName(review.command) ||
     isRunnerCommandName(review.command) ||
     isConnectionCommandName(review.command) ||
+    isHostCommandName(review.command) ||
     isShellUiCommandName(review.command) ||
     // MAR-507. In this list for the plainest reason of all: performing one
     // opens a file picker, which this module cannot do and must not appear to.
@@ -826,6 +891,27 @@ export interface WorkspaceActionResult {
   data?: Record<string, string | number | boolean>;
 }
 
+/**
+ * The only data a host action may give back to the renderer.
+ *
+ * `host.create` deliberately spells its answer rather than returning a host
+ * record or a generic data bag. A record could grow a path; a generic bag could
+ * grow `private_key`. This closed union contains the public key and key *name*
+ * only, which makes the custody rule a type-level restriction at the boundary.
+ */
+export type HostActionResult =
+  | {
+      ok: true;
+      action: "create";
+      host_id: string;
+      label: string;
+      public_key: string;
+      key_name: string;
+    }
+  | { ok: true; action: "probe"; host_id: string; label: string; runner_build: string | null }
+  | { ok: true; action: "forget"; host_id: string; label: string }
+  | { ok: false; detail: string; problem?: HostReachProblem };
+
 export interface DispatchContext {
   runAgentCommand(input: AgentCommandInput): Promise<AgentCommandResult>;
   /**
@@ -854,6 +940,17 @@ export interface DispatchContext {
     action: ConnectionAction,
     target: { agent_id: string; connection_id: string; field_id: string },
   ): Promise<ConnectionActionResult>;
+  /**
+   * Create, probe or forget a saved host. Main owns the key and the filesystem;
+   * this pure dispatcher only passes the narrowed target and projects the
+   * deliberately closed result above.
+   */
+  hostAction(
+    action: HostAction,
+    target:
+      | { label: string; address: string; username: string; port: number }
+      | { host_id: string },
+  ): Promise<HostActionResult>;
   /**
    * Show the application menu at a point in the window (MAR-440).
    *
@@ -964,6 +1061,60 @@ export async function dispatchCommand(
       recovery: result.recovery,
       data: { state: result.state, masked_hint: result.masked_hint ?? "" },
     };
+  }
+
+  if (isHostCommandName(review.command)) {
+    const action = HOST_ACTIONS[review.command];
+    const result =
+      action === "create"
+        ? await context.hostAction(action, {
+            label: String(review.payload["label"]),
+            address: String(review.payload["address"]),
+            username: String(review.payload["username"]),
+            port: Number(review.payload["port"]),
+          })
+        : await context.hostAction(action, { host_id: String(review.payload["host_id"]) });
+
+    if (!result.ok) {
+      return {
+        ok: false,
+        request_id: review.audit.request_id,
+        detail: result.detail,
+        data: result.problem === undefined ? undefined : { problem: result.problem },
+      };
+    }
+
+    switch (result.action) {
+      case "create":
+        // The explicit projection is the custody boundary: no record, private
+        // key or path can be added to a `host.create` reply by accident.
+        return {
+          ok: true,
+          request_id: review.audit.request_id,
+          data: {
+            host_id: result.host_id,
+            label: result.label,
+            public_key: result.public_key,
+            key_name: result.key_name,
+          },
+        };
+      case "probe":
+        return {
+          ok: true,
+          request_id: review.audit.request_id,
+          data: {
+            host_id: result.host_id,
+            label: result.label,
+            runner_build: result.runner_build ?? "",
+          },
+        };
+      case "forget":
+        return {
+          ok: true,
+          request_id: review.audit.request_id,
+          data: { host_id: result.host_id, label: result.label },
+        };
+    }
   }
 
   if (isShellUiCommandName(review.command)) {

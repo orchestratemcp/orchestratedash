@@ -14,6 +14,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import {
   HANDOFF_FILE_NAME,
+  MAX_HANDOFF_BYTES,
   buildHandoff,
   handoffUrl,
   isSafeAgentId,
@@ -231,7 +232,7 @@ describe("reading one from disk", () => {
   it("refuses one that is far too large to be a handoff", () => {
     // Bounded by a stat, not by reading it: pointing DASH at a huge file costs a
     // syscall rather than the heap.
-    expect(readHandoff(write("huge", "x".repeat(70_000)))).toMatchObject({
+    expect(readHandoff(write("huge", "x".repeat(MAX_HANDOFF_BYTES + 1)))).toMatchObject({
       ok: false,
       problem: "too_large",
     });
@@ -277,6 +278,19 @@ describe("verifying one", () => {
 });
 
 describe("building one", () => {
+  it("refuses a file set whose JSON encoding would exceed the reader's bound", () => {
+    const built = buildHandoff(
+      facts({
+        files: [
+          { path: "agent.manifest.json", contents: "{}" },
+          { path: "code.mjs", contents: "\u0000".repeat(3 * 1024 * 1024) },
+        ],
+      }),
+      { handoff_id: HANDOFF_ID, nonce: NONCE },
+    );
+    expect(built).toMatchObject({ ok: false, problem: "too_large" });
+  });
+
   it("cannot produce a document the reader would refuse", () => {
     // The producer and the consumer share this module precisely so a build-time
     // mistake surfaces on the author's machine rather than in a user's dialog.

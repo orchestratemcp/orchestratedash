@@ -176,6 +176,18 @@ describe("the preload's exposed surface", () => {
       expect(body, `${bridge} must not expose a channel name`).not.toContain("CHANNEL");
     }
   });
+
+  it("exposes the three host actions by name, with no private-key or path argument", () => {
+    const start = source.indexOf("const dashShell = {");
+    const end = source.indexOf("\n};", start);
+    const body = source.slice(start, end);
+
+    expect(body).toContain("createHost:");
+    expect(body).toContain("probeHost:");
+    expect(body).toContain("forgetHost:");
+    expect(body).not.toContain("private_key");
+    expect(body).not.toContain("key_path");
+  });
 });
 
 describe("isReadName", () => {

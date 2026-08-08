@@ -422,6 +422,19 @@ describe("describeStoreDamage", () => {
     const recovery = describeStoreDamage({ agents: ["billing-watch"], events: 0 });
     expect(`${recovery?.meaning} ${recovery?.next_action}`).toMatch(/keyring|sign-in/i);
   });
+
+  it("surfaces folder/index drift and says which source won", () => {
+    const recovery = describeStoreDamage({
+      agents: [],
+      events: 0,
+      agent_folders: [{ agent: "folder-digest", kind: "index_drift" }],
+    });
+    expect(recovery?.headline).toContain("folder-digest");
+    expect(recovery?.meaning).toContain("folder is authoritative");
+    expect(recovery?.meaning).toMatch(/last readable index/i);
+    expect(recovery?.next_action).toMatch(/re-import/i);
+    expect(recovery?.actor).toBe("dash");
+  });
 });
 
 describe("the legacy import's imported_at", () => {

@@ -8,7 +8,7 @@ import {
   isCommandName,
   reviewCommand,
 } from "../lib/shell/ipc";
-import type { CommandAuditRecord, ConnectionAction, WorkspaceAction } from "../lib/shell/ipc";
+import type { CommandAuditRecord, ConnectionAction, HostAction, WorkspaceAction } from "../lib/shell/ipc";
 import type { AgentCommandInput } from "../lib/agent-dom/runner";
 import {
   SHELL_WEB_PREFERENCES,
@@ -136,6 +136,12 @@ describe("the audited command chokepoint", () => {
       // MAR-518. Same family, and names no agent: a damaged store is a fact
       // about the runner, not about any one of the agents it supervises.
       "runner.retireStore",
+      // MAR-536. Servers are independent of agents. Create accepts only the
+      // four ordinary connection facts; main mints both names and returns only
+      // the public key, while probe and forget take the opaque host id.
+      "host.create",
+      "host.probe",
+      "host.forget",
       // MAR-434. A fifth family, addressing the runner's task workspace over
       // routes the runner already served and proof 9 already exercised. Note
       // the payload: two opaque ids, no path — main asks the *user* where to
@@ -366,6 +372,7 @@ describe("dispatch", () => {
     const inputs: AgentCommandInput[] = [];
     const lifecycle: Array<{ action: string; agent_id: string | undefined }> = [];
     const connections: Array<{ action: string; target: Record<string, string> }> = [];
+    const hosts: Array<{ action: HostAction; target: Record<string, string | number> }> = [];
     // MAR-507. Recorded rather than performed, for the sharpest version of the
     // reason the others are: performing one would open a file picker, and the
     // property these tests exist to hold is that whatever the renderer sent,
@@ -384,6 +391,7 @@ describe("dispatch", () => {
       inputs,
       lifecycle,
       connections,
+      hosts,
       workspaces,
       menus,
       downloads,
@@ -416,6 +424,43 @@ describe("dispatch", () => {
           masked_hint: "••••4f2a",
           detail: `${action} ok`,
         });
+      },
+      // MAR-536. The fake records unsecret input only. Its create answer spells
+      // the public fields individually, matching the closed host-result type;
+      // it has no private key or filesystem path to accidentally return.
+      hostAction: (
+        action: HostAction,
+        target:
+          | { label: string; address: string; username: string; port: number }
+          | { host_id: string },
+      ) => {
+        hosts.push({ action, target });
+        switch (action) {
+          case "create":
+            return Promise.resolve({
+              ok: true as const,
+              action,
+              host_id: "host-fake-1",
+              label: "My server",
+              public_key: "ssh-ed25519 AAAA-public orchestratedash",
+              key_name: "host-fake-1",
+            });
+          case "probe":
+            return Promise.resolve({
+              ok: true as const,
+              action,
+              host_id: "host-fake-1",
+              label: "My server",
+              runner_build: "fixture",
+            });
+          case "forget":
+            return Promise.resolve({
+              ok: true as const,
+              action,
+              host_id: "host-fake-1",
+              label: "My server",
+            });
+        }
       },
       audit: (record: CommandAuditRecord) => audited.push(record),
       runAgentCommand: (input: AgentCommandInput) => {
@@ -600,6 +645,78 @@ describe("dispatch", () => {
       payload: { agent_id: "fixture-agent" },
     });
     expect(() => executeCommand(review)).toThrow(/must go through dispatchCommand/);
+  });
+
+  /**
+   * MAR-536. The server family is the same dispatcher/preload/main shape as
+   * MAR-518's store repair, including the missing-half MAR-518 found: a command
+   * no named bridge and page can reach is not a product command. This test pins
+   * the dispatcher half, where the private-key and path refusal is structural.
+   */
+  describe("the host command family", () => {
+    const create = {
+      command: "host.create",
+      request_id: "req-host-create",
+      payload: { label: "My server", address: "vps.example.com", username: "dash", port: 22 },
+    };
+
+    it("routes a host creation to its own trusted-side action", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(create, ctx);
+
+      expect(ctx.hosts).toEqual([
+        {
+          action: "create",
+          target: { label: "My server", address: "vps.example.com", username: "dash", port: 22 },
+        },
+      ]);
+      expect(result).toMatchObject({
+        ok: true,
+        data: {
+          host_id: "host-fake-1",
+          public_key: "ssh-ed25519 AAAA-public orchestratedash",
+          key_name: "host-fake-1",
+        },
+      });
+      expect(ctx.inputs).toHaveLength(0);
+      expect(ctx.lifecycle).toHaveLength(0);
+      expect(ctx.connections).toHaveLength(0);
+    });
+
+    it.each(["private_key", "key_path", "path"])(
+      "refuses a create payload carrying %s before it can reach main",
+      async (key) => {
+        const ctx = context();
+        const result = await dispatchCommand(
+          { ...create, payload: { ...create.payload, [key]: "not-a-private-key" } },
+          ctx,
+        );
+
+        expect(result).toMatchObject({ ok: false, reason: "unexpected_payload_field" });
+        expect(ctx.hosts).toHaveLength(0);
+      },
+    );
+
+    it("returns exactly public create fields, never a private key or path", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(create, ctx);
+      const fields = Object.keys(result.data ?? {}).sort();
+
+      expect(fields).toEqual(["host_id", "key_name", "label", "public_key"]);
+      expect(fields).not.toContain("private_key");
+      expect(fields).not.toContain("key_path");
+      expect(fields).not.toContain("path");
+      expect(JSON.stringify(result.data)).not.toContain("PRIVATE KEY");
+    });
+
+    it("requires a host id to probe or forget", async () => {
+      const ctx = context();
+      for (const command of ["host.probe", "host.forget"] as const) {
+        const result = await dispatchCommand({ command, request_id: `${command}-missing` }, ctx);
+        expect(result).toMatchObject({ ok: false, reason: "missing_payload_field" });
+      }
+      expect(ctx.hosts).toHaveLength(0);
+    });
   });
 
   /**

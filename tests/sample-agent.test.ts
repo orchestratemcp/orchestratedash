@@ -22,6 +22,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { openHandoff, type HandoffPorts, type HandoffPrompt } from "../lib/handoff-flow";
+import { writeAgentFolder } from "../lib/agent-folders";
 import { BUNDLED_NODE_COMMAND, readRegistration, resolveSpawnCommand } from "../lib/registration";
 import { createSampleAgent, SAMPLE_AGENT_ID, planSampleAgent } from "../lib/sample-agent";
 import { childEnvironment } from "../runner/supervisor";
@@ -170,7 +171,19 @@ describe("adding the sample", () => {
           prompts.push(prompt);
           return true;
         },
-        importManifest: () => ({ ok: true }),
+        importManifest: (_manifest, options) => {
+          if (options?.files === undefined || options.registration === undefined) {
+            return { ok: false, errors: ["the sample handoff did not carry its folder"] };
+          }
+          writeAgentFolder({
+            dataDir,
+            agent: options.registration.agent_id,
+            manifestJson: options.manifestJson ?? "",
+            registration: options.registration,
+            files: options.files,
+          });
+          return { ok: true };
+        },
         forgetAgent: () => ({ existed: false }),
         recordHandoff: () => {},
         readHandoffRecord: () => null,

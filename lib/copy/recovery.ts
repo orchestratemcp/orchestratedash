@@ -541,16 +541,40 @@ export function describeStoreDamage(unreadable: {
   events: number;
   /** Agent rows so damaged that not even the name came back. */
   unnamed_agents?: number;
+  /** Folder/index disagreement found at startup (ADR 0008). */
+  agent_folders?: ReadonlyArray<{
+    agent: string;
+    kind: "folder_unreadable" | "folder_missing" | "index_drift" | "missing_index";
+  }>;
 }): Recovery | null {
   const named = unreadable.agents;
   const unnamed = unreadable.unnamed_agents ?? 0;
   const agentCount = named.length + unnamed;
+  const folderAgents = [
+    ...new Set((unreadable.agent_folders ?? []).map((issue) => issue.agent)),
+  ];
+  const folderRecovery: Recovery | null =
+    folderAgents.length === 0
+      ? null
+      : {
+          headline:
+            folderAgents.length === 1
+              ? `DASH found that ${String(folderAgents[0])}'s agent folder and its index do not agree.`
+              : `DASH found agent-folder/index disagreement for: ${folderAgents.join(", ")}.`,
+          meaning:
+            "The agent folder is authoritative. DASH used the folder where it was readable and kept the last readable index where it was not, so one damaged folder does not take down the Agents page. The disagreement is being shown rather than treated as proof that both stores agree.",
+          next_action:
+            folderAgents.length === 1
+              ? "Re-import that agent to put a fresh complete copy in DASH's keeping."
+              : "Re-import those agents to put fresh complete copies in DASH's keeping.",
+          actor: "dash",
+        };
 
   if (agentCount === 0 && unreadable.events === 0) {
     // Null for the same reason `describeConnectionCondition` returns null for a
     // healthy connection: an intact store is not a failure state, and a surface
     // that rendered a recovery for one would be teaching people to ignore them.
-    return null;
+    return folderRecovery;
   }
 
   /**
@@ -579,7 +603,7 @@ export function describeStoreDamage(unreadable: {
     return `DASH could not read what it stored about ${String(agentCount)} of your agents: ${named.join(", ")}${rest}.`;
   })();
 
-  return {
+  const rowRecovery: Recovery = {
     headline,
     // Says both halves plainly: what is still here, and what is not coming back
     // by waiting. A user who is told only the first will assume the second.
@@ -591,6 +615,16 @@ export function describeStoreDamage(unreadable: {
         : agentCount === 1
           ? "Add the agent again to replace what was lost. Its sign-ins are in your system's keyring and are untouched."
           : "Add those agents again to replace what was lost. Their sign-ins are in your system's keyring and are untouched.",
+    actor: "dash",
+  };
+
+  if (folderRecovery === null) {
+    return rowRecovery;
+  }
+  return {
+    headline: `${rowRecovery.headline} ${folderRecovery.headline}`,
+    meaning: `${rowRecovery.meaning} ${folderRecovery.meaning}`,
+    next_action: `${rowRecovery.next_action} ${folderRecovery.next_action}`,
     actor: "dash",
   };
 }

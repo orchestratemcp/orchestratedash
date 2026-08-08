@@ -410,14 +410,22 @@ function handleBrokerResponse(message) {
  * not a precondition for doing the work.
  */
 const AGENT_NAME = (() => {
-  try {
-    const manifest = JSON.parse(
-      readFileSync(path.join(projectDir, "agent.manifest.json"), "utf8"),
-    );
-    return String(manifest?.agent?.name ?? "agent");
-  } catch {
-    return "agent";
+  // In the author's project the manifest is beside this file. After DASH
+  // acquires the project, code lives in `code/` under the authoritative agent
+  // folder and the manifest lives one level above it. Accept both standings so
+  // the same source runs before and after import without an injected path.
+  for (const manifestPath of [
+    path.join(projectDir, "agent.manifest.json"),
+    path.join(projectDir, "..", "agent.manifest.json"),
+  ]) {
+    try {
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      return String(manifest?.agent?.name ?? "agent");
+    } catch {
+      // Try the other supported layout.
+    }
   }
+  return "agent";
 })();
 
 const ingestUrl = process.env.DASH_INGEST_URL;

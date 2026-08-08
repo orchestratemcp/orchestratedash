@@ -9,7 +9,15 @@
  * existing JSON store neither loses it nor gets it imported twice.
  */
 
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -76,11 +84,13 @@ describe("schema", () => {
     // permission broker, 6 is MAR-467's lapse table and delivery column, 7 is
     // MAR-434's projection of the runner's file-backed artifacts, 8 is MAR-500's
     // avatar column and its backfill, 9 is MAR-488's record of DASH's own
-    // reading.
+    // reading, 10 is MAR-553's manifest-only agent-folder materialisation
+    // (kept at that index at merge time — installed databases had already
+    // recorded it), and 11 is MAR-536's saved hosts.
     // Asserted as a number rather than as MIGRATIONS.length so that appending a
     // migration is a deliberate edit here too.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(10);
+    expect(version.user_version).toBe(12);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -101,6 +111,7 @@ describe("schema", () => {
     expect(tables).toContain("broker_audit");
     expect(tables).toContain("workspace_artifacts");
     expect(tables).toContain("evidence_pulls");
+    expect(tables).toContain("hosts");
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -129,6 +140,8 @@ describe("schema", () => {
     first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
     // And migration 9 (MAR-488), DASH's record of its own reading.
     first.db.db().exec("DROP TABLE evidence_pulls");
+    // And migration 10 (MAR-536), saved servers.
+    first.db.db().exec("DROP TABLE hosts");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -171,6 +184,7 @@ describe("schema", () => {
     first.db.db().exec("DROP TABLE broker_audit");
     first.db.db().exec("DROP TABLE broker_grants");
     first.db.db().exec("DROP TABLE broker_lapses");
+    first.db.db().exec("DROP TABLE hosts");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -212,6 +226,7 @@ describe("schema", () => {
     // And migration 6 (MAR-467), which builds on migration 5's broker_audit and
     // would otherwise fail creating a table that is still there.
     first.db.db().exec("DROP TABLE broker_lapses");
+    first.db.db().exec("DROP TABLE hosts");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -245,6 +260,7 @@ describe("schema", () => {
     first.db.db().exec("DROP TABLE evidence_pulls");
     first.db.db().exec("DROP TABLE broker_lapses");
     first.db.db().exec("ALTER TABLE broker_audit DROP COLUMN delivered");
+    first.db.db().exec("DROP TABLE hosts");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -285,6 +301,7 @@ describe("schema", () => {
     first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
     // And migration 9 (MAR-488), DASH's record of its own reading.
     first.db.db().exec("DROP TABLE evidence_pulls");
+    first.db.db().exec("DROP TABLE hosts");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -339,6 +356,34 @@ describe("schema", () => {
       "availability_detail",
       "observed_at",
     ]);
+  });
+
+  /**
+   * MAR-536. The table names a key by the stable name main resolves, never by
+   * path and never by its contents. This is the storage half of the same
+   * private-key boundary `tests/shell.test.ts` pins at the IPC edge.
+   */
+  it("stores host connection facts but no private key or key path", async () => {
+    const { db } = await freshStore();
+    const columns = db
+      .db()
+      .prepare("PRAGMA table_info(hosts)")
+      .all()
+      .map((row) => String(row["name"]));
+
+    expect(columns).toEqual([
+      "host_id",
+      "label",
+      "address",
+      "port",
+      "username",
+      "key_name",
+      "host_fingerprint",
+      "added_at",
+    ]);
+    for (const forbidden of ["private_key", "key_path", "path", "public_key", "channel_secret"]) {
+      expect(columns, `hosts must not carry ${forbidden}`).not.toContain(forbidden);
+    }
   });
 
   /**
@@ -406,7 +451,81 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(10);
+    ).toBe(12);
+  });
+
+  it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {
+    const first = await freshStore();
+    const agent = String((manifest["agent"] as { name: string }).name);
+    expect(first.store.importManifest(manifest)).toMatchObject({ ok: true });
+
+    // Re-create the standing every installed pre-MAR-553 store has: the row and
+    // a runner registration point at an author-owned project, with no DASH copy.
+    rmSync(path.join(first.dataDir, "agents", agent), { recursive: true, force: true });
+    const authorProject = path.join(first.dataDir, "author-project");
+    mkdirSync(authorProject, { recursive: true });
+    const authorCode = path.join(authorProject, "agent.mjs");
+    writeFileSync(authorCode, "// author-owned and not migration input\n", "utf8");
+    const registrationFile = path.join(first.dataDir, "agents", `${agent}.json`);
+    const oldRegistration = {
+      agent_id: agent,
+      manifest_path: path.join(authorProject, "agent.manifest.json"),
+      command: "node",
+      args: ["agent.mjs"],
+      cwd: authorProject,
+    };
+    writeFileSync(registrationFile, JSON.stringify(oldRegistration), "utf8");
+    first.db.db().exec("PRAGMA user_version = 10");
+    first.db.closeDb();
+
+    process.env.DASH_DATA_DIR = first.dataDir;
+    vi.resetModules();
+    const db = await import("../lib/db");
+    const store = await import("../lib/store");
+    opened.push({ dataDir: first.dataDir, closeDb: db.closeDb });
+
+    expect(store.listAgentNames()).toContain(agent);
+    expect(readdirSync(path.join(first.dataDir, "agents", agent)).sort()).toEqual([
+      "agent.manifest.json",
+    ]);
+    expect(readFileSync(authorCode, "utf8")).toBe("// author-owned and not migration input\n");
+    expect(JSON.parse(readFileSync(registrationFile, "utf8"))).toEqual(oldRegistration);
+    expect(db.describeAgentFolderMigration()).toMatchObject({
+      materialized_agents: [agent],
+      skipped_agents: [],
+      unreadable_rows: 0,
+    });
+  });
+
+  it("reports but preserves a legacy row whose name cannot be a folder", async () => {
+    const first = await freshStore();
+    const legacy = structuredClone(manifest);
+    (legacy["agent"] as { name: string }).name = "con";
+    first.db
+      .db()
+      .prepare(
+        "INSERT INTO agents (name, manifest_version, manifest_json, imported_at, avatar) " +
+          "VALUES (?, ?, ?, ?, ?)",
+      )
+      .run("con", Number(legacy["manifest_version"]), JSON.stringify(legacy), new Date().toISOString(), null);
+    first.db.db().exec("PRAGMA user_version = 10");
+    first.db.closeDb();
+
+    process.env.DASH_DATA_DIR = first.dataDir;
+    vi.resetModules();
+    const db = await import("../lib/db");
+    const store = await import("../lib/store");
+    opened.push({ dataDir: first.dataDir, closeDb: db.closeDb });
+
+    expect(store.listAgentNames()).toContain("con");
+    expect(existsSync(path.join(first.dataDir, "agents", "con"))).toBe(false);
+    expect(db.describeAgentFolderMigration()?.skipped_agents).toEqual([
+      {
+        name: "con",
+        errors: [expect.stringContaining("safe folder component")],
+      },
+    ]);
+    expect(store.readStore().unreadable.agent_folders).toBeUndefined();
   });
 
   it("preserves pending tasks and approvals across a DASH restart", async () => {
