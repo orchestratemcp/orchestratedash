@@ -3404,6 +3404,11 @@ async function proveProtectedWorkspaceDownload(recorded: {
       { availability },
     );
 
+    // TEMPORARY — MAR-575 before/after demonstration only. Remove before merge.
+    check("9h. TEMPORARY MAR-575 demo: deliberately forced failure", false, {
+      note: "if this line and the final [smoke] summary line are missing from the CI log, the truncation reproduced",
+    });
+
     /* -- On failure, the runner's own log is the only witness --------------- */
 
     // The runner is detached with its stdio on {dataDir}/runner.log, so a
@@ -3483,6 +3488,7 @@ function exitAfterClosing(code: number): void {
     // worth printing and is not worth turning a passing run into a failure.
     console.error(`[smoke] closing the store failed: ${String(error)}`);
   }
+  // MAR-575 BEFORE-DEMO: fix temporarily reverted to reproduce the truncation.
   app.exit(code);
 }
 
