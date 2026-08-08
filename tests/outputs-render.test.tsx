@@ -208,6 +208,54 @@ describe("raw identifiers stay behind the disclosure", () => {
   });
 });
 
+/**
+ * The output before the paperwork about the output (MAR-576).
+ *
+ * This card used to render its four-row provenance receipt and its button
+ * *between* the title and the digest. On the AI News Scout — the one agent DASH
+ * ships, whose entire purpose is a summary of the news — that made the first
+ * four facts under "News from 3 sources" a name, two timestamps and a byte
+ * count, and on a 375px viewport it put the first headline 1166px down an 812px
+ * screen. The report this issue was filed on reads "I get no AI news from it.
+ * Only some text about that it ran or something", which is that ordering
+ * described exactly.
+ *
+ * Index comparison rather than a snapshot, because the claim is about order and
+ * nothing else: what has to hold is that a person reading this card downwards
+ * reaches the agent's work before they reach DASH's custody of it.
+ */
+describe("the output comes before the paperwork", () => {
+  const headline = "A supervisor for long-running agents lands in beta";
+
+  it("puts the digest above the provenance receipt", () => {
+    const html = render();
+    expect(html).toContain(headline);
+    expect(html.indexOf(headline)).toBeLessThan(html.indexOf(OUTPUTS_PANEL_COPY.receipt.agent));
+  });
+
+  it("puts the digest above the save action", () => {
+    const html = render(undefined, records(), () => {});
+    expect(html.indexOf(headline)).toBeLessThan(html.indexOf(OUTPUTS_PANEL_COPY.download));
+  });
+
+  it("folds the receipt behind a disclosure while the output is here", () => {
+    const html = render();
+    expect(html).toContain(OUTPUTS_PANEL_COPY.receipt_summary);
+    // Folded, never dropped: every label is still one press away.
+    for (const label of Object.values(OUTPUTS_PANEL_COPY.receipt)) {
+      expect(html, label).toContain(label);
+    }
+  });
+
+  /**
+   * A `<details open>` would satisfy every assertion above and put the receipt
+   * back exactly where it was on screen.
+   */
+  it("ships that disclosure closed", () => {
+    expect(render()).not.toMatch(/<details class="output-receipt-disclosure" open/);
+  });
+});
+
 describe("the receipt survives an output going missing", () => {
   it.each(["missing", "moved", "quarantined", "deleted"] as const)(
     "keeps provenance when the output is %s",

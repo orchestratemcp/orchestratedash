@@ -107,7 +107,10 @@ export function planScaffold(request: ScaffoldRequest, sources: TemplateSources)
   return {
     ok: true,
     files: [
-      { path: "agent.manifest.json", contents: `${JSON.stringify(manifest(request), null, 2)}\n` },
+      {
+        path: "agent.manifest.json",
+        contents: `${JSON.stringify(scaffoldManifest(request), null, 2)}\n`,
+      },
       { path: "package.json", contents: `${JSON.stringify(projectPackage(request), null, 2)}\n` },
       { path: "agent.mjs", contents: sources.agent },
       { path: "scripts/open-in-dash.mjs", contents: sources.openInDash },
@@ -140,8 +143,17 @@ export function planScaffold(request: ScaffoldRequest, sources: TemplateSources)
  * offering DASH a button with nothing behind it, which
  * `docs/agent-dom-contract-v2.md` calls out as the failure to avoid: missing
  * controls mean read-only, not inferred controls.
+ *
+ * **Exported for MAR-576**, which needs the document without the project around
+ * it. Re-importing an agent DASH scaffolded means producing the manifest this
+ * template writes *today* for an agent that already exists — no directory, no
+ * `agent.mjs`, no handoff. Calling `planScaffold` and fishing the manifest back
+ * out of its `files` array would have worked and would have required inventing a
+ * directory path that nothing writes to, which is the kind of unused argument
+ * that later reads as a real one. `directory` is genuinely unread here; the
+ * shared `ScaffoldRequest` keeps it because the scaffold proper needs it.
  */
-function manifest(request: ScaffoldRequest): Record<string, unknown> {
+export function scaffoldManifest(request: ScaffoldRequest): Record<string, unknown> {
   return {
     manifest_version: 2,
     agent: {

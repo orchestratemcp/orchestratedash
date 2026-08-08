@@ -1910,6 +1910,96 @@ if (recorded !== null) {
             );
           }
 
+          /*
+           * 6p — the agent's own output leads its page (MAR-576).
+           *
+           * MAR-576 was filed on this exact route, in these words: "I get no AI
+           * news from it. Only some text about that it ran or something." The
+           * record was there the whole time — every digest the scout had written
+           * was on the page, underneath a permission disclaimer and a four-row
+           * provenance receipt. At 375px the first headline began 1166px down an
+           * 812px screen, so the answer to "what did it find?" sat a screen and
+           * a half below the question.
+           *
+           * That is a claim about **document order**, so this measures document
+           * order rather than pixels: a height comparison would make the same
+           * check pass or fail on the size of CI's window.
+           * `compareDocumentPosition` is also what a screen reader and a keyboard
+           * follow, which is the population an ordering defect hurts most and
+           * the one a screenshot says nothing about.
+           *
+           * The two comparisons are separate because they fail separately. A
+           * heading that moved without its contents would mean an empty
+           * "Outputs" section had been hoisted above the receipt while the news
+           * stayed below it — the reordering that looks right in a diff and
+           * fixes nothing.
+           *
+           * Same already-loaded page as 6n, and skipped on the same condition:
+           * with no completed run there is no digest, and "the news is not above
+           * the receipt" would be a true sentence about 6g's failure wearing
+           * this proof's name.
+           */
+          /*
+           * A named type rather than `typeof ordering` at the cast below. The
+           * variable is initialised to `null`, so `typeof` there resolves to the
+           * *narrowed* type and the assertion silently produces `never` — which
+           * `tsc` reports as a missing property on the branch that reads it, a
+           * message that points at the reader rather than the cast.
+           */
+          interface WorkspaceOrdering {
+            news_before_receipt: boolean | null;
+            heading_before_receipt: boolean | null;
+            has_receipt: boolean;
+          }
+          let ordering: WorkspaceOrdering | null = null;
+          if (canWitnessPanel && panel !== null) {
+            try {
+              ordering = (await window.webContents.executeJavaScript(
+                `(() => {
+                   const main = document.querySelector("main") ?? document.body;
+                   /* The first digest item anywhere on the page. This agent's
+                      manifest declares a report section as well, so the news
+                      appears twice; the first in document order is the Outputs
+                      area, which is the one this proof is about. */
+                   const news = main.querySelector(".digest-items li");
+                   const heading = document.querySelector("#outputs-heading");
+                   const receipt = document.querySelector("#permission-receipt");
+                   if (news === null || heading === null) return null;
+                   const before = (a, b) =>
+                     (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+                   return {
+                     news_before_receipt: receipt === null ? null : before(news, receipt),
+                     heading_before_receipt: receipt === null ? null : before(heading, receipt),
+                     has_receipt: receipt !== null,
+                   };
+                 })()`,
+              )) as WorkspaceOrdering | null;
+            } catch (error: unknown) {
+              console.warn(`[smoke] the workspace ordering could not be read: ${String(error)}`);
+            }
+          }
+
+          if (ordering === null) {
+            skip(
+              "6p. the agent's own output comes before DASH's run chatter",
+              canWitnessPanel
+                ? "6n found no drawn workspace to inspect"
+                : "6g produced no run whose digest could lead the page",
+            );
+          } else {
+            check(
+              "6p. the agent's own output comes before DASH's run chatter",
+              // `has_receipt` is asserted rather than assumed. The scaffold
+              // declares one read permission, so this agent has a receipt — and
+              // on the day it stops having one, both comparisons go null and
+              // this proof would otherwise pass by having nothing to compare.
+              ordering.has_receipt &&
+                ordering.news_before_receipt === true &&
+                ordering.heading_before_receipt === true,
+              ordering,
+            );
+          }
+
           const finalLedger = readHandoffRecord(created.value.handoff.handoff_id);
           check(
             "6f. the handoff ledger keeps the first final outcome",

@@ -3580,3 +3580,148 @@ the single-instance lock for this entire session. CI's `shell-smoke` is a
 genuine installed-shell witness — it is what MAR-492 leaned on for the same
 reason — but it runs on CI's machine and against CI's store, and the workspace
 screenshots showing a real declared panel on a real route do not exist yet.
+
+## The agent's own output leads its page (MAR-576)
+
+Henrik, on the AI News Scout, in the app: *"I get no AI news from it. Only some
+text about that it ran or something."*
+
+### The diagnosis was run on the real store first, and it refuted half the prediction
+
+MAR-548's handoff predicted the cause and was **right about the manifest**. A
+`VACUUM INTO` snapshot of `%APPDATA%\orchestratedash\dash.sqlite` — read-only;
+the live file was never opened read-write — shows `ai-news-scout`'s stored
+document, folder and row byte-identical, stamped `create-dash-agent 43.2.0` and
+generated `2026-08-05T15:24:29Z`, with `agent_dom` keys running `dom_version`,
+`runtime`, `trigger`, `locations`, `connections`, `permissions`, `control`,
+`memory` — **and no `panel`**. Reconciliation is clean: no damage, no drift. The
+manifest predates MAR-548 exactly as predicted.
+
+**The second half of the prediction was wrong, and that is what the issue turned
+on.** The digests were all there — 33 of them, the newest carrying nine items and
+three sources — and **the news was on the page the whole time**. `workspaceView`
+resolves outputs from `latestArtifactForAgent`, `resolveArtifactAvailability`
+returns `available` when no workspace row exists, `canPreview` passes, and
+`OutputsPanel` renders the digest through `DigestBody`. Nothing was missing and
+nothing was broken.
+
+What was wrong was the **order**. Reproduced in the packaged renderer against a
+scratch store seeded with Henrik's own manifest, digest and events: the first
+headline began **1166px down an 812px viewport** at 375, and 664px at 1280. Above
+it sat the files panel, Run now, a permission disclaimer, and — inside the output
+card itself — a four-row provenance receipt reading *Made by* / *The agent's own
+time* / *Reached DASH* / *Size stored*. That is "only some text about that it
+ran", precisely. The agent's own output was the fifth thing on its own page, and
+last inside its own card.
+
+**So the obvious fix would have made it worse.** `AgentPanel` renders *below* the
+Outputs area, so restoring the manifest alone would have pushed the declared
+digest surface further down the page.
+
+### The output leads, and only DASH's own surfaces moved
+
+`OutputsArea` goes directly under the identity header; inputs, Run now and the
+permission receipt drop below it. Inside the card the body renders before the
+receipt, and the receipt folds behind *How DASH got this* while the output is
+available — **inline when it is not**, which keeps MAR-434's argument that a
+missing output still needs its provenance as a live branch rather than a deleted
+one. `news_top_px` moves 1166 → 875 at 375, and 664 → 487 at 1280.
+
+The author's panel **stays below DASH's surfaces**. MAR-548's attribution
+argument — that a `note` must not sit where a person has learned to read DASH's
+own voice — is untouched, because the news Henrik wanted is DASH's own rendering
+of it, and raising that was enough.
+
+**One defect, two renderers, and only the photograph had both in frame.**
+`app/_components/panel.tsx` draws its own artifact card, so fixing the Outputs
+area fixed nothing inside the author's region. The screenshot taken after
+pressing the new button showed the receipt still sitting above the headlines in
+the box whose entire purpose is *what did the scout find?*.
+
+### The silence, and the one sentence that replaces it
+
+`describeManifestGap` fires on two conditions: the stored document carries DASH's
+own `create-dash-agent` provenance **and** declares no panel. Narrow on purpose —
+most agents declare no panel and for them the absence is the author's choice, so
+only a document **DASH itself wrote** can be behind DASH's own template. A
+*malformed* panel is deliberately excluded: `resolvePanel` already reports it as
+`unreadable`, and telling that person their agent is also old would be the wrong
+second diagnosis of one fault.
+
+**The first draft of the notice was itself the defect.** Headline, five-line
+explanation, next action, button and a four-line reassurance rendered 400px tall
+at 375px and put the news at 1156px — within ten pixels of where the bug had it.
+A notice that explains why you cannot see something, by covering it, has fixed
+nothing. It is one sentence now, two-column above 28rem, and the "nothing has
+been lost" reassurance was cut because with the output directly underneath it
+describes what the reader can already see. `next_action` survives as the way
+forward for the reader with **no** button — a browser tab, or a shell older than
+the command — and renders only then.
+
+### One press, and the gate that makes it safe
+
+`sample.refresh` is a fifth command family rather than an eighth `agent.*` verb:
+that prefix is the contract's seven, and this is not one of them; `runner.*` is
+process lifecycle, and no process is started, stopped or asked anything. The
+payload is one agent id, so page script can ask DASH to regenerate an agent
+**from DASH's own template** and has no way to hand DASH a document to store.
+
+**The ownership gate lives in `electron/main.ts`, beside the write, not at the
+IPC seam** — a gate at the seam is one a second implementation forgets. It reads
+the *folder* first (ADR 0008's authority rule) and refuses anything
+`create-dash-agent` did not generate. It then goes through the ordinary
+`importManifest` door, which writes folder-then-row, revalidates, clears the
+startup folder issue, and — through the `ON CONFLICT DO UPDATE` that deliberately
+omits `avatar` — is why the caption under the button can promise the character
+survives. Identity comes from the stored document, capability from the template;
+regenerating rather than patching in the missing `panel` means a scaffolded agent
+is never more than one press behind DASH itself. The agent's own project folder
+is never touched.
+
+`lib/shell/ipc.ts`'s compile-time routing assertion caught the unrouted command
+on the first typecheck, which is exactly what it is there for.
+
+### A test I wrote was false about the shipped product
+
+Having folded the Outputs receipt behind a `<details>`, folding the panel's was
+the obvious next step — and **neither smoke check 6o nor
+`tests/panel-render.test.tsx` counts a `<summary>` as a control**, so it would
+have passed everything while quietly weakening ADR 0008's "no toggle" claim.
+Adding `<details>` to that control list turned it red, and the cause was not the
+new code: `DigestBody` has drawn *Where this came from* inside the region since
+MAR-434, arriving from the **artifact** the same way a digest item's link does —
+the honest qualification `app/_components/panel.tsx`'s header already records
+about links. So the assertion was wrong and the code was not. The panel's receipt
+is simply moved below its body, the control list is unchanged, and it now carries
+the reason.
+
+### Evidence
+
+`pnpm typecheck` clean · `brand:check` green · `state:check` **valid** with the
+same 19 pre-existing merged/In-Progress drift warnings, none from this branch ·
+full vitest from PowerShell **107 files / 2176 passed / 8 skipped / 0 failed**,
+21 new · **`pnpm verify:shell` run locally on this Windows machine and all proofs
+passed**, including new proof **6p** (`news_before_receipt: true`,
+`heading_before_receipt: true`, `has_receipt: true`) with **6n and 6o still
+green** (`controls_inside: 0`, `raw_instants: 0`) — which is what says the panel
+change cost ADR 0008 nothing.
+
+6p measures **document order** through `compareDocumentPosition`, not pixels: a
+height comparison would pass or fail on the size of CI's window, and document
+order is what a screen reader and a keyboard actually follow — the population an
+ordering defect hurts most and the one a screenshot says nothing about.
+
+Both load-bearing tests were demonstrated failing first. Dropping the provenance
+gate turns *"says nothing about a third-party agent that declares no panel"* red
+and nothing else; putting the receipt back above the body turns the two ordering
+assertions red and nothing else.
+
+Screenshots in `qa-screenshots-mar576/`: packaged renderer, 375 and 1280, light
+and dark, plus one taken **after pressing Update this agent** showing the panel
+present, the notice gone and the first headline at 410px. Taken by a throwaway
+Electron probe that skipped `smoke-identity` — its own app name, user-data
+directory and single-instance lock — so it ran beside the live DASH and never
+opened Henrik's records. Deleted rather than committed, on MAR-548's precedent.
+
+Non-goals held: no schema edit (`contracts/` belongs to MAR-569), no new panel
+section type.

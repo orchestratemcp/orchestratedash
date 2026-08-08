@@ -87,6 +87,20 @@ export const OUTPUTS_PANEL_COPY = {
    */
   download: "Save a copy",
   developer_summary: "Reference for developers",
+  /*
+   * The provenance receipt's disclosure label (MAR-576).
+   *
+   * The receipt used to sit between the card's title and the output itself, so
+   * the first four facts under "News from 3 sources" were a name, two timestamps
+   * and a byte count — and on a 375px viewport the first headline began 1166px
+   * down an 812px screen. That is exactly the shape of the report this issue was
+   * filed on: "I get no AI news from it. Only some text about that it ran."
+   *
+   * Worded as a question about DASH rather than about the output, because that
+   * is what is inside it: `Made by`, the agent's own time, when it reached DASH
+   * and the size DASH stored. Every one of those is custody, not content.
+   */
+  receipt_summary: "How DASH got this",
   receipt: {
     agent: "Made by",
     stated_at: "The agent’s own time",

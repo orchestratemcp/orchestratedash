@@ -147,36 +147,23 @@ function OutputCard({
         </div>
       )}
 
-      {/* The receipt is rendered in every density and in every availability
-          state. A compact DASH shows the same facts in less space — an output
-          that is missing still has a provenance a person needs in order to
-          work out what happened to it. */}
-      <dl className="facts output-receipt">
-        <div>
-          <dt>{COPY.receipt.agent}</dt>
-          <dd className="value">{receipt.agent}</dd>
-        </div>
-        <div>
-          <dt>{COPY.receipt.stated_at}</dt>
-          <dd className="value">{receipt.stated_at}</dd>
-        </div>
-        <div>
-          <dt>{COPY.receipt.received_at}</dt>
-          <dd className="value">{receipt.received_at}</dd>
-        </div>
-        <div>
-          <dt>{COPY.receipt.size}</dt>
-          <dd className="value">{receipt.size}</dd>
-        </div>
-      </dl>
+      {/* MAR-576. The output itself, before anything about the output.
 
-      {/* On the receipt, not in the card heading. The receipt is the part of
-          this card that says what the thing *is* — who made it, when, how big
-          — and "give me a copy" is the action on that, whereas the heading is
-          the output's name. It also keeps the action next to the size, which is
-          the fact a person weighs before asking for a file. */}
-      {downloadable ? (
-        <div className="button-row">
+          It used to come last, under a four-row provenance receipt and a
+          button, and that ordering is the defect this issue was filed on: on
+          the agent whose entire purpose is a digest of the news, the first
+          things under its title were who made it, two timestamps and a byte
+          count. `Receipt` below says what the swap costs and why it costs
+          nothing. */}
+      <OutputContent card={card} grounding={grounding} />
+
+      <div className="output-footer">
+        {/* Still in the same row as the receipt, which is what MAR-434 wanted
+            it next to — the size is the fact a person weighs before asking for
+            a file, and it is one press away rather than four rows up. Out of
+            the heading for MAR-434's own reason: the heading is the output's
+            name, not an action bar. */}
+        {downloadable ? (
           <button
             className="button-secondary"
             onClick={() => onDownload?.(card)}
@@ -184,10 +171,9 @@ function OutputCard({
           >
             {COPY.download}
           </button>
-        </div>
-      ) : null}
-
-      <OutputContent card={card} grounding={grounding} />
+        ) : null}
+        <Receipt card={card} />
+      </div>
 
       <details className="output-developer">
         <summary>{COPY.developer_summary}</summary>
@@ -214,6 +200,78 @@ function OutputCard({
         </dl>
       </details>
     </article>
+  );
+}
+
+/**
+ * Where this output came from — behind a disclosure, unless it is all there is
+ * (MAR-576).
+ *
+ * ## The rule, in one line: content leads, custody follows
+ *
+ * The four facts here are provenance. They matter and they are kept, in every
+ * density and in every availability state, exactly as MAR-434 required — what
+ * changed is that they no longer stand between a person and the thing they
+ * opened the page for.
+ *
+ * ## Why the unavailable case is not a disclosure
+ *
+ * MAR-434's argument for rendering the receipt unconditionally is specifically
+ * about the output that is *gone*: "an output that is missing still has a
+ * provenance a person needs in order to work out what happened to it". That
+ * argument survives here unchanged, and it is the reason this is a branch
+ * rather than a `<details>` with a different label. When there is no content,
+ * `OutputContent` renders nothing at all, and folding the only remaining facts
+ * on the card behind a closed disclosure would leave a missing output showing
+ * its recovery notice above an apparently empty card. So: available outputs
+ * lead with themselves and keep their receipt one press away; unavailable ones
+ * have nothing to lead with, and the receipt is the card.
+ *
+ * `open` is not set on the disclosure. A disclosure that ships open is a
+ * disclosure in name only, and the whole point is that the first thing under a
+ * digest's title is the digest.
+ */
+function Receipt({ card }: { card: ArtifactCardView }): ReactNode {
+  const { receipt } = card;
+  const facts = (
+    <dl className="facts output-receipt">
+      <div>
+        <dt>{COPY.receipt.agent}</dt>
+        <dd className="value">{receipt.agent}</dd>
+      </div>
+      <div>
+        <dt>{COPY.receipt.stated_at}</dt>
+        <dd className="value">{receipt.stated_at}</dd>
+      </div>
+      <div>
+        <dt>{COPY.receipt.received_at}</dt>
+        <dd className="value">{receipt.received_at}</dd>
+      </div>
+      <div>
+        <dt>{COPY.receipt.size}</dt>
+        <dd className="value">{receipt.size}</dd>
+      </div>
+    </dl>
+  );
+
+  /*
+   * `availability`, not `canPreview`. The two differ for an output that is
+   * present in a format this build cannot lay out, and that difference decides
+   * correctly here: such an output is not gone, `OutputContent` still offers the
+   * record as it arrived, and its provenance is as ordinary as any other card's.
+   * `canPreview` would have pinned the receipt open for it — treating "DASH does
+   * not know this shape" as if it were "this file is missing", which is the
+   * conflation `OutputContent`'s own third branch exists to refuse.
+   */
+  if (card.availability !== "available") {
+    return facts;
+  }
+
+  return (
+    <details className="output-receipt-disclosure">
+      <summary>{COPY.receipt_summary}</summary>
+      {facts}
+    </details>
   );
 }
 

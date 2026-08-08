@@ -365,8 +365,31 @@ function PanelArtifactCard({ card }: { card: ArtifactCardView }): ReactNode {
         </div>
       )}
 
+      {/* MAR-576. The output before the paperwork about it, on the same rule
+          `app/_components/outputs.tsx` now follows — and the rule matters more
+          here than there, because this region exists to answer "what did the
+          scout find?" and this card is the answer.
+
+          Found by looking rather than by reasoning: the Outputs area was fixed
+          first, and the packaged-renderer screenshot of a re-imported agent
+          showed the receipt still sitting above the headlines *inside the
+          author's box*, because this file draws its own card. One defect, two
+          renderers, and only the photograph had both in frame. */}
+      <PanelArtifactBody card={card} />
+
       {/* Both clocks, labelled as whose each one is. A single "Created" would
-          quietly promote the agent's claim into DASH's record. */}
+          quietly promote the agent's claim into DASH's record.
+
+          **Moved below the body, and deliberately not folded behind a
+          disclosure the way the Outputs area now folds it.** Not because a
+          `<details>` would be a control — `DigestBody` already draws one here
+          for a digest's sources, and it reaches this region the same way a
+          digest item's link does, from the artifact rather than from the
+          vocabulary. It is that the fold buys nothing here. The Outputs area
+          needs it because a "Save a copy" button and a developer disclosure are
+          competing for the same footer; this card has neither, so moving the
+          receipt below the body is the whole of the fix, and the region keeps
+          one less piece of chrome that an author's box does not need. */}
       <dl className="facts output-receipt">
         <div>
           <dt>{OUTPUTS_PANEL_COPY.receipt.agent}</dt>
@@ -385,8 +408,6 @@ function PanelArtifactCard({ card }: { card: ArtifactCardView }): ReactNode {
           <dd className="value">{receipt.size}</dd>
         </div>
       </dl>
-
-      <PanelArtifactBody card={card} />
     </article>
   );
 }

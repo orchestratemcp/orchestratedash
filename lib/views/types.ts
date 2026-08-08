@@ -32,6 +32,7 @@ import type { EvidenceNotice } from "../copy/evidence";
 import type { ArtifactCardView } from "./artifacts";
 import type { InputRoleView } from "./inputs";
 import type { PanelView } from "./panel";
+import type { ManifestGapView } from "../sample-refresh";
 import type { Recovery } from "../copy/recovery";
 import type { ConnectionRequirementRow } from "../connections";
 import type { ManifestPermissions, PermissionGrant, RunArtifact, RunEvent } from "../contracts";
@@ -630,6 +631,25 @@ export type WorkspaceView =
        * a page cannot have to decide what a missing panel means.
        */
       panel: PanelView;
+      /**
+       * Whether this agent's saved setup is behind DASH's own template, and
+       * what to say about it (MAR-576).
+       *
+       * Null for every agent DASH did not scaffold, and for every scaffolded
+       * agent already carrying the current template's capabilities — which is
+       * to say null almost always. It is non-null exactly when DASH is about to
+       * draw a thinner page than it would for a freshly added copy of the same
+       * agent, which is the one moment silence would be a lie.
+       *
+       * A sibling of `panel` rather than a fourth `PanelView` case, and that is
+       * deliberate. `PanelView` answers "what does the author's region draw",
+       * and the answer here is genuinely `none` — there is no region, the author
+       * declared nothing, and `AgentPanel` is right to render nothing. This
+       * answers a different question, in DASH's own voice, about DASH's own
+       * template. Folding it into the union would have put a sentence DASH is
+       * saying about itself inside the box marked as somebody else's.
+       */
+      manifest_gap: ManifestGapView | null;
     };
 
 export type WorkInboxRow = InboxItem & {
