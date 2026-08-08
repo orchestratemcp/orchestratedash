@@ -131,8 +131,37 @@ const ACTION = "action-create-invite-draft";
 
 const failures: string[] = [];
 
+/**
+ * MAR-575: a per-line size cap, because a line long enough can break a log
+ * reader before `app.exit` ever gets a chance to matter.
+ *
+ * `6b`'s own detail once embedded a shipped sample agent's entire file
+ * contents in one `JSON.stringify`, producing a single ~150KB line. Line-at-a-
+ * time log readers commonly cap what they'll buffer for one line — Go's
+ * `bufio.Scanner`, which both `gh run view --log` and (by all the evidence
+ * available here) GitHub's own log viewer are built on, defaults to 64KB and
+ * simply stops reading on a longer one, with nothing surfaced to the reader.
+ * That is a materially different, and better-supported, explanation for "the
+ * log always stops at the same proof in both a failing and a green run" than
+ * a race at process exit: this repository's own CI, re-run against a
+ * deliberately-failed late proof, shows the *raw* stored log is complete in
+ * both cases — `gh api .../logs` has every line — while `gh run view --log`
+ * truncates both at the same point, immediately before that oversized line.
+ * See MAR-575 for the before/after evidence.
+ *
+ * The cap is generous relative to that limit and applied here, once, so no
+ * future proof's detail object can reintroduce the same failure by accident —
+ * exactly the "by construction rather than by convention" ADR 0004 asks for.
+ */
+const CHECK_DETAIL_BYTE_LIMIT = 8_000;
+
 function check(label: string, passed: boolean, detail: unknown): void {
-  console.log(`${passed ? "PASS" : "FAIL"}  ${label}: ${JSON.stringify(detail)}`);
+  let serialized = JSON.stringify(detail);
+  if (serialized.length > CHECK_DETAIL_BYTE_LIMIT) {
+    const totalLength = serialized.length;
+    serialized = `${serialized.slice(0, CHECK_DETAIL_BYTE_LIMIT)}…[truncated, ${String(totalLength)} chars total]`;
+  }
+  console.log(`${passed ? "PASS" : "FAIL"}  ${label}: ${serialized}`);
   if (!passed) {
     failures.push(label);
   }
@@ -1160,7 +1189,21 @@ if (recorded !== null) {
           nonce: randomBytes(32).toString("hex"),
         },
       });
-      check("6b. Try a sample agent creates a real handoff", created.ok, created);
+      // MAR-575: log a summary, not `created` itself — `value.files[].contents`
+      // is the sample agent's entire bundle (manifest + code), which is what
+      // produced the ~150KB single line that broke `gh run view --log`.
+      check(
+        "6b. Try a sample agent creates a real handoff",
+        created.ok,
+        created.ok
+          ? {
+              ok: true,
+              agent_id: created.value.handoff.agent_id,
+              directory: created.value.directory,
+              files: created.value.files.map((file) => ({ path: file.path, bytes: file.contents.length })),
+            }
+          : created,
+      );
 
       if (created.ok) {
         agentId = created.value.handoff.agent_id;
