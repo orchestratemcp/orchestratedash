@@ -2544,3 +2544,250 @@ button:disabled {
     display: none;
   }
 }
+
+/* ---------------------------------------------------------------------- *
+ * The declarative panel (MAR-554, ADR 0008 slice 3)
+ *
+ * One attributed region, drawn as a box the reader can see the edges of. That
+ * is not decoration: ADR 0008 puts the panel's whole security argument on
+ * attribution — an author can editorialise inside it and cannot imitate a DASH
+ * verdict — and an author's block that bled into the page would be exactly the
+ * confusion the argument is meant to prevent. So the region takes the accent as
+ * a 2px left bar, `--active-bar`'s "this element is the one being acted on"
+ * turned into "this element belongs to somebody else".
+ *
+ * Every value here is a token. No hex, no radius, no shadow: `app/tokens.css`
+ * sets `--radius-*` to zero and `DESIGN.md` is explicit that depth in this
+ * system is tonal layering plus a 1px line. `tests/panel-render.test.tsx` holds
+ * this block to that by reading it.
+ * ---------------------------------------------------------------------- */
+
+.agent-panel {
+  padding: var(--density-card-p);
+  border: 1px solid var(--line);
+  border-left: var(--active-bar) solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+
+.agent-panel-head {
+  margin-bottom: var(--density-stack);
+}
+
+.agent-panel-head h2 {
+  margin: 0 0 var(--space-2);
+}
+
+/* The sentence that says what is inside this box and what is deliberately
+   outside it. Held to a readable measure rather than the region's full width —
+   it is the one paragraph on the surface a person has to actually read. */
+.agent-panel-attribution {
+  max-width: 46rem;
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.agent-panel-sections {
+  display: grid;
+  gap: var(--density-stack);
+}
+
+/*
+ * A section is a band, not a card.
+ *
+ * Cards inside a card is the tonal layering this system spends on real
+ * elevation, and a panel of five nested boxes reads as five separate things
+ * rather than as one declaration. A rule between sections says "these are the
+ * parts of one box", which is what they are.
+ */
+.agent-panel-section + .agent-panel-section {
+  padding-top: var(--density-stack);
+  border-top: 1px solid var(--line);
+}
+
+.agent-panel-section > h3 {
+  margin: 0 0 var(--space-3);
+}
+
+/* The stated empty state and the stated card both sit flush inside their
+   section — `.empty` and `.notice` each bring their own margins for the
+   surfaces they were built for. */
+.agent-panel-empty {
+  margin: 0;
+  padding: var(--density-card-p);
+}
+
+.agent-panel-card {
+  margin: 0;
+  border-color: var(--line-strong);
+}
+
+/* ---------------------------------------------------------------------- *
+ * The author's own words
+ *
+ * Marked the way a quotation is marked, because that is what it is. The bar is
+ * `--line-strong` rather than the accent: the accent is DASH's own primary, and
+ * a note wearing it would be author copy in DASH's colour, which is the one
+ * thing the attribution argument cannot allow.
+ * ---------------------------------------------------------------------- */
+.agent-panel-note {
+  max-width: 46rem;
+  margin: 0;
+  padding-left: var(--space-3);
+  border-left: var(--active-bar) solid var(--line-strong);
+  color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------------- *
+ * An output inside the panel
+ *
+ * `.output-card` does the work; these are the two differences. The title is a
+ * value rather than a heading here (see `app/_components/panel.tsx` on heading
+ * levels), so it needs the size the heading was giving it.
+ * ---------------------------------------------------------------------- */
+.agent-panel-output-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 700;
+}
+
+.agent-panel .output-list {
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------------- *
+ * Metrics
+ *
+ * A responsive grid rather than `.facts`'s fixed two-up: eight metrics in two
+ * columns is a tall thin list at 1280px, and eight across is unreadable at
+ * 375px. `auto-fit` is the same answer `.card-grid` already gives.
+ *
+ * The attribution sits under every single value, quiet and always present. It
+ * is the stated/received split applied to a number, and a design that showed it
+ * only when it looked interesting would be a design deciding which of an
+ * agent's claims to attribute.
+ * ---------------------------------------------------------------------- */
+.agent-panel-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--density-gap);
+  margin: 0;
+}
+
+.agent-panel-metric {
+  min-width: 0;
+  padding: var(--density-card-p);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.agent-panel-metric dt {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.agent-panel-metric dd {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+}
+
+.agent-panel-metric-value {
+  font-size: var(--text-xl);
+  line-height: var(--leading-tight);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * "Not reported yet", at the size a sentence is rather than the size a number
+ * is. Found in a screenshot, not in a measurement: at the display step, an agent
+ * that had never run drew three metrics shouting their own emptiness in type
+ * twice the size of the one real value beside them. An absence is stated and
+ * quiet — the same treatment `.agent-panel-absent` gives an empty cell.
+ */
+.agent-panel-metric-absent {
+  color: var(--text-faint);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+}
+
+/* A provenance mark, not a heading, so it takes the caps treatment at the
+   smallest step and sits under the number it belongs to. */
+.agent-panel-attribution-mark {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+}
+
+/* ---------------------------------------------------------------------- *
+ * The one table in DASH
+ *
+ * MAR-491 removed every table in this product after measuring one at 1425px
+ * inside a 341px window. This is allowed to be a table because it is a
+ * different population — at most eight columns, each named by the author, of
+ * small declared values read across — and the 375px problem is answered by
+ * containment rather than by hoping it will not happen: the wrapper scrolls and
+ * the page does not.
+ *
+ * `contain: inline-size` is what makes that a guarantee rather than a hope. A
+ * horizontally scrolled container can otherwise let an absolutely positioned
+ * descendant escape it and drag the page's scroll width out with it, which is
+ * the failure the comment at the top of this file already records once.
+ * ---------------------------------------------------------------------- */
+.agent-panel-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  contain: inline-size;
+}
+
+.agent-panel-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+/* The concept's card header, applied to a header row: a tonal step up, a caps
+   label, and a 1px rule under it. */
+.agent-panel-table th {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.agent-panel-table td {
+  padding: var(--space-2) var(--space-3);
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.agent-panel-table tbody tr + tr td {
+  border-top: 1px solid var(--line);
+}
+
+/*
+ * A cell with nothing in it. Faint, because it is the absence of a value and
+ * not a value; never blank, because a blank cell and a cell a reader skipped
+ * look identical. Its accessible name is the words — see `lib/copy/panel.ts`.
+ */
+.agent-panel-absent {
+  color: var(--text-faint);
+}
+
+@media (max-width: 34rem) {
+  /* One metric per row on a phone. Nothing is hidden and nothing is added,
+     which is the density rule applied to a breakpoint. */
+  .agent-panel-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
