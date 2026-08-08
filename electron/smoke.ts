@@ -3488,8 +3488,59 @@ function exitAfterClosing(code: number): void {
     // worth printing and is not worth turning a passing run into a failure.
     console.error(`[smoke] closing the store failed: ${String(error)}`);
   }
-  // MAR-575 BEFORE-DEMO: fix temporarily reverted to reproduce the truncation.
-  app.exit(code);
+  flushOutputThenExit(code);
+}
+
+/**
+ * MAR-575: `app.exit` terminates immediately and does not wait for pending
+ * asynchronous writes to `stdout`/`stderr` to drain. On a TTY (a developer's
+ * PowerShell window) those writes are synchronous, so every `PASS`/`FAIL`
+ * line survives regardless of when `app.exit` fires. Under CI, both streams
+ * are real pipes and Node writes to them asynchronously; when the reader on
+ * the other end (GitHub Actions' own log capture) falls behind, Node queues
+ * the backlog in the writable stream's own buffer rather than dropping it —
+ * but `app.exit` discards that whole queue unconditionally, however large it
+ * has grown. That is why the captured log always stopped at the same proof
+ * (`6a`, immediately after the runner starts) in both a failing and a green
+ * run: not one write lost at the very end, but every write queued from
+ * whatever point the reader first fell behind.
+ *
+ * Checked against the alternative the issue raised before settling on this
+ * fix: the runner the smoke deliberately leaves running does *not* inherit
+ * this process's stdout. `electron/runner-process.ts` redirects it to
+ * `runner.log` on disk specifically to avoid an EPIPE once the parent exits
+ * — so the runner holding a handle open is not what is happening here.
+ *
+ * A stream's write callbacks fire in the same order the writes were issued,
+ * so writing one more empty chunk and waiting for *its* callback is enqueued
+ * behind everything already buffered — by the time it fires, every earlier
+ * `check()` line has actually reached the OS, no matter how large that
+ * backlog was. Both streams are drained, not just stdout, because
+ * `console.error` (the `closeDb` failure path above, and `run()`'s own
+ * rejection handler) writes to stderr, and CI's captured log interleaves
+ * both.
+ *
+ * The fallback timer exists so a pipe that never drains at all — a broken CI
+ * runner, a reader that stopped consuming — cannot hang a release gate
+ * forever. It is generous rather than tight: the failure this fixes is a
+ * slow reader taking real time to catch up on a real backlog, so a short
+ * timeout would just reproduce the same truncation under a different name.
+ * It is `unref`'d so it never itself keeps the process alive.
+ */
+function flushOutputThenExit(code: number): void {
+  let exited = false;
+  const doExit = (): void => {
+    if (exited) return;
+    exited = true;
+    app.exit(code);
+  };
+
+  const fallback = setTimeout(doExit, 15_000);
+  fallback.unref();
+
+  process.stdout.write("", () => {
+    process.stderr.write("", doExit);
+  });
 }
 
 void run().then(
