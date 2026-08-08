@@ -2,6 +2,10 @@ import type { ReactNode } from "react";
 
 import type { GroundingAnalysis } from "../../lib/analyze";
 import { describeDigestGaps, describeSourceFailure } from "../../lib/copy/recovery";
+/* A value import, and safe: `lib/copy/when.ts` has no imports at all, so it
+   reaches no Node builtin and drags nothing into the renderer bundle — the rule
+   `tests/client-bundle.test.ts` enforces over every component in `app/`. */
+import { plainMoment } from "../../lib/copy/when";
 import type { DigestArtifact, DraftArtifact } from "../../lib/contracts";
 
 /**
@@ -94,7 +98,7 @@ export function DigestBody({
               {item.summary === undefined ? null : <p className="wrap">{item.summary}</p>}
               <p className="muted">
                 {item.source_name ?? "Source not named"}
-                {item.published_at === undefined ? "" : ` · ${item.published_at}`}
+                {publishedSuffix(item.published_at)}
                 {uncited.has(item.headline) ? (
                   <>
                     {" · "}
@@ -120,6 +124,37 @@ export function DigestBody({
       <SourceList artifact={artifact} />
     </>
   );
+}
+
+/**
+ * When an item was published, in DASH's own words — or nothing at all.
+ *
+ * This line used to interpolate `item.published_at` directly, so a digest item
+ * read `Hacker News · 2026-08-05T09:00:00.000Z` on the guided path. MAR-533
+ * named that class of defect and built `lib/copy/when.ts` for it — "a person who
+ * has to read a machine's own spelling of something has been handed the
+ * machine's problem" — and this call site was missed, so the raw instant kept
+ * reaching three surfaces: the run detail page, the workspace Outputs area, and
+ * (since MAR-554) the declarative panel's `report` and `outputs` sections. One
+ * call site, because `SourceList` below renders no timestamp at all and
+ * `ArtifactSource.fetched_at` is not drawn anywhere.
+ *
+ * **A timestamp DASH cannot read produces no segment, rather than the input.**
+ * `lib/copy/when.ts` states that rule and it is the interesting half: echoing a
+ * malformed value back would put the exact string this exists to remove onto the
+ * screen, on the one path where nobody is watching. The separator goes with it —
+ * a dangling " · " would advertise a missing value that a reader can do nothing
+ * about, and the item's source name is a complete line on its own.
+ *
+ * The whole suffix rather than the moment alone, so the separator can never be
+ * rendered by one branch and the value by another.
+ */
+function publishedSuffix(publishedAt: string | undefined): string {
+  if (publishedAt === undefined) {
+    return "";
+  }
+  const moment = plainMoment(publishedAt);
+  return moment === null ? "" : ` · ${moment}`;
 }
 
 /**
