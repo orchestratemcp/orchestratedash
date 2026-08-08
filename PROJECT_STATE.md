@@ -3151,3 +3151,143 @@ where two lines join `readAgentFolderManifest` to `buildPanelView`, and
 `app/agents/detail/page.tsx` is where the region is placed. Both are outside
 this session's ownership, and neither is worth doing before a manifest declares
 a panel — which arrives with MAR-548.
+
+## The panel gets declared, and the workspace draws it (MAR-548, ADR 0008 slice 3's integration)
+
+**PR #88 merged as `9c7c72d`, and the sentence above is now history rather than
+a plan.** MAR-554's entry moves `planned → merged` with its commit, checked with
+`git merge-base --is-ancestor`; MAR-571's moves the same way at `0816f0c`. Both
+are the pre-merge-sentence correction seven predecessors in this file have each
+received from the session after them, and neither rewrites the prose its own
+session wrote.
+
+**What MAR-554 built had no caller and no author.** The renderer was complete,
+tested in both themes at three widths, and reachable from nothing: no page
+mounted it, and no manifest in the repository declared the block it renders. So
+its ceiling was `merged` by construction, and its own exit note named the two
+things that would lift it. This is both of them.
+
+### The wiring is two joins and a field
+
+`workspaceView` passes the **folder's** `agent.manifest.json` to
+`buildPanelView`, falling back to the row's `manifest_json`, and
+`app/agents/detail/page.tsx` renders the region. `panelDocument` is where ADR
+0008's authority rule finally has a caller: `lib/views/panel.ts` states it in
+prose and *cannot* state it in a type, because that module has to stay clear of
+`node:fs` to reach the renderer bundle, so the choice is made where the disk is
+already open.
+
+**A folder that is present and unreadable falls back to the row, and that is not
+the silent repair the ADR forbids.** `reconcileAgentFolders` has already
+recorded it as a `folder_unreadable` issue at startup and routed it through the
+same damage surface `readStore`'s unreadable rows use. The disagreement is
+surfaced by the thing that observed both documents, rather than guessed at again
+by a view builder holding one of them.
+
+The region sits **below** the permission receipt and the Outputs area. Those are
+DASH's record and DASH's controls; the panel is somebody else's box, and an
+author's `note` placed above them would occupy the part of the page a person has
+learned to read DASH's own voice in.
+
+### Two panels, five section types between them
+
+The **AI News Scout** — the manifest `agent-kit/scaffold.ts` generates, which is
+what *Try a sample agent* actually creates — declares `report(digest)`,
+`metrics`, and a `table` over the digest's items. Two choices on it are worth
+more than the JSON:
+
+- **Every metric is a `dash_fact`.** The scout emits no top-level numeric field,
+  so an `artifact_field` metric could only ever render absent while *looking*
+  like a number the agent had stood behind. The vocabulary offers both sources;
+  this manifest uses the one it can honour.
+- **`published_at` is declared `timestamp`, not `text`.** That is the author
+  telling DASH the value is a moment, which is the licence DASH needs to run it
+  through `plainMoment` rather than shipping the machine's spelling of it. The
+  same column typed `text` would be a legal panel drawing a legal string, and
+  nothing else would notice.
+
+The **Gmail meeting assistant** declares `note`, `report(draft)`, `outputs` and
+`metrics`. Its note says what the assistant does and **makes no safety claim**:
+"nothing is sent" is DASH's sentence, rendered by `DraftBody` outside the
+author's voice, and an author's note repeating it is precisely what the
+attribution rule exists to prevent.
+
+### The second query is not an optimisation
+
+`artifactRecordsForAgent` is new because a panel binds by **role across every
+run**, which the Outputs area beside it deliberately does not. A newest-first
+window alone has a hole: an agent that has written `PANEL_ARTIFACT_LIMIT` drafts
+since its last digest pushes that digest out, and a `report` bound to `digest`
+renders its stated empty state — the surface saying *nothing yet* about a record
+DASH is holding. That is a silent wrong answer, which is the failure this
+project keeps paying for. A second query takes the newest artifact of **every
+kind** whatever its position and closes it by construction.
+
+The limit is 20 because that is `max_items`' own maximum in the schema. Setting
+DASH's fetch bound to exactly the largest bound the vocabulary can request means
+a truncation a person sees is always the *author's* cap biting, never DASH's, so
+`describeOutputsCap`'s sentence can never be quietly wrong about whose choice
+hid something.
+
+### Both load-bearing tests were demonstrated failing first
+
+A gate nobody has seen fail is not known to work. Pointing `panelDocument` at
+the row turns the folder-wins test red — expected `Edited on disk`, received the
+row's title — and it is the only assertion in the file that could catch it,
+because both documents are present, both readable, and both declare a legal
+panel. Dropping the second query turns the buried-role test red: twenty drafts,
+no digest. Both pass on the code as committed.
+
+### The installed witness MAR-554 could not write
+
+`electron/smoke.ts` gains **6n** and **6o**, on the workspace route of the agent
+proof 6 has just created through the real handoff. 6n asserts the author's
+title, three drawn sections, and a table with rows — and the rows exist only
+because the run above really produced a digest and the role really resolved
+against it. 6o measures ADR 0008's strongest claim where it can be refused:
+**zero controls inside the region, and zero raw instants.** MAR-554's 32
+screenshots were the panel's markup mounted into `<main>` by a harness, and that
+file's header says at length that they are not evidence the workspace renders a
+panel. These are.
+
+### The trim is a finding, not a change
+
+MAR-548 asks to stop shipping the rest of the cast, and **there is no cast being
+shipped.** `examples/` is in no package, nothing seeds a fleet, no surface offers
+those manifests, and the only sample a user can meet is the one the menu
+scaffolds — one agent, since MAR-457 replaced the folder digest rather than
+shipping beside it. The four non-sample manifests in `examples/` are fixtures
+with a directory that flatters them, and `tests/panel-spec.test.ts` now records
+that where a reader will meet it.
+
+Moving them into `tests/fixtures/` was the alternative and was declined on a
+live collision: **MAR-569 is dirty in its own worktree editing
+`contracts/agent.manifest.v2.schema.json`**, and connection-requirement work
+will land on exactly those connection-declaring examples. What did change is the
+half of MAR-548 that was a product change rather than a directory move: the
+sample set is two agents and both declare a panel.
+
+### Evidence, and the gap that is left
+
+`state:check` **valid** (19 pre-existing drift warnings, none from this branch),
+`typecheck` clean, `brand:check` green, full vitest from PowerShell **104 files
+/ 2056 passed / 8 skipped / 0 failed**, 12 of them new, and `build:renderer`
+green — which is the check that the new client import of
+`app/_components/panel` did not drag a Node builtin into the browser bundle.
+
+**`verify:shell` was NOT run, and neither was the `electron/capture.ts`
+re-run.** A live DASH held the single-instance lock for this entire session,
+`AGENTS.md` forbids force-killing it, and closing another session's window is
+not this session's call — the same judgment MAR-441, MAR-421, MAR-434 and
+MAR-554 each recorded in turn. Both remaining evidence items need the same
+thing, so **`proven` is exactly one attended run away**: `pnpm verify` from
+PowerShell with DASH closed, then the capture harness. Until then CI's Windows
+`shell-smoke` gate on the PR is what executes 6n and 6o.
+
+One prompt premise was wrong and is recorded rather than quietly worked around:
+**orchestratekit-mcp holds no per-agent panel fixtures.** At `01e3f8a` the only
+panel-shaped things in that repository are the pinned DASH schema and the
+`.strict()` boundary tests in `tests/tools/exportBuildBrief.test.ts`, so both
+panels were designed against the schema. `$defs.panel` was diffed against that
+pinned fixture and is byte-identical, which is what makes "no schema edit" a
+checked claim rather than an intention.
