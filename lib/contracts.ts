@@ -339,6 +339,12 @@ export interface AgentManifestV2 extends AgentManifestBody {
     task_inputs?: TaskInputRole[];
     /** ADR 0008's declarative panel. Omitted when undeclared — never an empty object. */
     panel?: PanelSpec;
+    /**
+     * MAR-569's connection needs. Omitted when undeclared — never an empty
+     * object, and never read as "this agent needs nothing connected":
+     * `connections` above is still the inventory.
+     */
+    connection_requirements?: ConnectionRequirementsSpec;
     [key: string]: unknown;
   };
 }
@@ -452,6 +458,58 @@ export function agentPanel(manifest: AnyAgentManifest): PanelSpec | null {
     return null;
   }
   return declared as PanelSpec;
+}
+
+/**
+ * The connection-requirements types live in `lib/connection-spec.ts` and are
+ * re-exported here for the reason the panel types are: that module has **no
+ * imports at all**, because the Connections surface is a client component and
+ * this module reads schema files with `node:fs`. The closed vocabulary is a
+ * value, so a value import from here would drag Ajv and the filesystem into a
+ * browser chunk. The pure module owns them and this one re-exports.
+ */
+export type {
+  ConnectionRequirementsSpec,
+  ConnectionRequirementsResolution,
+  ConnectionRequirementV1,
+  ConnectorKindV1,
+  ConnectionSpecError,
+  ConnectionSpecErrorCode,
+  ConnectionRequirementsValidation,
+} from "./connection-spec";
+
+import type { ConnectionRequirementsSpec } from "./connection-spec";
+
+/**
+ * What this agent declared it needs connected, or null (MAR-569).
+ *
+ * The same shape and the same three-way honesty as `agentPanel`: null for a v1
+ * manifest, null for a v2 manifest with no block, and null for a block that is
+ * not an object.
+ *
+ * **Null means the author declared nothing here — never that this agent needs
+ * nothing connected.** That distinction is sharper than the panel's, because the
+ * wrong reading is actively dangerous: every agent exported before this block
+ * existed returns null, and most of them reach Gmail. `agent_dom.connections` is
+ * the inventory and stays authoritative for what an agent touches; this block
+ * only says what the *next action* is.
+ *
+ * This returns the declared document. `resolveConnectionRequirements` in
+ * `lib/connection-spec.ts` is what applies the version rules, and
+ * `resolveRequirement` in `lib/connection-requirements.ts` is what resolves one
+ * against the store.
+ */
+export function agentConnectionRequirements(
+  manifest: AnyAgentManifest,
+): ConnectionRequirementsSpec | null {
+  if (!isManifestV2(manifest)) {
+    return null;
+  }
+  const declared = manifest.agent_dom["connection_requirements"];
+  if (typeof declared !== "object" || declared === null || Array.isArray(declared)) {
+    return null;
+  }
+  return declared as ConnectionRequirementsSpec;
 }
 
 /**

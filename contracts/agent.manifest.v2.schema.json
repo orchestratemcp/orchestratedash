@@ -119,6 +119,9 @@
         "panel": {
           "$ref": "#/$defs/panel"
         },
+        "connection_requirements": {
+          "$ref": "#/$defs/connectionRequirements"
+        },
         "control": {
           "type": "object",
           "required": ["supported", "command_version", "commands"],
@@ -376,6 +379,100 @@
         "type": { "type": "string", "minLength": 1, "maxLength": 64 }
       }
     },
+    "connectionRequirements": {
+      "type": "object",
+      "description": "What this agent needs connected, and which flow DASH launches to connect it (MAR-569).\n\n**Read the name carefully: this is not `$defs.connectionRequirement`.** That one is the per-credential inventory behind `agent_dom.connections` — who holds the secret, which fields exist, how a test is run. This block is the shorter, DASH-first question a person actually arrives with: *what still needs connecting, and what happens when I press the button?* The two describe the same connections from opposite ends, and a v1 requirement names its `connection_id` so DASH can check that they agree rather than trusting that they do.\n\nThe standing correction ADR 0008 makes about panels holds here word for word: **what travels is a declaration, not code.** The agent says what it needs; DASH's own trusted flows do the connecting. `connector_kind` is a closed enum of flows DASH has actually built, because a kind DASH cannot launch is a lie on a button.\n\nOptional, and **omitted when undeclared — never an empty object**, the rule `task_inputs` and `panel` both shipped with. Absence means the author declared nothing here; it must never be read as \"this agent needs nothing connected\" — `agent_dom.connections` is still the inventory, and every agent built before this block existed has one.",
+      "required": ["requirements_version", "requirements"],
+      "properties": {
+        "requirements_version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Which vocabulary the requirements are written in. Version 1 is the closed two-flow set below. See the if/then/else: a version DASH knows is checked strictly, a version it does not know is accepted structurally and drawn as one stated card. A new connector kind arrives by bumping this, never by widening version 1's enum in place."
+        },
+        "requirements": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "description": "In the order a person should work through them. Bounded here rather than defended against in the surface, the same argument `panel.sections` makes: a spec that cannot describe an unbounded list is better than a page that has to survive one."
+        }
+      },
+      "if": { "properties": { "requirements_version": { "const": 1 } } },
+      "then": {
+        "properties": {
+          "requirements": { "type": "array", "items": { "$ref": "#/$defs/connectionRequirementV1" } }
+        }
+      },
+      "else": {
+        "properties": {
+          "requirements": { "type": "array", "items": { "$ref": "#/$defs/connectionRequirementOpaque" } }
+        }
+      }
+    },
+    "connectionRequirementV1": {
+      "type": "object",
+      "description": "One thing that needs connecting, in a version 1 declaration (MAR-569).\n\n`connector_kind` is closed on purpose and a typo'd kind is refused at import, loudly, rather than dropped at render — the same refusal `$defs.panelSectionV1` makes, for the same reason. The failure it prevents is worse here than on a panel: a requirement DASH cannot place is a line on the Connections page with a Connect button that fires nothing, which teaches a person that DASH's buttons are decorative.\n\nEvery member below is either plain language a person reads or an identifier DASH resolves against something it already holds. **Nothing here is a URL, a path, a host, or a credential**, and the `propertyNames` guard repeats the manifest-wide rule that a connection block describes requirements and never carries a value.",
+      "propertyNames": {
+        "not": { "enum": ["value", "secret", "password", "token", "access_token", "refresh_token", "client_secret", "api_key", "credential_value"] }
+      },
+      "required": ["id", "name", "connector_kind", "connection_id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9_]+$",
+          "description": "Technical vocabulary, so a requirement can be addressed by the surface and the emitter. Travels; never rendered — `lib/copy/identifiers.ts`'s rule."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "What the user sees on the line: \"Your Gmail\", \"A Notion workspace\". Plain language, the author's words, and the only member of this object a person reads. Held to lib/copy/identifiers.ts, which is what stops it being a provider slug in disguise."
+        },
+        "connector_kind": {
+          "enum": ["google_oauth_broker", "api_key"],
+          "description": "Which flow DASH launches. Closed to the two DASH has actually built: `google_oauth_broker` is MAR-458's brokered sign-in, `api_key` is DASH-custodied secret entry through the credential prompt.\n\n**Two, not three, and the missing one is the point.** MAR-569 as filed named a third kind, `mcp_server`, attributed to MAR-498's wizard. That wizard connects an SSH deploy host — an address, a username, a key name, a pinned fingerprint — so an agent can be *put on a server*. It cannot connect a Notion workspace, and DASH has no MCP-server connect flow anywhere: `remote_mcp_server` exists only as a `TokenCustodian` label whose own docblock records that `dash_vault` is the sole reachable value. Shipping the kind would have produced exactly what this enum exists to prevent, and Henrik's ruling on 2026-08-08 was to drop it.\n\nA real MCP-server flow arrives the way any fourth kind does: a version bump, structurally accepted by the `else` branch above and drawn as one stated \"DASH cannot connect this yet\" line — never a dead Connect button. Widening this enum in place is widening what a manifest can make DASH offer to do, which is why it is a by-value pin in a reviewed commit."
+        },
+        "connection_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Which entry of `agent_dom.connections` this requirement is about, by its `id`. Required, because both v1 kinds act on a declared connection.\n\nThat is not bookkeeping: it is what makes the requirement checkable. DASH resolves the standing of each named operation through the existing three-party intersection on that connection, and the Connect button acts on that connection's field. A requirement that named no connection could only be drawn as a sentence with a dead button beside it — and an id naming a connection this manifest never declared is a disagreement between two of its own blocks, which DASH surfaces rather than repairs."
+        },
+        "operations": {
+          "type": "array",
+          "maxItems": 12,
+          "uniqueItems": true,
+          "description": "The operations this requirement needs, by the id `lib/broker/operations.ts` gives them.\n\nThese feed the requested-vs-unrequested intersection the capability cards already draw, so a requirement resolves to the same four standings a capability does. Absent means the requirement names no operations of its own and DASH reads the whole connection's requested set — the honest default, since `agent_dom.connections` already declared the scopes.\n\nAn operation named here that the connection never declared is a **disagreement between two blocks of one manifest**, and DASH surfaces it rather than rounding it into \"not connected\": the fix is a re-export, not a sign-in.",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)*$"
+          }
+        },
+        "optional": {
+          "type": "boolean",
+          "description": "Whether this agent can run without it. Absent means required.\n\nThe reading that matters is the false one: an agent that can run degraded says so here, and one that cannot stays silent. A surface may then tell the truth a checklist could not — that three of these four are what the agent actually needs, and the fourth adds something."
+        },
+        "why": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400,
+          "description": "What the agent does with it, in the author's words and with the same standing as the manifest's `goal` — the author's claim, rendered as the author's claim. Optional, because an author with nothing to add should say nothing rather than pad the line."
+        }
+      }
+    },
+    "connectionRequirementOpaque": {
+      "type": "object",
+      "description": "A requirement from a declaration version DASH does not know (MAR-569).\n\nChecked for structure only, so the document is accepted rather than rejected — the contract's additive-versioning rule. DASH draws such a declaration as **one stated card** saying the author declared it in a newer format, never line by line with buttons: a Connect button DASH resolved by guessing is worse than no button, and it is the same argument `$defs.panelSectionOpaque` makes about a half-drawn panel.\n\n`connector_kind` is an open string here precisely because the closed enum belongs to version 1 and must not rot into leniency to accommodate a version that has not been designed yet.",
+      "required": ["id", "name", "connector_kind"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "connector_kind": { "type": "string", "minLength": 1, "maxLength": 64 }
+      }
+    },
     "roleName": {
       "type": "string",
       "minLength": 1,
@@ -428,6 +525,7 @@
     },
     "connectionRequirement": {
       "type": "object",
+      "description": "One connection this agent declares, as an inventory entry: who holds the credential, which fields it has, and how a test is run against it. This is what `agent_dom.connections` is made of, and it is the source the permission cards and the vault both read.\n\n**Not to be confused with `$defs.connectionRequirements` (plural)**, added by MAR-569, which is the shorter DASH-first declaration of *what still needs connecting and which flow connects it*. A v1 entry there names one of these by `id`. Same connections, opposite ends: this one is the record, that one is the next action.",
       "propertyNames": {
         "not": { "enum": ["value", "secret", "password", "token", "access_token", "refresh_token", "client_secret", "api_key", "credential_value"] }
       },
