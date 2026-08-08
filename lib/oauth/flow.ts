@@ -12,8 +12,12 @@
  * Not for mockability as an end in itself. The behaviour worth testing is the
  * *classification* — that Google's `400 {"error":"invalid_grant"}` becomes
  * `revoked` and not a generic failure, which is a MAR-446 acceptance criterion
- * in as many words. Pinning that needs a server that returns exactly that, and
- * a real one cannot be asked to.
+ * in as many words; and, since MAR-542, that `{"error":"invalid_client"}`
+ * becomes `client_misconfigured` rather than the same report-this sentence
+ * every other malformed request gets. Pinning either needs a server that
+ * returns exactly that body, and a real one cannot be asked to — nor can
+ * `electron/smoke.ts`'s loopback fixture, whose `/token` route answers every
+ * request with `200` and cannot produce either shape (MAR-508).
  *
  * ## Nothing here logs
  *
@@ -43,6 +47,16 @@ export type OAuthFailureCode =
   | "network"
   /** The provider answered, and said no for some other reason. */
   | "provider_refused"
+  /**
+   * The provider rejected DASH's own client id or secret — RFC 6749 §5.2's
+   * `invalid_client` (MAR-542). Distinct from `provider_refused` because the
+   * fix is concrete and belongs to whoever configured DASH: the client secret
+   * is wrong or was never set. Every other malformed-request code stays under
+   * `provider_refused`, because none of the rest names the client
+   * credentials specifically the way `invalid_client` does — see the
+   * `postForm` note below.
+   */
+  | "client_misconfigured"
   /** The provider answered with something that was not a token response. */
   | "malformed_response";
 
@@ -176,6 +190,26 @@ async function postForm(
     // generic.
     if (parsed.error === "invalid_grant") {
       throw new OAuthError("revoked", "The sign-in is no longer valid.");
+    }
+    // MAR-542: the second error code with a specific meaning, and the one this
+    // used to fall through with everything else. RFC 6749 §5.2 defines
+    // `invalid_client` as client authentication failing — an unknown client,
+    // none included, or an unsupported method — which for this flow means
+    // exactly one thing: the client secret DASH sent does not match what
+    // Google has on file, or DASH sent none. That is not a report-this fault
+    // and not the account's — it is whoever configured DASH's own client
+    // secret, and the recovery in `lib/copy/recovery.ts` says so by name.
+    // `invalid_request`, `unauthorized_client` and `unsupported_grant_type`
+    // stay under `provider_refused` below: none of them names the client
+    // credentials the way `invalid_client` does, and RFC 6749 §5.2 lets
+    // `invalid_request` cover a missing parameter, a duplicated one, or any
+    // other malformed field, so narrowing it here would be a guess dressed as
+    // a diagnosis.
+    if (parsed.error === "invalid_client") {
+      throw new OAuthError(
+        "client_misconfigured",
+        "The sign-in service rejected DASH's own client credentials.",
+      );
     }
     // Deliberately does not include `parsed.error_description`. It is
     // provider-written text landing in a DASH surface, and the codes above are

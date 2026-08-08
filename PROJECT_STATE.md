@@ -2591,6 +2591,42 @@ because Henrik agreed to DASH being closed for it; the app was closed with
 the force-kill AGENTS.md forbids. 66 images and `cast-witness.json` in
 `qa-screenshots-mar-501-503/`.
 
+## The sidebar, decided (MAR-546)
+
+**Henrik overrode the reskin's own call.** MAR-528 kept the horizontal nav,
+citing MAR-440; Henrik wants the concept's fixed left sidebar, and MAR-546 is
+that decision executed — branch `000henrik/mar-546-sidebar`, cut from master
+after PR #81 merged so the sidebar is drawn in the bundled type pairing.
+
+The 240px left track `--sidebar-width` has been waiting for since MAR-420:
+identity block without the fiction (wordmark plus the adopted concept's own
+name, `aria-hidden` because the title bar already says DASH), six pixel glyphs
+drawn as `currentColor` SVG rects on a 12×12 grid rather than vendored as
+PNGs — the O's are audited artwork, these are glyphs that must survive the
+active block's `--accent-contrast` — and the density control at the bottom.
+
+**Below 900px it collapses to an icon rail, not a drawer.** A drawer needs a
+scrim and nothing in DASH may paint over an approval card; a drawer hides
+every destination behind a press, which was the horizontal nav's whole
+narrow-width failure; the rail costs 47px of a 375px window. MAR-491 is not
+regressed, measured rather than asserted: at 375 `main` keeps 328px,
+`page_overflows` false, `widest_scroller` null, the density toggle fully
+visible — for the first time at that width since MAR-440 shipped. The labels
+hide with the visually-hidden recipe, never `display: none`, so all six
+accessible names survive the collapse; a test pins that distinction.
+
+The grid stays honest when bands are absent: the sidebar column is `auto`, so
+on a dialog route the empty track collapses to zero and MAR-534's gate now
+removes six links and a rail from a password prompt. The chrome and the fleet
+strip span both columns — the drag strip and the bottom edge are facts about
+the window, not about a column of it.
+
+Evidence: typecheck clean, brand:check green over 41 files, 98 test files /
+1837 passed / 8 skipped from PowerShell (12 new in `tests/sidebar.test.tsx`),
+and the full capture matrix over `dash-app://ui/` in `qa-screenshots-mar546/`:
+66 images, 13/13 cast witnesses. MAR-440's note is revisited in the same PR,
+as the issue asks.
+
 ## The type pairing arrives (MAR-535, decided again and executed)
 
 **The dispute the coordinator recorded at the #77 merge is resolved: bundle.**
@@ -2715,3 +2751,52 @@ them new. `pnpm verify:shell` was **not** run from this worktree — a parallel
 visual session may have DASH open and the smoke hangs silently if it is — and
 CI runs verify plus the Windows shell smoke on the PR, which is the gate.
 Nothing installed changes in this slice, so `merged` is its ceiling.
+
+## The config error stops reading as DASH's own bug (MAR-542)
+
+A wrong or missing Google client secret reached the user as `DASH's Google
+sign-in request was rejected... this needs reporting` — MAR-508 made the
+token exchange send the secret correctly, but never taught `postForm` in
+`lib/oauth/flow.ts` to say anything different when Google refused it.
+`invalid_client`, RFC 6749 §5.2's own name for client authentication
+failing, was collapsed into the same `provider_refused` bucket as every
+other malformed-request code, actor `dash`, "report this". A config error a
+person could fix in a minute was dressed as a defect worth filing.
+
+**The fix is one new code, drawn narrowly.** `client_misconfigured` fires
+only when `parsed.error === "invalid_client"`. `invalid_request` (which
+covers a missing parameter, a duplicate, or any other malformed field —
+including MAR-508's own `client_secret is missing.` shape),
+`unauthorized_client` and `unsupported_grant_type` all stay under
+`provider_refused`: none of them names the client credentials specifically
+the way `invalid_client` does, and narrowing them too would be a guess
+dressed as a diagnosis. `describeAuthorizationFailure` in
+`lib/copy/recovery.ts` gained the matching case — headline `DASH's Google
+client secret is wrong or missing.`, meaning says plainly the account was
+never reached, actor `user` because the fix is concrete. The next action
+names *what* to fix — the Google client secret DASH is configured with —
+without the literal `DASH_GOOGLE_CLIENT_SECRET`: MAR-423's rule that no raw
+identifier reaches a guided-path surface applies here as much as anywhere
+else, and `expectPlainLanguage` enforces it on the new copy rather than
+trusting a read-through.
+
+**The test drives Google's real error shape, not the loopback fixture's.**
+`electron/smoke.ts`'s `/token` route answers every POST with `200`
+unconditionally and structurally cannot produce an `invalid_client` body —
+the same blindness MAR-508 found the fixture had for a missing
+`client_secret`. `tests/oauth-flow.test.ts` instead builds a fetch
+returning `{error: "invalid_client", error_description: "Unauthorized"}`
+and Google's `"The OAuth client was not found."` variant, against both
+`exchangeAuthorizationCode` and `refreshAccessToken`. A neighbouring case
+pins that `invalid_request` and `unauthorized_client` still classify as
+`provider_refused`, guarding the narrowness against a later change
+reclassifying too much.
+
+Only `lib/oauth/flow.ts`, `lib/copy/recovery.ts` and
+`tests/oauth-flow.test.ts` changed — no layout or visual file, respecting
+the running visual session's ownership of look-and-feel. Evidence:
+typecheck clean; full vitest from PowerShell (Git Bash's `whoami` fakes
+channel-secret-adjacent failures on this machine, unrelated to this change)
+98 files / 1827 passed / 8 skipped / 0 failed; `state:check` valid;
+`brand:check` green, unaffected. `verify:shell` not run locally — CI's
+shell-smoke gate is the check for this branch.
