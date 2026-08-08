@@ -49,6 +49,7 @@ const [{ writeHandoff }, { planScaffold }, { createAgentChannels }, { IPC_ORIGIN
     import("../lib/agent-dom/ipc-fetch"),
   ]);
 const { closeDb } = await import("../lib/db");
+const { agentFolderCodePath } = await import("../lib/agent-folders");
 const { handoffUrl } = await import("../lib/handoff");
 const { openHandoff } = await import("../lib/handoff-flow");
 const { readRegistration } = await import("../lib/registration");
@@ -222,8 +223,8 @@ describe("runner-hosted Agent Kit telemetry", () => {
       dataDir: dashDataDir,
       now: () => new Date(),
       confirm: async () => true,
-      importManifest: (manifest) => {
-        const result = importManifest(manifest);
+      importManifest: (manifest, options) => {
+        const result = importManifest(manifest, options);
         return result.ok ? { ok: true } : { ok: false, errors: result.errors };
       },
       forgetAgent,
@@ -297,7 +298,9 @@ describe("runner-hosted Agent Kit telemetry", () => {
         compliant: true,
       },
     });
-    expect(existsSync(path.join(projectDir, "runs", "events.jsonl"))).toBe(true);
+    expect(
+      existsSync(path.join(agentFolderCodePath(dashDataDir, "folder-digest"), "runs", "events.jsonl")),
+    ).toBe(true);
 
     // A mixed batch from a second real child proves one malformed candidate is
     // recorded as a rejection without losing its valid neighbour or stopping

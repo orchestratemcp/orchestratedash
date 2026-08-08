@@ -2856,3 +2856,70 @@ channel-secret-adjacent failures on this machine, unrelated to this change)
 98 files / 1827 passed / 8 skipped / 0 failed; `state:check` valid;
 `brand:check` green, unaffected. `verify:shell` not run locally — CI's
 shell-smoke gate is the check for this branch.
+
+## An agent is now a folder (MAR-553, ADR 0008 slice 2)
+
+ADR 0008's second implementation slice is on PR
+[#87](https://github.com/orchestratemcp/orchestratedash/pull/87), branch
+`000henrik/mar-553-folder-store`, open and unmerged. A newly imported agent is
+now a DASH-owned folder at `{userData}/agents/{name}/`: its exact
+`agent.manifest.json`, a relative `registration.json`, opaque `code/`, and
+opaque `assets/`. The SQLite `agents.manifest_json` column deliberately remains.
+It is an index and a last-readable fallback, which means `readStore`, every
+existing view, and the row-level damage tolerance keep their shapes.
+
+**Disagreement is reconciled and still reported.** On startup, a readable
+folder wins and its manifest is projected into the row, but the discovering
+session also receives `index_drift` or `missing_index` in
+`unreadable.agent_folders`; projection never turns the observation into silent
+agreement. If the folder is missing or unreadable, DASH serves the last readable
+row so one damaged folder cannot take down the Agents page, and surfaces
+`folder_missing` or `folder_unreadable`. A later clean restart has no stale
+damage once the stores really agree. `describeStoreDamage` says both halves:
+the folder is authoritative, and the index was used only where the folder could
+not be read.
+
+**Import commits the authority first.** The manifest, registration and declared
+files are written into a bounded staging folder, fsynced, and swapped into
+place before the exact manifest bytes enter SQLite. Every agent name and every
+file-path segment passes `runner/path-guard.ts`'s `inspectComponent`, and the
+joined path is independently checked for containment under that agent folder.
+The `dash://` handoff carries a declared `{path, contents}[]` set only after the
+person sees that DASH is about to take a copy. Agent-kit declares exactly its
+seven scaffold files; the live registration points to the acquired manifest and
+`code/` directory. Repeated handoffs compare the stored bytes as well as the
+digest, so a locally changed acquired copy is repaired after consent rather
+than blessed by stale metadata. Changing the author's project after import can
+no longer change the code DASH runs.
+
+**Migration tells the truth about what DASH has.** DB migration 10 is the
+function-form, avatar-backfill-shaped migration the ADR specifies. It
+materialises a manifest-only folder for each readable, safe row and copies no
+code from an author's project and changes no legacy runner registration.
+Unsafe directory names remain supported row-only agents and are reported as
+skipped. Migrated agents therefore keep running from their old registration,
+while `inspectAgentFolderStanding` reports `manifest_only`; no deploy producer
+may pretend that means a build exists. The refusal already exported for slice 5
+is `MANIFEST_ONLY_DEPLOY_REFUSAL`: this agent's build lives outside DASH;
+re-import it to put a copy in DASH's keeping.
+
+**The two consumers now have exact seams.** MAR-556's bundle producer can call
+`inspectAgentFolderStanding` and, only for `complete`, consume
+`agentFolderManifestPath`, `agentFolderRegistrationPath`,
+`agentFolderCodePath`, and `agentFolderAssetsPath`; for `manifest_only` it can
+render `MANIFEST_ONLY_DEPLOY_REFUSAL`. It needs neither the SQLite row as source
+nor an author's project directory. LAB's workbench evaluation can continue to
+consume the unchanged `readStore()` projection, use
+`unreadable.agent_folders` through `describeStoreDamage` as disagreement
+evidence, and evaluate acquired agent material from a `complete` folder's
+`code/` and `assets/`, taking the folder manifest as identity. Neither consumer
+has to invent reconciliation policy.
+
+Evidence from PowerShell: `pnpm verify` passed — project state valid, typecheck
+and brand check green, **102 test files / 1956 passed / 8 skipped / 0 failed**,
+renderer build green, and every installed-shell proof passed. The shell proof
+materialised a manifest-only folder without acquiring its source code, showed
+that migrated standing still runs, imported a folder-carrying handoff, proved
+that changing the original source cannot change stored code, and produced the
+sample's reports from that stored `code/`. No renderer, panel schema, MCP
+emitter, or MAR-556 bundle work is part of this slice.

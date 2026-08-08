@@ -78,7 +78,13 @@ import {
   OAUTH_CREDENTIAL_VERSION,
   serializeOAuthCredential,
 } from "../lib/oauth/credential";
-import { closeDb, dataDir } from "../lib/db";
+import { closeDb, dataDir, db, materializeAgentFoldersFromRows } from "../lib/db";
+import {
+  agentFolderCodePath,
+  agentFolderManifestPath,
+  agentFolderPath,
+  inspectAgentFolderStanding,
+} from "../lib/agent-folders";
 import {
   FIRST_PAINT_BUDGET_MS,
   FIRST_PAINT_PROBE,
@@ -1122,7 +1128,7 @@ if (recorded !== null) {
     },
   );
 
-  /* -- Proof 6: existing sample -> handoff -> runner -> Runs ------------ */
+  /* -- Proof 6: migrated sample -> folder handoff -> runner -> Runs ------ */
 
   const templates = readTemplateSources();
   check("6a. the shipped sample templates can be read", templates.ok, templates.ok ? "present" : templates);
@@ -1136,7 +1142,11 @@ if (recorded !== null) {
       // already owned by this installation inside the temporary parent.
       for (let suffix = 1; suffix < 1_000; suffix += 1) {
         const candidate = suffix === 1 ? SAMPLE_AGENT_ID : `${SAMPLE_AGENT_ID}-${String(suffix)}`;
-        if (readRegistration(dataDir, candidate) === null) break;
+        if (
+          readRegistration(dataDir, candidate) === null &&
+          readAgentManifest(candidate) === null &&
+          !existsSync(agentFolderPath(dataDir, candidate))
+        ) break;
         mkdirSync(path.join(parentDir, candidate), { recursive: true });
       }
 
@@ -1181,6 +1191,85 @@ if (recorded !== null) {
         };
         let observedPending = false;
         const ports = handoffPorts(dataDir, handle);
+
+        /*
+         * The upgrade standing first: a full row and the existing registration
+         * still point at the author project. The function-form migration may
+         * materialise only the manifest. It must neither move the registration
+         * nor acquire the project code, and that standing must still start.
+         */
+        const manifestFile = created.value.files.find(
+          (file) => file.path === "agent.manifest.json",
+        );
+        const manifestJson = manifestFile?.contents ?? "";
+        const parsedManifest = JSON.parse(manifestJson) as { manifest_version: number };
+        db()
+          .prepare(
+            "INSERT INTO agents (name, manifest_version, manifest_json, imported_at, avatar) " +
+              "VALUES (?, ?, ?, ?, ?)",
+          )
+          .run(
+            agentId,
+            parsedManifest.manifest_version,
+            manifestJson,
+            new Date().toISOString(),
+            null,
+          );
+        writeRegistration(dataDir, {
+          registration: {
+            agent_id: agentId,
+            manifest_path: created.value.handoff.manifest_path,
+            command: created.value.handoff.command,
+            args: created.value.handoff.args,
+            cwd: created.value.directory,
+            env: created.value.handoff.env,
+          },
+          manifestJson,
+          ownership: {
+            owner: "dash_handoff",
+            handoff_id: "smoke-pre-folder-standing",
+            source_project: created.value.directory,
+            display_name: created.value.handoff.display_name,
+            summary: created.value.handoff.summary,
+            registered_at: new Date().toISOString(),
+          },
+        });
+        const migration = materializeAgentFoldersFromRows(db());
+        const migratedStanding = inspectAgentFolderStanding(dataDir, agentId);
+        const migratedRegistration = readRegistration(dataDir, agentId);
+        check(
+          "6b-m1. migration creates only a manifest and leaves the existing registration in place",
+          migration.materialized_agents.includes(agentId) &&
+            migratedStanding.kind === "manifest_only" &&
+            migratedRegistration?.cwd === created.value.directory &&
+            !existsSync(agentFolderCodePath(dataDir, agentId)),
+          { migration, migratedStanding, migratedRegistration },
+        );
+
+        const migratedReload = await ports.runner?.reload();
+        const migratedStart = await ports.runner?.start(agentId);
+        const migratedTask = await waitForValue(async () => {
+          const view = (await window.webContents.executeJavaScript(
+            `window.dashData.workspace(${JSON.stringify(agentId)})`,
+          )) as {
+            data?: { snapshot?: { tasks?: Array<{ id?: string; status?: string }> } | null };
+          };
+          return view.data?.snapshot?.tasks?.some(
+            (task) => task.id === "waiting-to-be-run" && task.status === "pending",
+          )
+            ? "waiting"
+            : null;
+        }, "the manifest-only migrated sample to publish its waiting task");
+        check(
+          "6b-m2. the sample still runs from its migrated standing",
+          migratedReload?.ok === true && migratedStart?.ok === true && migratedTask === "waiting",
+          { migratedReload, migratedStart, migratedTask },
+        );
+        const migratedStop = await ports.runner?.stop(agentId);
+        check("6b-m3. the migrated sample stops cleanly before re-import", migratedStop?.ok === true, migratedStop);
+        removeRegistration(dataDir, agentId);
+        forgetAgent(agentId);
+
         const report = await openHandoff(created.value.url, {
           ...ports,
           confirm: async () => {
@@ -1193,6 +1282,23 @@ if (recorded !== null) {
           "6c. consent sees pending first, then registers and starts the sample",
           observedPending && report.ok && report.running === true,
           { observedPending, report },
+        );
+        const acquiredStanding = inspectAgentFolderStanding(dataDir, agentId);
+        const acquiredRegistration = readRegistration(dataDir, agentId);
+        const acquiredSources = path.join(agentFolderCodePath(dataDir, agentId), SOURCES_FILE_NAME);
+        const acquiredSourcesBefore = readFileSync(acquiredSources, "utf8");
+        writeFileSync(
+          path.join(created.value.directory, SOURCES_FILE_NAME),
+          `${JSON.stringify({ sources: [] }, null, 2)}\n`,
+          "utf8",
+        );
+        check(
+          "6c-f. the folder-carrying handoff runs DASH's copy, not the author's project",
+          acquiredStanding.kind === "complete" &&
+            acquiredRegistration?.manifest_path === agentFolderManifestPath(dataDir, agentId) &&
+            acquiredRegistration.cwd === agentFolderCodePath(dataDir, agentId) &&
+            readFileSync(acquiredSources, "utf8") === acquiredSourcesBefore,
+          { acquiredStanding, acquiredRegistration },
         );
 
         /*
@@ -1329,7 +1435,7 @@ if (recorded !== null) {
            * product does not have.
            */
           writeFileSync(
-            path.join(created.value.directory, SOURCES_FILE_NAME),
+            path.join(agentFolderCodePath(dataDir, agentId), SOURCES_FILE_NAME),
             JSON.stringify(
               [
                 { name: "Local RSS", url: `${feedOrigin}/rss`, format: "rss" },
@@ -1386,7 +1492,7 @@ if (recorded !== null) {
           // The agent's half first: its own artifact on its own disk. Reaching
           // this line means the run really ran, so a later failure is about DASH
           // rather than about the agent — the distinction 6g could not draw.
-          const reportsDir = path.join(created.value.directory, "reports");
+          const reportsDir = path.join(agentFolderCodePath(dataDir, agentId), "reports");
           const digestFiles = await waitForObserved(
             async () => {
               const files = existsSync(reportsDir)

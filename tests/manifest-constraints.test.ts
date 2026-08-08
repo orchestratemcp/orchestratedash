@@ -28,9 +28,11 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const dataDir = mkdtempSync(path.join(tmpdir(), "dash-constraints-"));
 process.env.DASH_DATA_DIR = dataDir;
 
-const { checkManifestConstraints, REMOTE_DASH_MANAGED_PHRASE } = await import(
-  "../lib/manifest-constraints"
-);
+const {
+  checkManifestConstraints,
+  INVALID_AGENT_FOLDER_NAME_PHRASE,
+  REMOTE_DASH_MANAGED_PHRASE,
+} = await import("../lib/manifest-constraints");
 const { explainImportFailure } = await import("../lib/import-feedback");
 const { importManifest, resetStore } = await import("../lib/store");
 const { closeDb } = await import("../lib/db");
@@ -110,6 +112,21 @@ describe("checkManifestConstraints", () => {
       checkManifestConstraints(manifest as Parameters<typeof checkManifestConstraints>[0]),
     ).toEqual([]);
   });
+
+  it("applies the component guard to both manifest versions", () => {
+    for (const file of [
+      "agent.manifest.example.json",
+      "gmail-meeting-assistant.manifest.v2.example.json",
+    ]) {
+      const manifest = example(file) as { agent: { name: string } };
+      manifest.agent.name = "con";
+      expect(
+        checkManifestConstraints(
+          manifest as unknown as Parameters<typeof checkManifestConstraints>[0],
+        ).join(" "),
+      ).toContain(INVALID_AGENT_FOLDER_NAME_PHRASE);
+    }
+  });
 });
 
 /* ---------------------------------------------------------------------- *
@@ -130,6 +147,14 @@ describe("importManifest under the constraint", () => {
       true,
     );
     expect(importManifest(example("agent-managed.manifest.v2.example.json")).ok).toBe(true);
+  });
+
+  it("refuses a name it cannot make into the authoritative folder", () => {
+    const manifest = example("agent.manifest.example.json") as { agent: { name: string } };
+    manifest.agent.name = "con";
+    const result = importManifest(manifest);
+    expect(result).toMatchObject({ ok: false });
+    expect(result.ok ? "" : result.errors.join(" ")).toContain(INVALID_AGENT_FOLDER_NAME_PHRASE);
   });
 });
 
@@ -159,6 +184,20 @@ describe("what the refusal says", () => {
     );
     // The raw errors are exempt, as Ajv's are — they are shown as the
     // validator's own words, never as the headline.
+    expectPlainLanguage([explanation.headline, explanation.suggestion]);
+  });
+
+  it("explains an unsafe folder name without silently proposing a rename", () => {
+    const manifest = example("agent.manifest.example.json") as { agent: { name: string } };
+    manifest.agent.name = "con";
+    const explanation = explainImportFailure(
+      checkManifestConstraints(
+        manifest as unknown as Parameters<typeof checkManifestConstraints>[0],
+      ),
+    );
+    expect(explanation.kind).toBe("invalid_agent_folder_name");
+    expect(explanation.headline).toContain("folder");
+    expect(explanation.suggestion).toContain("will not silently rename");
     expectPlainLanguage([explanation.headline, explanation.suggestion]);
   });
 });

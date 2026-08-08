@@ -26,6 +26,11 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { analyzeGrounding } from "../lib/analyze";
+import {
+  agentFolderCodePath,
+  agentFolderManifestPath,
+  writeAgentFolder,
+} from "../lib/agent-folders";
 import type { DigestArtifact } from "../lib/contracts";
 import { run } from "../agent-kit/cli";
 import { writeHandoff } from "../agent-kit/open-in-dash";
@@ -326,10 +331,16 @@ describe("open-in-dash", () => {
     const directory = scaffold();
     const written = writeHandoff(directory, "0.1.1");
     expect(written.ok && written.value.handoff.env).toEqual({});
-    // The whole document, checked as text: nothing that looks like a secret.
-    expect(written.ok && readFileSync(written.value.file, "utf8")).not.toMatch(
-      /password|api[_-]?key|client_secret|bearer/i,
+    if (!written.ok) return;
+    // The acquired source may explain that agents never receive passwords or
+    // bearer tokens. The security boundary is the structured environment and
+    // the declared file set, not whether safe comments contain those words.
+    expect(written.value.handoff.env).toEqual({});
+    expect(written.value.handoff.files?.map((file) => file.path)).not.toContain(".env");
+    expect(written.value.handoff.files?.some((file) => file.path.includes("node_modules"))).toBe(
+      false,
     );
+    expect(written.value.handoff.files?.some((file) => file.path.includes("reports"))).toBe(false);
   });
 
   it("mints a fresh code every time, so an old link stops working", () => {
@@ -371,7 +382,19 @@ describe("create, build, open in DASH", () => {
         prompts.push(prompt);
         return true;
       },
-      importManifest: () => ({ ok: true }),
+      importManifest: (_manifest, options) => {
+        if (options?.files === undefined || options.registration === undefined) {
+          return { ok: false, errors: ["the folder-carrying handoff lost its files"] };
+        }
+        writeAgentFolder({
+          dataDir,
+          agent: "folder-digest",
+          manifestJson: options.manifestJson ?? "",
+          registration: options.registration,
+          files: options.files,
+        });
+        return { ok: true };
+      },
       forgetAgent: () => ({ existed: false }),
       recordHandoff: () => {},
       readHandoffRecord: () => null,
@@ -399,9 +422,26 @@ describe("create, build, open in DASH", () => {
     expect(registration).toMatchObject({
       command: "node",
       args: ["agent.mjs"],
-      cwd: directory,
+      cwd: agentFolderCodePath(dataDir, "folder-digest"),
     });
     expect(registration?.dash.owner).toBe("dash_handoff");
+    expect(registration?.manifest_path).toBe(agentFolderManifestPath(dataDir, "folder-digest"));
+    expect(existsSync(path.join(agentFolderCodePath(dataDir, "folder-digest"), "agent.mjs"))).toBe(
+      true,
+    );
+
+    // The digest in the live registration says what DASH wrote previously; it
+    // is not proof the authoritative folder still contains those bytes. The
+    // same handoff must therefore notice and repair on-disk code drift.
+    writeFileSync(path.join(agentFolderCodePath(dataDir, "folder-digest"), "agent.mjs"), "drift\n");
+    const repaired = await openHandoff(
+      handoffUrl(written.value.file, written.value.handoff.nonce),
+      ports,
+    );
+    expect(repaired).toMatchObject({ ok: true, outcome: "updated" });
+    expect(prompts).toHaveLength(2);
+    expect(readFileSync(path.join(agentFolderCodePath(dataDir, "folder-digest"), "agent.mjs"), "utf8"))
+      .toBe(TEMPLATE_AGENT);
   });
 });
 
