@@ -3085,3 +3085,142 @@ where two lines join `readAgentFolderManifest` to `buildPanelView`, and
 `app/agents/detail/page.tsx` is where the region is placed. Both are outside
 this session's ownership, and neither is worth doing before a manifest declares
 a panel — which arrives with MAR-548.
+
+## What needs connecting becomes a declaration (MAR-569, DASH slice)
+
+ADR 0008's argument, applied to connections: what travels is a **declaration,
+not code**. The agent says what it needs connected; DASH's own trusted flows do
+the connecting. `$defs.connectionRequirements` is the block, referenced from
+`agent_dom.connection_requirements`, versioned with the same if/then/else
+discipline as `$defs.panel` — version 1 checked strictly, a version DASH does
+not know accepted for structure only, and the block omitted when undeclared
+rather than emitted as an empty object.
+
+### The third connector kind does not exist, and that is the finding
+
+The issue pinned `connector_kind` v1 to three members and attributed
+`mcp_server` to MAR-498's wizard. **That wizard connects an SSH deploy host.**
+`HostRecord` is an address, a username, a key name and a pinned fingerprint,
+and `DEPLOY_VERBS` is what runs over it — the flow exists so an agent can be
+put *on a server*. It cannot connect a Notion workspace. Nor is there an
+MCP-server connect flow anywhere else in DASH: `remote_mcp_server` in
+`lib/broker/providers.ts` is a `TokenCustodian` label, and that type's own
+docblock records `dash_vault` as the only reachable value.
+
+So the kind would have been unlaunchable on the day it shipped, which is the
+precise failure the closed enum exists to prevent — the issue states the rule
+itself, that "a kind DASH cannot launch is a lie on a button". The session
+raised it rather than shipping it; Henrik's ruling on 2026-08-08 was to drop
+it. **v1 is two members, `google_oauth_broker` and `api_key`.** A real
+MCP-server flow belongs to the MAR-438 family and arrives the way any third
+kind does: a version bump, accepted structurally, drawn as one stated "DASH
+cannot connect this yet" line rather than a dead Connect button. A typo'd v1
+kind still refuses at import, loudly.
+
+Both remaining kinds act on a declared connection, so `connection_id` is
+unconditionally required and the conditional branches the three-kind version
+needed are gone. The link is not bookkeeping: it is what makes a requirement
+checkable at all, since the standings resolve through the existing three-party
+intersection on that connection and the Connect button acts on that
+connection's field.
+
+A near-collision worth knowing about: `$defs.connectionRequirement`
+**singular** already existed and is a different thing — the per-credential
+inventory behind `agent_dom.connections`, with fields, custody and a validation
+action. Both defs now carry a description naming the other. Same connections,
+opposite ends: one is the record, the other is the next action.
+
+### The corpus found the drift it exists to find
+
+`lib/connection-spec.ts` is the pure reader beside `lib/panel-spec.ts`, with
+**no imports at all**, so MAR-570's surface and `lib/import-feedback.ts` can
+reach it in a chunk that ships to the browser. `tests/connection-spec.test.ts`
+runs 44 cases through **both** Ajv and the reader and asserts they agree on
+every one.
+
+It paid for itself on the first run. The schema refused a requirement carrying
+a live-looking key under an `api_key` member, through the `propertyNames` guard
+every connection block in this manifest has had since v2 was written; the
+reader accepted it, because a re-statement written by hand had simply not
+restated that rule. `FORBIDDEN_REQUIREMENT_MEMBERS` is the reader's copy now,
+and the corpus is what holds the two together. A re-statement of a schema is a
+second source of truth unless something fails when they disagree; this is the
+something, and it was not hypothetical.
+
+### The standings are MAR-533's, called rather than copied
+
+`lib/connection-requirements.ts` resolves one requirement against the
+connection row it names. It **calls `capabilityStandings`** from
+`lib/connection-card.ts`. It does not re-derive the issued/signed-in facts from
+a receipt, and the reason is the reason those four standings exist:
+`not_issued` is the state a second implementation collapses into
+`awaiting_you`, and the collapse tells somebody to sign in again to fix
+something signing in again does not fix. That is MAR-533's own stated bug; a
+fork here would have reintroduced it on a different page. A test asserts the
+two stay distinct.
+
+What the module adds is the **rollup**, because a requirement names several
+operations and a line has room for one chip. The precedence is what the reader
+should do next, worst-blocked first: `not_asked_for` (no sign-in clears it),
+then `awaiting_you`, then `not_issued`, then `allowed`. **An empty list rolls
+up to `awaiting_you`, never `allowed`** — a requirement whose connection has no
+broker has granted nothing, and reporting that as "can do this right now" is
+the one wrong answer on a page about what is safe to run.
+
+**A disagreement is not a standing.** An operation a requirement names that its
+own connection does not offer is two blocks of one document contradicting each
+other. Rounding it into `not_asked_for` was available and would have made DASH
+render "nobody asked for this" against a line that had just asked for it — so
+it travels in `disagreements`, with its own sentence, pointing at a re-export
+rather than a sign-in. The four standings are reused exactly, never stretched.
+
+### Nothing is ever a button DASH cannot fire
+
+`ConnectFlow` carries exactly what `lib/shell/ipc.ts`'s `connection.connect`
+channel requires — agent, connection, field — so MAR-570 derives nothing of its
+own; a descriptor the surface had to complete is one it could complete wrongly.
+Both kinds land on that one channel deliberately: the row's own field kind is
+what decides whether the prompt is a sign-in or a typed secret, and deriving a
+second channel from `connector_kind` would put DASH's decision in the
+manifest's hands.
+
+Where no flow can be built, `ConnectFlowRefusal` says which case it is —
+`connection_not_declared` or `no_field_to_act_on` — each with a sentence that
+blames the file rather than the person. A test asserts **exactly one** of
+`flow` and `flow_refusal` is ever set: a line with no button and no reason is a
+dead end the surface cannot describe. The version-skew resolution carries no
+requirements at all, inherited from the panel's rule, so there is no array to
+put buttons beside.
+
+The plain-language sentence in `lib/import-feedback.ts` is written out rather
+than derived from the pinned array, because the members are slugs and
+`lib/copy/identifiers.ts` refuses those on a guided surface — "google oauth
+broker" is not what a person calls signing in. That makes the sentence
+underivable and therefore able to go stale, so the vocabulary's size is pinned
+by a test that names the paragraph to rewrite.
+
+### What follow-ons consume, exactly
+
+**The MCP emitter slice** mirrors `$defs.connectionRequirements`,
+`$defs.connectionRequirementV1` and `$defs.connectionRequirementOpaque` as a
+`.strict()` input, conditionally emitted, with fixture + `contract.lock` +
+`canonical_commit` in one commit — the MAR-555 mechanics. It must emit a
+`connection_id` matching an `agent_dom.connections[].id` it is already writing,
+and **two** connector kinds. `dash:schema:check` gates it, which is why this
+landed first. Derivation is honest here, unlike the panel's: the plan's
+`connection_contract` / `what_you_need` already name the providers and scopes.
+
+**MAR-570** calls `resolveConnectionRequirements(manifest)` for the four-way
+resolution, then `resolveRequirements(requirements, agentId, rows)` for a line
+each. Per line it gets `name`, `optional`, `why`, one `standing` for the chip,
+`operations` for the expanded detail, `disagreements`, and either a `flow` or a
+`flow_refusal` — never neither, never both. `describeStanding` and
+`describeFlowRefusal` are the sentences. The `newer_version` case has
+`declared_count` and no requirements, which is the stated card.
+
+Evidence: `typecheck` clean; `brand:check` green; full vitest from PowerShell
+105 files / 2124 passed / 8 skipped / 0 failed, 79 of them new; `state:check`
+valid with 19 pre-existing drift warnings, none from this branch.
+`verify:shell` NOT RUN locally — CI's shell-smoke gate on PR #91 is the check
+for this branch, cut directly from `origin/master` at `9c7c72d` rather than
+stacked. No UI, no MCP change, no broker change.
