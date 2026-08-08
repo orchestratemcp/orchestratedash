@@ -2924,6 +2924,72 @@ that changing the original source cannot change stored code, and produced the
 sample's reports from that stored `code/`. No renderer, panel schema, MCP
 emitter, or MAR-556 bundle work is part of this slice.
 
+## A date the machine wrote, on three surfaces (MAR-571)
+
+`DigestBody` interpolated a digest item's `published_at` straight into its
+muted source line, so an item read `Hacker News ·
+2026-08-05T09:00:00.000Z`. That is the class of defect MAR-533 already named
+and built `lib/copy/when.ts` for — that module's own header says a timestamp
+with a `T` and a `Z` in it is the same failure as a raw identifier, because a
+person who has to read a machine's own spelling of something has been handed
+the machine's problem — and this call site was simply missed.
+
+**It survived because nothing was looking.** No test rendered a digest item
+that carried a `published_at` at all, so the copy gates, the plain-language
+scan and every render test in the repository passed over it without a word.
+The rule existed, the helper existed, and the one surface that needed them had
+neither.
+
+**Three surfaces from one call site**, because `DigestBody` is shared: the run
+detail page, the workspace Outputs area, and — since MAR-554 — the declarative
+panel's `report` and `outputs` sections. It is the *only* call site, checked
+rather than assumed: `SourceList` renders no timestamp, and
+`ArtifactSource.fetched_at` is drawn nowhere in the product.
+
+The fix is a `publishedSuffix` helper over `plainMoment`, and the interesting
+half is the null branch. **A timestamp DASH cannot read produces no segment
+rather than the input** — `lib/copy/when.ts`'s own rule is that no function in
+it ever returns what it was given, precisely so a malformed value cannot be
+echoed back onto the screen on the one path nobody watches. The separator goes
+with it: a dangling `" · "` would advertise a missing value a reader can do
+nothing about, and the source name is a complete line on its own. The helper
+returns the whole suffix rather than the moment so that the separator can never
+be rendered by one branch and the value by another.
+
+`Hacker News · 2026-08-05T09:00:00.000Z` becomes `Hacker News · 5 August 2026
+at 11:00`.
+
+**The tests were demonstrated failing before the fix was restored**, which is
+the discipline MAR-465 and MAR-500 both wrote down — a gate nobody has seen
+fail is not known to work. The component was reverted to the defect and three
+of the four new assertions went red: the raw instant absent, the worded moment
+present, and a malformed value producing no segment at all. The fourth — an
+item carrying no date produces no segment either — passes in both directions
+**by design**, and is recorded here as what it is: a regression guard on
+behaviour the old code already had, not a claim about this fix.
+
+The import is a *value* import and it is safe: `lib/copy/when.ts` has no
+imports at all, so it reaches no Node builtin and drags nothing into the
+renderer bundle. That is the rule `tests/client-bundle.test.ts` enforces over
+every component in `app/`, and the failure MAR-498 and MAR-434 each paid for
+once; the comment beside the import says so rather than leaving the next reader
+to work out why this one is allowed.
+
+Evidence: `typecheck` clean; `brand:check` green and unaffected — no stylesheet
+or asset touched; `state:check` valid with the 19 pre-existing drift warnings,
+none from this branch; full vitest from PowerShell 102 files / 1971 passed / 8
+skipped / 0 failed, with `tests/outputs-render.test.tsx` going 25 → 29.
+`verify:shell` NOT RUN: this change touches no shell, store or runner path, and
+CI's shell-smoke gate is the check for the branch.
+
+**One follow-up, named rather than forgotten.**
+`tests/panel-render.test.tsx`'s "words a moment rather than shipping the
+machine's spelling of one" assertion is scoped to the panel's own table region
+*because of this defect*, and can be widened to the whole panel once both land.
+It is not widened here because MAR-554's PR #88 is still open and that file does
+not exist on master; cutting from #88 instead would have been a stacked PR,
+which gets no CI in this repository.
+
 ## The panel gets drawn (MAR-554, ADR 0008 slice 3)
 
 MAR-552 made the panel a contract. This draws it, and the shape of the

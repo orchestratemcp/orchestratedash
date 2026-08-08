@@ -21,6 +21,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { OutputsPanel } from "../app/_components/outputs";
 import { OUTPUTS_PANEL_COPY, describeArtifactAvailability } from "../lib/copy/artifacts";
 import { buildArtifactCards } from "../lib/views/artifacts";
+import { plainMoment } from "../lib/copy/when";
 import type { ArtifactAvailability } from "../lib/copy/artifacts";
 import type { DigestArtifact, DraftArtifact } from "../lib/contracts";
 import type { RunArtifactRecord } from "../lib/store";
@@ -264,5 +265,82 @@ describe("a kind DASH cannot draw", () => {
 
   it("still shows its provenance", () => {
     expect(html()).toContain("4.2 kB");
+  });
+});
+/**
+ * A digest item's publish date, in DASH's words rather than the machine's.
+ *
+ * MAR-533 removed raw instants from the Connections page and named the rule —
+ * "a timestamp with a `T` and a `Z` in it is the same failure" as a raw
+ * identifier — and this call site was missed, so `Hacker News ·
+ * 2026-08-05T09:00:00.000Z` kept reaching three surfaces: the run detail page,
+ * this panel, and (since MAR-554) the declarative panel's `report` and
+ * `outputs` sections. It survived because nothing was looking: no test rendered
+ * a digest item that carried one.
+ *
+ * That is the gap these four assertions close, and the third is the one worth
+ * having. `lib/copy/when.ts` returns `null` for anything it cannot read and no
+ * function in it ever returns its input, precisely so a malformed value cannot
+ * be echoed back onto the screen — which is the path nobody watches.
+ */
+describe("when a digest item was published", () => {
+  const PUBLISHED = "2026-08-05T09:00:00.000Z";
+
+  function withItems(items: DigestArtifact["items"]): string {
+    return render(undefined, [
+      {
+        artifact: { ...digest, items },
+        received_at: "2026-08-05T21:14:08.412Z",
+        stored_bytes: 4210,
+      },
+    ]);
+  }
+
+  const html = (): string =>
+    withItems([
+      {
+        headline: "A supervisor for long-running agents lands in beta",
+        source_name: "Hacker News",
+        published_at: PUBLISHED,
+      },
+    ]);
+
+  it("never ships the machine's own spelling of the moment", () => {
+    expect(html()).not.toContain(PUBLISHED);
+  });
+
+  it("says it the way a person writes a date", () => {
+    // Compared against `plainMoment` rather than a literal: the value is local
+    // time, so a literal would pin this test to the timezone it was written in.
+    const moment = plainMoment(PUBLISHED);
+    expect(moment).not.toBeNull();
+    expect(html()).toContain(`Hacker News · ${moment ?? ""}`);
+  });
+
+  it("drops the whole segment for a timestamp it cannot read", () => {
+    /*
+     * Not the input, and not an empty separator either. Echoing the value back
+     * would put the exact string this fix removes onto the screen, and a
+     * dangling " · " would advertise a missing value a reader can do nothing
+     * about — the source name is a complete line on its own.
+     */
+    const broken = withItems([
+      {
+        headline: "A supervisor for long-running agents lands in beta",
+        source_name: "Hacker News",
+        published_at: "the day before yesterday",
+      },
+    ]);
+    expect(broken).not.toContain("the day before yesterday");
+    expect(broken).toContain("Hacker News");
+    expect(broken).not.toContain("Hacker News ·");
+  });
+
+  it("says nothing at all when the item carries no date", () => {
+    const undated = withItems([
+      { headline: "A supervisor for long-running agents lands in beta", source_name: "Hacker News" },
+    ]);
+    expect(undated).toContain("Hacker News");
+    expect(undated).not.toContain("Hacker News ·");
   });
 });
