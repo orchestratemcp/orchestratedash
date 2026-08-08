@@ -154,6 +154,8 @@ export interface RegistrationOwnership {
   registered_at: string;
   /** Of the manifest DASH copied, so a changed plan is detectable. */
   manifest_sha256: string;
+  /** Of the declared folder file set. Absent on pre-folder registrations. */
+  files_sha256?: string;
 }
 
 export interface ManagedRegistration extends AgentRegistration {
@@ -286,6 +288,7 @@ function ownershipOf(parsed: Partial<ManagedRegistration>): RegistrationOwnershi
     summary: String(block.summary ?? ""),
     registered_at: String(block.registered_at ?? ""),
     manifest_sha256: String(block.manifest_sha256 ?? ""),
+    files_sha256: typeof block.files_sha256 === "string" ? block.files_sha256 : undefined,
   };
 }
 
@@ -322,6 +325,9 @@ export function describeRegistrationChange(
   }
   if (existing.dash.manifest_sha256 !== proposed.dash.manifest_sha256) {
     changes.push("what the agent plans to do has changed");
+  }
+  if (existing.dash.files_sha256 !== proposed.dash.files_sha256) {
+    changes.push("the copy of the agent DASH would run has changed");
   }
   return changes;
 }
@@ -361,9 +367,13 @@ export type WriteOutcome = "created" | "updated" | "unchanged";
 
 export interface WriteRegistrationInput {
   registration: AgentRegistration;
-  ownership: Omit<RegistrationOwnership, "manifest_sha256">;
+  ownership: Omit<RegistrationOwnership, "manifest_sha256" | "files_sha256">;
   /** The manifest, already validated as v2 by the caller. Stored verbatim. */
   manifestJson: string;
+  /** The authoritative folder manifest, already durably written by import. */
+  storedManifestPath?: string;
+  /** Digest of the declared folder files, so a code-only update is not silent. */
+  filesDigest?: string;
 }
 
 /**
@@ -385,7 +395,7 @@ export function writeRegistration(
   input: WriteRegistrationInput,
 ): { outcome: WriteOutcome; changes: string[]; registration: ManagedRegistration } {
   const agentId = input.registration.agent_id;
-  const manifestFile = managedManifestPath(dataDir, agentId);
+  const manifestFile = input.storedManifestPath ?? managedManifestPath(dataDir, agentId);
 
   const proposed: ManagedRegistration = {
     ...input.registration,
@@ -394,6 +404,7 @@ export function writeRegistration(
     dash: {
       ...input.ownership,
       manifest_sha256: manifestDigest(input.manifestJson),
+      files_sha256: input.filesDigest,
     },
   };
 
@@ -403,18 +414,32 @@ export function writeRegistration(
     if (changes.length === 0) {
       return { outcome: "unchanged", changes, registration: existing };
     }
-    persist(dataDir, proposed, input.manifestJson);
+    persist(
+      dataDir,
+      proposed,
+      input.storedManifestPath === undefined ? input.manifestJson : null,
+    );
     return { outcome: "updated", changes, registration: proposed };
   }
 
-  persist(dataDir, proposed, input.manifestJson);
+  persist(
+    dataDir,
+    proposed,
+    input.storedManifestPath === undefined ? input.manifestJson : null,
+  );
   return { outcome: "created", changes: [], registration: proposed };
 }
 
-function persist(dataDir: string, registration: ManagedRegistration, manifestJson: string): void {
-  const manifestFile = managedManifestPath(dataDir, registration.agent_id);
-  mkdirSync(path.dirname(manifestFile), { recursive: true });
-  writeFileSync(manifestFile, manifestJson, { encoding: "utf8", mode: 0o600 });
+function persist(
+  dataDir: string,
+  registration: ManagedRegistration,
+  manifestJson: string | null,
+): void {
+  if (manifestJson !== null) {
+    const manifestFile = managedManifestPath(dataDir, registration.agent_id);
+    mkdirSync(path.dirname(manifestFile), { recursive: true });
+    writeFileSync(manifestFile, manifestJson, { encoding: "utf8", mode: 0o600 });
+  }
 
   const file = registrationPath(dataDir, registration.agent_id);
   mkdirSync(path.dirname(file), { recursive: true });

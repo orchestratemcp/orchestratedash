@@ -74,8 +74,10 @@ export const HANDOFF_HOST = "handoff";
  */
 export const HANDOFF_FILE_NAME = "dash-handoff.json";
 
-/** Generous for a handoff, far too small to be a useful memory attack. */
-export const MAX_HANDOFF_BYTES = 65_536;
+/** Folder-carrying, still bounded before a byte is parsed. */
+export const MAX_HANDOFF_BYTES = 16 * 1024 * 1024;
+export const MAX_HANDOFF_FILES = 1_024;
+export const MAX_HANDOFF_FILE_BYTES = 8 * 1024 * 1024;
 
 /** How long a handoff stays openable. Long enough to read the terminal output. */
 export const HANDOFF_TTL_MS = 30 * 60 * 1000;
@@ -105,6 +107,12 @@ const HEX_TOKEN = /^[0-9a-f]{32,128}$/;
 const SECRET_LOOKING_NAME =
   /(secret|token|password|passwd|api[_-]?key|apikey|credential|private[_-]?key|access[_-]?key|auth)/i;
 
+export interface HandoffFile {
+  /** Project-relative. The receiver applies component and containment guards. */
+  path: string;
+  contents: string;
+}
+
 export interface AgentHandoff {
   handoff_version: typeof HANDOFF_VERSION;
   /** Names this proposal. DASH records it so replaying a handoff is idempotent. */
@@ -128,6 +136,8 @@ export interface AgentHandoff {
   args: string[];
   /** Extra child environment. No secrets, no `DASH_*`; see `secretsInEnvironment`. */
   env: Record<string, string>;
+  /** The exact text files DASH is being asked to copy into its agent folder. */
+  files?: HandoffFile[];
   /** Which tool wrote this, for the log and for support questions. */
   produced_by: string;
 }
@@ -356,6 +366,50 @@ export function validateHandoff(input: unknown): HandoffResult<AgentHandoff> {
     };
   }
 
+  if (value.files !== undefined) {
+    if (!Array.isArray(value.files) || value.files.length > MAX_HANDOFF_FILES) {
+      return {
+        ok: false,
+        problem: "malformed",
+        detail: "That handoff's file list is not a bounded list of files.",
+      };
+    }
+    let fileBytes = 0;
+    for (const file of value.files) {
+      if (
+        typeof file !== "object" ||
+        file === null ||
+        typeof file.path !== "string" ||
+        typeof file.contents !== "string"
+      ) {
+        return {
+          ok: false,
+          problem: "malformed",
+          detail: "That handoff's file list has an entry DASH cannot read.",
+        };
+      }
+      fileBytes += Buffer.byteLength(file.contents, "utf8");
+    }
+    if (fileBytes > MAX_HANDOFF_FILE_BYTES) {
+      return {
+        ok: false,
+        problem: "too_large",
+        detail: "That handoff carries more agent files than DASH will copy at once.",
+      };
+    }
+    if (
+      !value.files.some(
+        (file) => file.path.replace(/\\/g, "/") === "agent.manifest.json",
+      )
+    ) {
+      return {
+        ok: false,
+        problem: "malformed",
+        detail: "That handoff's file list does not include the agent manifest.",
+      };
+    }
+  }
+
   const environment = value.env;
   if (
     typeof environment !== "object" ||
@@ -502,6 +556,7 @@ export interface HandoffFacts {
   command: string;
   args: string[];
   env?: Record<string, string>;
+  files?: HandoffFile[];
   produced_by: string;
 }
 
@@ -533,8 +588,21 @@ export function buildHandoff(
     command: facts.command,
     args: [...facts.args],
     env: { ...(facts.env ?? {}) },
+    files: facts.files === undefined ? undefined : facts.files.map((file) => ({ ...file })),
     produced_by: facts.produced_by,
   };
+
+  // `readHandoff` bounds the encoded document before reading it. Apply the
+  // same bound to the producer: JSON escaping can make a bounded text file much
+  // larger on disk, and a producer that emits what its consumer refuses has a
+  // split contract even when both agree about the parsed shape.
+  if (Buffer.byteLength(JSON.stringify(candidate), "utf8") > MAX_HANDOFF_BYTES) {
+    return {
+      ok: false,
+      problem: "too_large",
+      detail: "That agent's declared files do not fit in one bounded DASH handoff.",
+    };
+  }
 
   return validateHandoff(candidate);
 }

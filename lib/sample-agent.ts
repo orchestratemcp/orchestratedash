@@ -135,6 +135,7 @@ export function planSampleAgent(request: SampleRequest): SampleResult {
       manifest_path: path.join(directory, "agent.manifest.json"),
       command: BUNDLED_NODE_COMMAND,
       args: ["agent.mjs"],
+      files: planned.files,
       produced_by: `DASH sample agent ${request.kitVersion}`,
     },
     request.ids,

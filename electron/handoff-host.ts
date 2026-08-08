@@ -216,8 +216,8 @@ export function handoffPorts(dataDir: string, runner: RunnerHandle | null): Hand
     dataDir,
     now: () => new Date(),
     confirm: askUser,
-    importManifest: (manifest) => {
-      const result = importManifest(manifest);
+    importManifest: (manifest, options) => {
+      const result = importManifest(manifest, options);
       return result.ok ? { ok: true } : { ok: false, errors: result.errors };
     },
     forgetAgent,

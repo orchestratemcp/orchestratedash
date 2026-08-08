@@ -35,11 +35,16 @@ import { PANEL_MANIFEST_PATH, PANEL_SECTION_TYPES_V1 } from "./panel-spec";
 export const REMOTE_DASH_MANAGED_PHRASE =
   "declares a remote runtime location and a DASH-managed connection";
 
+/** The component-guard refusal MAR-553 adds at both manifest import doors. */
+export const INVALID_AGENT_FOLDER_NAME_PHRASE =
+  "cannot be used as the agent folder name";
+
 export type ImportFailureKind =
   | "not_json"
   | "unsupported_version"
   | "missing_agent_dom"
   | "missing_required_field"
+  | "invalid_agent_folder_name"
   | "remote_agent_dash_connections"
   | "invalid_panel"
   | "schema_mismatch";
@@ -102,6 +107,16 @@ export function explainImportFailure(errors: string[]): ImportFailureExplanation
         "DASH can only manage a sign-in for an agent it runs on this computer, while DASH is open. " +
         "An agent that runs somewhere else holds its own sign-ins — re-export it with its " +
         "connections marked as the agent's own, and DASH will say plainly what it cannot see or limit.",
+      raw: errors,
+    };
+  }
+
+  if (joined.includes(INVALID_AGENT_FOLDER_NAME_PHRASE)) {
+    return {
+      kind: "invalid_agent_folder_name",
+      headline: "This agent's name cannot be used for its folder.",
+      suggestion:
+        "Give the agent a single file-name-safe name with no slashes, control characters, trailing dot or space, or reserved device word, then re-export it. DASH will not silently rename an agent.",
       raw: errors,
     };
   }

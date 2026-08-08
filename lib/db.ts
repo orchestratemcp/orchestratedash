@@ -32,6 +32,13 @@ import { DatabaseSync } from "node:sqlite";
 
 import { oFor } from "./brand/o-cast";
 import { validateEvent, validateManifest } from "./contracts";
+import {
+  inspectAgentFolderName,
+  listAgentFolderNames,
+  materializeManifestOnlyFolder,
+  readAgentFolderManifest,
+  recoverAgentFolderSwaps,
+} from "./agent-folders";
 
 /* ---------------------------------------------------------------------- *
  * Location
@@ -49,6 +56,34 @@ export const databasePath = path.join(dataDir, "dash.sqlite");
 
 /** The store this one replaces. Read once, on first run, and never written. */
 export const legacyJsonPath = path.join(dataDir, "dash.json");
+
+const AGENT_FOLDER_MIGRATION_KEY = "agent_folder_migration";
+const AGENT_FOLDER_RECONCILIATION_KEY = "agent_folder_reconciliation";
+
+export interface AgentFolderMigrationResult {
+  materialized_agents: string[];
+  already_materialized: string[];
+  skipped_agents: Array<{ name: string; errors: string[] }>;
+  unreadable_rows: number;
+  migrated_at: string;
+}
+
+export type AgentFolderIssueKind =
+  | "folder_unreadable"
+  | "folder_missing"
+  | "index_drift"
+  | "missing_index";
+
+export interface AgentFolderIssue {
+  agent: string;
+  kind: AgentFolderIssueKind;
+}
+
+export interface AgentFolderReconciliationResult {
+  checked_at: string;
+  projected_agents: string[];
+  issues: AgentFolderIssue[];
+}
 
 /* ---------------------------------------------------------------------- *
  * Schema
@@ -610,6 +645,16 @@ const MIGRATIONS: readonly Migration[] = [
     workspace_truncated INTEGER NOT NULL
   );
   `,
+  // MAR-553, ADR 0008 slice 2. Materialise the new authoritative folder from
+  // every readable row, and nothing else. In particular this does not follow a
+  // registration's `cwd` into the author's project: acquiring code without a
+  // user at the import door would turn a migration into an undisclosed copy.
+  // Kept at this index at merge time: a database migrated on master before the
+  // hosts table arrived records this position as applied, so the hosts
+  // migration below must come after, never before.
+  (database) => {
+    materializeAgentFoldersFromRows(database);
+  },
   // MAR-536. One server DASH may reach, and never its credential.
   //
   // `key_name` is a stable identifier resolved by electron/ssh-host.ts inside
@@ -669,6 +714,7 @@ export function db(): DatabaseSync {
 
   migrate(database);
   importLegacyJson(database);
+  reconcileAgentFolders(database);
 
   handle = database;
   return handle;
@@ -810,6 +856,173 @@ export function readRowsTolerantly(
   return { rows, lost };
 }
 
+/**
+ * Function-form migration 10: rows become manifest-only folders.
+ *
+ * Exported for the installed smoke's upgrade witness. Production reaches it
+ * through `MIGRATIONS` exactly once; the witness calls the same function over a
+ * deliberately row-only sample standing and then proves the old registration
+ * still starts it.
+ */
+export function materializeAgentFoldersFromRows(
+  database: DatabaseSync,
+): AgentFolderMigrationResult {
+  const now = new Date().toISOString();
+  const result: AgentFolderMigrationResult = {
+    materialized_agents: [],
+    already_materialized: [],
+    skipped_agents: [],
+    unreadable_rows: 0,
+    migrated_at: now,
+  };
+
+  const rows = readRowsTolerantly(database, {
+    table: "agents",
+    bulk: "SELECT rowid, name, manifest_json FROM agents ORDER BY name",
+    byRowid: "SELECT rowid, name, manifest_json FROM agents WHERE rowid = ?",
+  });
+  result.unreadable_rows = rows.lost;
+
+  for (const row of rows.rows) {
+    const name = String(row["name"]);
+    const raw = String(row["manifest_json"]);
+    let candidate: unknown;
+    try {
+      candidate = JSON.parse(raw);
+    } catch {
+      result.skipped_agents.push({ name, errors: ["manifest_json is not readable JSON"] });
+      continue;
+    }
+    const validation = validateManifest(candidate);
+    if (!validation.ok) {
+      result.skipped_agents.push({ name, errors: validation.errors });
+      continue;
+    }
+    if (validation.value.agent.name !== name) {
+      result.skipped_agents.push({
+        name,
+        errors: ["the row name and manifest agent name disagree"],
+      });
+      continue;
+    }
+    const component = inspectAgentFolderName(name);
+    if (component !== null) {
+      result.skipped_agents.push({
+        name,
+        errors: [`the name is not a safe folder component (${component.refusal})`],
+      });
+      continue;
+    }
+
+    const materialized = materializeManifestOnlyFolder(dataDir, name, raw);
+    (materialized.created
+      ? result.materialized_agents
+      : result.already_materialized
+    ).push(name);
+  }
+
+  setMeta(database, AGENT_FOLDER_MIGRATION_KEY, JSON.stringify(result));
+  return result;
+}
+
+/**
+ * Re-project folders into rows at startup and persist the disagreement report.
+ *
+ * Updating the row is not allowed to erase the evidence that it disagreed.
+ * `readStore` reads this report for the lifetime of the session and routes it
+ * through the existing damage surface. The next clean startup clears it only
+ * after observing agreement, which is the point at which the claim is fresh.
+ */
+export function reconcileAgentFolders(
+  database: DatabaseSync,
+): AgentFolderReconciliationResult {
+  recoverAgentFolderSwaps(dataDir);
+
+  const now = new Date().toISOString();
+  const result: AgentFolderReconciliationResult = {
+    checked_at: now,
+    projected_agents: [],
+    issues: [],
+  };
+  const rows = readRowsTolerantly(database, {
+    table: "agents",
+    bulk: "SELECT rowid, name, manifest_version, manifest_json, imported_at, avatar FROM agents",
+    byRowid:
+      "SELECT rowid, name, manifest_version, manifest_json, imported_at, avatar FROM agents WHERE rowid = ?",
+  });
+  const byName = new Map(rows.rows.map((row) => [String(row["name"]), row]));
+  const folderNames = listAgentFolderNames(dataDir);
+  const folders = new Set(folderNames);
+
+  transact(database, () => {
+    for (const agent of folderNames) {
+      const read = readAgentFolderManifest(dataDir, agent);
+      if (!read.ok) {
+        result.issues.push({ agent, kind: "folder_unreadable" });
+        continue;
+      }
+
+      let candidate: unknown;
+      try {
+        candidate = JSON.parse(read.json);
+      } catch {
+        result.issues.push({ agent, kind: "folder_unreadable" });
+        continue;
+      }
+      const validation = validateManifest(candidate);
+      if (!validation.ok || validation.value.agent.name !== agent) {
+        // Import constraints deliberately do not run here. Tightening a
+        // constraint later cannot strand an agent already accepted; schema
+        // readability and folder/name identity are the startup invariants.
+        result.issues.push({ agent, kind: "folder_unreadable" });
+        continue;
+      }
+
+      const existing = byName.get(agent);
+      if (existing === undefined) {
+        database
+          .prepare(
+            "INSERT INTO agents (name, manifest_version, manifest_json, imported_at, avatar) " +
+              "VALUES (?, ?, ?, ?, ?)",
+          )
+          .run(agent, validation.value.manifest_version, read.json, now, oFor(agent));
+        result.projected_agents.push(agent);
+        result.issues.push({ agent, kind: "missing_index" });
+        continue;
+      }
+
+      if (
+        String(existing["manifest_json"]) !== read.json ||
+        Number(existing["manifest_version"]) !== validation.value.manifest_version
+      ) {
+        database
+          .prepare(
+            "UPDATE agents SET manifest_version = ?, manifest_json = ? WHERE name = ?",
+          )
+          .run(validation.value.manifest_version, read.json, agent);
+        result.projected_agents.push(agent);
+        result.issues.push({ agent, kind: "index_drift" });
+      }
+    }
+
+    for (const [agent] of byName) {
+      // A legacy name that cannot be a component is the supported row-only
+      // standing the migration reports. It is not re-labelled as fresh damage
+      // on every startup.
+      if (inspectAgentFolderName(agent) === null && !folders.has(agent)) {
+        result.issues.push({ agent, kind: "folder_missing" });
+      }
+    }
+
+    result.projected_agents.sort((a, b) => a.localeCompare(b));
+    result.issues.sort(
+      (a, b) => a.agent.localeCompare(b.agent) || a.kind.localeCompare(b.kind),
+    );
+    setMeta(database, AGENT_FOLDER_RECONCILIATION_KEY, JSON.stringify(result));
+  });
+  return result;
+}
+
 function migrate(database: DatabaseSync): void {
   const row = database.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined;
   const applied = Number(row?.user_version ?? 0);
@@ -939,6 +1152,20 @@ function importLegacyJson(database: DatabaseSync): void {
         continue;
       }
       const manifest = validation.value;
+      const manifestJson = JSON.stringify(manifest);
+      const component = inspectAgentFolderName(manifest.agent.name);
+      if (component !== null) {
+        result.skipped_agents.push({
+          name: key,
+          errors: [`the name is not a safe folder component (${component.refusal})`],
+        });
+        continue;
+      }
+
+      // Folder first, row second. A crash after this call and before SQLite's
+      // commit leaves a folder startup reconciliation can index; the reverse
+      // ordering would leave a row claiming DASH held bytes it never acquired.
+      materializeManifestOnlyFolder(dataDir, manifest.agent.name, manifestJson);
       database
         .prepare(
           "INSERT INTO agents (name, manifest_version, manifest_json, imported_at, avatar) " +
@@ -947,7 +1174,7 @@ function importLegacyJson(database: DatabaseSync): void {
         .run(
           manifest.agent.name,
           manifest.manifest_version,
-          JSON.stringify(manifest),
+          manifestJson,
           importedAt(stored?.imported_at, now),
           // MAR-500. This is a creation, so it assigns — the same seed and the
           // same function `importManifest` uses. An agent that arrives from
@@ -1038,4 +1265,34 @@ export function insertEventRow(
 export function describeLegacyImport(): LegacyImportResult | null {
   const raw = getMeta(db(), LEGACY_IMPORT_KEY);
   return raw === null ? null : (JSON.parse(raw) as LegacyImportResult);
+}
+
+/** What migration 10 materialised, including every row it deliberately skipped. */
+export function describeAgentFolderMigration(): AgentFolderMigrationResult | null {
+  const raw = getMeta(db(), AGENT_FOLDER_MIGRATION_KEY);
+  return raw === null ? null : (JSON.parse(raw) as AgentFolderMigrationResult);
+}
+
+/** The drift or folder damage found at this process's startup. */
+export function describeAgentFolderReconciliation(): AgentFolderReconciliationResult | null {
+  const raw = getMeta(db(), AGENT_FOLDER_RECONCILIATION_KEY);
+  return raw === null ? null : (JSON.parse(raw) as AgentFolderReconciliationResult);
+}
+
+/**
+ * A successful re-import/removal resolves that agent's startup issue now.
+ * Other issues stay visible; clearing the whole report would let one repaired
+ * folder hide a second one nobody touched.
+ */
+export function clearAgentFolderIssue(database: DatabaseSync, agent: string): void {
+  const raw = getMeta(database, AGENT_FOLDER_RECONCILIATION_KEY);
+  if (raw === null) return;
+  let report: AgentFolderReconciliationResult;
+  try {
+    report = JSON.parse(raw) as AgentFolderReconciliationResult;
+  } catch {
+    return;
+  }
+  report.issues = (report.issues ?? []).filter((issue) => issue.agent !== agent);
+  setMeta(database, AGENT_FOLDER_RECONCILIATION_KEY, JSON.stringify(report));
 }

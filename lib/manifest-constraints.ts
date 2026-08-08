@@ -36,12 +36,16 @@
 import type { AnyAgentManifest } from "./contracts";
 import { isManifestV2 } from "./contracts";
 import type { ManifestConnection } from "./connections";
+import { inspectComponent } from "../runner/path-guard";
 // The phrase lives in `lib/import-feedback.ts` and is imported from it, not
 // the reverse — that module is bundled into a client component and must not
 // reach this one, which drags `lib/contracts.ts` and its `node:fs` reads in.
-import { REMOTE_DASH_MANAGED_PHRASE } from "./import-feedback";
+import {
+  INVALID_AGENT_FOLDER_NAME_PHRASE,
+  REMOTE_DASH_MANAGED_PHRASE,
+} from "./import-feedback";
 
-export { REMOTE_DASH_MANAGED_PHRASE };
+export { INVALID_AGENT_FOLDER_NAME_PHRASE, REMOTE_DASH_MANAGED_PHRASE };
 
 /**
  * Everything wrong with an otherwise schema-valid manifest, as error strings.
@@ -49,10 +53,19 @@ export { REMOTE_DASH_MANAGED_PHRASE };
  * kinds of refusal travel the same road to the same explanation layer.
  */
 export function checkManifestConstraints(manifest: AnyAgentManifest): string[] {
+  const errors: string[] = [];
+  const folderName = inspectComponent(manifest.agent.name);
+  if (folderName !== null) {
+    errors.push(
+      `/agent/name ${INVALID_AGENT_FOLDER_NAME_PHRASE} (${folderName.refusal}); ` +
+        "DASH refuses the name rather than silently changing the author's identity (ADR 0008)",
+    );
+  }
+
   if (!isManifestV2(manifest)) {
     // v1 has no Agent DOM, so it has neither of the two fields whose
     // combination this refuses.
-    return [];
+    return errors;
   }
 
   // `agent_dom.locations` is outside the subset `AgentManifestV2` types,
@@ -70,11 +83,11 @@ export function checkManifestConstraints(manifest: AnyAgentManifest): string[] {
 
   if (runtimeKind === "remote" && dashManaged.length > 0) {
     const named = dashManaged.map((connection) => connection.label).join(", ");
-    return [
+    errors.push(
       `/agent_dom ${REMOTE_DASH_MANAGED_PHRASE} (${named}); ` +
         "an agent running away from this computer can never reach one (ADR 0006)",
-    ];
+    );
   }
 
-  return [];
+  return errors;
 }

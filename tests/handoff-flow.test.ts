@@ -25,6 +25,12 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { HANDOFF_FILE_NAME, buildHandoff, handoffUrl, type AgentHandoff } from "../lib/handoff";
+import {
+  AGENT_CODE_DIRECTORY,
+  AGENT_MANIFEST_FILE,
+  agentFolderCodePath,
+  agentFolderManifestPath,
+} from "../lib/agent-folders";
 import type { HandoffRecord } from "../lib/handoff-ledger";
 import {
   openHandoff,
@@ -78,6 +84,7 @@ function makeProject(options: {
   nonce?: string;
   args?: string[];
   manifestJson?: string;
+  files?: AgentHandoff["files"];
   now?: Date;
   ttlMs?: number;
 } = {}): Project {
@@ -96,6 +103,7 @@ function makeProject(options: {
       manifest_path: manifestFile,
       command: "node",
       args: options.args ?? ["dist/agent.mjs"],
+      files: options.files,
       produced_by: "create-dash-agent (test)",
     },
     { handoff_id: options.handoffId ?? "b".repeat(32), nonce: options.nonce ?? NONCE },
@@ -127,7 +135,7 @@ interface Harness {
   dataDir: string;
   prompts: HandoffPrompt[];
   ledger: HandoffRecord[];
-  imported: unknown[];
+  imported: Array<{ manifest: unknown; options: Parameters<HandoffPorts["importManifest"]>[1] }>;
   forgotten: string[];
   runnerCalls: string[];
   answer: boolean;
@@ -178,8 +186,8 @@ function harness(
       state.prompts.push(prompt);
       return state.answer;
     },
-    importManifest: (manifest) => {
-      state.imported.push(manifest);
+    importManifest: (manifest, options) => {
+      state.imported.push({ manifest, options });
       return { ok: true };
     },
     forgetAgent: (agentId) => {
@@ -246,6 +254,39 @@ describe("adding an agent", () => {
     });
     // The registration points at DASH's copy of the plan, not the author's file.
     expect(stored?.manifest_path).not.toBe(project.manifestFile);
+  });
+
+  it("asks before copying a bounded file set, then passes that exact set to the folder import", async () => {
+    const manifestJson = v2Manifest();
+    const files = [
+      { path: AGENT_MANIFEST_FILE, contents: manifestJson },
+      { path: "dist/agent.mjs", contents: "process.stdout.write('ready')\n" },
+    ];
+    const project = makeProject({ manifestJson, files });
+
+    await openHandoff(project.url, context.ports);
+
+    expect((context.prompts[0] as HandoffPrompt).detail).toContain(
+      "DASH is about to take a copy of these files. Changing the originals later will not change the copy DASH runs.",
+    );
+    expect(context.imported).toHaveLength(1);
+    expect(context.imported[0]).toMatchObject({
+      options: {
+        files,
+        manifestJson,
+        registration: {
+          agent_id: AGENT_ID,
+          manifest_path: AGENT_MANIFEST_FILE,
+          cwd: AGENT_CODE_DIRECTORY,
+          command: "node",
+          args: ["dist/agent.mjs"],
+        },
+      },
+    });
+    expect(readRegistration(context.dataDir, AGENT_ID)).toMatchObject({
+      manifest_path: agentFolderManifestPath(context.dataDir, AGENT_ID),
+      cwd: agentFolderCodePath(context.dataDir, AGENT_ID),
+    });
   });
 
   it("asks in plain language, with no internal vocabulary in it", async () => {
@@ -446,6 +487,41 @@ describe("refusing a handoff", () => {
     expect(context.runnerCalls).toEqual([]);
     expect(context.imported).toEqual([]);
   }
+
+  it("refuses an escaping declared file before consent or any import", async () => {
+    const manifestJson = v2Manifest();
+    const project = makeProject({
+      manifestJson,
+      files: [
+        { path: AGENT_MANIFEST_FILE, contents: manifestJson },
+        { path: "..\\another-agent\\agent.mjs", contents: "outside\n" },
+      ],
+    });
+
+    const report = await openHandoff(project.url, context.ports);
+
+    expect(report).toMatchObject({ ok: false, outcome: "refused" });
+    expect(report.headline).toMatch(/outside its own folder/i);
+    assertNothingHappened();
+  });
+
+  it("refuses an unsafe agent-folder name at the handoff door", async () => {
+    const manifestJson = v2Manifest((manifest) => {
+      (manifest["agent"] as { name: string }).name = "con";
+    });
+    const project = makeProject({ manifestJson });
+    writeFileSync(
+      project.handoffFile,
+      JSON.stringify({ ...project.handoff, agent_id: "con" }),
+      "utf8",
+    );
+
+    const report = await openHandoff(handoffUrl(project.handoffFile, NONCE), context.ports);
+
+    expect(report).toMatchObject({ ok: false, outcome: "refused" });
+    expect(report.headline).toMatch(/name DASH cannot use for its folder/i);
+    assertNothingHappened();
+  });
 
   it("refuses a link that expired, and blames nobody", async () => {
     const project = makeProject({ now: new Date("2026-07-28T09:00:00.000Z"), ttlMs: 60_000 });
