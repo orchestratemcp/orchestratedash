@@ -447,6 +447,53 @@ export interface ConnectionsView {
 }
 
 /* ---------------------------------------------------------------------- *
+ * Saved servers (MAR-574)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * One saved server, as the Servers page reads it.
+ *
+ * Narrowed on purpose, and here the narrowing is the security half of the
+ * record rather than a rendering preference. `HostRecord` carries `key_name` —
+ * which key on this computer DASH reaches this server with — and no page has
+ * any use for it. It is the one field on that record that names a credential,
+ * so it is the one field that must not travel to a renderer merely because it
+ * happened to be in the row.
+ *
+ * `fingerprint` does travel: it is the *server's* public identity, the thing a
+ * person checks against what their provider shows them, and it is null on every
+ * real record today (MAR-572).
+ */
+export interface SavedServerView {
+  host_id: string;
+  label: string;
+  address: string;
+  username: string;
+  port: number;
+  added_at: string;
+  fingerprint: string | null;
+  /**
+   * Where this record sits among the records naming the same address and
+   * account, 1-based, oldest first. Always 1 when nothing is duplicated.
+   */
+  same_server_index: number;
+  /** How many records name it, including this one. 1 when nothing is duplicated. */
+  same_server_count: number;
+}
+
+/**
+ * Every server DASH has saved.
+ *
+ * A list rather than an optional single record, and the four rows in Henrik's
+ * store are why: DASH really can hold more than one record for one machine, it
+ * really does today, and a view shaped as "the server, if any" would have had to
+ * choose one of them silently.
+ */
+export interface HostsView {
+  servers: SavedServerView[];
+}
+
+/* ---------------------------------------------------------------------- *
  * Live workspace
  * ---------------------------------------------------------------------- */
 

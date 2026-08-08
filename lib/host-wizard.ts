@@ -1,5 +1,5 @@
 /**
- * Connecting a server, as four steps (MAR-498).
+ * Connecting a server, as three steps (MAR-498, revised by MAR-574).
  *
  * `lib/host-connect.ts` is the *outcome* half of this issue — which states a
  * connected host can be in, and what each one says. It shipped as the design
@@ -10,6 +10,24 @@
  * Pure, and it renders nothing. `lib/hosts.ts` owns the record and its refusals;
  * `electron/ssh-host.ts` owns the key and the probe; this owns the order, what
  * each step is for, and the copy between them.
+ *
+ * ## Why there are three steps and not four
+ *
+ * There were four, and the first was a grid of provider cards. Henrik used it
+ * five times against a real server and said what it was for:
+ *
+ * > We don't need different servers as examples. Just one "connect a server".
+ * > Then if we want pre-filled fields we can have a dropdown once we started
+ * > connecting a server.
+ *
+ * The card grid asked a question before the flow began, and the answer to that
+ * question set **one default string** — the account name. That is a convenience
+ * on a field, so it is now a field's dropdown rather than a step's worth of
+ * screen, and the flow starts where the person thought it started: at the form.
+ *
+ * The dropdown is optional in the strong sense — no choice is a first-class
+ * state with its own answer, not an empty value the form is waiting on. See
+ * `describeProviderChoice`.
  *
  * ## The inversion, and why it is the whole design
  *
@@ -30,18 +48,20 @@
  * only part that should ever travel. Step 3 below is that inversion, and it is
  * the step this issue exists for.
  *
- * ## What the provider cards are, and what they are deliberately not
+ * ## What the provider list is, and what it is deliberately not
  *
- * MAR-485 — provider recommendations with affiliate links — is an explicit
- * non-goal of this issue, so the cards recommend nothing, rank nothing and link
- * nowhere.
+ * The options recommend nothing, rank nothing and link nowhere. They do exactly
+ * one thing: fill in the account name that provider gives you by default, and
+ * say where its own interface keeps the key list. That is real help for the one
+ * question a novice cannot answer from the outside — "it is asking for a user,
+ * what is my user?" — and it is a fact about a provider rather than an opinion
+ * about one.
  *
- * They do exactly one thing: fill in the account name that provider gives you by
- * default, and say where its own interface keeps the key list. That is real help
- * for the one question a novice cannot answer from the outside — "it is asking
- * for a user, what is my user?" — and it is a fact about a provider rather than
- * an opinion about one. "Something else" is a first-class choice and not a
- * fallback, which is why it carries the same shape of answer as the named ones.
+ * The one opinion DASH does express is `describeHostingRecommendation`, and it
+ * is deliberately somewhere else: it answers *"I don't own a server"*, which is
+ * a different question from *"what is my account called"*, and it is the only
+ * sentence here that names a provider DASH prefers. It is held to its own rules
+ * — see that function.
  */
 
 import { checkHostRecord, type HostRecord, type HostRecordCheck } from "./hosts";
@@ -50,7 +70,7 @@ import { checkHostRecord, type HostRecord, type HostRecordCheck } from "./hosts"
  * The steps
  * ---------------------------------------------------------------------- */
 
-export type WizardStep = "provider" | "address" | "key" | "check";
+export type WizardStep = "address" | "key" | "check";
 
 export interface WizardStepCopy {
   /** The rail's own label. Plain words; the caps are typography. */
@@ -60,24 +80,20 @@ export interface WizardStepCopy {
 }
 
 /**
- * Four steps, named for what the person does rather than for what DASH stores.
+ * Three steps, named for what the person does rather than for what DASH stores.
  *
  * The concept's rail reads `TYPE — VPS_CONFIG — PARAMS — INIT`. Three of those
  * four are DASH's vocabulary wearing a costume, and MAR-528's adoption of this
  * system is explicit that the caps are typography and the words stay English.
- * "Where it is", "How to reach it", "The key", "Check" is the same rail saying
- * what it is for.
+ * "How to reach it", "The key", "Check" is the same rail saying what it is for.
+ *
+ * "Where it is" — the provider step — is gone rather than renamed. See the
+ * module header: it asked a question whose whole effect was one default string.
  */
-export const WIZARD_STEPS: readonly WizardStep[] = ["provider", "address", "key", "check"];
+export const WIZARD_STEPS: readonly WizardStep[] = ["address", "key", "check"];
 
 export function describeStep(step: WizardStep): WizardStepCopy {
   switch (step) {
-    case "provider":
-      return {
-        label: "Where it is",
-        purpose:
-          "Who you rent the server from. DASH does not recommend one — this only fills in the account name most of them use.",
-      };
     case "address":
       return {
         label: "How to reach it",
@@ -101,31 +117,45 @@ export function describeStep(step: WizardStep): WizardStepCopy {
  * Providers
  * ---------------------------------------------------------------------- */
 
-export type ProviderId = "digitalocean" | "hetzner" | "aws" | "other";
+export type ProviderId = "hostinger" | "digitalocean" | "hetzner" | "aws";
 
-export interface ProviderCard {
+export interface ProviderOption {
   id: ProviderId;
   /** The provider's own name, as they spell it. */
   label: string;
   /**
    * The account name that provider hands out on a fresh server.
    *
-   * Null for "Something else", which is not a gap: DASH does not know, and a
-   * guessed default there would be a wrong answer presented as a helpful one.
+   * Never null. An option that prefilled nothing would be an entry in a list
+   * whose only job is prefilling — which is what "Something else" was, and why
+   * it is gone: choosing nothing already means that, and two ways to say the
+   * same thing is one of them being wrong later.
    */
-  default_username: string | null;
+  default_username: string;
   /** Where the person will paste the public key, in that provider's own words. */
   where_the_key_goes: string;
 }
 
 /**
- * The cards, and every field on them is a fact rather than an opinion.
+ * The options, and every field on one is a fact rather than an opinion.
  *
- * No ranking, no prices, no links, no logos — MAR-485 owns all of that and this
- * issue's non-goals name it. What is here is the answer to the one question a
- * novice cannot get from the outside: the account name.
+ * No ranking, no prices, no links, no logos. What is here is the answer to the
+ * one question a novice cannot get from the outside: the account name.
+ *
+ * Hostinger is first because it is the provider DASH has actually been proven
+ * against — MAR-536's attended run on 2026-08-08 reached a real Hostinger box
+ * and the host's own auth log recorded DASH's minted key signing in. That is a
+ * fact about what has been tested, and the ordering says nothing more than the
+ * list's own order; the recommendation lives in `describeHostingRecommendation`
+ * where it can be read as one.
  */
-export const PROVIDER_CARDS: readonly ProviderCard[] = [
+export const PROVIDER_OPTIONS: readonly ProviderOption[] = [
+  {
+    id: "hostinger",
+    label: "Hostinger",
+    default_username: "root",
+    where_the_key_goes: "The SSH keys tab of the server, in its own control panel.",
+  },
   {
     id: "digitalocean",
     label: "DigitalOcean",
@@ -144,21 +174,78 @@ export const PROVIDER_CARDS: readonly ProviderCard[] = [
     default_username: "ubuntu",
     where_the_key_goes: "The key pairs page for the region the server is in.",
   },
-  {
-    id: "other",
-    label: "Something else",
-    default_username: null,
-    where_the_key_goes:
-      "Wherever that provider keeps its key list, or in the account's own list of allowed keys on the server itself.",
-  },
 ];
 
-export function providerCard(id: ProviderId): ProviderCard {
-  const found = PROVIDER_CARDS.find((card) => card.id === id);
+export function providerOption(id: ProviderId): ProviderOption {
+  const found = PROVIDER_OPTIONS.find((option) => option.id === id);
   if (found === undefined) {
     throw new Error("unknown provider");
   }
   return found;
+}
+
+/**
+ * What the form says beside the dropdown, including when nothing is chosen.
+ *
+ * The no-choice state is answered rather than left blank, and that is the whole
+ * reason this is a function. A dropdown whose unchosen state says nothing reads
+ * as a question waiting to be answered; this one has an answer — DASH does not
+ * know your provider's default account, so type the account name — which is the
+ * same shape of answer the named options give and is why the field is genuinely
+ * optional rather than merely un-validated.
+ */
+export function describeProviderChoice(id: ProviderId | null): {
+  where_the_key_goes: string;
+} {
+  return id === null
+    ? {
+        where_the_key_goes:
+          "Wherever that provider keeps its key list, or in the account's own list of allowed keys on the server itself.",
+      }
+    : { where_the_key_goes: providerOption(id).where_the_key_goes };
+}
+
+/* ---------------------------------------------------------------------- *
+ * The person who has no server at all
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The one opinion on this surface, and the two rules it is written under.
+ *
+ * Henrik, 2026-08-08: *"I want a 'don't own a server? We recommend Hostinger →
+ * click here to get your own server'."* This is that line, and the ratified plan
+ * attaches two conditions to it that are load-bearing rather than decorative:
+ *
+ * 1. **The free local path stays first-class on the same screen.** A person who
+ *    reads this must not come away thinking a server is required, because it is
+ *    not: agents run on this computer and always have. So `free_path` is part of
+ *    the same block rather than a sentence somewhere further down, and it is
+ *    stated first in the rendering order.
+ * 2. **The outbound link is an affiliate link, and it appears only after the
+ *    attended proof passes** (MAR-489). Until then `link_label` is a label with
+ *    nothing behind it — see `app/hosts/page.tsx`, which renders it as text and
+ *    carries the `TODO-affiliate` marker rather than shipping a control that
+ *    does nothing when pressed.
+ *
+ * No URL appears in this module in either state. A link in copy would be a raw
+ * identifier by `lib/copy/identifiers.ts`'s own rule, and keeping the address
+ * out of here means the day it arrives is a change to a component and a review
+ * of one line, rather than a string that has quietly been in the copy sweep.
+ */
+export function describeHostingRecommendation(): {
+  free_path: string;
+  question: string;
+  recommendation: string;
+  link_label: string;
+} {
+  return {
+    free_path:
+      "You do not need a server. Agents run on this computer, for nothing, and that is where most people should start.",
+    question: "Do not own a server yet?",
+    recommendation:
+      "A server is for agents that must keep working while DASH is closed. We recommend Hostinger — it is the one DASH has been tested against on a real machine.",
+    link_label: "Get a server from Hostinger",
+  };
 }
 
 /* ---------------------------------------------------------------------- *
@@ -199,8 +286,6 @@ export const DEFAULT_PORT = "22";
  */
 export function canLeave(step: WizardStep, draft: HostDraft): boolean {
   switch (step) {
-    case "provider":
-      return draft.provider !== null;
     case "address":
       return checkDraft(draft).ok;
     case "key":
@@ -278,15 +363,21 @@ export function describeKeyStep(hostLabel: string): {
  */
 export function everyWizardSentence(hostLabel = "My server"): string[] {
   const key = describeKeyStep(hostLabel);
+  const hosting = describeHostingRecommendation();
   return [
     ...WIZARD_STEPS.flatMap((step) => {
       const copy = describeStep(step);
       return [copy.label, copy.purpose];
     }),
-    ...PROVIDER_CARDS.flatMap((card) => [card.label, card.where_the_key_goes]),
+    ...PROVIDER_OPTIONS.flatMap((option) => [option.label, option.where_the_key_goes]),
+    describeProviderChoice(null).where_the_key_goes,
     key.headline,
     key.detail,
     key.refusal,
     key.next_action,
+    hosting.free_path,
+    hosting.question,
+    hosting.recommendation,
+    hosting.link_label,
   ];
 }

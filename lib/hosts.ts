@@ -171,6 +171,90 @@ export function checkHostRecord(candidate: HostRecord): HostRecordCheck {
 }
 
 /* ---------------------------------------------------------------------- *
+ * The same server, twice (MAR-574)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What makes two records the same server: where DASH signs in, and as whom.
+ *
+ * Not the label — two people can call one machine two things and both be right,
+ * and a label collision is a naming annoyance rather than a duplicate. Not the
+ * port either: a second record for the same account on the same address over a
+ * different port is still a second key, a second set of trust, and a second row
+ * that will drift from the first.
+ *
+ * The host id is deliberately not derived from this. An address can change hands
+ * and a record survives being renamed; identity for *storage* stays opaque, and
+ * this is identity for *refusal*, which is a different question asked once at
+ * the door.
+ */
+export interface HostIdentity {
+  address: string;
+  username: string;
+}
+
+/**
+ * Address comparison folds case because DNS does and because a person who typed
+ * `Example.com` yesterday and `example.com` today has typed one server twice.
+ * The account name is already lowercase-only by `USERNAME_PATTERN`, so folding
+ * it changes nothing and is done anyway rather than leaving a rule that holds
+ * only as long as that pattern does.
+ */
+function identityKey(identity: HostIdentity): string {
+  return `${identity.address.trim().toLowerCase()} ${identity.username.trim().toLowerCase()}`;
+}
+
+export function sameHostIdentity(one: HostIdentity, other: HostIdentity): boolean {
+  return identityKey(one) === identityKey(other);
+}
+
+/**
+ * The record a new one would duplicate, or null.
+ *
+ * MAR-574's own evidence for why this exists: Henrik's real store held **four
+ * rows for one machine**, all `root` at one address, one per attempt at the
+ * wizard — because the page's only affordance was "add another" and nothing
+ * anywhere refused the second. Each row carries its own minted key, so four rows
+ * is also four keys on this computer and four lines that were meant to be on
+ * that server.
+ *
+ * Returns the *oldest* match rather than the newest. The refusal names it, and
+ * the record somebody has been using is the one they will recognise.
+ */
+export function findDuplicateHost(
+  existing: Iterable<HostRecord>,
+  candidate: HostIdentity,
+): HostRecord | null {
+  const matches = [...existing].filter((record) => sameHostIdentity(record, candidate));
+  if (matches.length === 0) {
+    return null;
+  }
+  return matches.reduce((oldest, record) => (record.added_at < oldest.added_at ? record : oldest));
+}
+
+/**
+ * What a person reads instead of getting a second row.
+ *
+ * It names the existing record, because "already added" without saying *which*
+ * one sends somebody hunting through a list for a server they cannot tell apart
+ * from the one they just typed. And it says what to do with the one they have,
+ * which is the half a refusal is not finished without.
+ */
+export function describeDuplicateHost(existingLabel: string): {
+  headline: string;
+  detail: string;
+  next_action: string;
+} {
+  return {
+    headline: `You already have this server, saved as ${existingLabel}`,
+    detail:
+      "DASH signs in to this address with this account already. Saving it again would " +
+      "make a second key for one machine, and DASH would show you the same server twice.",
+    next_action: `Use ${existingLabel} instead, or stop using it first and then add this one`,
+  };
+}
+
+/* ---------------------------------------------------------------------- *
  * The verb set
  * ---------------------------------------------------------------------- */
 

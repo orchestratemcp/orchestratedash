@@ -1,8 +1,8 @@
 /**
- * Connecting a server, as four steps (MAR-498).
+ * Connecting a server, as three steps (MAR-498, revised by MAR-574).
  *
  * `tests/host-connect.test.ts` drives what a *connected* host's states say.
- * This drives the half in front of that: the steps, the provider cards, and the
+ * This drives the half in front of that: the steps, the provider list, and the
  * gate that decides whether a step can be left.
  *
  * The assertion this file exists for is the negative one at the bottom. The
@@ -17,14 +17,16 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PORT,
   EMPTY_DRAFT,
-  PROVIDER_CARDS,
+  PROVIDER_OPTIONS,
   WIZARD_STEPS,
   canLeave,
   checkDraft,
+  describeHostingRecommendation,
   describeKeyStep,
+  describeProviderChoice,
   describeStep,
   everyWizardSentence,
-  providerCard,
+  providerOption,
   type HostDraft,
 } from "../lib/host-wizard";
 import { describeDeployArrangement, describeDeployReceipt } from "../lib/deploy/bundle";
@@ -38,17 +40,27 @@ const good: HostDraft = {
   port: DEFAULT_PORT,
 };
 
-describe("the four steps", () => {
+describe("the three steps", () => {
   it("are named for what the person does, not for what DASH stores", () => {
     // The concept's rail reads TYPE — VPS_CONFIG — PARAMS — INIT. Three of those
     // four are DASH's vocabulary wearing a costume, and MAR-528's adoption is
     // explicit that the caps are typography and the words stay English.
     expect(WIZARD_STEPS.map((step) => describeStep(step).label)).toEqual([
-      "Where it is",
       "How to reach it",
       "The key",
       "Check",
     ]);
+  });
+
+  it("starts at the form, because the provider step chose nothing", () => {
+    /*
+     * MAR-574. Henrik used the four-card provider grid five times and reported
+     * that the choice it demanded set exactly one default string. The flow now
+     * begins where a person thought it began — at the fields — and the provider
+     * is a convenience on one of them.
+     */
+    expect(WIZARD_STEPS[0]).toBe("address");
+    expect(WIZARD_STEPS).not.toContain("provider");
   });
 
   it("gives each step a distinct purpose", () => {
@@ -60,15 +72,18 @@ describe("the four steps", () => {
 describe("leaving a step", () => {
   it("gates only on what that step asked for", () => {
     /*
-     * Not "is the whole thing valid". A person on step 1 who has picked a
-     * provider must be able to reach step 2, where the address they have not
-     * typed yet is asked for — gating step 1 on the whole record is the
-     * commonest way a four-step form becomes a dead end.
+     * Not "is the whole thing valid". Each step gates on what it asked for, so
+     * nobody is blocked by something they have not been shown — which is the
+     * commonest way a stepped form becomes a dead end.
      */
-    expect(canLeave("provider", EMPTY_DRAFT)).toBe(false);
-    expect(canLeave("provider", { ...EMPTY_DRAFT, provider: "aws" })).toBe(true);
-    expect(canLeave("address", { ...EMPTY_DRAFT, provider: "aws" })).toBe(false);
+    expect(canLeave("address", EMPTY_DRAFT)).toBe(false);
     expect(canLeave("address", good)).toBe(true);
+  });
+
+  it("never asks for a provider, because the field is genuinely optional", () => {
+    // The one assertion that would fail if the dropdown quietly became required
+    // again: a complete draft with no provider chosen is a draft that can go on.
+    expect(canLeave("address", { ...good, provider: null })).toBe(true);
   });
 
   it("never blocks the last two, because neither takes input", () => {
@@ -105,31 +120,75 @@ describe("the draft's own refusals", () => {
   });
 });
 
-describe("the provider cards", () => {
-  it("recommend nothing and rank nothing", () => {
-    // MAR-485 — provider recommendations with affiliate links — is an explicit
-    // non-goal of this issue. Every field on a card has to be a fact about that
-    // provider rather than an opinion about it.
-    for (const card of PROVIDER_CARDS) {
-      const text = `${card.label} ${card.where_the_key_goes}`;
+describe("the provider list", () => {
+  it("recommends nothing and ranks nothing", () => {
+    // The dropdown is a prefill and not an opinion. The one opinion DASH does
+    // express lives in `describeHostingRecommendation`, where it can be read as
+    // one — see the block below, which holds it to its own rules.
+    for (const option of PROVIDER_OPTIONS) {
+      const text = `${option.label} ${option.where_the_key_goes}`;
       for (const word of ["recommend", "best", "cheapest", "we suggest", "popular", "http"]) {
-        expect(text.toLowerCase(), `${card.label} must not ${word}`).not.toContain(word);
+        expect(text.toLowerCase(), `${option.label} must not ${word}`).not.toContain(word);
       }
     }
   });
 
-  it("has a Something else that is a first-class choice", () => {
-    // Not a fallback. It answers the same question the named ones do, and it
-    // answers it by admitting DASH does not know the account name — a guess
-    // there would be a wrong answer presented as a helpful one.
-    const other = providerCard("other");
-    expect(other.default_username).toBeNull();
-    expect(other.where_the_key_goes.length).toBeGreaterThan(0);
+  it("gives every option an account name to prefill, because that is its only job", () => {
+    /*
+     * MAR-574. An option that prefilled nothing would be an entry in a list
+     * whose whole purpose is prefilling — which is what "Something else" was,
+     * and why it is gone: choosing nothing already means that.
+     */
+    for (const option of PROVIDER_OPTIONS) {
+      expect(option.default_username.length, option.label).toBeGreaterThan(0);
+    }
   });
 
-  it("gives every named provider an account name to prefill", () => {
-    for (const card of PROVIDER_CARDS.filter((one) => one.id !== "other")) {
-      expect(card.default_username, card.label).not.toBeNull();
+  it("answers the same question when nothing is chosen", () => {
+    // Not a blank. A dropdown whose unchosen state says nothing reads as a
+    // question waiting to be answered; this one has an answer.
+    expect(describeProviderChoice(null).where_the_key_goes.length).toBeGreaterThan(0);
+    expect(describeProviderChoice("hostinger").where_the_key_goes).toBe(
+      providerOption("hostinger").where_the_key_goes,
+    );
+  });
+
+  it("carries the one provider DASH has actually been proven against", () => {
+    // MAR-536's attended run on 2026-08-08 reached a real Hostinger box and the
+    // host's own auth log recorded DASH's minted key signing in. Every other
+    // name on the list is a fact about a default account name and nothing more.
+    expect(PROVIDER_OPTIONS.map((option) => option.id)).toContain("hostinger");
+  });
+});
+
+describe("the person who does not own a server", () => {
+  const copy = describeHostingRecommendation();
+
+  it("says the free local path first, so hosting cannot read as required", () => {
+    /*
+     * The load-bearing half of Henrik's own line. A person who reads a
+     * recommendation must not come away thinking a server is needed, because it
+     * is not — agents run on this computer and always have.
+     */
+    expect(copy.free_path).toContain("do not need a server");
+    expect(copy.free_path.toLowerCase()).toContain("nothing");
+  });
+
+  it("names the one provider it recommends, and says why", () => {
+    expect(copy.recommendation).toContain("Hostinger");
+    expect(copy.recommendation).toContain("tested against");
+  });
+
+  it("carries no link, in either the label or the sentences", () => {
+    /*
+     * The outbound link is an affiliate link and the ratified plan puts it after
+     * the attended proof passes (MAR-489). Until then no address exists here at
+     * all — which is also what keeps this copy clean under the raw-identifier
+     * rule, since a URL is one.
+     */
+    for (const sentence of [copy.free_path, copy.question, copy.recommendation, copy.link_label]) {
+      expect(sentence).not.toContain("http");
+      expect(sentence).not.toContain(".com");
     }
   });
 });

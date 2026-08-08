@@ -38,6 +38,7 @@ import type { AgentCommand } from "../../lib/workspace";
 import type {
   AgentsView,
   ConnectionsView,
+  HostsView,
   RunView,
   RunsView,
   WorkInboxView,
@@ -201,6 +202,7 @@ export interface DashDataSource {
   connections(): Promise<ViewResult<ConnectionsView>>;
   inbox(): Promise<ViewResult<WorkInboxView>>;
   workspace(agent: string): Promise<ViewResult<WorkspaceView>>;
+  hosts(): Promise<ViewResult<HostsView>>;
 }
 
 /**
@@ -224,6 +226,12 @@ async function fromBridge<T>(call: () => Promise<{ ok: true; data: T } | { ok: f
 }
 
 function shellSource(bridge: DashReadApi): DashDataSource {
+  /*
+   * MAR-574. Read once into a local rather than checked at the call site: a
+   * shell built before this read exposes a `dashData` without it, and the
+   * narrowing has to survive into the closure below.
+   */
+  const readHosts = bridge.hosts?.bind(bridge);
   return {
     host: "shell",
     can_act: typeof window !== "undefined" && window.dashShell !== undefined,
@@ -233,6 +241,16 @@ function shellSource(bridge: DashReadApi): DashDataSource {
     connections: () => fromBridge(() => bridge.connections()),
     inbox: () => fromBridge(() => bridge.inbox()),
     workspace: (agent) => fromBridge(() => bridge.workspace(agent)),
+    /*
+     * Refused rather than called when the shell predates this read, and
+     * `describeViewFailure("refused")` is exactly the right sentence for it:
+     * the renderer asked this build for a document it does not offer, which can
+     * only be a wiring mismatch rather than anything the user did.
+     */
+    hosts: () =>
+      readHosts === undefined
+        ? Promise.resolve({ ok: false, recovery: describeViewFailure("refused") })
+        : fromBridge(readHosts),
   };
 }
 
@@ -271,6 +289,7 @@ function browserSource(): DashDataSource {
     inbox: () => fromHttp("/api/views/inbox"),
     workspace: (agent) =>
       fromHttp(`/api/views/workspace?agent=${encodeURIComponent(agent)}`),
+    hosts: () => fromHttp("/api/views/hosts"),
   };
 }
 

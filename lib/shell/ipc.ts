@@ -917,7 +917,26 @@ export type HostActionResult =
       public_key: string;
       key_name: string;
     }
-  | { ok: true; action: "probe"; host_id: string; label: string; runner_build: string | null }
+  /**
+   * `agents_running` is a count from the server's own answer (MAR-574).
+   *
+   * A number rather than a list of names, and that is a decision about what
+   * DASH knows rather than about what fits through the channel. DASH keeps **no
+   * record of what it has deployed where** — `host.deploy` pushes a bundle,
+   * starts it and stores nothing — so the only account of what is on a server
+   * is what that server says when it is asked. A list travelling here would
+   * read as DASH's inventory of somebody else's machine, and there is no such
+   * inventory to be right or wrong about. The count answers the question the
+   * page asks and claims nothing beyond the check that produced it.
+   */
+  | {
+      ok: true;
+      action: "probe";
+      host_id: string;
+      label: string;
+      runner_build: string | null;
+      agents_running: number;
+    }
   | {
       ok: true;
       action: "deploy";
@@ -1131,6 +1150,7 @@ export async function dispatchCommand(
             host_id: result.host_id,
             label: result.label,
             runner_build: result.runner_build ?? "",
+            agents_running: result.agents_running,
           },
         };
       case "deploy":

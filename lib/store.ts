@@ -19,7 +19,12 @@ import {
   transact,
   type AgentFolderIssue,
 } from "./db";
-import { checkHostRecord, type HostRecord } from "./hosts";
+import {
+  checkHostRecord,
+  describeDuplicateHost,
+  findDuplicateHost,
+  type HostRecord,
+} from "./hosts";
 import { checkManifestConstraints } from "./manifest-constraints";
 import {
   AgentFolderValidationError,
@@ -320,12 +325,35 @@ export function readHost(hostId: string): HostRecord | null {
 }
 
 /**
+ * Every saved host, oldest first (MAR-574).
+ *
+ * Named rather than left to callers spreading `readStore().hosts`, so that the
+ * duplicate check in main and the projection in `lib/views/build.ts` are asking
+ * one function the same question.
+ */
+export function listHosts(): HostRecord[] {
+  return Object.values(readStore().hosts).sort(
+    (one, other) =>
+      one.added_at.localeCompare(other.added_at) || one.host_id.localeCompare(other.host_id),
+  );
+}
+
+/**
  * Persist a host only after its argv-facing fields have passed the one shared
- * validator. This is defence in depth: main validates the renderer's draft
- * before minting a key, and the database writer refuses a future direct caller
- * that bypassed that door.
+ * validator, and only when it is not a server DASH already has.
+ *
+ * Defence in depth twice over: main validates the renderer's draft before
+ * minting a key and refuses a duplicate before creating one, and this refuses a
+ * future direct caller that bypassed either door. MAR-574's evidence for why
+ * the second refusal is worth a query on every write is a real store holding
+ * four rows for one machine — the wizard was the only writer, and it wrote them
+ * all quite happily.
  */
 export function saveHost(record: HostRecord): void {
+  const duplicate = findDuplicateHost(listHosts(), record);
+  if (duplicate !== null) {
+    throw new Error(`Refusing to save this server: ${describeDuplicateHost(duplicate.label).headline}`);
+  }
   const checked = checkHostRecord(record);
   if (!checked.ok) {
     throw new Error(`Refusing to save this server: ${checked.detail}`);
