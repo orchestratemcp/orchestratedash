@@ -27,6 +27,7 @@ import type { RunArtifactRecord } from "../store";
 import {
   describeArtifactAvailability,
   describeArtifactRole,
+  describeReceiptMoment,
   describeRecordSize,
   type ArtifactAvailability,
   type ArtifactRole,
@@ -106,8 +107,11 @@ export function buildArtifactCards(
       recovery: describeArtifactAvailability(availability, { title: artifact.title }),
       receipt: {
         agent: artifact.agent,
-        stated_at: artifact.generated_at,
-        received_at: record.received_at,
+        // Worded, not stored. See `describeReceiptMoment` — this was the one
+        // field in this struct still shipping the machine's spelling of a
+        // moment, beside a `size` that has been worded since MAR-434.
+        stated_at: describeReceiptMoment(artifact.generated_at),
+        received_at: describeReceiptMoment(record.received_at),
         size: describeRecordSize(record.stored_bytes),
       },
       reference: {

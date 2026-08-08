@@ -1789,7 +1789,17 @@ if (recorded !== null) {
             controls_inside: number;
             raw_instants: number;
           } | null = null;
+          /*
+           * Skipped rather than failed when there is no completed run, which is
+           * the discipline MAR-473 put on 6i/6j/6k after one upstream failure
+           * printed three red lines each blaming the thing it is named after.
+           * The table binds `digest`, so with no run there is no artifact and
+           * "the panel has no rows" would be a true statement about 6g's
+           * failure wearing this proof's name.
+           */
+          const canWitnessPanel = completed !== null;
           try {
+            if (!canWitnessPanel) throw new Error("no completed run to witness a panel against");
             await window.loadURL(workspaceUrl);
             panel = await waitForValue(async () => {
               const seen = (await window.webContents.executeJavaScript(
@@ -1814,19 +1824,28 @@ if (recorded !== null) {
             }, "the workspace to draw the sample's declared panel");
           } catch (error: unknown) {
             panel = null;
-            console.warn(`[smoke] the agent workspace did not load: ${String(error)}`);
+            if (canWitnessPanel) {
+              console.warn(`[smoke] the agent workspace did not load: ${String(error)}`);
+            }
           }
 
-          check(
-            "6n. the workspace draws the panel the sample's manifest declared",
-            panel !== null &&
-              panel.heading === "What the scout found" &&
-              panel.labels.length === 3 &&
-              // The table binds `digest`, so rows exist only because the run
-              // above actually produced one and the role resolved against it.
-              panel.table_rows > 0,
-            panel,
-          );
+          if (!canWitnessPanel) {
+            skip(
+              "6n. the workspace draws the panel the sample's manifest declared",
+              "6g produced no run whose outputs a panel could bind against",
+            );
+          } else {
+            check(
+              "6n. the workspace draws the panel the sample's manifest declared",
+              panel !== null &&
+                panel.heading === "What the scout found" &&
+                panel.labels.length === 3 &&
+                // The table binds `digest`, so rows exist only because the run
+                // above actually produced one and the role resolved against it.
+                panel.table_rows > 0,
+              panel,
+            );
+          }
 
           /*
            * 6o is the ADR's strongest claim, measured on a real route rather
@@ -1840,7 +1859,9 @@ if (recorded !== null) {
           if (panel === null) {
             skip(
               "6o. nothing inside the author's region is a control or a raw instant",
-              "6n found no panel to inspect",
+              canWitnessPanel
+                ? "6n found no panel to inspect"
+                : "6g produced no run whose outputs a panel could bind against",
             );
           } else {
             check(

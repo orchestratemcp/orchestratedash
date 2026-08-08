@@ -221,7 +221,16 @@ describe("the receipt survives an output going missing", () => {
       for (const label of Object.values(OUTPUTS_PANEL_COPY.receipt)) {
         expect(html, label).toContain(label);
       }
-      expect(html).toContain("2026-08-05T21:14:02.000Z");
+      /*
+       * MAR-548: this used to assert the stored `2026-08-05T21:14:02.000Z`
+       * appeared, which is how the receipt came to ship a machine instant onto
+       * three guided surfaces — the run detail page, this Outputs area, and the
+       * panel — beside a `size` worded since MAR-434. Smoke check 6o found it.
+       * The provenance still has to survive the output going, which is what
+       * this case is about; it just has to survive in DASH's words.
+       */
+      expect(html).not.toContain("2026-08-05T21:14:02.000Z");
+      expect(html).toContain("August 2026 at");
       expect(html).toContain("4.2 kB");
     },
   );

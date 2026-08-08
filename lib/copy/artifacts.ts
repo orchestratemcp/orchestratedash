@@ -53,6 +53,11 @@
  */
 
 import type { Recovery } from "./recovery";
+/* A value import, and safe for the same reason `app/_components/digest.tsx`'s
+   is: `lib/copy/when.ts` has no imports at all, so it reaches no Node builtin
+   and drags nothing into the renderer bundle — the rule
+   `tests/client-bundle.test.ts` enforces over everything reachable from `app/`. */
+import { plainMoment } from "./when";
 
 /**
  * The panel's own fixed words.
@@ -247,4 +252,37 @@ export function describeRecordSize(bytes: number): string {
     return `${(bytes / 1000).toFixed(1)} kB`;
   }
   return `${(bytes / 1_000_000).toFixed(1)} MB`;
+}
+
+/**
+ * A receipt's moment, in DASH's words rather than the machine's (MAR-548).
+ *
+ * **Found by a proof rather than by reading.** MAR-548's smoke check 6o asserts
+ * that no `YYYY-MM-DDTHH:MM:SS.sssZ` reaches the declarative panel, and it went
+ * red on the receipt — `stated_at` and `received_at` were interpolated exactly
+ * as stored, sitting beside a `size` that `describeRecordSize` has worded since
+ * MAR-434. One field in a struct being raw while its sibling is worded is an
+ * oversight rather than a decision, and this is that oversight closed.
+ *
+ * Three surfaces from one place, because `buildArtifactCards` feeds all of them:
+ * the run detail page, the workspace Outputs area, and the panel's `report` and
+ * `outputs` sections. It is MAR-571's fix pointed at the other value in the same
+ * card — that one was the digest item's `published_at`, this is the receipt
+ * around it — and both are MAR-533's rule, which `lib/copy/when.ts`'s own header
+ * states: a timestamp with a `T` and a `Z` in it is the same failure as a raw
+ * identifier, because a person made to read a machine's spelling of something
+ * has been handed the machine's problem.
+ *
+ * **The two moments stay two.** `stated_at` is the agent's claim and
+ * `received_at` is DASH's record, and wording them changes how each reads and
+ * not which is which — a receipt that collapsed them would be the promotion the
+ * labels in `OUTPUTS_PANEL_COPY.receipt` exist to prevent.
+ *
+ * Unreadable becomes `"unknown"` rather than the input, which is
+ * `describeRecordSize`'s answer four lines up for the same slot and the same
+ * reason: a value that cannot be computed is absent, and `lib/copy/when.ts`'s
+ * rule is that no function there ever hands its input back to the screen.
+ */
+export function describeReceiptMoment(iso: string): string {
+  return plainMoment(iso) ?? "unknown";
 }
