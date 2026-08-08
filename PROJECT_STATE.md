@@ -2682,7 +2682,7 @@ Ajv cannot reach the client-side renderer slice 3 needs; and Ajv's account of a
 failed `oneOf` is five copies of `must be equal to constant`, which names
 nothing an author can act on. So `lib/panel-spec.ts` has **no imports at all**,
 carries the vocabularies by value, and returns typed errors. The obvious cost
-is a second source of truth, and it is paid rather than waved at: all 61 corpus
+is a second source of truth, and it is paid rather than waved at: all 62 corpus
 cases in `tests/panel-spec.test.ts` run through both the compiled schema and
 the pure reader and must return the same verdict, so a rule added to one and
 not the other turns the file red.
