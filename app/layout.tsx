@@ -65,8 +65,9 @@ export default function RootLayout({
         <FleetStripScript />
       </head>
       {/*
-        Three bands: the chrome, the page, and the fleet strip along the bottom
-        edge (MAR-503).
+        Three bands and a left track: the chrome across the top, the sidebar
+        beside the page (MAR-546), and the fleet strip along the bottom edge
+        (MAR-503).
 
         A grid rather than normal flow because the strip has to sit at the
         bottom of the *window* on a short page and at the bottom of the
