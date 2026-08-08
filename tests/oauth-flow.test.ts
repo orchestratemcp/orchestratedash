@@ -286,6 +286,82 @@ describe("exchanging and refreshing", () => {
   });
 
   /**
+   * MAR-542: a wrong or missing Google client secret used to reach a user as
+   * `provider_refused` — "DASH's request was rejected, report this bug" — a
+   * config error dressed as DASH's own defect. This is what Google's real
+   * token endpoint sends for it, RFC 6749 §5.2's own shape for client
+   * authentication failing, not the loopback proof fixture's: that fixture's
+   * `/token` route (`electron/smoke.ts`) answers every request with `200`
+   * and structurally cannot produce this body, which is exactly how the
+   * missing-`client_secret` defect MAR-508 found passed every gate that only
+   * exercised the fixture. Pinning the classification needs a fetch that
+   * returns what Google returns.
+   */
+  it("classifies invalid_client as a client misconfiguration, not a generic refusal", async () => {
+    await expect(
+      refreshAccessToken(
+        google,
+        storedCredential(),
+        respondingWith(401, { error: "invalid_client", error_description: "Unauthorized" }),
+      ),
+    ).rejects.toMatchObject({ code: "client_misconfigured" });
+
+    await expect(
+      exchangeAuthorizationCode(
+        google,
+        { code: "c", verifier: "v", redirect_uri: "r", scopes: GMAIL_SCOPES },
+        respondingWith(401, {
+          error: "invalid_client",
+          error_description: "The OAuth client was not found.",
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "client_misconfigured" });
+
+    // And the words say what the code means: a secret DASH itself got wrong,
+    // named as DASH's setup rather than the account, with a concrete fix —
+    // not the "report this" sentence every other malformed request still
+    // gets.
+    const recovery = describeAuthorizationFailure("client_misconfigured", { service: "Google" });
+    expect(recovery.actor).toBe("user");
+    expect(recovery.headline.toLowerCase()).toContain("client secret");
+    expect(recovery.headline.toLowerCase()).not.toContain("report");
+    expect(recovery.meaning.toLowerCase()).not.toContain("wrong with your account");
+    expect(recovery.next_action.toLowerCase()).toContain("client secret");
+    expectPlainLanguage([recovery.headline, recovery.meaning, recovery.next_action]);
+  });
+
+  /**
+   * The rest of RFC 6749 §5.2's malformed-request codes are not `invalid_client`
+   * and must not be swept into the same reclassification: `invalid_request` in
+   * particular covers a missing parameter, a duplicated one, or any other
+   * malformed field, so narrowing it to "client secret" would be a guess, not
+   * a diagnosis of what Google actually said. MAR-508's own `client_secret is
+   * missing.` failure reached exactly this code, and it must keep reading as
+   * a DASH-side fault worth reporting rather than a named fix that might be
+   * wrong.
+   */
+  it("does not stretch the client-misconfiguration classification onto other malformed-request codes", async () => {
+    await expect(
+      refreshAccessToken(
+        google,
+        storedCredential(),
+        respondingWith(400, {
+          error: "invalid_request",
+          error_description: "client_secret is missing.",
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "provider_refused" });
+
+    await expect(
+      refreshAccessToken(
+        google,
+        storedCredential(),
+        respondingWith(400, { error: "unauthorized_client" }),
+      ),
+    ).rejects.toMatchObject({ code: "provider_refused" });
+  });
+
+  /**
    * MAR-508's own aftermath: a malformed token request — a missing
    * `client_secret` classifies exactly this way — must not read to the user
    * as their account being turned away. `provider_refused` is what
