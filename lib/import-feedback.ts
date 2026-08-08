@@ -16,12 +16,13 @@
  * contract, here is what the validator said".
  */
 
-// The one import this module may take, and it is safe by construction:
-// `lib/panel-spec.ts` has no imports of its own, so nothing reaches the
-// filesystem through it. The alternative was a second copy of the section
-// vocabulary written out as prose here, which is the copy that would still say
-// five types on the day a sixth was added.
+// The only imports this module may take, and they are safe by construction:
+// neither `lib/panel-spec.ts` nor `lib/connection-spec.ts` has imports of its
+// own, so nothing reaches the filesystem through them. The alternative was a
+// second copy of each closed vocabulary written out as prose here, which is the
+// copy that would still say five section types on the day a sixth was added.
 import { PANEL_MANIFEST_PATH, PANEL_SECTION_TYPES_V1 } from "./panel-spec";
+import { CONNECTION_REQUIREMENTS_MANIFEST_PATH } from "./connection-spec";
 
 /**
  * The distinctive phrase `lib/manifest-constraints.ts` puts in its error
@@ -47,6 +48,7 @@ export type ImportFailureKind =
   | "invalid_agent_folder_name"
   | "remote_agent_dash_connections"
   | "invalid_panel"
+  | "invalid_connection_requirements"
   | "schema_mismatch";
 
 export interface ImportFailureExplanation {
@@ -142,6 +144,36 @@ export function explainImportFailure(errors: string[]): ImportFailureExplanation
         "and each one needs a heading and the details its kind requires. DASH refuses a panel " +
         "it would have to guess at rather than drawing half of one. Re-export the agent from a " +
         "current OrchestrateKit; the validator's errors below point at the section at fault.",
+      raw: errors,
+    };
+  }
+
+  // Before the missing-property branch for the panel case's reason (MAR-569). A
+  // requirement that forgot which connection it acts on produces Ajv's ordinary
+  // "must have required property" string, and read by that branch it becomes
+  // "this manifest is missing a required section" naming an internal field —
+  // which sends an author to the top of their manifest for something that is
+  // wrong inside one line of their connection list.
+  if (joined.includes(CONNECTION_REQUIREMENTS_MANIFEST_PATH)) {
+    // The vocabulary is deliberately *not* named here the way the panel's
+    // section types are. Those five are ordinary words; these are slugs, and
+    // `lib/copy/identifiers.ts` refuses them on a guided surface — correctly,
+    // since "google oauth broker" is not what a person calls signing in.
+    //
+    // So the two ways are described rather than listed, which means this
+    // sentence cannot be derived from the pinned array and would quietly go
+    // stale if a third kind were ever added. `tests/connection-spec.test.ts`
+    // pins the vocabulary's size against this sentence for exactly that reason:
+    // add a kind and that test fails, naming this paragraph.
+    return {
+      kind: "invalid_connection_requirements",
+      headline: "This agent describes what it needs connected in a way DASH cannot read.",
+      suggestion:
+        "DASH connects things in two ways: it signs you in and holds that sign-in for you, or it " +
+        "keeps a key you paste in. Every line has to name one of those two, and point at a " +
+        "connection the same file describes. DASH refuses a list it would have to guess at, " +
+        "because the alternative is showing you a Connect button that does nothing. Re-export the " +
+        "agent from a current OrchestrateKit; the validator's errors below point at the line at fault.",
       raw: errors,
     };
   }
