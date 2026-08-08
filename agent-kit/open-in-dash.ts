@@ -44,6 +44,24 @@ export interface HandoffWriteResult {
 }
 
 /**
+ * The files `planScaffold` creates, kept in its order.
+ *
+ * This is a declaration, not a recursive directory acquisition: a handoff must
+ * never scoop up `.env`, `node_modules`, reports, or any other file merely
+ * because it happens to be beside the agent. The Agent Kit knows which files it
+ * authored, and those are the files the user is asked to let DASH copy.
+ */
+const AGENT_KIT_PROJECT_FILES = [
+  "agent.manifest.json",
+  "package.json",
+  "agent.mjs",
+  "scripts/open-in-dash.mjs",
+  "sources.json",
+  "README.md",
+  ".gitignore",
+] as const;
+
+/**
  * Compose and write the handoff for the project in `projectDir`.
  *
  * Exported and pure of process concerns so `tests/agent-kit.test.ts` can drive
@@ -56,11 +74,13 @@ export function writeHandoff(
 ): { ok: true; value: HandoffWriteResult } | { ok: false; problem: string } {
   const manifestPath = path.join(projectDir, "agent.manifest.json");
 
+  let manifestJson: string;
   let manifest: {
     agent?: { name?: unknown; display_name?: unknown; goal?: unknown };
   };
   try {
-    manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as typeof manifest;
+    manifestJson = readFileSync(manifestPath, "utf8");
+    manifest = JSON.parse(manifestJson) as typeof manifest;
   } catch {
     return {
       ok: false,
@@ -72,6 +92,23 @@ export function writeHandoff(
   const agentId = manifest.agent?.name;
   if (typeof agentId !== "string" || agentId.length === 0) {
     return { ok: false, problem: "This agent has no name, so DASH would have nothing to call it." };
+  }
+
+  let files: Array<{ path: string; contents: string }>;
+  try {
+    files = AGENT_KIT_PROJECT_FILES.map((relative) => ({
+      path: relative,
+      contents:
+        relative === "agent.manifest.json"
+          ? manifestJson
+          : readFileSync(path.join(projectDir, ...relative.split("/")), "utf8"),
+    }));
+  } catch {
+    return {
+      ok: false,
+      problem:
+        "This agent's build is incomplete, so DASH cannot take a reliable copy. Build it again, then run Open in DASH once more.",
+    };
   }
 
   const built = buildHandoff(
@@ -90,6 +127,7 @@ export function writeHandoff(
       // which is what a person means when they say "run it with node".
       command: "node",
       args: ["agent.mjs"],
+      files,
       produced_by: `create-dash-agent ${kitVersion}`,
     },
     {

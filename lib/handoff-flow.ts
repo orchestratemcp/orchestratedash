@@ -45,6 +45,17 @@
 import { readFileSync, statSync } from "node:fs";
 
 import { isManifestV2, validateManifest, type AnyAgentManifest } from "./contracts";
+import {
+  AGENT_CODE_DIRECTORY,
+  AGENT_MANIFEST_FILE,
+  agentFolderCodePath,
+  agentFolderFilesDigest,
+  agentFolderMatchesImport,
+  agentFolderManifestPath,
+  inspectAgentFolderName,
+  validateAgentFolderFiles,
+  type AgentFolderFile,
+} from "./agent-folders";
 import type { HandoffOutcome, HandoffRecord } from "./handoff-ledger";
 import { checkManifestConstraints } from "./manifest-constraints";
 import {
@@ -60,6 +71,7 @@ import {
   readRegistration,
   removeRegistration,
   writeRegistration,
+  type AgentRegistration,
   type CleanupReport,
   type ManagedRegistration,
 } from "./registration";
@@ -125,7 +137,14 @@ export interface HandoffPorts {
   /** Ask the person. The native question must close when the handoff expires. */
   confirm(prompt: HandoffPrompt, expiresAt: string): Promise<boolean | "expired">;
   /** Store the manifest so the rest of DASH can see the agent. */
-  importManifest(manifest: unknown): { ok: boolean; errors?: string[] };
+  importManifest(
+    manifest: unknown,
+    options?: {
+      files?: readonly AgentFolderFile[];
+      registration?: AgentRegistration;
+      manifestJson?: string;
+    },
+  ): { ok: boolean; errors?: string[] };
   /** Drop DASH's current picture of an agent. History is kept; see lib/store.ts. */
   forgetAgent(agentId: string): { existed: boolean };
   recordHandoff(record: HandoffRecord): void;
@@ -174,7 +193,7 @@ export async function openHandoff(url: string, ports: HandoffPorts): Promise<Han
   }
 
   const handoff = verified.value;
-  const manifest = readManifestFor(handoff);
+  const manifest = readManifestFor(handoff, ports.dataDir);
   if (!manifest.ok) {
     return refuse(ports, handoff, manifest.headline, manifest.detail);
   }
@@ -210,6 +229,101 @@ function refuse(
  * dialog that wasted their time and taught them that approving is meaningless.
  */
 function readManifestFor(
+  handoff: AgentHandoff,
+  dataDir: string,
+):
+  | { ok: true; value: AnyAgentManifest; json: string }
+  | { ok: false; headline: string; detail?: string } {
+  if (handoff.files === undefined) {
+    return readManifestFromProject(handoff);
+  }
+
+  if (inspectAgentFolderName(handoff.agent_id) !== null) {
+    return {
+      ok: false,
+      headline: `“${handoff.display_name}” has a name DASH cannot use for its folder.`,
+      detail: "Give the agent a file-name-safe name and build it again. DASH will not silently rename it.",
+    };
+  }
+  const fileErrors = validateAgentFolderFiles(dataDir, handoff.agent_id, handoff.files);
+  if (fileErrors.length > 0) {
+    return {
+      ok: false,
+      headline: `“${handoff.display_name}” asks DASH to copy a file outside its own folder.`,
+      detail: "Build the agent again with a current Agent Kit. DASH did not copy any files.",
+    };
+  }
+  const declared = handoff.files.find(
+    (file) => file.path.replace(/\\/g, "/") === AGENT_MANIFEST_FILE,
+  );
+  if (declared === undefined) {
+    return {
+      ok: false,
+      headline: `“${handoff.display_name}” did not include the plan it asks DASH to copy.`,
+      detail: "Build the agent again, then run “Open in DASH” from its folder.",
+    };
+  }
+  if (Buffer.byteLength(declared.contents, "utf8") > MAX_MANIFEST_BYTES) {
+    return {
+      ok: false,
+      headline: `“${handoff.display_name}” has an implausibly large plan, so DASH did not read it.`,
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(declared.contents);
+  } catch {
+    return {
+      ok: false,
+      headline: `“${handoff.display_name}” has a damaged plan file, so DASH did not add it.`,
+      detail: "Build the agent again, then run “Open in DASH” from its folder.",
+    };
+  }
+  const validation = validateManifest(parsed);
+  if (!validation.ok) {
+    return {
+      ok: false,
+      headline: `“${handoff.display_name}” does not match what DASH knows how to run.`,
+      detail: "Building the agent again with a current Agent Kit usually fixes this.",
+    };
+  }
+  if (!isManifestV2(validation.value)) {
+    return {
+      ok: false,
+      headline: `“${handoff.display_name}” was built for an older version of DASH.`,
+      detail:
+        "DASH can only run agents built with the current Agent Kit. Older agents can still be imported to watch, but not started.",
+    };
+  }
+  if (validation.value.agent.name !== handoff.agent_id) {
+    return {
+      ok: false,
+      headline: "That handoff does not match the agent's own plan, so DASH did not add it.",
+      detail: "Build the agent again, then run “Open in DASH” from its folder.",
+    };
+  }
+  const constraintErrors = checkManifestConstraints(validation.value);
+  if (constraintErrors.length > 0) {
+    if (inspectAgentFolderName(validation.value.agent.name) !== null) {
+      return {
+        ok: false,
+        headline: `“${handoff.display_name}” has a name DASH cannot use for its folder.`,
+        detail:
+          "Give the agent a file-name-safe name and build it again. DASH will not silently rename it.",
+      };
+    }
+    return {
+      ok: false,
+      headline: `“${handoff.display_name}” has a name or runtime declaration DASH cannot import.`,
+      detail: "Build the agent again with a current Agent Kit.",
+    };
+  }
+  return { ok: true, value: validation.value, json: declared.contents };
+}
+
+/** Compatibility path for a handoff written before file sets were carried. */
+function readManifestFromProject(
   handoff: AgentHandoff,
 ):
   | { ok: true; value: AnyAgentManifest; json: string }
@@ -279,7 +393,16 @@ function readManifestFor(
   // door too — the same rule at the same moment, one step earlier than the
   // store, because a refusal after the user approved the dialog is a dialog
   // that wasted their time.
-  if (checkManifestConstraints(validation.value).length > 0) {
+  const legacyConstraintErrors = checkManifestConstraints(validation.value);
+  if (legacyConstraintErrors.length > 0) {
+    if (inspectAgentFolderName(validation.value.agent.name) !== null) {
+      return {
+        ok: false,
+        headline: `“${handoff.display_name}” has a name DASH cannot use for its folder.`,
+        detail:
+          "Give the agent a file-name-safe name and build it again. DASH will not silently rename it.",
+      };
+    }
     return {
       ok: false,
       headline: `“${handoff.display_name}” runs on another computer, but asks DASH to manage sign-ins for it.`,
@@ -312,7 +435,31 @@ async function register(
   // The idempotent path. Same agent, same facts: nothing to write and nothing
   // to ask. The end state is still made true — an agent that is registered and
   // not running is not "already added" in any sense the user cares about.
-  if (existing !== null && changesFrom(existing, handoff, manifestJson).length === 0) {
+  const changes =
+    existing === null ? [] : changesFrom(existing, handoff, manifestJson, ports.dataDir);
+  if (
+    existing !== null &&
+    handoff.files !== undefined &&
+    !agentFolderMatchesImport({
+      dataDir: ports.dataDir,
+      agent: handoff.agent_id,
+      manifestJson,
+      registration: {
+        agent_id: handoff.agent_id,
+        manifest_path: AGENT_MANIFEST_FILE,
+        command: handoff.command,
+        args: handoff.args,
+        cwd: AGENT_CODE_DIRECTORY,
+        env: handoff.env,
+      },
+      files: handoff.files,
+    }) &&
+    !changes.includes("the copy of the agent DASH would run has changed")
+  ) {
+    changes.push("the copy of the agent DASH would run has changed");
+  }
+
+  if (existing !== null && changes.length === 0) {
     const seenBefore = ports.readHandoffRecord(handoff.handoff_id) !== null;
     const started = await ensureRunning(handoff.agent_id, ports);
     ports.recordHandoff({
@@ -335,7 +482,6 @@ async function register(
     };
   }
 
-  const changes = existing === null ? [] : changesFrom(existing, handoff, manifestJson);
   const prompt =
     existing === null
       ? describeNewAgent(handoff, manifest)
@@ -385,6 +531,45 @@ async function register(
     };
   }
 
+  const folderCarrying = handoff.files !== undefined;
+  const folderRegistration: AgentRegistration | undefined = folderCarrying
+    ? {
+        agent_id: handoff.agent_id,
+        manifest_path: AGENT_MANIFEST_FILE,
+        command: handoff.command,
+        args: handoff.args,
+        cwd: AGENT_CODE_DIRECTORY,
+        env: handoff.env,
+      }
+    : undefined;
+
+  // Folder first, SQLite index second. `importManifest` performs both in that
+  // order; the live runner registration is written only after the durable
+  // source and its projection agree.
+  const imported = ports.importManifest(manifest, {
+    files: handoff.files,
+    registration: folderRegistration,
+    manifestJson,
+  });
+  if (!imported.ok) {
+    ports.log(`[dash-shell] the store refused an agent folder: ${handoff.agent_id}`);
+    return refuse(
+      ports,
+      handoff,
+      `DASH could not finish copying “${handoff.display_name}”, so it was not added.`,
+      "Nothing was started. Build the agent again with a current Agent Kit, then open it in DASH once more.",
+    );
+  }
+
+  const storedManifest = folderCarrying
+    ? agentFolderManifestPath(ports.dataDir, handoff.agent_id)
+    : undefined;
+  const storedCwd = folderCarrying
+    ? agentFolderCodePath(ports.dataDir, handoff.agent_id)
+    : handoff.project_dir;
+  const filesDigest =
+    handoff.files === undefined ? undefined : agentFolderFilesDigest(handoff.files);
+
   const written = writeRegistration(ports.dataDir, {
     registration: {
       agent_id: handoff.agent_id,
@@ -393,7 +578,7 @@ async function register(
       manifest_path: handoff.manifest_path,
       command: handoff.command,
       args: handoff.args,
-      cwd: handoff.project_dir,
+      cwd: storedCwd,
       env: handoff.env,
     },
     ownership: {
@@ -405,18 +590,14 @@ async function register(
       registered_at: ports.now().toISOString(),
     },
     manifestJson,
+    storedManifestPath: storedManifest,
+    filesDigest,
   });
 
-  const imported = ports.importManifest(manifest);
-  if (!imported.ok) {
-    // The registration is on disk and the store rejected the manifest DASH
-    // itself just validated. That is a DASH bug, not a user error, and saying
-    // so is more useful than a schema dump the user cannot act on.
-    ports.log(`[dash-shell] the store refused a manifest DASH had validated: ${handoff.agent_id}`);
-  }
-
   const started = await ensureRunning(handoff.agent_id, ports);
-  const outcome: HandoffOutcome = written.outcome === "updated" ? "updated" : "registered";
+  // A folder repair is an update even when the top-level runner registration
+  // was already byte-for-byte correct and therefore needed no rewrite.
+  const outcome: HandoffOutcome = existing === null ? "registered" : "updated";
 
   ports.recordHandoff({
     handoff_id: handoff.handoff_id,
@@ -464,14 +645,24 @@ function changesFrom(
   existing: ManagedRegistration,
   handoff: AgentHandoff,
   manifestJson: string,
+  dataDir: string,
 ): string[] {
+  const filesDigest =
+    handoff.files === undefined ? undefined : agentFolderFilesDigest(handoff.files);
   return describeRegistrationChange(existing, {
     ...existing,
     command: handoff.command,
     args: handoff.args,
-    cwd: handoff.project_dir,
+    cwd:
+      handoff.files === undefined
+        ? handoff.project_dir
+        : agentFolderCodePath(dataDir, handoff.agent_id),
     env: handoff.env,
-    dash: { ...existing.dash, manifest_sha256: manifestDigest(manifestJson) },
+    dash: {
+      ...existing.dash,
+      manifest_sha256: manifestDigest(manifestJson),
+      files_sha256: filesDigest,
+    },
   });
 }
 
@@ -532,7 +723,12 @@ export function describeNewAgent(handoff: AgentHandoff, manifest: AnyAgentManife
     detail: [
       handoff.summary,
       "",
-      `It runs on this computer, from the folder you just created: ${handoff.project_dir}`,
+      `Its files come from the folder you just created: ${handoff.project_dir}`,
+      ...(handoff.files === undefined
+        ? []
+        : [
+            "DASH is about to take a copy of these files. Changing the originals later will not change the copy DASH runs.",
+          ]),
       startSentence(handoff),
       connectionSentence(manifest),
       ...permissionLines(manifest),
@@ -551,9 +747,16 @@ export function describeChangedAgent(handoff: AgentHandoff, changes: string[]): 
     detail: [
       `Since you added it, ${joinPlainly(changes)}.`,
       "",
-      `It runs from: ${handoff.project_dir}`,
+      `Its files come from: ${handoff.project_dir}`,
+      ...(handoff.files === undefined
+        ? []
+        : [
+            "DASH is about to take a copy of these files. Changing the originals later will not change the copy DASH runs.",
+          ]),
       startSentence(handoff),
-      "Updating replaces what DASH knows about this agent. Nothing in its own folder is changed.",
+      ...(handoff.files === undefined
+        ? ["Updating replaces what DASH knows about this agent. Nothing in your project folder is changed."]
+        : ["Updating replaces DASH's copy of this agent. Nothing in your original project folder is changed."]),
     ].join("\n"),
     confirm_label: "Update",
     cancel_label: "Keep what I have",

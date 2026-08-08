@@ -9,7 +9,15 @@
  * existing JSON store neither loses it nor gets it imported twice.
  */
 
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -76,11 +84,11 @@ describe("schema", () => {
     // permission broker, 6 is MAR-467's lapse table and delivery column, 7 is
     // MAR-434's projection of the runner's file-backed artifacts, 8 is MAR-500's
     // avatar column and its backfill, 9 is MAR-488's record of DASH's own
-    // reading.
+    // reading, 10 is MAR-553's manifest-only agent-folder materialisation.
     // Asserted as a number rather than as MIGRATIONS.length so that appending a
     // migration is a deliberate edit here too.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(10);
+    expect(version.user_version).toBe(11);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -406,7 +414,81 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(10);
+    ).toBe(11);
+  });
+
+  it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {
+    const first = await freshStore();
+    const agent = String((manifest["agent"] as { name: string }).name);
+    expect(first.store.importManifest(manifest)).toMatchObject({ ok: true });
+
+    // Re-create the standing every installed pre-MAR-553 store has: the row and
+    // a runner registration point at an author-owned project, with no DASH copy.
+    rmSync(path.join(first.dataDir, "agents", agent), { recursive: true, force: true });
+    const authorProject = path.join(first.dataDir, "author-project");
+    mkdirSync(authorProject, { recursive: true });
+    const authorCode = path.join(authorProject, "agent.mjs");
+    writeFileSync(authorCode, "// author-owned and not migration input\n", "utf8");
+    const registrationFile = path.join(first.dataDir, "agents", `${agent}.json`);
+    const oldRegistration = {
+      agent_id: agent,
+      manifest_path: path.join(authorProject, "agent.manifest.json"),
+      command: "node",
+      args: ["agent.mjs"],
+      cwd: authorProject,
+    };
+    writeFileSync(registrationFile, JSON.stringify(oldRegistration), "utf8");
+    first.db.db().exec("PRAGMA user_version = 10");
+    first.db.closeDb();
+
+    process.env.DASH_DATA_DIR = first.dataDir;
+    vi.resetModules();
+    const db = await import("../lib/db");
+    const store = await import("../lib/store");
+    opened.push({ dataDir: first.dataDir, closeDb: db.closeDb });
+
+    expect(store.listAgentNames()).toContain(agent);
+    expect(readdirSync(path.join(first.dataDir, "agents", agent)).sort()).toEqual([
+      "agent.manifest.json",
+    ]);
+    expect(readFileSync(authorCode, "utf8")).toBe("// author-owned and not migration input\n");
+    expect(JSON.parse(readFileSync(registrationFile, "utf8"))).toEqual(oldRegistration);
+    expect(db.describeAgentFolderMigration()).toMatchObject({
+      materialized_agents: [agent],
+      skipped_agents: [],
+      unreadable_rows: 0,
+    });
+  });
+
+  it("reports but preserves a legacy row whose name cannot be a folder", async () => {
+    const first = await freshStore();
+    const legacy = structuredClone(manifest);
+    (legacy["agent"] as { name: string }).name = "con";
+    first.db
+      .db()
+      .prepare(
+        "INSERT INTO agents (name, manifest_version, manifest_json, imported_at, avatar) " +
+          "VALUES (?, ?, ?, ?, ?)",
+      )
+      .run("con", Number(legacy["manifest_version"]), JSON.stringify(legacy), new Date().toISOString(), null);
+    first.db.db().exec("PRAGMA user_version = 10");
+    first.db.closeDb();
+
+    process.env.DASH_DATA_DIR = first.dataDir;
+    vi.resetModules();
+    const db = await import("../lib/db");
+    const store = await import("../lib/store");
+    opened.push({ dataDir: first.dataDir, closeDb: db.closeDb });
+
+    expect(store.listAgentNames()).toContain("con");
+    expect(existsSync(path.join(first.dataDir, "agents", "con"))).toBe(false);
+    expect(db.describeAgentFolderMigration()?.skipped_agents).toEqual([
+      {
+        name: "con",
+        errors: [expect.stringContaining("safe folder component")],
+      },
+    ]);
+    expect(store.readStore().unreadable.agent_folders).toBeUndefined();
   });
 
   it("preserves pending tasks and approvals across a DASH restart", async () => {

@@ -9,8 +9,25 @@ import {
   type RunEvent,
 } from "./contracts";
 import { isOName, oFor, type OName } from "./brand/o-cast";
-import { db, insertEventRow, readRowsTolerantly, transact } from "./db";
+import {
+  clearAgentFolderIssue,
+  dataDir,
+  db,
+  describeAgentFolderReconciliation,
+  insertEventRow,
+  readRowsTolerantly,
+  transact,
+  type AgentFolderIssue,
+} from "./db";
 import { checkManifestConstraints } from "./manifest-constraints";
+import {
+  AgentFolderValidationError,
+  listAgentFolderNames,
+  removeAgentFolder,
+  writeAgentFolder,
+  type AgentFolderFile,
+} from "./agent-folders";
+import type { AgentRegistration } from "./registration";
 
 /**
  * The store's query layer.
@@ -78,6 +95,8 @@ export interface UnreadableRows {
    * invented name would be rendered to a user as if it were their agent's.
    */
   unnamed_agents: number;
+  /** Folder/index disagreements found and surfaced at startup (ADR 0008). */
+  agent_folders?: AgentFolderIssue[];
 }
 
 export interface StoreShape {
@@ -205,6 +224,11 @@ export function readStore(): StoreShape {
   unreadable.events += eventRows.lost;
   unreadable.unnamed_agents = agentRows.lost;
 
+  const folderReconciliation = describeAgentFolderReconciliation();
+  if ((folderReconciliation?.issues.length ?? 0) > 0) {
+    unreadable.agent_folders = folderReconciliation?.issues ?? [];
+  }
+
   return { agents, events, unreadable };
 }
 
@@ -218,6 +242,13 @@ export function readStore(): StoreShape {
  */
 export function resetStore(): void {
   const database = db();
+  const folderNames = new Set([
+    ...listAgentFolderNames(dataDir),
+    ...database.prepare("SELECT name FROM agents").all().map((row) => text(row, "name")),
+  ]);
+  for (const name of folderNames) {
+    removeAgentFolder(dataDir, name);
+  }
   transact(database, () => {
     database.exec("DELETE FROM events");
     database.exec("DELETE FROM runs");
@@ -234,6 +265,9 @@ export function resetStore(): void {
     // reading of: a reset that kept it would leave the Runs page disclosing a
     // gap in evidence that is no longer there.
     database.exec("DELETE FROM evidence_pulls");
+    database
+      .prepare("DELETE FROM store_meta WHERE key = ?")
+      .run("agent_folder_reconciliation");
   });
 }
 
@@ -256,6 +290,10 @@ export function resetStore(): void {
  */
 export function forgetAgent(name: string): { existed: boolean } {
   const database = db();
+  // Folder first, row second: if the process stops between them, the surviving
+  // row renders as named damage instead of a folder resurrecting an agent the
+  // user removed.
+  const folderExisted = removeAgentFolder(dataDir, name);
   return transact(database, () => {
     const existed = database.prepare("SELECT 1 FROM agents WHERE name = ?").get(name) !== undefined;
     database.prepare("DELETE FROM agents WHERE name = ?").run(name);
@@ -270,7 +308,8 @@ export function forgetAgent(name: string): { existed: boolean } {
     // the thing the history is about.
     database.prepare("DELETE FROM broker_grants WHERE agent = ?").run(name);
     database.prepare("DELETE FROM broker_audit WHERE agent = ?").run(name);
-    return { existed };
+    clearAgentFolderIssue(database, name);
+    return { existed: existed || folderExisted };
   });
 }
 
@@ -335,7 +374,16 @@ export type ImportResult =
   | { ok: true; agent: string; replaced: boolean }
   | { ok: false; errors: string[] };
 
-export function importManifest(input: unknown): ImportResult {
+export interface ImportManifestOptions {
+  /** Folder-carrying handoff files. Omitted for a manifest-only import. */
+  files?: readonly AgentFolderFile[];
+  /** The spawn recipe stored in the folder. Omitted for a manifest-only import. */
+  registration?: AgentRegistration;
+  /** The exact validated bytes from a handoff, kept verbatim in folder and row. */
+  manifestJson?: string;
+}
+
+export function importManifest(input: unknown, options: ImportManifestOptions = {}): ImportResult {
   const result = validateManifest(input);
   if (!result.ok) {
     return { ok: false, errors: result.errors };
@@ -354,6 +402,58 @@ export function importManifest(input: unknown): ImportResult {
   const database = db();
   const manifest = result.value;
   const name = manifest.agent.name;
+  let manifestJson = JSON.stringify(manifest);
+
+  if (options.manifestJson !== undefined) {
+    let source: unknown;
+    try {
+      source = JSON.parse(options.manifestJson);
+    } catch {
+      return { ok: false, errors: ["/manifest source is not readable JSON"] };
+    }
+    const sourceValidation = validateManifest(source);
+    if (
+      !sourceValidation.ok ||
+      JSON.stringify(sourceValidation.value) !== JSON.stringify(manifest)
+    ) {
+      return {
+        ok: false,
+        errors: ["/manifest source disagrees with the manifest DASH validated"],
+      };
+    }
+    manifestJson = options.manifestJson;
+  }
+
+  const declaredManifest = options.files?.find(
+    (file) => file.path.replace(/\\/g, "/") === "agent.manifest.json",
+  );
+  if (declaredManifest !== undefined && declaredManifest.contents !== manifestJson) {
+    return {
+      ok: false,
+      errors: ["/files declares a different agent.manifest.json than DASH validated"],
+    };
+  }
+  if (options.registration !== undefined && options.registration.agent_id !== name) {
+    return { ok: false, errors: ["/registration agent_id must match /agent/name"] };
+  }
+
+  try {
+    writeAgentFolder({
+      dataDir,
+      agent: name,
+      manifestJson,
+      registration: options.registration,
+      files: options.files,
+    });
+  } catch (error: unknown) {
+    if (error instanceof AgentFolderValidationError) {
+      return { ok: false, errors: error.errors };
+    }
+    return {
+      ok: false,
+      errors: ["DASH could not finish writing the agent folder."],
+    };
+  }
 
   return transact(database, () => {
     const existing = database.prepare("SELECT 1 FROM agents WHERE name = ?").get(name);
@@ -368,7 +468,7 @@ export function importManifest(input: unknown): ImportResult {
       .run(
         name,
         manifest.manifest_version,
-        JSON.stringify(manifest),
+        manifestJson,
         new Date().toISOString(),
         // MAR-500. The insert assigns; the update clause above deliberately
         // omits `avatar`, so re-importing a manifest never re-costumes an agent
@@ -382,6 +482,7 @@ export function importManifest(input: unknown): ImportResult {
         // would have drawn for the same agent.
         oFor(name),
       );
+    clearAgentFolderIssue(database, name);
     return { ok: true as const, agent: name, replaced: existing !== undefined };
   });
 }
