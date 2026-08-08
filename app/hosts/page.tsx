@@ -16,8 +16,15 @@ import {
   type ProviderId,
   type WizardStep,
 } from "../../lib/host-wizard";
-import { describeConnectState, type HostConnectState } from "../../lib/host-connect";
+import {
+  HOST_REACH_PROBLEMS,
+  describeConnectState,
+  describeDisconnect,
+  type HostConnectState,
+  type HostReachProblem,
+} from "../../lib/host-connect";
 import { describeDeployArrangement } from "../../lib/deploy/receipt";
+import { submitHostCommand } from "../_data/source";
 import { useCanAct } from "../_data/use-view";
 
 /**
@@ -46,17 +53,12 @@ import { useCanAct } from "../_data/use-view";
  * server before expects to be asked; a flow that quietly does not ask reads as
  * one that forgot.
  *
- * ## What this build cannot do yet, said on the surface
+ * ## The command path
  *
- * There is no host command family. `lib/shell/ipc.ts` has five — Agent DOM,
- * agent commands, runner lifecycle, workspace and connections — and none of them
- * reaches `electron/ssh-host.ts`, so nothing here can mint a key, write a record
- * or run a probe. That is MAR-536.
- *
- * The page says so, in the place where the effect would have happened, rather
- * than presenting a Next button that does nothing. It is the same read-only
- * honesty `useCanAct` already gives the developer path, extended to a capability
- * that is missing from every build rather than from this window.
+ * MAR-536 gives this flow its named, public-only command path. The renderer can
+ * ask the preload bridge to create, probe, or forget a host; the main process
+ * owns SSH, persistence, and key custody. A browser or an older app bridge still
+ * receives the same explicit read-only explanation from `submitHostCommand`.
  */
 
 /* ---------------------------------------------------------------------- *
@@ -284,6 +286,12 @@ export default function HostsPage(): ReactNode {
   const canAct = useCanAct();
   const [step, setStep] = useState<WizardStep>("provider");
   const [draft, setDraft] = useState<HostDraft>(EMPTY_DRAFT);
+  const [hostId, setHostId] = useState<string | null>(null);
+  const [publicKey, setPublicKey] = useState<string | null>(null);
+  const [checkState, setCheckState] = useState<HostConnectState>({ step: "no_host" });
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirmForget, setConfirmForget] = useState(false);
 
   const at = WIZARD_STEPS.indexOf(step);
   const label = draft.label.trim() === "" ? "this server" : draft.label.trim();
@@ -294,7 +302,93 @@ export default function HostsPage(): ReactNode {
    * nothing has been checked — and the notice below says why rather than a
    * button pretending otherwise.
    */
-  const checkState: HostConnectState = { step: "no_host" };
+  function reachProblem(value: unknown): HostReachProblem | null {
+    return typeof value === "string" && HOST_REACH_PROBLEMS.includes(value as HostReachProblem)
+      ? (value as HostReachProblem)
+      : null;
+  }
+
+  async function makeKey(): Promise<void> {
+    setBusy(true);
+    setNotice(null);
+    const result = await submitHostCommand("create", {
+      label: draft.label,
+      address: draft.address,
+      username: draft.username,
+      port: Number(draft.port),
+    });
+    setBusy(false);
+
+    const madeHostId = result.data?.["host_id"];
+    const madePublicKey = result.data?.["public_key"];
+    if (!result.ok || typeof madeHostId !== "string" || typeof madePublicKey !== "string") {
+      setNotice(result.detail ?? "DASH could not make a key for this server.");
+      return;
+    }
+
+    setHostId(madeHostId);
+    setPublicKey(madePublicKey);
+    setCheckState({ step: "awaiting_key_install", label, public_key: madePublicKey });
+    setStep("key");
+  }
+
+  async function probe(): Promise<void> {
+    if (hostId === null) {
+      setNotice("DASH has no saved server to check.");
+      return;
+    }
+    setBusy(true);
+    setNotice(null);
+    setStep("check");
+    setCheckState({ step: "probing", label });
+    const result = await submitHostCommand("probe", { host_id: hostId });
+    setBusy(false);
+
+    if (result.ok) {
+      const runnerBuild = result.data?.["runner_build"];
+      setCheckState({
+        step: "reachable",
+        label,
+        runner_build: typeof runnerBuild === "string" && runnerBuild !== "" ? runnerBuild : null,
+      });
+      return;
+    }
+
+    const problem = reachProblem(result.data?.["problem"]);
+    if (problem !== null) {
+      setCheckState({ step: "unreachable", label, problem });
+      return;
+    }
+
+    // SSH diagnostics can name an account, address, port and local key path.
+    // Keep the key state visible and show the transport's safe sentence below.
+    setCheckState(
+      publicKey === null
+        ? { step: "no_host" }
+        : { step: "awaiting_key_install", label, public_key: publicKey },
+    );
+    setNotice(result.detail ?? "DASH could not check this server.");
+  }
+
+  async function forget(nextStep: WizardStep): Promise<void> {
+    if (hostId === null) {
+      setStep(nextStep);
+      return;
+    }
+    setBusy(true);
+    setNotice(null);
+    const result = await submitHostCommand("forget", { host_id: hostId });
+    setBusy(false);
+    if (!result.ok) {
+      setNotice(result.detail ?? "DASH could not forget this server safely.");
+      return;
+    }
+    setHostId(null);
+    setPublicKey(null);
+    setCheckState({ step: "no_host" });
+    setConfirmForget(false);
+    setStep(nextStep);
+  }
 
   return (
     <>
@@ -338,45 +432,113 @@ export default function HostsPage(): ReactNode {
         ) : step === "address" ? (
           <AddressStep draft={draft} onChange={setDraft} />
         ) : step === "key" ? (
-          <KeyStep label={label} publicKey={null} />
+          <KeyStep label={label} publicKey={publicKey} />
         ) : (
           <CheckStep state={checkState} />
         )}
 
+        {notice === null ? null : (
+          <p className="notice notice-err wrap" role="alert">
+            {notice}
+          </p>
+        )}
+
         <div className="button-row">
-          {at === 0 ? null : (
+          {at === 0 || step === "check" ? null : (
             <button
               type="button"
               className="button-secondary"
-              onClick={() => setStep(WIZARD_STEPS[at - 1] as WizardStep)}
+              disabled={busy}
+              onClick={() => {
+                if (step === "key") {
+                  void forget("address");
+                } else {
+                  setNotice(null);
+                  setStep(WIZARD_STEPS[at - 1] as WizardStep);
+                }
+              }}
             >
               Back
             </button>
           )}
-          {at === WIZARD_STEPS.length - 1 ? null : (
+          {step === "provider" ? (
             <button
               type="button"
               className="button-primary"
-              disabled={!canLeave(step, draft)}
-              onClick={() => setStep(WIZARD_STEPS[at + 1] as WizardStep)}
+              disabled={busy || !canLeave(step, draft)}
+              onClick={() => {
+                setNotice(null);
+                setStep("address");
+              }}
             >
               Next
             </button>
-          )}
+          ) : step === "address" ? (
+            <button
+              type="button"
+              className="button-primary"
+              disabled={busy || !canLeave(step, draft)}
+              onClick={() => void makeKey()}
+            >
+              {busy ? "Making key..." : "Make key"}
+            </button>
+          ) : step === "key" ? (
+            <button
+              type="button"
+              className="button-primary"
+              disabled={busy || hostId === null || publicKey === null}
+              onClick={() => void probe()}
+            >
+              {busy ? "Checking..." : "Check the connection"}
+            </button>
+          ) : null}
         </div>
+
+        {step !== "check" || hostId === null ? null : confirmForget ? (
+          <section className="notice wrap" role="alert">
+            <p>
+              <strong>{describeDisconnect(label).headline}</strong>
+            </p>
+            <p>{describeDisconnect(label).detail}</p>
+            <div className="button-row">
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={busy}
+                onClick={() => setConfirmForget(false)}
+              >
+                Keep using it
+              </button>
+              <button
+                type="button"
+                className="button-primary"
+                disabled={busy}
+                onClick={() => void forget("provider")}
+              >
+                {busy ? "Disconnecting..." : "Disconnect"}
+              </button>
+            </div>
+          </section>
+        ) : (
+          <div className="button-row">
+            <button
+              type="button"
+              className="button-secondary"
+              disabled={busy}
+              onClick={() => setConfirmForget(true)}
+            >
+              Stop using this server
+            </button>
+          </div>
+        )}
       </article>
 
-      {/*
-        The gap, named where the effect would have happened rather than in a
-        commit message. `useCanAct` is checked too, because a browser tab cannot
-        act either and the two absences have different fixes — one is a missing
-        command family and the other is the window you are in.
-      */}
-      <p className="notice wrap" role="note">
-        {canAct
-          ? "DASH cannot finish this yet. Making the key, saving the server and checking the connection all need a part of DASH that is not built: everything above is the flow, and nothing here has reached a server."
-          : "This window can show the flow and cannot cause anything. Open DASH itself to connect a server — and note that DASH cannot finish this yet either, because the part that reaches a server is not built."}
-      </p>
+      {canAct ? null : (
+        <p className="notice wrap" role="note">
+          This window can show servers and cannot connect one. Open the installed DASH app to make a
+          key, save a server and check it.
+        </p>
+      )}
     </>
   );
 }

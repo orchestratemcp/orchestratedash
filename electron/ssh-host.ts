@@ -38,7 +38,7 @@
  */
 
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { remoteRunnerChannel, type RemoteRunnerChannel } from "../lib/agent-dom/runner-channel";
@@ -74,6 +74,23 @@ export function hostKeysDirectory(dataDir: string): string {
 /** Where `ssh -i` is pointed. The name comes from the host record. */
 export function hostKeyPath(dataDir: string, keyName: string): string {
   return path.join(dataDir, "hosts", `${keyName}.key`);
+}
+
+/**
+ * Remove the key pair for a host DASH is forgetting.
+ *
+ * This function names the files it owns from a validated key name, but never
+ * reads either one. In particular it returns no bytes and no path: forgetting a
+ * server must remove DASH's ability to sign in without creating a route that
+ * could reveal the credential being removed.
+ */
+export function forgetHostKey(dataDir: string, keyName: string): void {
+  const privateFile = hostKeyPath(dataDir, keyName);
+  for (const file of [privateFile, `${privateFile}.pub`]) {
+    if (existsSync(file)) {
+      unlinkSync(file);
+    }
+  }
 }
 
 /**

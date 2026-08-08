@@ -19,6 +19,7 @@ import {
   transact,
   type AgentFolderIssue,
 } from "./db";
+import { checkHostRecord, type HostRecord } from "./hosts";
 import { checkManifestConstraints } from "./manifest-constraints";
 import {
   AgentFolderValidationError,
@@ -101,6 +102,13 @@ export interface UnreadableRows {
 
 export interface StoreShape {
   agents: Record<string, StoredAgent>;
+  /**
+   * Servers DASH can reach, keyed by their opaque id.
+   *
+   * This record deliberately contains a key *name*, never a path or key
+   * material. `electron/ssh-host.ts` resolves the name only in main.
+   */
+  hosts: Record<string, HostRecord>;
   events: RunEvent[];
   /** What this read could not parse. Both empty on a healthy store. */
   unreadable: UnreadableRows;
@@ -174,6 +182,7 @@ function storedAvatar(value: unknown, name: string): OName {
 export function readStore(): StoreShape {
   const database = db();
   const agents: Record<string, StoredAgent> = {};
+  const hosts: Record<string, HostRecord> = {};
   const unreadable: UnreadableRows = { agents: [], events: 0, unnamed_agents: 0 };
 
   // Both tables are read tolerantly, because damage arrives in two shapes and
@@ -197,6 +206,35 @@ export function readStore(): StoreShape {
       imported_at: text(row, "imported_at"),
       avatar: storedAvatar(row["avatar"], name),
     };
+  }
+
+  // Hosts are independent of agents: a server is not an agent's property, and
+  // joining it into `agents` would make forgetting an agent erase the route to
+  // a machine it may have shared with another one. Validate on every read just
+  // as a record about ssh's argv is validated before every use; a hand-edited
+  // or damaged row cannot become a string that `ssh` interprets as an option.
+  const hostRows = readRowsTolerantly(database, {
+    table: "hosts",
+    bulk:
+      "SELECT host_id, label, address, port, username, key_name, host_fingerprint, added_at FROM hosts",
+    byRowid:
+      "SELECT host_id, label, address, port, username, key_name, host_fingerprint, added_at FROM hosts WHERE rowid = ?",
+  });
+  for (const row of hostRows.rows) {
+    const candidate: HostRecord = {
+      host_id: text(row, "host_id"),
+      label: text(row, "label"),
+      address: text(row, "address"),
+      port: Number(row["port"]),
+      username: text(row, "username"),
+      key_name: text(row, "key_name"),
+      host_fingerprint: row["host_fingerprint"] === null ? null : text(row, "host_fingerprint"),
+      added_at: text(row, "added_at"),
+    };
+    const checked = checkHostRecord(candidate);
+    if (checked.ok) {
+      hosts[candidate.host_id] = checked.record;
+    }
   }
 
   // Ordered by arrival, which is what the JSON store's array order meant. The
@@ -229,7 +267,7 @@ export function readStore(): StoreShape {
     unreadable.agent_folders = folderReconciliation?.issues ?? [];
   }
 
-  return { agents, events, unreadable };
+  return { agents, hosts, events, unreadable };
 }
 
 /**
@@ -253,6 +291,7 @@ export function resetStore(): void {
     database.exec("DELETE FROM events");
     database.exec("DELETE FROM runs");
     database.exec("DELETE FROM agents");
+    database.exec("DELETE FROM hosts");
     database.exec("DELETE FROM connection_secrets");
     database.exec("DELETE FROM agent_dom_state");
     database.exec("DELETE FROM command_nonces");
@@ -269,6 +308,59 @@ export function resetStore(): void {
       .prepare("DELETE FROM store_meta WHERE key = ?")
       .run("agent_folder_reconciliation");
   });
+}
+
+/* ---------------------------------------------------------------------- *
+ * Hosts (MAR-536)
+ * ---------------------------------------------------------------------- */
+
+/** Read one host by the opaque id the renderer holds, or null when it is gone. */
+export function readHost(hostId: string): HostRecord | null {
+  return readStore().hosts[hostId] ?? null;
+}
+
+/**
+ * Persist a host only after its argv-facing fields have passed the one shared
+ * validator. This is defence in depth: main validates the renderer's draft
+ * before minting a key, and the database writer refuses a future direct caller
+ * that bypassed that door.
+ */
+export function saveHost(record: HostRecord): void {
+  const checked = checkHostRecord(record);
+  if (!checked.ok) {
+    throw new Error(`Refusing to save this server: ${checked.detail}`);
+  }
+  db()
+    .prepare(
+      "INSERT INTO hosts (host_id, label, address, port, username, key_name, host_fingerprint, added_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .run(
+      record.host_id,
+      record.label,
+      record.address,
+      record.port,
+      record.username,
+      record.key_name,
+      record.host_fingerprint,
+      record.added_at,
+    );
+}
+
+/**
+ * Remove DASH's record of one server and return the key name main must retire.
+ *
+ * No path travels out of this query layer. The caller receives the record only
+ * inside Electron main, where `forgetHostKey` derives the one owned file from
+ * its name; the renderer receives just an id and a human label.
+ */
+export function forgetHost(hostId: string): HostRecord | null {
+  const record = readHost(hostId);
+  if (record === null) {
+    return null;
+  }
+  db().prepare("DELETE FROM hosts WHERE host_id = ?").run(hostId);
+  return record;
 }
 
 /**

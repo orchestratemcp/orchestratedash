@@ -68,6 +68,23 @@ export interface ConnectionCommandArgs {
   field_id: string;
 }
 
+/**
+ * The unsecret server facts a renderer may offer DASH (MAR-536).
+ *
+ * Key material and paths are deliberately not representable. Main owns those
+ * facts and returns the public key after it has stored the private half.
+ */
+export interface HostCreateCommandArgs {
+  label: string;
+  address: string;
+  username: string;
+  port: number;
+}
+
+export interface HostCommandTarget {
+  host_id: string;
+}
+
 interface DashShellClient {
   /**
    * Show the application menu (MAR-440).
@@ -105,6 +122,14 @@ interface DashShellClient {
   connectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   testConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   disconnectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
+  /**
+   * Optional for the same reason as the workspace and runner methods: a shell
+   * built before the host command family has a bridge, but cannot make, check
+   * or forget a server. Calling through would throw instead of refusing.
+   */
+  createHost?(args: HostCreateCommandArgs): Promise<CommandResult>;
+  probeHost?(args: HostCommandTarget): Promise<CommandResult>;
+  forgetHost?(args: HostCommandTarget): Promise<CommandResult>;
   /**
    * The task-workspace commands (MAR-507).
    *
@@ -468,6 +493,73 @@ export async function submitConnectionCommand(
     default: {
       const unreachable: never = action;
       throw new Error(`Unhandled connection command: ${String(unreachable)}`);
+    }
+  }
+}
+
+/**
+ * Submit one server action through its named preload method (MAR-536).
+ *
+ * A generic `host(action, target)` would let a page address a future operation
+ * merely by choosing a string. The explicit switch matches the bridge and keeps
+ * `host.create`'s public-only answer visible at the one renderer call site.
+ */
+export async function submitHostCommand(
+  action: "create",
+  target: HostCreateCommandArgs,
+): Promise<CommandResult>;
+export async function submitHostCommand(
+  action: "probe" | "forget",
+  target: HostCommandTarget,
+): Promise<CommandResult>;
+export async function submitHostCommand(
+  action: "create" | "probe" | "forget",
+  target: HostCreateCommandArgs | HostCommandTarget,
+): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to connect a server.",
+    };
+  }
+
+  switch (action) {
+    case "create":
+      if (bridge.createHost === undefined) {
+        return {
+          ok: false,
+          request_id: "",
+          reason: "read_only_host",
+          detail: "This version of the DASH app cannot make a server key yet.",
+        };
+      }
+      return bridge.createHost(target as HostCreateCommandArgs);
+    case "probe":
+      if (bridge.probeHost === undefined) {
+        return {
+          ok: false,
+          request_id: "",
+          reason: "read_only_host",
+          detail: "This version of the DASH app cannot check a server yet.",
+        };
+      }
+      return bridge.probeHost(target as HostCommandTarget);
+    case "forget":
+      if (bridge.forgetHost === undefined) {
+        return {
+          ok: false,
+          request_id: "",
+          reason: "read_only_host",
+          detail: "This version of the DASH app cannot forget a server yet.",
+        };
+      }
+      return bridge.forgetHost(target as HostCommandTarget);
+    default: {
+      const unreachable: never = action;
+      throw new Error(`Unhandled host command: ${String(unreachable)}`);
     }
   }
 }
