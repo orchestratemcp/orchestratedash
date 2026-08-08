@@ -11,7 +11,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const dataDir = mkdtempSync(path.join(tmpdir(), "dash-store-"));
 process.env.DASH_DATA_DIR = dataDir;
 
-const { importManifest, ingestEvents, listAgents, listRuns, resetStore } =
+const { forgetHost, importManifest, ingestEvents, listAgents, listRuns, readHost, readStore, resetStore, saveHost } =
   await import("../lib/store");
 const { closeDb } = await import("../lib/db");
 
@@ -67,6 +67,36 @@ describe("manifest import", () => {
   it("keeps unknown fields rather than rejecting them", () => {
     const additive = { ...(manifest as object), future_field: "ignored" };
     expect(importManifest(additive).ok).toBe(true);
+  });
+});
+
+describe("saved hosts", () => {
+  const host = {
+    host_id: "host-store-1",
+    label: "My server",
+    address: "vps.example.com",
+    port: 22,
+    username: "dash",
+    key_name: "host-store-1",
+    host_fingerprint: null,
+    added_at: "2026-08-08T12:00:00.000Z",
+  };
+
+  it("persists an independently-addressed server with only a key name", () => {
+    saveHost(host);
+
+    expect(readHost(host.host_id)).toEqual(host);
+    expect(readStore().hosts).toEqual({ [host.host_id]: host });
+    expect(Object.keys(readStore().hosts[host.host_id] ?? {})).not.toEqual(
+      expect.arrayContaining(["private_key", "key_path", "path"]),
+    );
+  });
+
+  it("forgets the record and returns its internal key name for main to retire", () => {
+    saveHost(host);
+
+    expect(forgetHost(host.host_id)).toEqual(host);
+    expect(readHost(host.host_id)).toBeNull();
   });
 });
 

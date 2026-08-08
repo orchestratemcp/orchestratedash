@@ -74,6 +74,22 @@ interface ConnectionArgs {
   field_id: string;
 }
 
+/**
+ * The four facts a page may offer for a server. Main mints both opaque names
+ * and the key; there is deliberately no key, key-name or path field here.
+ */
+interface HostCreateArgs {
+  label: string;
+  address: string;
+  username: string;
+  port: number;
+}
+
+/** A saved host is addressed by DASH's opaque id, never by a filesystem path. */
+interface HostTarget {
+  host_id: string;
+}
+
 function send(command: string, payload: Record<string, string>): Promise<CommandResult> {
   return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
     command,
@@ -94,6 +110,27 @@ function sendNumbers(command: string, payload: Record<string, number>): Promise<
     command,
     request_id: requestId(),
     payload,
+  }) as Promise<CommandResult>;
+}
+
+/**
+ * A mixed string/number payload for the host-creation form.
+ *
+ * Kept separate from `send` so existing methods stay string-only and so this
+ * is the one place a page can name a port. Every field is copied explicitly:
+ * spreading the caller's object would let a page pass a private key or path to
+ * the command boundary merely to have it refused later.
+ */
+function sendHostCreate(args: HostCreateArgs): Promise<CommandResult> {
+  return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
+    command: "host.create",
+    request_id: requestId(),
+    payload: {
+      label: args.label,
+      address: args.address,
+      username: args.username,
+      port: args.port,
+    },
   }) as Promise<CommandResult>;
 }
 
@@ -166,6 +203,19 @@ const dashShell = {
   connectConnection: (args: ConnectionArgs) => send("connection.connect", { ...args }),
   testConnection: (args: ConnectionArgs) => send("connection.test", { ...args }),
   disconnectConnection: (args: ConnectionArgs) => send("connection.disconnect", { ...args }),
+
+  /**
+   * The three host actions (MAR-536), one named method each.
+   *
+   * `createHost` receives only ordinary connection facts and returns only the
+   * public half of a newly minted key. The private half never enters this
+   * preload, and probe/forget take only DASH's opaque host id. Named methods
+   * keep a page from addressing a future host action by string.
+   */
+  createHost: ({ label, address, username, port }: HostCreateArgs) =>
+    sendHostCreate({ label, address, username, port }),
+  probeHost: ({ host_id }: HostTarget) => send("host.probe", { host_id }),
+  forgetHost: ({ host_id }: HostTarget) => send("host.forget", { host_id }),
 
   /**
    * The three task-workspace commands (MAR-507).

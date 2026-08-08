@@ -3,9 +3,9 @@
  *
  * The issue's `merged` bar is *"every state of the flow — no host, probing,
  * reachable, unreachable, no usable ssh — rendered and screenshotted at the three
- * widths"*. The screenshots cover the states the surface can actually reach
- * today, which is the four steps; the six unreachable ones need a probe, and
- * there is no host command family to run one (MAR-536).
+ * widths"*. The screenshots cover the four steps; MAR-536 now gives the live
+ * page its named host command path, and the state renders below keep every
+ * answer from that probe represented under test.
  *
  * So this file is the other half of that bar and the more durable half: it
  * renders all nine states of the check step, plus the key step both ways, and
@@ -17,6 +17,9 @@
  * draws no such field — so the whole wizard's markup is checked for one.
  */
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -25,6 +28,7 @@ import { HOST_REACH_PROBLEMS, type HostConnectState } from "../lib/host-connect"
 import { WIZARD_STEPS, describeStep } from "../lib/host-wizard";
 
 const LABEL = "My server";
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Every state the check step can be in, which is what the issue enumerates. */
 const STATES: HostConnectState[] = [
@@ -61,6 +65,21 @@ describe("the step rail", () => {
     for (const step of WIZARD_STEPS) {
       expect(html).toContain(describeStep(step).label);
     }
+  });
+});
+
+describe("the live wizard's command path", () => {
+  it("uses every named host action, so the bridge actions are actual page affordances", () => {
+    /*
+     * MAR-518 found the meaningful failure mode: a command can be correctly
+     * dispatched and still be unavailable to every page when preload never
+     * exposes it. Reading the component is the appropriate proof here because
+     * the server-rendered state intentionally does not invoke Electron.
+     */
+    const source = readFileSync(path.join(repoRoot, "app", "hosts", "page.tsx"), "utf8");
+    expect(source).toContain('submitHostCommand("create"');
+    expect(source).toContain('submitHostCommand("probe"');
+    expect(source).toContain('submitHostCommand("forget"');
   });
 });
 
