@@ -589,7 +589,7 @@
     {
       "id": "MAR-556",
       "lifecycle": "planned",
-      "linear_status": "Backlog",
+      "linear_status": "In Review",
       "commit": null,
       "proof": {
         "command": "pnpm typecheck && pnpm brand:check && pnpm test && pnpm build:shell && pnpm build:runner-standalone (PowerShell)"

@@ -3088,6 +3088,8 @@ a panel — which arrives with MAR-548.
 
 ## The folder becomes the deploy bundle (MAR-556, ADR 0008 slice 5)
 
+PR #90 is open against `master` from `000henrik/mar-556-bundle-producer`.
+
 `lib/deploy/folder-bundle.ts` is the production caller `assembleBundle` was
 missing. It reads a `complete` MAR-553 folder through
 `inspectAgentFolderStanding` and the four public folder-path helpers, maps that
