@@ -566,7 +566,7 @@
     {
       "id": "MAR-554",
       "lifecycle": "planned",
-      "linear_status": "Backlog",
+      "linear_status": "In Review",
       "commit": null,
       "proof": {
         "command": "pnpm typecheck && pnpm brand:check && pnpm test (from PowerShell) && pnpm build:renderer && pnpm build:shell && DASH_SHELL_URL=dash-app://ui/ electron dist/electron/capture-panel.mjs",
