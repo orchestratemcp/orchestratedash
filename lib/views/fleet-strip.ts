@@ -5,20 +5,22 @@
  * everything about it that can be wrong without a browser: whether it is shown,
  * and how many of the O's fit before the rest become a number.
  *
- * ## What the strip is, stated once so the component cannot drift from it
+ * ## What the strip is, restated for MAR-544
  *
- * **Presence, not telemetry.** Each agent stands in its one pose whatever it is
- * doing. MAR-435's phase-3 animation needs per-state sprite sheets that do not
- * exist, and a character invented into motion from a single frame would be
- * motion pretending to be state — which is the same failure as a costume
- * pretending to be status, arriving through the other door.
+ * This header said **"presence, not telemetry"** and argued that a character
+ * invented into motion from a single frame would be motion pretending to be
+ * state. Henrik overrode the conclusion on 2026-08-07 — the fleet should be
+ * alive, its health readable as behaviour — and MAR-544 keeps the argument's
+ * premise while reversing its verdict: the O's now move, and *only* as a pure
+ * function of real signals. `lib/views/fleet-motion.ts` is that function and
+ * carries the full rule; the single vendored frames are still the only
+ * artwork, and what animates is the box they are drawn in, on `--motion-*`
+ * tokens.
  *
- * That is also why nothing here takes an agent's condition. The strip could
- * have carried a status word on hover; it deliberately does not, because
- * `app/tokens.css` reserves emerald for live and healthy things and a row of
- * characters that changed when agents did would become a second, cuter status
- * bar sitting under the real one. The fleet cards say how an agent is. This says
- * who is here.
+ * What survives unchanged: no meaning colour ever reaches the row —
+ * `app/tokens.css` reserves emerald for live and healthy things, and a
+ * behaviour is legible without a colour — and the caption states the same
+ * facts in words, so the motion is never the only copy of them.
  */
 
 /** Whether the strip is drawn. Two states, and there should stay two. */

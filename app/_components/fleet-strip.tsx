@@ -6,13 +6,20 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { OAvatar } from "./o-avatar";
 import { agentWorkspaceHref, isSeparateWindowRoute } from "../_data/routes";
-import { useView } from "../_data/use-view";
+import { useLiveView, useView } from "../_data/use-view";
+import {
+  describeFleetActivity,
+  fleetMotion,
+  fleetMotionSignals,
+  type FleetMotion,
+} from "../../lib/views/fleet-motion";
+import type { DashDataSource, ViewResult } from "../_data/source";
+import type { StalledAgentRow, WorkInboxRow, RunRow } from "../../lib/views/types";
 import {
   DEFAULT_FLEET_STRIP,
   FLEET_STRIP_ATTRIBUTE,
   FLEET_STRIP_SLOT,
   FLEET_STRIP_STORAGE_KEY,
-  describeFleetCount,
   describeFleetStrip,
   fleetStripSlots,
   nextFleetStripSetting,
@@ -34,22 +41,25 @@ import type { AgentRow } from "../../lib/views/types";
  * non-goal and is not a thing this component could do by accident: it is a
  * layout row in the document, and the window it is in is the app's own.
  *
- * ## Static, and that is the design rather than a first version of it
+ * ## Alive since MAR-544, and the rule that keeps it honest
  *
- * The cast has exactly one frame per character. Idle, working and waiting loops
- * would need sprite sheets that do not exist, and a walk cycle invented from a
- * single frame would be motion pretending to be state — the costume-as-status
- * mistake arriving through the other door. So every O stands still, and there
- * is nothing here for `prefers-reduced-motion` to switch off. `lib/views/fleet-strip.ts`
- * carries the rest of that argument.
+ * This strip was static by design (MAR-503: "presence, not telemetry"), and
+ * Henrik overrode that: the fleet's health should be readable ambiently, as
+ * behaviour, from across the room. What survives of the old argument is its
+ * core — **motion signals real state, or it doesn't run.** Every behaviour is
+ * a pure function (`lib/views/fleet-motion.ts`) of signals the store actually
+ * holds: a run in flight, a decision waiting in the inbox, the time of the
+ * last event. Nothing is random, nothing fidgets to look busy, and an idle
+ * quiet agent's honest animation is none — it sleeps by standing still.
  *
- * ## Presence, not a second status bar
+ * The sprites stay the vendored single frames; what moves is the box they are
+ * drawn in, on `--motion-*` tokens, so `prefers-reduced-motion` stills the
+ * whole fleet for free and the strip degrades to exactly the strip MAR-503
+ * shipped.
  *
- * Nothing about an agent's condition reaches this row — not the pose, not a
- * colour, not the hover text. MAR-503 permits a textual state on hover and this
- * declines it, because the fleet cards already say how each agent is, and a
- * strip that changed with them would be a status display a person reads at a
- * glance and cannot act on. What the caption says is who is here.
+ * The caption is the disclosure half: the same facts the motion draws, in
+ * words ("3 agents · 1 working"), so the ambient signal is never the only
+ * copy of it and a screen reader loses nothing to the animation.
  *
  * ## It is a row, never an overlay
  *
@@ -110,11 +120,48 @@ export function fleetStripLinks(
   };
 }
 
+/** The two views the behaviours read, folded into one degradable read. */
+interface FleetActivity {
+  runs: RunRow[] | null;
+  inbox: { items: WorkInboxRow[]; stalled: StalledAgentRow[] } | null;
+}
+
+/**
+ * Never fails, by construction: a runs read that failed costs the fleet its
+ * motion — every agent stands still, which is exactly the pre-MAR-544 strip —
+ * rather than costing the page its bottom edge.
+ */
+async function readFleetActivity(source: DashDataSource): Promise<ViewResult<FleetActivity>> {
+  const [runs, inbox] = await Promise.all([source.runs(), source.inbox()]);
+  return {
+    ok: true,
+    data: {
+      runs: runs.ok ? runs.data.runs : null,
+      inbox: inbox.ok ? { items: inbox.data.items, stalled: inbox.data.stalled } : null,
+    },
+  };
+}
+
 function FleetStripBand(): ReactNode {
   const state = useView((source) => source.agents());
   const [setting, setSetting] = useState<FleetStripSetting>(DEFAULT_FLEET_STRIP);
   const [hovered, setHovered] = useState<string | null>(null);
   const row = useRowCapacity();
+
+  /*
+   * The one always-on live read in DASH, and the departure is deliberate
+   * (MAR-544). `useLiveView`'s own rule is that polling happens only while the
+   * caller says something is in flight — but this strip's whole job is now to
+   * *notice* something coming into flight, which a poll gated on already
+   * knowing about it cannot do. The cadence is the same five seconds the
+   * adapters drain the runner on, so nothing here learns anything sooner than
+   * the store does; and the disclosure the rule exists for is the caption,
+   * which states in words what the motion shows. When every read fails the
+   * strip stands still rather than failing — see `readFleetActivity`.
+   */
+  const activity = useLiveView(readFleetActivity, "fleet-activity", true);
+  const signals: FleetActivity =
+    activity.status === "ready" ? activity.data : { runs: null, inbox: null };
 
   /*
    * Adopt whatever the pre-paint script already put on the document rather than
@@ -180,6 +227,21 @@ function FleetStripBand(): ReactNode {
 
   const { links, overflow } = fleetStripLinks(agents, row.width);
 
+  /*
+   * Derived at render, once per agent, from this moment's signals. The date is
+   * the render's — recency is a fact about "now", and a memoised now would be
+   * a clock that stops between reads.
+   */
+  const now = new Date();
+  const motions = new Map<string, FleetMotion>(
+    agents.map((agent) => [
+      agent.name,
+      fleetMotion(fleetMotionSignals(agent.name, signals.runs, signals.inbox), now),
+    ]),
+  );
+  const working = [...motions.values()].filter((motion) => motion === "working").length;
+  const waiting = [...motions.values()].filter((motion) => motion === "waiting").length;
+
   return (
     <aside className="fleet-strip" aria-label="Your agents">
       {/*
@@ -191,7 +253,13 @@ function FleetStripBand(): ReactNode {
         {links.map((agent) => (
           <li key={agent.name}>
             <Link
-              className="fleet-strip-o"
+              /*
+                The behaviour class carries state the caption also states in
+                words. It is on the link and painted on the avatar inside, and
+                it is never a colour: `app/tokens.css` reserves the meaning
+                colours, and a behaviour is legible without one.
+              */
+              className={`fleet-strip-o is-${motions.get(agent.name) ?? "sleeping"}`}
               href={agent.href}
               onMouseEnter={() => setHovered(agent.name)}
               onMouseLeave={() => setHovered(null)}
@@ -234,7 +302,7 @@ function FleetStripBand(): ReactNode {
         twice on the way past.
       */}
       <p className="fleet-strip-caption" aria-hidden="true">
-        {hovered ?? describeFleetCount(agents.length, overflow)}
+        {hovered ?? describeFleetActivity(agents.length, overflow, working, waiting)}
       </p>
       <button
         type="button"

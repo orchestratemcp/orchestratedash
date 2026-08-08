@@ -390,12 +390,31 @@
   :root {
     --motion-fast: 0ms;
     --motion-normal: 0ms;
+    --motion-hop: 0ms;
+    --motion-beckon: 0ms;
+    --motion-stroll: 0ms;
+    --motion-boot: 0ms;
+    --motion-blink: 0ms;
   }
 }
 
+/*
+ * The behaviour durations (MAR-544). The first two are transition speeds; these
+ * five are cycle lengths for motion that *is* state — an O hopping while its
+ * agent works, beckoning while a decision waits, pacing while recently active,
+ * the boot glyph assembling, the boot cursor blinking. They live here and
+ * nowhere else so that a person who asked for stillness gets the whole fleet
+ * still with the two zeroes above extended to seven, and no surface has to
+ * remember.
+ */
 @media not (prefers-reduced-motion: reduce) {
   :root {
     --motion-fast: 90ms;
     --motion-normal: 160ms;
+    --motion-hop: 640ms;
+    --motion-beckon: 1800ms;
+    --motion-stroll: 3600ms;
+    --motion-boot: 1200ms;
+    --motion-blink: 1060ms;
   }
 }

@@ -16,6 +16,7 @@ import { InputsPanel, type SelectedInput } from "../../_components/inputs";
 import { OAvatar } from "../../_components/o-avatar";
 import { OutputsPanel } from "../../_components/outputs";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
+import { WorkingLine } from "../../_components/working";
 import { AGENT_WORKSPACE_PARAMS, runDetailHref } from "../../_data/routes";
 import {
   downloadOutput,
@@ -28,6 +29,7 @@ import type { GroundingAnalysis } from "../../../lib/analyze";
 import type { OName } from "../../../lib/brand/o-cast";
 import type { PermissionGrant } from "../../../lib/contracts";
 import { INPUTS_PANEL_COPY } from "../../../lib/copy/inputs";
+import { describeWorkingPhase } from "../../../lib/copy/working";
 import type { InputRoleView } from "../../../lib/views/inputs";
 import type { ArtifactCardView } from "../../../lib/views/artifacts";
 import type { InboxItem } from "../../../lib/workspace";
@@ -972,9 +974,22 @@ function RunCard({
   pending: string | null;
   run: WorkspaceRunView;
 }): ReactNode {
+  const phase = describeWorkingPhase(run.status);
   return (
     <article className="summary-card">
-      <p className="eyebrow">{run.status.replaceAll("_", " ")}</p>
+      {/*
+        A run in flight gets the living line; every other status keeps the
+        plain eyebrow (MAR-544). The split is `describeWorkingPhase`'s and is
+        deliberate: an approval waiting on the person is not the system
+        working, and a pulse on "waiting for approval" would claim it is.
+      */}
+      {phase !== null ? (
+        <p className="eyebrow">
+          <WorkingLine phase={phase} />
+        </p>
+      ) : (
+        <p className="eyebrow">{run.status.replaceAll("_", " ")}</p>
+      )}
       <h3>{run.started_at === null ? "Current run" : `Started ${run.started_at}`}</h3>
       {run.progress === null ? null : (
         <progress aria-label="Run progress" max={1} value={run.progress}>

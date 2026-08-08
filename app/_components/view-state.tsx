@@ -37,10 +37,71 @@ import { VIEW_STATE_ATTRIBUTE } from "../../lib/shell/first-paint";
  * `lib/shell/first-paint.ts` for why the absence of this attribute is the
  * assertion rather than the presence of any particular content.
  */
+/**
+ * The boot glyph's eight pieces: a pixel O, as a ring of bars with notched
+ * corners, in clockwise order so the stagger below sweeps around it
+ * (MAR-544). Drawn like the sidebar's icons — `currentColor` rects on a 12×12
+ * grid — and not one of the cast: the cast are the *agents'* characters, and
+ * the thing booting here is DASH.
+ */
+const BOOT_RING: readonly (readonly [number, number, number, number])[] = [
+  [3, 1, 3, 2],
+  [6, 1, 3, 2],
+  [9, 3, 2, 3],
+  [9, 6, 2, 3],
+  [6, 9, 3, 2],
+  [3, 9, 3, 2],
+  [1, 6, 2, 3],
+  [1, 3, 2, 3],
+];
+
 export function ViewLoading({ what }: { what: string }): ReactNode {
   return (
-    <div className="empty" aria-live="polite" {...{ [VIEW_STATE_ATTRIBUTE]: "loading" }}>
-      <p>Reading {what}…</p>
+    /*
+      The Bit-Command boot sequence (MAR-544): the pixel O assembling, the
+      sentence, the cursor. Everything load-bearing about this component is
+      unchanged — the `data-view-state="loading"` attribute is still what
+      `electron/first-paint.ts` waits to disappear, the copy still says what is
+      being waited for, and the state still resolves the moment real data is
+      ready and never outlives it, because it always did: this is the same
+      genuinely-loading state, dressed. The motion runs on `--motion-*` tokens,
+      so under `prefers-reduced-motion` the glyph is a still, whole O.
+    */
+    <div className="empty boot" aria-live="polite" {...{ [VIEW_STATE_ATTRIBUTE]: "loading" }}>
+      <svg
+        className="boot-glyph"
+        viewBox="0 0 12 12"
+        width="24"
+        height="24"
+        aria-hidden="true"
+        shapeRendering="crispEdges"
+      >
+        {BOOT_RING.map(([x, y, w, h], index) => (
+          <rect
+            key={`${String(x)}-${String(y)}`}
+            x={x}
+            y={y}
+            width={w}
+            height={h}
+            fill="currentColor"
+            /*
+              Negative delays start every piece mid-cycle, so the sweep is
+              already going on the first frame rather than winding up. Under
+              reduced motion the duration is zero, no animation runs, and each
+              rect keeps its natural opacity: the whole O, still.
+            */
+            style={{
+              animationDelay: `calc(var(--motion-boot) * -${String(index)} / ${String(BOOT_RING.length)})`,
+            }}
+          />
+        ))}
+      </svg>
+      <p>
+        Reading {what}…
+        <span className="boot-cursor" aria-hidden="true">
+          ▍
+        </span>
+      </p>
     </div>
   );
 }

@@ -1,11 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { EvidenceNotice } from "../../lib/copy/evidence";
 import { TechnicalDetails } from "../_components/record-card";
 import { RunVerdictChips } from "../_components/verdict";
 import { HostNotice, ViewFailed, ViewLoading } from "../_components/view-state";
-import { useHost, useView } from "../_data/use-view";
+import { WorkingLine } from "../_components/working";
+import { useHost, useLiveView } from "../_data/use-view";
 import { runDetailHref } from "../_data/routes";
 
 /**
@@ -77,8 +78,22 @@ export function describeRunStart(startedAt: string): string {
 }
 
 export default function RunsPage(): ReactNode {
-  const state = useView((source) => source.runs());
+  /*
+   * Follows the list only while a run is actually going (MAR-544), which is
+   * `agents/detail`'s pattern exactly: `useLiveView` stops the moment `live`
+   * turns false, so a page of finished runs is as still as every other page in
+   * DASH. The disclosure the polling rule asks for is the line beside the
+   * heading below.
+   */
+  const [live, setLive] = useState(false);
+  const state = useLiveView((source) => source.runs(), "runs", live);
   const host = useHost();
+
+  const anyRunning =
+    state.status === "ready" && state.data.runs.some((run) => run.status === "running");
+  useEffect(() => {
+    setLive(anyRunning);
+  }, [anyRunning]);
 
   return (
     <>
@@ -86,6 +101,14 @@ export default function RunsPage(): ReactNode {
       <p className="lede">
         Every time one of your agents has done its job, and whether it went the
         way its plan said it would.
+      </p>
+      {/* A live region so the page's own refreshing is announced as well as
+          seen, and it disappears with the running run rather than becoming
+          furniture — `agents/detail`'s pattern. */}
+      <p aria-live="polite" className="live-note">
+        {anyRunning && state.last_read_at !== null
+          ? `Following the running work. Last updated ${state.last_read_at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}.`
+          : ""}
       </p>
       <HostNotice host={host} />
 
@@ -154,7 +177,19 @@ export default function RunsPage(): ReactNode {
                   </div>
                   <div className="chips">
                     <RunVerdictChips analysis={run.analysis} />
-                    <span className={`status-${run.status}`}>{run.status}</span>
+                    {/*
+                      A run in flight gets the working line rather than the
+                      bare status word (MAR-544): "running" was DASH's
+                      vocabulary rendered verbatim, and a person watching work
+                      happen deserves the feedback that it is. The finished
+                      statuses keep their chips — they are records, and a
+                      record does not pulse.
+                    */}
+                    {run.status === "running" ? (
+                      <WorkingLine />
+                    ) : (
+                      <span className={`status-${run.status}`}>{run.status}</span>
+                    )}
                   </div>
                 </div>
                 {/*
