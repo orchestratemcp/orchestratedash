@@ -3688,3 +3688,17 @@ holds and MAR-573's fourth acceptance bar names the proof: an attended re-probe
 from a genuinely fresh box. Both issues are `merged`, not `proven`, until then —
 and neither is reachable from the UI until MAR-574 wires the two states, which is
 the coordination this branch was cut around.
+
+**CI is green at `aa56ad5`** — `verify` and `shell-smoke` both SUCCESS on PR #94.
+The first of those runs on `ubuntu-latest`, which is the point: `/bin/sh` there is
+`dash`, the same shell the bootstrap script meets on a host, so the two
+shell-backed tests that skip on Windows genuinely executed — 12 tests in
+`tests/host-bootstrap.test.ts` with no skips, against 10 of 12 locally.
+
+`pnpm verify:shell` was **not** run locally, and the reason is recorded rather
+than glossed: six Electron processes were live on this machine — including the
+orphan runner **pid 44632** that MAR-548's note already names — so the smoke
+would have contended for the single-instance lock or hung silently, and
+AGENTS.md forbids force-killing either. CI's Windows `shell-smoke` is the
+installed-shell witness for this branch, the same call MAR-548 and MAR-492 each
+recorded for the same reason.
