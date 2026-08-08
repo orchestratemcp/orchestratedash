@@ -796,6 +796,98 @@ export function artifactRecordsForRun(agent: string, runId: string): RunArtifact
 }
 
 /**
+ * How many of an agent's artifacts the declarative panel is fed (MAR-548).
+ *
+ * Twenty because that is `max_items`'s own maximum in
+ * `contracts/agent.manifest.v2.schema.json` — the largest number of records any
+ * section in the panel vocabulary can ask to draw. Setting DASH's fetch bound
+ * to exactly the vocabulary's own bound means a truncation a person sees is
+ * always the *author's* cap biting, never DASH's, so `describeOutputsCap`'s
+ * sentence is never quietly wrong about whose choice hid something.
+ */
+export const PANEL_ARTIFACT_LIMIT = 20;
+
+/**
+ * What an agent has produced, newest first, for the panel to bind roles against
+ * (MAR-548, ADR 0008).
+ *
+ * Across every run rather than scoped to one, which is the difference between
+ * this and the Outputs area beside it. The Outputs area answers "what happened
+ * last time?" and is deliberately one run's worth; a panel binds by *role* —
+ * "the newest artifact whose kind is `digest`" — and a role a person declared
+ * must not appear empty because the most recent run happened to produce a
+ * different kind of thing.
+ *
+ * ## Why two queries, and why the second one is not an optimisation
+ *
+ * The first takes the newest `limit` records, which is what an `outputs`
+ * section draws. On its own it has a hole: an agent that has written twenty
+ * drafts since its last digest would push that digest out of the window, and a
+ * `report` bound to `digest` would render its stated empty state — the surface
+ * saying "nothing yet" about something DASH is holding. That is a silent wrong
+ * answer, which is the one failure this codebase keeps paying for.
+ *
+ * The second query closes it by construction: the newest record of *every*
+ * kind, whatever its position. `kind` is a column, so this costs an index seek
+ * per kind rather than a scan of the bodies. The two are merged and deduped on
+ * `(run_id, artifact_id)`, which is the identity the table's own primary key
+ * uses, so a record that both queries return is one record here.
+ *
+ * A damaged row is skipped rather than thrown, exactly as `artifactsForRun`
+ * treats one.
+ */
+export function artifactRecordsForAgent(
+  agent: string,
+  limit: number = PANEL_ARTIFACT_LIMIT,
+): RunArtifactRecord[] {
+  const newest = db()
+    .prepare(
+      "SELECT run_id, artifact_id, artifact_json, generated_at, received_at FROM run_artifacts " +
+        "WHERE agent = ? ORDER BY generated_at DESC LIMIT ?",
+    )
+    .all(agent, limit) as Array<Record<string, unknown>>;
+
+  const newestOfEachKind = db()
+    .prepare(
+      "SELECT run_id, artifact_id, artifact_json, generated_at, received_at FROM run_artifacts a " +
+        "WHERE a.agent = ? AND a.generated_at = " +
+        "(SELECT MAX(b.generated_at) FROM run_artifacts b WHERE b.agent = a.agent AND b.kind = a.kind)",
+    )
+    .all(agent) as Array<Record<string, unknown>>;
+
+  const seen = new Set<string>();
+  const rows: Array<{ row: Record<string, unknown>; generated_at: string }> = [];
+  for (const row of [...newest, ...newestOfEachKind]) {
+    const identity = `${text(row, "run_id")} ${text(row, "artifact_id")}`;
+    if (seen.has(identity)) {
+      continue;
+    }
+    seen.add(identity);
+    rows.push({ row, generated_at: text(row, "generated_at") });
+  }
+
+  // Newest first over the merged set. `artifactRecordsForRun` gets this from
+  // its own ORDER BY; here two orderings arrive and one of them has to win, so
+  // it is stated rather than inherited — `lib/views/panel.ts` documents that
+  // every binding resolves against records in this order.
+  rows.sort((a, b) => b.generated_at.localeCompare(a.generated_at));
+
+  const records: RunArtifactRecord[] = [];
+  for (const { row } of rows) {
+    const json = text(row, "artifact_json");
+    const artifact = parseOrNull<RunArtifact>(json);
+    if (artifact !== null) {
+      records.push({
+        artifact,
+        received_at: text(row, "received_at"),
+        stored_bytes: Buffer.byteLength(json, "utf8"),
+      });
+    }
+  }
+  return records;
+}
+
+/**
  * The most recent digest this agent produced, across every run.
  *
  * What the agent workspace opens on: a person who came back to see what their

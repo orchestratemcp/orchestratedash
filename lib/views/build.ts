@@ -46,12 +46,15 @@ import {
   listAnalyzedRuns,
 } from "../insights";
 import { listRegistrations, type ManagedRegistration } from "../registration";
+import { readAgentFolderManifest } from "../agent-folders";
 import {
+  artifactRecordsForAgent,
   artifactRecordsForRun,
   latestArtifactForAgent,
   listAgents,
   listAgentNames,
   listConnectionCapableAgents,
+  listRuns,
   readAgentAvatar,
   readAgentManifest,
   readEvidencePulls,
@@ -62,6 +65,7 @@ import {
 } from "../store";
 import { buildArtifactCards, type ArtifactCardView } from "./artifacts";
 import { buildInputRoles } from "./inputs";
+import { buildPanelView, type PanelDashFacts, type PanelView } from "./panel";
 import {
   availableControls,
   buildOverview,
@@ -723,6 +727,7 @@ function workspaceSnapshot(
 export function workspaceView(
   agent: string,
   now: Date = new Date(),
+  store: StoreShape = readStore(),
 ): WorkspaceView {
   const manifest = readAgentManifest(agent);
   if (manifest === null) {
@@ -796,6 +801,69 @@ export function workspaceView(
     // DASH derived from anything else would be DASH describing somebody else's
     // agent.
     input_roles: buildInputRoles(manifest),
+    // MAR-548, ADR 0008 slice 3's wiring. The authoritative document, not the
+    // row's copy — see `panelDocument` for which store answers and why.
+    panel: buildPanelView(panelDocument(agent, manifest), {
+      artifacts: artifactRecordsForAgent(agent),
+      facts: dashFactsForAgent(agent, store),
+    }),
+  };
+}
+
+/**
+ * Which of the two stored copies of an author's document the panel is drawn
+ * from (MAR-548, ADR 0008 / MAR-553).
+ *
+ * The folder's `agent.manifest.json` is authoritative and the row's
+ * `manifest_json` is a projection of it, so the folder is asked first. This is
+ * the rule `lib/views/panel.ts` states in prose and cannot state in a type: that
+ * module has to stay free of `node:fs` to reach the renderer bundle, so the
+ * choice is made here, where the disk is already being read.
+ *
+ * **The row is a fallback, not an equal.** It answers for every agent that
+ * predates MAR-553's migration and every agent whose name failed the component
+ * guard — a standing MAR-553 keeps supported on purpose, and one that must not
+ * cost those agents their panel.
+ *
+ * A folder that is present and unreadable falls back to the row too, and that
+ * is not the silent repair ADR 0008 forbids: `reconcileAgentFolders` has already
+ * recorded it as a `folder_unreadable` issue at startup and routed it through
+ * the same damage surface `readStore`'s unreadable rows use. The disagreement is
+ * surfaced; it is surfaced by the thing that observed it, rather than guessed at
+ * again by a view builder that only has one of the two documents in front of it.
+ */
+function panelDocument(agent: string, row: unknown): unknown {
+  const folder = readAgentFolderManifest(dataDir, agent);
+  if (!folder.ok) {
+    return row;
+  }
+  try {
+    return JSON.parse(folder.json) as unknown;
+  } catch {
+    return row;
+  }
+}
+
+/**
+ * The three facts `dash_fact` can name, in DASH's own voice (ADR 0008).
+ *
+ * Derived from `listRuns` rather than counted here, which is the same call
+ * `complianceForAgent` makes two hundred lines up. Run status is decided in one
+ * place — `run_failed` beats `run_completed` beats still running — and a panel
+ * that derived its own would be a second authority free to disagree with the
+ * verdict on the Runs page about the very same run.
+ *
+ * `listRuns` returns newest first, so the first entry for this agent is the last
+ * run. `started_at` is what `last_run_at` means: when it last ran, not when the
+ * last event about it happened to arrive.
+ */
+function dashFactsForAgent(agent: string, store: StoreShape): PanelDashFacts {
+  const runs = listRuns(store).filter((run) => run.agent === agent);
+  const last = runs[0];
+  return {
+    run_count: runs.length,
+    last_run_at: last?.started_at ?? null,
+    last_run_status: last?.status ?? null,
   };
 }
 

@@ -456,22 +456,22 @@ describe("no raw identifier reaches this surface", () => {
      * MAR-533. The `timestamp` column is the author telling DASH the value is a
      * moment, which is the licence DASH needs to say it in its own words.
      *
-     * Scoped to the table, and the scoping is a finding rather than a
-     * convenience. Written against the whole panel this failed, on a string this
-     * component does not produce: `DigestBody` prints a digest item's
-     * `published_at` straight into its source line
-     * (`app/_components/digest.tsx`), so a raw instant reaches the screen there
-     * — on the run detail page and in the workspace's Outputs area as well as
-     * here, unchanged since before this slice. That is MAR-533's own defect
-     * surviving in a file MAR-554 does not own, and it is recorded on the issue
-     * rather than fixed here. Asserting over the whole panel would have made
-     * this test fail for somebody else's line; asserting over the region this
-     * slice draws is the honest scope, and the receipt above already carries
-     * the same shape of value by MAR-434's design.
+     * **Widened from the table region to the whole panel (MAR-548).** This
+     * assertion used to read only `tableRegionOf(html)`, and the scoping was a
+     * finding rather than a convenience: written against the whole panel it
+     * failed on a string this component does not produce, because
+     * `DigestBody` printed a digest item's `published_at` straight into its
+     * source line. That was MAR-533's own defect surviving in a file MAR-554
+     * did not own; MAR-571 fixed it, and this is the widening that issue's exit
+     * clause named. The same fixture item now has to survive being drawn twice
+     * — once as a table cell, once inside the report section's digest body —
+     * and a regression in *either* renderer fails here.
      */
-    const table = tableRegionOf(html);
-    expect(table).not.toContain("2026-08-05T09:00:00.000Z");
-    expect(table).toContain("August 2026 at");
+    expect(html).not.toContain("2026-08-05T09:00:00.000Z");
+    expect(html).toContain("August 2026 at");
+    // Still checked in the table specifically, so the widening cannot be
+    // satisfied by the digest body alone if the cell ever stops rendering.
+    expect(tableRegionOf(html)).toContain("August 2026 at");
   });
 });
 
