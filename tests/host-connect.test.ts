@@ -3,10 +3,19 @@
  * (MAR-498, design slice).
  *
  * The design decision under test is **how many states there are**, and the
- * assertion that carries it is that the six unreachable problems produce six
+ * assertion that carries it is that the unreachable problems produce that many
  * *distinct next actions*. A collapse into "could not connect" would pass every
  * other check in this file and fail that one — which is the same assertion
  * MAR-434 wrote against its four unavailable states, for the same reason.
+ *
+ * Three of them arrived on 2026-08-08 (MAR-572, MAR-573), when the flow first
+ * met a host DASH had not seen and produced three different failures in
+ * sequence — an unconfirmed identity, a refused sign-in, a server with nothing
+ * to answer with — while showing one sentence for all three. So this file now
+ * also tests the *classifier*: the function that turns what `ssh` said into
+ * which of them happened. Those cases are strings captured from real OpenSSH
+ * builds, which is the only kind of evidence available to a test running on a
+ * machine with no host.
  *
  * Everything else here is copy: the house voice, `lib/copy/identifiers.ts`, and
  * the two ADR 0007 sentences appearing verbatim and together.
@@ -15,6 +24,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  classifyHostFailure,
   describeConnectState,
   describeDisconnect,
   everyConnectSentence,
@@ -28,16 +38,45 @@ const LABEL = "My server";
 
 describe("the states a person can be in", () => {
   /**
-   * The load-bearing assertion. Six problems that lead six different places
-   * stay six problems; the moment two of them share a next action, one of the
-   * two is sending somebody to the wrong place.
+   * The load-bearing assertion. Problems that lead different places stay
+   * distinct; the moment two of them share a next action, one of the two is
+   * sending somebody to the wrong place.
    */
-  it("gives each of the six unreachable problems its own next action", () => {
+  it("gives each unreachable problem its own next action", () => {
     const actions = HOST_REACH_PROBLEMS.map(
       (problem) => describeConnectState({ step: "unreachable", label: LABEL, problem }).next_action,
     );
     expect(new Set(actions).size).toBe(HOST_REACH_PROBLEMS.length);
     expect(actions.every((action) => action !== null && action.length > 0)).toBe(true);
+  });
+
+  /**
+   * The enrollment moment, and the sentence most tools leave out (MAR-572).
+   *
+   * Trust on first use is not verification: a machine impersonating this server
+   * would hand back its own key and its own fingerprint just as smoothly. What
+   * the step buys is attribution — a person looked, compared, and said yes. A
+   * screen that showed a code and a Confirm button without admitting DASH
+   * cannot check it would be teaching people that clicking yes *is* a check,
+   * which is worse than not asking.
+   */
+  it("shows the identity code and admits DASH cannot check it", () => {
+    const copy = describeConnectState({
+      step: "confirm_host_key",
+      label: LABEL,
+      fingerprint: "SHA256:2Su8ZWuoW3XhTTa8bUjFLkevsVh3lqozGECLseaGbec",
+      key_type: "ssh-ed25519",
+      offered_count: 2,
+    });
+
+    expect(copy.detail).toContain("SHA256:2Su8ZWuoW3XhTTa8bUjFLkevsVh3lqozGECLseaGbec");
+    expect(copy.detail).toContain("DASH cannot check this for you");
+    // It sends somebody to compare, not merely to agree.
+    expect(copy.next_action?.toLowerCase()).toContain("compare");
+    // Nothing is wrong here, and the words must not suggest otherwise.
+    for (const word of ["error", "fail", "problem", "invalid"]) {
+      expect(`${copy.headline} ${copy.detail}`.toLowerCase()).not.toContain(word);
+    }
   });
 
   it("asks for nothing while it is working, and nothing once it has worked", () => {
@@ -96,6 +135,113 @@ describe("the states a person can be in", () => {
     const copy = describeConnectState(state);
     expect(copy.detail).not.toContain(state.public_key);
     expect(copy.detail).toContain("kept the private half on this computer");
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * Which of them happened (MAR-572, MAR-573)
+ * ---------------------------------------------------------------------- */
+
+describe("reading what ssh said", () => {
+  /**
+   * The three the 2026-08-08 run produced, in the order it produced them.
+   *
+   * Each of these is what OpenSSH actually writes, and until this classifier
+   * existed all three arrived at the same sentence: *"DASH could not sign in,
+   * or the helper is not installed there."* The host's own `auth.log`
+   * distinguished them at every step, which is what makes the single sentence
+   * indefensible rather than merely unhelpful.
+   */
+  it("tells an unconfirmed identity from a refused sign-in from a missing helper", () => {
+    expect(
+      classifyHostFailure({
+        stderr:
+          "No ED25519 host key is known for 203.0.113.7 and you have requested strict checking.\n" +
+          "Host key verification failed.\n",
+        pinned: false,
+      }),
+    ).toBe("host_key_not_trusted");
+
+    expect(
+      classifyHostFailure({
+        stderr: "root@203.0.113.7: Permission denied (publickey).\n",
+        pinned: true,
+      }),
+    ).toBe("key_not_on_server");
+
+    // The host's own words, from the run: the shell it reached had never heard
+    // of the verb DASH sent.
+    expect(
+      classifyHostFailure({ stderr: "bash: line 1: status: command not found\n", pinned: true }),
+    ).toBe("helper_not_installed");
+  });
+
+  it("never softens a changed key into an unconfirmed one", () => {
+    /*
+     * The one classification where being wrong is a security failure rather
+     * than an inconvenience, so it is decided two ways that must agree.
+     *
+     * OpenSSH's banner is unambiguous and claims it first. The record's own
+     * state is the backstop: a host DASH already pinned that now fails host-key
+     * verification is a changed key by definition, whatever wording the local
+     * build used.
+     */
+    const banner =
+      "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n" +
+      "@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n" +
+      "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n" +
+      "Host key verification failed.\n";
+
+    expect(classifyHostFailure({ stderr: banner, pinned: true })).toBe("server_identity_changed");
+    // Even with no pin recorded — the banner outranks the record, because a
+    // record and a file that disagree is itself a reason not to sign in.
+    expect(classifyHostFailure({ stderr: banner, pinned: false })).toBe("server_identity_changed");
+    // And a bare verification failure against a pinned host is the same alarm.
+    expect(
+      classifyHostFailure({ stderr: "Host key verification failed.\n", pinned: true }),
+    ).toBe("server_identity_changed");
+  });
+
+  it("puts a wrong address before every question that needs an answer", () => {
+    for (const stderr of [
+      "ssh: Could not resolve hostname no-such-host.example: Name or service not known\n",
+      "ssh: connect to host 203.0.113.7 port 22: Connection refused\n",
+      "ssh: connect to host 203.0.113.7 port 22: Connection timed out\n",
+      "ssh: connect to host 203.0.113.7 port 22: Network is unreachable\n",
+    ]) {
+      expect(classifyHostFailure({ stderr, pinned: false })).toBe("no_answer_at_address");
+    }
+  });
+
+  it("says nothing rather than guessing", () => {
+    /*
+     * The honest half, and the reason `null` is in the return type. An `ssh`
+     * failure this function does not recognise keeps the generic sentence that
+     * today's single refusal already uses. Rounding it to the nearest named
+     * problem would be worse than the shrug it replaced: a shrug sends nobody
+     * anywhere, and a wrong classification sends them somewhere specific.
+     */
+    for (const stderr of ["", "Killed by signal 1.\n", "debug1: Reading configuration data\n"]) {
+      expect(classifyHostFailure({ stderr, pinned: false })).toBeNull();
+    }
+  });
+
+  it("returns a problem the copy has a sentence for", () => {
+    // The classifier and the copy are two lists that must not drift. Anything
+    // this function can return must be renderable, or a real failure would
+    // reach a person as a crash instead of a sentence.
+    const stderrs = [
+      "Host key verification failed.\n",
+      "root@host: Permission denied (publickey).\n",
+      "bash: line 1: status: command not found\n",
+      "ssh: connect to host h port 22: Connection refused\n",
+      "Too many authentication failures\n",
+    ];
+    for (const stderr of stderrs) {
+      const problem = classifyHostFailure({ stderr, pinned: false });
+      expect(problem).not.toBeNull();
+      expect(HOST_REACH_PROBLEMS).toContain(problem);
+    }
   });
 });
 

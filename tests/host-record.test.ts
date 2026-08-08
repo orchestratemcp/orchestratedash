@@ -283,12 +283,62 @@ describe("the key DASH holds", () => {
    * `exportHostKey` or `hostKeyMaterial` fails here — which is where somebody
    * would add one, because the deploy plane will one day want to "just check"
    * the key.
+   *
+   * MAR-572 added the first reader that is allowed: `readHostPublicKey`, which
+   * enrollment needs because it must be resumable — before it, the only way to
+   * see the public half was to *mint a key*, so a flow that lost its place
+   * minted another one and stranded the first.
+   *
+   * The exemption is by exact name and it is deliberately narrow. `Public` in a
+   * name is a claim, and a claim is not evidence, so the test below no longer
+   * stops at the name: it runs every exempted reader against a real key pair
+   * and asserts that what comes back is the public half and carries nothing of
+   * the other one. That is a stronger guard than the one it replaces, which
+   * checked no behaviour at all.
    */
+  const PUBLIC_READERS = ["readHostPublicKey"] as const;
+
   it("has no function that returns a private key", () => {
-    const readers = Object.keys(sshHost).filter((name) =>
-      /^(read|export|get|load|reveal)/i.test(name) && /key/i.test(name),
+    const readers = Object.keys(sshHost).filter(
+      (name) => /^(read|export|get|load|reveal)/i.test(name) && /key/i.test(name),
     );
-    expect(readers).toEqual([]);
+    expect(readers).toEqual([...PUBLIC_READERS]);
+  });
+
+  const tools = sshHost.probeSshTools();
+  const whenSsh = tools.present ? it : it.skip;
+
+  whenSsh(
+    "hands back only the public half from the one reader that is allowed",
+    () => {
+      const dataDir = workDir();
+      const minted = sshHost.createHostKey(dataDir, "host-01");
+      const readBack = sshHost.readHostPublicKey(dataDir, "host-01");
+
+      // The same string minting returned, so there is no second, looser route
+      // to the same file.
+      expect(readBack).toBe(minted);
+      expect(readBack.startsWith("ssh-ed25519 ")).toBe(true);
+      expect(readBack).not.toContain("PRIVATE KEY");
+
+      // And the private half really is sitting next to it, unread.
+      const onDisk = readFileSync(sshHost.hostKeyPath(dataDir, "host-01"), "utf8");
+      expect(onDisk).toContain("PRIVATE KEY");
+      expect(readBack).not.toContain(onDisk.trim());
+    },
+    SHELLING_OUT_MS,
+  );
+
+  it("refuses to read a public half for a host whose key is gone", () => {
+    // Enrollment resumes by asking for what exists. When the record outlived
+    // its key there is nothing honest to return, and main turns this into
+    // "start this server over" rather than minting a key the server's
+    // allowed-keys file has never been told about.
+    const dataDir = workDir();
+    sshHost.hostKeysDirectory(dataDir);
+    expect(() => sshHost.readHostPublicKey(dataDir, "absent")).toThrowError(
+      /no longer holds the key/,
+    );
   });
 
   it("names the key by path without the record ever carrying one", () => {

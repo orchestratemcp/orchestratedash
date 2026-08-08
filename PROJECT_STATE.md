@@ -3580,3 +3580,111 @@ the single-instance lock for this entire session. CI's `shell-smoke` is a
 genuine installed-shell witness — it is what MAR-492 leaned on for the same
 reason — but it runs on CI's machine and against CI's store, and the workspace
 screenshots showing a real declared panel on a real route do not exist yet.
+
+## The first pin, and the helper's way in (MAR-572, MAR-573, ADR 0009)
+
+**A never-seen host could never pass the probe, and a fresh host could never
+answer a verb.** Both were found on 2026-08-08 by the first attended run of
+MAR-536's wiring against a real box — Hostinger, Ubuntu 24.04, rented an hour
+earlier — and neither could have been found by a gate, because every fixture
+host in this repository is already trusted and already has a helper on it.
+
+The run passed. It passed because the operator cleared both walls **by hand**,
+and that hand-work is what these two issues turn into product. They are one
+branch because they are one journey: the enrollment wall is what a person hits
+first, and clearing it is what makes the second wall reachable at all.
+
+**Wall one: the strict half shipped and the enrollment half did not.** `sshArgv`
+has dialled with `StrictHostKeyChecking=yes` since MAR-484, against a
+`known_hosts` that `createHostKey` writes *empty on purpose* — so a first
+connection fails closed rather than silently trusting whatever answered. The
+comment beside it said the first pin must come from an explicit enrollment flow,
+marked future. Nothing built it. The host's own `auth.log` recorded the
+consequence exactly: DASH's probes arrived and aborted at **preauth**, with no
+publickey attempt logged at all, while the wizard said *"could not sign in, or
+the helper is not installed there."*
+
+`host.probe` on an unpinned record no longer dials. It scans the host key over
+DASH's own dialer, computes the fingerprint **from the bytes** — pinned in CI
+against a vector OpenSSH produced, so the code a person compares is not scraped
+from another program's stdout — and asks. `host.trust` carries the fingerprint
+that was *shown* back to main, which asks the server again and refuses if the
+two disagree.
+
+**The sentence that makes it worth doing** is the one most tools leave out.
+Trust on first use proves nothing: a fingerprint fetched over the connection it
+describes is self-consistent by construction, and an impersonating machine would
+hand back its own just as smoothly. So the screen says *"DASH cannot check this
+for you — anything answering at this address could say the same thing, so this
+is the one part only you can confirm."* A fingerprint and a Confirm button
+without it would teach people that clicking yes **is** a verification.
+
+**There is no re-pin**, and that is the property an enrollment feature most
+easily destroys — the natural next commit is a "confirm the new key" button,
+offered at the moment somebody is most inclined to press it. It is refused in
+three places that must agree: `pinHostKey` has no argument that overwrites a
+line, `pinHostFingerprint` updates only where the column is still null, and
+`trustHostKey` returns the identity-changed alarm rather than a success on a
+record that is already pinned.
+
+**One refusal became nine.** `classifyHostFailure` reads `ssh`'s stderr and
+returns one of nine named problems — or `null`, which keeps today's generic
+sentence rather than guessing. This reverses a rule `openSshChannel` has carried
+since MAR-484 (*do not read stderr*), and the reversal is the point: that rule
+was kept by **not looking**, and the run priced it. Three completely different
+failures — an unconfirmed identity, a refused sign-in, a server with nothing to
+answer with — arrived as one sentence, while the host's own log distinguished
+all three at every step. A surface that cannot tell apart what the server itself
+can is a surface guessing on the user's behalf. The rule is now kept by the
+return type: the classifier can only return a member of a closed union, and a
+reviewer checks that by reading the signature.
+
+**Enrollment is resumable, and no longer churns keys.** The wizard reset to step
+one on every failure and minted a *fresh key* each pass, leaving the previous one
+attached to nothing in DASH's store and a stale line on the host. Fixed at the
+point where a key would be minted rather than in the wizard: `host.create` finds
+the server it already has by address, port and account, and reads the public
+half back instead of minting. So the churn is gone **even if the page still
+resets** — which matters, because `app/hosts/page.tsx` belongs to MAR-574 and
+this work did not touch it.
+
+**Wall two: the bootstrap was circular.** ADR 0007 says the helper travels inside
+the bundle DASH pushes; pushing a bundle is the `install` verb, which needs the
+helper. Once the key was pinned by hand, DASH authenticated — `Accepted publickey
+for root … SHA256:FCU60rvm…`, its own credential — and the host replied `bash:
+line 1: status: command not found`.
+
+**The answer is one snippet and a forced command.** `host.setup` returns text a
+person pastes into their server once: it installs a pinned Node where Ubuntu
+24.04 ships none new enough, writes the helper — **embedded as base64, not
+downloaded**, because there is nowhere to download it from without a hosting bill
+and because embedding makes the bytes the ones this DASH shipped — and adds one
+allowed-keys line: `restrict,command="/opt/orchestratedash/dash-host" <key>`.
+
+That line is ADR 0009's decision, and it is worth more than the tidiness it
+replaces. Namespacing the verbs (`dash-status`) would solve the collision of
+English words on `PATH` and nothing else; the key would remain a general shell
+credential. `command=` removes the question entirely — no `PATH` entries at all —
+and turns ADR 0007's promise into a property of the host: `sshd` runs the helper
+whatever the client asks, so **a key stolen from this machine cannot open a shell
+on that server**. Its cost is one seam, and `entry.ts` now reads
+`SSH_ORIGINAL_COMMAND` as well as argv.
+
+**Two things caught a real defect before it shipped.** A test spawns the *real
+built helper* with empty argv and only `SSH_ORIGINAL_COMMAND` set, and gets the
+same answer the attended run got by hand — which guards against a helper that
+works under `ssh host status` and says "no operation was named" on every real
+host. And a test that *evaluates* the allowed-keys assignment in a POSIX shell
+caught the forced command's quotes being eaten: valid syntax, `sh -n` clean, and
+it would have produced `command=/opt/…` unquoted, which `sshd` rejects — locking
+DASH out of a server somebody had just finished setting up, reported as a refused
+sign-in with nothing to point at.
+
+**What is still not proven, and it is the whole gap.** Nothing in CI runs the
+bootstrap; the enrollment step has never met an `sshd` it did not already know.
+The tests parse the script under Ubuntu's own `dash` and check the one assignment
+whose meaning a parser cannot see, but parsing is not running. ADR 0004's rule
+holds and MAR-573's fourth acceptance bar names the proof: an attended re-probe
+from a genuinely fresh box. Both issues are `merged`, not `proven`, until then —
+and neither is reachable from the UI until MAR-574 wires the two states, which is
+the coordination this branch was cut around.

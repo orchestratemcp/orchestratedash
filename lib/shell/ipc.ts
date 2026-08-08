@@ -229,6 +229,45 @@ export const COMMANDS = {
     mutates: false,
     irreversible: false,
   },
+
+  /*
+   * MAR-572. The first pin, as a command of its own rather than a side effect
+   * of connecting.
+   *
+   * `fingerprint` is required and is the one the person was *shown*. Main
+   * fetches the host's key again and refuses if it no longer matches, so the
+   * thing that gets trusted is the thing that was on screen when somebody said
+   * yes — not whatever answers at the moment they click. That gap is small and
+   * it is exactly the gap this step exists to close.
+   *
+   * `mutates` is true and `irreversible` is false: what it writes is removed by
+   * `host.forget`, which is the only thing that removes it.
+   */
+  "host.trust": {
+    effect:
+      "Record that you confirmed this server's identity, so DASH will sign in to it. Only ever the first time.",
+    payload_keys: ["host_id", "fingerprint"],
+    required_keys: ["host_id", "fingerprint"],
+    mutates: true,
+    irreversible: false,
+  },
+
+  /*
+   * MAR-573. The text a person pastes into a server that has never heard of
+   * DASH.
+   *
+   * `mutates` is false, and that is not a technicality: this command reads
+   * DASH's own public key and the helper it ships, and composes a string.
+   * Nothing on this machine or on the server changes until the person decides
+   * to run it, on a machine DASH is not connected to yet.
+   */
+  "host.setup": {
+    effect: "Write out the one-off setup step for a server, as text to copy. Changes nothing.",
+    payload_keys: ["host_id"],
+    required_keys: ["host_id"],
+    mutates: false,
+    irreversible: false,
+  },
   "host.deploy": {
     effect:
       "Put one stored agent folder and DASH's standalone runner on one saved server, then start that runner.",
@@ -543,6 +582,8 @@ export function isConnectionCommandName(value: CommandName): value is Connection
 export const HOST_ACTIONS = {
   "host.create": "create",
   "host.probe": "probe",
+  "host.trust": "trust",
+  "host.setup": "setup",
   "host.deploy": "deploy",
   "host.forget": "forget",
 } as const;
@@ -916,8 +957,37 @@ export type HostActionResult =
       label: string;
       public_key: string;
       key_name: string;
+      /**
+       * The same public half with the restriction that makes it safe, ready to
+       * paste (MAR-573).
+       *
+       * Beside `public_key` rather than instead of it, because they answer
+       * different questions: one is the key, and this is the *line* — the key
+       * plus `restrict,command="…"`, which is what makes DASH's credential
+       * structurally unable to run anything but the helper. A person installing
+       * by hand should install this one.
+       */
+      authorized_keys_line: string;
+      /** True when this call attached to a server DASH already had (MAR-572). */
+      resumed: boolean;
     }
   | { ok: true; action: "probe"; host_id: string; label: string; runner_build: string | null }
+  | {
+      ok: true;
+      action: "trust";
+      host_id: string;
+      label: string;
+      /** What was pinned, so a surface can show what it now trusts. */
+      fingerprint: string;
+    }
+  | {
+      ok: true;
+      action: "setup";
+      host_id: string;
+      label: string;
+      /** The whole snippet, as text to copy. Carries no private key and no path on this machine. */
+      script: string;
+    }
   | {
       ok: true;
       action: "deploy";
@@ -929,7 +999,21 @@ export type HostActionResult =
       detail: string;
     }
   | { ok: true; action: "forget"; host_id: string; label: string }
-  | { ok: false; detail: string; problem?: HostReachProblem };
+  | {
+      ok: false;
+      detail: string;
+      problem?: HostReachProblem;
+      /**
+       * Set only with `problem: "host_key_not_trusted"` (MAR-572).
+       *
+       * A named, closed shape rather than a data bag, for the reason the
+       * successful variants are spelled out one field at a time: a bag on the
+       * failure path is where a diagnostic string naming this machine's key
+       * location would eventually be added by somebody being helpful. Three
+       * fields, all facts about a *remote* key, none of them from this machine.
+       */
+      host_key?: { fingerprint: string; key_type: string; offered_count: number };
+    };
 
 export interface DispatchContext {
   runAgentCommand(input: AgentCommandInput): Promise<AgentCommandResult>;
@@ -969,6 +1053,7 @@ export interface DispatchContext {
     target:
       | { label: string; address: string; username: string; port: number }
       | { host_id: string }
+      | { host_id: string; fingerprint: string }
       | { host_id: string; agent_id: string },
   ): Promise<HostActionResult>;
   /**
@@ -1098,14 +1183,37 @@ export async function dispatchCommand(
               host_id: String(review.payload["host_id"]),
               agent_id: String(review.payload["agent_id"]),
             })
-          : await context.hostAction(action, { host_id: String(review.payload["host_id"]) });
+          : action === "trust"
+            ? await context.hostAction(action, {
+                host_id: String(review.payload["host_id"]),
+                // The fingerprint the person was shown, carried back so main can
+                // refuse if the server's answer has changed since. Required by
+                // the payload rules, so it is a non-empty string by here.
+                fingerprint: String(review.payload["fingerprint"]),
+              })
+            : await context.hostAction(action, { host_id: String(review.payload["host_id"]) });
 
     if (!result.ok) {
       return {
         ok: false,
         request_id: review.audit.request_id,
         detail: result.detail,
-        data: result.problem === undefined ? undefined : { problem: result.problem },
+        data:
+          result.problem === undefined
+            ? undefined
+            : {
+                problem: result.problem,
+                // Flattened to primitives here, like every other command's data.
+                // Absent unless main set them, which it does only for the one
+                // problem that has a fingerprint to show (MAR-572).
+                ...(result.host_key === undefined
+                  ? {}
+                  : {
+                      fingerprint: result.host_key.fingerprint,
+                      key_type: result.host_key.key_type,
+                      offered_count: result.host_key.offered_count,
+                    }),
+              },
       };
     }
 
@@ -1121,6 +1229,32 @@ export async function dispatchCommand(
             label: result.label,
             public_key: result.public_key,
             key_name: result.key_name,
+            authorized_keys_line: result.authorized_keys_line,
+            resumed: result.resumed,
+          },
+        };
+      case "trust":
+        return {
+          ok: true,
+          request_id: review.audit.request_id,
+          data: {
+            host_id: result.host_id,
+            label: result.label,
+            fingerprint: result.fingerprint,
+          },
+        };
+      case "setup":
+        // The script and nothing else. It is composed by `lib/host-bootstrap.ts`
+        // from DASH's own public key and the helper's bytes; no path on this
+        // machine and no private key can appear in it, which is a property of
+        // that module's allowlist rather than of this projection.
+        return {
+          ok: true,
+          request_id: review.audit.request_id,
+          data: {
+            host_id: result.host_id,
+            label: result.label,
+            script: result.script,
           },
         };
       case "probe":

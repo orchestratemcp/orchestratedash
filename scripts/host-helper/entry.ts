@@ -8,9 +8,21 @@
  * code.
  */
 
-import { runHelper } from "./main";
+import { helperArgv, runHelper } from "./main";
 
-void runHelper(process.argv.slice(2)).then(
+/*
+ * Argv, or the request `sshd` set aside when it ran this instead (MAR-573).
+ *
+ * With ADR 0009's forced command in the host's allowed-keys file, `sshd` runs
+ * this program no matter what DASH asked for and puts DASH's actual request in
+ * `SSH_ORIGINAL_COMMAND`. Reading only `process.argv` — which is what this file
+ * did — would mean every verb arrived as no verb at all.
+ *
+ * The resolution itself is in `main.ts` so it can be tested without a process.
+ * This file stays what its header says it is: the one place a number becomes an
+ * exit code.
+ */
+void runHelper(helperArgv(process.argv.slice(2), process.env["SSH_ORIGINAL_COMMAND"])).then(
   (code) => {
     // `stdout.write` may still be draining down a pipe. Exiting on the flush
     // rather than immediately is what stops a one-line answer being lost on the

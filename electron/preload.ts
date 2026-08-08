@@ -95,6 +95,18 @@ interface HostDeployTarget extends HostTarget {
   agent_id: string;
 }
 
+/**
+ * A saved host plus the identity code the person was shown (MAR-572).
+ *
+ * The fingerprint is a fact about the *server's* key. It names nothing on this
+ * machine, and it travels this way — back through the same boundary it came
+ * out of — so that main can check what is answering now against what was on
+ * screen when somebody said yes.
+ */
+interface HostTrustTarget extends HostTarget {
+  fingerprint: string;
+}
+
 function send(command: string, payload: Record<string, string>): Promise<CommandResult> {
   return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
     command,
@@ -220,6 +232,19 @@ const dashShell = {
   createHost: ({ label, address, username, port }: HostCreateArgs) =>
     sendHostCreate({ label, address, username, port }),
   probeHost: ({ host_id }: HostTarget) => send("host.probe", { host_id }),
+  /**
+   * The first pin, and the setup text (MAR-572, MAR-573).
+   *
+   * `trustHost` carries the fingerprint the person was shown back to main,
+   * which asks the server again and refuses if the two disagree.
+   *
+   * `hostSetupScript` takes only an id and returns text. It cannot be given a
+   * path, a key or a command; what comes back is composed in main from DASH's
+   * own public half and the helper this build ships.
+   */
+  trustHost: ({ host_id, fingerprint }: HostTrustTarget) =>
+    send("host.trust", { host_id, fingerprint }),
+  hostSetupScript: ({ host_id }: HostTarget) => send("host.setup", { host_id }),
   deployAgentToHost: ({ host_id, agent_id }: HostDeployTarget) =>
     send("host.deploy", { host_id, agent_id }),
   forgetHost: ({ host_id }: HostTarget) => send("host.forget", { host_id }),

@@ -89,6 +89,19 @@ export interface HostDeployCommandTarget extends HostCommandTarget {
   agent_id: string;
 }
 
+/**
+ * A saved server plus the identity code the person just read on screen
+ * (MAR-572).
+ *
+ * The fingerprint goes *back* the way it came so main can check it against the
+ * server's answer now. It is a fact about the far end's key and names nothing
+ * on this machine, which is why it is representable here when a key or a path
+ * is not.
+ */
+export interface HostTrustCommandTarget extends HostCommandTarget {
+  fingerprint: string;
+}
+
 interface DashShellClient {
   /**
    * Show the application menu (MAR-440).
@@ -133,6 +146,17 @@ interface DashShellClient {
    */
   createHost?(args: HostCreateCommandArgs): Promise<CommandResult>;
   probeHost?(args: HostCommandTarget): Promise<CommandResult>;
+  /**
+   * Confirming a server's identity, and writing out its setup step (MAR-572,
+   * MAR-573).
+   *
+   * Optional like the four around them, and here the optionality has already
+   * earned its keep once: these two are the newest commands on the bridge, so
+   * an installed DASH from before this work has a `dashShell` with the rest and
+   * without them.
+   */
+  trustHost?(args: HostTrustCommandTarget): Promise<CommandResult>;
+  hostSetupScript?(args: HostCommandTarget): Promise<CommandResult>;
   deployAgentToHost?(args: HostDeployCommandTarget): Promise<CommandResult>;
   forgetHost?(args: HostCommandTarget): Promise<CommandResult>;
   /**
@@ -522,8 +546,20 @@ export async function submitHostCommand(
   target: HostDeployCommandTarget,
 ): Promise<CommandResult>;
 export async function submitHostCommand(
-  action: "create" | "probe" | "deploy" | "forget",
-  target: HostCreateCommandArgs | HostCommandTarget | HostDeployCommandTarget,
+  action: "trust",
+  target: HostTrustCommandTarget,
+): Promise<CommandResult>;
+export async function submitHostCommand(
+  action: "setup",
+  target: HostCommandTarget,
+): Promise<CommandResult>;
+export async function submitHostCommand(
+  action: "create" | "probe" | "trust" | "setup" | "deploy" | "forget",
+  target:
+    | HostCreateCommandArgs
+    | HostCommandTarget
+    | HostTrustCommandTarget
+    | HostDeployCommandTarget,
 ): Promise<CommandResult> {
   const bridge = typeof window === "undefined" ? undefined : window.dashShell;
   if (bridge === undefined) {
@@ -556,6 +592,26 @@ export async function submitHostCommand(
         };
       }
       return bridge.probeHost(target as HostCommandTarget);
+    case "trust":
+      if (bridge.trustHost === undefined) {
+        return {
+          ok: false,
+          request_id: "",
+          reason: "read_only_host",
+          detail: "This version of the DASH app cannot confirm a server's identity yet.",
+        };
+      }
+      return bridge.trustHost(target as HostTrustCommandTarget);
+    case "setup":
+      if (bridge.hostSetupScript === undefined) {
+        return {
+          ok: false,
+          request_id: "",
+          reason: "read_only_host",
+          detail: "This version of the DASH app cannot write a server's setup step yet.",
+        };
+      }
+      return bridge.hostSetupScript(target as HostCommandTarget);
     case "deploy":
       if (bridge.deployAgentToHost === undefined) {
         return {

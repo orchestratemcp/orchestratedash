@@ -142,6 +142,14 @@ describe("the audited command chokepoint", () => {
       // the public key, while probe and forget take the opaque host id.
       "host.create",
       "host.probe",
+      // MAR-572. The first pin, as a command rather than a side effect of
+      // connecting: it carries back the fingerprint the person was *shown*, and
+      // main refuses if the server no longer answers with it.
+      "host.trust",
+      // MAR-573. Text a person pastes into a server that has never heard of
+      // DASH. `mutates: false` — it reads DASH's own public key and the helper
+      // this build ships, and composes a string.
+      "host.setup",
       "host.deploy",
       "host.forget",
       // MAR-434. A fifth family, addressing the runner's task workspace over
@@ -435,6 +443,7 @@ describe("dispatch", () => {
         target:
           | { label: string; address: string; username: string; port: number }
           | { host_id: string }
+          | { host_id: string; fingerprint: string }
           | { host_id: string; agent_id: string },
       ) => {
         hosts.push({ action, target });
@@ -447,6 +456,29 @@ describe("dispatch", () => {
               label: "My server",
               public_key: "ssh-ed25519 AAAA-public orchestratedash",
               key_name: "host-fake-1",
+              authorized_keys_line:
+                'restrict,command="/opt/orchestratedash/dash-host" ssh-ed25519 AAAA-public orchestratedash',
+              resumed: false,
+            });
+          // MAR-572 / MAR-573. Both new answers are unsecret by construction,
+          // like the four around them: a fingerprint is a fact about the
+          // *server's* key, and the setup text is composed in main from DASH's
+          // own public half.
+          case "trust":
+            return Promise.resolve({
+              ok: true as const,
+              action,
+              host_id: "host-fake-1",
+              label: "My server",
+              fingerprint: "SHA256:fixture",
+            });
+          case "setup":
+            return Promise.resolve({
+              ok: true as const,
+              action,
+              host_id: "host-fake-1",
+              label: "My server",
+              script: "#!/bin/sh\nexit 0\n",
             });
           case "probe":
             return Promise.resolve({
@@ -716,7 +748,19 @@ describe("dispatch", () => {
       const result = await dispatchCommand(create, ctx);
       const fields = Object.keys(result.data ?? {}).sort();
 
-      expect(fields).toEqual(["host_id", "key_name", "label", "public_key"]);
+      // Six now, and the two additions are both public by construction:
+      // `authorized_keys_line` is the same public half with the restriction
+      // that makes DASH's key unable to run anything but the helper (MAR-573),
+      // and `resumed` says whether this call attached to a server DASH already
+      // had rather than minting a second key for it (MAR-572).
+      expect(fields).toEqual([
+        "authorized_keys_line",
+        "host_id",
+        "key_name",
+        "label",
+        "public_key",
+        "resumed",
+      ]);
       expect(fields).not.toContain("private_key");
       expect(fields).not.toContain("key_path");
       expect(fields).not.toContain("path");

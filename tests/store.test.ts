@@ -11,8 +11,19 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const dataDir = mkdtempSync(path.join(tmpdir(), "dash-store-"));
 process.env.DASH_DATA_DIR = dataDir;
 
-const { forgetHost, importManifest, ingestEvents, listAgents, listRuns, readHost, readStore, resetStore, saveHost } =
-  await import("../lib/store");
+const {
+  findHostByConnection,
+  forgetHost,
+  importManifest,
+  ingestEvents,
+  listAgents,
+  listRuns,
+  pinHostFingerprint,
+  readHost,
+  readStore,
+  resetStore,
+  saveHost,
+} = await import("../lib/store");
 const { closeDb } = await import("../lib/db");
 
 function example(name: string): unknown {
@@ -97,6 +108,52 @@ describe("saved hosts", () => {
 
     expect(forgetHost(host.host_id)).toEqual(host);
     expect(readHost(host.host_id)).toBeNull();
+  });
+
+  /**
+   * Resumability, at the point where a second key would have been minted
+   * (MAR-572).
+   *
+   * The 2026-08-08 run walked the add-a-server steps four times against one box
+   * because the wizard returned to step one on every failure, and each pass
+   * minted a fresh key — leaving the previous one attached to nothing here and
+   * its public half stale in the server's allowed-keys file. Matching on the
+   * three facts that identify a way in is what lets main resume instead.
+   */
+  it("finds a saved server by how DASH reaches it, not by what it is called", () => {
+    saveHost(host);
+
+    expect(findHostByConnection({ address: host.address, port: 22, username: "dash" })).toEqual(
+      host,
+    );
+    // The label is what a person calls it and may well change between attempts;
+    // nothing points at it.
+    expect(findHostByConnection({ address: host.address, port: 2222, username: "dash" })).toBeNull();
+    expect(
+      findHostByConnection({ address: host.address, port: 22, username: "someone-else" }),
+    ).toBeNull();
+    expect(
+      findHostByConnection({ address: "other.example", port: 22, username: "dash" }),
+    ).toBeNull();
+  });
+
+  /**
+   * The pin is written once, and there is no path here that moves it.
+   *
+   * ADR 0007 requires a changed host key to fail closed. Once an enrollment
+   * step exists, the way to keep that true is for the enrollment step to be
+   * unable to re-enrol — so the update is conditional on the column still being
+   * null, and a caller that tries again is told it did not happen rather than
+   * quietly succeeding.
+   */
+  it("records a confirmed identity once and refuses to move it", () => {
+    saveHost(host);
+
+    expect(pinHostFingerprint(host.host_id, "SHA256:first")).toBe(true);
+    expect(readHost(host.host_id)?.host_fingerprint).toBe("SHA256:first");
+
+    expect(pinHostFingerprint(host.host_id, "SHA256:second")).toBe(false);
+    expect(readHost(host.host_id)?.host_fingerprint).toBe("SHA256:first");
   });
 });
 
