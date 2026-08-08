@@ -1760,6 +1760,156 @@ if (recorded !== null) {
             );
           }
 
+          /*
+           * 6n/6o — the panel the sample's own manifest declared, on the
+           * installed shell (MAR-548, ADR 0008 slice 3).
+           *
+           * This is the check MAR-554 could not write and said so: its 32
+           * screenshots were the packaged renderer drawing the panel's markup
+           * mounted into `<main>` by a harness, which is evidence about the
+           * components and explicitly not evidence that the workspace renders a
+           * panel — because nothing was wired to a page and no manifest declared
+           * one. Both halves are true now, so the claim is made where it can be
+           * refused: the real agent this proof just created through the real
+           * handoff, its manifest read back out of the folder store by
+           * `workspaceView`, drawn on its own route in the installed window.
+           *
+           * The route is the workspace, not a run. A panel is a property of the
+           * *agent*, and 6k already covers the run detail page.
+           */
+          const workspaceUrl =
+            `${parsedRenderer.protocol}//${parsedRenderer.host}` +
+            `/agents/detail?agent=${encodeURIComponent(agentId)}`;
+
+          let panel: {
+            heading: string;
+            sections: number;
+            labels: string[];
+            table_rows: number;
+            controls_inside: number;
+            raw_instants: number;
+          } | null = null;
+          /*
+           * Skipped rather than failed when there is no completed run, which is
+           * the discipline MAR-473 put on 6i/6j/6k after one upstream failure
+           * printed three red lines each blaming the thing it is named after.
+           * The table binds `digest`, so with no run there is no artifact and
+           * "the panel has no rows" would be a true statement about 6g's
+           * failure wearing this proof's name.
+           */
+          const canWitnessPanel = completed !== null;
+          try {
+            if (!canWitnessPanel) throw new Error("no completed run to witness a panel against");
+            /*
+             * Retried, because a single `loadURL` here is a navigation race and
+             * not an assertion about the panel. 6k has just loaded the run
+             * detail page and that page reads its view in an effect; a second
+             * navigation arriving while the first is still settling comes back
+             * `ERR_ABORTED (-3)`, which would fail this proof for a reason it
+             * is not named after — MAR-473's lesson, which cost three red lines
+             * blaming the things they were named after once already.
+             */
+            for (let attempt = 0; ; attempt += 1) {
+              try {
+                await window.loadURL(workspaceUrl);
+                break;
+              } catch (error: unknown) {
+                if (attempt >= 2) throw error;
+                console.warn(
+                  `[smoke] the workspace navigation was superseded, retrying: ${String(error)}`,
+                );
+                await new Promise((resolve) => setTimeout(resolve, 750));
+              }
+            }
+            panel = await waitForValue(async () => {
+              const seen = (await window.webContents.executeJavaScript(
+                `(() => {
+                   const region = document.querySelector(".agent-panel");
+                   if (region === null) return null;
+                   return {
+                     heading: document.querySelector("#agent-panel-heading")?.textContent ?? "",
+                     sections: region.querySelectorAll(".agent-panel-section").length,
+                     /*
+                      * ":scope > h3" — a section's OWN label, not every h3 under
+                      * it. A descendant selector here returned five, because
+                      * DigestBody renders each digest item's headline as an h3
+                      * inside the report section, so the author's three labels
+                      * arrived mixed with the agent's own headlines. That is the
+                      * defect this proof reported on its first two CI runs, and
+                      * it was in the query rather than in the panel.
+                      */
+                     labels: [...region.querySelectorAll(".agent-panel-section")].map(
+                       (s) => s.querySelector(":scope > h3")?.textContent ?? "",
+                     ),
+                     table_rows: region.querySelectorAll("tbody tr").length,
+                     controls_inside: region.querySelectorAll("button, input, select, textarea").length,
+                     raw_instants: (region.textContent ?? "").split(/\\d{4}-\\d{2}-\\d{2}T[\\d:.]+Z/).length - 1,
+                   };
+                 })()`,
+              )) as typeof panel;
+              // The page reads its view in an effect, so a missing region is
+              // "not yet". Waiting for all three declared sections is what makes
+              // this an assertion about the panel rather than about a heading
+              // that happened to paint first.
+              return seen !== null && seen.sections === 3 ? seen : null;
+            }, "the workspace to draw the sample's declared panel");
+          } catch (error: unknown) {
+            panel = null;
+            if (canWitnessPanel) {
+              console.warn(`[smoke] the agent workspace did not load: ${String(error)}`);
+            }
+          }
+
+          if (!canWitnessPanel) {
+            skip(
+              "6n. the workspace draws the panel the sample's manifest declared",
+              "6g produced no run whose outputs a panel could bind against",
+            );
+          } else {
+            check(
+              "6n. the workspace draws the panel the sample's manifest declared",
+              panel !== null &&
+                panel.heading === "What the scout found" &&
+                // The author's three labels, in the order they were declared.
+                // By value rather than by count, which is what would have caught
+                // the descendant-selector defect above on the first run.
+                JSON.stringify(panel.labels) ===
+                  JSON.stringify([
+                    "The latest digest",
+                    "How this agent has been doing",
+                    "Every headline in the latest digest",
+                  ]) &&
+                // The table binds `digest`, so rows exist only because the run
+                // above actually produced one and the role resolved against it.
+                panel.table_rows > 0,
+              panel,
+            );
+          }
+
+          /*
+           * 6o is the ADR's strongest claim, measured on a real route rather
+           * than in a harness-mounted fragment: the panel vocabulary contains no
+           * component that asks the user for anything, so a region drawn from an
+           * agent's own declaration must contain no control at all. It also
+           * carries MAR-533's rule into the installed shell — a `timestamp`
+           * column and a digest body both render moments here, and neither may
+           * ship the machine's spelling of one.
+           */
+          if (panel === null) {
+            skip(
+              "6o. nothing inside the author's region is a control or a raw instant",
+              canWitnessPanel
+                ? "6n found no panel to inspect"
+                : "6g produced no run whose outputs a panel could bind against",
+            );
+          } else {
+            check(
+              "6o. nothing inside the author's region is a control or a raw instant",
+              panel.controls_inside === 0 && panel.raw_instants === 0,
+              { controls_inside: panel.controls_inside, raw_instants: panel.raw_instants },
+            );
+          }
+
           const finalLedger = readHandoffRecord(created.value.handoff.handoff_id);
           check(
             "6f. the handoff ledger keeps the first final outcome",

@@ -93,6 +93,41 @@
     },
     "memory": [
       { "id": "meeting-preferences", "label": "Meeting preferences", "description": "User-approved scheduling preferences with visible provenance", "visibility": "user_visible", "retention": "user_approved" }
-    ]
+    ],
+    "panel": {
+      "panel_version": 1,
+      "title": "Replies this assistant has drafted",
+      "sections": [
+        {
+          "id": "how_it_works",
+          "type": "note",
+          "label": "What this assistant does",
+          "text": "It reads meeting requests, proposes two times that fit your calendar, and waits for you to approve before it creates an event or writes a reply."
+        },
+        {
+          "id": "latest_reply",
+          "type": "report",
+          "label": "The reply it wrote last",
+          "artifact_role": "draft"
+        },
+        {
+          "id": "earlier_replies",
+          "type": "outputs",
+          "label": "Earlier replies",
+          "artifact_role": "draft",
+          "max_items": 5
+        },
+        {
+          "id": "activity",
+          "type": "metrics",
+          "label": "How this agent has been doing",
+          "items": [
+            { "id": "run_count", "label": "Times it has run", "source": { "kind": "dash_fact", "fact": "run_count" } },
+            { "id": "last_run_at", "label": "Last checked", "source": { "kind": "dash_fact", "fact": "last_run_at" } },
+            { "id": "last_run_verdict", "label": "How the last run ended", "source": { "kind": "dash_fact", "fact": "last_run_verdict" } }
+          ]
+        }
+      ]
+    }
   }
 }

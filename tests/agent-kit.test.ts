@@ -44,6 +44,7 @@ import {
 } from "../lib/contracts";
 import { HANDOFF_FILE_NAME, handoffUrl, readHandoff, verifyHandoff } from "../lib/handoff";
 import { openHandoff, type HandoffPorts, type HandoffPrompt } from "../lib/handoff-flow";
+import { resolvePanel } from "../lib/panel-spec";
 import { readRegistration } from "../lib/registration";
 import { buildAgentDomState } from "../runner/state";
 import { Supervisor } from "../runner/supervisor";
@@ -217,6 +218,115 @@ describe("the scaffold", () => {
       readFileSync(path.join(directory, "agent.manifest.json"), "utf8"),
     ) as { agent_dom: { connections: unknown[] } };
     expect(manifest.agent_dom.connections).toEqual([]);
+  });
+
+  /* -------------------------------------------------------------------- *
+   * The declared panel (MAR-548, ADR 0008)
+   * -------------------------------------------------------------------- */
+
+  it("declares a panel DASH can draw, resolved rather than read", () => {
+    /*
+     * Through `resolvePanel`, not by reaching into the JSON. This is the
+     * document the installed shell actually imports — "Try a sample agent"
+     * scaffolds it, and `electron/smoke.ts` proof 6 puts it through the real
+     * handoff — so what matters is that the *renderer's own door* accepts it.
+     * A test that asserted on the object literal would keep passing on a panel
+     * DASH had stopped being able to read.
+     */
+    const directory = scaffold();
+    const resolved = resolvePanel(
+      JSON.parse(readFileSync(path.join(directory, "agent.manifest.json"), "utf8")),
+    );
+
+    expect(resolved.kind).toBe("v1");
+    if (resolved.kind !== "v1") return;
+    expect(resolved.sections.map((section) => section.type)).toEqual([
+      "report",
+      "metrics",
+      "table",
+    ]);
+  });
+
+  it("binds only to roles and members this agent's own output actually has", () => {
+    /*
+     * The binding half, and the reason it is a separate assertion: a panel that
+     * resolves is a panel DASH will *draw*, and a panel that draws the wrong
+     * names is a panel of empty cells. `digest` is the artifact kind the
+     * template's `artifact()` call emits, and the three column keys are members
+     * of the digest item shape in `contracts/run-artifact.schema.json`.
+     *
+     * Both sides are read here rather than restated: the roles come off the
+     * resolved sections, and the item members come out of the schema file, so a
+     * schema that renamed `published_at` fails this test instead of quietly
+     * emptying a column in the shipped sample.
+     */
+    const directory = scaffold();
+    const resolved = resolvePanel(
+      JSON.parse(readFileSync(path.join(directory, "agent.manifest.json"), "utf8")),
+    );
+    if (resolved.kind !== "v1") throw new Error("the scaffold's panel must resolve as v1");
+
+    const itemMembers = Object.keys(
+      (
+        JSON.parse(
+          readFileSync(path.join(repoRoot, "contracts", "run-artifact.schema.json"), "utf8"),
+        ) as { properties: { items: { items: { properties: Record<string, unknown> } } } }
+      ).properties.items.items.properties,
+    );
+
+    for (const section of resolved.sections) {
+      if (section.type === "report") {
+        expect(section.artifact_role).toBe("digest");
+      }
+      if (section.type === "table") {
+        expect(section.source_role).toBe("digest");
+        for (const column of section.columns) {
+          expect(itemMembers, column.key).toContain(column.key);
+        }
+      }
+    }
+  });
+
+  it("asks DASH to word the publish date rather than declaring it text", () => {
+    /*
+     * MAR-533's rule reached through a declaration. `timestamp` is the author
+     * telling DASH the value is a moment, which is the licence
+     * `lib/views/panel.ts` needs to run it through `plainMoment` instead of
+     * printing the machine's spelling of it. Declared `text`, the same column
+     * would render `2026-08-05T09:00:00.000Z` and no other test would notice —
+     * it would be a valid panel drawing a legal string.
+     */
+    const directory = scaffold();
+    const resolved = resolvePanel(
+      JSON.parse(readFileSync(path.join(directory, "agent.manifest.json"), "utf8")),
+    );
+    if (resolved.kind !== "v1") throw new Error("the scaffold's panel must resolve as v1");
+
+    const table = resolved.sections.find((section) => section.type === "table");
+    expect(table?.type === "table" && table.columns.find((c) => c.key === "published_at")?.kind).toBe(
+      "timestamp",
+    );
+  });
+
+  it("declares no metric that would let the agent's own number wear DASH's voice", () => {
+    /*
+     * Every metric on this sample is a `dash_fact`, so every value it draws is
+     * DASH's record and is attributed as such. That is a property of this
+     * manifest rather than of the vocabulary — `artifact_field` exists and is
+     * legitimate — and it is asserted because the scout has no top-level
+     * numeric field to report, so a metric bound to one could only ever render
+     * absent while looking like a number the agent had stood behind.
+     */
+    const directory = scaffold();
+    const resolved = resolvePanel(
+      JSON.parse(readFileSync(path.join(directory, "agent.manifest.json"), "utf8")),
+    );
+    if (resolved.kind !== "v1") throw new Error("the scaffold's panel must resolve as v1");
+
+    const metrics = resolved.sections.find((section) => section.type === "metrics");
+    expect(metrics?.type === "metrics" && metrics.items.every((i) => i.source.kind === "dash_fact")).toBe(
+      true,
+    );
   });
 
   it("writes a project with no dependencies to install", () => {

@@ -191,13 +191,55 @@ describe("canPreview needs both halves", () => {
 });
 
 describe("the provenance receipt", () => {
-  it("carries both times, and keeps them apart", () => {
+  it("carries both times, keeps them apart, and words neither as the machine wrote it", () => {
     const [card] = buildArtifactCards([record()]);
-    // One is the agent's claim and one is DASH's record. A single "created"
-    // would promote the first into the second.
-    expect(card!.receipt.stated_at).toBe("2026-08-01T06:04:11.000Z");
-    expect(card!.receipt.received_at).toBe("2026-08-01T06:04:14.812Z");
-    expect(card!.receipt.stated_at).not.toBe(card!.receipt.received_at);
+    /*
+     * One is the agent's claim and one is DASH's record. A single "created"
+     * would promote the first into the second, so they stay two.
+     *
+     * MAR-548: these two assertions used to pin the stored ISO strings, which
+     * is what let the receipt ship `2026-08-01T06:04:11.000Z` onto three guided
+     * surfaces beside a `size` that has been worded since MAR-434. Smoke check
+     * 6o found it. Written against the worded forms rather than against exact
+     * strings, because `plainMoment` renders in local time and a fixed
+     * expectation here would pass in Oslo and fail in CI's UTC.
+     */
+    expect(card!.receipt.stated_at).not.toContain("T");
+    expect(card!.receipt.received_at).not.toContain("T");
+    expect(card!.receipt.stated_at).toContain("August 2026 at");
+    expect(card!.receipt.received_at).toContain("August 2026 at");
+
+    /*
+     * **What wording costs, pinned rather than discovered.** `plainMoment`
+     * renders to the minute, so this fixture's two moments — 3.8 seconds apart,
+     * which is the ordinary case — now read identically. The assertion that
+     * used to sit here (`stated_at` differs from `received_at`) was true only
+     * because both were raw to the millisecond, and keeping it would have meant
+     * keeping the defect to satisfy a test.
+     *
+     * The distinction the receipt exists to protect is *whose claim each is*,
+     * and that is carried by the two labels, which is what MAR-434's own
+     * comment says a single "Created" row would destroy. Two labelled rows
+     * showing the same minute is an honest rendering of an artifact DASH
+     * received in the minute the agent made it. What must still be visible is
+     * the case that matters — a gap big enough to mean something — and that is
+     * the assertion below.
+     */
+    const delayed = buildArtifactCards([record({ received_at: "2026-08-01T09:30:00.000Z" })]);
+    expect(delayed[0]!.receipt.stated_at).not.toBe(delayed[0]!.receipt.received_at);
+  });
+
+  it("states an unreadable moment rather than handing the input back", () => {
+    /*
+     * `lib/copy/when.ts`'s rule, which is why this is worth its own case: no
+     * function there ever returns what it was given, so a malformed instant
+     * cannot be echoed onto the screen through the one field nobody watches.
+     * "unknown" is `describeRecordSize`'s answer for the same slot.
+     */
+    const [card] = buildArtifactCards([
+      record({ artifact: { ...digest(), generated_at: "not a time" } as DigestArtifact }),
+    ]);
+    expect(card!.receipt.stated_at).toBe("unknown");
   });
 
   it("reports the size DASH is actually holding", () => {
@@ -213,8 +255,8 @@ describe("the provenance receipt", () => {
     for (const state of ["available", ...GONE] as ArtifactAvailability[]) {
       const [card] = buildArtifactCards([record()], () => state);
       expect(card!.receipt.agent, state).toBe("ai-news-scout");
-      expect(card!.receipt.stated_at.length, state).toBeGreaterThan(0);
-      expect(card!.receipt.received_at.length, state).toBeGreaterThan(0);
+      expect(card!.receipt.stated_at, state).toContain("August 2026 at");
+      expect(card!.receipt.received_at, state).toContain("August 2026 at");
       expect(card!.receipt.size, state).toBe("4.2 kB");
     }
   });
