@@ -3372,3 +3372,55 @@ panel-shaped things in that repository are the pinned DASH schema and the
 panels were designed against the schema. `$defs.panel` was diffed against that
 pinned fixture and is byte-identical, which is what makes "no schema edit" a
 checked claim rather than an intention.
+
+### The receipt was shipping raw instants, and a proof found it
+
+6o went red on its first CI run, and the cause was a real defect rather than a
+bad proof. `buildArtifactCards` interpolated `stated_at` and `received_at`
+exactly as stored, so a receipt read `2026-08-05T21:14:02.000Z` beside a `Size
+stored` that `describeRecordSize` has worded since MAR-434. One field in a
+struct being raw while its sibling is worded is an oversight, not a decision.
+
+Three surfaces from one place: the run detail page, the workspace Outputs area,
+and the panel. It is **MAR-571's fix pointed at the other value in the same
+card** — that one was the digest item's `published_at`, this is the receipt
+around it — and both are MAR-533's rule.
+
+**What wording costs is pinned rather than discovered.** `plainMoment` renders
+to the minute, so an artifact DASH received in the minute the agent made it now
+shows the same value on both rows. The assertion that used to sit in
+`tests/outputs-panel.test.ts` — `stated_at` differs from `received_at` — was
+true only because both were raw to the millisecond, and keeping it would have
+meant keeping the defect to satisfy a test. What the receipt protects is *whose*
+claim each row is, which the two labels carry; the replacement assertion drives
+a gap big enough to mean something and requires the rendered values to differ.
+
+### CI's shell-smoke cannot say which proof failed, and that is the blocker
+
+**`shell-smoke` is RED at `283d3b6` and which proof fails is not known.** That
+is a property of the gate rather than a hedge: its log stops at proof 6a in the
+failing run *and in the last green one alike*, so the job reports pass/fail
+without ever saying which proof decided it. It deserves its own issue.
+
+Three candidates were addressed in order. The receipt — certainly 6o's failure
+on the first red run. 6n/6o failing rather than skipping when 6g produced no
+run, fixed to MAR-473's discipline. And the workspace navigation racing 6k's,
+reproduced locally as `ERR_ABORTED (-3)` and now retried — **unconfirmed**.
+
+A throwaway Electron probe, deleted rather than committed, established the
+useful half: skipping `smoke-identity` gave it its own app name, user-data
+directory and single-instance lock, so it ran beside the live DASH without
+opening Henrik's records, and against its own store it showed that **the
+scaffolded manifest imports with its panel, the panel draws on the real
+`/agents/detail` route in the packaged renderer, and the region contains no raw
+instant.** So neither proof's assertions are known to be wrong. The remaining red
+is undiagnosed rather than explained, and the next session's first act is
+`pnpm verify:shell` from PowerShell with DASH closed, redirected to a file —
+which prints the failing proof's own line and detail object, the thing CI
+structurally cannot show.
+
+One thing was left on this machine and is named rather than left to be found: an
+orphan runner from that probe, **pid 44632**, holding the *scratch* store at
+`%APPDATA%\Electron` and not DASH's own at `%APPDATA%\orchestratedash`. It was
+not force-killed, per AGENTS.md, and it should not affect `verify:shell` —
+different data directory, different pipe.

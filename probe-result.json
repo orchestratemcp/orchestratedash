@@ -1,0 +1,18 @@
+{
+  "panel": {
+    "heading": "What the scout found",
+    "sections": 3,
+    "labels": [
+      "The latest digest",
+      "A supervisor for long-running agents",
+      "Second thing that happened",
+      "How this agent has been doing",
+      "Every headline in the latest digest"
+    ],
+    "table_rows": 2,
+    "controls_inside": 0,
+    "raw_instants": 0
+  },
+  "raw_instants": null,
+  "text": "Declared by this agent’s authorWhat the scout foundEverything in this box is what the author declared and what the agent itself produced. DASH’s own findings — approvals, compliance and receipts — are outside it.The latest digestSummaryAI agent news for 8 AugustA roundup the agent gathered and wrote for you to read.Made byai-news-scoutThe agent’s own time8 August 2026 at 11:00Reached DASH8 August 2026 at 16:16Size stored509 bytesA supervisor for long-running agentsHacker News · 8 August 2026 at 09:30Second thing that happenedarXivWhere this came from (1)Hacker News · 2 itemsHow this agent has been doingTimes it has run1DASH’s recordLast checked8 August 2026 at 11:00DASH’s recordHow the last run endedFinishedDASH’s recordEvery headline in the latest digestHeadlineSourcePublishedA supervisor for long-running agentsHacker News8 August 2026 at 09:30Second thing that happenedarXiv—"
+}
