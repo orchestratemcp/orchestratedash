@@ -16,6 +16,13 @@
  * contract, here is what the validator said".
  */
 
+// The one import this module may take, and it is safe by construction:
+// `lib/panel-spec.ts` has no imports of its own, so nothing reaches the
+// filesystem through it. The alternative was a second copy of the section
+// vocabulary written out as prose here, which is the copy that would still say
+// five types on the day a sixth was added.
+import { PANEL_MANIFEST_PATH, PANEL_SECTION_TYPES_V1 } from "./panel-spec";
+
 /**
  * The distinctive phrase `lib/manifest-constraints.ts` puts in its error
  * string and this module keys on. It lives HERE and is imported THERE, not
@@ -34,6 +41,7 @@ export type ImportFailureKind =
   | "missing_agent_dom"
   | "missing_required_field"
   | "remote_agent_dash_connections"
+  | "invalid_panel"
   | "schema_mismatch";
 
 export interface ImportFailureExplanation {
@@ -55,6 +63,17 @@ const UNSUPPORTED_VERSION = /unsupported manifest_version/i;
 
 /** Ajv's phrasing for an absent property, e.g. `must have required property 'agent'`. */
 const MISSING_PROPERTY = /must have required property '([^']+)'/;
+
+/**
+ * The five section kinds, as a sentence.
+ *
+ * Built from the pinned array rather than typed out, so the day a sixth
+ * component is added to the vocabulary this sentence grows with it instead of
+ * quietly continuing to name five.
+ */
+const SECTION_TYPES_SENTENCE = `${PANEL_SECTION_TYPES_V1.slice(0, -1).join(", ")} and ${
+  PANEL_SECTION_TYPES_V1[PANEL_SECTION_TYPES_V1.length - 1]
+}`;
 
 export function explainImportFailure(errors: string[]): ImportFailureExplanation {
   const joined = errors.join(" ");
@@ -83,6 +102,31 @@ export function explainImportFailure(errors: string[]): ImportFailureExplanation
         "DASH can only manage a sign-in for an agent it runs on this computer, while DASH is open. " +
         "An agent that runs somewhere else holds its own sign-ins — re-export it with its " +
         "connections marked as the agent's own, and DASH will say plainly what it cannot see or limit.",
+      raw: errors,
+    };
+  }
+
+  // Before the missing-property branch below, deliberately (ADR 0008,
+  // MAR-552). A section that forgot `artifact_role` produces Ajv's ordinary
+  // "must have required property" string, and read by that branch it becomes
+  // "this manifest is missing a required section: artifact_role" — which sends
+  // an author looking at the top of their manifest for something that is
+  // wrong inside their panel.
+  if (joined.includes(PANEL_MANIFEST_PATH)) {
+    // Ajv's own account of a failed `oneOf` is five copies of "must be equal to
+    // constant", which names nothing an author can act on. So this case does
+    // not try to relay the validator; it states the rule the panel broke and
+    // names the whole vocabulary, because picking one of five words is the
+    // author's actual next move. The raw errors travel underneath for anyone
+    // who wants the path.
+    return {
+      kind: "invalid_panel",
+      headline: "This agent declares a panel DASH cannot draw.",
+      suggestion:
+        `A panel is built from a fixed set of sections — ${SECTION_TYPES_SENTENCE} — ` +
+        "and each one needs a heading and the details its kind requires. DASH refuses a panel " +
+        "it would have to guess at rather than drawing half of one. Re-export the agent from a " +
+        "current OrchestrateKit; the validator's errors below point at the section at fault.",
       raw: errors,
     };
   }
