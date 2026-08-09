@@ -31,6 +31,9 @@
  */
 
 import { localRunnerChannel } from "../lib/agent-dom/runner-channel";
+import { parseAiKeyCredential } from "../lib/ai/credential";
+import { aiAuthHeaders, aiProviderById } from "../lib/ai/providers";
+import { isKeyCredential, type BrokerCredential } from "../lib/broker/grant";
 import { createBroker, type BrokerAuditRow, type CredentialRead } from "../lib/broker/execute";
 import {
   hasBrokerRequest,
@@ -126,8 +129,48 @@ async function readCredential(secretName: string): Promise<CredentialRead> {
     }
     return { kind: "vault_error" };
   }
-  const credential = parseOAuthCredential(raw);
-  return credential === null ? { kind: "unusable" } : { kind: "found", credential };
+  // Two parsers, each of which refuses the other's envelope, tried in a fixed
+  // order (MAR-582). Neither can accept a value the other wrote — see
+  // `lib/ai/credential.ts` on the discriminator — so the order is for
+  // readability rather than for correctness, and `unusable` still means what it
+  // meant: something is under that name and this version cannot read it.
+  const grant = parseOAuthCredential(raw);
+  if (grant !== null) {
+    return { kind: "found", credential: grant };
+  }
+  const key = parseAiKeyCredential(raw);
+  return key === null ? { kind: "unusable" } : { kind: "found", credential: key };
+}
+
+/**
+ * Turn a stored credential into the headers that authorize one request
+ * (MAR-582).
+ *
+ * The branch that decides which of DASH's two custody models is in force, kept
+ * in main beside the vault because both halves need something only main has:
+ * the OAuth half exchanges a refresh token over the network, and the key half
+ * holds the key itself.
+ *
+ * Neither branch returns the credential. `mintAccessToken` returns a short-lived
+ * token that this function immediately spends on a header string, and
+ * `aiAuthHeaders` is the one function in DASH that puts a model key anywhere.
+ * What leaves is a header map whose names `lib/broker/execute.ts` checks against
+ * a frozen set before it uses them.
+ */
+async function mintAuthorization(credential: BrokerCredential): Promise<Record<string, string>> {
+  if (isKeyCredential(credential)) {
+    const profile = aiProviderById(credential.provider);
+    if (profile === null) {
+      // An envelope naming a provider this build has dropped. Unreachable
+      // through `parseAiKeyCredential`, which refuses one — so reaching it means
+      // DASH changed its registry between the parse and here, and a throw is the
+      // honest answer rather than an unauthorized request.
+      throw new Error("no model provider profile for a stored key");
+    }
+    return aiAuthHeaders(profile, credential.key);
+  }
+  const minted = await mintAccessToken(credential);
+  return { authorization: `Bearer ${minted.access_token}` };
 }
 
 /**
@@ -190,11 +233,11 @@ export function startBroker(
     readManifest: (agentId: string) =>
       readAgentManifest(agentId) as ConnectionSourceManifest | null,
     readCredential,
-    mintAccessToken,
+    mintAuthorization,
     fetchImpl: fetch,
     // The durable replay memory a write needs (MAR-469). Supplied here rather
     // than imported inside the broker because `lib/broker/` touches no store,
-    // and this is the same seam `readCredential` and `mintAccessToken` occupy.
+    // and this is the same seam `readCredential` and `mintAuthorization` occupy.
     hasHandledRequest: hasBrokerRequest,
     audit: (row: BrokerAuditRow) => {
       written.push({ id: recordBrokerCall(row), request_id: row.request_id });

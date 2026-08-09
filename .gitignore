@@ -25,3 +25,14 @@ build/appx/*.msix
 # `layout.json` it writes are the evidence and are committed under
 # `qa-screenshots-*/`; the log of the run that produced them is not.
 capture-*.log
+
+# MAR-586. `pnpm verify:shell` has to be redirected to a file rather than piped
+# — piping it hangs on the surviving runner's stdout — so any session that runs
+# the gate leaves one of these behind. Same reason as the capture log above: it
+# is one machine's transcript, and the evidence a PR quotes is the exit status.
+verify-shell-*.log
+
+# The session-end ritual leaves DASH running, and launching it detached means
+# its console has to go somewhere. Same reason again: one machine's transcript —
+# this one names the pipe its runner is on and the store path it opened.
+dash-launch.*.log

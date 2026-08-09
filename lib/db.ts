@@ -680,6 +680,76 @@ const MIGRATIONS: readonly Migration[] = [
 
   CREATE INDEX IF NOT EXISTS hosts_by_added_at ON hosts (added_at);
   `,
+  // MAR-582. What a model provider said about a key DASH holds, and when.
+  //
+  // **A table of observations, not of state.** The distinction is the whole
+  // reason it exists rather than a column on connection_secrets: DASH cannot
+  // know whether a key works, only what a provider said last time it was asked,
+  // and a boolean beside the credential would read as a property of the key. Two
+  // columns carry the honesty — state names what was observed, checked_at names
+  // when — and lib/ai/liveness.ts makes them inseparable by giving the
+  // never-asked case its own state with a null date.
+  //
+  // No row means never checked. That is deliberate rather than a default to be
+  // filled in on connect: a key pasted a second ago has not been checked, and
+  // writing a row at connect time would need a state meaning "not checked" in a
+  // table whose every other row is a real observation.
+  //
+  // model_count is a number and never a list. Which models a key can reach is
+  // the provider's own content (ADR 0002 invariant 7), and a durable table of
+  // them would be the same mistake broker_audit.result_count already refuses.
+  // There is no place here for a message, a body, or an error string from the
+  // provider: what happened is one of five states this repository wrote down.
+  `
+  CREATE TABLE ai_key_checks (
+    agent         TEXT NOT NULL,
+    connection_id TEXT NOT NULL,
+    state         TEXT NOT NULL,
+    checked_at    TEXT NOT NULL,
+    model_count   INTEGER,
+    PRIMARY KEY (agent, connection_id)
+  );
+  `,
+  // MAR-586. When the person last opened one agent's page.
+  //
+  // **A table about the reader, not about any agent's work**, and it is here for
+  // exactly the reason `evidence_pulls` above is its own table rather than
+  // columns on a run: every other table in this schema records something an
+  // agent or a runner did, and this one records something the person at the
+  // keyboard did. A column on `agents` would have put it inside the row
+  // `importManifest` rewrites on every re-import, where the next `ON CONFLICT DO
+  // UPDATE` would either have to remember to leave it alone — the trap
+  // `avatar`'s own note describes — or quietly reset it. Nothing here is ever
+  // touched by an import.
+  //
+  // One row per agent, overwritten, because this is a state and not a history.
+  // The question a fleet card asks is "has anything arrived since they last
+  // looked", and a log of every page view would answer it no better and would be
+  // a durable record of what somebody read and when, which is not a record DASH
+  // was asked to keep.
+  //
+  // No foreign key to `agents`, for the reason `command_audit` has none to
+  // `runs`: a row for an agent that has since been removed costs nothing, and a
+  // constraint here would make deleting an agent fail on a table about reading.
+  //
+  // This is the one new fact MAR-586 stores. The other three questions its
+  // cards answer — a pending approval, an unconnected requirement, a schedule
+  // gone by — are already recorded elsewhere and are derived at render time.
+  //
+  // `IF NOT EXISTS` for the reason the hosts migration above states, and it is
+  // the same situation exactly: this table stands on its own, and a database
+  // that has it while reporting an older schema version — a downgrade test, a
+  // restored backup — must not die on the way back up. Reapplying the same shape
+  // is safe; changing it needs a new migration.
+  `
+  CREATE TABLE IF NOT EXISTS agent_looks (
+    agent          TEXT PRIMARY KEY,
+    -- DASH's own clock at the moment the agent's page was opened. Compared only
+    -- against other DASH-clock timestamps -- run_artifacts.received_at -- and
+    -- never against an agent's own claim about when it made something.
+    last_looked_at TEXT NOT NULL
+  );
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

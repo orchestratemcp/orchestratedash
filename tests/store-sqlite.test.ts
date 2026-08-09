@@ -86,11 +86,15 @@ describe("schema", () => {
     // avatar column and its backfill, 9 is MAR-488's record of DASH's own
     // reading, 10 is MAR-553's manifest-only agent-folder materialisation
     // (kept at that index at merge time — installed databases had already
-    // recorded it), and 11 is MAR-536's saved hosts.
+    // recorded it), 11 is MAR-536's saved hosts, 12 is MAR-582's record of
+    // what a model provider last said about a key DASH holds, and 13 is
+    // MAR-586's record of when the reader last opened an agent's page —
+    // authored as 12, renumbered at the merge because MAR-582 reached master
+    // first and installed databases had already recorded it.
     // Asserted as a number rather than as MIGRATIONS.length so that appending a
     // migration is a deliberate edit here too.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(12);
+    expect(version.user_version).toBe(14);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -112,6 +116,7 @@ describe("schema", () => {
     expect(tables).toContain("workspace_artifacts");
     expect(tables).toContain("evidence_pulls");
     expect(tables).toContain("hosts");
+    expect(tables).toContain("ai_key_checks");
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -142,6 +147,8 @@ describe("schema", () => {
     first.db.db().exec("DROP TABLE evidence_pulls");
     // And migration 10 (MAR-536), saved servers.
     first.db.db().exec("DROP TABLE hosts");
+    // And migration 12 (MAR-582), what a model provider last said about a key.
+    first.db.db().exec("DROP TABLE ai_key_checks");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -185,6 +192,8 @@ describe("schema", () => {
     first.db.db().exec("DROP TABLE broker_grants");
     first.db.db().exec("DROP TABLE broker_lapses");
     first.db.db().exec("DROP TABLE hosts");
+    // And migration 12 (MAR-582), what a model provider last said about a key.
+    first.db.db().exec("DROP TABLE ai_key_checks");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -227,6 +236,8 @@ describe("schema", () => {
     // would otherwise fail creating a table that is still there.
     first.db.db().exec("DROP TABLE broker_lapses");
     first.db.db().exec("DROP TABLE hosts");
+    // And migration 12 (MAR-582), what a model provider last said about a key.
+    first.db.db().exec("DROP TABLE ai_key_checks");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -261,6 +272,8 @@ describe("schema", () => {
     first.db.db().exec("DROP TABLE broker_lapses");
     first.db.db().exec("ALTER TABLE broker_audit DROP COLUMN delivered");
     first.db.db().exec("DROP TABLE hosts");
+    // And migration 12 (MAR-582), what a model provider last said about a key.
+    first.db.db().exec("DROP TABLE ai_key_checks");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -302,6 +315,8 @@ describe("schema", () => {
     // And migration 9 (MAR-488), DASH's record of its own reading.
     first.db.db().exec("DROP TABLE evidence_pulls");
     first.db.db().exec("DROP TABLE hosts");
+    // And migration 12 (MAR-582), what a model provider last said about a key.
+    first.db.db().exec("DROP TABLE ai_key_checks");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -451,7 +466,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(12);
+    ).toBe(14);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {
@@ -476,6 +491,10 @@ describe("schema", () => {
     };
     writeFileSync(registrationFile, JSON.stringify(oldRegistration), "utf8");
     first.db.db().exec("PRAGMA user_version = 10");
+    // Migration 12 (MAR-582) ran when this store was created, so it goes back
+    // too — re-running it against the table it already made would fail on the
+    // duplicate rather than on anything this test is about.
+    first.db.db().exec("DROP TABLE ai_key_checks");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -509,6 +528,10 @@ describe("schema", () => {
       )
       .run("con", Number(legacy["manifest_version"]), JSON.stringify(legacy), new Date().toISOString(), null);
     first.db.db().exec("PRAGMA user_version = 10");
+    // Migration 12 (MAR-582) ran when this store was created, so it goes back
+    // too — re-running it against the table it already made would fail on the
+    // duplicate rather than on anything this test is about.
+    first.db.db().exec("DROP TABLE ai_key_checks");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;

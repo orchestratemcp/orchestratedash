@@ -32,6 +32,10 @@ import type { ConnectionSourceManifest } from "../lib/connections";
 import { Vault } from "../lib/vault";
 import { FakeSafeStorage } from "./fakes/fake-safe-storage";
 import { oauthCredential, scriptedOAuth } from "./fakes/oauth-operations";
+// Throws on contact. Nothing in this file drives a model-provider key, so the
+// AI path being unreachable from the fan-out is a thing the suite fails on
+// rather than a thing a reader checks (MAR-582's own argument for this fake).
+import { refusingAi } from "./fakes/ai-operations";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -120,6 +124,7 @@ function deps(
     readManifest: (agentId: string) => manifests[agentId] ?? null,
     promptForSecret: () => Promise.resolve(null),
     oauth,
+    ai: refusingAi(),
     listAgentIds: () => Object.keys(manifests),
   };
 }
@@ -333,6 +338,7 @@ describe("a typed secret", () => {
       readManifest: (id: string) => world[id] ?? null,
       promptForSecret: () => Promise.resolve("sk-ledger-value"),
       oauth: scriptedOAuth(),
+      ai: refusingAi(),
       listAgentIds: () => Object.keys(world),
     });
 

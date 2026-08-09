@@ -38,6 +38,8 @@ const NOTHING = {
   check: () => undefined,
   deploy: () => undefined,
   forget: () => undefined,
+  trust: () => undefined,
+  setup: () => Promise.resolve(null),
 };
 
 /**
@@ -64,6 +66,13 @@ const STANDINGS: HostConnectState[] = [
   { step: "not_checked", label: SERVER.label },
   { step: "probing", label: SERVER.label },
   { step: "reachable", label: SERVER.label, runner_build: "96cef120", agents_running: 2 },
+  {
+    step: "confirm_host_key",
+    label: SERVER.label,
+    fingerprint: "SHA256:FCU60rvm6UzWbFXeMm0CUSO8qid2WYv9v3aymVi51HA",
+    key_type: "ssh-ed25519",
+    offered_count: 3,
+  },
   ...HOST_REACH_PROBLEMS.map((problem): HostConnectState => ({
     step: "unreachable",
     label: SERVER.label,
@@ -228,7 +237,6 @@ describe("the four rows on a real machine", () => {
 
 describe("the deploy panel", () => {
   const panel = (
-    bootstrapGap: boolean,
     agents: AgentDeployChoice[] = [SENDABLE],
     over: {
       chosenAgent?: string;
@@ -244,7 +252,6 @@ describe("the deploy panel", () => {
         busy={false}
         canAct
         chosenAgent={over.chosenAgent ?? ""}
-        bootstrapGap={bootstrapGap}
         deploy={over.deploy ?? null}
         report={over.report ?? { step: "not_checked", label: SERVER.label }}
         checkedAt={over.checkedAt ?? null}
@@ -261,22 +268,52 @@ describe("the deploy panel", () => {
      * say it — and it says it from the same function the connect flow uses, so
      * neither copy can be softened alone.
      */
-    const html = panel(false);
+    const html = panel();
     expect(html).toContain("Before you put an agent here");
     expect(html).toContain("only show you what the server still has");
     expect(html).toContain("Turning this off in DASH does not stop it");
   });
 
-  it("warns about the bootstrap only on a server that answered with nothing on it", () => {
-    // MAR-573. On a prepared server the action works — Henrik's was, by hand —
-    // so this is a sentence rather than a disabled button, and it appears where
-    // it is true rather than on every card.
-    expect(panel(true)).toContain("known gap");
-    expect(panel(false)).not.toContain("known gap");
+  it("no longer carries the dead-end bootstrap-gap sentence (MAR-579)", () => {
+    // MAR-579 deleted `describeBootstrapGap`: the gap now has a way out (the
+    // setup snippet on the card), so the deploy panel no longer describes a
+    // gap it cannot close.
+    expect(panel()).not.toContain("known gap");
   });
 
   it("says so plainly when there is no agent to put anywhere", () => {
-    expect(panel(false, [])).toContain("no agent here");
+    expect(panel([])).toContain("no agent here");
+  });
+});
+
+describe("the enrollment and setup affordances (MAR-579)", () => {
+  it("shows the fingerprint and a Confirm control when the host key is unconfirmed", () => {
+    const html = card({
+      step: "confirm_host_key",
+      label: SERVER.label,
+      fingerprint: "SHA256:FCU60rvm6UzWbFXeMm0CUSO8qid2WYv9v3aymVi51HA",
+      key_type: "ssh-ed25519",
+      offered_count: 3,
+    });
+    // The code the person compares, on its own line, and a control to confirm it.
+    expect(html).toContain("SHA256:FCU60rvm6UzWbFXeMm0CUSO8qid2WYv9v3aymVi51HA");
+    expect(html).toContain("Yes, this is my server");
+    // The honesty ADR 0009 requires: DASH cannot verify this for the person.
+    expect(html).toContain("only you can confirm");
+  });
+
+  it("offers the setup step when the server is not set up for DASH yet", () => {
+    for (const problem of ["helper_not_installed", "key_not_on_server"] as const) {
+      const html = card({ step: "unreachable", label: SERVER.label, problem });
+      expect(html, problem).toContain("Show the setup text");
+    }
+  });
+
+  it("does not offer setup on a reachable server or one still to be checked", () => {
+    expect(card({ step: "not_checked", label: SERVER.label })).not.toContain("Show the setup text");
+    expect(
+      card({ step: "reachable", label: SERVER.label, runner_build: "96cef120", agents_running: 0 }),
+    ).not.toContain("Show the setup text");
   });
 });
 
@@ -293,7 +330,6 @@ describe("an agent DASH cannot send", () => {
         busy={false}
         canAct
         chosenAgent={chosenAgent}
-        bootstrapGap={false}
         deploy={null}
         report={{ step: "not_checked", label: SERVER.label }}
         checkedAt={null}
@@ -346,7 +382,6 @@ describe("a deploy while it is happening, and after", () => {
         busy={deploy.step === "sending"}
         canAct
         chosenAgent={SENDABLE.name}
-        bootstrapGap={false}
         deploy={deploy}
         report={report}
         checkedAt={checkedAt}

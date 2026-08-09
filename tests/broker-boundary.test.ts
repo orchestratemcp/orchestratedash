@@ -388,6 +388,7 @@ describe("the capability card", () => {
           connection_provider: "x",
           oauth_provider_id: "google",
           label: "Something",
+          credential_kind: "oauth_grant",
           token_custodian,
           client_owner: "not_oauth",
           api_origin: "https://example.com",
@@ -406,8 +407,9 @@ describe("the capability card", () => {
     expect(
       describeClientOwner({
         connection_provider: "x",
-        oauth_provider_id: "",
+        oauth_provider_id: null,
         label: "Something",
+        credential_kind: "oauth_grant",
         token_custodian: "remote_mcp_server",
         client_owner: "not_oauth",
         api_origin: "https://example.com",
@@ -650,16 +652,40 @@ describe("responses on the wire", () => {
  * ---------------------------------------------------------------------- */
 
 describe("the shipped operations", () => {
-  it("is the two reads of ADR 0002 stage 1 plus the one write of stage 2", () => {
+  it("is stage 1 and 2 of ADR 0002, plus one read per model provider", () => {
+    // Pinned by value, which is the point: this array is the complete answer to
+    // "what can DASH do to somebody's account?", and widening it is a diff a
+    // reviewer reads. MAR-582 added three, and each of them lists models and
+    // does nothing else — there is no completion operation, so an agent holding
+    // a model key cannot spend a penny of the account behind it.
     expect(allOperations().map((operation) => operation.id).sort()).toEqual([
+      "anthropic.models.list",
       "gmail.draft.create",
       "gmail.message.read",
       "gmail.search",
+      "openai.models.list",
+      "openrouter.models.list",
     ]);
   });
 
-  it("belongs entirely to the Gmail profile", () => {
+  it("nothing that writes belongs to a model provider", () => {
+    // The strongest thing the shape above makes true. A key is a bearer of
+    // whatever the account can do, and the only defence DASH has is that no
+    // operation built on one changes anything — so this is the assertion that
+    // would fail the moment somebody added a completion call without also
+    // answering the questions `WriteOperation` asks (MAR-582).
+    const keyed = allOperations().filter((operation) =>
+      operation.id.endsWith(".models.list"),
+    );
+    expect(keyed).toHaveLength(3);
+    expect(keyed.every((operation) => operation.access === "read")).toBe(true);
+  });
+
+  it("splits cleanly by profile, with no operation in two", () => {
     expect(operationsForProvider("google-gmail")).toHaveLength(3);
+    expect(operationsForProvider("openrouter")).toHaveLength(1);
+    expect(operationsForProvider("anthropic")).toHaveLength(1);
+    expect(operationsForProvider("openai")).toHaveLength(1);
     expect(operationsForProvider("google-calendar")).toEqual([]);
   });
 
@@ -672,7 +698,7 @@ describe("the shipped operations", () => {
     const broker = createBroker({
       readManifest: () => gmailExample,
       readCredential: () => Promise.resolve({ kind: "found", credential: credential() }),
-      mintAccessToken: () => Promise.resolve({ access_token: "t" }),
+      mintAuthorization: () => Promise.resolve({ authorization: "Bearer t" }),
       fetchImpl: ((url: string) => {
         calls.push(String(url));
         return Promise.resolve(

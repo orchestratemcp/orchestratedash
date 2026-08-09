@@ -36,6 +36,7 @@
  * replacement for the enforcing one.
  */
 
+import { aiProviderFor } from "./ai/providers";
 import type { ConnectionSourceManifest, ManifestConnection, ManifestConnectionField } from "./connections";
 import { checkRequestedScopes, oauthProviderFor } from "./oauth/providers";
 
@@ -168,6 +169,20 @@ export type CredentialTargetRefusal =
   | "oauth_scopes_not_declared"
   /** MAR-446: an OAuth field asking for access DASH will not request. */
   | "oauth_scope_not_allowed"
+  /**
+   * MAR-582: a model provider's key, with a manifest asking DASH to hand it to
+   * the agent.
+   *
+   * DASH holds keys for the providers in `lib/ai/providers.ts` and reaches them
+   * through named operations, so there is no environment variable for one to
+   * become. A manifest that names one is asking for the raw-credential model ADR
+   * 0002 exists to end, and it is refused **here** rather than ignored at spawn —
+   * the same argument this file already makes for a reserved environment name.
+   * An author who sees this at connect time can delete one line; an author whose
+   * variable was silently dropped would ship an agent that starts and then fails
+   * at whichever step needed the key.
+   */
+  | "brokered_provider_delivery"
   | EnvironmentNameRefusal;
 
 /**
@@ -181,7 +196,24 @@ export type CredentialTargetRefusal =
  * those four places branches on a declared field rather than re-deriving it from
  * the manifest.
  */
-export type CredentialKind = "secret" | "oauth";
+export type CredentialKind =
+  /** A string the user typed for a service DASH has no client for. Delivered. */
+  | "secret"
+  /** A provider sign-in DASH negotiated and holds. Brokered. */
+  | "oauth"
+  /**
+   * A model provider's key the user typed, for a provider DASH *is* a client
+   * for (MAR-582).
+   *
+   * Obtained exactly like a `secret` — the same prompt, the same vault — and
+   * used exactly like an `oauth` grant: DASH presents it, the agent never sees
+   * it, and access is named operations rather than a credential. It is a third
+   * value rather than a flag on `secret` because that is the shape of the
+   * decision every consumer makes: `deliverableSecretFields` filters on this
+   * field, so a keyed target is excluded by the type rather than by a caller
+   * remembering to check a boolean.
+   */
+  | "provider_key";
 
 /** The sign-in DASH would run for an OAuth target. */
 export interface OAuthTarget {
@@ -198,6 +230,15 @@ export interface CredentialTarget {
   kind: CredentialKind;
   /** Present exactly when `kind` is `oauth`. */
   oauth: OAuthTarget | null;
+  /**
+   * The model provider's id, present exactly when `kind` is `provider_key`
+   * (MAR-582).
+   *
+   * The id and not the profile: this type crosses to the credential prompt and
+   * is stored on a view, and carrying an origin and a path there would put the
+   * request's shape somewhere it could be read back rather than looked up.
+   */
+  ai_provider_id: string | null;
   agent_id: string;
   connection_id: string;
   field_id: string;
@@ -280,6 +321,15 @@ export function resolveCredentialTarget(
   // answer than an honest no. It now asks three questions first, and the honest
   // no survives all three as the default: a provider with no flow is refused in
   // exactly the words it was before.
+  // MAR-582. Asked before the environment-name check below, because the answer
+  // decides whether an environment name may be declared at all: for a model
+  // provider the honest refusal is "DASH does not hand this over", not "that
+  // name is reserved".
+  const aiProvider = field.kind === "secret" ? aiProviderFor(connection.provider) : null;
+  if (aiProvider !== null && field.technical?.environment_name !== undefined) {
+    return { ok: false, refusal: "brokered_provider_delivery" };
+  }
+
   let oauth: OAuthTarget | null = null;
   if (field.kind === "oauth_reauthorization") {
     const provider = oauthProviderFor(connection.provider);
@@ -323,8 +373,9 @@ export function resolveCredentialTarget(
   return {
     ok: true,
     target: {
-      kind: oauth === null ? "secret" : "oauth",
+      kind: oauth !== null ? "oauth" : aiProvider !== null ? "provider_key" : "secret",
       oauth,
+      ai_provider_id: aiProvider?.id ?? null,
       agent_id: agentId,
       connection_id: connection.id,
       field_id: field.id,
@@ -395,10 +446,18 @@ export function deliverableFields(
  * The credentials DASH may actually put in a child process's environment
  * (MAR-458).
  *
- * Typed secrets only. An API key is a value the user pasted for a service DASH
- * has no client for and no ability to narrow — DASH holding it and not
- * delivering it would mean holding it for nothing — so it goes to the agent, as
- * it always did.
+ * Typed secrets only, and MAR-582 narrowed what that means. A `secret` is a
+ * value the user pasted for a service DASH has no client for and no ability to
+ * narrow — DASH holding it and not delivering it would mean holding it for
+ * nothing — so it goes to the agent, as it always did.
+ *
+ * A model provider's key is the case that used to qualify under that sentence
+ * and no longer does, because the premise stopped being true: DASH *is* a client
+ * for the three providers in `lib/ai/providers.ts`. It knows their origin, it
+ * can present the key itself, and it can ask them a real question. So a
+ * `provider_key` target is not here, and it cannot be — `resolveCredentialTarget`
+ * refuses a manifest that names a delivery variable for one, so such a target
+ * never has an environment name to be filtered on in the first place.
  *
  * An OAuth grant is the opposite case in every respect. DASH *is* a client for
  * it, it can be exchanged for access at any time, and the access it buys is

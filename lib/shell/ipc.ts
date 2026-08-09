@@ -241,6 +241,43 @@ export const COMMANDS = {
   },
 
   /*
+   * MAR-586. Remember that this agent's page has just been opened.
+   *
+   * **A sixth family, and it is about the reader rather than about anything
+   * DASH supervises.** Every other command in this catalogue asks DASH to act on
+   * an agent, a process, a credential, a server, a file or a manifest. This one
+   * writes down that somebody looked, which is the fact a fleet card needs to
+   * say "three things have arrived since you were last here" — and the one new
+   * thing MAR-586 stores.
+   *
+   * It could not have been a read. `lib/shell/read.ts` states that a read
+   * changes nothing and is therefore not audited, and recording a look inside
+   * the answer to `view.workspace` would have broken that in the worst place:
+   * that view is polled every five seconds while a run is going, so the fact
+   * would have been rewritten by the page merely staying open rather than by
+   * anybody arriving.
+   *
+   * `mutates` is true — a row exists afterwards that did not before.
+   * `irreversible` is false in the strongest sense in this file: nothing happens
+   * in the world, nothing of the user's moves, no message is sent, and the whole
+   * consequence is that some chips on one card stop being drawn. Running it
+   * twice is running it once.
+   *
+   * The widest thing a compromised renderer could do with it is claim to have
+   * read an agent's page it did not read. That is worth naming rather than
+   * waving away, and it is bounded by what the fact drives: DASH would draw one
+   * fewer chip. It reaches no agent, no runner, no vault and no provider.
+   */
+  "glance.looked": {
+    effect:
+      "Remember that you have just opened this agent's page, so DASH can tell you what has arrived since.",
+    payload_keys: ["agent_id"],
+    required_keys: ["agent_id"],
+    mutates: true,
+    irreversible: false,
+  },
+
+  /*
    * MAR-536. A host is not an agent's property: it is a server DASH reaches
    * with a key DASH keeps on this computer. The renderer can name the four
    * ordinary connection facts, but not the host id, the key name, a key path
@@ -370,8 +407,22 @@ export const COMMANDS = {
     irreversible: false,
   },
   "connection.test": {
+    // "Contacts no provider" until MAR-582, and it had already stopped being
+    // true: MAR-446 made this refresh an OAuth grant, which is a request to the
+    // provider, and the sentence in this catalogue — the one an audit line
+    // quotes — went on saying otherwise. MAR-582 adds the second kind that
+    // contacts one, so the wording is corrected rather than compounded.
+    //
+    // Worded by what DASH holds rather than by which of three branches runs,
+    // because the reader of an audit line has the connection in front of them
+    // and not this file. What survives every branch is the promise that matters:
+    // the check never sends the credential anywhere except to the service it
+    // belongs to, and never sends it anywhere at all for a service DASH is not a
+    // client for.
     effect:
-      "Check that this computer's vault still holds the credential for one connection. Contacts no provider.",
+      "Check that the credential DASH holds for one connection still works. For a provider sign-in " +
+      "or a model provider key this asks that provider; for anything else it reads this computer's " +
+      "vault and contacts nobody.",
     payload_keys: ["agent_id", "connection_id", "field_id"],
     required_keys: ["agent_id", "connection_id", "field_id"],
     // Reads the vault and writes the result of that read to the connection's
@@ -617,6 +668,29 @@ export function isSampleCommandName(value: CommandName): value is SampleCommandN
   return Object.hasOwn(SAMPLE_ACTIONS, value);
 }
 
+/**
+ * Remembering that somebody looked (MAR-586).
+ *
+ * A sixth family on the terms the fifth was created under, and the distinction
+ * is sharper than any of the others: every command in the five families above
+ * acts on something DASH supervises, and this one records something about the
+ * person at the keyboard. A reviewer asking "what in DASH writes down what the
+ * user has read?" gets a complete answer from one map with one member in it.
+ *
+ * One member is not a shape waiting to be filled — see `SAMPLE_ACTIONS` for the
+ * same standing.
+ */
+export const GLANCE_ACTIONS = {
+  "glance.looked": "looked",
+} as const;
+
+export type GlanceCommandName = keyof typeof GLANCE_ACTIONS;
+export type GlanceAction = (typeof GLANCE_ACTIONS)[GlanceCommandName];
+
+export function isGlanceCommandName(value: CommandName): value is GlanceCommandName {
+  return Object.hasOwn(GLANCE_ACTIONS, value);
+}
+
 export const CONNECTION_ACTIONS = {
   "connection.connect": "connect",
   "connection.test": "test",
@@ -690,6 +764,7 @@ type UnroutedCommand = Exclude<
   | ShellUiCommandName
   | WorkspaceCommandName
   | SampleCommandName
+  | GlanceCommandName
   | "shell.ping"
 >;
 const _allCommandsAreRouted: UnroutedCommand extends never ? true : never = true;
@@ -925,7 +1000,11 @@ export function executeCommand(review: CommandReview): CommandResult {
     // MAR-576. Performing one writes the agent folder and the store, both of
     // which need `node:fs` — and this module stays importable from a sandboxed
     // preload. Succeeding here would report a manifest replaced that was not.
-    isSampleCommandName(review.command)
+    isSampleCommandName(review.command) ||
+    // MAR-586. Writes a row through `node:sqlite`, which is the same reason as
+    // every entry above: succeeding here would report a look recorded that was
+    // not, and the fleet card would go on saying an output is new.
+    isGlanceCommandName(review.command)
   ) {
     // Not a denial and not a result: a caller that reached here bypassed the
     // trusted side entirely. Throwing is the only honest answer — returning a
@@ -1200,6 +1279,19 @@ export interface DispatchContext {
     target: { agent_id: string },
   ): Promise<{ ok: boolean; refusal?: string; detail?: string }>;
   /**
+   * Write down that this agent's page has been opened (MAR-586).
+   *
+   * Injected for the plainest form of the reason the five above are: the real
+   * implementation reaches `node:sqlite`, and this module has to stay importable
+   * from a sandboxed preload.
+   *
+   * It returns whether the row was written and nothing else. There is no
+   * document to hand back and deliberately no timestamp: the moment DASH
+   * recorded is DASH's own clock, and returning it would invite a renderer to
+   * start reasoning about a value it has no business holding.
+   */
+  glanceAction(action: GlanceAction, target: { agent_id: string }): Promise<{ ok: boolean }>;
+  /**
    * Where the IPC-level audit record goes.
    *
    * Injected rather than written to `console` here for the same reason as
@@ -1461,6 +1553,20 @@ export async function dispatchCommand(
       reason: result.refusal,
       detail: result.detail,
     };
+  }
+
+  if (isGlanceCommandName(review.command)) {
+    /*
+     * MAR-586. One agent id, and there is nowhere for a second field to go: the
+     * payload rules permit exactly one key and the moment recorded is DASH's own
+     * clock in main, never a value the renderer chose. A page that could stamp
+     * this would be a page that could mark an agent as read in the future and
+     * silence its card for good.
+     */
+    const result = await context.glanceAction(GLANCE_ACTIONS[review.command], {
+      agent_id: String(review.payload["agent_id"]),
+    });
+    return { ok: result.ok, request_id: review.audit.request_id };
   }
 
   if (isRunnerCommandName(review.command)) {

@@ -48,6 +48,7 @@ import {
   CREDENTIAL_SUBMIT_CHANNEL,
   type CredentialPromptDescription,
 } from "../lib/shell/credential-prompt";
+import { aiProviderById } from "../lib/ai/providers";
 import type { AuthorizationOutcome } from "../lib/connection-actions";
 import type { CredentialTarget } from "../lib/connection-credentials";
 import { describePermissions, oauthProviderById } from "../lib/oauth/providers";
@@ -322,13 +323,21 @@ export async function promptForSecret(
   parent: BrowserWindow | null,
   rendererOrigin: string,
 ): Promise<string | null> {
+  // MAR-582. For a model provider DASH is a client for, DASH knows where a key
+  // comes from even when the agent's author did not say — and the moment a
+  // person is being asked to paste one is the moment that sentence is worth
+  // something. The author's own words still win: this is a fallback for a null,
+  // not an override, so an author who wrote better guidance keeps it.
+  const help =
+    target.help ?? aiProviderById(target.ai_provider_id)?.key_source ?? null;
+
   const resolution = await openPrompt(
     {
       mode: "secret",
       service: target.service,
       field_label: target.field_label,
       purpose: target.purpose,
-      help: target.help,
+      help,
       vault_label: vaultLabel,
       replacing,
     },

@@ -29,6 +29,7 @@
 
 import type { GroundingAnalysis, RunAnalysis } from "../analyze";
 import type { EvidenceNotice } from "../copy/evidence";
+import type { GlanceChip } from "../copy/glance";
 import type { ArtifactCardView } from "./artifacts";
 import type { InputRoleView } from "./inputs";
 import type { PanelView } from "./panel";
@@ -145,6 +146,20 @@ export interface AgentRow {
    * and needs the answer per option. See `AgentDeployView`.
    */
   deploy: AgentDeployView;
+  /**
+   * The four questions this agent's card answers at a glance, already worded
+   * (MAR-586).
+   *
+   * Sentences rather than the counts behind them, and that is this file's own
+   * rule about projecting rather than passing through: two hosts build this
+   * document, and a page composing its own copy from four numbers would be the
+   * second place the claim could soften. `lib/copy/glance.ts` owns the wording
+   * and `lib/views/glance.ts` owns which records answer.
+   *
+   * Never empty. A card with no chips cannot be told apart from a card DASH
+   * failed to fill in, so "nothing needs you" is a chip — see `GLANCE_ALL_CLEAR`.
+   */
+  glance: GlanceChip[];
 }
 
 export interface AgentsView {
@@ -297,15 +312,22 @@ export interface ConnectionRowWithCredential extends ConnectionRequirementRow {
    */
   delivered_to_agent: boolean;
   /**
-   * Whether Connect opens a text box or a provider sign-in (MAR-446).
+   * Whether Connect opens a text box or a provider sign-in (MAR-446), and for a
+   * text box, whether what is typed stays with DASH (MAR-582).
    *
    * Null when DASH cannot hold this row at all. The page needs it because the
-   * two produce different sentences for the same situation: an API key DASH
+   * kinds produce different sentences for the same situation: an API key DASH
    * holds but cannot deliver has to be fetched by the agent some other way,
    * while a sign-in DASH holds but cannot deliver is one DASH will keep renewing
    * and the agent will reach through its own means.
+   *
+   * `provider_key` is the third, and it is typed like the first and behaves like
+   * the second: a key the user pastes for a model provider DASH *is* a client
+   * for. It is never delivered, it is reached through named operations, and it
+   * is the one kind DASH can ask a provider a real question about. See
+   * `lib/ai/providers.ts` for which services qualify and why the list is closed.
    */
-  credential_kind: "secret" | "oauth" | null;
+  credential_kind: "secret" | "oauth" | "provider_key" | null;
   /** The permission card, for a connection DASH brokers. Null otherwise. */
   broker: BrokerRowView | null;
   /**

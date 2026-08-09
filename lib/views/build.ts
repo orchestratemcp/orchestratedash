@@ -30,7 +30,7 @@ import { describeClientOwner, describeCustody, describeDashClosedWindow } from "
 import { listReceipts, readBrokerAudit, readBrokerLapses, type BrokerLapse } from "../broker/store";
 import { describeBrokerRefusal } from "../copy/recovery";
 import { heldCredentials } from "../connection-actions";
-import { connectableFields } from "../connection-credentials";
+import { connectableFields, type CredentialKind } from "../connection-credentials";
 import { describeEvidenceRecord } from "../copy/evidence";
 import { describeStoreDamage } from "../copy/recovery";
 import { deriveConnectionRequirements, type ConnectionSourceManifest } from "../connections";
@@ -54,6 +54,7 @@ import {
   readAgentFolderManifest,
 } from "../agent-folders";
 import { describeManifestGap } from "../sample-refresh";
+import { glanceReader } from "./glance";
 import {
   artifactRecordsForAgent,
   artifactRecordsForRun,
@@ -87,6 +88,7 @@ import type {
   BrokerCapabilityView,
   BrokerLapseView,
   BrokerRowView,
+  ConnectionRowWithCredential,
   ConnectionsView,
   HostsView,
   PlannedStepView,
@@ -162,6 +164,10 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
   const registrations = new Map(
     listRegistrations(dataDir).map((registration) => [registration.agent_id, registration]),
   );
+  // MAR-586. Reads the looks table and the run list once for the whole fleet,
+  // then answers per card — see `glanceReader` for why those two in particular
+  // must not be asked per agent.
+  const glanceFor = glanceReader(store, { connectionRows: connectionRowsFor });
 
   return {
     agents: listAgents(store).map((agent) => ({
@@ -183,6 +189,10 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
       // this function already does per row. It is what lets the Servers page's
       // deploy panel say which of these agents it could actually send.
       deploy: agentDeployStanding(agent.name),
+      // MAR-586. The four questions a card answers at a glance, already worded.
+      // Composed here rather than in the page for `damage`'s reason directly
+      // below: both hosts must hand the renderer the same sentences.
+      glance: glanceFor(agent.name),
     })),
     // Composed here rather than in the page, so both hosts hand the renderer the
     // same sentence — the property this module exists to keep.
@@ -327,7 +337,7 @@ function credentialStatus(
   manifest: ConnectionSourceManifest,
 ): Map<
   string,
-  { field_id: string; masked_hint: string | null; deliverable: boolean; kind: "secret" | "oauth" }
+  { field_id: string; masked_hint: string | null; deliverable: boolean; kind: CredentialKind }
 > {
   const held = new Map<string, string | null>(
     heldCredentials(agentName).map((entry): [string, string | null] => [
@@ -342,7 +352,7 @@ function credentialStatus(
       field_id: string;
       masked_hint: string | null;
       deliverable: boolean;
-      kind: "secret" | "oauth";
+      kind: CredentialKind;
     }
   >();
 
@@ -661,6 +671,61 @@ export function hostsView(store: StoreShape = readStore()): HostsView {
   };
 }
 
+/**
+ * One agent's connection checklist, with what DASH holds folded onto each row.
+ *
+ * Lifted out of `connectionsView` for MAR-586 rather than copied into it, and
+ * the reason is the one `lib/connection-requirements.ts` opens with: these rows
+ * are what MAR-569's resolution intersects against, and a second implementation
+ * of them would be a second place for the four standings to collapse into three.
+ * A fleet card that computed its own "not connected" count would eventually
+ * disagree with the Connections page about the same agent, on the same store, in
+ * the same window.
+ *
+ * The whole read is per agent, which is why it is one function: `credentialStatus`,
+ * the receipts and the audit are each indexed by agent, and a caller that fetched
+ * them per row would run one query per connection on every render.
+ */
+export function connectionRowsFor(
+  name: string,
+  manifest: ConnectionSourceManifest,
+  /**
+   * Which agents name each provider, for `also_connects` (MAR-570).
+   *
+   * A parameter rather than a read, because the answer is a fact *between*
+   * agents and this function is given one. `connectionsView` builds it over
+   * every connection-capable agent; a caller that has no such list passes
+   * nothing and gets an empty array, which is why the field's own docblock says
+   * empty means "no other agent needs this provider" only when a sharing map
+   * was supplied — the glance reader does not render the sentence and does not
+   * supply one.
+   */
+  sharing: ReadonlyMap<string, string[]> = new Map(),
+): ConnectionRowWithCredential[] {
+  const status = credentialStatus(name, manifest);
+  const receipts = listReceipts(name);
+  const audit = readBrokerAudit(name, BROKER_HISTORY_LIMIT * 4);
+  const displayName = displayNameOf(manifest, name);
+
+  return deriveConnectionRequirements(manifest).map((row) => {
+    const credential = status.get(row.connection_id);
+    return {
+      ...row,
+      dash_can_hold: credential !== undefined,
+      field_id: credential?.field_id ?? null,
+      masked_hint: credential?.masked_hint ?? null,
+      delivered_to_agent: credential?.deliverable ?? false,
+      credential_kind: credential?.kind ?? null,
+      broker: brokerCard(name, displayName, manifest, row.connection_id, receipts, audit),
+      // MAR-570. Everyone else who names this provider, so both surfaces that
+      // draw a Connect button can say what pressing it reaches beyond the agent
+      // on screen. Excludes this agent: the sentence is about the ones a person
+      // is *not* looking at.
+      also_connects: (sharing.get(row.provider) ?? []).filter((other) => other !== name),
+    };
+  });
+}
+
 export function connectionsView(store: StoreShape = readStore()): ConnectionsView {
   const capable = listConnectionCapableAgents(store);
 
@@ -688,32 +753,7 @@ export function connectionsView(store: StoreShape = readStore()): ConnectionsVie
 
   return {
     agents: capable.map(({ name, manifest }) => {
-      const status = credentialStatus(name, manifest);
-      // Read once per agent rather than once per row: both are indexed by agent
-      // and a row-level read would be one query per connection on every render.
-      const receipts = listReceipts(name);
-      const audit = readBrokerAudit(name, BROKER_HISTORY_LIMIT * 4);
-      const displayName = displayNameOf(manifest, name);
-
-      const rows = deriveConnectionRequirements(manifest).map((row) => {
-        const credential = status.get(row.connection_id);
-        return {
-          ...row,
-          dash_can_hold: credential !== undefined,
-          field_id: credential?.field_id ?? null,
-          masked_hint: credential?.masked_hint ?? null,
-          delivered_to_agent: credential?.deliverable ?? false,
-          credential_kind: credential?.kind ?? null,
-          broker: brokerCard(name, displayName, manifest, row.connection_id, receipts, audit),
-          // MAR-570. Everyone else who names this provider, so both surfaces
-          // that draw a Connect button can say what pressing it reaches beyond
-          // the agent on screen. Excludes this agent: the sentence is about the
-          // ones a person is *not* looking at.
-          also_connects: (agentsByProvider.get(row.provider) ?? []).filter(
-            (other) => other !== name,
-          ),
-        };
-      });
+      const rows = connectionRowsFor(name, manifest, agentsByProvider);
 
       return {
         name,

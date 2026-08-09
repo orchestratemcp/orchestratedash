@@ -28,6 +28,7 @@ import { WorkingLine } from "../../_components/working";
 import { AGENT_WORKSPACE_PARAMS, runDetailHref } from "../../_data/routes";
 import {
   downloadOutput,
+  markAgentLooked,
   refreshSampleAgent,
   submitAgentCommand,
   submitWorkspaceCommand,
@@ -103,6 +104,62 @@ function AgentWorkspace(): ReactNode {
   useEffect(() => {
     setLive(running);
   }, [running]);
+
+  /*
+   * MAR-586. Write down that this page was opened, once per agent.
+   *
+   * The dependency is `agent` alone and deliberately not `refreshKey` or the
+   * view: a person pressing Refresh state has not arrived again, and a page that
+   * re-stamped on every poll would record the window being left open rather than
+   * anybody reading anything.
+   *
+   * Fired for an agent DASH may not even hold — the guard is in main, where
+   * writing an unknown agent's look is a harmless row and asking the renderer to
+   * check first would mean a read before a write for no gain. Nothing is awaited
+   * and no failure is surfaced: `markAgentLooked` refuses silently in the hosts
+   * that cannot write, and there is no question on this screen for an error to
+   * be the answer to.
+   */
+  useEffect(() => {
+    if (agent === "") {
+      return;
+    }
+    void markAgentLooked(agent);
+  }, [agent]);
+
+  /*
+   * MAR-586. Honour the fragment a fleet chip arrived with.
+   *
+   * A browser scrolls to `#waiting-work` when the document that contains it has
+   * loaded, and this page has no such element then: every DASH page reads its
+   * content across the IPC boundary *after* the first paint, so the fragment has
+   * already been resolved against an empty page and dropped. Without this, a
+   * chip that promised to take somebody to the thing that needs them would land
+   * them at the top of a page and leave them looking.
+   *
+   * Runs when the view arrives rather than on mount, and asks the document
+   * rather than trusting the fragment: an unknown name simply finds nothing and
+   * leaves the reader where they are, which is the right outcome for a section
+   * that exists only when there is something in it.
+   */
+  const ready = state.status === "ready";
+  useEffect(() => {
+    if (!ready || typeof window === "undefined") {
+      return;
+    }
+    const fragment = window.location.hash.slice(1);
+    if (fragment === "") {
+      return;
+    }
+    // One frame later: the branch that draws the section is rendering in this
+    // same commit, so the element does not exist yet when the effect runs.
+    const timer = window.setTimeout(() => {
+      document.getElementById(fragment)?.scrollIntoView({ block: "start" });
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [ready, agent]);
 
   async function issue(
     key: string,

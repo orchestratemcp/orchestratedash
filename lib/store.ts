@@ -1193,6 +1193,90 @@ export function readEvidencePulls(): EvidencePullRecord[] {
   }));
 }
 
+/* ---------------------------------------------------------------------- *
+ * When the reader last looked (MAR-586)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Record that somebody has just opened this agent's page.
+ *
+ * The one fact MAR-586 adds to the store, and it is a fact about the *reader*
+ * rather than about the agent — see the migration's own note for why it is its
+ * own table and not a column on `agents`.
+ *
+ * `at` is a parameter with a production default, the pattern `runsView` uses for
+ * `pulls`: production passes nothing and gets DASH's clock, and a test drives the
+ * boundary — an output that arrived one second before a look and one second
+ * after it — without waiting for a real second to pass.
+ *
+ * Overwrites. A second look replaces the first, because what the fleet card asks
+ * is "has anything arrived since the last one", and the answer to that never
+ * involves the look before it.
+ */
+export function recordAgentLook(agent: string, at: string = new Date().toISOString()): void {
+  db()
+    .prepare(
+      "INSERT INTO agent_looks (agent, last_looked_at) VALUES (?, ?) " +
+        "ON CONFLICT (agent) DO UPDATE SET last_looked_at = excluded.last_looked_at",
+    )
+    .run(agent, at);
+}
+
+/**
+ * When each agent's page was last opened, keyed by agent.
+ *
+ * Read whole rather than one at a time because the caller is the fleet — a page
+ * that draws every agent — and one statement beats one per card. An agent with no
+ * entry is simply absent from the map, which is the state that means *nobody has
+ * ever opened this agent's page*, and it is deliberately not folded into "looked
+ * at the beginning of time": the two produce different sentences, and
+ * `lib/copy/glance.ts` says why.
+ */
+export function readAgentLooks(): Map<string, string> {
+  const rows = db().prepare("SELECT agent, last_looked_at FROM agent_looks").all();
+  return new Map(rows.map((row) => [text(row, "agent"), text(row, "last_looked_at")]));
+}
+
+/**
+ * How much this agent has produced, and how much of it is newer than a moment.
+ *
+ * **`received_at` and not `generated_at`**, and the choice is the whole
+ * correctness of the "new output" chip. `generated_at` is the *agent's* claim
+ * about when it made something, from a clock DASH does not set; `received_at` is
+ * DASH's own clock when the artifact arrived, and a look is stamped from that
+ * same clock. Comparing DASH's record of a look against an agent's account of its
+ * own past would let an agent with a wrong clock either hide its output forever
+ * or announce every old artifact as new.
+ *
+ * `since` of null means nobody has looked, and every artifact counts — which is
+ * true, and is the state a first-run fleet is in.
+ *
+ * One statement rather than two, because both numbers are aggregates over the
+ * same rows and this is called once per card.
+ */
+export function artifactArrivals(
+  agent: string,
+  since: string | null,
+): { total: number; since_count: number } {
+  const row = db()
+    .prepare(
+      "SELECT count(*) AS total, " +
+        "sum(CASE WHEN received_at > ? THEN 1 ELSE 0 END) AS since_count " +
+        "FROM run_artifacts WHERE agent = ?",
+    )
+    // The empty string sorts below every ISO-8601 instant, so "nobody has
+    // looked" and "everything is newer than the look" are the same query.
+    .get(since ?? "", agent) as Record<string, unknown> | undefined;
+
+  return {
+    total: Number(row?.["total"] ?? 0),
+    // `sum` over no rows is NULL rather than 0 in SQLite, which `Number(null)`
+    // would turn into 0 anyway — stated because the coalesce is load-bearing
+    // for an agent that has produced nothing at all.
+    since_count: Number(row?.["since_count"] ?? 0),
+  };
+}
+
 /**
  * Narrow one candidate from the runner.
  *

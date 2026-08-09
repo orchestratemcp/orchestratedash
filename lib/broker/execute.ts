@@ -3,11 +3,17 @@
  * (MAR-458, ADR 0002).
  *
  * Everything else in `lib/broker/` decides. This performs — and it is the only
- * place in DASH where a live provider token is held, attached to a request, and
- * dropped. ADR 0002 invariant 2 is a property of this file's scope: the token is
- * a `const` inside one `async` function, it is never returned, never stored,
- * never logged, never audited, and never reachable from the value that goes back
- * to the agent.
+ * place in DASH where a live provider credential is held, attached to a request,
+ * and dropped. ADR 0002 invariant 2 is a property of this file's scope: the
+ * authorization is a `const` inside one `async` function, it is never returned,
+ * never stored, never logged, never audited, and never reachable from the value
+ * that goes back to the agent.
+ *
+ * Since MAR-582 that credential is one of two things — a minted access token or
+ * a model provider's key — and the difference is resolved before it gets here.
+ * `mintAuthorization` returns finished headers, this file checks their names
+ * against a frozen set and attaches them, and every other line is indifferent to
+ * which kind it just sent.
  *
  * ## The order of the checks, and why it is this order
  *
@@ -51,12 +57,19 @@
  * agent's reasoning.
  */
 
+import { AI_AUTH_HEADERS } from "../ai/providers";
 import type { ConnectionSourceManifest } from "../connections";
 import { connectionSecretName } from "../connection-credentials";
-import type { OAuthCredential } from "../oauth/credential";
 import { isOAuthError } from "../oauth/flow";
 import { maskAccount } from "../secret-refs";
-import { brokeredField, grants, resolveGrant, type BrokerGrant } from "./grant";
+import {
+  brokeredField,
+  credentialAccount,
+  grants,
+  resolveGrant,
+  type BrokerCredential,
+  type BrokerGrant,
+} from "./grant";
 import { operationById, planCall } from "./operations";
 import { fulfil, refuse, type BrokerRefusal, type BrokerRequest, type BrokerResponse } from "./protocol";
 
@@ -66,7 +79,7 @@ import { fulfil, refuse, type BrokerRefusal, type BrokerRequest, type BrokerResp
 
 /** How a vault read turned out. The four cases lead to three different refusals. */
 export type CredentialRead =
-  | { kind: "found"; credential: OAuthCredential }
+  | { kind: "found"; credential: BrokerCredential }
   /** Nothing under that name: the user has not connected it. */
   | { kind: "absent" }
   /** Something under that name that is not a grant this version can read. */
@@ -108,16 +121,27 @@ export interface BrokerDeps {
   readManifest(agentId: string): ConnectionSourceManifest | null;
   readCredential(secretName: string): Promise<CredentialRead>;
   /**
-   * Exchange the stored grant for a short-lived access token.
+   * Turn a stored credential into the headers that authorize one request.
    *
    * Injected rather than imported so that the one call that produces a live
-   * token is a seam a test can stand in front of — which is what lets
-   * `tests/broker-threat-model.test.ts` hand the broker a token it planted and
+   * credential is a seam a test can stand in front of — which is what lets
+   * `tests/broker-threat-model.test.ts` hand the broker a value it planted and
    * then assert, from the outside, that no output of any kind contains it.
+   *
+   * **Headers rather than a token** since MAR-582, because the two kinds present
+   * themselves differently: a sign-in becomes a bearer token DASH mints from a
+   * refresh token, and a model key is carried in whichever header its provider
+   * reads. Returning the finished headers means the branch lives with the
+   * credential, in Electron main beside the vault, and this file stays the place
+   * that attaches them and drops them.
+   *
+   * What comes back is checked against `AUTHORIZATION_HEADERS` before it is
+   * used, so an implementation that returned `host`, `content-type` or a cookie
+   * cannot reshape the request it is authorizing.
    *
    * Throws on failure, and the throw is classified by `isOAuthError`.
    */
-  mintAccessToken(credential: OAuthCredential): Promise<{ access_token: string }>;
+  mintAuthorization(credential: BrokerCredential): Promise<Record<string, string>>;
   fetchImpl: typeof fetch;
   /**
    * Has this agent already had a request with this id adjudicated, ever
@@ -189,6 +213,26 @@ export const BROKER_WRITES_PER_WINDOW = 3;
  * `BrokerDeps.hasHandledRequest`.
  */
 export const BROKER_REPLAY_MEMORY = 512;
+
+/**
+ * Every header name a credential is allowed to occupy (MAR-582).
+ *
+ * The broker builds a request's method, URL and content headers itself and then
+ * merges in whatever `mintAuthorization` returned. Without this check that merge
+ * is an arbitrary header write by whichever code holds the vault — which is
+ * DASH's own code, and is therefore exactly the kind of thing that is fine until
+ * a fourth provider's profile is added in a hurry.
+ *
+ * A superset of `AI_AUTH_HEADERS` by construction rather than a second list, so
+ * a provider registry that grew a header would widen this automatically and a
+ * reviewer would see it in that file's diff. `authorization` is named
+ * separately because the OAuth path uses it and does not come from that
+ * registry.
+ */
+const AUTHORIZATION_HEADERS: ReadonlySet<string> = new Set<string>([
+  "authorization",
+  ...AI_AUTH_HEADERS,
+]);
 
 /* ---------------------------------------------------------------------- *
  * The broker
@@ -326,7 +370,11 @@ export function createBroker(deps: BrokerDeps): Broker {
       if (read.kind !== "found") {
         return no("not_connected");
       }
-      const accountHint = read.credential.account === null ? null : maskAccount(read.credential.account);
+      // Null for every keyed connection, because a provider key names nobody.
+      // See `credentialAccount` on why deriving one from the key is not an
+      // option (MAR-582).
+      const account = credentialAccount(read.credential);
+      const accountHint = account === null ? null : maskAccount(account);
 
       /* 6. Does the grant cover it? */
       const resolved = resolveGrant(
@@ -387,16 +435,29 @@ export function createBroker(deps: BrokerDeps): Broker {
       }
 
       /* 9. Mint, call, project. */
-      let accessToken: string;
+      let authorization: Record<string, string>;
       try {
-        accessToken = (await deps.mintAccessToken(read.credential)).access_token;
+        authorization = await deps.mintAuthorization(read.credential);
       } catch (error: unknown) {
         // `revoked` is the one that must not read as a transient failure: the
         // user, or Google, ended this grant, and retrying will not undo that.
+        // A keyed credential never reaches this branch — there is nothing to
+        // exchange, so nothing to be refused at exchange time. What a provider
+        // thinks of the key is learned from the call below.
         return no(
           isOAuthError(error) && error.code === "revoked" ? "revoked" : "provider_unavailable",
           accountHint,
         );
+      }
+
+      // DASH's own code, checked anyway (MAR-582). The map above came from the
+      // one function that holds a live credential, and merging it unchecked
+      // would let a bug there decide the request's `host` or its content type
+      // with a secret already in hand.
+      for (const header of Object.keys(authorization)) {
+        if (!AUTHORIZATION_HEADERS.has(header.toLowerCase())) {
+          return no("broker_error", accountHint);
+        }
       }
 
       let body: unknown;
@@ -404,9 +465,13 @@ export function createBroker(deps: BrokerDeps): Broker {
         const response = await deps.fetchImpl(planned.call.url, {
           method: planned.call.method,
           headers: {
-            // The only place this value is used, and it does not survive the
-            // function. Nothing below reads `accessToken` again.
-            authorization: `Bearer ${accessToken}`,
+            // The only place these values are used, and they do not survive the
+            // function. Nothing below reads `authorization` again.
+            //
+            // Spread first, so a credential header can never overwrite the
+            // content type or the accept header DASH chose — the merge order is
+            // the guard, and the name check above is the other half of it.
+            ...authorization,
             accept: "application/json",
             ...(planned.call.method === "POST"
               ? { "content-type": "application/json" }

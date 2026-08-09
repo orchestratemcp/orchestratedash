@@ -137,6 +137,18 @@ interface DashShellClient {
    */
   refreshSampleAgent?(args: { agent_id: string }): Promise<CommandResult>;
   /**
+   * Remember that this agent's page has just been opened (MAR-586).
+   *
+   * Optional for the same reason as the three above, and here the absence is the
+   * ordinary case for a while: an installed DASH older than this command has a
+   * `dashShell` without it, and every fleet card it draws will go on saying an
+   * agent's output is new. That is the honest degradation — the record does not
+   * exist, so nothing can be said to have been read — and it is why
+   * `markAgentLooked` below refuses quietly rather than surfacing an error on a
+   * page nobody asked a question on.
+   */
+  markAgentLooked?(args: { agent_id: string }): Promise<CommandResult>;
+  /**
    * The runner's own health, and its one repair (MAR-518).
    *
    * Optional on top of the bridge already being optional, like `openAppMenu`
@@ -505,6 +517,34 @@ export async function downloadOutput(args: {
     };
   }
   return bridge.downloadOutput(args);
+}
+
+/**
+ * Tell DASH this agent's page has been opened (MAR-586).
+ *
+ * **The one command in this module whose refusal is never shown to anybody**,
+ * and that is deliberate rather than an oversight. Every other function here
+ * composes a sentence for the two hosts that cannot act, because each of them is
+ * called by a person pressing a button and a button that did nothing needs to
+ * say why. Nobody presses this one: it fires when a page opens, and a browser tab
+ * — which has no bridge at all and never will — would otherwise show a refusal
+ * for something its reader never asked for.
+ *
+ * What is lost when it refuses is stated rather than hidden: in a browser tab,
+ * and in an installed shell older than this command, the "new output" chip on
+ * the fleet keeps counting from a look that was never recorded. That is the
+ * truth about those hosts — the read-only path is read-only, so it cannot write
+ * down that somebody read something.
+ */
+export async function markAgentLooked(agentId: string): Promise<void> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge?.markAgentLooked === undefined) {
+    return;
+  }
+  // Deliberately unawaited in effect: the caller does not branch on the answer,
+  // and a page that waited on this before rendering would be a page whose first
+  // paint depended on a write nobody is watching.
+  await bridge.markAgentLooked({ agent_id: agentId });
 }
 
 /**
