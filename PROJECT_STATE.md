@@ -4016,3 +4016,35 @@ would have contended for the single-instance lock or hung silently, and
 AGENTS.md forbids force-killing either. CI's Windows `shell-smoke` is the
 installed-shell witness for this branch, the same call MAR-548 and MAR-492 each
 recorded for the same reason.
+
+---
+
+## 2026-08-09 — the packet catches up with reality: 0 drift warnings (coordinator session)
+
+PR #97 repaired the code half of the merge accident (conflict markers merged
+into master by a gate that checked finished-not-passed; see its own commit
+message for the full anatomy). This entry is the record half, which #97
+deliberately did not touch.
+
+The 19 recorded lifecycle drift warnings — carried in every state:check
+output for days — are resolved. They were all one shape, "Git says merged,
+recorded Linear status is In Progress", and they split two ways on
+inspection: 17 issues where Linear itself was stale (MAR-421, 467, 484, 488,
+491, 492, 497, 498, 500, 503, 505, 506, 507, 518, 528, 533, 534 — merged for
+weeks, some since early August, with Linear never moved) were set to Done in
+Linear on 2026-08-09; 2 (MAR-474, MAR-508) were already Done in Linear and
+only the packet's recorded copy was stale. The packet now records Done for
+all 19.
+
+The weekend batch's five entries (MAR-572, 573, 574, 575, 576) go
+`planned → merged` with their merge commits (#94 d7fc1e0, #96 4438bbc,
+#93 bc28035, #95 dd96ba2), their "PR OPEN, NOT MERGED" notes rewritten to
+say when and where they merged, and all five Done in Linear. MAR-577 stays
+open: its remaining scope after MAR-574's deploy panel is verified and
+recorded on the issue (agent-side entry point, deploy progress/result,
+manifest-only refusal on a real surface).
+
+`pnpm state:check` on this branch: **valid; 0 recorded cross-system drift
+warning(s)** — the first zero since the warnings began accruing. A parallel
+repair PR (#98) built before #97 landed was closed as superseded; its packet
+reconciliation is what this commit carries forward.
