@@ -1056,6 +1056,16 @@ describe("the request envelope", () => {
    */
   it("asks each operation for the narrowest scope it actually needs", () => {
     for (const operation of allOperations()) {
+      if (operation.connection_provider !== "google-gmail") {
+        // MAR-582. A model provider key carries no scopes at all, so an
+        // operation built on one can require none — and an empty list here is
+        // the *absence* of the third party in ADR 0002's intersection rather
+        // than a permission that happened to match. `describeKeyNarrowing` is
+        // what makes a card say so; the assertion below is that nothing snuck a
+        // Google scope onto a connection Google has nothing to do with.
+        expect(operation.required_scopes).toEqual([]);
+        continue;
+      }
       if (operation.access === "read") {
         expect(operation.required_scopes).toEqual([GMAIL_READONLY]);
       } else {

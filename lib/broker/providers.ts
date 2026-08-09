@@ -18,6 +18,7 @@
  * the case the ADR calls out.
  */
 
+import { aiProviders, type AiProviderProfile } from "../ai/providers";
 import {
   loopbackProofOrigin,
   LOOPBACK_PROOF_MANIFEST_PROVIDER,
@@ -63,13 +64,43 @@ export type OAuthClientOwner =
   /** Not applicable: this connection is not a native OAuth one. */
   | "not_oauth";
 
+/**
+ * What kind of credential sits behind a brokered connection (MAR-582).
+ *
+ * Added when a second kind arrived, and it is a distinction the broker genuinely
+ * has to branch on rather than a label. The two differ in what DASH can *check*
+ * before it acts: an OAuth grant carries the scopes the user actually consented
+ * to, so `lib/broker/grant.ts` can intersect three independent parties. A
+ * provider key carries nothing. It is a bearer of whatever the account can do,
+ * and the third party in that intersection — the user, speaking through the
+ * provider — has no way to say anything at all.
+ *
+ * So the narrowing DASH performs on a keyed connection is genuinely weaker than
+ * the one it performs on a signed-in connection, and `describeKeyNarrowing`
+ * exists so a card can say which of the two it is looking at. A grammar with no
+ * place to state that would be the same failure `token_custodian` was added to
+ * avoid: a receipt that cannot say what it does not know.
+ */
+export type BrokerCredentialKind =
+  /** A refresh token DASH exchanges for scoped access, per connection. */
+  | "oauth_grant"
+  /** A key the user pasted, presented as-is. Carries no scopes to check. */
+  | "provider_key";
+
 export interface BrokerProviderProfile {
   /** The manifest's `provider` string, e.g. `google-gmail`. */
   connection_provider: string;
-  /** The `OAuthProvider.id` whose grant authorizes it, e.g. `google`. */
-  oauth_provider_id: string;
+  /**
+   * The `OAuthProvider.id` whose grant authorizes it, e.g. `google`, or null.
+   *
+   * Null exactly when `credential_kind` is `provider_key`. Nullable rather than
+   * an empty string, so the one place that resolves a sign-in flow from it has
+   * to say what it does with the absence instead of looking one up for `""`.
+   */
+  oauth_provider_id: string | null;
   /** Friendly service name for a card, e.g. "Gmail". */
   label: string;
+  credential_kind: BrokerCredentialKind;
   token_custodian: TokenCustodian;
   client_owner: OAuthClientOwner;
   /**
@@ -88,10 +119,46 @@ const GMAIL: BrokerProviderProfile = {
   connection_provider: "google-gmail",
   oauth_provider_id: "google",
   label: "Gmail",
+  credential_kind: "oauth_grant",
   token_custodian: "dash_vault",
   client_owner: "dash_project",
   api_origin: "https://gmail.googleapis.com",
 };
+
+/**
+ * A model provider's profile, derived from the registry rather than restated
+ * (MAR-582).
+ *
+ * `lib/ai/providers.ts` is the closed by-value list and it holds the facts that
+ * decide a request: the origin, the path, the header scheme. This turns one of
+ * those into the shape the broker's card grammar already speaks, and it is a
+ * projection rather than a second table so the two cannot disagree about which
+ * origin a key is sent to.
+ *
+ * `client_owner` is `not_oauth`, which is the true answer and also a useful one:
+ * there is no consent screen at all here, so the question "whose application is
+ * this registered to" has no meaning and `describeClientOwner` says nothing
+ * rather than reassuring.
+ */
+function keyProfile(provider: AiProviderProfile): BrokerProviderProfile {
+  return {
+    connection_provider: provider.connection_provider,
+    oauth_provider_id: null,
+    label: provider.label,
+    credential_kind: "provider_key",
+    // The key really is in this machine's vault and a disconnect really does end
+    // DASH's use of it — which is what `dash_vault` means. What it does not mean,
+    // and `describeCustody` now says out loud for this kind, is that the key
+    // stops existing at the provider.
+    token_custodian: "dash_vault",
+    client_owner: "not_oauth",
+    api_origin: provider.api_origin,
+  };
+}
+
+const KEY_PROFILES: readonly BrokerProviderProfile[] = Object.freeze(
+  aiProviders().map(keyProfile),
+);
 
 /**
  * The loopback profile the installed proof runs against.
@@ -149,6 +216,7 @@ function proofProfile(): BrokerProviderProfile | null {
     connection_provider: PROOF_CONNECTION_PROVIDER,
     oauth_provider_id: LOOPBACK_PROOF_PROVIDER_ID,
     label: "Loopback mail (proof harness)",
+    credential_kind: "oauth_grant",
     token_custodian: "dash_vault",
     client_owner: "dash_project",
     api_origin: origin,
@@ -166,6 +234,12 @@ function proofProfile(): BrokerProviderProfile | null {
 export function brokerProfileFor(connectionProvider: string): BrokerProviderProfile | null {
   if (connectionProvider === GMAIL.connection_provider) {
     return GMAIL;
+  }
+  const key = KEY_PROFILES.find(
+    (profile) => profile.connection_provider === connectionProvider,
+  );
+  if (key !== undefined) {
+    return key;
   }
   const proof = proofProfile();
   if (proof !== null && connectionProvider === proof.connection_provider) {
@@ -192,7 +266,18 @@ export function operationProviderFor(profile: BrokerProviderProfile): string {
 export function describeCustody(profile: BrokerProviderProfile): string {
   switch (profile.token_custodian) {
     case "dash_vault":
-      return "DASH holds the sign-in for this connection in this computer's vault. The agent never receives it.";
+      // Two sentences for one custodian value, because the honest half differs.
+      // A sign-in DASH deletes is one DASH can also ask the provider to
+      // withdraw, and `lib/connection-actions.ts` does exactly that on
+      // disconnect. A key DASH deletes goes on existing in the user's own
+      // account, and there is no request DASH could make that would change
+      // that — so the custody sentence has to stop one clause earlier than the
+      // sign-in one, and say why (MAR-582).
+      return profile.credential_kind === "provider_key"
+        ? `DASH holds this ${profile.label} key in this computer's vault. The agent never receives it — ` +
+            "it asks DASH, and DASH makes the request. Deleting it here stops DASH using it and does " +
+            `not delete the key itself, which stays in your ${profile.label} account until you remove it there.`
+        : "DASH holds the sign-in for this connection in this computer's vault. The agent never receives it.";
     case "remote_mcp_server":
       return "A remote server holds the sign-in for this connection, not DASH. Disconnecting here stops DASH using it and does not withdraw the server's own access.";
     case "hosted_broker":
@@ -221,6 +306,40 @@ export function describeDashClosedWindow(profile: BrokerProviderProfile): string
     `This agent can use your ${profile.label} connection only while DASH is open on this ` +
     "computer. When DASH is closed, the agent keeps running and its requests through this " +
     "connection go unanswered."
+  );
+}
+
+/**
+ * How much of the three-party check is actually available for this connection
+ * (MAR-582).
+ *
+ * ADR 0002 amendment 1 states the rule a grant is decided by: DASH built the
+ * operation, the author declared what it needs, and **the user, through the
+ * provider**, granted it. The third is the one a user can see themselves giving,
+ * on a consent screen with checkboxes, and it is the one that catches an agent
+ * author widening their own access.
+ *
+ * A pasted key has no third party. There is no screen, no checkbox and no
+ * per-connection consent — the key is a bearer of whatever the account behind it
+ * can do, and no request DASH makes can narrow that. What remains is real and
+ * worth saying plainly: DASH will only ever make the requests it has built, and
+ * the key does not leave this computer. What must not be said is that the user
+ * approved a narrow slice of their account, because they did not, and a card
+ * implying it would be the "contract claim, not a technical firewall" ADR 0002
+ * was written about, in the one place the user cannot check it.
+ *
+ * Null for a sign-in, where the intersection is whole and the card already
+ * describes it through the granted capability list.
+ */
+export function describeKeyNarrowing(profile: BrokerProviderProfile): string | null {
+  if (profile.credential_kind !== "provider_key") {
+    return null;
+  }
+  return (
+    `A ${profile.label} key is not like signing in: there is no screen where you tick what an agent ` +
+    "may do, and the key can do everything your account can. What DASH can promise is narrower and " +
+    "is the whole of it — the key stays on this computer, the agent never receives it, and DASH " +
+    "will only make the requests it has been built to make. It cannot make the key itself smaller."
   );
 }
 

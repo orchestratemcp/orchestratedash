@@ -680,6 +680,36 @@ const MIGRATIONS: readonly Migration[] = [
 
   CREATE INDEX IF NOT EXISTS hosts_by_added_at ON hosts (added_at);
   `,
+  // MAR-582. What a model provider said about a key DASH holds, and when.
+  //
+  // **A table of observations, not of state.** The distinction is the whole
+  // reason it exists rather than a column on connection_secrets: DASH cannot
+  // know whether a key works, only what a provider said last time it was asked,
+  // and a boolean beside the credential would read as a property of the key. Two
+  // columns carry the honesty — state names what was observed, checked_at names
+  // when — and lib/ai/liveness.ts makes them inseparable by giving the
+  // never-asked case its own state with a null date.
+  //
+  // No row means never checked. That is deliberate rather than a default to be
+  // filled in on connect: a key pasted a second ago has not been checked, and
+  // writing a row at connect time would need a state meaning "not checked" in a
+  // table whose every other row is a real observation.
+  //
+  // model_count is a number and never a list. Which models a key can reach is
+  // the provider's own content (ADR 0002 invariant 7), and a durable table of
+  // them would be the same mistake broker_audit.result_count already refuses.
+  // There is no place here for a message, a body, or an error string from the
+  // provider: what happened is one of five states this repository wrote down.
+  `
+  CREATE TABLE ai_key_checks (
+    agent         TEXT NOT NULL,
+    connection_id TEXT NOT NULL,
+    state         TEXT NOT NULL,
+    checked_at    TEXT NOT NULL,
+    model_count   INTEGER,
+    PRIMARY KEY (agent, connection_id)
+  );
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

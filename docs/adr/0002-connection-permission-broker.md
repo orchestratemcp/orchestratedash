@@ -535,3 +535,115 @@ optional deployment choice; it is not required for the local-first path" —
 stays exactly true, and ADR 0006 sharpens what it was always describing:
 somebody else's hosted broker, as a custody fact a card must be able to state.
 DASH operating one is ruled out.
+
+## Amendment 5 (MAR-582): a second custody model, missing a third party
+
+Status: Accepted
+
+Date: 2026-08-09
+
+A model provider's key — OpenRouter, Anthropic, OpenAI — is now a connection DASH
+takes custody of and brokers. The key stays in the OS vault, never enters an
+agent process, and an agent reaches the provider through a named operation, which
+is invariants 1 to 3 applied to a credential this ADR was not written about.
+
+Four things follow that the sections above do not cover.
+
+### The manifest schema did not change, and that was checked before it was claimed
+
+MAR-582 asked whether MAR-569's `api_key` connector kind plus a provider field
+covers this without a schema change. It does, and the answer is recorded here
+because "we did not need to" is only worth anything if somebody looked.
+
+`agent.manifest.v2.schema.json` types a connection's `provider` as an open string
+with no enumeration, and `connectionRequirementV1.connector_kind` has carried
+`api_key` since MAR-569. So an agent declaring a model provider key is
+expressible today: one `dash_managed` connection whose `provider` is
+`openrouter`, one required `secret` field, and one version 1 requirement of kind
+`api_key` pointing at it. Nothing was added and nothing was widened.
+
+**The `provider` string should stay open**, and that is the load-bearing half. It
+is the *author's* word for what their agent talks to, and DASH refusing to import
+an agent because it named a service DASH has never heard of would be DASH
+deciding which agents may exist. What DASH decides is narrower and lives in
+DASH's own code: `lib/ai/providers.ts` is a closed, by-value list of the provider
+strings DASH will **act on** — take custody of a key for, attach to a request,
+and check against a provider. Widening it is a reviewed diff, in the shape
+`CONNECTOR_KINDS_V1` and `WRITE_PATHS` already have. A schema enumeration would
+have put the same decision in a document third parties write against.
+
+### The three-party intersection loses its third party, and the card says so
+
+Amendment 1 records the rule a grant is decided by: DASH built the operation, the
+author declared what it needs, and the user — through the provider — granted it.
+The third is the one a person can see themselves giving, and it is the one that
+catches an agent author widening their own access.
+
+**A pasted key has no third party.** There is no consent screen, no scope, and
+nothing on the credential to intersect. What survives is real: DASH performs only
+the operations it has built, and the key does not leave this machine. What must
+not be said is that the user approved a narrow slice of their account — they did
+not, and a card implying it would be the "contract claim, not a technical
+firewall" this ADR was written about, in the one place the user cannot check it.
+So `describeKeyNarrowing` is a required, nullable field on the capability card,
+in the shape `wider_permission` took in amendment 2 and for the same reason: a
+future keyed provider cannot ship without somebody answering the question.
+
+`unused_scopes` and `missing_scopes` are empty for a keyed grant because there is
+nothing to compare, not because everything matched. A reader cannot tell those
+apart from the arrays, which is exactly why the sentence exists.
+
+Two smaller asymmetries follow from the same absence. A key identifies nobody, so
+a keyed connection has no account and the audit's `account_hint` is null rather
+than four characters of a live secret. And disconnect cannot withdraw anything:
+DASH deletes its copy, the key goes on existing in the user's account, and the
+sentence stops one clause earlier than the sign-in one — the same choice
+`performOAuthAction` makes when a revocation fails.
+
+### What is built on a model key, and what deliberately is not
+
+One read per provider: the list of models the key can reach. **There is no
+completion operation, no streaming, no embedding and no image call.** An agent
+holding one of these connections can find out what it *could* use and cannot
+spend a penny of the account behind it, which is a narrower agent than any raw
+key produces and is also, plainly, not yet a useful one.
+
+That is stage 1 of this ADR's own rollout shape applied to a new provider family,
+and the next slice is the one that needs a cost story and a per-run budget this
+one did not invent. `tests/broker-boundary.test.ts` pins the operation set by
+value and asserts separately that nothing belonging to a model provider writes —
+so adding a completion means editing a reviewed array and answering
+`WriteOperation`'s three questions.
+
+### The delivery path is refused rather than dropped
+
+Before this, a manifest could declare `technical.environment_name` on an API-key
+field and DASH would hand the value to the child process. For the three providers
+above that is now refused at the moment a user presses Connect, with a sentence
+saying DASH holds model keys itself — not ignored at spawn, where the same
+refusal surfaces as an agent that starts and then fails at whichever step needed
+the key. The argument is `lib/connection-credentials.ts`'s existing one for a
+reserved environment name, applied to a new reason.
+
+The typed-secret path itself is untouched. A key for a service DASH has no client
+for is still stored, still delivered, and still uncheckable — and
+`lib/connection-actions.ts`'s claim that `test` "cannot honestly contact a
+provider" is now **scoped rather than universal**, in the way amendment 4 scoped
+four of this ADR's own sentences. The catalogue sentence for `connection.test`
+said "Contacts no provider", which had already stopped being true when MAR-446
+made that command refresh a grant; it is corrected here rather than compounded.
+
+### What is proven, and what is not
+
+**Unit tests only.** The boundary is driven end to end with a planted key —
+`tests/ai-key-broker.test.ts` asserts the key reaches the header its provider
+reads and appears in no response, no audit row and no view — and the liveness
+probe is exercised against a real loopback HTTP server. Neither is an installed
+proof, and **no request has been made to a real model provider**. Nothing here
+may be described as proven against OpenRouter, Anthropic or OpenAI's API,
+including that a real key is accepted, and there is no attended runbook for one
+yet.
+
+There is also no user-facing surface. `lib/ai/connection-view.ts` is the seam the
+Connections page will consume; the page itself is MAR-570's and belongs to
+whoever redesigns it.

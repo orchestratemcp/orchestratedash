@@ -34,10 +34,11 @@
  * facts stay separate because they fail separately.
  */
 
+import { performAiKeyAction, type AiKeyOperations } from "./ai/actions";
 import type { CredentialTarget, CredentialTargetRefusal } from "./connection-credentials";
 import { resolveCredentialTarget } from "./connection-credentials";
 import { recordReceipt, forgetReceipt } from "./broker/store";
-import { resolveGrant } from "./broker/grant";
+import { resolveGrant, resolveKeyGrantWithoutCredential } from "./broker/grant";
 import type { ConnectionSourceManifest, ManifestConnection } from "./connections";
 import {
   describeAuthorizationFailure,
@@ -135,6 +136,14 @@ export interface ConnectionActionDeps {
    * anything it calls can tell the difference.
    */
   oauth: OAuthOperations;
+  /**
+   * Asking a model provider whether a key still works (MAR-582).
+   *
+   * The third seam, beside the prompt and the sign-in, injected for the reason
+   * both of those are: the real one makes an HTTPS request to a third party.
+   * `lib/ai/actions.ts` owns what is done with the answer.
+   */
+  ai: AiKeyOperations;
 }
 
 /**
@@ -245,6 +254,23 @@ function refusalCopy(
         },
       };
 
+    case "brokered_provider_delivery":
+      // MAR-582. Refused at connect rather than dropped at spawn, so the author
+      // hears about it while there is still a screen in front of somebody.
+      return {
+        detail: `DASH holds ${service} keys itself and will not hand this one to the agent.`,
+        recovery: {
+          headline: `${service} is a service DASH can reach on the agent's behalf.`,
+          meaning:
+            "The agent asks DASH to pass it the key. DASH keeps keys for this kind of service and " +
+            "makes the requests itself, so the agent never holds one — and it will not make an " +
+            "exception because an agent asked for it.",
+          next_action:
+            "This needs a fix from whoever built the agent. Nothing was stored and nothing is at risk.",
+          actor: "dash",
+        },
+      };
+
     case "unknown_connection":
     case "unknown_field":
       return {
@@ -344,6 +370,10 @@ export async function performConnectionAction(
 
   if (credential.kind === "oauth") {
     return performOAuthAction(action, credential, backing.label, manifest, deps);
+  }
+
+  if (credential.kind === "provider_key") {
+    return performProviderKeyAction(action, credential, backing.label, manifest, deps);
   }
 
   if (action === "disconnect") {
@@ -447,6 +477,76 @@ export async function performConnectionAction(
     masked_hint: maskSecret(secret),
     detail: `${credential.service} is connected. DASH keeps the ${credential.field_label.toLowerCase()} in ${backing.label}.`,
   };
+}
+
+/* ---------------------------------------------------------------------- *
+ * The model-provider key action (MAR-582)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Connect, check or disconnect a key DASH holds for a model provider.
+ *
+ * A thin wrapper rather than a fourth long branch: `lib/ai/actions.ts` owns the
+ * behaviour and knows nothing about receipts or the vault's capability check,
+ * and this function owns the two things that have to happen in the same order
+ * they happen for a sign-in.
+ *
+ * **The receipt is written from a grant resolved without the key**, which is a
+ * stronger version of what the OAuth path does. There, the grant is resolved
+ * from the credential that just came back, because scopes live on it. Here there
+ * are no scopes, so the same grant the broker would resolve is knowable from the
+ * manifest alone — and writing the receipt from it means the capability list a
+ * person approves is the list a request will actually be allowed to use.
+ */
+async function performProviderKeyAction(
+  action: ConnectionActionName,
+  credential: CredentialTarget,
+  vaultLabel: string,
+  manifestForGrant: ConnectionSourceManifest,
+  deps: ConnectionActionDeps,
+): Promise<ConnectionActionResult> {
+  if (action === "connect") {
+    try {
+      // Before the prompt, for the reason the typed-secret path checks before
+      // its own: asking someone to go and make an API key and then telling them
+      // there was nowhere to put it wastes the part that took effort.
+      assertCanHoldSecret(deps.store.describeBacking());
+    } catch (error: unknown) {
+      if (isSecureStoreError(error)) {
+        return fromStoreError(error, credential.service, vaultLabel, null);
+      }
+      throw error;
+    }
+  }
+
+  const result = await performAiKeyAction(action, credential, vaultLabel, {
+    store: deps.store,
+    promptForSecret: deps.promptForSecret,
+    ai: deps.ai,
+    now: () => new Date(),
+  });
+
+  if (action === "disconnect") {
+    // After the credential is gone, and for `forgetReceipt`'s reason: a receipt
+    // describing access DASH no longer holds would outlive the thing it is a
+    // receipt for. The brokered-call audit rows deliberately stay.
+    forgetReceipt(credential.agent_id, credential.connection_id);
+  } else if (action === "connect" && result.masked_hint !== null) {
+    // A hint means a key was stored — a cancel returns the previous hint, and a
+    // vault failure returns before this line. `granted_at` survives an update,
+    // so re-pasting a key does not make an old approval look like a new one.
+    const grant = resolveKeyGrantWithoutCredential(
+      credential.agent_id,
+      manifestForGrant,
+      credential.connection_id,
+      credential.secret_name,
+    );
+    if (grant.ok) {
+      recordReceipt(grant.grant, new Date().toISOString());
+    }
+  }
+
+  return result;
 }
 
 /* ---------------------------------------------------------------------- *
