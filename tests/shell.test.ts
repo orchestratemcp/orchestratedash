@@ -8,7 +8,13 @@ import {
   isCommandName,
   reviewCommand,
 } from "../lib/shell/ipc";
-import type { CommandAuditRecord, ConnectionAction, HostAction, WorkspaceAction } from "../lib/shell/ipc";
+import type {
+  CommandAuditRecord,
+  ConnectionAction,
+  HostAction,
+  SampleAction,
+  WorkspaceAction,
+} from "../lib/shell/ipc";
 import type { AgentCommandInput } from "../lib/agent-dom/runner";
 import { MANIFEST_ONLY_DEPLOY_REFUSAL } from "../lib/agent-folders";
 import {
@@ -137,6 +143,13 @@ describe("the audited command chokepoint", () => {
       // MAR-518. Same family, and names no agent: a damaged store is a fact
       // about the runner, not about any one of the agents it supervises.
       "runner.retireStore",
+      // MAR-576. A fifth family, and the only command in DASH that can rewrite
+      // an author's manifest. Its own prefix rather than `agent.*`, which is
+      // reserved for the contract's seven verbs, and not `runner.*`, because no
+      // process is started, stopped or asked anything. The payload is one agent
+      // id: page script can ask DASH to regenerate an agent *from DASH's own
+      // template* and has no way to hand DASH a document to store.
+      "sample.refresh",
       // MAR-536. Servers are independent of agents. Create accepts only the
       // four ordinary connection facts; main mints both names and returns only
       // the public key, while probe and forget take the opaque host id.
@@ -388,11 +401,15 @@ describe("dispatch", () => {
     // real one reaches the runner over a socket and raises a native save
     // dialog, and neither exists in this process.
     const downloads: Array<{ action: string; target: Record<string, string> }> = [];
+    // MAR-576. Recorded rather than performed: the real one rewrites the agent
+    // folder and the store through `importManifest`, and neither exists here.
+    const samples: Array<{ action: SampleAction; target: { agent_id: string } }> = [];
     return {
       audited,
       inputs,
       lifecycle,
       connections,
+      samples,
       hosts,
       workspaces,
       menus,
@@ -408,6 +425,14 @@ describe("dispatch", () => {
           detail: `${action} ok`,
           data: { task_id: "task-fake-1" },
         });
+      },
+      // MAR-576. Recorded, not performed. The fake regenerates nothing and
+      // writes nothing: what these tests are about is that the command is
+      // reviewed, audited and routed to this seam rather than to another one —
+      // the ownership gate lives in `electron/main.ts`, beside the real write.
+      sampleAction: (action: SampleAction, target: { agent_id: string }) => {
+        samples.push({ action, target });
+        return Promise.resolve({ ok: true });
       },
       showApplicationMenu: (at: { x: number; y: number } | undefined) => {
         menus.push(at);
@@ -1104,6 +1129,96 @@ describe("dispatch", () => {
 
     it("refuses to execute one without the trusted side", () => {
       expect(() => executeCommand(reviewCommand(download))).toThrowError(
+        /must go through dispatchCommand/,
+      );
+    });
+  });
+
+  /**
+   * MAR-576's `sample.refresh`, and the property worth pinning is the same
+   * shape as the download above: what its payload *cannot* say.
+   *
+   * This is the only command in DASH that can overwrite an agent's manifest —
+   * the document every other surface treats as the author's and never edits. So
+   * the boundary that matters is that the renderer names an *agent* and never a
+   * document: it can ask DASH to regenerate one from DASH's own template, and
+   * has no way to supply the template, the version, or a manifest of its own.
+   * Whether that agent is one DASH may regenerate at all is main's decision,
+   * taken against the stored manifest's own provenance, which is why the fake
+   * here records rather than judges.
+   */
+  describe("re-importing an agent DASH created (MAR-576)", () => {
+    const refresh = {
+      command: "sample.refresh",
+      request_id: "req-refresh-1",
+      payload: { agent_id: "ai-news-scout" },
+    };
+
+    it("routes to the sample side and not to the agent, the runner or the workspace", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(refresh, ctx);
+
+      expect(result).toMatchObject({ ok: true });
+      expect(ctx.samples).toEqual([
+        { action: "refresh", target: { agent_id: "ai-news-scout" } },
+      ]);
+      expect(ctx.inputs).toHaveLength(0);
+      expect(ctx.lifecycle).toHaveLength(0);
+      expect(ctx.connections).toHaveLength(0);
+      expect(ctx.workspaces).toHaveLength(0);
+    });
+
+    it.each(["manifest", "manifest_json", "template", "kit_version", "path", "directory"])(
+      "refuses a refresh carrying a %s field",
+      async (key) => {
+        const ctx = context();
+        const result = await dispatchCommand(
+          { ...refresh, payload: { ...refresh.payload, [key]: "anything at all" } },
+          ctx,
+        );
+
+        expect(result).toMatchObject({ ok: false, reason: "unexpected_payload_field" });
+        expect(ctx.samples).toHaveLength(0);
+      },
+    );
+
+    it("refuses a refresh that names no agent", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(
+        { command: "sample.refresh", request_id: "req-refresh-2", payload: {} },
+        ctx,
+      );
+
+      expect(result).toMatchObject({ ok: false, reason: "missing_payload_field" });
+      expect(ctx.samples).toHaveLength(0);
+    });
+
+    /**
+     * Recorded as mutating, unlike `workspace.download` above — this one really
+     * does replace a stored document.
+     *
+     * `irreversible` is asserted on the catalogue rather than on this record,
+     * because the IPC audit record does not carry it: `CommandAuditRecord` holds
+     * `mutates` and stops there. Asserting it here would have been a test
+     * agreeing with a field it had invented.
+     */
+    it("is audited, with keys only, and recorded as changing the store", async () => {
+      const ctx = context();
+      await dispatchCommand(refresh, ctx);
+
+      expect(ctx.audited[0]).toMatchObject({
+        command: "sample.refresh",
+        decision: "allowed",
+        payload_keys: ["agent_id"],
+        mutates: true,
+      });
+      // Nothing happens in the world, and the agent's identity, runs, outputs
+      // and credentials all survive — see the catalogue entry's own reasoning.
+      expect(COMMANDS["sample.refresh"].irreversible).toBe(false);
+    });
+
+    it("refuses to execute one without the trusted side", () => {
+      expect(() => executeCommand(reviewCommand(refresh))).toThrowError(
         /must go through dispatchCommand/,
       );
     });

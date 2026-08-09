@@ -1135,6 +1135,64 @@ a.plain:hover {
   border-color: var(--err);
 }
 
+/* MAR-576. Neither a failure nor a success: DASH saying that what it is about
+   to draw is thinner than it would be for a freshly added copy of the same
+   agent, and what to press about it.
+
+   `--warn` rather than `--err`, and the distinction is worth keeping sharp:
+   nothing is broken, nothing was lost, and every output the agent ever produced
+   is on the page below. An error border would teach a person to read a stale
+   template as damage — and this project has real store damage, with its own
+   surface and its own colour. */
+.notice-warn {
+  border-color: var(--warn);
+}
+
+/* MAR-576. Two columns where there is room, stacked where there is not.
+
+   This notice sits directly above the agent's own output, so its height is not
+   a cosmetic question: the first version of it was a 400px block at 375px wide
+   and pushed the first headline to 1156px — ten pixels from where the defect
+   this issue was filed on had put it. Side by side, the sentence and the
+   control occupy the height of the taller one instead of the sum of both.
+
+   `28rem` rather than a device width. The pair needs roughly a readable line
+   plus a button; below that the button would be squeezed to two words per line,
+   which is worse than stacking. */
+.manifest-gap {
+  display: grid;
+  gap: 0.75rem var(--density-gap);
+}
+
+.manifest-gap p:last-child {
+  margin-bottom: 0;
+}
+
+.manifest-gap-do {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.manifest-gap-do .muted {
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+@media (min-width: 28rem) {
+  .manifest-gap {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  /* Capped so the caption under the button wraps into a narrow column beside
+     the sentence rather than stretching the notice into two wide paragraphs. */
+  .manifest-gap-do {
+    max-width: 16rem;
+  }
+}
+
 .notice summary {
   cursor: pointer;
   color: var(--muted);
@@ -2187,6 +2245,42 @@ button:disabled {
 
 .output-receipt {
   margin: var(--density-gap) 0 0;
+}
+
+/* MAR-576. The quiet row under the output: the one action, and the way to the
+   provenance that used to sit above the output itself.
+
+   `align-items: flex-start` so the button keeps its own height while the
+   disclosure — which grows into a four-row grid when opened — expands
+   downwards rather than stretching the button with it. `flex-wrap` because at
+   375px "Save a copy" and the summary do not share a line, and the wrap is
+   better than either shrinking. */
+.output-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.75rem var(--density-gap);
+  margin-top: var(--density-gap);
+}
+
+/* Takes the remaining width so its `.facts` grid has somewhere to open into.
+   `min-width: 0` for the reason every flex child in this file has it: without
+   it a long value refuses to wrap and pushes the row past the card. */
+.output-footer .output-receipt-disclosure {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-size: var(--text-sm);
+}
+
+.output-receipt-disclosure summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+
+/* Already spaced by the summary above it; the shared rule's top margin would
+   double it. */
+.output-receipt-disclosure .output-receipt {
+  margin-top: 0.6rem;
 }
 
 .output-developer {

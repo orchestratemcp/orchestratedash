@@ -115,6 +115,15 @@ interface DashShellClient {
    */
   downloadOutput?(args: { agent_id: string; artifact_id: string }): Promise<CommandResult>;
   /**
+   * Re-import an agent DASH created, from DASH's current template (MAR-576).
+   *
+   * Optional for the same reason as the two above, and the case is a real one
+   * rather than a formality: the whole defect this repairs is a store older than
+   * the build reading it, so a shell older than this method is exactly the shell
+   * most likely to be showing the notice that offers it.
+   */
+  refreshSampleAgent?(args: { agent_id: string }): Promise<CommandResult>;
+  /**
    * The runner's own health, and its one repair (MAR-518).
    *
    * Optional on top of the bridge already being optional, like `openAppMenu`
@@ -399,6 +408,43 @@ export async function submitWorkspaceCommand(
       throw new Error(`Unhandled workspace command: ${String(unreachable)}`);
     }
   }
+}
+
+/**
+ * Ask DASH to re-import an agent it created, from its current template
+ * (MAR-576).
+ *
+ * The same two refusals `downloadOutput` distinguishes below, for the same
+ * reason and with a sharper consequence in the second case. A browser tab has
+ * no bridge and cannot write a store. A shell older than this command has a
+ * bridge without the method — and that user is in a genuinely awkward spot
+ * worth wording exactly: their DASH is old enough that its saved agent is
+ * behind its own template, and also old enough to be unable to fix that from
+ * this page. "Open the installed app" would be advice they have already taken,
+ * so the sentence names the way out that does exist.
+ */
+export async function refreshSampleAgent(args: {
+  agent_id: string;
+}): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to update this agent.",
+    };
+  }
+  if (bridge.refreshSampleAgent === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail:
+        "This version of the DASH app cannot update an agent in place. Add the agent again from its own folder to bring it up to date.",
+    };
+  }
+  return bridge.refreshSampleAgent(args);
 }
 
 /**

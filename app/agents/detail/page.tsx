@@ -11,7 +11,13 @@ import {
   type SetStateAction,
 } from "react";
 
-import { RunOutput } from "../../_components/digest";
+/* `RunOutput` is deliberately not imported. MAR-434 replaced this page's single
+   `RunOutput` call with `OutputsArea` and left the import behind, where it sat
+   unread until MAR-576 went looking for why the news was not on the page. It
+   was not the cause — `OutputsPanel` renders the digest through `DigestBody`
+   either way — but a dead import of the component whose whole job is to draw
+   the thing a user says is missing is a false lead, and removing it is cheaper
+   than the next person following it. */
 import { InputsPanel, type SelectedInput } from "../../_components/inputs";
 import { OAvatar } from "../../_components/o-avatar";
 import { OutputsPanel } from "../../_components/outputs";
@@ -21,6 +27,7 @@ import { WorkingLine } from "../../_components/working";
 import { AGENT_WORKSPACE_PARAMS, runDetailHref } from "../../_data/routes";
 import {
   downloadOutput,
+  refreshSampleAgent,
   submitAgentCommand,
   submitWorkspaceCommand,
   type AgentCommandArgs,
@@ -30,7 +37,11 @@ import type { GroundingAnalysis } from "../../../lib/analyze";
 import type { OName } from "../../../lib/brand/o-cast";
 import type { PermissionGrant } from "../../../lib/contracts";
 import { INPUTS_PANEL_COPY } from "../../../lib/copy/inputs";
+import { SAMPLE_REFRESH_COPY } from "../../../lib/copy/panel";
 import { describeWorkingPhase } from "../../../lib/copy/working";
+/* A type, so it erases — `lib/sample-refresh.ts` reaches `agent-kit/scaffold.ts`
+   and must never arrive in this bundle as a value. See tests/client-bundle. */
+import type { ManifestGapView } from "../../../lib/sample-refresh";
 import type { InputRoleView } from "../../../lib/views/inputs";
 import type { ArtifactCardView } from "../../../lib/views/artifacts";
 import type { InboxItem } from "../../../lib/workspace";
@@ -312,7 +323,60 @@ function AgentWorkspace(): ReactNode {
         </div>
       )}
 
-      {/* MAR-507. Above Run now, because it is the step before it. */}
+      {/* MAR-576. Before the output, because it is the reason the output may be
+          the only thing here — and DASH's own voice about DASH's own template,
+          which is why it is a plain notice and not a region attributed to
+          anyone. Null for every agent DASH did not scaffold and for every
+          scaffolded agent already current, which is almost all of them. */}
+      <ManifestGapNotice
+        agent={view.agent}
+        canAct={canAct}
+        gap={view.manifest_gap}
+        onRefreshed={() => setRefreshKey((value) => value + 1)}
+        setFeedback={setFeedback}
+      />
+
+      {/* MAR-576. First on the page, under the agent's own name.
+
+          It was fifth — behind the files panel, the Run now button and the
+          permission receipt — and inside it the digest came last, under a
+          four-row provenance receipt. On a 375px viewport the first headline
+          began 1166px down an 812px screen, so opening the AI News Scout showed
+          a permission disclaimer and a byte count and no news at all. Henrik's
+          words for that page were "I get no AI news from it. Only some text
+          about that it ran or something", and he was describing the ordering
+          rather than a missing record: every digest was there, below the fold.
+
+          What moved is only DASH's own surfaces relative to each other. The
+          author's panel stays below them (see `AgentPanel` further down), so the
+          attribution rule MAR-548 argued for is untouched — nothing an agent's
+          author controls has been promoted into the position a person reads as
+          DASH's own voice.
+
+          Outside the snapshot branch on purpose. Outputs are DASH's own record
+          and outlive the process that made them, so a stopped or unreachable
+          agent still shows what it last produced.
+
+          MAR-434: this used to be `RunOutput` on `latest_digest` alone — one
+          artifact, on a page whose agent may well have written two. The panel
+          draws every output of that run, each with its own receipt and its own
+          availability, which is the same correction MAR-434 made on the run
+          detail page. `latest_digest_grounding` still rides along because
+          grounding is a verdict about the newest digest specifically. */}
+      <OutputsArea
+        agent={view.agent}
+        canAct={canAct}
+        cards={view.outputs}
+        grounding={view.latest_digest_grounding}
+        runId={view.outputs_run_id}
+        setFeedback={setFeedback}
+      />
+
+      {/* MAR-507. Above Run now, because it is the step before it. Both are now
+          below the output: MAR-576's rule is that the agent's own work is the
+          page's primary content, and a control is not content. They stay in
+          this order relative to each other, and stay above everything that is
+          merely a record of what already happened. */}
       <InputsPanel
         busyRole={busyRole}
         canAct={canAct}
@@ -333,31 +397,17 @@ function AgentWorkspace(): ReactNode {
 
       <PermissionReceipt permissions={view.permissions} />
 
-      {/* Outside the snapshot branch on purpose. Outputs are DASH's own record
-          and outlive the process that made them, so a stopped or unreachable
-          agent still shows what it last produced.
-
-          MAR-434: this used to be `RunOutput` on `latest_digest` alone — one
-          artifact, on a page whose agent may well have written two. The panel
-          draws every output of that run, each with its own receipt and its own
-          availability, which is the same correction MAR-434 made on the run
-          detail page. `latest_digest_grounding` still rides along because
-          grounding is a verdict about the newest digest specifically. */}
-      <OutputsArea
-        agent={view.agent}
-        canAct={canAct}
-        cards={view.outputs}
-        grounding={view.latest_digest_grounding}
-        runId={view.outputs_run_id}
-        setFeedback={setFeedback}
-      />
-
       {/* MAR-548, ADR 0008 slice 3. Below DASH's own surfaces on purpose: the
           permission receipt and the Outputs area are DASH's record and DASH's
           controls, and the panel is somebody else's box. Putting the author's
           region above them would let a `note` sit where a person has learned to
           read DASH's own voice. It renders nothing at all for the agents that
-          declare no panel, which is most of them — see `AgentPanel`. */}
+          declare no panel, which is most of them — see `AgentPanel`.
+
+          MAR-576 moved DASH's own surfaces and deliberately left this where it
+          was: the fix for "the news is too far down" is to raise DASH's
+          rendering of the news, not to promote a region whose contents an author
+          controls. */}
       <AgentPanel view={view.panel} />
 
       {view.snapshot === null ? (
@@ -383,6 +433,114 @@ function AgentWorkspace(): ReactNode {
         />
       )}
     </>
+  );
+}
+
+/**
+ * The one sentence an agent older than DASH's own template is owed (MAR-576).
+ *
+ * ## Why this exists at all
+ *
+ * DASH ships one demo agent, and every machine that added it before MAR-548 has
+ * a manifest with no panel in it. MAR-553's migration deliberately never
+ * rewrites an author's document — the right rule — so those agents render
+ * without the report the same agent added today would draw, and until now
+ * nothing on screen said so. That is silent degradation on the product's only
+ * demo agent: the page simply looked like an agent that produces nothing.
+ *
+ * So the sentence is not a nicety. It is the render-side half of the discipline
+ * `MANIFEST_ONLY_DEPLOY_REFUSAL` applies on the deploy path — when DASH knows it
+ * is doing less than it could, it says so and names the way forward, rather than
+ * quietly doing less.
+ *
+ * ## The button is offered, never assumed
+ *
+ * `repairable` decides whether there is a control, and the sentence renders
+ * with or without one. `canAct` decides whether it is drawn at all rather than
+ * drawn disabled — `lib/workspace.ts`'s rule about dead controls, and sharper
+ * here than usual: a greyed-out "Update this agent" reads as "this agent cannot
+ * be updated", which is a claim about the agent rather than about the window.
+ *
+ * `detail` is rendered beside the button and not inside a confirmation dialog.
+ * The action replaces a saved document and preserves everything a person would
+ * miss, and saying which is which *before* the press is more use than a modal
+ * that appears after they have already decided.
+ */
+function ManifestGapNotice({
+  agent,
+  canAct,
+  gap,
+  onRefreshed,
+  setFeedback,
+}: {
+  agent: string;
+  canAct: boolean;
+  gap: ManifestGapView | null;
+  /** Re-read the workspace, so the page redraws with the panel it just gained. */
+  onRefreshed: () => void;
+  setFeedback: Dispatch<SetStateAction<CommandFeedback>>;
+}): ReactNode {
+  const [busy, setBusy] = useState(false);
+
+  if (gap === null) {
+    return null;
+  }
+
+  async function update(): Promise<void> {
+    setBusy(true);
+    setFeedback(null);
+    try {
+      const result = await refreshSampleAgent({ agent_id: agent });
+      setFeedback({
+        ok: result.ok,
+        message: result.detail ?? (result.ok ? SAMPLE_REFRESH_COPY.ok : SAMPLE_REFRESH_COPY.failed),
+      });
+      if (result.ok) {
+        onRefreshed();
+      }
+    } catch {
+      setFeedback({
+        ok: false,
+        message: "DASH could not reach the command boundary. Nothing was changed.",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const offered = gap.repairable && canAct;
+
+  return (
+    <div className="notice notice-warn manifest-gap" role="status">
+      <div className="manifest-gap-said">
+        <p>
+          <strong>{gap.card.headline}</strong>
+        </p>
+        <p className="wrap">{gap.card.meaning}</p>
+        {/* Only for the reader who has no button. With one, the control *is*
+            the way forward and this sentence would be the same instruction
+            twice; without one — a browser tab, or a shell older than the
+            command — it is the only way forward there is, and a notice that
+            named a problem and no way out would be the silence this issue is
+            about wearing a different shape. */}
+        {offered || gap.card.next_action === null ? null : (
+          <p className="next-action">{gap.card.next_action}</p>
+        )}
+      </div>
+      {offered ? (
+        <div className="manifest-gap-do">
+          <button
+            className="button-primary"
+            disabled={busy}
+            onClick={() => void update()}
+            type="button"
+          >
+            {busy ? SAMPLE_REFRESH_COPY.pending : SAMPLE_REFRESH_COPY.action}
+          </button>
+          <p className="muted wrap">{SAMPLE_REFRESH_COPY.detail}</p>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

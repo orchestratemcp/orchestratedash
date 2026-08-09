@@ -108,6 +108,88 @@ export const PANEL_UNREADABLE: PanelCard = {
 };
 
 /**
+ * An agent DASH scaffolded, whose saved document predates the panel (MAR-576).
+ *
+ * The third member of this family and the only one that renders **outside** the
+ * attributed region, because there is no region: the author declared no panel,
+ * so `PanelView` is `none` and `AgentPanel` correctly draws nothing at all. This
+ * card is DASH speaking in DASH's own voice about DASH's own gap, which is why
+ * it sits with the workspace's other notices rather than inside a box marked as
+ * somebody else's.
+ *
+ * ## Why this is not shown for every panel-less agent
+ *
+ * Most agents declare no panel and most of them never will. For them the
+ * absence is a choice, and a notice about it would be DASH nagging an author
+ * about a feature they never asked for — the rule that an agent which declared
+ * no panel "is not an agent that gets a default one", applied to copy.
+ *
+ * What makes this case different is that **DASH wrote the document itself**.
+ * `agent-kit/scaffold.ts` declares a panel today, so a manifest carrying DASH's
+ * own `create-dash-agent` provenance and no panel is a copy of DASH's own
+ * template from before the template had one. DASH is not reporting an author's
+ * omission here; it is reporting that its own scaffold has moved on — a fact
+ * only DASH can know and only DASH can fix.
+ *
+ * ## The silence it replaces
+ *
+ * MAR-553's migration deliberately never rewrites an author's manifest, which
+ * is the right rule and left this consequence unowned: the one agent DASH ships
+ * renders panel-less on every machine that added it before MAR-548, with
+ * nothing on screen saying why. That is silent degradation, and it is the same
+ * failure `MANIFEST_ONLY_DEPLOY_REFUSAL` refuses on the deploy path — say it
+ * plainly, and offer the way forward.
+ */
+/*
+ * ## Short, because it sits above the news
+ *
+ * The first draft of this card ran to a headline, a five-line explanation, a
+ * next action, a button and a four-line reassurance. Rendered at 375px it was
+ * 400px tall and it put the first headline 1156px down the page — which is
+ * within 10px of where the defect had it. A notice that explains why you cannot
+ * see something, by covering it, has not fixed anything.
+ *
+ * So it is one sentence, and the issue asked for exactly that. Two things paid
+ * for the cut and neither is missed:
+ *
+ * - The old `meaning` ended "everything it has already produced is below, and
+ *   none of it has been lost". With the output now directly underneath, that
+ *   sentence describes what the reader can already see. Reassurance about a
+ *   visible thing is noise.
+ * - The old `next_action` said to update it, one line above a button that says
+ *   "Update this agent". It is now the way forward for the reader who has *no*
+ *   button — a browser tab, or a shell too old to have the command — and
+ *   `ManifestGapNotice` renders it only then. Same field, no longer a duplicate.
+ */
+export const PANEL_PREDATES_CAPABILITY: PanelCard = {
+  headline: "This agent was added before DASH could show its own reports.",
+  meaning: "Updating it adds the summary a freshly added copy would draw for you.",
+  next_action: "Add this agent again from its own folder to bring it up to date.",
+};
+
+/**
+ * The control beside the card above, and what it promises (MAR-576).
+ *
+ * `detail` is neither a scare sentence nor a shrug. Re-importing genuinely does
+ * replace the saved document, and the two things a person actually worries about
+ * — losing what the agent produced, and losing the agent they recognise — are
+ * named as surviving, because `importManifest` really does preserve them: its
+ * `ON CONFLICT DO UPDATE` deliberately omits `avatar`, and runs, outputs and
+ * credentials live in tables it does not touch at all.
+ *
+ * One line rather than the three it took to say the same thing. It is a caption
+ * under a button, not a consent dialog: the action is reversible, nothing leaves
+ * this computer, and a paragraph of comfort would be its own kind of alarm.
+ */
+export const SAMPLE_REFRESH_COPY = {
+  action: "Update this agent",
+  pending: "Updating…",
+  detail: "Keeps its name, its character, everything it has produced and any connected accounts.",
+  ok: "Updated. This agent now shows its own report.",
+  failed: "DASH could not update this agent, and nothing was changed.",
+} as const;
+
+/**
  * Where a metric's number came from, said out loud beside it.
  *
  * ADR 0008 is explicit that collapsing these two "would let an agent's own

@@ -235,6 +235,23 @@ describe("all five components draw", () => {
     expect(html).toContain("A supervisor for long-running agents lands in beta");
   });
 
+  /**
+   * MAR-576, in the region whose whole purpose is "what did the scout find?".
+   *
+   * This file renders its own artifact card rather than reusing the Outputs
+   * area's, so fixing the ordering there fixed nothing here — and nothing said
+   * so. What said so was a screenshot of the packaged renderer after the
+   * re-import: the author's box drew "Made by / The agent's own time / Reached
+   * DASH / Size stored" above the headlines, which is the exact defect this
+   * issue was filed on, surviving one renderer down.
+   */
+  it("puts the report's own body above its provenance receipt", () => {
+    const headline = "A supervisor for long-running agents lands in beta";
+    expect(html.indexOf(headline)).toBeLessThan(
+      html.indexOf(OUTPUTS_PANEL_COPY.receipt.agent),
+    );
+  });
+
   it("draws a table, inside a box that scrolls rather than a page that does", () => {
     /*
      * MAR-491's finding is that a table in DASH becomes a 1425px scroller in a
@@ -396,6 +413,20 @@ describe("the panel asks the user for nothing", () => {
      * anything — no button, no toggle, no input — and that absence is the
      * strongest claim in this ADR." Asserted over the markup, because the claim
      * is about what reaches a screen rather than about what the schema allows.
+     *
+     * **`<details>` is deliberately not in this list, and it took MAR-576 an
+     * attempt to add it to find out why.** A disclosure is already inside this
+     * region and always has been: `DigestBody` draws `Where this came from` for
+     * any digest carrying `sources_fetched`, on every surface, since MAR-434.
+     * It arrives the same way a digest item's source link does — from the
+     * *artifact*, not from the panel vocabulary — which is the honest
+     * qualification `app/_components/panel.tsx`'s header already records about
+     * links. Adding `<details>` here asserts something untrue of the shipped
+     * product, and the assertion fails on a fixture whose digest names a source.
+     *
+     * What the list names is the set that can *submit or change something* —
+     * and that is the set both `tests/panel-spec.test.ts` and installed check
+     * 6o count, so the three agree.
      */
     for (const control of ["<button", "<input", "<textarea", "<select", "<form"]) {
       expect(html, control).not.toContain(control);
