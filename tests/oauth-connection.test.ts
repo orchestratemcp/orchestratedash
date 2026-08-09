@@ -29,6 +29,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import type { ConnectionSourceManifest } from "../lib/connections";
 import { Vault } from "../lib/vault";
 import { FakeSafeStorage } from "./fakes/fake-safe-storage";
+import { refusingAi } from "./fakes/ai-operations";
 import { oauthCredential, scriptedOAuth } from "./fakes/oauth-operations";
 import { expectPlainLanguage } from "./helpers/plain-language";
 
@@ -71,6 +72,10 @@ function deps(store: Vault, oauth: ReturnType<typeof scriptedOAuth>) {
       throw new Error("A sign-in field must never reach the typed-secret prompt.");
     },
     oauth,
+    // A sign-in is not a model provider key, so nothing in this file may reach a
+    // probe (MAR-582). Throws rather than answering, for the reason the prompt
+    // above does.
+    ai: refusingAi(),
   };
 }
 

@@ -20,6 +20,7 @@ import type { ConnectionSourceManifest } from "../lib/connections";
 import { Vault } from "../lib/vault";
 import { FakeSafeStorage } from "./fakes/fake-safe-storage";
 import { MemorySecureStore } from "./fakes/memory-secure-store";
+import { refusingAi } from "./fakes/ai-operations";
 import { refusingOAuth } from "./fakes/oauth-operations";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -82,6 +83,9 @@ function deps(
     // so the OAuth path being unreachable from it is a thing the suite proves
     // rather than a thing a reader checks (MAR-446).
     oauth: refusingOAuth(),
+    // The same, for the model-provider path (MAR-582). This file's connections
+    // name a provider DASH is not a client for, so nothing here may contact one.
+    ai: refusingAi(),
   };
 }
 

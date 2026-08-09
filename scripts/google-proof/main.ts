@@ -526,6 +526,16 @@ async function run(): Promise<void> {
             return startAuthorization(provider, target.oauth?.scopes ?? [], null).outcome;
           },
         },
+        // Never reached: this target is an OAuth field, and no model provider is
+        // involved in this proof at all. It throws rather than answering, for
+        // `promptForSecret`'s reason directly above — a wiring mistake that
+        // routed a Gmail connect through the model-key path should be loud
+        // (MAR-582).
+        ai: {
+          probe: () => {
+            throw new Error("the Gmail field is an OAuth target and has no model provider to probe");
+          },
+        },
       },
     );
 

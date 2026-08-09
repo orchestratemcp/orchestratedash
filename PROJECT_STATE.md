@@ -4179,3 +4179,114 @@ agent two ways. `AgentRow` carries no title and the Agents list renders the id
 deliberately, inside `<code>`; making the picker disagree with the list a person
 picked from would trade one inconsistency for another. It is a DASH-wide naming
 decision and not this issue's to take.
+
+## The AI-key layer, below the surface (MAR-582)
+
+A model provider's key — OpenRouter, Anthropic, OpenAI — is now a connection
+DASH takes custody of. The key is typed into the existing credential prompt,
+stored in the OS vault, presented by DASH on the agent's behalf, checked with one
+cheap call, and deleted on disconnect. **No page was built and none was touched**;
+`lib/ai/connection-view.ts` is the seam MAR-570's redesign will consume.
+
+### The schema question, checked rather than assumed
+
+The issue asked whether MAR-569's `api_key` kind plus a provider field covers
+this without a schema change. **It does.**
+`contracts/agent.manifest.v2.schema.json` types a connection's `provider` as an
+open string with no enumeration, and `connectionRequirementV1.connector_kind` has
+carried `api_key` since MAR-569. An author declares one `dash_managed`
+connection whose `provider` is `openrouter`, one required `secret` field, and one
+version 1 requirement of kind `api_key` pointing at it. Nothing was added.
+
+The `provider` string should **stay** open, and that is the half worth writing
+down. It is the author's word for what their agent talks to; DASH refusing an
+import because it named an unfamiliar service would be DASH deciding which agents
+may exist. What DASH decides is narrower and belongs in DASH's code:
+`lib/ai/providers.ts` is a closed, by-value list of the provider strings DASH
+will *act on*, in the shape `CONNECTOR_KINDS_V1` and `WRITE_PATHS` already have.
+An enumeration in the schema would have put that decision in a document third
+parties write against. ADR 0002 amendment 5 records both halves.
+
+### The third party is missing, and the card says so
+
+ADR 0002 amendment 1 says a grant is the intersection of three parties: DASH
+built the operation, the author declared what it needs, the user granted it
+through the provider. The third is the one a person can watch themselves give.
+
+A pasted key has no third party. No consent screen, no scope, nothing on the
+credential to intersect — a key is a bearer of whatever the account can do, and
+no request DASH makes can narrow that. `unused_scopes` and `missing_scopes` are
+empty for a keyed grant because there is nothing to compare, not because
+everything matched, and a reader cannot tell those apart from the arrays. So
+`describeKeyNarrowing` is a **required, nullable** field on the capability card
+and every keyed card carries it: DASH will only make the requests it has been
+built to make, and it cannot make the key itself smaller.
+
+Two smaller consequences fall out of the same absence. A key identifies nobody,
+so `account_hint` is null on every keyed audit row rather than four characters of
+a live secret. And disconnect withdraws nothing at the provider — DASH deletes
+its copy and says so, one clause short of the sign-in sentence.
+
+### One operation per provider, and it lists models
+
+`openrouter.models.list`, `anthropic.models.list`, `openai.models.list`. **There
+is no completion call, no streaming, no embedding, no image generation.** An
+agent holding one of these connections can find out what it could use and cannot
+spend a penny of the account behind it — narrower than any raw key produces, and
+plainly not yet useful. That is stage 1 of ADR 0002's own rollout shape applied
+to a new provider family; the next slice needs a cost story and a per-run budget
+this one did not invent. `tests/broker-boundary.test.ts` pins the operation set
+by value and separately asserts that nothing belonging to a model provider
+writes.
+
+### Three things that were nearly wrong
+
+**The delivery path.** A manifest could declare `technical.environment_name` on
+an API-key field and DASH would hand the value to the child process. Dropping it
+silently would have produced an agent that starts and then fails at whichever
+step needed the key, so it is refused at the moment a user presses Connect, with
+a sentence naming the fix — the argument `lib/connection-credentials.ts` already
+makes for a reserved environment name.
+
+**The two envelopes.** One vault name holds whatever the manifest's field kind
+said when it was written. `parseOAuthCredential` already refused a bare string,
+so one direction was covered; the other was not, and it was the dangerous one — a
+reader expecting a bare key would have found an OAuth envelope, taken the whole
+JSON document as the key, and sent a refresh token to a model provider as a
+bearer credential. A stored key now carries a discriminator and each parser
+refuses the other's document.
+
+**The model id.** The projection's first draft accepted `../../etc/passwd`,
+because a flat character class allowing `.` and `/` does. No operation
+interpolates a model id into a URL today, so it was not an escape — it was a
+value that would become one the moment somebody built the completion call this
+slice did not. `tests/ai-key-broker.test.ts` was written to watch for it and
+caught it; the pattern now requires each segment to start alphanumeric and
+refuses a run of dots outright.
+
+### What is proven
+
+**Unit tests only, and no real model provider has been contacted.**
+`tests/ai-key-broker.test.ts` drives the boundary from the agent's side with a
+planted key and asserts it reaches the header its provider reads and appears in
+no response, no audit row and no view; the liveness probe runs against a real
+loopback HTTP server, so the five states are a translation of what a server
+actually answered. Nothing here may be described as proven against OpenRouter,
+Anthropic or OpenAI's API, including that a real key is accepted, and there is no
+attended runbook for one yet.
+
+`pnpm verify:shell` was **not** run locally: a live DASH session and several
+other worktrees' Electron instances were on this machine, and AGENTS.md forbids
+force-killing them. CI's Windows `shell-smoke` is the installed-shell witness for
+this branch. Nothing in this slice is reachable from the installed journey
+anyway — there is no page — so the smoke exercises the same paths it did before,
+plus the migration.
+
+### The honesty defect this found in something else
+
+`COMMANDS["connection.test"]` said "Contacts no provider." That had already
+stopped being true when MAR-446 made `test` refresh an OAuth grant — a real
+request to Google — and the sentence an audit line quotes went on saying
+otherwise for four issues. MAR-582 adds the second kind that contacts one, so it
+is corrected rather than compounded: the effect now says what DASH holds decides
+whether a provider is asked, and names the promise that survives every branch.

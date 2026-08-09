@@ -370,8 +370,22 @@ export const COMMANDS = {
     irreversible: false,
   },
   "connection.test": {
+    // "Contacts no provider" until MAR-582, and it had already stopped being
+    // true: MAR-446 made this refresh an OAuth grant, which is a request to the
+    // provider, and the sentence in this catalogue — the one an audit line
+    // quotes — went on saying otherwise. MAR-582 adds the second kind that
+    // contacts one, so the wording is corrected rather than compounded.
+    //
+    // Worded by what DASH holds rather than by which of three branches runs,
+    // because the reader of an audit line has the connection in front of them
+    // and not this file. What survives every branch is the promise that matters:
+    // the check never sends the credential anywhere except to the service it
+    // belongs to, and never sends it anywhere at all for a service DASH is not a
+    // client for.
     effect:
-      "Check that this computer's vault still holds the credential for one connection. Contacts no provider.",
+      "Check that the credential DASH holds for one connection still works. For a provider sign-in " +
+      "or a model provider key this asks that provider; for anything else it reads this computer's " +
+      "vault and contacts nobody.",
     payload_keys: ["agent_id", "connection_id", "field_id"],
     required_keys: ["agent_id", "connection_id", "field_id"],
     // Reads the vault and writes the result of that read to the connection's

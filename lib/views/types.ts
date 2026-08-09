@@ -297,15 +297,22 @@ export interface ConnectionRowWithCredential extends ConnectionRequirementRow {
    */
   delivered_to_agent: boolean;
   /**
-   * Whether Connect opens a text box or a provider sign-in (MAR-446).
+   * Whether Connect opens a text box or a provider sign-in (MAR-446), and for a
+   * text box, whether what is typed stays with DASH (MAR-582).
    *
    * Null when DASH cannot hold this row at all. The page needs it because the
-   * two produce different sentences for the same situation: an API key DASH
+   * kinds produce different sentences for the same situation: an API key DASH
    * holds but cannot deliver has to be fetched by the agent some other way,
    * while a sign-in DASH holds but cannot deliver is one DASH will keep renewing
    * and the agent will reach through its own means.
+   *
+   * `provider_key` is the third, and it is typed like the first and behaves like
+   * the second: a key the user pastes for a model provider DASH *is* a client
+   * for. It is never delivered, it is reached through named operations, and it
+   * is the one kind DASH can ask a provider a real question about. See
+   * `lib/ai/providers.ts` for which services qualify and why the list is closed.
    */
-  credential_kind: "secret" | "oauth" | null;
+  credential_kind: "secret" | "oauth" | "provider_key" | null;
   /** The permission card, for a connection DASH brokers. Null otherwise. */
   broker: BrokerRowView | null;
 }

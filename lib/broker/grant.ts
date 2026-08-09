@@ -48,16 +48,47 @@
  * in, a decision out. No vault, no network, no clock.
  */
 
-import type { ConnectionSourceManifest, ManifestConnection } from "../connections";
+import type { AiKeyCredential } from "../ai/credential";
+import type { ConnectionSourceManifest, ManifestConnection, ManifestConnectionField } from "../connections";
 import type { OAuthCredential } from "../oauth/credential";
 import { operationsForProvider, type BrokerOperation } from "./operations";
 import {
   brokerProfileFor,
   describeClientOwner,
   describeCustody,
+  describeKeyNarrowing,
   operationProviderFor,
   type BrokerProviderProfile,
 } from "./providers";
+
+/**
+ * A credential the broker can act on (MAR-582).
+ *
+ * A discriminated union rather than a widened `OAuthCredential`, so every place
+ * that reads `scopes` has to say what it does when there are none. The two are
+ * told apart by `kind`, which only the key envelope carries — see
+ * `lib/ai/credential.ts` on why that discriminator exists at all, and on the
+ * confusion between the two that this union makes unrepresentable.
+ */
+export type BrokerCredential = OAuthCredential | AiKeyCredential;
+
+/** Is this a pasted provider key rather than a sign-in DASH negotiated? */
+export function isKeyCredential(credential: BrokerCredential): credential is AiKeyCredential {
+  return "kind" in credential && credential.kind === "ai_provider_key";
+}
+
+/**
+ * Whose account this credential belongs to, or null when it does not say.
+ *
+ * Always null for a key, and that is a fact rather than a gap: a provider key is
+ * an opaque string that identifies nobody. The audit's `account_hint` is
+ * therefore empty for every keyed call, which is the honest answer — deriving
+ * one from the key would put four characters of a live secret into a durable
+ * table to answer a question the key cannot answer.
+ */
+export function credentialAccount(credential: BrokerCredential): string | null {
+  return isKeyCredential(credential) ? null : credential.account;
+}
 
 /** Why an agent has no brokered access to something it named. */
 export type GrantRefusal =
@@ -69,6 +100,25 @@ export type GrantRefusal =
   | "no_broker_profile"
   /** The connection declares no OAuth field, so there is no grant to resolve. */
   | "no_oauth_field"
+  /**
+   * The connection declares no single required secret field, so there is
+   * nowhere for a provider key to live (MAR-582).
+   *
+   * Its own code rather than reusing `no_oauth_field`, because the fix differs:
+   * one manifest is missing a sign-in declaration and the other is missing a key
+   * field, and a refusal that named the wrong one would send an author to the
+   * wrong line of their own document.
+   */
+  | "no_key_field"
+  /**
+   * The stored credential is the wrong kind for this connection (MAR-582).
+   *
+   * A sign-in envelope under a connection whose manifest now declares a key, or
+   * the reverse. Reachable when an author changes a field's kind between
+   * exports, and refused rather than coerced: the alternative is presenting a
+   * refresh token to a model provider as a bearer key.
+   */
+  | "credential_kind_mismatch"
   /** DASH holds no credential for it yet. */
   | "not_connected"
   /**
@@ -156,21 +206,36 @@ function findConnection(
 }
 
 /**
- * The connection's OAuth field, if it has exactly one.
+ * The one field of this connection a brokered credential lives in, or null.
  *
- * A connection with two OAuth fields is not modelled and is refused rather than
- * guessed at: which of them a grant belongs to would be DASH's choice, and a
- * credential filed against the wrong field is one a disconnect would not delete.
+ * A connection with two fields of the wanted kind is not modelled and is refused
+ * rather than guessed at: which of them a credential belongs to would be DASH's
+ * choice, and a credential filed against the wrong field is one a disconnect
+ * would not delete.
+ *
+ * Which kind is wanted comes from the **profile**, not from the manifest
+ * (MAR-582). That direction matters: DASH decides how it holds a credential for
+ * a given provider, and a manifest that declared a pasted key for a connection
+ * DASH signs into would otherwise choose the weaker of the two custody models
+ * for itself.
  */
-function oauthField(
+function brokeredCredentialField(
   connection: ManifestConnection,
+  profile: BrokerProviderProfile,
 ): { id: string; scopes: string[] } | null {
-  const fields = connection.fields.filter((field) => field.kind === "oauth_reauthorization");
+  const wanted: ManifestConnectionField["kind"] =
+    profile.credential_kind === "provider_key" ? "secret" : "oauth_reauthorization";
+  const fields = connection.fields.filter((field) => field.kind === wanted);
   const only = fields.length === 1 ? fields[0] : undefined;
   if (only === undefined) {
     return null;
   }
   return { id: only.id, scopes: [...(only.technical?.provider_scopes ?? [])] };
+}
+
+/** The refusal for a connection with no usable field, worded by what is missing. */
+function noFieldRefusal(profile: BrokerProviderProfile): GrantRefusal {
+  return profile.credential_kind === "provider_key" ? "no_key_field" : "no_oauth_field";
 }
 
 /**
@@ -198,9 +263,9 @@ export function brokeredField(
   if (profile === null) {
     return { ok: false, refusal: "no_broker_profile" };
   }
-  const field = oauthField(connection);
+  const field = brokeredCredentialField(connection, profile);
   if (field === null) {
-    return { ok: false, refusal: "no_oauth_field" };
+    return { ok: false, refusal: noFieldRefusal(profile) };
   }
   return {
     ok: true,
@@ -224,7 +289,7 @@ export function resolveGrant(
   agentId: string,
   manifest: ConnectionSourceManifest,
   connectionId: string,
-  credential: OAuthCredential | null,
+  credential: BrokerCredential | null,
   secretName: string,
 ): GrantResolution {
   const connection = findConnection(manifest, connectionId);
@@ -244,12 +309,27 @@ export function resolveGrant(
     return { ok: false, refusal: "no_broker_profile" };
   }
 
-  const field = oauthField(connection);
+  const field = brokeredCredentialField(connection, profile);
   if (field === null) {
-    return { ok: false, refusal: "no_oauth_field" };
+    return { ok: false, refusal: noFieldRefusal(profile) };
   }
   if (credential === null) {
     return { ok: false, refusal: "not_connected" };
+  }
+
+  // The two kinds must agree before anything is read out of the credential. A
+  // mismatch here is a manifest whose field kind changed under a stored value,
+  // and coercing it would mean presenting one provider's credential to another
+  // (MAR-582). Written as two checks around the narrowing rather than one
+  // equality, so the compiler carries the distinction into the branches instead
+  // of a reader having to.
+  if (isKeyCredential(credential)) {
+    return profile.credential_kind === "provider_key"
+      ? resolveKeyGrant(agentId, connectionId, field.id, profile, secretName)
+      : { ok: false, refusal: "credential_kind_mismatch" };
+  }
+  if (profile.credential_kind === "provider_key") {
+    return { ok: false, refusal: "credential_kind_mismatch" };
   }
 
   const declared = new Set(field.scopes);
@@ -317,6 +397,115 @@ export function resolveGrant(
   };
 }
 
+/**
+ * What a pasted key grants (MAR-582).
+ *
+ * **Two of the three parties, and the missing one is named rather than
+ * simulated.** DASH's half is real and is the whole of the narrowing: the
+ * operations below are the ones this file's own list holds for the provider, and
+ * nothing else can be reached with the key however it is asked for. The author's
+ * half is real too, in the weaker sense that the manifest had to declare the
+ * connection at all for any of this to resolve.
+ *
+ * The user's half does not exist. There is no consent screen, no scope, and
+ * nothing on the credential that could be intersected — so `unused_scopes` and
+ * `missing_scopes` are empty because there is nothing to compare, not because
+ * everything matched. A reader of a grant cannot tell those two apart from the
+ * arrays alone, which is exactly why `describeKeyNarrowing` exists and why
+ * `describeGrant` puts its sentence on every card built from one of these.
+ *
+ * `account` is null. A key does not say whose it is, and a masked hint derived
+ * from the key itself would answer "which of my accounts is this" with four
+ * characters of a secret — the mistake `maskAccount` was added to stop.
+ */
+function resolveKeyGrant(
+  agentId: string,
+  connectionId: string,
+  fieldId: string,
+  profile: BrokerProviderProfile,
+  secretName: string,
+): GrantResolution {
+  const operations: GrantedOperation[] = operationsForProvider(
+    operationProviderFor(profile),
+  ).map((operation) => ({
+    id: operation.id,
+    label: operation.label,
+    access: operation.access,
+    consequence: operation.access === "write" ? operation.consequence : null,
+  }));
+
+  if (operations.length === 0) {
+    // A profile DASH has built nothing on. Reported as the same code an empty
+    // OAuth intersection produces, because it is the same fact from the user's
+    // side — the connection is real and reaches no action.
+    return { ok: false, refusal: "no_operations_granted", missing_scopes: [] };
+  }
+
+  return {
+    ok: true,
+    grant: {
+      agent_id: agentId,
+      connection_id: connectionId,
+      field_id: fieldId,
+      profile,
+      secret_name: secretName,
+      account: null,
+      operations: [
+        ...operations.filter((operation) => operation.access === "write"),
+        ...operations.filter((operation) => operation.access === "read"),
+      ],
+      unused_scopes: [],
+      missing_scopes: [],
+    },
+  };
+}
+
+/**
+ * What a keyed connection grants, **without reading the key** (MAR-582).
+ *
+ * Not a convenience. It is the statement that a provider key contributes nothing
+ * to the decision: the operations DASH will perform with one are a function of
+ * the manifest and this repository's own list, and the credential is only ever
+ * the thing that authorizes the request afterwards. `resolveGrant` needs a
+ * credential because the OAuth half genuinely reads scopes off it; this half
+ * never could, and a caller made to produce a credential-shaped object in order
+ * to ask would be a caller inventing one.
+ *
+ * Used where a receipt is written — the moment a key is stored, before anything
+ * has been done with it — and it resolves the same grant the broker itself would
+ * for the same connection, which is what stops a card listing something a
+ * request would then be refused.
+ *
+ * Refuses a connection whose profile is a sign-in, because the answer for one of
+ * those is genuinely unknowable without the credential.
+ */
+export function resolveKeyGrantWithoutCredential(
+  agentId: string,
+  manifest: ConnectionSourceManifest,
+  connectionId: string,
+  secretName: string,
+): GrantResolution {
+  const connection = findConnection(manifest, connectionId);
+  if (connection === undefined) {
+    return { ok: false, refusal: "unknown_connection" };
+  }
+  if (connection.ownership !== "dash_managed") {
+    return { ok: false, refusal: "not_dash_managed" };
+  }
+  const profile = brokerProfileFor(connection.provider);
+  if (profile === null) {
+    return { ok: false, refusal: "no_broker_profile" };
+  }
+  if (profile.credential_kind !== "provider_key") {
+    return { ok: false, refusal: "credential_kind_mismatch" };
+  }
+  const field = brokeredCredentialField(connection, profile);
+  if (field === null) {
+    return { ok: false, refusal: "no_key_field" };
+  }
+  return resolveKeyGrant(agentId, connectionId, field.id, profile, secretName);
+}
+
 /** Is this operation one this grant covers? The allowlist check, by id. */
 export function grants(grant: BrokerGrant, operationId: string): boolean {
   return grant.operations.some((operation) => operation.id === operationId);
@@ -371,6 +560,17 @@ export interface CapabilityCard {
    * line asks.
    */
   wider_permission_sentence: string | null;
+  /**
+   * How much of the three-party check this connection actually got, or null
+   * when it got all of it (MAR-582).
+   *
+   * Required-and-nullable, in `wider_permission_sentence`'s shape and for its
+   * reason: the fact this line carries is uncomfortable and specific to one
+   * custody model, and a card that could omit it would omit it exactly when a
+   * second keyed provider arrived and nobody remembered. `describeKeyNarrowing`
+   * writes it; a signed-in connection gets null and says nothing.
+   */
+  key_narrowing_sentence: string | null;
 }
 
 /**
@@ -386,6 +586,7 @@ export function describeGrant(grant: BrokerGrant, displayName: string): Capabili
   const unusedCount = grant.unused_scopes.length;
   return {
     wider_permission_sentence: widerPermissionSentence(grant),
+    key_narrowing_sentence: describeKeyNarrowing(grant.profile),
     connection_id: grant.connection_id,
     service: grant.profile.label,
     requesting_agent: displayName,
@@ -450,10 +651,18 @@ export function requestedOperations(
     return [];
   }
   const profile = brokerProfileFor(connection.provider);
-  const field = oauthField(connection);
-  if (profile === null || field === null) {
+  if (profile === null) {
     return [];
   }
+  const field = brokeredCredentialField(connection, profile);
+  if (field === null) {
+    return [];
+  }
+  // A key field declares no scopes, and every model-provider operation requires
+  // none — so the filter below passes them all, which is the right answer rather
+  // than a coincidence: what a keyed connection asks for is everything DASH has
+  // built for that provider (MAR-582). `describeKeyNarrowing` is what stops that
+  // reading as a permission the user chose.
   const declared = new Set(field.scopes);
   return operationsForProvider(operationProviderFor(profile)).filter((operation) =>
     operation.required_scopes.every((scope) => declared.has(scope)),

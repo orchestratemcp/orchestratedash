@@ -63,6 +63,8 @@
  * an untrusted input.
  */
 
+import { aiModelsUrl, aiProviders, type AiProviderProfile } from "../ai/providers";
+
 /** Read or write *at the provider*. Drives ordering and the words on a card. */
 export type BrokerAccess = "read" | "write";
 
@@ -784,6 +786,100 @@ const GMAIL_DRAFT_CREATE: WriteOperation = {
   },
 };
 
+/* ---------------------------------------------------------------------- *
+ * Model providers (MAR-582)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * A model id, conservatively.
+ *
+ * Provider content, and therefore untrusted under ADR 0002 invariant 7. The
+ * shape here is the one the three registries actually use — a bare name like
+ * `gpt-4.1-mini`, or one vendor segment and one model segment as in
+ * `anthropic/claude-opus-4` and `meta-llama/llama-3.3-70b:free` — expressed as
+ * an allowlist rather than an exclusion, so the safety argument is short: no
+ * whitespace, no control characters, no quotes, no angle brackets and no
+ * backslash can appear in a value that passes.
+ *
+ * **The structure matters as much as the character set**, which a flat
+ * character class got wrong on its first draft: `[A-Za-z0-9._:/-]+` accepts
+ * `../../etc/passwd`, and a test written to watch for exactly that caught it. No
+ * operation interpolates a model id into a URL today — there is no completion
+ * call — so it was not yet an escape; it was a value that would become one the
+ * moment somebody built the operation this slice deliberately did not. Requiring
+ * each segment to begin with an alphanumeric, allowing at most one separator,
+ * and refusing a run of dots outright means a traversal cannot be spelled at
+ * all rather than being harmless for now.
+ */
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(\/[A-Za-z0-9][A-Za-z0-9._:-]{0,63})?$/;
+
+/** A model id DASH is willing to name, structure and characters both. */
+function isModelId(id: string): boolean {
+  return MODEL_ID.test(id) && !id.includes("..");
+}
+
+/** The most model ids one answer will carry across the boundary. */
+const MAX_MODELS = 200;
+
+/**
+ * Read the list of models a key can reach.
+ *
+ * **The only thing DASH has built on a model key, and stage 1 of exactly the
+ * shape ADR 0002's rollout uses.** There is no completion operation, no
+ * streaming, no embedding and no image call — so an agent holding this
+ * connection can find out what it *could* use and cannot spend a penny of the
+ * account behind it. That is a narrower agent than any raw key produces, and it
+ * is also, plainly, not yet a useful one: a completion operation is the next
+ * slice, and it needs a cost story and a per-run budget this one deliberately
+ * does not invent.
+ *
+ * All three providers answer this question the same way — an object with a
+ * `data` array of objects carrying an `id` — which is why one projection serves
+ * three profiles rather than three near-identical ones.
+ *
+ * Ids only. Not descriptions, not context lengths, not prices: a projection that
+ * carried a provider's marketing copy into an agent's reasoning is precisely the
+ * injection surface invariant 7 is about, and an agent that needs a price is an
+ * agent asking a question DASH has not built an operation for.
+ */
+function modelsListOperation(provider: AiProviderProfile): ReadOperation {
+  return {
+    id: `${provider.id}.models.list`,
+    connection_provider: provider.connection_provider,
+    label: `See which models your ${provider.label} key can use`,
+    access: "read",
+    // Empty, and not a placeholder. A key carries no scopes, so step 3 of the
+    // three-party intersection has nothing to say — see `describeKeyNarrowing`,
+    // which is where a card admits that rather than implying otherwise.
+    required_scopes: [],
+    max_response_bytes: 1_048_576,
+
+    plan(origin) {
+      // Built from the profile's own frozen path and re-rooted on the origin the
+      // broker resolved, so a request cannot reach a second provider's registry
+      // even if the two profiles were ever confused. `aiModelsUrl` is the same
+      // construction DASH's own liveness probe uses; one URL, built once.
+      const url = new URL(new URL(aiModelsUrl(provider)).pathname, origin);
+      return { ok: true, call: { method: "GET", url: url.toString() } };
+    },
+
+    project(body) {
+      const data = (body as { data?: unknown } | null)?.data;
+      const list = Array.isArray(data) ? data : [];
+      return {
+        models: list
+          .map((entry) => readString(entry, "id"))
+          .filter((id): id is string => id !== undefined && isModelId(id))
+          .slice(0, MAX_MODELS),
+      };
+    },
+  };
+}
+
+const MODEL_OPERATIONS: readonly ReadOperation[] = Object.freeze(
+  aiProviders().map(modelsListOperation),
+);
+
 /**
  * Every operation the broker will ever perform, frozen.
  *
@@ -791,11 +887,18 @@ const GMAIL_DRAFT_CREATE: WriteOperation = {
  * shape and a projection — which is the point. There is no path from a manifest,
  * a scope, a connection or an agent request to an entry that is not written here
  * by hand.
+ *
+ * The model-provider entries are generated from `lib/ai/providers.ts` rather
+ * than written out three times, and that is not a loophole: the generator takes
+ * a profile from a closed, by-value list and produces one read whose path,
+ * origin and projection are all fixed here. Widening the set still means editing
+ * a reviewed array — it is just a different array (MAR-582).
  */
 const OPERATIONS: readonly BrokerOperation[] = Object.freeze([
   GMAIL_SEARCH,
   GMAIL_MESSAGE_READ,
   GMAIL_DRAFT_CREATE,
+  ...MODEL_OPERATIONS,
 ]);
 
 /**
