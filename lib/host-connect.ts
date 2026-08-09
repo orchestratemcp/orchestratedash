@@ -464,6 +464,26 @@ export function readProbeStanding(
     };
   }
   const problem = result.data?.["problem"];
+  // The enrollment moment on an unpinned record (MAR-572, surfaced by
+  // MAR-579): the probe answers with the offered fingerprint rather than a
+  // bare failure, and every reader of a probe shows the same Confirm rather
+  // than a refusal. Falls through to the plain refusal when the probe did not
+  // carry the identity, so a probe without one degrades to MAR-572's original
+  // hard stop instead of inventing a fingerprint to confirm.
+  if (problem === "host_key_not_trusted") {
+    const fingerprint = result.data?.["fingerprint"];
+    const keyType = result.data?.["key_type"];
+    const offered = result.data?.["offered_count"];
+    if (typeof fingerprint === "string" && typeof keyType === "string") {
+      return {
+        step: "confirm_host_key",
+        label,
+        fingerprint,
+        key_type: keyType,
+        offered_count: typeof offered === "number" ? offered : 1,
+      };
+    }
+  }
   return typeof problem === "string" && HOST_REACH_PROBLEMS.includes(problem as HostReachProblem)
     ? { step: "unreachable", label, problem: problem as HostReachProblem }
     : null;

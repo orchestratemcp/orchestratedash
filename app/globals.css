@@ -1382,6 +1382,35 @@ a.plain:hover {
   border-top: 1px solid var(--line);
 }
 
+/*
+ * The one-paste bootstrap (MAR-573, MAR-579). A long multi-line script, so it
+ * scrolls inside its own box rather than stretching the card sideways — the
+ * same discipline `.public-key` keeps for the shorter key line.
+ */
+.setup-script {
+  margin: var(--density-gap) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-0);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  max-height: 18rem;
+  overflow: auto;
+  white-space: pre;
+}
+
+/* The enrollment confirmation and the setup step, spaced off the facts above. */
+.enrollment-panel,
+.setup-panel {
+  margin-top: var(--density-gap);
+  padding-top: var(--density-gap);
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
 /* ---------------------------------------------------------------------- *
  * A saved server (MAR-574)
  *
