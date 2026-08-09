@@ -18,6 +18,7 @@ import {
    either way — but a dead import of the component whose whole job is to draw
    the thing a user says is missing is a false lead, and removing it is cheaper
    than the next person following it. */
+import { DeployToServer } from "../../_components/deploy";
 import { InputsPanel, type SelectedInput } from "../../_components/inputs";
 import { OAvatar } from "../../_components/o-avatar";
 import { OutputsPanel } from "../../_components/outputs";
@@ -394,6 +395,18 @@ function AgentWorkspace(): ReactNode {
         pending={pending}
         snapshot={view.snapshot}
       />
+
+      {/* MAR-577. Directly under Run now, because it is the same question asked
+          of a different machine — "run this, there" beside "run this, here" —
+          and a person deciding between them should not have to find one of the
+          two on another page. Below the output for MAR-576's reason: the
+          agent's own work is the page's primary content and a control is not
+          content.
+
+          The issue's second direction. The Servers page asks which agent goes
+          on a machine; this asks which machine an agent goes on, and both reach
+          the same `host.deploy`. */}
+      <DeployToServer agent={view.agent} title={view.title} deploy={view.deploy} canAct={canAct} />
 
       <PermissionReceipt permissions={view.permissions} />
 

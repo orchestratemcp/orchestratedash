@@ -1417,6 +1417,41 @@ a.plain:hover {
   margin-top: var(--density-gap);
 }
 
+/* ---------------------------------------------------------------------- *
+ * Running an agent on a server, from the agent's own page (MAR-577)
+ *
+ * The second of the two directions a deploy can start from. No new card system
+ * here either: it is an ordinary `.section` on the agent workspace, carrying the
+ * same receipt block the Servers page draws.
+ *
+ * The measure is the server card's `56rem` and that is the point of naming it
+ * twice. The content is identical — DASH's own disclosure paragraphs and a
+ * three-item list — and the agent workspace has no width of its own, so without
+ * this the same three sentences would run to a single 1280px line here and wrap
+ * at a readable measure two pages away.
+ * ---------------------------------------------------------------------- */
+.deploy-section {
+  max-width: 56rem;
+}
+
+.deploy-section > .field-label {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--density-gap);
+}
+
+/*
+ * What is happening, or what happened.
+ *
+ * Only the failure branch carries `.notice`, which brings its own spacing; the
+ * in-flight and finished states are plain text in the flow of the section and
+ * need it here. `:not()` rather than a second class, so a state that later
+ * becomes a notice cannot end up with both.
+ */
+.deploy-outcome:not(.notice) {
+  margin-top: var(--density-gap);
+}
+
 /*
  * The one recommendation on this surface, and the block is quiet on purpose.
  *

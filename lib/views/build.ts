@@ -47,7 +47,12 @@ import {
   listAnalyzedRuns,
 } from "../insights";
 import { listRegistrations, type ManagedRegistration } from "../registration";
-import { readAgentFolderManifest } from "../agent-folders";
+import {
+  MANIFEST_ONLY_DEPLOY_REFUSAL,
+  UNREADABLE_FOLDER_DEPLOY_REFUSAL,
+  inspectAgentFolderStanding,
+  readAgentFolderManifest,
+} from "../agent-folders";
 import { describeManifestGap } from "../sample-refresh";
 import {
   artifactRecordsForAgent,
@@ -76,6 +81,7 @@ import {
   type WorkspaceManifest,
 } from "../workspace";
 import type {
+  AgentDeployView,
   AgentOriginView,
   AgentsView,
   BrokerCapabilityView,
@@ -114,6 +120,37 @@ export function agentOrigin(registration: ManagedRegistration | undefined): Agen
 }
 
 /**
+ * Whether DASH holds enough of this agent to send it to a server (MAR-577).
+ *
+ * The same three-way answer `produceAgentFolderBundle` opens with, projected for
+ * a renderer rather than acted on. Only `complete` is deployable: a migrated
+ * agent has its author's document and no program, and the refusal for that is
+ * MAR-553's own sentence, unchanged, because it is the one the trusted side will
+ * give back if a page ignores this and presses anyway.
+ *
+ * Never throws. `inspectAgentFolderStanding` refuses an agent name that cannot
+ * be a folder component — a legacy row is allowed to be one — and a view that
+ * threw there would take the whole agents list down over a row that simply
+ * cannot be deployed. That is the answer either way, so it is the answer given.
+ */
+export function agentDeployStanding(agent: string): AgentDeployView {
+  let standing: ReturnType<typeof inspectAgentFolderStanding>;
+  try {
+    standing = inspectAgentFolderStanding(dataDir, agent);
+  } catch {
+    return { deployable: false, refusal: UNREADABLE_FOLDER_DEPLOY_REFUSAL };
+  }
+  switch (standing.kind) {
+    case "complete":
+      return { deployable: true, refusal: null };
+    case "manifest_only":
+      return { deployable: false, refusal: MANIFEST_ONLY_DEPLOY_REFUSAL };
+    case "unreadable":
+      return { deployable: false, refusal: UNREADABLE_FOLDER_DEPLOY_REFUSAL };
+  }
+}
+
+/**
  * The agents list.
  *
  * Registrations are read from the directory rather than from the store, for the
@@ -142,6 +179,10 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
       // character; the way to guarantee that is for all three to be reading one
       // stored value rather than each deriving its own.
       avatar: agent.avatar,
+      // MAR-577. One folder inspection per row, beside the registration read
+      // this function already does per row. It is what lets the Servers page's
+      // deploy panel say which of these agents it could actually send.
+      deploy: agentDeployStanding(agent.name),
     })),
     // Composed here rather than in the page, so both hosts hand the renderer the
     // same sentence — the property this module exists to keep.
@@ -874,6 +915,10 @@ export function workspaceView(
     // row that disagrees with it would be DASH reporting its own index back at
     // them as their agent.
     manifest_gap: describeManifestGap(document),
+    // MAR-577. The same fact the agents list carries, on the page where the
+    // agent is already chosen — so its deploy section can refuse before it
+    // offers a server rather than after somebody picks one.
+    deploy: agentDeployStanding(agent),
   };
 }
 

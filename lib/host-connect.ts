@@ -429,6 +429,46 @@ export const HOST_REACH_PROBLEMS = [
   "runner_refused_credential",
 ] as const satisfies readonly HostReachProblem[];
 
+/**
+ * A probe's answer, as a standing (MAR-577).
+ *
+ * Two surfaces now ask a server what is running on it — the Servers page and an
+ * agent's own page — and both have to turn one command result into one of these
+ * states. Written twice, they would drift on the branch that matters least often
+ * and most: the unclassified refusal.
+ *
+ * **`null` means DASH could not classify what came back**, and the caller is
+ * expected to say the generic thing rather than pick the nearest problem.
+ * Naming a problem DASH did not establish sends somebody to fix a thing that is
+ * not broken, which is the whole reason `classifyHostFailure` may return null
+ * one layer down.
+ *
+ * The argument is structural rather than a `CommandResult`: that type lives in
+ * `lib/shell/ipc.ts`, which reaches the trusted side, and this module is
+ * imported by pages.
+ */
+export function readProbeStanding(
+  label: string,
+  result: { ok: boolean; data?: Record<string, unknown> },
+): HostConnectState | null {
+  if (result.ok) {
+    const build = result.data?.["runner_build"];
+    const running = result.data?.["agents_running"];
+    return {
+      step: "reachable",
+      label,
+      runner_build: typeof build === "string" && build !== "" ? build : null,
+      // Zero rather than a guess when the field is missing: the count is the
+      // server's answer, and an absent answer is not a number DASH may invent.
+      agents_running: typeof running === "number" ? running : 0,
+    };
+  }
+  const problem = result.data?.["problem"];
+  return typeof problem === "string" && HOST_REACH_PROBLEMS.includes(problem as HostReachProblem)
+    ? { step: "unreachable", label, problem: problem as HostReachProblem }
+    : null;
+}
+
 /* ---------------------------------------------------------------------- *
  * Turning what `ssh` said into one of the nine
  * ---------------------------------------------------------------------- */

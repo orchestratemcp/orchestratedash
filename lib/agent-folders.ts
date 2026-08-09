@@ -56,6 +56,22 @@ export const MAX_AGENT_MANIFEST_BYTES = 524_288;
 export const MANIFEST_ONLY_DEPLOY_REFUSAL =
   "This agent's build lives outside DASH; re-import it to put a copy in DASH's keeping.";
 
+/**
+ * The other reason a deploy surface has nothing to offer (MAR-577).
+ *
+ * `inspectAgentFolderStanding` has three answers and the refusal above covers
+ * one of them. An agent whose folder DASH cannot read at all is a different
+ * situation with a different cause — a folder that was never materialised, or
+ * one something has since damaged — and it must not borrow a sentence claiming
+ * the build lives somewhere else, which would send the person re-importing from
+ * a project that may have been fine all along.
+ *
+ * Worded as DASH's own failure, because it is one. `describeStoreDamage` already
+ * carries the diagnosis; this is the deploy surface's one line about it.
+ */
+export const UNREADABLE_FOLDER_DEPLOY_REFUSAL =
+  "DASH cannot read what it saved for this agent, so it has nothing to send to a server.";
+
 export interface AgentFolderFile {
   /** Project-relative, with either separator accepted and neither trusted. */
   path: string;

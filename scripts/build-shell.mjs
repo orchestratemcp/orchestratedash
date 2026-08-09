@@ -247,6 +247,19 @@ await Promise.all([
     format: "esm",
   }),
 
+  // The deploy surface's own screenshot harness (MAR-577), on the same terms
+  // again. Two facts the store decides, not one: whether an agent can be sent
+  // anywhere is its folder standing, and whether a server is offered is the host
+  // table. A run against whatever a machine holds photographs one branch of each
+  // and cannot say which. This one seeds the store it was pointed at and is run
+  // once per scene. See `electron/capture-deploy.ts`.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-deploy.ts")],
+    outfile: path.join(outDir, "capture-deploy.mjs"),
+    format: "esm",
+  }),
+
   // MAR-423. "Try a sample agent" scaffolds a project, and a scaffold needs the
   // same `scripts/open-in-dash.mjs` the Agent Kit copies in, so the user can
   // re-add their agent later from their own folder without DASH.

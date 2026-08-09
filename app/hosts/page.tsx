@@ -21,9 +21,11 @@ import {
 import {
   HOST_REACH_PROBLEMS,
   describeConnectState,
+  readProbeStanding,
   type HostConnectState,
   type HostReachProblem,
 } from "../../lib/host-connect";
+import type { DeployStanding } from "../../lib/deploy/deploying";
 import { describeDuplicateHost, findDuplicateHost } from "../../lib/hosts";
 import { describeDuplicateRecords, summariseServers } from "../../lib/server-card";
 import { describeDeployArrangement } from "../../lib/deploy/receipt";
@@ -649,9 +651,24 @@ export default function HostsPage(): ReactNode {
   const [standings, setStandings] = useState<Record<string, HostConnectState>>({});
   const [busyHost, setBusyHost] = useState<string | null>(null);
   const [notices, setNotices] = useState<Record<string, string>>({});
+  /*
+   * When each standing above was given, and how each card's last deploy went
+   * (MAR-577).
+   *
+   * Both live beside the standing rather than in the store, and for its reason:
+   * DASH records nothing about a check and nothing about a deploy, so a value
+   * that outlived the visit would be a claim with nothing left to check it.
+   */
+  const [checkedAt, setCheckedAt] = useState<Record<string, string>>({});
+  const [deploys, setDeploys] = useState<Record<string, DeployStanding>>({});
 
   function setStanding(hostId: string, standing: HostConnectState): void {
     setStandings((current) => ({ ...current, [hostId]: standing }));
+  }
+
+  /** Stamped when a *server's answer* arrives, never when a check begins. */
+  function stampChecked(hostId: string): void {
+    setCheckedAt((current) => ({ ...current, [hostId]: new Date().toISOString() }));
   }
 
   function setNotice(hostId: string, detail: string | null): void {
@@ -673,49 +690,63 @@ export default function HostsPage(): ReactNode {
     const result = await submitHostCommand("probe", { host_id: server.host_id });
     setBusyHost(null);
 
-    if (result.ok) {
-      const runnerBuild = result.data?.["runner_build"];
-      const running = result.data?.["agents_running"];
-      setStanding(server.host_id, {
-        step: "reachable",
-        label: server.label,
-        runner_build: typeof runnerBuild === "string" && runnerBuild !== "" ? runnerBuild : null,
-        agents_running: typeof running === "number" ? running : 0,
-      });
-      return;
-    }
-
-    const problem = result.data?.["problem"];
-    if (typeof problem === "string" && HOST_REACH_PROBLEMS.includes(problem as HostReachProblem)) {
-      setStanding(server.host_id, {
-        step: "unreachable",
-        label: server.label,
-        problem: problem as HostReachProblem,
-      });
-      return;
-    }
-
     /*
-     * A refusal the transport could not classify. The standing goes back to
-     * not-checked rather than to any of the six problems: naming one DASH did
-     * not establish would send somebody to fix a thing that is not broken.
+     * MAR-577. One reading of a probe's answer, shared with the agent page's own
+     * deploy section — see `readProbeStanding`. Null is the case that matters:
+     * a refusal the transport could not classify goes back to not-checked rather
+     * than to any of the nine problems, because naming one DASH did not
+     * establish sends somebody to fix a thing that is not broken.
      */
-    setStanding(server.host_id, { step: "not_checked", label: server.label });
-    setNotice(server.host_id, result.detail ?? "DASH could not check this server.");
+    const standing = readProbeStanding(server.label, result);
+    if (standing === null) {
+      setStanding(server.host_id, { step: "not_checked", label: server.label });
+      setNotice(server.host_id, result.detail ?? "DASH could not check this server.");
+      return;
+    }
+    setStanding(server.host_id, standing);
+    stampChecked(server.host_id);
   }
 
   async function deploy(server: SavedServerView, agentId: string): Promise<void> {
     setBusyHost(server.host_id);
     setNotice(server.host_id, null);
+    /*
+     * The in-flight state, said rather than implied by a disabled button
+     * (MAR-577). Installing a bundle over SSH takes long enough that a control
+     * which simply greyed out reads as a page that has stopped responding —
+     * which is how somebody comes to press it again, or to close DASH mid-push.
+     */
+    setDeploys((current) => ({
+      ...current,
+      [server.host_id]: { step: "sending", agent: agentId, server: server.label },
+    }));
     const result = await submitHostCommand("deploy", {
       host_id: server.host_id,
       agent_id: agentId,
     });
     setBusyHost(null);
     if (!result.ok) {
-      setNotice(server.host_id, result.detail ?? "DASH could not put that agent on this server.");
+      /*
+       * Main's own sentence, in the deploy's own place rather than in the card's
+       * general notice. That is what puts `MANIFEST_ONLY_DEPLOY_REFUSAL` and a
+       * refused sign-in where the person is looking, under the control they just
+       * pressed, with the one next action DASH can honestly offer.
+       */
+      setDeploys((current) => ({
+        ...current,
+        [server.host_id]: {
+          step: "failed",
+          agent: agentId,
+          server: server.label,
+          detail: result.detail ?? "DASH could not put that agent on this server.",
+        },
+      }));
       return;
     }
+    setDeploys((current) => ({
+      ...current,
+      [server.host_id]: { step: "sent", agent: agentId, server: server.label },
+    }));
     // Ask the server what it has now rather than assuming the deploy's own
     // answer. The card's count is the host's report, and this is how it stays
     // one — see `describeDeployed`.
@@ -735,7 +766,15 @@ export default function HostsPage(): ReactNode {
   }
 
   const servers = state.status === "ready" ? state.data.servers : [];
-  const agentNames = agents.status === "ready" ? agents.data.agents.map((agent) => agent.name) : [];
+  /*
+   * MAR-577. The name *and* whether DASH could send it. A list of names could
+   * not tell a deployable agent from a migrated one, so the panel had nowhere to
+   * put the refusal until the press had already happened.
+   */
+  const agentChoices =
+    agents.status === "ready"
+      ? agents.data.agents.map((agent) => ({ name: agent.name, deploy: agent.deploy }))
+      : [];
   const showConnect = connecting ?? servers.length === 0;
 
   return (
@@ -783,9 +822,11 @@ export default function HostsPage(): ReactNode {
                 <ServerCard
                   server={server}
                   standing={standings[server.host_id] ?? { step: "not_checked", label: server.label }}
-                  agents={agentNames}
+                  checkedAt={checkedAt[server.host_id] ?? null}
+                  agents={agentChoices}
                   busy={busyHost === server.host_id}
                   notice={notices[server.host_id] ?? null}
+                  deploy={deploys[server.host_id] ?? null}
                   canAct={canAct}
                   actions={{
                     check: () => void check(server),
