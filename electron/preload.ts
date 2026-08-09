@@ -298,6 +298,19 @@ const dashShell = {
   refreshSampleAgent: (args: { agent_id: string }) => send("sample.refresh", { ...args }),
 
   /**
+   * Remember that this agent's page has just been opened (MAR-586).
+   *
+   * One agent id and nothing else — in particular, no time. The moment recorded
+   * is DASH's own clock in main, so a page cannot mark an agent as read at a
+   * moment it chose, which is the one way this fact could be used to hide an
+   * output rather than to acknowledge one.
+   *
+   * A named method, like everything above, rather than a generic entry point
+   * whose reachable surface grows without a review.
+   */
+  markAgentLooked: (args: { agent_id: string }) => send("glance.looked", { ...args }),
+
+  /**
    * The runner's own health, and its one repair (MAR-518).
    *
    * `status` carries no payload — it is a fact about the runner as a whole,

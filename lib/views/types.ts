@@ -29,6 +29,7 @@
 
 import type { GroundingAnalysis, RunAnalysis } from "../analyze";
 import type { EvidenceNotice } from "../copy/evidence";
+import type { GlanceChip } from "../copy/glance";
 import type { ArtifactCardView } from "./artifacts";
 import type { InputRoleView } from "./inputs";
 import type { PanelView } from "./panel";
@@ -145,6 +146,20 @@ export interface AgentRow {
    * and needs the answer per option. See `AgentDeployView`.
    */
   deploy: AgentDeployView;
+  /**
+   * The four questions this agent's card answers at a glance, already worded
+   * (MAR-586).
+   *
+   * Sentences rather than the counts behind them, and that is this file's own
+   * rule about projecting rather than passing through: two hosts build this
+   * document, and a page composing its own copy from four numbers would be the
+   * second place the claim could soften. `lib/copy/glance.ts` owns the wording
+   * and `lib/views/glance.ts` owns which records answer.
+   *
+   * Never empty. A card with no chips cannot be told apart from a card DASH
+   * failed to fill in, so "nothing needs you" is a chip — see `GLANCE_ALL_CLEAR`.
+   */
+  glance: GlanceChip[];
 }
 
 export interface AgentsView {

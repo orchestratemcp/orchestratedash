@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AgentComplianceChips } from "./_components/verdict";
 import { AgentOrigin } from "./_components/agent-origin";
+import { GlanceChips, OpenAgentButton } from "./_components/glance-chips";
 import { TechnicalDetails } from "./_components/record-card";
 import { OAvatar } from "./_components/o-avatar";
 import { HostNotice, ViewFailed, ViewLoading } from "./_components/view-state";
@@ -13,7 +14,6 @@ import { agentWorkspaceHref } from "./_data/routes";
 import { oFor } from "../lib/brand/o-cast";
 import { describeRunnerStoreDamage, type RunnerStoreDamageKind } from "../lib/copy/recovery";
 import type { CommandResult } from "../lib/shell/ipc";
-import { ROLLUP_RUN_COUNT } from "../lib/views/rollup";
 
 /**
  * The folder name `lib/sample-agent.ts` gives the sample agent, and therefore
@@ -97,31 +97,61 @@ export default function AgentsPage(): ReactNode {
               </div>
             )
           ) : (
-        <ol className="row-list">
+        /*
+          MAR-547's concept composition, taken (Henrik, 2026-08-09: "I want the
+          fleet cards to fit like 3 in a row. And the avatar to be bigger").
+
+          The list stays an `<ol>` and stays `.row-list` — what changes is the
+          track it lays cards on, which is a `fleet-grid` modifier rather than a
+          change to `.row-list` itself. The Runs and Connections pages use that
+          class too, and their records are wide rows of prose rather than
+          portraits; giving all three a three-column grid because one of them
+          wanted it is how a shared class stops being shared.
+        */
+        <ol className="row-list fleet-grid">
           {state.data.agents.map((agent) => (
             <li key={agent.name}>
-              <article className="row-card">
-                <div className="section-heading">
-                  {/*
-                    MAR-501. The character sits beside the name — recognition
-                    next to identity — and not in the block on the right, which
-                    is where this card keeps its verdict. That placement is the
-                    rule rather than a preference: a costume aligned with a
-                    compliance chip reads as one unit, and then the costume is
-                    saying something about how the agent behaved.
-                  */}
-                  <div className="agent-identity">
-                    <OAvatar name={agent.avatar} size={50} />
-                    <h3>
-                      <Link className="plain" href={agentWorkspaceHref(agent.name)}>
-                        <code>{agent.name}</code>
-                      </Link>
-                    </h3>
-                  </div>
-                  <div>
-                    <p className="eyebrow">Last {ROLLUP_RUN_COUNT} runs</p>
-                    <AgentComplianceChips compliance={agent.compliance} />
-                  </div>
+              <article className="row-card fleet-card">
+                {/*
+                  The concept's header band (MAR-528, `DESIGN.md` "Cards &
+                  Panels"): a distinct top section with a bold monospace label
+                  and one status slot on the right. The label is the agent's
+                  name; the status is DASH's own verdict on its recent runs,
+                  which is the nearest true thing to the concept's ACTIVE chip —
+                  and unlike that chip it is a record rather than a reading.
+
+                  The "Last N runs" eyebrow that used to sit above these chips is
+                  gone, and nothing is lost with it: every chip carries its own
+                  denominator ("5/5 clean", "2/5 gate violation"), which is the
+                  fact the eyebrow was there to supply. In a card a third of the
+                  page wide, a label explaining a number that is already on
+                  screen is the "text that is not needed" MAR-547 names.
+                */}
+                <div className="card-head">
+                  <h3>
+                    <Link className="plain" href={agentWorkspaceHref(agent.name)}>
+                      <code>{agent.name}</code>
+                    </Link>
+                  </h3>
+                  <AgentComplianceChips compliance={agent.compliance} />
+                </div>
+                {/*
+                  MAR-501's rule survives the move and is worth restating, since
+                  the character is no longer beside the name: it must not be
+                  aligned with the verdict. Here it is centred in a band of its
+                  own, above the goal and below the name — recognition, in the
+                  position the concept gives a portrait, and nowhere near the
+                  compliance chips.
+
+                  `size={100}` is the portrait size the agent page already draws.
+                  `lib/brand/o-cast.ts` allows exactly two sizes and nothing
+                  between them, because `image-rendering: pixelated` upscales by
+                  nearest neighbour and a "slightly bigger" sprite lands source
+                  pixels unevenly — so a bigger avatar here means the other
+                  whole multiple, not a chosen number.
+                */}
+                <div className="fleet-portrait">
+                  <OAvatar name={agent.avatar} size={100} />
                 </div>
                 <p className="muted wrap">{agent.goal}</p>
                 {/*
@@ -138,11 +168,30 @@ export default function AgentsPage(): ReactNode {
                   card is two interfaces, and room is not a reason to show
                   something.
                 */}
+                {/*
+                  MAR-586. The four questions, above the meta line and below the
+                  goal: what an agent is *for* is why you keep it, and whether
+                  something is waiting on you is why you look at it today. Both
+                  come before DASH's own record of how many times it has run.
+
+                  Every chip is a stored fact and links to where that fact is
+                  answered — see `lib/copy/glance.ts` for MAR-547's ruling, which
+                  is what keeps this a row of facts rather than a row of meters.
+                */}
+                <GlanceChips agent={agent.name} chips={agent.glance} />
                 <p className="card-meta">
                   <span className="value">{describeRunCount(agent.run_count)}</span>
                   <span aria-hidden="true"> · </span>
                   <AgentOrigin origin={agent.origin} />
                 </p>
+                {/*
+                  MAR-586's second half, and MAR-547's "can't be clicked" from
+                  the reader's side: a control they can see, rather than a
+                  heading that turns out to have been a link.
+                */}
+                <div className="glance-actions">
+                  <OpenAgentButton agent={agent.name} />
+                </div>
                 <TechnicalDetails>
                   <dl className="facts">
                     <div>
