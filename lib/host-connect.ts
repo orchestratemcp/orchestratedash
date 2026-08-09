@@ -88,6 +88,7 @@ export type HostConnectState =
   /** A key exists and the server has not been told about it yet. */
   | { step: "awaiting_key_install"; label: string; public_key: string }
   /**
+<<<<<<< HEAD
    * The enrollment moment: DASH has this server's key and nobody has said yet
    * whether it is the right one (MAR-572).
    *
@@ -107,9 +108,28 @@ export type HostConnectState =
       /** How many keys the server offered in total, chosen included. */
       offered_count: number;
     }
+=======
+   * A saved server DASH has not signed in to since it opened (MAR-574).
+   *
+   * The state the Servers page opens in for every record it has, and it is not
+   * a failure and not a probe result: DASH holds the connection facts and has
+   * not used them yet. Kept distinct from `probing` — which is a check in
+   * flight — and from `unreachable`, because a page that showed a saved server
+   * as unreachable before asking would be inventing a fault.
+   */
+  | { step: "not_checked"; label: string }
+>>>>>>> origin/master
   | { step: "probing"; label: string }
-  /** DASH reached the runner and it answered. `runner_build` may be unknown. */
-  | { step: "reachable"; label: string; runner_build: string | null }
+  /**
+   * DASH reached the runner and it answered. `runner_build` may be unknown.
+   *
+   * `agents_running` is what the *server* said when asked, counted from its own
+   * answer rather than from anything DASH stored — DASH keeps no record of what
+   * it has deployed where, so this number is only ever as fresh as the check
+   * that produced it. See `lib/server-card.ts` for why that is stated on screen
+   * rather than smoothed over.
+   */
+  | { step: "reachable"; label: string; runner_build: string | null; agents_running: number }
   | { step: "unreachable"; label: string; problem: HostReachProblem };
 
 /**
@@ -157,6 +177,7 @@ export function describeConnectState(state: HostConnectState): HostConnectCopy {
         next_action: "Copy the key, then check the connection",
       };
 
+<<<<<<< HEAD
     case "confirm_host_key":
       return {
         headline: `Is this ${state.label}?`,
@@ -172,6 +193,15 @@ export function describeConnectState(state: HostConnectState): HostConnectCopy {
           "DASH cannot check this for you — anything answering at this address could say " +
           "the same thing, so this is the one part only you can confirm.",
         next_action: "Compare the code, then confirm this is your server",
+=======
+    case "not_checked":
+      return {
+        headline: `${state.label} has not been checked yet`,
+        detail:
+          "DASH knows how to reach this server and has not signed in to it since you opened " +
+          "DASH. Nothing is wrong — it simply has not looked.",
+        next_action: "Check this server",
+>>>>>>> origin/master
       };
 
     case "probing":
@@ -183,7 +213,16 @@ export function describeConnectState(state: HostConnectState): HostConnectCopy {
 
     case "reachable":
       return {
-        headline: `${state.label} is connected`,
+        // The count is in the headline rather than in a line below it, because
+        // it is the answer to the question the page is open for. "Connected"
+        // and "connected, running two agents" are different facts and reading
+        // one of them at a glance should not require reading the other.
+        headline:
+          state.agents_running === 0
+            ? `${state.label} is connected`
+            : state.agents_running === 1
+              ? `${state.label} is connected, running 1 agent`
+              : `${state.label} is connected, running ${String(state.agents_running)} agents`,
         // The two ADR 0007 sentences, verbatim and together. The second is the
         // unpleasant one and is required *before* the first deploy.
         detail: `${describeHostReach().while_open} ${describeHostReach().while_closed}`,
@@ -350,6 +389,7 @@ export function everyConnectSentence(label = "My server"): string[] {
   const states: HostConnectState[] = [
     { step: "no_host" },
     { step: "awaiting_key_install", label, public_key: "ssh-ed25519 AAAA… orchestratedash" },
+<<<<<<< HEAD
     {
       step: "confirm_host_key",
       label,
@@ -359,8 +399,13 @@ export function everyConnectSentence(label = "My server"): string[] {
       key_type: "ssh-ed25519",
       offered_count: 3,
     },
+=======
+    { step: "not_checked", label },
+>>>>>>> origin/master
     { step: "probing", label },
-    { step: "reachable", label, runner_build: "96cef12082fe67afa3a6" },
+    // Both wordings of the count, so neither escapes the copy sweep.
+    { step: "reachable", label, runner_build: "96cef12082fe67afa3a6", agents_running: 1 },
+    { step: "reachable", label, runner_build: "96cef12082fe67afa3a6", agents_running: 2 },
     ...HOST_REACH_PROBLEMS.map(
       (problem): HostConnectState => ({ step: "unreachable", label, problem }),
     ),

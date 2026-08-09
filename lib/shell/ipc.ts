@@ -207,6 +207,40 @@ export const COMMANDS = {
   },
 
   /*
+   * MAR-576. Re-import an agent DASH itself scaffolded, from DASH's own current
+   * template.
+   *
+   * **Its own prefix, and that is the point** — the argument this file already
+   * makes for `runner.*` existing rather than a `agent.start` being invented.
+   * `agent.*` is exactly the seven verbs of `agent-command.schema.json`; this is
+   * not one of them, becomes no envelope and is adjudicated against no manifest.
+   * It is also not `runner.*`: no process is started, stopped or asked anything,
+   * and the runner is not involved at any point. What it touches is DASH's own
+   * record of an agent DASH wrote — a fifth kind of thing, named as one.
+   *
+   * `mutates` is plainly true: it replaces the stored manifest and the folder
+   * document beneath it.
+   *
+   * `irreversible` is **false**, and the reasoning matters more than the flag.
+   * Nothing happens in the world — no message, no file of the user's, no
+   * credential. What is replaced is a document DASH generated, by the same
+   * generator, and the agent's identity, character, runs, outputs and connected
+   * credentials all survive: `importManifest`'s `ON CONFLICT DO UPDATE`
+   * deliberately omits `avatar`, and it writes no other table. The bound worth
+   * stating is not this flag but the gate in main — `refreshSampleAgent` refuses
+   * any manifest DASH's own scaffold did not generate, so a document a person
+   * wrote by hand can never be overwritten by this command however it is called.
+   */
+  "sample.refresh": {
+    effect:
+      "Replace the saved setup of an agent DASH created with DASH's current version of it. Keeps the agent's name, character, runs, outputs and credentials.",
+    payload_keys: ["agent_id"],
+    required_keys: ["agent_id"],
+    mutates: true,
+    irreversible: false,
+  },
+
+  /*
    * MAR-536. A host is not an agent's property: it is a server DASH reaches
    * with a key DASH keeps on this computer. The renderer can name the four
    * ordinary connection facts, but not the host id, the key name, a key path
@@ -558,6 +592,31 @@ export function isWorkspaceCommandName(value: CommandName): value is WorkspaceCo
   return Object.hasOwn(WORKSPACE_ACTIONS, value);
 }
 
+/**
+ * Re-importing an agent DASH scaffolded (MAR-576).
+ *
+ * A fifth family with one member, on the terms the fourth was created under: it
+ * is not an Agent DOM verb, not process lifecycle, not the vault and not a file
+ * a person chose. What these touch is **the stored manifest itself** — the one
+ * document every other surface in DASH treats as the author's and never edits —
+ * and a route that can rewrite it deserves to be findable by name rather than
+ * folded in beside three commands that cannot.
+ *
+ * One member is not a shape waiting to be filled. If nothing ever joins it, a
+ * reviewer asking "what in DASH can overwrite an author's document?" still gets
+ * a complete answer from one map.
+ */
+export const SAMPLE_ACTIONS = {
+  "sample.refresh": "refresh",
+} as const;
+
+export type SampleCommandName = keyof typeof SAMPLE_ACTIONS;
+export type SampleAction = (typeof SAMPLE_ACTIONS)[SampleCommandName];
+
+export function isSampleCommandName(value: CommandName): value is SampleCommandName {
+  return Object.hasOwn(SAMPLE_ACTIONS, value);
+}
+
 export const CONNECTION_ACTIONS = {
   "connection.connect": "connect",
   "connection.test": "test",
@@ -630,6 +689,7 @@ type UnroutedCommand = Exclude<
   | HostCommandName
   | ShellUiCommandName
   | WorkspaceCommandName
+  | SampleCommandName
   | "shell.ping"
 >;
 const _allCommandsAreRouted: UnroutedCommand extends never ? true : never = true;
@@ -861,7 +921,11 @@ export function executeCommand(review: CommandReview): CommandResult {
     isShellUiCommandName(review.command) ||
     // MAR-507. In this list for the plainest reason of all: performing one
     // opens a file picker, which this module cannot do and must not appear to.
-    isWorkspaceCommandName(review.command)
+    isWorkspaceCommandName(review.command) ||
+    // MAR-576. Performing one writes the agent folder and the store, both of
+    // which need `node:fs` — and this module stays importable from a sandboxed
+    // preload. Succeeding here would report a manifest replaced that was not.
+    isSampleCommandName(review.command)
   ) {
     // Not a denial and not a result: a caller that reached here bypassed the
     // trusted side entirely. Throwing is the only honest answer — returning a
@@ -971,7 +1035,26 @@ export type HostActionResult =
       /** True when this call attached to a server DASH already had (MAR-572). */
       resumed: boolean;
     }
-  | { ok: true; action: "probe"; host_id: string; label: string; runner_build: string | null }
+  /**
+   * `agents_running` is a count from the server's own answer (MAR-574).
+   *
+   * A number rather than a list of names, and that is a decision about what
+   * DASH knows rather than about what fits through the channel. DASH keeps **no
+   * record of what it has deployed where** — `host.deploy` pushes a bundle,
+   * starts it and stores nothing — so the only account of what is on a server
+   * is what that server says when it is asked. A list travelling here would
+   * read as DASH's inventory of somebody else's machine, and there is no such
+   * inventory to be right or wrong about. The count answers the question the
+   * page asks and claims nothing beyond the check that produced it.
+   */
+  | {
+      ok: true;
+      action: "probe";
+      host_id: string;
+      label: string;
+      runner_build: string | null;
+      agents_running: number;
+    }
   | {
       ok: true;
       action: "trust";
@@ -1096,6 +1179,26 @@ export interface DispatchContext {
       artifact_id?: string;
     },
   ): Promise<WorkspaceActionResult>;
+  /**
+   * Re-import an agent DASH scaffolded, from DASH's current template (MAR-576).
+   *
+   * Injected for the reason the four above are, in its strongest form: the real
+   * implementation writes the agent's folder and the store through
+   * `importManifest`, which reaches `node:fs` and `node:sqlite`. This module has
+   * to stay importable from a sandboxed preload, so it can name the command and
+   * must be unable to perform it.
+   *
+   * **The ownership check belongs to the implementation, not to this seam**, and
+   * that is deliberate. A gate stated here would be a gate a second
+   * implementation could forget; stated in main, beside the write, it is
+   * unavoidable by anything that actually rewrites a document. The refusal comes
+   * back through `refusal`, which is the same channel a connection action's
+   * does, so a surface renders it with the machinery it already has.
+   */
+  sampleAction(
+    action: SampleAction,
+    target: { agent_id: string },
+  ): Promise<{ ok: boolean; refusal?: string; detail?: string }>;
   /**
    * Where the IPC-level audit record goes.
    *
@@ -1265,6 +1368,7 @@ export async function dispatchCommand(
             host_id: result.host_id,
             label: result.label,
             runner_build: result.runner_build ?? "",
+            agents_running: result.agents_running,
           },
         };
       case "deploy":
@@ -1334,6 +1438,28 @@ export async function dispatchCommand(
       reason: result.refusal,
       detail: result.detail,
       data: result.data,
+    };
+  }
+
+  if (isSampleCommandName(review.command)) {
+    /*
+     * MAR-576. The renderer names an agent and nothing else.
+     *
+     * It cannot supply a manifest, a template, a version or a path — the
+     * payload rules permit one key, and `reviewCommand` has already enforced
+     * that by here. Main reads the stored document, checks DASH's own scaffold
+     * wrote it, regenerates it and imports it. So the widest thing a
+     * compromised renderer could ask for is "re-import agent X from DASH's own
+     * template", which is the same thing the button asks for.
+     */
+    const result = await context.sampleAction(SAMPLE_ACTIONS[review.command], {
+      agent_id: String(review.payload["agent_id"]),
+    });
+    return {
+      ok: result.ok,
+      request_id: review.audit.request_id,
+      reason: result.refusal,
+      detail: result.detail,
     };
   }
 

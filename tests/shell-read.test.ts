@@ -191,11 +191,55 @@ describe("the preload's exposed surface", () => {
   });
 });
 
+/**
+ * MAR-574's read, and the two things that make it safe to have added.
+ *
+ * The catalogue is the security argument for this whole channel, so a seventh
+ * entry is a review event rather than a line. What it returns is a page's own
+ * content — the servers a person has connected — and what it deliberately does
+ * not return is the name of the key DASH signs in with, which is the only field
+ * on a host record that names a credential.
+ */
+describe("the saved-servers read", () => {
+  it("takes no parameters, because it is the whole list or nothing", () => {
+    expect(reviewRead({ read: "view.hosts" })).toEqual({
+      decision: "allowed",
+      read: "view.hosts",
+      params: {},
+    });
+    expect(reviewRead({ read: "view.hosts", params: { host_id: "host-1" } })).toEqual({
+      decision: "denied",
+      reason: "unexpected_param",
+    });
+  });
+
+  it("says in the catalogue what it will not return", () => {
+    // The catalogue is what somebody auditing the surface reads. A read whose
+    // description omitted the exclusion would leave them to check the projection
+    // themselves, which is the work this catalogue exists to save.
+    expect(READS["view.hosts"].returns).toContain("Never which key");
+  });
+
+  it("is exposed by the preload, so a page can actually reach it", () => {
+    /*
+     * The MAR-518 shape: a correctly catalogued read that no bridge exposes is a
+     * read no page has. This is the read whose absence *was* MAR-574 — hosts
+     * were in the store, nothing projected them, and the Servers page could not
+     * know a server had ever been saved.
+     */
+    const source = readFileSync(path.join(repoRoot, "electron", "preload.ts"), "utf8");
+    const start = source.indexOf("const dashData = {");
+    const body = source.slice(start, source.indexOf("\n}", start));
+    expect(body).toContain('read("view.hosts")');
+  });
+});
+
 describe("isReadName", () => {
   it("recognises exactly the catalogue", () => {
     expect(isReadName("view.agents")).toBe(true);
     expect(isReadName("view.inbox")).toBe(true);
     expect(isReadName("view.workspace")).toBe(true);
+    expect(isReadName("view.hosts")).toBe(true);
     expect(isReadName("view.nothing")).toBe(false);
     expect(isReadName("toString")).toBe(false);
     expect(isReadName(undefined)).toBe(false);

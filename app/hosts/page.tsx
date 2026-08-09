@@ -5,13 +5,15 @@ import { useState, type ReactNode } from "react";
 import {
   DEFAULT_PORT,
   EMPTY_DRAFT,
-  PROVIDER_CARDS,
+  PROVIDER_OPTIONS,
   WIZARD_STEPS,
   canLeave,
   checkDraft,
+  describeHostingRecommendation,
   describeKeyStep,
+  describeProviderChoice,
   describeStep,
-  providerCard,
+  providerOption,
   type HostDraft,
   type ProviderId,
   type WizardStep,
@@ -19,46 +21,56 @@ import {
 import {
   HOST_REACH_PROBLEMS,
   describeConnectState,
-  describeDisconnect,
   type HostConnectState,
   type HostReachProblem,
 } from "../../lib/host-connect";
+import { describeDuplicateHost, findDuplicateHost } from "../../lib/hosts";
+import { describeDuplicateRecords, summariseServers } from "../../lib/server-card";
 import { describeDeployArrangement } from "../../lib/deploy/receipt";
+import { ServerCard } from "../_components/server-card";
+import { HostNotice, ViewFailed, ViewLoading } from "../_components/view-state";
 import { submitHostCommand } from "../_data/source";
-import { useCanAct } from "../_data/use-view";
+import { useCanAct, useHost, useView } from "../_data/use-view";
+import type { SavedServerView } from "../../lib/views/types";
 
 /**
- * Connect a server (MAR-498).
+ * Servers: manage the one you have, or connect one (MAR-498, MAR-536, MAR-574).
  *
- * The surface half of ADR 0007, and the first thing in DASH that is a *guided
- * flow* rather than a page with a form on it. Four steps, drawn in the
- * Bit-Command system MAR-528 adopted: a numbered rail, provider cards, an inset
- * field, and a receipt.
+ * ## The defect this page shipped with
  *
- * `lib/host-wizard.ts` owns the steps and their copy; `lib/host-connect.ts` owns
- * what a connected host's states say; `lib/hosts.ts` owns the record's own
- * refusals, which this calls rather than re-implements.
+ * It rendered the add-a-server wizard **unconditionally**. There was no read
+ * that could tell it a server had ever been saved — `readStore()` has returned
+ * hosts since MAR-536 and no view projected them — so after a successful
+ * connect and a restart, Henrik's real, reachable, probe-passing Hostinger box
+ * was nowhere on the only page about servers, and step 1 was waiting for him
+ * again as if nothing had happened.
  *
- * ## The inversion, on the step where the asking would have happened
+ * Nothing was lost. His store holds **four rows**, one per attempt at the
+ * wizard, all one machine, because "add another" was the only thing this page
+ * could do and nothing anywhere refused the second. So the page had two faults
+ * and the invisible record was only the first.
  *
- * The concept screen has an `SSH_PRIVATE_KEY` textarea with a
- * `-----BEGIN OPENSSH PRIVATE KEY-----` placeholder. **DASH does not draw that
- * field and will not.** MAR-484 made key custody structural rather than a
- * policy: `electron/ssh-host.ts` has no function that returns a private key and
- * a test asserts that over the module's exports. A paste field would hand DASH
- * the one secret it has arranged not to be able to read.
+ * ## The two states
  *
- * So step 3 shows the **public** half and where to put it, and it says the
- * refusal out loud rather than simply not asking. Somebody who has connected a
- * server before expects to be asked; a flow that quietly does not ask reads as
- * one that forgot.
+ * > When a server is connected the Server page state should be manage that
+ * > server. And once disconnected the add a server state should render.
+ * > — Henrik, 2026-08-08
  *
- * ## The command path
+ * Which is what this is: one read of `view.hosts` decides. With a record, the
+ * page is that server — its standing, its facts, and what you can do to it. With
+ * none, it is the connect flow, which is also what "connect another" opens.
  *
- * MAR-536 gives this flow its named, public-only command path. The renderer can
- * ask the preload bridge to create, probe, or forget a host; the main process
- * owns SSH, persistence, and key custody. A browser or an older app bridge still
- * receives the same explicit read-only explanation from `submitHostCommand`.
+ * The wizard is a *mode* rather than a consequence of the store being empty.
+ * Saving a record is the wizard's second step, not its last, so a page that
+ * switched to manage the moment a row existed would throw somebody out of the
+ * flow between minting a key and installing it.
+ *
+ * ## The standing is live and is not stored
+ *
+ * DASH records how to reach a server. It records nothing about whether that
+ * worked, and nothing about what is deployed there. So every card opens in
+ * `not_checked` — an honest state, not a failure — and the standing on screen is
+ * only ever as old as the check that produced it. See `lib/server-card.ts`.
  */
 
 /* ---------------------------------------------------------------------- *
@@ -93,54 +105,56 @@ export function StepRail({ current }: { current: WizardStep }): ReactNode {
  * The steps
  * ---------------------------------------------------------------------- */
 
-function ProviderStep({
-  draft,
-  onPick,
-}: {
-  draft: HostDraft;
-  onPick: (id: ProviderId) => void;
-}): ReactNode {
-  return (
-    <>
-      <div className="provider-grid">
-        {PROVIDER_CARDS.map((card) => {
-          const chosen = draft.provider === card.id;
-          return (
-            <button
-              key={card.id}
-              type="button"
-              className={chosen ? "provider-card is-chosen" : "provider-card"}
-              aria-pressed={chosen}
-              onClick={() => onPick(card.id)}
-            >
-              <span className="provider-name">{card.label}</span>
-              <span className="provider-user">
-                {card.default_username === null
-                  ? "You tell DASH the account"
-                  : `Signs in as ${card.default_username}`}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-      {draft.provider === null ? null : (
-        <p className="muted wrap">
-          The key goes in: {providerCard(draft.provider).where_the_key_goes}
-        </p>
-      )}
-    </>
-  );
-}
-
-function AddressStep({
+/**
+ * Step 1: the form, with the provider dropdown inside it.
+ *
+ * This replaces the four-card provider grid entirely. Henrik used that grid five
+ * times and reported what it was for:
+ *
+ * > We don't need different servers as examples. Just one "connect a server".
+ * > Then if we want pre-filled fields we can have a dropdown once we started
+ * > connecting a server.
+ *
+ * The grid asked a question before the flow began whose whole effect was setting
+ * **one default string**. It is a convenience on a field now, and it sits after
+ * the account name rather than before it, because a person who already knows
+ * their account name should never have to touch it.
+ */
+export function AddressStep({
   draft,
   onChange,
+  servers,
 }: {
   draft: HostDraft;
   onChange: (next: HostDraft) => void;
+  /** What DASH already has, so a duplicate is named before it is attempted. */
+  servers: readonly SavedServerView[];
 }): ReactNode {
   const check = checkDraft(draft);
   const touched = draft.label !== "" || draft.address !== "" || draft.username !== "";
+  /*
+   * MAR-574. The refusal main will give, given here while the fields are still
+   * on screen. Main is the authority — this cannot be the only check, because a
+   * page can be wrong about what the store holds — but a person who learns their
+   * server is already saved *after* pressing "make key" has been made to wait
+   * for an answer the page could see.
+   */
+  const duplicate =
+    draft.address.trim() === "" || draft.username.trim() === ""
+      ? null
+      : findDuplicateHost(
+          servers.map((server) => ({
+            host_id: server.host_id,
+            label: server.label,
+            address: server.address,
+            username: server.username,
+            port: server.port,
+            key_name: "not-read-here",
+            host_fingerprint: server.fingerprint,
+            added_at: server.added_at,
+          })),
+          { address: draft.address, username: draft.username },
+        );
 
   return (
     <>
@@ -152,7 +166,9 @@ function AddressStep({
             className="field"
             value={draft.label}
             placeholder="My server"
-            onChange={(event) => onChange({ ...draft, label: event.target.value })}
+            onChange={(event) => {
+              onChange({ ...draft, label: event.target.value });
+            }}
           />
         </label>
         <label className="field-label" htmlFor="host-address">
@@ -162,7 +178,9 @@ function AddressStep({
             className="field"
             value={draft.address}
             placeholder="example.com"
-            onChange={(event) => onChange({ ...draft, address: event.target.value })}
+            onChange={(event) => {
+              onChange({ ...draft, address: event.target.value });
+            }}
           />
         </label>
         <label className="field-label" htmlFor="host-username">
@@ -172,8 +190,47 @@ function AddressStep({
             className="field"
             value={draft.username}
             placeholder="root"
-            onChange={(event) => onChange({ ...draft, username: event.target.value })}
+            onChange={(event) => {
+              onChange({ ...draft, username: event.target.value });
+            }}
           />
+        </label>
+        <label className="field-label" htmlFor="host-provider">
+          Who you rent it from
+          <select
+            id="host-provider"
+            className="field"
+            value={draft.provider ?? ""}
+            onChange={(event) => {
+              const picked = event.target.value === "" ? null : (event.target.value as ProviderId);
+              onChange({
+                ...draft,
+                provider: picked,
+                /*
+                 * Only fills an empty field. Somebody who typed their own
+                 * account name and then went looking through this list for
+                 * their provider must not have it overwritten — the dropdown's
+                 * whole job is to save typing, and taking a typed value away is
+                 * the opposite of that.
+                 */
+                username:
+                  picked !== null && draft.username === ""
+                    ? providerOption(picked).default_username
+                    : draft.username,
+              });
+            }}
+          >
+            {/* Short enough to fit the field at every width. The first draft read
+                "I will type the account myself" and the packaged renderer clipped
+                it to "…the account mysel" at 1280, which is the one width nobody
+                thinks to check for a truncation. */}
+            <option value="">I will type it myself</option>
+            {PROVIDER_OPTIONS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="field-label" htmlFor="host-port">
           Port
@@ -183,10 +240,17 @@ function AddressStep({
             value={draft.port}
             placeholder={DEFAULT_PORT}
             inputMode="numeric"
-            onChange={(event) => onChange({ ...draft, port: event.target.value })}
+            onChange={(event) => {
+              onChange({ ...draft, port: event.target.value });
+            }}
           />
         </label>
       </div>
+
+      <p className="muted wrap">
+        The key goes in: {describeProviderChoice(draft.provider).where_the_key_goes}
+      </p>
+
       {/*
         The refusal comes from `lib/hosts.ts` rather than from a second set of
         rules here, and it is shown only once somebody has typed something —
@@ -198,6 +262,13 @@ function AddressStep({
           {check.detail}
         </p>
       ) : null}
+
+      {duplicate === null ? null : (
+        <p className="notice notice-err wrap" role="alert">
+          {describeDuplicateHost(duplicate.label).headline}.{" "}
+          {describeDuplicateHost(duplicate.label).detail}
+        </p>
+      )}
     </>
   );
 }
@@ -249,8 +320,7 @@ export function CheckStep({ state }: { state: HostConnectState }): ReactNode {
 }
 
 /**
- * The receipt `lib/deploy/bundle.ts` has built since MAR-487 and that rendered
- * nowhere.
+ * The receipt `lib/deploy/bundle.ts` has built since MAR-487.
  *
  * Here rather than at the deploy, and that is ADR 0007's own requirement: the
  * while-closed sentence is *"said before the first deploy"*, and the moment a
@@ -278,30 +348,68 @@ function DeployArrangement({ label }: { label: string }): ReactNode {
   );
 }
 
+/**
+ * The person who does not own a server (MAR-574, Henrik's own words).
+ *
+ * Two rules from the ratified plan, both visible in the order of this block:
+ *
+ * 1. **The free local path is stated first and is not a footnote.** Hosting must
+ *    never read as required, because it is not — agents run on this computer and
+ *    always have.
+ * 2. **The outbound link is not here yet.** It is an affiliate link and the plan
+ *    puts it after the attended proof passes (MAR-489). What renders is the
+ *    label as text.
+ *
+ * TODO-affiliate (MAR-485, gated on MAR-489): this is where the outbound link
+ * goes. It cannot simply become an `<a href>` — `createWindow` in
+ * `electron/main.ts` denies window-open and blocks navigation away from the
+ * renderer's own origin, so an anchor here would do *nothing* in the installed
+ * app while looking like a control. Wiring it needs a command that reaches
+ * `shell.openExternal` in main, which is a review event and belongs with the
+ * issue that adds the real URL. Text until then, deliberately, because a dead
+ * button is worse than a sentence.
+ */
+function NoServerYet(): ReactNode {
+  const copy = describeHostingRecommendation();
+  return (
+    <section className="hosting-note">
+      <p className="wrap">{copy.free_path}</p>
+      <p className="wrap">
+        <strong>{copy.question}</strong> {copy.recommendation}
+      </p>
+      <p className="muted wrap">{copy.link_label} — coming soon.</p>
+    </section>
+  );
+}
+
 /* ---------------------------------------------------------------------- *
- * The page
+ * Connecting one
  * ---------------------------------------------------------------------- */
 
-export default function HostsPage(): ReactNode {
-  const canAct = useCanAct();
-  const [step, setStep] = useState<WizardStep>("provider");
+function ConnectServer({
+  servers,
+  canAct,
+  onSaved,
+  onLeave,
+}: {
+  servers: readonly SavedServerView[];
+  canAct: boolean;
+  /** A record now exists or was removed — the page should re-read. */
+  onSaved: () => void;
+  /** Null when there is nothing to go back to, which is the first-run case. */
+  onLeave: (() => void) | null;
+}): ReactNode {
+  const [step, setStep] = useState<WizardStep>("address");
   const [draft, setDraft] = useState<HostDraft>(EMPTY_DRAFT);
   const [hostId, setHostId] = useState<string | null>(null);
   const [publicKey, setPublicKey] = useState<string | null>(null);
   const [checkState, setCheckState] = useState<HostConnectState>({ step: "no_host" });
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [confirmForget, setConfirmForget] = useState(false);
 
   const at = WIZARD_STEPS.indexOf(step);
   const label = draft.label.trim() === "" ? "this server" : draft.label.trim();
 
-  /*
-   * No host bridge exists in any build (MAR-536), so the probe cannot run and
-   * no key can be minted. The state is fixed at `probing`'s honest neighbour —
-   * nothing has been checked — and the notice below says why rather than a
-   * button pretending otherwise.
-   */
   function reachProblem(value: unknown): HostReachProblem | null {
     return typeof value === "string" && HOST_REACH_PROBLEMS.includes(value as HostReachProblem)
       ? (value as HostReachProblem)
@@ -330,6 +438,9 @@ export default function HostsPage(): ReactNode {
     setPublicKey(madePublicKey);
     setCheckState({ step: "awaiting_key_install", label, public_key: madePublicKey });
     setStep("key");
+    // The record exists from here on. The page re-reads so that leaving the flow
+    // at any later point lands on a manage surface that already knows about it.
+    onSaved();
   }
 
   async function probe(): Promise<void> {
@@ -346,10 +457,12 @@ export default function HostsPage(): ReactNode {
 
     if (result.ok) {
       const runnerBuild = result.data?.["runner_build"];
+      const running = result.data?.["agents_running"];
       setCheckState({
         step: "reachable",
         label,
         runner_build: typeof runnerBuild === "string" && runnerBuild !== "" ? runnerBuild : null,
+        agents_running: typeof running === "number" ? running : 0,
       });
       return;
     }
@@ -370,9 +483,17 @@ export default function HostsPage(): ReactNode {
     setNotice(result.detail ?? "DASH could not check this server.");
   }
 
-  async function forget(nextStep: WizardStep): Promise<void> {
+  /**
+   * Going back from the key step throws the record away, and that is deliberate.
+   *
+   * A key was minted for an address the person is now changing. Keeping the row
+   * would leave exactly the orphan MAR-574 is about — a record nobody meant to
+   * keep, with its own key — and the next attempt would then be refused as a
+   * duplicate of a server that was never really added.
+   */
+  async function forgetAndGoBack(): Promise<void> {
     if (hostId === null) {
-      setStep(nextStep);
+      setStep("address");
       return;
     }
     setBusy(true);
@@ -386,18 +507,12 @@ export default function HostsPage(): ReactNode {
     setHostId(null);
     setPublicKey(null);
     setCheckState({ step: "no_host" });
-    setConfirmForget(false);
-    setStep(nextStep);
+    setStep("address");
+    onSaved();
   }
 
   return (
     <>
-      <h1>Servers</h1>
-      <p className="lede">
-        Put an agent on a server and it keeps working when DASH is closed. DASH
-        reaches out to the server; the server never reaches back.
-      </p>
-
       <StepRail current={step} />
 
       <article className="row-card wizard-card">
@@ -412,25 +527,8 @@ export default function HostsPage(): ReactNode {
 
         <p className="connection-purpose wrap">{describeStep(step).purpose}</p>
 
-        {step === "provider" ? (
-          <ProviderStep
-            draft={draft}
-            onPick={(id) =>
-              setDraft((current) => ({
-                ...current,
-                provider: id,
-                // Only fills an empty field. Somebody who typed their own
-                // account name and then went back a step should not have it
-                // overwritten by a default.
-                username:
-                  current.username === ""
-                    ? (providerCard(id).default_username ?? "")
-                    : current.username,
-              }))
-            }
-          />
-        ) : step === "address" ? (
-          <AddressStep draft={draft} onChange={setDraft} />
+        {step === "address" ? (
+          <AddressStep draft={draft} onChange={setDraft} servers={servers} />
         ) : step === "key" ? (
           <KeyStep label={label} publicKey={publicKey} />
         ) : (
@@ -444,40 +542,26 @@ export default function HostsPage(): ReactNode {
         )}
 
         <div className="button-row">
-          {at === 0 || step === "check" ? null : (
+          {step === "key" ? (
             <button
               type="button"
               className="button-secondary"
               disabled={busy}
-              onClick={() => {
-                if (step === "key") {
-                  void forget("address");
-                } else {
-                  setNotice(null);
-                  setStep(WIZARD_STEPS[at - 1] as WizardStep);
-                }
-              }}
+              onClick={() => void forgetAndGoBack()}
             >
               Back
             </button>
-          )}
-          {step === "provider" ? (
-            <button
-              type="button"
-              className="button-primary"
-              disabled={busy || !canLeave(step, draft)}
-              onClick={() => {
-                setNotice(null);
-                setStep("address");
-              }}
-            >
-              Next
+          ) : step === "address" && onLeave !== null ? (
+            <button type="button" className="button-secondary" disabled={busy} onClick={onLeave}>
+              Cancel
             </button>
-          ) : step === "address" ? (
+          ) : null}
+
+          {step === "address" ? (
             <button
               type="button"
               className="button-primary"
-              disabled={busy || !canLeave(step, draft)}
+              disabled={busy || !canLeave(step, draft) || !canAct}
               onClick={() => void makeKey()}
             >
               {busy ? "Making key..." : "Make key"}
@@ -491,47 +575,241 @@ export default function HostsPage(): ReactNode {
             >
               {busy ? "Checking..." : "Check the connection"}
             </button>
-          ) : null}
+          ) : (
+            /*
+              The end of the flow, and it goes to the server rather than to
+              nothing. Whatever the check said, a record exists and the manage
+              card is where every next action about it lives — including the
+              ones for a check that failed.
+            */
+            <button
+              type="button"
+              className="button-primary"
+              disabled={busy}
+              onClick={() => {
+                onSaved();
+                onLeave?.();
+              }}
+            >
+              Done
+            </button>
+          )}
         </div>
+      </article>
 
-        {step !== "check" || hostId === null ? null : confirmForget ? (
-          <section className="notice wrap" role="alert">
-            <p>
-              <strong>{describeDisconnect(label).headline}</strong>
-            </p>
-            <p>{describeDisconnect(label).detail}</p>
-            <div className="button-row">
-              <button
-                type="button"
-                className="button-secondary"
-                disabled={busy}
-                onClick={() => setConfirmForget(false)}
-              >
-                Keep using it
-              </button>
-              <button
-                type="button"
-                className="button-primary"
-                disabled={busy}
-                onClick={() => void forget("provider")}
-              >
-                {busy ? "Disconnecting..." : "Disconnect"}
-              </button>
-            </div>
-          </section>
-        ) : (
+      {step === "address" ? <NoServerYet /> : null}
+    </>
+  );
+}
+
+/**
+ * Why the same server is on this page more than once (MAR-574).
+ *
+ * Rendered once above the list rather than on each card in the group. The
+ * decision it explains is the issue's own instruction: do not delete Henrik's
+ * four rows silently. They are real data with real keys, and saying so is what
+ * turns "DASH shows this twice" from a bug into a decision the reader can see.
+ */
+function DuplicateNotice(): ReactNode {
+  const copy = describeDuplicateRecords();
+  return (
+    <section className="notice wrap" role="note">
+      <p>
+        <strong>{copy.headline}</strong>
+      </p>
+      <p>{copy.detail}</p>
+      <p className="next-action">{copy.next_action}</p>
+    </section>
+  );
+}
+
+/* ---------------------------------------------------------------------- *
+ * The page
+ * ---------------------------------------------------------------------- */
+
+export default function HostsPage(): ReactNode {
+  const canAct = useCanAct();
+  const host = useHost();
+  const [revision, setRevision] = useState(0);
+  const state = useView((source) => source.hosts(), revision);
+  const agents = useView((source) => source.agents(), revision);
+
+  /** Null means "show whatever the store implies"; a value is a deliberate mode. */
+  const [connecting, setConnecting] = useState<boolean | null>(null);
+
+  /*
+   * The standing per server, held in page state and never stored.
+   *
+   * DASH records how to reach a server and records nothing about whether that
+   * worked. So this map begins empty, every card opens in `not_checked`, and a
+   * standing on screen is exactly as old as the check that produced it. A stored
+   * one would be a number that keeps looking true after it stops being true,
+   * which is the failure the whole page exists to fix.
+   */
+  const [standings, setStandings] = useState<Record<string, HostConnectState>>({});
+  const [busyHost, setBusyHost] = useState<string | null>(null);
+  const [notices, setNotices] = useState<Record<string, string>>({});
+
+  function setStanding(hostId: string, standing: HostConnectState): void {
+    setStandings((current) => ({ ...current, [hostId]: standing }));
+  }
+
+  function setNotice(hostId: string, detail: string | null): void {
+    setNotices((current) => {
+      const next = { ...current };
+      if (detail === null) {
+        delete next[hostId];
+      } else {
+        next[hostId] = detail;
+      }
+      return next;
+    });
+  }
+
+  async function check(server: SavedServerView): Promise<void> {
+    setBusyHost(server.host_id);
+    setNotice(server.host_id, null);
+    setStanding(server.host_id, { step: "probing", label: server.label });
+    const result = await submitHostCommand("probe", { host_id: server.host_id });
+    setBusyHost(null);
+
+    if (result.ok) {
+      const runnerBuild = result.data?.["runner_build"];
+      const running = result.data?.["agents_running"];
+      setStanding(server.host_id, {
+        step: "reachable",
+        label: server.label,
+        runner_build: typeof runnerBuild === "string" && runnerBuild !== "" ? runnerBuild : null,
+        agents_running: typeof running === "number" ? running : 0,
+      });
+      return;
+    }
+
+    const problem = result.data?.["problem"];
+    if (typeof problem === "string" && HOST_REACH_PROBLEMS.includes(problem as HostReachProblem)) {
+      setStanding(server.host_id, {
+        step: "unreachable",
+        label: server.label,
+        problem: problem as HostReachProblem,
+      });
+      return;
+    }
+
+    /*
+     * A refusal the transport could not classify. The standing goes back to
+     * not-checked rather than to any of the six problems: naming one DASH did
+     * not establish would send somebody to fix a thing that is not broken.
+     */
+    setStanding(server.host_id, { step: "not_checked", label: server.label });
+    setNotice(server.host_id, result.detail ?? "DASH could not check this server.");
+  }
+
+  async function deploy(server: SavedServerView, agentId: string): Promise<void> {
+    setBusyHost(server.host_id);
+    setNotice(server.host_id, null);
+    const result = await submitHostCommand("deploy", {
+      host_id: server.host_id,
+      agent_id: agentId,
+    });
+    setBusyHost(null);
+    if (!result.ok) {
+      setNotice(server.host_id, result.detail ?? "DASH could not put that agent on this server.");
+      return;
+    }
+    // Ask the server what it has now rather than assuming the deploy's own
+    // answer. The card's count is the host's report, and this is how it stays
+    // one — see `describeDeployed`.
+    void check(server);
+  }
+
+  async function forget(server: SavedServerView): Promise<void> {
+    setBusyHost(server.host_id);
+    setNotice(server.host_id, null);
+    const result = await submitHostCommand("forget", { host_id: server.host_id });
+    setBusyHost(null);
+    if (!result.ok) {
+      setNotice(server.host_id, result.detail ?? "DASH could not forget this server safely.");
+      return;
+    }
+    setRevision((current) => current + 1);
+  }
+
+  const servers = state.status === "ready" ? state.data.servers : [];
+  const agentNames = agents.status === "ready" ? agents.data.agents.map((agent) => agent.name) : [];
+  const showConnect = connecting ?? servers.length === 0;
+
+  return (
+    <>
+      <h1>Servers</h1>
+      <p className="lede">
+        Put an agent on a server and it keeps working when DASH is closed. DASH
+        reaches out to the server; the server never reaches back.
+      </p>
+      <HostNotice host={host} />
+
+      {state.status === "loading" ? (
+        <ViewLoading what="the servers you have connected" />
+      ) : state.status === "failed" ? (
+        <ViewFailed recovery={state.recovery} />
+      ) : showConnect ? (
+        <ConnectServer
+          servers={servers}
+          canAct={canAct}
+          onSaved={() => {
+            setRevision((current) => current + 1);
+          }}
+          onLeave={
+            servers.length === 0
+              ? null
+              : () => {
+                  setConnecting(false);
+                }
+          }
+        />
+      ) : (
+        <>
+          {/* Counted rather than asserted, so this line cannot drift from the
+              cards under it — the failure mode of every hand-written summary
+              that has ever sat at the top of a list. */}
+          <p className="page-summary wrap">{summariseServers(servers)}</p>
+
+          {/* Said once, above the list, rather than repeated on every card that
+              is part of a group. Each card carries only which of them it is. */}
+          {servers.some((server) => server.same_server_count > 1) ? <DuplicateNotice /> : null}
+
+          <ul className="row-list">
+            {servers.map((server) => (
+              <li key={server.host_id}>
+                <ServerCard
+                  server={server}
+                  standing={standings[server.host_id] ?? { step: "not_checked", label: server.label }}
+                  agents={agentNames}
+                  busy={busyHost === server.host_id}
+                  notice={notices[server.host_id] ?? null}
+                  canAct={canAct}
+                  actions={{
+                    check: () => void check(server),
+                    deploy: (agentId) => void deploy(server, agentId),
+                    forget: () => void forget(server),
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+
           <div className="button-row">
             <button
               type="button"
               className="button-secondary"
-              disabled={busy}
-              onClick={() => setConfirmForget(true)}
+              onClick={() => {
+                setConnecting(true);
+              }}
             >
-              Stop using this server
+              Connect another server
             </button>
           </div>
-        )}
-      </article>
+        </>
+      )}
 
       {canAct ? null : (
         <p className="notice wrap" role="note">

@@ -34,6 +34,7 @@ import { connectableFields } from "../connection-credentials";
 import { describeEvidenceRecord } from "../copy/evidence";
 import { describeStoreDamage } from "../copy/recovery";
 import { deriveConnectionRequirements, type ConnectionSourceManifest } from "../connections";
+import { sameHostIdentity } from "../hosts";
 import {
   readAgentDomState,
   readCommandAudit,
@@ -47,6 +48,7 @@ import {
 } from "../insights";
 import { listRegistrations, type ManagedRegistration } from "../registration";
 import { readAgentFolderManifest } from "../agent-folders";
+import { describeManifestGap } from "../sample-refresh";
 import {
   artifactRecordsForAgent,
   artifactRecordsForRun,
@@ -80,6 +82,7 @@ import type {
   BrokerLapseView,
   BrokerRowView,
   ConnectionsView,
+  HostsView,
   PlannedStepView,
   RunView,
   RunsView,
@@ -568,6 +571,55 @@ function lapseViews(
   });
 }
 
+/**
+ * Every saved server, oldest first, with the duplicates counted (MAR-574).
+ *
+ * The read the Servers page never had. `readStore()` has returned `hosts` since
+ * MAR-536 and no view projected them, which is why a saved server could be in
+ * the database and absent from the only page about servers.
+ *
+ * Two decisions are made here rather than in the page:
+ *
+ * **`key_name` is dropped.** It is the one field on a `HostRecord` that names a
+ * credential on this computer, and a projection that carried it because it was
+ * in the row would put it in a renderer's memory for no page to use. The rule
+ * `AgentOriginView` states, applied where it has teeth.
+ *
+ * **The duplicate counting happens on the trusted side**, so both hosts get the
+ * same numbers, and it counts rather than merges: those records are real and
+ * each has its own key. See `lib/hosts.ts`'s `sameHostIdentity` for what makes
+ * two rows one server, and `lib/server-card.ts` for what the page says about it.
+ *
+ * Oldest first, deliberately, and it is the choice `findDuplicateHost` makes for
+ * the same reason: the record somebody has been using is the one they will
+ * recognise, and a newest-first list would put four accidental retries above it.
+ */
+export function hostsView(store: StoreShape = readStore()): HostsView {
+  const records = Object.values(store.hosts).sort(
+    (one, other) =>
+      one.added_at.localeCompare(other.added_at) || one.host_id.localeCompare(other.host_id),
+  );
+
+  return {
+    servers: records.map((record) => {
+      const sameServer = records.filter((other) => sameHostIdentity(other, record));
+      return {
+        host_id: record.host_id,
+        label: record.label,
+        address: record.address,
+        username: record.username,
+        port: record.port,
+        added_at: record.added_at,
+        fingerprint: record.host_fingerprint,
+        // Derived from the same sorted list the page renders, so the position
+        // a card claims and the position it has cannot drift apart.
+        same_server_index: sameServer.indexOf(record) + 1,
+        same_server_count: sameServer.length,
+      };
+    }),
+  };
+}
+
 export function connectionsView(store: StoreShape = readStore()): ConnectionsView {
   return {
     agents: listConnectionCapableAgents(store).map(({ name, manifest }) => {
@@ -737,6 +789,13 @@ export function workspaceView(
   const workspaceManifest = manifest as WorkspaceManifest;
   const stored = readAgentDomState(agent);
   const digest = latestArtifactForAgent(agent);
+  /*
+   * Resolved once. Two consumers now ask this document different questions —
+   * `buildPanelView` what it declares, `describeManifestGap` how old it is — and
+   * `panelDocument` reads the folder off disk, so calling it twice would open
+   * the same file twice per render of a page that already polls.
+   */
+  const document = panelDocument(agent, manifest);
 
   /*
    * Everything that run produced, not only the newest thing it produced.
@@ -803,10 +862,18 @@ export function workspaceView(
     input_roles: buildInputRoles(manifest),
     // MAR-548, ADR 0008 slice 3's wiring. The authoritative document, not the
     // row's copy — see `panelDocument` for which store answers and why.
-    panel: buildPanelView(panelDocument(agent, manifest), {
+    panel: buildPanelView(document, {
       artifacts: artifactRecordsForAgent(agent),
       facts: dashFactsForAgent(agent, store),
     }),
+    // MAR-576. The same document the panel was resolved from, asked a different
+    // question: not "what does this declare" but "is this older than what DASH
+    // would write for it today". It has to be the authoritative copy for the
+    // reason the panel does — a folder edited on disk is the document the user
+    // actually has, and telling them their setup is stale on the strength of a
+    // row that disagrees with it would be DASH reporting its own index back at
+    // them as their agent.
+    manifest_gap: describeManifestGap(document),
   };
 }
 

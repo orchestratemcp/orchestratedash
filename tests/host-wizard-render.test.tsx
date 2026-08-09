@@ -3,14 +3,18 @@
  *
  * The issue's `merged` bar is *"every state of the flow — no host, probing,
  * reachable, unreachable, no usable ssh — rendered and screenshotted at the three
- * widths"*. The screenshots cover the four steps; MAR-536 now gives the live
- * page its named host command path, and the state renders below keep every
- * answer from that probe represented under test.
+ * widths"*. The screenshots cover the steps; MAR-536 gave the live page its
+ * named host command path, and the state renders below keep every answer from
+ * that probe represented under test.
  *
  * So this file is the other half of that bar and the more durable half: it
- * renders all nine states of the check step, plus the key step both ways, and
+ * renders every state of the check step, plus the key step both ways, and
  * asserts what each one has to say. A screenshot proves a state was drawn once
  * on one machine; this proves every state is still drawn on every run.
+ *
+ * `tests/server-card-render.test.tsx` is the same discipline pointed at
+ * MAR-574's other half — the saved server, which this page could not draw at
+ * all until then.
  *
  * The load-bearing assertion is again a negative one. The concept screen for
  * this flow has a private-key textarea on it, and the entire design is that DASH
@@ -34,8 +38,9 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const STATES: HostConnectState[] = [
   { step: "no_host" },
   { step: "awaiting_key_install", label: LABEL, public_key: "ssh-ed25519 AAAA… orchestratedash" },
+  { step: "not_checked", label: LABEL },
   { step: "probing", label: LABEL },
-  { step: "reachable", label: LABEL, runner_build: "96cef12082fe67afa3a6" },
+  { step: "reachable", label: LABEL, runner_build: "96cef12082fe67afa3a6", agents_running: 1 },
   ...HOST_REACH_PROBLEMS.map((problem): HostConnectState => ({
     step: "unreachable",
     label: LABEL,
@@ -61,7 +66,7 @@ describe("the step rail", () => {
   });
 
   it("names every step, so none is reachable without being announced", () => {
-    const html = renderToStaticMarkup(<StepRail current="provider" />);
+    const html = renderToStaticMarkup(<StepRail current="address" />);
     for (const step of WIZARD_STEPS) {
       expect(html).toContain(describeStep(step).label);
     }
@@ -80,6 +85,13 @@ describe("the live wizard's command path", () => {
     expect(source).toContain('submitHostCommand("create"');
     expect(source).toContain('submitHostCommand("probe"');
     expect(source).toContain('submitHostCommand("forget"');
+    /*
+     * MAR-574. `host.deploy` was the fourth action and, until this page could
+     * render a saved server, it had **no page affordance at all** — dispatcher
+     * and preload only, which is precisely the MAR-518 shape this test exists to
+     * catch. The manage card is where it finally has one.
+     */
+    expect(source).toContain('submitHostCommand("deploy"');
   });
 });
 
@@ -127,7 +139,7 @@ describe("the key step", () => {
 });
 
 describe("every state of the check step", () => {
-  it("renders all nine, each with a headline and a meaning", () => {
+  it("renders every one of them, each with a headline and a meaning", () => {
     for (const state of STATES) {
       const html = renderToStaticMarkup(<CheckStep state={state} />);
       expect(html.length, state.step).toBeGreaterThan(0);
@@ -170,7 +182,14 @@ describe("every state of the check step", () => {
 
 describe("the deploy receipt, surfaced at last", () => {
   const reachable = renderToStaticMarkup(
-    <CheckStep state={{ step: "reachable", label: LABEL, runner_build: "96cef12082fe67afa3a6" }} />,
+    <CheckStep
+      state={{
+        step: "reachable",
+        label: LABEL,
+        runner_build: "96cef12082fe67afa3a6",
+        agents_running: 1,
+      }}
+    />,
   );
 
   it("appears the moment a server becomes reachable, and not before", () => {

@@ -1,0 +1,137 @@
+{
+  "captured_at": "2026-08-08T21:30:34.662Z",
+  "measurements": [
+    {
+      "viewport": 1279,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "server_cards": 0,
+      "wizard_cards": 1,
+      "hosting_notes": 1,
+      "widest_overflow": 33
+    },
+    {
+      "viewport": 1279,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "server_cards": 0,
+      "wizard_cards": 1,
+      "hosting_notes": 1,
+      "widest_overflow": 33
+    },
+    {
+      "viewport": 767,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "server_cards": 0,
+      "wizard_cards": 1,
+      "hosting_notes": 1,
+      "widest_overflow": 150
+    },
+    {
+      "viewport": 767,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "server_cards": 0,
+      "wizard_cards": 1,
+      "hosting_notes": 1,
+      "widest_overflow": 175
+    },
+    {
+      "viewport": 374,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "server_cards": 0,
+      "wizard_cards": 1,
+      "hosting_notes": 1,
+      "widest_overflow": 150
+    },
+    {
+      "viewport": 374,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "server_cards": 0,
+      "wizard_cards": 1,
+      "hosting_notes": 1,
+      "widest_overflow": 175
+    },
+    {
+      "viewport": 1279,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "server_cards": 0,
+      "wizard_cards": 1,
+      "hosting_notes": 1,
+      "widest_overflow": 33
+    },
+    {
+      "viewport": 1279,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "server_cards": 0,
+      "wizard_cards": 1,
+      "hosting_notes": 1,
+      "widest_overflow": 33
+    },
+    {
+      "viewport": 767,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "server_cards": 0,
+      "wizard_cards": 1,
+      "hosting_notes": 1,
+      "widest_overflow": 150
+    },
+    {
+      "viewport": 767,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "server_cards": 0,
+      "wizard_cards": 1,
+      "hosting_notes": 1,
+      "widest_overflow": 175
+    },
+    {
+      "viewport": 374,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "server_cards": 0,
+      "wizard_cards": 1,
+      "hosting_notes": 1,
+      "widest_overflow": 150
+    },
+    {
+      "viewport": 374,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "server_cards": 0,
+      "wizard_cards": 1,
+      "hosting_notes": 1,
+      "widest_overflow": 175
+    }
+  ]
+}

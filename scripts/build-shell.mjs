@@ -234,6 +234,19 @@ await Promise.all([
     format: "esm",
   }),
 
+  // The Servers route's own screenshot harness (MAR-574), on the same terms.
+  // Separate from `capture.ts` because that one photographs whatever store the
+  // machine happens to hold, and /hosts is a two-state route whose state that
+  // store *decides* — so a run against one machine's store photographs one of
+  // the two and cannot say which. This one is pointed at a store the run
+  // chooses, and is run once per state. See `electron/capture-servers.ts`.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-servers.ts")],
+    outfile: path.join(outDir, "capture-servers.mjs"),
+    format: "esm",
+  }),
+
   // MAR-423. "Try a sample agent" scaffolds a project, and a scaffold needs the
   // same `scripts/open-in-dash.mjs` the Agent Kit copies in, so the user can
   // re-add their agent later from their own folder without DASH.
