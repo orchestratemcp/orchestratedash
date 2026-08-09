@@ -116,31 +116,20 @@ import {
   serveRenderer,
 } from "./renderer-host";
 import { RENDERER_ENTRY_URL, RENDERER_ORIGIN } from "../lib/shell/renderer-scheme";
-<<<<<<< HEAD
 import {
   findHostByConnection,
   forgetHost,
-  pinHostFingerprint,
-=======
-<<<<<<< HEAD
-import { forgetHost, listHosts, readAgentManifest, readHost, saveHost } from "../lib/store";
-=======
-import {
-  forgetHost,
   importManifest,
->>>>>>> origin/master
+  listHosts,
+  pinHostFingerprint,
   readAgentManifest,
   readHost,
   saveHost,
 } from "../lib/store";
-<<<<<<< HEAD
-=======
 // MAR-576. The folder is authoritative (ADR 0008), so the re-import reads it
 // before the row — see `refreshSampleAgent`.
 import { readAgentFolderManifest } from "../lib/agent-folders";
 import { isScaffoldedByDash, refreshedManifest } from "../lib/sample-refresh";
->>>>>>> origin/master
->>>>>>> origin/master
 import {
   promptForAuthorization,
   promptForSecret,

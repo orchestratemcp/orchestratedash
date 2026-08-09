@@ -68,6 +68,12 @@ export function standingChip(state: HostConnectState): { label: string; tone: st
         : { label: "Cannot reach", tone: "chip-err" };
     case "awaiting_key_install":
       return { label: "Waiting for its key", tone: "chip-warn" };
+    // MAR-572's enrollment moment, added at the MAR-574/572 merge. Warn rather
+    // than error for `awaiting_key_install`'s reason: nothing is wrong, the
+    // server answered and is waiting on a person — and it is the one standing
+    // whose next step only the person can take.
+    case "confirm_host_key":
+      return { label: "Waiting for you to confirm it", tone: "chip-warn" };
     case "no_host":
       return { label: "Not connected", tone: "chip-muted" };
   }

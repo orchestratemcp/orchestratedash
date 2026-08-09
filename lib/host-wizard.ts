@@ -408,11 +408,8 @@ export function describeSetupStep(hostLabel: string): {
  */
 export function everyWizardSentence(hostLabel = "My server"): string[] {
   const key = describeKeyStep(hostLabel);
-<<<<<<< HEAD
-  const setup = describeSetupStep(hostLabel);
-=======
   const hosting = describeHostingRecommendation();
->>>>>>> origin/master
+  const setup = describeSetupStep(hostLabel);
   return [
     ...WIZARD_STEPS.flatMap((step) => {
       const copy = describeStep(step);
@@ -424,18 +421,15 @@ export function everyWizardSentence(hostLabel = "My server"): string[] {
     key.detail,
     key.refusal,
     key.next_action,
-<<<<<<< HEAD
+    hosting.free_path,
+    hosting.question,
+    hosting.recommendation,
+    hosting.link_label,
     setup.headline,
     setup.detail,
     setup.disclosure,
     setup.next_action,
     ...setup.what_it_does,
     ...setup.what_it_leaves,
-=======
-    hosting.free_path,
-    hosting.question,
-    hosting.recommendation,
-    hosting.link_label,
->>>>>>> origin/master
   ];
 }

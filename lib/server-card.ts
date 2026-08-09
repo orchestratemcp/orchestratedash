@@ -155,6 +155,10 @@ export function describeDeployed(state: HostConnectState): string {
 
     case "not_checked":
     case "awaiting_key_install":
+    // MAR-572's enrollment moment joins this group at the MAR-574/572 merge:
+    // DASH has read the server's identity and has not signed in, so it knows
+    // exactly as much about what runs there as it does before any check.
+    case "confirm_host_key":
     case "no_host":
       return "DASH does not know what is running there. It asks the server each time you check, and keeps no list of its own.";
   }

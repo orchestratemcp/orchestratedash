@@ -88,7 +88,16 @@ export type HostConnectState =
   /** A key exists and the server has not been told about it yet. */
   | { step: "awaiting_key_install"; label: string; public_key: string }
   /**
-<<<<<<< HEAD
+   * A saved server DASH has not signed in to since it opened (MAR-574).
+   *
+   * The state the Servers page opens in for every record it has, and it is not
+   * a failure and not a probe result: DASH holds the connection facts and has
+   * not used them yet. Kept distinct from `probing` — which is a check in
+   * flight — and from `unreachable`, because a page that showed a saved server
+   * as unreachable before asking would be inventing a fault.
+   */
+  | { step: "not_checked"; label: string }
+  /**
    * The enrollment moment: DASH has this server's key and nobody has said yet
    * whether it is the right one (MAR-572).
    *
@@ -108,17 +117,6 @@ export type HostConnectState =
       /** How many keys the server offered in total, chosen included. */
       offered_count: number;
     }
-=======
-   * A saved server DASH has not signed in to since it opened (MAR-574).
-   *
-   * The state the Servers page opens in for every record it has, and it is not
-   * a failure and not a probe result: DASH holds the connection facts and has
-   * not used them yet. Kept distinct from `probing` — which is a check in
-   * flight — and from `unreachable`, because a page that showed a saved server
-   * as unreachable before asking would be inventing a fault.
-   */
-  | { step: "not_checked"; label: string }
->>>>>>> origin/master
   | { step: "probing"; label: string }
   /**
    * DASH reached the runner and it answered. `runner_build` may be unknown.
@@ -177,7 +175,15 @@ export function describeConnectState(state: HostConnectState): HostConnectCopy {
         next_action: "Copy the key, then check the connection",
       };
 
-<<<<<<< HEAD
+    case "not_checked":
+      return {
+        headline: `${state.label} has not been checked yet`,
+        detail:
+          "DASH knows how to reach this server and has not signed in to it since you opened " +
+          "DASH. Nothing is wrong — it simply has not looked.",
+        next_action: "Check this server",
+      };
+
     case "confirm_host_key":
       return {
         headline: `Is this ${state.label}?`,
@@ -193,15 +199,6 @@ export function describeConnectState(state: HostConnectState): HostConnectCopy {
           "DASH cannot check this for you — anything answering at this address could say " +
           "the same thing, so this is the one part only you can confirm.",
         next_action: "Compare the code, then confirm this is your server",
-=======
-    case "not_checked":
-      return {
-        headline: `${state.label} has not been checked yet`,
-        detail:
-          "DASH knows how to reach this server and has not signed in to it since you opened " +
-          "DASH. Nothing is wrong — it simply has not looked.",
-        next_action: "Check this server",
->>>>>>> origin/master
       };
 
     case "probing":
@@ -389,7 +386,7 @@ export function everyConnectSentence(label = "My server"): string[] {
   const states: HostConnectState[] = [
     { step: "no_host" },
     { step: "awaiting_key_install", label, public_key: "ssh-ed25519 AAAA… orchestratedash" },
-<<<<<<< HEAD
+    { step: "not_checked", label },
     {
       step: "confirm_host_key",
       label,
@@ -399,9 +396,6 @@ export function everyConnectSentence(label = "My server"): string[] {
       key_type: "ssh-ed25519",
       offered_count: 3,
     },
-=======
-    { step: "not_checked", label },
->>>>>>> origin/master
     { step: "probing", label },
     // Both wordings of the count, so neither escapes the copy sweep.
     { step: "reachable", label, runner_build: "96cef12082fe67afa3a6", agents_running: 1 },
