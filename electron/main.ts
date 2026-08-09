@@ -34,8 +34,8 @@ import { assertContractsLocation } from "./resources";
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from "electron";
 
-import { writeFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
 import { userInfo } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -117,19 +117,29 @@ import {
 } from "./renderer-host";
 import { RENDERER_ENTRY_URL, RENDERER_ORIGIN } from "../lib/shell/renderer-scheme";
 <<<<<<< HEAD
+import {
+  findHostByConnection,
+  forgetHost,
+  pinHostFingerprint,
+=======
+<<<<<<< HEAD
 import { forgetHost, listHosts, readAgentManifest, readHost, saveHost } from "../lib/store";
 =======
 import {
   forgetHost,
   importManifest,
+>>>>>>> origin/master
   readAgentManifest,
   readHost,
   saveHost,
 } from "../lib/store";
+<<<<<<< HEAD
+=======
 // MAR-576. The folder is authoritative (ADR 0008), so the re-import reads it
 // before the row — see `refreshSampleAgent`.
 import { readAgentFolderManifest } from "../lib/agent-folders";
 import { isScaffoldedByDash, refreshedManifest } from "../lib/sample-refresh";
+>>>>>>> origin/master
 >>>>>>> origin/master
 import {
   promptForAuthorization,
@@ -156,12 +166,19 @@ import {
   assertHostKeyProtected,
   createHostKey,
   forgetHostKey,
+  forgetHostKeyPin,
   knownHostsPath,
   openSshChannel,
+  pinHostKey,
   probeSshTools,
+  readHostPublicKey,
   runDeployVerb,
+  scanHostKey,
   sshDeploySpawn,
+  type SshDiagnostics,
 } from "./ssh-host";
+import { authorizedKeysLine, buildBootstrapScript } from "../lib/host-bootstrap";
+import { classifyHostFailure, type HostReachProblem } from "../lib/host-connect";
 
 /**
  * Where the renderer loads from.
@@ -1132,11 +1149,59 @@ async function hostAction(
   target:
     | { label: string; address: string; username: string; port: number }
     | { host_id: string }
+    | { host_id: string; fingerprint: string }
     | { host_id: string; agent_id: string },
 ): Promise<HostActionResult> {
   if (action === "create") {
     if (!("label" in target)) {
       return { ok: false, detail: "DASH did not receive the server details it needs." };
+    }
+
+    /*
+     * Adding a server DASH already has is *resuming*, not adding a second one
+     * (MAR-572).
+     *
+     * The 2026-08-08 run walked this path four times against one box, because
+     * the wizard returned to its first step on every failure. Each pass minted
+     * a fresh key: the previous one stayed in DASH's store attached to nothing,
+     * and its public half stayed in the server's allowed-keys file as a line
+     * nobody could account for. Neither is a wizard bug that can be fixed only
+     * in the wizard — anything that walks these steps twice would do it — so
+     * the idempotence lives here, at the point where a key would be minted.
+     *
+     * The label is taken from the newer attempt. It is what the person calls
+     * the server and they may well have improved it; nothing points at it.
+     */
+    const existing = findHostByConnection({
+      address: target.address.trim(),
+      port: target.port,
+      username: target.username.trim(),
+    });
+    if (existing !== null) {
+      let publicKey: string;
+      try {
+        publicKey = readHostPublicKey(dataDir, existing.key_name);
+      } catch {
+        // The record outlived its key, which is recoverable only by starting
+        // this server over — and saying so beats silently minting a key the
+        // server's allowed-keys file has never been told about.
+        return {
+          ok: false,
+          detail:
+            "DASH has this server saved but no longer holds the key for it. " +
+            "Stop using it and add it again to make a new one.",
+        };
+      }
+      return {
+        ok: true,
+        action: "create",
+        host_id: existing.host_id,
+        label: existing.label,
+        public_key: publicKey,
+        key_name: existing.key_name,
+        authorized_keys_line: authorizedKeysLine(publicKey),
+        resumed: true,
+      };
     }
 
     // The renderer does not choose either name. An address is not an identity,
@@ -1219,6 +1284,8 @@ async function hostAction(
       label: record.label,
       public_key: publicKey,
       key_name: record.key_name,
+      authorized_keys_line: authorizedKeysLine(publicKey),
+      resumed: false,
     };
   }
 
@@ -1235,11 +1302,75 @@ async function hostAction(
       // Remove the credential first. If this fails, keep the record so DASH
       // does not report a server forgotten while it can still sign in to it.
       forgetHostKey(dataDir, record.key_name);
+      // And the pin, which is the only place it is ever removed. A server added
+      // again later must be confirmed again: the previous decision was about a
+      // machine that may not be this one any more (MAR-572).
+      forgetHostKeyPin(dataDir, record);
       forgetHost(record.host_id);
     } catch {
       return { ok: false, detail: "DASH could not forget this server safely." };
     }
     return { ok: true, action: "forget", host_id: record.host_id, label: record.label };
+  }
+
+  if (action === "setup") {
+    return hostSetupScript(record);
+  }
+
+  if (action === "trust") {
+    if (!("fingerprint" in target)) {
+      return { ok: false, detail: "DASH did not receive the identity code you confirmed." };
+    }
+    return trustHostKey(record, target.fingerprint);
+  }
+
+  /*
+   * The enrollment gate, and it is before `ssh` rather than after it (MAR-572).
+   *
+   * A host whose identity nobody has confirmed cannot pass `sshArgv`'s
+   * `StrictHostKeyChecking=yes`, so dialling first would spend a connection to
+   * learn what this record already says. Worse, it would report the failure as
+   * a refusal — which is what happened on 2026-08-08, when four probe attempts
+   * against a real box produced "could not sign in, or the helper is not
+   * installed" while the box's own log showed DASH aborting before it offered
+   * anything at all.
+   *
+   * Deploy passes through here too. Putting an agent on a server DASH has not
+   * been told to trust is the same question asked with more at stake.
+   */
+  if (record.host_fingerprint === null) {
+    const scan = scanHostKey(record);
+    if (!scan.ok) {
+      return {
+        ok: false,
+        detail:
+          scan.problem === "no_ssh"
+            ? "This computer is missing the tool DASH uses to check a server's identity."
+            : scan.problem === "no_answer"
+              ? "Nothing answered at this server's address."
+              : "This server offered no identity DASH knows how to check.",
+        problem:
+          scan.problem === "no_ssh"
+            ? "no_ssh_on_this_computer"
+            : scan.problem === "no_answer"
+              ? "no_answer_at_address"
+              : "sign_in_refused",
+      };
+    }
+    return {
+      ok: false,
+      // Not an error, and the copy that renders this state says so. It is
+      // reported on the failure path because DASH did not do the thing it was
+      // asked to do, and reporting it as a success would be a probe that says
+      // it reached a server it has never signed in to.
+      detail: "This server's identity has not been confirmed yet.",
+      problem: "host_key_not_trusted",
+      host_key: {
+        fingerprint: scan.offer.chosen.fingerprint,
+        key_type: scan.offer.chosen.type,
+        offered_count: scan.offer.offered.length,
+      },
+    };
   }
 
   let produced: ReturnType<typeof produceAgentFolderBundle> | null = null;
@@ -1273,20 +1404,25 @@ async function hostAction(
     };
   }
 
+  // Collected by `openSshChannel` and read only by `classifyHostFailure`, whose
+  // return type is a closed union — so `ssh`'s own text, which names this
+  // machine's key location, has no route from here to anything rendered.
+  const diagnostics: SshDiagnostics = { stderr: "" };
+
   let answer: Awaited<ReturnType<typeof runDeployVerb>>;
   try {
     if (produced !== null && produced.ok) {
-      const spawn = sshDeploySpawn(record, dataDir);
+      const spawn = sshDeploySpawn(record, dataDir, diagnostics);
       const installed = await runDeployVerb(spawn, produced.request);
       if (!installed.ok) {
-        return { ok: false, detail: installed.detail };
+        return { ok: false, detail: installed.detail, problem: diagnosed(diagnostics, record) };
       }
       const started = await runDeployVerb(spawn, {
         verb: "start",
         bundle_id: produced.request.bundle_id,
       });
       if (!started.ok) {
-        return { ok: false, detail: started.detail };
+        return { ok: false, detail: started.detail, problem: diagnosed(diagnostics, record) };
       }
       return {
         ok: true,
@@ -1312,6 +1448,7 @@ async function hostAction(
           verb,
           { identity_file: identity, known_hosts_file: knownHostsPath(dataDir) },
           bundleId,
+          diagnostics,
         ),
       { verb: "status" },
     );
@@ -1323,11 +1460,22 @@ async function hostAction(
   }
 
   if (!answer.ok) {
-    // `openSshChannel` deliberately does not parse ssh's stderr: those messages
-    // can name the account, address, port and local key path. The safe answer is
-    // therefore the transport's own generic sentence, not a guessed one of the
-    // sign-in or identity-change states.
-    return { ok: false, detail: answer.detail };
+    /*
+     * The transport's own generic sentence, plus a *class* when one can be
+     * recognised (MAR-572, MAR-573).
+     *
+     * `ssh`'s stderr still never travels — `classifyHostFailure` can only
+     * return one of nine named problems, and the renderer turns that into copy
+     * of DASH's own. What this replaces is the old behaviour of returning no
+     * class at all, which made every one of those nine wear the same sentence:
+     * "DASH could not sign in, or the helper is not installed there." The
+     * 2026-08-08 run produced three of them in a row and read that sentence
+     * every time, while the server's log said precisely which had happened.
+     *
+     * An unrecognised failure still returns no class, and still gets the
+     * generic sentence. Guessing would be worse than the shrug it replaced.
+     */
+    return { ok: false, detail: answer.detail, problem: diagnosed(diagnostics, record) };
   }
   if (answer.verb !== "status") {
     return { ok: false, detail: "The server did not answer the check DASH sent." };
@@ -1353,6 +1501,156 @@ async function hostAction(
     // stored, because DASH stores nothing about what it deployed where. The
     // Servers page words it as a report for that reason.
     agents_running: running.length,
+  };
+}
+
+/**
+ * `ssh`'s diagnostics as one of nine problems, or as nothing.
+ *
+ * A named function rather than an inline call so that every `return` on the
+ * failure path reads the same way, and so there is exactly one place in main
+ * where these bytes are touched at all. Whether the host is pinned is the
+ * tiebreaker `classifyHostFailure` needs to tell an unconfirmed identity from a
+ * changed one.
+ */
+function diagnosed(diagnostics: SshDiagnostics, record: HostRecord): HostReachProblem | undefined {
+  return (
+    classifyHostFailure({
+      stderr: diagnostics.stderr,
+      pinned: record.host_fingerprint !== null,
+    }) ?? undefined
+  );
+}
+
+/**
+ * Record that a person confirmed this server's identity (MAR-572).
+ *
+ * The host is asked *again* rather than trusting the fingerprint that came back
+ * from the renderer, and the two must agree. That closes a real gap: between
+ * DASH showing a fingerprint and somebody deciding to accept it, whatever is
+ * answering at that address could have changed. The window is small and it is
+ * precisely the window this step exists to be careful about, so the check costs
+ * one scan and is worth it.
+ *
+ * The file and the record are written in that order and both refuse a second
+ * pin. If the record is already pinned, this returns the identity-changed alarm
+ * rather than a success — because the only way to reach this function with a
+ * pinned record is a server whose key is not the one that was pinned.
+ */
+function trustHostKey(record: HostRecord, confirmed: string): HostActionResult {
+  if (record.host_fingerprint !== null) {
+    return record.host_fingerprint === confirmed
+      ? // Confirming what is already confirmed. A no-op success rather than an
+        // error, because a flow that can be resumed will re-enter its own steps
+        // and a resumable flow that fails on the second pass is not one.
+        {
+          ok: true,
+          action: "trust",
+          host_id: record.host_id,
+          label: record.label,
+          fingerprint: record.host_fingerprint,
+        }
+      : {
+          // Somebody is being asked to confirm an identity that is not the one
+          // DASH pinned. There is no branch below this that could change the
+          // pin, and this refusal is where that fact is stated.
+          ok: false,
+          detail: "DASH already recorded a different identity for this server.",
+          problem: "server_identity_changed",
+        };
+  }
+
+  const scan = scanHostKey(record);
+  if (!scan.ok) {
+    return {
+      ok: false,
+      detail: "DASH could not ask this server for its identity again.",
+      problem: scan.problem === "no_ssh" ? "no_ssh_on_this_computer" : "no_answer_at_address",
+    };
+  }
+  if (scan.offer.chosen.fingerprint !== confirmed) {
+    // Never pinned. What is answering now is not what was on screen, and the
+    // honest response to that is the alarm, not a retry.
+    return {
+      ok: false,
+      detail: "This server answered with a different identity than the one you were shown.",
+      problem: "server_identity_changed",
+    };
+  }
+
+  const pinned = pinHostKey(dataDir, record, scan.offer.chosen);
+  if (!pinned.ok) {
+    return {
+      ok: false,
+      detail: "DASH already has a different identity recorded for this address.",
+      problem: "server_identity_changed",
+    };
+  }
+  if (!pinHostFingerprint(record.host_id, pinned.fingerprint)) {
+    // The row moved under us — two windows, or a record forgotten mid-flow. The
+    // file now holds a line for a host DASH may no longer have, which
+    // `host.forget` removes; nothing here overwrites anything.
+    return { ok: false, detail: "DASH could not record this server's identity." };
+  }
+  return {
+    ok: true,
+    action: "trust",
+    host_id: record.host_id,
+    label: record.label,
+    fingerprint: pinned.fingerprint,
+  };
+}
+
+/**
+ * The one-off setup step for a server, as text (MAR-573).
+ *
+ * Everything variable in it comes from two places: DASH's own public key for
+ * this host, and the helper artifact staged beside the bundled main process.
+ * `lib/host-bootstrap.ts` refuses anything it does not recognise rather than
+ * quoting it, so the script this returns either passed that allowlist or does
+ * not exist.
+ *
+ * The helper is read from the same directory `host.deploy` pushes from, which
+ * is what makes "the host is running the build this DASH shipped" true of the
+ * bootstrap as well as of the deploy.
+ */
+function hostSetupScript(record: HostRecord): HostActionResult {
+  let publicKey: string;
+  try {
+    publicKey = readHostPublicKey(dataDir, record.key_name);
+  } catch {
+    return {
+      ok: false,
+      detail: "DASH no longer holds the key for this server, so it cannot write a setup step for it.",
+    };
+  }
+
+  let helper: Buffer;
+  try {
+    helper = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "runner-standalone", "host-helper.mjs"),
+    );
+  } catch {
+    // A build that shipped without the artifact. Named as DASH's own fault,
+    // because it is: nothing the person did or could do produced it.
+    return { ok: false, detail: "This copy of DASH is missing the helper it puts on a server." };
+  }
+
+  const built = buildBootstrapScript({
+    public_key: publicKey,
+    username: record.username,
+    helper_base64: helper.toString("base64"),
+    helper_sha256: createHash("sha256").update(helper).digest("hex"),
+  });
+  if (!built.ok) {
+    return { ok: false, detail: built.detail };
+  }
+  return {
+    ok: true,
+    action: "setup",
+    host_id: record.host_id,
+    label: record.label,
+    script: built.script,
   };
 }
 

@@ -376,6 +376,55 @@ export function saveHost(record: HostRecord): void {
 }
 
 /**
+ * The saved server at one address, or null (MAR-572).
+ *
+ * Enrollment has to be resumable, and this is what makes it so. The 2026-08-08
+ * run reset the wizard to its first step on every failure, and walking forward
+ * again minted a *new* key each time — leaving the previous one unusable in
+ * DASH's store and its public half stale in the server's allowed-keys file. The
+ * fix is for "add this server" to find the server it already added instead of
+ * making a second one.
+ *
+ * Matched on the three facts that identify a way in — address, port, account —
+ * and deliberately not on the label, which is what a person calls it and may
+ * well change between attempts.
+ */
+export function findHostByConnection(connection: {
+  address: string;
+  port: number;
+  username: string;
+}): HostRecord | null {
+  const hosts = Object.values(readStore().hosts);
+  return (
+    hosts.find(
+      (host) =>
+        host.address === connection.address &&
+        host.port === connection.port &&
+        host.username === connection.username,
+    ) ?? null
+  );
+}
+
+/**
+ * Record that a person confirmed this server's identity (MAR-572).
+ *
+ * The one column this function writes, and it writes it once: the update is
+ * conditional on the fingerprint still being null, so a second call cannot move
+ * a pin that already exists. That is the same refusal `pinHostKey` makes about
+ * the file, kept in the database too — the two have to agree, and the way to
+ * make them agree is for neither to have a path that overwrites.
+ *
+ * Returns whether the pin was recorded. False means it was already pinned,
+ * which the caller must treat as the alarm it is rather than as success.
+ */
+export function pinHostFingerprint(hostId: string, fingerprint: string): boolean {
+  const changes = db()
+    .prepare("UPDATE hosts SET host_fingerprint = ? WHERE host_id = ? AND host_fingerprint IS NULL")
+    .run(fingerprint, hostId).changes;
+  return Number(changes) === 1;
+}
+
+/**
  * Remove DASH's record of one server and return the key name main must retire.
  *
  * No path travels out of this query layer. The caller receives the record only

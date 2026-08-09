@@ -51,6 +51,7 @@ import {
   type DeployRequest,
 } from "../lib/deploy/verbs";
 import { runDeployVerb, type DeploySpawn } from "../electron/ssh-host";
+import { helperArgv } from "../scripts/host-helper/main";
 import { sshArgv, type HostRecord } from "../lib/hosts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -115,6 +116,41 @@ function localHelper(hostRoot: string): DeploySpawn {
   };
 }
 
+/**
+ * The same child, invoked the way `sshd`'s forced command invokes it (MAR-573).
+ *
+ * With ADR 0009's `command="…"` in the host's allowed-keys file, `sshd` runs
+ * the helper with **no arguments at all** and puts DASH's actual request in
+ * `SSH_ORIGINAL_COMMAND`. So this spawner deliberately passes an empty argv:
+ * every byte that decides what happens travels in the environment, which is
+ * exactly the substitution the real host makes.
+ *
+ * It is the closest CI can get to the forced command without an `sshd`, and it
+ * is worth more than it looks — the failure it guards against is a helper that
+ * works perfectly under `ssh host status` and answers "no operation was named"
+ * on every real host, which is what would have shipped without it.
+ */
+function forcedCommandHelper(hostRoot: string): DeploySpawn {
+  return (verb, bundleId): StdioChannel => {
+    const child = spawn(process.execPath, [helperBundle], {
+      stdio: ["pipe", "pipe", "inherit"],
+      env: {
+        ...process.env,
+        DASH_HOST_ROOT: hostRoot,
+        SSH_ORIGINAL_COMMAND: [verb, ...(bundleId === undefined ? [] : [bundleId])].join(" "),
+      },
+    });
+    return {
+      stdin: child.stdin,
+      stdout: child.stdout,
+      close: () => {
+        child.stdin.end();
+        child.kill();
+      },
+    };
+  };
+}
+
 function sourceFile(relative: string, body: string, executable = false): SourceFile {
   return { path: relative, content: Buffer.from(body, "utf8"), executable };
 }
@@ -160,6 +196,33 @@ describe("the closed verb set", () => {
       expect(isDeployVerb(candidate)).toBe(false);
       expect(checkDeployRequest({ verb: candidate, bundle_id: "abc" }).ok).toBe(false);
     }
+  });
+
+  it("reads the verb from the forced command's environment when argv is empty", () => {
+    /*
+     * ADR 0009, at the seam. `helperArgv` prefers argv so that every existing
+     * caller — and the local children in this file — behave exactly as before,
+     * and falls back to `SSH_ORIGINAL_COMMAND`, which is the only thing a
+     * forced command leaves for the program it forces.
+     *
+     * The string is split and never interpreted. There is no shell between the
+     * environment variable and `checkDeployRequest`, which is why a request
+     * with a semicolon in it becomes tokens that are not verbs rather than
+     * something that runs.
+     */
+    expect(helperArgv([], "status")).toEqual(["status"]);
+    expect(helperArgv([], "connect news-scout")).toEqual(["connect", "news-scout"]);
+    expect(helperArgv([], "  status  ")).toEqual(["status"]);
+    expect(helperArgv([], undefined)).toEqual([]);
+    expect(helperArgv([], "")).toEqual([]);
+
+    // Argv wins, so nothing an environment carries can redirect an invocation
+    // that already named its verb.
+    expect(helperArgv(["status"], "install")).toEqual(["status"]);
+
+    // Not a verb, and not run: the tokens go to the same check as everything
+    // else, which draws from a closed array.
+    expect(isDeployVerb(helperArgv([], "status; rm -rf /")[0] as string)).toBe(false);
   });
 
   it("puts nothing on the command line that a request could choose", () => {
@@ -297,6 +360,27 @@ describe("install, start, status, collect, stop — against the real host helper
   async function send(hostRoot: string, request: DeployRequest): Promise<DeployAnswer> {
     return await runDeployVerb(localHelper(hostRoot), request);
   }
+
+  it("answers a verb that arrived only as a forced command's environment", async () => {
+    /*
+     * The MAR-573 finding, closed against the real helper binary.
+     *
+     * On 2026-08-08 DASH authenticated to a real sshd and the host answered
+     * `bash: line 1: status: command not found` — the verb reached a server
+     * with nothing on it named `status`. ADR 0009's answer is a forced command
+     * in the allowed-keys file, which means the verb no longer arrives on the
+     * command line at all: `sshd` runs the helper with empty argv and leaves
+     * the request in `SSH_ORIGINAL_COMMAND`.
+     *
+     * This spawns the built helper exactly that way. The answer below is the
+     * same one the attended run finally got by hand — `{"ok":true,
+     * "verb":"status","bundles":[]}` — reached without a single argument.
+     */
+    const hostRoot = freshDir("host-forced");
+    const answer = await runDeployVerb(forcedCommandHelper(hostRoot), { verb: "status" });
+
+    expect(answer).toEqual({ ok: true, verb: "status", bundles: [] });
+  });
 
   it("installs, verifies every digest on arrival, and starts what it installed", async () => {
     const hostRoot = freshDir("host");

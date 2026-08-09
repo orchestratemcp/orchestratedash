@@ -48,7 +48,15 @@ import {
   type DeployAnswer,
   type DeployRequest,
 } from "../lib/deploy/verbs";
-import { sshArgv, type HostRecord, type HostVerb } from "../lib/hosts";
+import {
+  hostPattern,
+  knownHostsEntriesFor,
+  knownHostsLine,
+  parseScannedHostKeys,
+  type HostKeyOffer,
+  type ScannedHostKey,
+} from "../lib/host-key";
+import { checkHostRecord, sshArgv, type HostRecord, type HostVerb } from "../lib/hosts";
 import { hardenOwnerOnly } from "../runner/channel-secret";
 
 /* ---------------------------------------------------------------------- *
@@ -262,6 +270,196 @@ export function createHostKey(dataDir: string, keyName: string): string {
 }
 
 /**
+ * The public half of a key DASH already holds.
+ *
+ * The obvious question about this function is whether it weakens the module's
+ * one structural promise — *there is no function here that returns a private
+ * key.* It does not, and the way it does not is worth stating: it names the
+ * `.pub` file, which is the file whose entire purpose is to be handed out, and
+ * there is no argument by which the other path could be reached from it. The
+ * test that sweeps this module's exports for a private-key reader still passes
+ * over it because it is still true.
+ *
+ * It exists because enrollment has to be **resumable**. Before MAR-572 the only
+ * way to see the public half was to mint a key, so a wizard that lost its place
+ * — which it did, on every failure — had no way to continue and minted another
+ * one. That left an unusable key in DASH's store and a stale line on the host
+ * for each attempt. The fix is to be able to ask for what already exists.
+ *
+ * @throws HostKeyError when this host has no key on this machine.
+ */
+export function readHostPublicKey(dataDir: string, keyName: string): string {
+  const publicKeyFile = `${hostKeyPath(dataDir, keyName)}.pub`;
+  if (!existsSync(publicKeyFile)) {
+    throw new HostKeyError(
+      "key_missing",
+      "DASH no longer holds the key for this server, so it cannot sign in. Connect the server again.",
+    );
+  }
+  return readFileSync(publicKeyFile, "utf8").trim();
+}
+
+/* ---------------------------------------------------------------------- *
+ * Enrollment: the first pin (MAR-572)
+ * ---------------------------------------------------------------------- */
+
+export type HostKeyScanProblem =
+  /** `ssh-keyscan` is not on this machine. */
+  | "no_ssh"
+  /** Nothing answered at that address and port. */
+  | "no_answer"
+  /** Something answered and offered no key DASH will pin. */
+  | "no_supported_key";
+
+export type HostKeyScanResult =
+  | { ok: true; offer: HostKeyOffer }
+  | { ok: false; problem: HostKeyScanProblem };
+
+/**
+ * Ask a host who it says it is, over DASH's own dialer.
+ *
+ * This is the half of `StrictHostKeyChecking=yes` that never shipped. The
+ * strict half has been in `sshArgv` since MAR-484, pointed at a `known_hosts`
+ * that `createHostKey` writes **empty on purpose** — so that a first connection
+ * fails closed rather than silently trusting whatever answered. What was
+ * missing was any way for a person to put a first key into that file, which
+ * meant every host DASH had not seen failed forever. The 2026-08-08 run found
+ * it against a real box: DASH's probes reached the server and aborted at
+ * preauth, and the host's `auth.log` recorded no publickey attempt at all
+ * because there had never been a session to make one in.
+ *
+ * `ssh-keyscan` rather than `ssh -o StrictHostKeyChecking=accept-new`, and the
+ * difference is the entire point. `accept-new` writes a key into the file as a
+ * side effect of connecting, so the trust decision would be made by the
+ * connection rather than by a person, and it would be made before anybody had
+ * seen a fingerprint. This asks, shows, and writes nothing.
+ *
+ * Nothing about the record reaches a shell: `execFileSync` takes an argument
+ * vector, and every component of it is either fixed here or has been through
+ * `checkHostRecord` — which refuses a leading `-` for exactly this reason.
+ */
+export function scanHostKey(record: HostRecord): HostKeyScanResult {
+  const checked = checkHostRecord(record);
+  if (!checked.ok) {
+    // A record that cannot be validated cannot be dialled. This is unreachable
+    // through the app — main validates before saving and `readStore` validates
+    // on the way back out — and it is checked rather than assumed because the
+    // next line puts these strings on a command line.
+    return { ok: false, problem: "no_answer" };
+  }
+
+  const address =
+    record.address.startsWith("[") && record.address.endsWith("]")
+      ? record.address.slice(1, -1)
+      : record.address;
+
+  let output: string;
+  try {
+    output = execFileSync(
+      "ssh-keyscan",
+      [
+        // Bounded, because this runs while somebody is watching a wizard. The
+        // default is five seconds per key type and this asks for three.
+        "-T", "10",
+        "-p", String(record.port),
+        // Asked for in DASH's own order of preference. What arrives is whatever
+        // the host has; `chooseHostKey` decides which one is pinned.
+        "-t", "ed25519,ecdsa,rsa",
+        address,
+      ],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true, timeout: 20_000 },
+    );
+  } catch (error: unknown) {
+    if ((error as { code?: string } | null)?.code === "ENOENT") {
+      return { ok: false, problem: "no_ssh" };
+    }
+    // `ssh-keyscan` exits non-zero when it found nothing, and its stdout is
+    // still the honest answer when it found something and then timed out on a
+    // later key type. Read what there is; the parser decides whether it is a key.
+    const stdout = (error as { stdout?: Buffer | string } | null)?.stdout;
+    output = typeof stdout === "string" ? stdout : (stdout?.toString("utf8") ?? "");
+  }
+
+  const parsed = parseScannedHostKeys(output);
+  if (!parsed.ok) {
+    // "Nothing answered" and "it answered with nothing usable" are different
+    // facts with different next actions — a wrong address against a server
+    // running an ancient key type — and `lib/host-connect.ts` has a sentence
+    // for each.
+    return { ok: false, problem: parsed.problem === "no_key_offered" ? "no_answer" : "no_supported_key" };
+  }
+  return { ok: true, offer: parsed.offer };
+}
+
+export type HostKeyPinResult =
+  | { ok: true; fingerprint: string }
+  /** Something is already pinned for this host and it is not this key. */
+  | { ok: false; problem: "already_pinned_differently" };
+
+/**
+ * Write the first pin, and refuse to write a second one.
+ *
+ * The refusal is the load-bearing half. ADR 0007 requires a changed host key to
+ * fail closed, and the way to keep that true once an enrollment step exists is
+ * to make sure the enrollment step cannot be used to *re*-enrol: there is no
+ * argument to this function that overwrites a line, and no sibling function
+ * that does either. A host whose key really did change is forgotten and added
+ * again, which is a deliberate act with a confirmation in front of it, rather
+ * than a button that appears at the moment somebody is most inclined to press
+ * it.
+ *
+ * Re-pinning the *same* key succeeds and writes nothing new, so a retried
+ * enrollment is not an error — resumability that stops at the first repeated
+ * step is not resumability.
+ *
+ * @throws ChannelSecretError when the ACL cannot be applied or proven.
+ */
+export function pinHostKey(dataDir: string, record: HostRecord, key: ScannedHostKey): HostKeyPinResult {
+  hostKeysDirectory(dataDir);
+  const file = knownHostsPath(dataDir);
+  const contents = existsSync(file) ? readFileSync(file, "utf8") : "";
+  const pattern = hostPattern(record.address, record.port);
+  const line = knownHostsLine(pattern, key);
+
+  const existing = knownHostsEntriesFor(contents, pattern);
+  if (existing.length > 0) {
+    return existing.every((entry) => entry.trim() === line)
+      ? { ok: true, fingerprint: key.fingerprint }
+      : { ok: false, problem: "already_pinned_differently" };
+  }
+
+  const separator = contents.length === 0 || contents.endsWith("\n") ? "" : "\n";
+  writeFileSync(file, `${contents}${separator}${line}\n`, { encoding: "utf8", mode: 0o600 });
+  hardenOwnerOnly(file);
+  return { ok: true, fingerprint: key.fingerprint };
+}
+
+/**
+ * Forget one host's pin, as part of forgetting the host.
+ *
+ * The only way a pinned key is ever removed, and it is reached from
+ * `host.forget` — the path with a confirmation in front of it that also removes
+ * DASH's own key. Leaving the line behind would mean a server added again later
+ * skipped the enrollment step and inherited a decision somebody made about a
+ * machine that may no longer be the same one.
+ */
+export function forgetHostKeyPin(dataDir: string, record: HostRecord): void {
+  const file = knownHostsPath(dataDir);
+  if (!existsSync(file)) {
+    return;
+  }
+  const pattern = hostPattern(record.address, record.port);
+  const kept = readFileSync(file, "utf8")
+    .split(/\r?\n/)
+    .filter((entry) => entry.trim().length > 0 && entry.split(/\s+/)[0] !== pattern);
+  writeFileSync(file, kept.length === 0 ? "" : `${kept.join("\n")}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  hardenOwnerOnly(file);
+}
+
+/**
  * Prove the key is still protected, immediately before it is used.
  *
  * The same rule `ensureChannelSecret` applies on every call and for the same
@@ -288,24 +486,60 @@ export function assertHostKeyProtected(dataDir: string, keyName: string): string
  * ---------------------------------------------------------------------- */
 
 /**
+ * Where `ssh`'s own diagnostics are collected so they can be *classified*.
+ *
+ * A mutable box rather than a return value because the text arrives after the
+ * channel does, and the caller reads it once the answer has settled.
+ */
+export interface SshDiagnostics {
+  stderr: string;
+}
+
+/** Enough to hold any refusal OpenSSH prints, and far less than a log flood. */
+const MAX_DIAGNOSTIC_BYTES = 8 * 1024;
+
+/**
  * Spawn one `ssh` for one request, and hand back its two pipes.
  *
- * `stderr` is inherited into DASH's own log rather than piped and parsed.
- * `ssh`'s diagnostics name a host, a user, a port and a key path, and a
- * transport that read them would be a transport that could interpolate them
- * into an error message — which `describeTransportError` exists to prevent.
- * The class of failure is what callers act on; the text is for whoever is
- * reading a log on this machine.
+ * `stderr` still goes to DASH's own log and still goes nowhere else. What
+ * changed in MAR-572 is that it is *also* kept, when a caller asks, so that
+ * `classifyHostFailure` can reduce it to one of a closed set of problems.
+ *
+ * The original rule was written as "do not read it", for a good reason —
+ * `ssh`'s diagnostics name a host, a user, a port and the local path of DASH's
+ * private key, and a transport that read them would be a transport that could
+ * interpolate them into an error message. Keeping the rule by not looking cost
+ * the product the ability to tell three completely different failures apart,
+ * which is what the 2026-08-08 attended run ran into: an unconfirmed host key,
+ * a refused sign-in and a server with no helper on it all arrived as one
+ * sentence.
+ *
+ * So the rule is now kept by the return type of the thing that reads it.
+ * `classifyHostFailure` takes this text and can only return a member of
+ * `HostReachProblem` — there is no path from these bytes to a rendered string.
+ * The class of failure is what callers act on; the text is still only for
+ * whoever is reading a log on this machine.
  */
 export function openSshChannel(
   record: HostRecord,
   verb: HostVerb,
   paths: { identity_file: string; known_hosts_file: string },
   bundleId?: string,
+  diagnostics?: SshDiagnostics,
 ): StdioChannel {
   const child = spawn("ssh", sshArgv(record, verb, paths, bundleId), {
-    stdio: ["pipe", "pipe", "inherit"],
+    // Piped rather than inherited so the same bytes can reach two places. They
+    // are written straight back out below, so what lands in DASH's log is what
+    // landed there before.
+    stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
+  });
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk: string) => {
+    process.stderr.write(chunk);
+    if (diagnostics !== undefined && diagnostics.stderr.length < MAX_DIAGNOSTIC_BYTES) {
+      diagnostics.stderr += chunk;
+    }
   });
   return {
     stdin: child.stdin,
@@ -445,7 +679,12 @@ const MAX_ANSWER_BYTES = 1024 * 1024;
  *
  * @throws HostKeyError, ChannelSecretError
  */
-export function sshDeploySpawn(record: HostRecord, dataDir: string): DeploySpawn {
+export function sshDeploySpawn(
+  record: HostRecord,
+  dataDir: string,
+  /** Collects `ssh`'s diagnostics for classification. See `openSshChannel`. */
+  diagnostics?: SshDiagnostics,
+): DeploySpawn {
   return (verb, bundleId) => {
     const identity = assertHostKeyProtected(dataDir, record.key_name);
     return openSshChannel(
@@ -453,6 +692,7 @@ export function sshDeploySpawn(record: HostRecord, dataDir: string): DeploySpawn
       verb,
       { identity_file: identity, known_hosts_file: knownHostsPath(dataDir) },
       bundleId,
+      diagnostics,
     );
   };
 }

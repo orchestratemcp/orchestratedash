@@ -64,6 +64,7 @@
  * — see that function.
  */
 
+import { describeBootstrap } from "./host-bootstrap";
 import { checkHostRecord, type HostRecord, type HostRecordCheck } from "./hosts";
 
 /* ---------------------------------------------------------------------- *
@@ -355,6 +356,50 @@ export function describeKeyStep(hostLabel: string): {
 }
 
 /**
+ * The setup step, which is what step 3 should actually offer now (MAR-573).
+ *
+ * `describeKeyStep` above is unchanged and still true — DASH made a key, the
+ * private half stays here, the public half is what travels. What changed is
+ * that copying a key onto a server is no longer *enough*: a freshly rented box
+ * has nothing on it that can answer DASH, and the 2026-08-08 run proved it by
+ * getting all the way to a successful sign-in and being told
+ * `status: command not found`.
+ *
+ * So this is a second thing to say on the same step, added beside the first
+ * rather than replacing it. The two are both true and a surface may show either
+ * or both: the snippet is the guided answer, and the bare key is what somebody
+ * who already administers servers will want.
+ *
+ * `what_it_does` and `what_it_leaves` come from `lib/host-bootstrap.ts`'s own
+ * description rather than being restated here, so the promise on screen and the
+ * banner the script prints cannot drift apart.
+ */
+export function describeSetupStep(hostLabel: string): {
+  headline: string;
+  detail: string;
+  /** The honesty about what the person is about to run. */
+  disclosure: string;
+  next_action: string;
+  what_it_does: string[];
+  what_it_leaves: string[];
+} {
+  const described = describeBootstrap();
+  return {
+    headline: `Set up ${hostLabel} for DASH`,
+    detail:
+      "A new server has nothing on it that can talk to DASH yet. Copy the setup text below " +
+      "and paste it into your server once — your provider's website has a place to type " +
+      "commands, or you can use any terminal you already sign in with.",
+    disclosure:
+      "You can read the whole thing before you run it. It says what it will install and what " +
+      "it leaves behind, and it prints that on your screen before it changes anything.",
+    next_action: "Copy the setup text, then run it on the server",
+    what_it_does: described.installs,
+    what_it_leaves: described.leaves_behind,
+  };
+}
+
+/**
  * Every sentence this module can produce, for the copy sweep.
  *
  * Derived from the unions rather than written out, so a step or a provider added
@@ -363,7 +408,11 @@ export function describeKeyStep(hostLabel: string): {
  */
 export function everyWizardSentence(hostLabel = "My server"): string[] {
   const key = describeKeyStep(hostLabel);
+<<<<<<< HEAD
+  const setup = describeSetupStep(hostLabel);
+=======
   const hosting = describeHostingRecommendation();
+>>>>>>> origin/master
   return [
     ...WIZARD_STEPS.flatMap((step) => {
       const copy = describeStep(step);
@@ -375,9 +424,18 @@ export function everyWizardSentence(hostLabel = "My server"): string[] {
     key.detail,
     key.refusal,
     key.next_action,
+<<<<<<< HEAD
+    setup.headline,
+    setup.detail,
+    setup.disclosure,
+    setup.next_action,
+    ...setup.what_it_does,
+    ...setup.what_it_leaves,
+=======
     hosting.free_path,
     hosting.question,
     hosting.recommendation,
     hosting.link_label,
+>>>>>>> origin/master
   ];
 }

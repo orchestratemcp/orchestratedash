@@ -529,6 +529,38 @@ function answer(value: DeployAnswer): void {
  * The one entry point
  * ---------------------------------------------------------------------- */
 
+/**
+ * What this invocation was asked to do, whichever way it was asked (MAR-573).
+ *
+ * Two routes reach this program and they must agree:
+ *
+ * - **Argv**, which is `ssh host status` and the local child a test drives.
+ * - **`SSH_ORIGINAL_COMMAND`**, which is what `sshd` sets when the key that
+ *   signed in carries `command="…"`. The forced command runs no matter what the
+ *   client asked for, and the client's request is put in that variable for the
+ *   forced program to read *or ignore*.
+ *
+ * ADR 0009 chose the forced command over namespacing the verbs, so this
+ * function is the seam that decision needs. Argv wins when it has anything in
+ * it, which keeps every existing caller — and the fixture proof in
+ * `tests/deploy-bridge.test.ts`, which runs this program as a local child —
+ * working exactly as before.
+ *
+ * **The variable is split, never interpreted.** It is a string a client chose,
+ * so it is cut on whitespace and handed to `checkDeployRequest` like anything
+ * else; there is no shell between here and there, no glob expansion, and no
+ * branch that would run one of these tokens. A request with more than two of
+ * them is refused rather than truncated: two is a verb and at most one
+ * identifier, and anything longer means the far end has a different idea of
+ * this protocol than this program does.
+ */
+export function helperArgv(argv: readonly string[], originalCommand: string | undefined): string[] {
+  if (argv.length > 0) {
+    return [...argv];
+  }
+  return (originalCommand ?? "").split(/\s+/).filter((token) => token.length > 0);
+}
+
 export async function runHelper(argv: string[]): Promise<number> {
   const root = hostRoot();
   mkdirSync(root, { recursive: true, mode: 0o700 });
@@ -537,6 +569,18 @@ export async function runHelper(argv: string[]): Promise<number> {
   if (verb === undefined) {
     answer({ ok: false, problem: "unknown_verb", detail: "No operation was named." });
     return 64; // EX_USAGE
+  }
+  if (argv.length > 2) {
+    // A verb and at most one identifier. Refused rather than trimmed, for
+    // `reviewCommand`'s reason about an unexpected field: a caller sending more
+    // than this program understands has a different model of it, and quietly
+    // ignoring the surplus hides that.
+    answer({
+      ok: false,
+      problem: "unknown_verb",
+      detail: "More was sent than an operation and one name.",
+    });
+    return 64;
   }
 
   /*
