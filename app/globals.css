@@ -876,6 +876,182 @@ code {
   color: var(--muted);
 }
 
+/*
+ * MAR-586's fourth tone: something new to read.
+ *
+ * Electric blue, which `DESIGN.md` makes the primary and active colour, and
+ * explicitly **not** `--ok`. A new output is a finished neutral thing, and
+ * `app/tokens.css` reserves emerald for a live, healthy one — a fleet of green
+ * cards has to keep meaning "these agents are well" rather than "these agents
+ * produced something", which is the drift that note names.
+ *
+ * One property, like the four above it. `.chip`'s border is `currentColor`, so
+ * this sets the outline and the word together and they cannot disagree.
+ */
+.chip-accent {
+  color: var(--accent);
+}
+
+/* ---------------------------------------------------------------------- *
+ * The fleet card's four answers (MAR-586)
+ *
+ * `lib/copy/glance.ts` owns what these say. What is here is only that a chip
+ * which is a link still looks and behaves like a chip, and that the sentences
+ * under the row are legible without being loud.
+ * ---------------------------------------------------------------------- */
+.glance {
+  margin-top: var(--space-3);
+}
+
+/*
+ * A chip that is a destination.
+ *
+ * It keeps `.chip`'s box exactly — the class is applied alongside, never instead
+ * — and adds only what an anchor needs: no underline at rest, because a row of
+ * underlined caps is unreadable, and one on hover so a pointer still reveals
+ * that this goes somewhere. The focus ring is `app/globals.css`'s global rule
+ * and is deliberately not overridden here; MAR-503 made a visible ring on every
+ * activatable thing a proven bar, and a chip is now one of them.
+ */
+.chip-link {
+  text-decoration: none;
+  cursor: default;
+}
+
+.chip-link:hover {
+  text-decoration: underline;
+  background: var(--surface-2);
+}
+
+/*
+ * The sentences under the chips.
+ *
+ * A list rather than a paragraph, because there can be four of them and they are
+ * separate facts about separate things — a comma-joined run would read as one
+ * claim. Muted and small: the chip is the glance, and this is what a person
+ * reads when the glance made them stop.
+ */
+.glance-said {
+  margin: var(--space-2) 0 0;
+  padding-left: 0;
+  list-style: none;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  display: grid;
+  gap: var(--space-1);
+}
+
+.glance-said > li {
+  /* An agent's own numbers and dates appear inside these sentences, and a long
+     unbroken one at 375px is the only way this row could force the page
+     sideways. */
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The button onward.
+ *
+ * Its own row rather than beside the meta line: at 375px a control sharing a
+ * line with two facts is a control that wraps under them and reads as a third
+ * fact. The row exists only to own that margin — the control itself is
+ * `.button-link`, which is the class the Work inbox already uses for the same
+ * journey, so nothing about its box is redeclared here.
+ */
+.glance-actions {
+  margin-top: var(--space-3);
+}
+
+/* ---------------------------------------------------------------------- *
+ * The fleet as a grid of portraits (MAR-547's concept, MAR-586's cards)
+ *
+ * Henrik, 2026-08-09: *"I want the fleet cards to fit like 3 in a row. And the
+ * avatar to be bigger."* The Stitch package's `fleet_monitor` screen is a row of
+ * equal cards, each with a header band, a large portrait on a tinted tile, the
+ * agent's name, and controls along the bottom.
+ *
+ * What is adopted is that composition. What is refused, by name, is everything
+ * the concept fills the middle of the card with — CPU LOAD 87%, a sparkline of
+ * nothing — which is MAR-547's own ruling and the reason the space under the
+ * portrait holds the four recorded answers instead.
+ *
+ * A modifier on `.row-list` rather than a change to it: the Runs and Connections
+ * pages lay records on that class too, and theirs are wide rows of prose.
+ * ---------------------------------------------------------------------- */
+.row-list.fleet-grid {
+  /*
+   * `auto-fit` and a floor, not a column count. Three-in-a-row is what a 1280px
+   * window gets and is the thing being asked for; a hardcoded `repeat(3, 1fr)`
+   * would give a 375px phone three 100px columns, which is the width-conditional
+   * interface MAR-491 settled against — except worse, because it would be the
+   * same interface at a width it cannot be read at.
+   *
+   * 19rem is the floor a card stops being legible below: the goal is one to two
+   * lines of an author's own prose, and the glance sentences under it are full
+   * sentences rather than labels.
+   */
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  /* Cards keep their own height rather than stretching to the tallest in the
+     row — except that `.fleet-card` below opts back in, so a row of cards with
+     unequal prose still lines its buttons up. */
+  align-items: stretch;
+}
+
+.row-list.fleet-grid > li {
+  display: flex;
+}
+
+/*
+ * A column, so the control can be pinned to the bottom.
+ *
+ * Without this a row of three cards puts its buttons at three different heights,
+ * following whatever length each author's goal happened to be — and the button
+ * is the one thing on this surface a person is looking for in the same place on
+ * every card.
+ */
+.fleet-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.fleet-card .glance-actions {
+  margin-top: auto;
+}
+
+/*
+ * The portrait tile.
+ *
+ * The concept draws the character on a filled square inside the card, and that
+ * is the part of it worth taking: it separates recognition from the reading
+ * matter under it, which is exactly the separation MAR-501 argues for in prose —
+ * a costume must not sit in the same block as a verdict.
+ *
+ * `--accent-bg` rather than the concept's purple: `app/tokens.css` is the
+ * palette, and a colour introduced for one tile would be a second brand.
+ */
+.fleet-portrait {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-4) 0;
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--accent-bg);
+}
+
+/*
+ * The name in the band wraps rather than truncating.
+ *
+ * An agent's name is the user's own word for it and can be long. A card a third
+ * of the page wide is where an ellipsis becomes tempting, and an ellipsis on the
+ * one string that identifies the record is how two agents come to look like the
+ * same agent.
+ */
+.fleet-card > .card-head > h3 {
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
 .findings {
   margin: 0 0 1.5rem;
   padding: 1rem 1.15rem;

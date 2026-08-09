@@ -260,6 +260,19 @@ await Promise.all([
     format: "esm",
   }),
 
+  // The fleet's glance chips (MAR-586), on the same terms and for the sharpest
+  // version of the reason: a chip exists only when the fact behind it is true,
+  // so a run against whatever a machine holds photographs one of sixteen
+  // combinations and cannot say which one it got. This one seeds five agents,
+  // one per answer, and photographs them side by side. See
+  // `electron/capture-glance.ts`.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-glance.ts")],
+    outfile: path.join(outDir, "capture-glance.mjs"),
+    format: "esm",
+  }),
+
   // MAR-423. "Try a sample agent" scaffolds a project, and a scaffold needs the
   // same `scripts/open-in-dash.mjs` the Agent Kit copies in, so the user can
   // re-add their agent later from their own folder without DASH.

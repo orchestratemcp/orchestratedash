@@ -710,6 +710,46 @@ const MIGRATIONS: readonly Migration[] = [
     PRIMARY KEY (agent, connection_id)
   );
   `,
+  // MAR-586. When the person last opened one agent's page.
+  //
+  // **A table about the reader, not about any agent's work**, and it is here for
+  // exactly the reason `evidence_pulls` above is its own table rather than
+  // columns on a run: every other table in this schema records something an
+  // agent or a runner did, and this one records something the person at the
+  // keyboard did. A column on `agents` would have put it inside the row
+  // `importManifest` rewrites on every re-import, where the next `ON CONFLICT DO
+  // UPDATE` would either have to remember to leave it alone — the trap
+  // `avatar`'s own note describes — or quietly reset it. Nothing here is ever
+  // touched by an import.
+  //
+  // One row per agent, overwritten, because this is a state and not a history.
+  // The question a fleet card asks is "has anything arrived since they last
+  // looked", and a log of every page view would answer it no better and would be
+  // a durable record of what somebody read and when, which is not a record DASH
+  // was asked to keep.
+  //
+  // No foreign key to `agents`, for the reason `command_audit` has none to
+  // `runs`: a row for an agent that has since been removed costs nothing, and a
+  // constraint here would make deleting an agent fail on a table about reading.
+  //
+  // This is the one new fact MAR-586 stores. The other three questions its
+  // cards answer — a pending approval, an unconnected requirement, a schedule
+  // gone by — are already recorded elsewhere and are derived at render time.
+  //
+  // `IF NOT EXISTS` for the reason the hosts migration above states, and it is
+  // the same situation exactly: this table stands on its own, and a database
+  // that has it while reporting an older schema version — a downgrade test, a
+  // restored backup — must not die on the way back up. Reapplying the same shape
+  // is safe; changing it needs a new migration.
+  `
+  CREATE TABLE IF NOT EXISTS agent_looks (
+    agent          TEXT PRIMARY KEY,
+    -- DASH's own clock at the moment the agent's page was opened. Compared only
+    -- against other DASH-clock timestamps -- run_artifacts.received_at -- and
+    -- never against an agent's own claim about when it made something.
+    last_looked_at TEXT NOT NULL
+  );
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *
