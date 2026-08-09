@@ -86,9 +86,11 @@ describe("schema", () => {
     // avatar column and its backfill, 9 is MAR-488's record of DASH's own
     // reading, 10 is MAR-553's manifest-only agent-folder materialisation
     // (kept at that index at merge time — installed databases had already
-    // recorded it), 11 is MAR-536's saved hosts, 12 is MAR-582's record of what
-    // a model provider last said about a key DASH holds, and 13 is MAR-586's
-    // record of when the reader last opened an agent's page.
+    // recorded it), 11 is MAR-536's saved hosts, 12 is MAR-582's record of
+    // what a model provider last said about a key DASH holds, and 13 is
+    // MAR-586's record of when the reader last opened an agent's page —
+    // authored as 12, renumbered at the merge because MAR-582 reached master
+    // first and installed databases had already recorded it.
     // Asserted as a number rather than as MIGRATIONS.length so that appending a
     // migration is a deliberate edit here too.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
@@ -115,7 +117,6 @@ describe("schema", () => {
     expect(tables).toContain("evidence_pulls");
     expect(tables).toContain("hosts");
     expect(tables).toContain("ai_key_checks");
-    expect(tables).toContain("agent_looks");
   });
 
   it("adds the artifact table to a store that predates it", async () => {

@@ -699,7 +699,7 @@
     {
       "id": "MAR-582",
       "lifecycle": "merged",
-      "linear_status": "In Progress",
+      "linear_status": "Done",
       "commit": "6d94bc5",
       "proof": {
         "command": "pnpm state:check && pnpm typecheck && pnpm brand:check && pnpm test (from PowerShell)",
