@@ -24,7 +24,6 @@ import {
 } from "../lib/hosts";
 import {
   describeAdded,
-  describeBootstrapGap,
   describeDeployed,
   describePin,
   describeDuplicateRecords,
@@ -210,19 +209,6 @@ describe("what is running there", () => {
     });
     expect(empty).not.toBe(silent);
     expect(empty).toContain("answered");
-  });
-});
-
-describe("the bootstrap gap", () => {
-  it("names it as a gap in DASH rather than as something the person did", () => {
-    /*
-     * MAR-573, proven rather than predicted: DASH signed in to a fresh Ubuntu
-     * box and the box answered `command not found`. Somebody who meets that
-     * without warning concludes their own server is broken.
-     */
-    const gap = describeBootstrapGap();
-    expect(gap.detail).toContain("known gap");
-    expect(gap.detail).toContain("not something you have done wrong");
   });
 });
 

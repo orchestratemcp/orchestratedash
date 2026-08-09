@@ -36,9 +36,9 @@
  * rather than hidden, because the alternative is a page that silently omits the
  * one fact a person would want before trusting a machine.
  *
- * A reachable server with no runner on it is where MAR-573's bootstrap belongs.
- * Its copy names the gap in the person's own words rather than promising a flow
- * that does not exist; see `describeBootstrapGap`.
+ * A server that is not set up yet is where MAR-573's bootstrap belongs. MAR-579
+ * wired it: the setup snippet (`describeSetupStep`, `host.setup`) is offered on
+ * the card, so what used to be a dead-end gap sentence is now an action.
  */
 
 import { plainMoment } from "./copy/when";
@@ -164,36 +164,14 @@ export function describeDeployed(state: HostConnectState): string {
   }
 }
 
-/**
- * The gap between a reachable server and one that can take an agent (MAR-573).
- *
- * Said on the card, at the one moment it is actionable, because the attended run
- * proved it rather than predicted it: DASH signed in to a fresh Ubuntu box and
- * the box answered `command not found` — the helper that answers DASH's verbs
- * travels inside the bundle DASH pushes, and pushing a bundle is itself one of
- * those verbs. A person who presses "put an agent here" on a server that has
- * never had one meets that, and meeting it without warning reads as *their*
- * server being broken.
- *
- * It is a sentence rather than a disabled button on purpose. The action does
- * work on a server that has been prepared — Henrik's was, by hand — and
- * disabling it would make a working path unreachable in order to describe a
- * broken one.
- *
- * **This function is what MAR-573 deletes.** When the guided bootstrap lands,
- * the gap is closed and the honest thing to render here is nothing at all.
+/*
+ * `describeBootstrapGap` used to live here — a sentence that told a person their
+ * fresh server could not take an agent and offered no way to fix it. MAR-579
+ * deleted it, exactly as MAR-573 said it would: the guided bootstrap
+ * (`describeSetupStep` and the `host.setup` snippet, offered on the card) is the
+ * way out the gap description never had, so the honest thing to render for that
+ * state is now an action rather than an apology.
  */
-export function describeBootstrapGap(): ServerFact {
-  return {
-    headline: "A server that has never run an agent needs a one-time setup",
-    detail:
-      "Putting an agent here also puts DASH's own runner there. On a server that has " +
-      "never had one, that first setup does not work yet — DASH cannot install the runner " +
-      "on a machine that has nothing of DASH's on it already. This is a known gap and it " +
-      "is not something you have done wrong.",
-    next_action: null,
-  };
-}
 
 /* ---------------------------------------------------------------------- *
  * The four rows on Henrik's machine
@@ -280,7 +258,6 @@ export function everyServerCardSentence(): string[] {
   const facts = [
     describePin(null),
     describePin("SHA256:FCU60rvm6UzWbFXeMm0CUSO8qid2WYv9v3aymVi51HA"),
-    describeBootstrapGap(),
     describeDuplicateRecords(),
   ];
 
