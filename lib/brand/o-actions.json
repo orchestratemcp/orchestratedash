@@ -1,0 +1,232 @@
+{
+  "$comment": "The audit record for the O's idle-action sprite sheets, vendored into DASH (MAR-587 Phase A). Copied verbatim from orchestrateweb's apps/web/components/brand/o-actions.json apart from this comment and `source`; the hashes are the audited ones and must stay byte-for-byte identical to SITE's. Each sheet is eight 50x50 frames laid left to right; every frame is the audited still with a prop stamped on top at a whole-pixel offset, and `region` is the only rectangle a frame may differ from the still inside — which is what makes \"a costume is recognition, never status\" something brand:check measures rather than something a reviewer asserts. `still.sha256` pins which still each sheet was built from, so a re-vendored character cannot silently leave its animation behind. Verified by `pnpm brand:check`. DASH does not regenerate this file: a deliberate change is made in orchestrateweb with `pnpm o:actions`, audited there, and re-vendored here.",
+  "grid": 50,
+  "frameCount": 8,
+  "source": "public/o/actions",
+  "sheets": {
+    "ninja-shuriken-toss": {
+      "character": "ninja",
+      "action": "shuriken-toss",
+      "file": "o/actions/ninja-shuriken-toss.png",
+      "still": {
+        "sha256": "910b5184c55186e1a87b29a9b68b8177aa8c3a178efbd8f1e883fccbff87ecb2",
+        "palette": 12
+      },
+      "frameCount": 8,
+      "frameWidth": 50,
+      "frameHeight": 50,
+      "layout": "horizontal-strip",
+      "loops": true,
+      "region": {
+        "x": 33,
+        "y": 10,
+        "w": 17,
+        "h": 28
+      },
+      "erases": {
+        "x": 35,
+        "y": 27,
+        "w": 7,
+        "h": 11
+      },
+      "bytes": 994,
+      "sha256": "347f2b6ba251069501eec5d53d982440021fa40b3a7d9b17e1d4f986d3ec8215",
+      "frames": [
+        {
+          "index": 0,
+          "changedFromStill": 25,
+          "opaquePixels": 485,
+          "colors": 11
+        },
+        {
+          "index": 1,
+          "changedFromStill": 45,
+          "opaquePixels": 474,
+          "colors": 11
+        },
+        {
+          "index": 2,
+          "changedFromStill": 57,
+          "opaquePixels": 486,
+          "colors": 11
+        },
+        {
+          "index": 3,
+          "changedFromStill": 45,
+          "opaquePixels": 474,
+          "colors": 11
+        },
+        {
+          "index": 4,
+          "changedFromStill": 57,
+          "opaquePixels": 486,
+          "colors": 11
+        },
+        {
+          "index": 5,
+          "changedFromStill": 45,
+          "opaquePixels": 474,
+          "colors": 11
+        },
+        {
+          "index": 6,
+          "changedFromStill": 57,
+          "opaquePixels": 486,
+          "colors": 11
+        },
+        {
+          "index": 7,
+          "changedFromStill": 39,
+          "opaquePixels": 474,
+          "colors": 11
+        }
+      ]
+    },
+    "knight-sword-swing": {
+      "character": "knight",
+      "action": "sword-swing",
+      "file": "o/actions/knight-sword-swing.png",
+      "still": {
+        "sha256": "8e25d500ce1d9721127871c10d57732518d455a872e12e547370f475725d8806",
+        "palette": 15
+      },
+      "frameCount": 8,
+      "frameWidth": 50,
+      "frameHeight": 50,
+      "layout": "horizontal-strip",
+      "loops": true,
+      "region": {
+        "x": 36,
+        "y": 13,
+        "w": 14,
+        "h": 25
+      },
+      "erases": null,
+      "bytes": 1128,
+      "sha256": "51dbe89a98ae425726fbdbd461f601d4495e87ff387ca26d14c068d4ce5b933d",
+      "frames": [
+        {
+          "index": 0,
+          "changedFromStill": 27,
+          "opaquePixels": 529,
+          "colors": 15
+        },
+        {
+          "index": 1,
+          "changedFromStill": 27,
+          "opaquePixels": 529,
+          "colors": 15
+        },
+        {
+          "index": 2,
+          "changedFromStill": 27,
+          "opaquePixels": 529,
+          "colors": 15
+        },
+        {
+          "index": 3,
+          "changedFromStill": 27,
+          "opaquePixels": 529,
+          "colors": 15
+        },
+        {
+          "index": 4,
+          "changedFromStill": 24,
+          "opaquePixels": 526,
+          "colors": 15
+        },
+        {
+          "index": 5,
+          "changedFromStill": 24,
+          "opaquePixels": 526,
+          "colors": 15
+        },
+        {
+          "index": 6,
+          "changedFromStill": 24,
+          "opaquePixels": 526,
+          "colors": 15
+        },
+        {
+          "index": 7,
+          "changedFromStill": 27,
+          "opaquePixels": 529,
+          "colors": 15
+        }
+      ]
+    },
+    "wizard-fireball": {
+      "character": "wizard",
+      "action": "fireball",
+      "file": "o/actions/wizard-fireball.png",
+      "still": {
+        "sha256": "64b03b6b0f22d0b768d446df9fdb2d7acee0342230069615c1b273d6bc089219",
+        "palette": 17
+      },
+      "frameCount": 8,
+      "frameWidth": 50,
+      "frameHeight": 50,
+      "layout": "horizontal-strip",
+      "loops": true,
+      "region": {
+        "x": 33,
+        "y": 16,
+        "w": 17,
+        "h": 22
+      },
+      "erases": null,
+      "bytes": 1234,
+      "sha256": "cf294f417d88663f4777b190d0b1bc85a0e1b3dbeead16bfe7930908b4712f58",
+      "frames": [
+        {
+          "index": 0,
+          "changedFromStill": 38,
+          "opaquePixels": 626,
+          "colors": 17
+        },
+        {
+          "index": 1,
+          "changedFromStill": 41,
+          "opaquePixels": 631,
+          "colors": 17
+        },
+        {
+          "index": 2,
+          "changedFromStill": 38,
+          "opaquePixels": 628,
+          "colors": 17
+        },
+        {
+          "index": 3,
+          "changedFromStill": 41,
+          "opaquePixels": 631,
+          "colors": 17
+        },
+        {
+          "index": 4,
+          "changedFromStill": 38,
+          "opaquePixels": 628,
+          "colors": 17
+        },
+        {
+          "index": 5,
+          "changedFromStill": 41,
+          "opaquePixels": 631,
+          "colors": 17
+        },
+        {
+          "index": 6,
+          "changedFromStill": 38,
+          "opaquePixels": 628,
+          "colors": 17
+        },
+        {
+          "index": 7,
+          "changedFromStill": 41,
+          "opaquePixels": 631,
+          "colors": 17
+        }
+      ]
+    }
+  }
+}

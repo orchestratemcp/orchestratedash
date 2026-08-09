@@ -23,8 +23,10 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  auditSheet,
   auditSprite,
   BUNDLED_FONTS,
+  checkActions,
   checkAvatarCss,
   checkBundledFonts,
   checkCast,
@@ -482,6 +484,137 @@ describe("violation 6 — a bundled family that does not truthfully ship (MAR-53
     expect(
       checkBundledFonts({ fonts, sources: [{ name: "app/fonts.css", source: fontsCss }] }),
     ).toEqual([]);
+  });
+});
+
+describe("violation 7 — an idle action that drifts, or says something (MAR-587)", () => {
+  const key = "ninja-shuriken-toss";
+  const sheetBytes = readFileSync(path.join(repoRoot, "public", "o", "actions", `${key}.png`));
+  const actions = JSON.parse(
+    readFileSync(path.join(repoRoot, "lib", "brand", "o-actions.json"), "utf8"),
+  ) as { sheets: Record<string, Record<string, unknown>> };
+  const record = actions.sheets[key] as {
+    character: string;
+    frameCount: number;
+    frameWidth: number;
+    frameHeight: number;
+    sha256: string;
+    still: { sha256: string };
+    region: { x: number; y: number; w: number; h: number };
+  };
+
+  /** The real sheet, measured against the real still — not a hand-built fixture. */
+  const audit = auditSheet(sheetBytes, ninja, key);
+  const base = { names: ["ninja"], files: [key], manifest: { sheets: { [key]: record } } };
+
+  it("measures the vendored sheet as eight 50x50 frames", () => {
+    expect(audit.frameCount).toBe(8);
+    expect(audit.width).toBe(400);
+    expect(audit.height).toBe(50);
+    expect(audit.frames.every((frame) => frame.cornersTransparent)).toBe(true);
+  });
+
+  it("passes on the sheet as vendored", () => {
+    expect(checkActions({ ...base, measured: { [key]: audit } })).toEqual([]);
+  });
+
+  it("fails when the sheet no longer matches the audited hash", () => {
+    const failures = checkActions({
+      ...base,
+      manifest: { sheets: { [key]: { ...record, sha256: "0".repeat(64) } } },
+      measured: { [key]: audit },
+    });
+    expect(failures.some((failure: string) => failure.includes("audited hash"))).toBe(true);
+    expect(failures.some((failure: string) => failure.includes("re-vendor"))).toBe(true);
+  });
+
+  it("fails when the character was re-vendored and its animation was left behind", () => {
+    // The failure only an animation has. Both files stay individually valid —
+    // the still is a real still, the sheet is a real sheet — and nothing but
+    // this pairing notices that the sheet animates pixels that are gone.
+    const failures = checkActions({
+      ...base,
+      manifest: { sheets: { [key]: { ...record, still: { sha256: "a".repeat(64) } } } },
+      measured: { [key]: audit },
+    });
+    expect(failures.some((failure: string) => failure.includes("left behind"))).toBe(true);
+  });
+
+  it("fails when a frame changes a pixel outside its declared region", () => {
+    // Shrinking the declared box is the same event as a frame growing past it:
+    // the check re-derives what actually moved from the pixels, so it cannot be
+    // satisfied by a manifest that simply claims more room.
+    const pinched = { ...record, region: { ...record.region, w: 4, h: 4 } };
+    const failures = checkActions({
+      ...base,
+      manifest: { sheets: { [key]: pinched } },
+      measured: { [key]: audit },
+    });
+    expect(failures.length).toBeGreaterThan(0);
+    expect(failures[0]).toContain("outside its declared region");
+    // The reason matters more than the coordinates: a region that can grow is a
+    // costume that can be made to carry status.
+    expect(failures[0]).toContain("something a costume could be made to say");
+  });
+
+  it("fails when a frame paints emerald", () => {
+    const stained = {
+      ...audit,
+      frames: audit.frames.map((frame, i) => (i === 3 ? { ...frame, emeraldPixels: 6 } : frame)),
+    };
+    const failures = checkActions({ ...base, measured: { [key]: stained } });
+    expect(failures.some((failure: string) => failure.includes("emerald"))).toBe(true);
+    expect(failures.some((failure: string) => failure.includes("never a health signal"))).toBe(true);
+  });
+
+  it("fails when a frame has a non-transparent corner", () => {
+    const boxed = {
+      ...audit,
+      frames: audit.frames.map((frame, i) => (i === 0 ? { ...frame, cornersTransparent: false } : frame)),
+    };
+    const failures = checkActions({ ...base, measured: { [key]: boxed } });
+    expect(failures.some((failure: string) => failure.includes("non-transparent corner"))).toBe(true);
+  });
+
+  it("fails when the sheets disagree about frame count", () => {
+    // One loop duration covers the whole fleet, so a six-frame character would
+    // either run at a different speed or be resampled in time.
+    const other = "knight-sword-swing";
+    const shortened = { ...audit, frameCount: 6, frames: audit.frames.slice(0, 6) };
+    const failures = checkActions({
+      names: ["ninja", "knight"],
+      files: [key, other],
+      manifest: {
+        sheets: {
+          [key]: record,
+          [other]: { ...(actions.sheets[other] as Record<string, unknown>), frameCount: 6 },
+        },
+      },
+      measured: { [key]: audit, [other]: shortened },
+    });
+    expect(failures.some((failure: string) => failure.includes("disagree about frame count"))).toBe(true);
+  });
+
+  it("fails on a sheet that is on disk but not in the manifest, and vice versa", () => {
+    expect(
+      checkActions({ ...base, files: [key, "pirate-plank-walk"], measured: { [key]: audit } }).some(
+        (failure: string) => failure.includes("unaudited animation"),
+      ),
+    ).toBe(true);
+    expect(
+      checkActions({ ...base, files: [], measured: {} }).some((failure: string) =>
+        failure.includes("does not exist"),
+      ),
+    ).toBe(true);
+  });
+
+  it("fails on an action whose character is not in the cast", () => {
+    const failures = checkActions({
+      ...base,
+      names: ["knight"],
+      measured: { [key]: audit },
+    });
+    expect(failures.some((failure: string) => failure.includes("not in O_NAMES"))).toBe(true);
   });
 });
 
