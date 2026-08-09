@@ -131,8 +131,37 @@ const ACTION = "action-create-invite-draft";
 
 const failures: string[] = [];
 
+/**
+ * MAR-575: a per-line size cap, because a line long enough can break a log
+ * reader before `app.exit` ever gets a chance to matter.
+ *
+ * `6b`'s own detail once embedded a shipped sample agent's entire file
+ * contents in one `JSON.stringify`, producing a single ~150KB line. Line-at-a-
+ * time log readers commonly cap what they'll buffer for one line — Go's
+ * `bufio.Scanner`, which both `gh run view --log` and (by all the evidence
+ * available here) GitHub's own log viewer are built on, defaults to 64KB and
+ * simply stops reading on a longer one, with nothing surfaced to the reader.
+ * That is a materially different, and better-supported, explanation for "the
+ * log always stops at the same proof in both a failing and a green run" than
+ * a race at process exit: this repository's own CI, re-run against a
+ * deliberately-failed late proof, shows the *raw* stored log is complete in
+ * both cases — `gh api .../logs` has every line — while `gh run view --log`
+ * truncates both at the same point, immediately before that oversized line.
+ * See MAR-575 for the before/after evidence.
+ *
+ * The cap is generous relative to that limit and applied here, once, so no
+ * future proof's detail object can reintroduce the same failure by accident —
+ * exactly the "by construction rather than by convention" ADR 0004 asks for.
+ */
+const CHECK_DETAIL_BYTE_LIMIT = 8_000;
+
 function check(label: string, passed: boolean, detail: unknown): void {
-  console.log(`${passed ? "PASS" : "FAIL"}  ${label}: ${JSON.stringify(detail)}`);
+  let serialized = JSON.stringify(detail);
+  if (serialized.length > CHECK_DETAIL_BYTE_LIMIT) {
+    const totalLength = serialized.length;
+    serialized = `${serialized.slice(0, CHECK_DETAIL_BYTE_LIMIT)}…[truncated, ${String(totalLength)} chars total]`;
+  }
+  console.log(`${passed ? "PASS" : "FAIL"}  ${label}: ${serialized}`);
   if (!passed) {
     failures.push(label);
   }
@@ -1160,7 +1189,21 @@ if (recorded !== null) {
           nonce: randomBytes(32).toString("hex"),
         },
       });
-      check("6b. Try a sample agent creates a real handoff", created.ok, created);
+      // MAR-575: log a summary, not `created` itself — `value.files[].contents`
+      // is the sample agent's entire bundle (manifest + code), which is what
+      // produced the ~150KB single line that broke `gh run view --log`.
+      check(
+        "6b. Try a sample agent creates a real handoff",
+        created.ok,
+        created.ok
+          ? {
+              ok: true,
+              agent_id: created.value.handoff.agent_id,
+              directory: created.value.directory,
+              files: created.value.files.map((file) => ({ path: file.path, bytes: file.contents.length })),
+            }
+          : created,
+      );
 
       if (created.ok) {
         agentId = created.value.handoff.agent_id;
@@ -3483,7 +3526,59 @@ function exitAfterClosing(code: number): void {
     // worth printing and is not worth turning a passing run into a failure.
     console.error(`[smoke] closing the store failed: ${String(error)}`);
   }
-  app.exit(code);
+  flushOutputThenExit(code);
+}
+
+/**
+ * MAR-575: `app.exit` terminates immediately and does not wait for pending
+ * asynchronous writes to `stdout`/`stderr` to drain. On a TTY (a developer's
+ * PowerShell window) those writes are synchronous, so every `PASS`/`FAIL`
+ * line survives regardless of when `app.exit` fires. Under CI, both streams
+ * are real pipes and Node writes to them asynchronously; when the reader on
+ * the other end (GitHub Actions' own log capture) falls behind, Node queues
+ * the backlog in the writable stream's own buffer rather than dropping it —
+ * but `app.exit` discards that whole queue unconditionally, however large it
+ * has grown. That is why the captured log always stopped at the same proof
+ * (`6a`, immediately after the runner starts) in both a failing and a green
+ * run: not one write lost at the very end, but every write queued from
+ * whatever point the reader first fell behind.
+ *
+ * Checked against the alternative the issue raised before settling on this
+ * fix: the runner the smoke deliberately leaves running does *not* inherit
+ * this process's stdout. `electron/runner-process.ts` redirects it to
+ * `runner.log` on disk specifically to avoid an EPIPE once the parent exits
+ * — so the runner holding a handle open is not what is happening here.
+ *
+ * A stream's write callbacks fire in the same order the writes were issued,
+ * so writing one more empty chunk and waiting for *its* callback is enqueued
+ * behind everything already buffered — by the time it fires, every earlier
+ * `check()` line has actually reached the OS, no matter how large that
+ * backlog was. Both streams are drained, not just stdout, because
+ * `console.error` (the `closeDb` failure path above, and `run()`'s own
+ * rejection handler) writes to stderr, and CI's captured log interleaves
+ * both.
+ *
+ * The fallback timer exists so a pipe that never drains at all — a broken CI
+ * runner, a reader that stopped consuming — cannot hang a release gate
+ * forever. It is generous rather than tight: the failure this fixes is a
+ * slow reader taking real time to catch up on a real backlog, so a short
+ * timeout would just reproduce the same truncation under a different name.
+ * It is `unref`'d so it never itself keeps the process alive.
+ */
+function flushOutputThenExit(code: number): void {
+  let exited = false;
+  const doExit = (): void => {
+    if (exited) return;
+    exited = true;
+    app.exit(code);
+  };
+
+  const fallback = setTimeout(doExit, 15_000);
+  fallback.unref();
+
+  process.stdout.write("", () => {
+    process.stderr.write("", doExit);
+  });
 }
 
 void run().then(

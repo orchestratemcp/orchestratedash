@@ -3581,6 +3581,76 @@ genuine installed-shell witness — it is what MAR-492 leaned on for the same
 reason — but it runs on CI's machine and against CI's store, and the workspace
 screenshots showing a real declared panel on a real route do not exist yet.
 
+## The shell-smoke log's real truncation cause, found by checking the theory rather than trusting it (MAR-575)
+
+**The issue's own likely mechanism was wrong, and this session found that out
+by testing it against real CI rather than by fixing it and hoping.** MAR-575
+theorized that `app.exit` racing an unflushed stdout pipe was why
+`shell-smoke`'s captured log always stopped at proof `6a`, in a failing run and
+a green one alike, and asked explicitly that the alternative — the detached
+runner inheriting stdout — be checked first. Both were checked, and neither
+survived contact with a real CI run.
+
+The runner alternative falls out of the source directly:
+`electron/runner-process.ts` already redirects the runner's stdio to
+`runner.log` on disk rather than inheriting the parent's, specifically to avoid
+an EPIPE once the parent exits. That was never the mechanism here.
+
+The drain theory took a real experiment to rule out. PR #93 pushed a
+deliberately-failing late proof (`9h`) with **no fix applied**, and CI's
+`gh run view --log` truncated it at `6a` exactly as the issue describes. But the
+**raw stored log** (`gh api repos/.../actions/jobs/<id>/logs`) was complete in
+that same run — every proof through `9h` and `[smoke] FAILED: ...` were all
+there. Nothing was lost at the source. The stdout/stderr-drain fix the issue
+suggested was then applied and CI re-run: `gh run view --log` **still**
+truncated at the identical point. The fix changed nothing observable, which is
+strong evidence it was not the actual mechanism, not weak evidence it needed
+tuning.
+
+**The real cause: proof `6b` logs one ~150KB single JSON line.**
+`check("6b. ...", created.ok, created)` was serializing the shipped sample
+agent's entire file bundle — manifest and full source — into one line.
+Line-oriented log readers commonly cap what they buffer for a single line; Go's
+`bufio.Scanner`, which `gh`'s own CLI is built on, defaults to 64KB and stops
+silently past it, with nothing surfaced to say so. That explains "always stops
+at the same proof, in both a failing and a green run" as a deterministic
+function of line length rather than a race dependent on timing — and it is
+consistent with what a human reading the job in GitHub's own log viewer
+plausibly saw, which is how the issue was originally raised.
+
+Two fixes, not one. `6b` now logs a summary — agent id, directory, per-file
+byte counts — instead of file contents, which is both smaller and more useful
+to read. And `check()` itself now caps a serialized detail at 8,000 characters
+with a truncation marker, so no future proof's detail object can reintroduce
+this class of defect by accident: ADR 0004's "by construction rather than by
+convention" applied to the harness's own output, not just to a release gate's
+pass/fail.
+
+**The drain fix stays, as defense in depth rather than as the confirmed fix.**
+`app.exit` racing an async pipe write is still a real, separate risk — a
+genuinely slow CI log consumer, or a genuinely large legitimate backlog, could
+still lose output at exit — it simply was not what produced this issue's
+symptom. `exitAfterClosing` now drains `stdout` then `stderr` before
+`app.exit`, with a 15-second `unref`'d fallback timer bounding a pipe that
+never drains at all.
+
+Evidence, all captured from this PR's own CI runs using the exact tool
+(`gh run view --log`) that exhibited the original symptom: before (run
+31278451508, demo failure, no fix) truncates at `6a`; an intermediate run
+(31279628021, size-cap fix applied, demo failure still in place) is the direct
+before/after pair the issue asked for — `9h`'s own line and
+`[smoke] FAILED: 9h. ...` reach the log for the first time; after (run
+31279893453, demo failure removed) is green end to end with
+`[smoke] all proofs passed` printed. `pnpm typecheck` clean; `pnpm test` 106
+files / 2145 passed / 8 skipped / 0 failed from PowerShell. PR
+[#93](https://github.com/orchestratemcp/orchestratedash/pull/93), branch
+`000henrik/mar-575-smoke-log`, open and not merged.
+
+MAR-577 (deploy has no surface) was raised mid-session as a possible fit for
+this slice and was declined: it is `app/` UI work sequenced behind the MAR-574
+Servers-page session, not a shell-smoke logging defect, and this branch never
+touches `app/`.
+
 ## The first pin, and the helper's way in (MAR-572, MAR-573, ADR 0009)
 
 **A never-seen host could never pass the probe, and a fresh host could never
