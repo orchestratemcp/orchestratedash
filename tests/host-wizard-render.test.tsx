@@ -41,6 +41,13 @@ const STATES: HostConnectState[] = [
   { step: "not_checked", label: LABEL },
   { step: "probing", label: LABEL },
   { step: "reachable", label: LABEL, runner_build: "96cef12082fe67afa3a6", agents_running: 1 },
+  {
+    step: "confirm_host_key",
+    label: LABEL,
+    fingerprint: "SHA256:FCU60rvm6UzWbFXeMm0CUSO8qid2WYv9v3aymVi51HA",
+    key_type: "ssh-ed25519",
+    offered_count: 3,
+  },
   ...HOST_REACH_PROBLEMS.map((problem): HostConnectState => ({
     step: "unreachable",
     label: LABEL,
@@ -92,27 +99,43 @@ describe("the live wizard's command path", () => {
      * catch. The manage card is where it finally has one.
      */
     expect(source).toContain('submitHostCommand("deploy"');
+    /*
+     * MAR-579. `host.trust` and `host.setup` landed in the IPC layer with no
+     * caller — the same MAR-518 shape. Enrollment (confirm the fingerprint) and
+     * the bootstrap snippet are what these wire, and without them the attended
+     * VPS proof (MAR-489) cannot reach a fresh host through the product.
+     */
+    expect(source).toContain('submitHostCommand("trust"');
+    expect(source).toContain('submitHostCommand("setup"');
   });
 });
 
 describe("the key step", () => {
-  it("draws the public half, and only the public half", () => {
+  const SCRIPT = "#!/bin/sh\n# DASH host setup\necho hello\n";
+  const LINE = 'restrict,command="/opt/orchestratedash/dash-host" ssh-ed25519 AAAAC3NzaC1lZDI1 orchestratedash';
+
+  it("leads with the one-paste setup snippet, not the bare key (MAR-579)", () => {
     const html = renderToStaticMarkup(
-      <KeyStep label={LABEL} publicKey="ssh-ed25519 AAAAC3NzaC1lZDI1 orchestratedash" />,
+      <KeyStep label={LABEL} setupScript={SCRIPT} authorizedKeysLine={LINE} />,
     );
-    expect(html).toContain("ssh-ed25519 AAAAC3NzaC1lZDI1");
-    expect(html).toContain("public-key");
+    expect(html).toContain("DASH host setup");
+    expect(html).toContain("setup-script");
+    // The by-hand line, when shown at all, is the RESTRICTED one — never the bare
+    // public key alone, which is what MAR-579 found the old step installing.
+    expect(html).toContain("restrict,command=");
   });
 
-  it("says the refusal out loud in both of its own states", () => {
+  it("says the refusal out loud whether or not the snippet is ready", () => {
     /*
      * Said, rather than merely not asked. Somebody who has connected a server
      * before expects to be asked for a private key — every other tool asks — and
      * a flow that quietly does not ask reads as one that forgot rather than as
      * one that decided.
      */
-    for (const key of [null, "ssh-ed25519 AAAA orchestratedash"]) {
-      const html = renderToStaticMarkup(<KeyStep label={LABEL} publicKey={key} />);
+    for (const script of [null, SCRIPT]) {
+      const html = renderToStaticMarkup(
+        <KeyStep label={LABEL} setupScript={script} authorizedKeysLine={script === null ? null : LINE} />,
+      );
       expect(html).toContain("will not ask you to paste a private key");
       expect(html).toContain('role="note"');
     }
@@ -129,12 +152,41 @@ describe("the key step", () => {
      * Checked against the *markup* rather than against the copy, because the
      * failure mode is somebody adding an input, not somebody adding a sentence.
      */
-    for (const key of [null, "ssh-ed25519 AAAA orchestratedash"]) {
-      const html = renderToStaticMarkup(<KeyStep label={LABEL} publicKey={key} />);
+    for (const script of [null, SCRIPT]) {
+      const html = renderToStaticMarkup(
+        <KeyStep label={LABEL} setupScript={script} authorizedKeysLine={script === null ? null : LINE} />,
+      );
       expect(html).not.toContain("<textarea");
       expect(html).not.toContain("<input");
       expect(html).not.toContain("BEGIN OPENSSH");
     }
+  });
+});
+
+describe("the enrollment moment on the check step (MAR-572, MAR-579)", () => {
+  const CONFIRM: HostConnectState = {
+    step: "confirm_host_key",
+    label: LABEL,
+    fingerprint: "SHA256:FCU60rvm6UzWbFXeMm0CUSO8qid2WYv9v3aymVi51HA",
+    key_type: "ssh-ed25519",
+    offered_count: 3,
+  };
+
+  it("shows the fingerprint on its own line and the sentence only the person can act on", () => {
+    const html = renderToStaticMarkup(<CheckStep state={CONFIRM} />);
+    expect(html).toContain("SHA256:FCU60rvm6UzWbFXeMm0CUSO8qid2WYv9v3aymVi51HA");
+    expect(html).toContain("public-key");
+    // ADR 0009's honesty sentence: trust-on-first-use is the person's to give.
+    expect(html).toContain("only you can confirm");
+  });
+
+  it("wires a Confirm control that carries the shown fingerprint back (source proof)", () => {
+    // The button lives in the wizard's button row, not in CheckStep. Reading the
+    // source is the right proof for the same reason the command-path test does:
+    // the server-rendered wizard does not invoke Electron.
+    const source = readFileSync(path.join(repoRoot, "app", "hosts", "page.tsx"), "utf8");
+    expect(source).toContain("confirmHostKey(checkState.fingerprint)");
+    expect(source).toContain("Yes, this is my server");
   });
 });
 

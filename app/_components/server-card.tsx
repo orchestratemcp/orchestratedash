@@ -10,12 +10,12 @@ import {
 import { describeDeployArrangement } from "../../lib/deploy/receipt";
 import {
   describeAdded,
-  describeBootstrapGap,
   describeDeployed,
   describePin,
   describeSameServer,
   describeSignIn,
 } from "../../lib/server-card";
+import { describeSetupStep } from "../../lib/host-wizard";
 import type { SavedServerView } from "../../lib/views/types";
 
 /**
@@ -87,6 +87,10 @@ export interface ServerCardActions {
   check(): void;
   deploy(agentId: string): void;
   forget(): void;
+  /** Confirm the identity the card displayed (MAR-572). Carries it back verbatim. */
+  trust(fingerprint: string): void;
+  /** Fetch the one-paste bootstrap for this server (MAR-573). Null on failure. */
+  setup(): Promise<string | null>;
 }
 
 export function ServerCard({
@@ -116,8 +120,6 @@ export function ServerCard({
   const chip = standingChip(standing);
   const pin = describePin(server.fingerprint);
   const sameServer = describeSameServer(server.same_server_index, server.same_server_count);
-  const reachableWithNothing =
-    standing.step === "unreachable" && standing.problem === "no_runner_there";
 
   return (
     <article className="row-card server-card">
@@ -192,6 +194,43 @@ export function ServerCard({
         </p>
       )}
 
+      {/*
+        The enrollment moment on a saved record (MAR-572). Every real record is
+        unpinned today, so the first check of a working server lands here: the
+        code is shown, and confirming it is the one part only the person can do.
+        The fingerprint they compare is on its own line above, so the button
+        carries a decision they have actually made rather than a blind yes.
+      */}
+      {standing.step === "confirm_host_key" ? (
+        <section className="enrollment-panel">
+          <pre className="public-key">{standing.fingerprint}</pre>
+          <button
+            type="button"
+            className="button-primary"
+            disabled={busy || !canAct}
+            onClick={() => {
+              actions.trust(standing.fingerprint);
+            }}
+          >
+            {busy ? "Confirming..." : "Yes, this is my server"}
+          </button>
+        </section>
+      ) : null}
+
+      {/*
+        The bootstrap, reachable where it is needed (MAR-573, MAR-579). On a
+        fresh box the walls arrive in order: the host key is confirmed first
+        (above), then the sign-in fails because DASH's key and the helper are not
+        on the server yet. Both are what the one-paste snippet installs, so the
+        setup affordance is offered for `key_not_on_server` as well as
+        `helper_not_installed` — the snippet is the single answer to "this server
+        is not set up for DASH yet", whichever of the two the probe named.
+      */}
+      {standing.step === "unreachable" &&
+      (standing.problem === "helper_not_installed" || standing.problem === "key_not_on_server") ? (
+        <SetupPanel label={server.label} busy={busy} canAct={canAct} fetchScript={actions.setup} />
+      ) : null}
+
       <div className="button-row">
         <button
           type="button"
@@ -233,7 +272,6 @@ export function ServerCard({
           busy={busy}
           canAct={canAct}
           chosenAgent={chosenAgent}
-          bootstrapGap={reachableWithNothing}
           onChoose={setChosenAgent}
           onCancel={() => {
             setDeploying(false);
@@ -272,7 +310,6 @@ export function DeployPanel({
   busy,
   canAct,
   chosenAgent,
-  bootstrapGap,
   onChoose,
   onCancel,
   onDeploy,
@@ -282,8 +319,6 @@ export function DeployPanel({
   busy: boolean;
   canAct: boolean;
   chosenAgent: string;
-  /** Whether this server answered a check with nothing running on it. */
-  bootstrapGap: boolean;
   onChoose: (agentId: string) => void;
   onCancel: () => void;
   onDeploy: () => void;
@@ -299,17 +334,12 @@ export function DeployPanel({
       <DeployArrangement label={server.label} />
 
       {/*
-        MAR-573, said where it lands. The attended run proved it rather than
-        predicting it: DASH signed in to a fresh Ubuntu box and the box answered
-        `command not found`, because the helper that answers DASH's verbs travels
-        inside the bundle DASH pushes. A person pressing this on a never-prepared
-        server meets that, and meeting it without warning reads as their own
-        server being broken.
-
-        Deleted, not softened, when MAR-573's guided bootstrap lands.
+        MAR-573's circular-bootstrap gap used to be a dead-end sentence here.
+        MAR-579 replaced it with a way out: the setup snippet is offered on the
+        card itself, gated on the states that actually mean "not set up yet"
+        (`helper_not_installed`, `key_not_on_server`), rather than described in
+        the deploy panel where the server is already reachable.
       */}
-      {bootstrapGap ? <BootstrapGap /> : null}
-
       {agents.length === 0 ? (
         <p className="wrap muted">
           There is no agent here to put on a server yet. Add one first and it will be offered
@@ -381,12 +411,68 @@ function DeployArrangement({ label }: { label: string }): ReactNode {
   );
 }
 
-function BootstrapGap(): ReactNode {
-  const gap = describeBootstrapGap();
+/**
+ * The one-paste bootstrap, reachable at last (MAR-573, MAR-579).
+ *
+ * This replaces `BootstrapGap`, which described the circular gap without a way
+ * out of it — a sentence that said "your fresh server has nothing to answer
+ * DASH" and then left the person there. The script is fetched on demand rather
+ * than held in the card, because it is DASH's own public key and the helper's
+ * bytes composed at request time: nothing about it is worth persisting, and a
+ * card that carried it would be carrying it for every server whether or not this
+ * one needs it.
+ *
+ * The disclosure copy comes from `describeSetupStep`, the same function the
+ * wizard's key step uses, so the two surfaces cannot drift on what the snippet
+ * promises.
+ */
+function SetupPanel({
+  label,
+  busy,
+  canAct,
+  fetchScript,
+}: {
+  label: string;
+  busy: boolean;
+  canAct: boolean;
+  fetchScript: () => Promise<string | null>;
+}): ReactNode {
+  const [script, setScript] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const copy = describeSetupStep(label);
   return (
-    <p className="disclosure wrap" role="note">
-      <strong>{gap.headline}.</strong> {gap.detail}
-    </p>
+    <section className="setup-panel">
+      <p className="wrap">
+        <strong>{copy.headline}</strong>
+      </p>
+      <p className="wrap">{copy.detail}</p>
+      {script === null ? (
+        <button
+          type="button"
+          className="button-secondary"
+          disabled={busy || loading || !canAct}
+          onClick={() => {
+            setLoading(true);
+            void fetchScript().then((text) => {
+              setLoading(false);
+              if (text !== null) {
+                setScript(text);
+              }
+            });
+          }}
+        >
+          {loading ? "Writing the setup text..." : "Show the setup text"}
+        </button>
+      ) : (
+        <>
+          <p className="disclosure wrap" role="note">
+            {copy.disclosure}
+          </p>
+          <pre className="setup-script">{script}</pre>
+          <p className="next-action wrap">{copy.next_action}</p>
+        </>
+      )}
+    </section>
   );
 }
 
