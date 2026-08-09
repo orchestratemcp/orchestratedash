@@ -4179,3 +4179,171 @@ agent two ways. `AgentRow` carries no title and the Agents list renders the id
 deliberately, inside `<code>`; making the picker disagree with the list a person
 picked from would trade one inconsistency for another. It is a DASH-wide naming
 decision and not this issue's to take.
+
+## Four questions, answered from the record (MAR-586)
+
+Henrik, 2026-08-09: *"The fleet view should give us quick info about each agent.
+For example. Has it new output? Does it need human approval? Does it lack
+connections? Is it stale? Besides this it needs buttons to its agent page."*
+
+MAR-547's ruling is what shapes the answer rather than decorating it: **nothing
+like `CPU LOAD 87%` with no source behind it.** So each of the four is a fact
+somebody wrote down, `lib/copy/glance.ts` turns facts into sentences and cannot
+reach a store, and `lib/views/glance.ts` reads the records and writes no
+sentence. A question DASH cannot answer draws no chip.
+
+| question | record |
+| --- | --- |
+| has it new output? | `run_artifacts.received_at` against `agent_looks` |
+| does it need you? | the Agent DOM snapshot, through `buildWorkInbox` |
+| is it connected? | MAR-569's resolution, or the declared checklist beneath it |
+| is it overdue? | the manifest's declared interval against DASH's own runs |
+
+### The one new fact, and why it is its own table
+
+Three of the four were already recorded. The fourth needed a last-looked
+timestamp per agent, which is the only thing this issue stores.
+
+`agent_looks` is a table rather than a column on `agents`, and the reason is
+`evidence_pulls`'s: it records something the **reader** did, not something an
+agent did. A column would have sat inside the row `importManifest` rewrites on
+every re-import, where the next `ON CONFLICT DO UPDATE` would either have to
+remember to leave it alone — the trap `avatar`'s own note describes — or quietly
+reset it. One row per agent, overwritten, because the question is "has anything
+arrived since the last look" and the answer never involves the look before it.
+
+`received_at` and not `generated_at` is the whole correctness of the chip.
+`generated_at` is the agent's claim about its own past, from a clock DASH does
+not set; a look is stamped from DASH's clock, and comparing the two would let an
+agent with a wrong clock either hide its output forever or announce every old
+artifact as new.
+
+### It is written by a command, and could not have been a read
+
+`lib/shell/read.ts` states that a read changes nothing and is therefore not
+audited. Recording a look inside the answer to `view.workspace` would have
+broken that in the worst available place: that view is polled every five seconds
+while a run is going, so the fact would have been rewritten by the window
+staying open rather than by anybody arriving.
+
+`glance.looked` is a sixth command family and the only one in the catalogue
+about the person at the keyboard rather than about anything DASH supervises. Its
+payload is one agent id and deliberately no time — main stamps its own clock —
+so page script cannot mark an agent as read at a moment it chose and silence its
+card for good.
+
+### One definition of late, and one row builder
+
+MAR-441's arithmetic moved out of `deriveStatus` into `pastScheduleExpectation`
+and is now shared rather than copied. A card and a status field that disagreed
+about whether the same agent was late would be worse than either of them being
+wrong. Every reason *not* to say so anyway stayed in `deriveStatus`, because
+those are judgments about a status field and the card makes its own: it refuses
+while a run is happening (asked of both records, since either may know first)
+and for an agent the person paused.
+
+It is measured against **DASH's own record of runs**, not the snapshot's
+`last_activity_at`. The two answer different questions — activity includes tasks
+and audit events, and the issue asks about runs — and DASH's runs table outlives
+the process, so a stopped agent still has an answer.
+
+`connectionRowsFor` was extracted from `connectionsView` so the fleet card and
+the Connection Center share one row builder. A second implementation would have
+been a second place for MAR-533's four standings to collapse into three, which
+is the exact bug `lib/connection-requirements.ts` opens by warning about. Where
+an author declared a `connection_requirements` block MAR-569's resolution
+answers; where there is none — which is every agent on any real machine today —
+the declared `agent_dom.connections` checklist does, on `panelDocument`'s
+folder-first rule. A row DASH cannot hold a credential for is deliberately not
+counted: DASH offers no button for it, and a chip would send somebody to do
+something DASH can never mark as done.
+
+### The chips are links, and the agent page had to learn to catch them
+
+Each chip goes to the place that answers it. Three are sections of the agent's
+own page; the connections chip goes to the Connection Center, because what an
+agent *needs* connected is that page's subject while the agent page's own
+Connections section is the agent's report on connections it already has.
+
+A browser resolves a fragment against the document it has loaded, and every DASH
+page reads its content across the IPC boundary *after* first paint — so the
+fragment was already resolved against an empty page and dropped. Without the
+effect that re-applies it once the view arrives, a chip that promised to take
+somebody to the thing waiting for them landed them at the top of a page and left
+them looking. That is MAR-547's *"a lot of things that can't be clicked"*
+arriving in a new shape rather than being fixed.
+
+### Henrik changed the layout mid-session
+
+Looking at the first set of screenshots: *"I want the fleet cards to fit like 3
+in a row. And the avatar to be bigger."* So the fleet takes the MAR-528 Stitch
+package's `fleet_monitor` composition — header band, portrait on a tinted tile,
+controls along the bottom — with the concept's meters refused by name and the
+four recorded answers in the space they would have occupied.
+
+Two decisions under the three columns are worth more than the number:
+
+- It is a `fleet-grid` **modifier**, not a change to `.row-list`. The Runs and
+  Connections pages lay records on that class too, and theirs are wide rows of
+  prose.
+- `auto-fit` with a 19rem floor, never `repeat(3, 1fr)`. Three-in-a-row is what
+  a 1280px window gets; a hardcoded count would have given a 375px phone three
+  100px columns, which is MAR-491's width-conditional interface in its worse
+  form — the same interface at a width it cannot be read at.
+
+The avatar is `size={100}`, the portrait size the agent page already draws.
+`lib/brand/o-cast.ts` allows exactly two whole multiples of the 50px source and
+nothing between them, so "bigger" here means the other one rather than a chosen
+number. The "Last N runs" eyebrow is gone with the move and nothing is lost:
+every compliance chip already carries its own denominator, so the label was
+explaining a number that is on the screen beside it.
+
+### Evidence
+
+`pnpm state:check` valid with 0 drift warnings; `pnpm typecheck` clean;
+`pnpm brand:check` green; `pnpm vitest run tests` from PowerShell — **116 test
+files / 2353 passed / 10 skipped / 0 failed**, two files new;
+`pnpm build:renderer` and `pnpm build:shell` both green.
+
+`electron/capture-glance.ts` is a new store-seeding harness on
+`electron/capture-deploy.ts`'s terms, and for the sharpest version of that
+reason: **a chip exists only when the fact behind it is true**, so a run against
+whatever a machine happens to hold photographs one of sixteen combinations and
+cannot say which one it got. It seeds five agents — one per answer — through the
+ordinary import and ingest doors and photographs them side by side. **14
+packaged-renderer frames** at 1280/768/375 in both themes and both densities,
+plus one all-cards frame per theme, in `qa-screenshots-mar586/`. Every frame
+carries all five chip kinds, none overflows sideways, and no chip is anything
+other than a link or the all-clear chip — all three asserted by the harness
+rather than by eye.
+
+**Its own witness caught a defect on the first run, and the defect was the
+witness.** `.chip` sets `text-transform: uppercase` and `innerText` returns the
+*rendered* text, so all five `says_…` checks read false while all five chips
+were in the photograph. That is `FLEET_STRIP_STORAGE_KEY`'s lesson — a harness
+that disagrees with the thing it is measuring — arriving by another door.
+
+`pnpm verify:shell` was run from PowerShell with its output redirected to a
+file, beside a live DASH and several other worktrees' Electron instances. Its
+Windows shell smoke reported **all proofs passed**, including proof 9g's
+installed five-second poll bringing an output into DASH's store.
+
+**It never returned an exit status, and that is a known hazard rather than a
+failure.** `scripts/verify-shell.mjs` runs the smoke through `spawnSync`; the
+smoke deliberately leaves its runner alive — *"closing DASH leaves agents
+running"* is the product's own behaviour and the smoke depends on it — and the
+surviving child holds the inherited stdout open, so the wrapper waits on a pipe
+nothing will close. The evidence is the log, which is complete and green; the
+process was stopped after it rather than force-killed mid-proof. CI's Windows
+`shell-smoke` is the branch's other installed witness and is the one that
+produces a bucket a merge can be gated on.
+
+### What is not proven, said rather than left
+
+The look is recorded only where a preload bridge exists. A browser tab has none
+and never will, and an installed shell older than `glance.looked` has a
+`dashShell` without it — so on both, the "new output" chip keeps counting from a
+look that was never written. `app/_data/source.ts` states that rather than
+hiding it, and it is the one command in this module whose refusal is
+deliberately never shown: nobody presses it, so a refusal would be an error
+message for something its reader never asked for.
