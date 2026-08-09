@@ -28,6 +28,9 @@ const { importManifest, ingestEvents, resetStore } = await import("../lib/store"
 const { closeDb } = await import("../lib/db");
 const { putAgentDomState } = await import("../lib/agent-dom/store");
 const { writeRegistration } = await import("../lib/registration");
+// Imported the same way as the modules above rather than statically, so nothing
+// in this file can observe a data directory chosen before the line that sets it.
+const { MANIFEST_ONLY_DEPLOY_REFUSAL } = await import("../lib/agent-folders");
 const {
   agentOrigin,
   agentsView,
@@ -164,6 +167,72 @@ describe("agentsView", () => {
     expect(origin?.kind).toBe("set_up_by_hand");
     // DASH did not create the file and cannot say where it points.
     expect(origin?.source_project).toBeUndefined();
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * Whether an agent can be sent to a server (MAR-577)
+ * ---------------------------------------------------------------------- */
+
+describe("what a view says about deploying an agent", () => {
+  /** The folder-carrying shape, which is what makes a standing `complete`. */
+  function importWithCode(name: string): void {
+    const document = structuredClone(manifest) as { agent: { name: string } };
+    document.agent.name = name;
+    const manifestJson = JSON.stringify(document);
+    importManifest(document, {
+      manifestJson,
+      registration: {
+        agent_id: name,
+        manifest_path: "agent.manifest.json",
+        command: "node",
+        args: ["agent.mjs"],
+        cwd: "code",
+        env: {},
+      },
+      files: [
+        { path: "agent.manifest.json", contents: manifestJson },
+        { path: "agent.mjs", contents: "process.stdout.write('ready')\n" },
+      ],
+    });
+  }
+
+  it("refuses a migrated agent with MAR-553's own sentence", () => {
+    /*
+     * The load-bearing one. A plain import materialises the author's document
+     * and no program — which is exactly what DB migration 10 leaves behind for
+     * every agent added before ADR 0008 — so DASH has nothing to send, knows it
+     * without a network, and must say the same sentence main would say.
+     */
+    importManifest(manifest);
+
+    const deploy = agentsView().agents[0]?.deploy;
+    expect(deploy?.deployable).toBe(false);
+    expect(deploy?.refusal).toBe(MANIFEST_ONLY_DEPLOY_REFUSAL);
+  });
+
+  it("allows one whose build DASH holds, and offers no refusal to render", () => {
+    importWithCode("email-lead-to-crm");
+
+    const deploy = agentsView().agents[0]?.deploy;
+    expect(deploy?.deployable).toBe(true);
+    // Null rather than an empty string: a renderer branching on truthiness and
+    // a renderer branching on the flag must reach the same conclusion.
+    expect(deploy?.refusal).toBeNull();
+  });
+
+  it("gives the workspace the same answer as the list, for the same agent", () => {
+    /*
+     * Two surfaces, one fact. They are built by separate functions and would be
+     * free to disagree — and a page that offered a deploy the Servers page
+     * refused would be the worse half of that disagreement.
+     */
+    importManifest(manifest);
+    const workspace = workspaceView("email-lead-to-crm");
+    expect(workspace.found).toBe(true);
+    expect(workspace.found ? workspace.deploy : null).toEqual(
+      agentsView().agents[0]?.deploy,
+    );
   });
 });
 

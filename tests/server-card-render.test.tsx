@@ -17,8 +17,10 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { DeployPanel, ServerCard, standingChip } from "../app/_components/server-card";
+import { MANIFEST_ONLY_DEPLOY_REFUSAL } from "../lib/agent-folders";
+import type { DeployStanding } from "../lib/deploy/deploying";
 import { HOST_REACH_PROBLEMS, type HostConnectState } from "../lib/host-connect";
-import type { SavedServerView } from "../lib/views/types";
+import type { AgentDeployChoice, SavedServerView } from "../lib/views/types";
 
 const SERVER: SavedServerView = {
   host_id: "host-1",
@@ -38,6 +40,25 @@ const NOTHING = {
   forget: () => undefined,
 };
 
+/**
+ * The refusal as it reaches the markup (MAR-577).
+ *
+ * React escapes an apostrophe in a text node, and the constant has two. Derived
+ * from the constant rather than typed out, so the assertion still fails if the
+ * sentence is reworded anywhere but in `lib/agent-folders.ts`.
+ */
+const RENDERED_REFUSAL = MANIFEST_ONLY_DEPLOY_REFUSAL.replaceAll("'", "&#x27;");
+
+/** An agent DASH holds a build for, and one it does not (MAR-577). */
+const SENDABLE: AgentDeployChoice = {
+  name: "News Scout",
+  deploy: { deployable: true, refusal: null },
+};
+const MIGRATED: AgentDeployChoice = {
+  name: "Old Scout",
+  deploy: { deployable: false, refusal: MANIFEST_ONLY_DEPLOY_REFUSAL },
+};
+
 /** Every standing a saved server can be shown in. */
 const STANDINGS: HostConnectState[] = [
   { step: "not_checked", label: SERVER.label },
@@ -54,14 +75,17 @@ function card(
   standing: HostConnectState,
   server: SavedServerView = SERVER,
   notice: string | null = null,
+  checkedAt: string | null = null,
 ): string {
   return renderToStaticMarkup(
     <ServerCard
       server={server}
       standing={standing}
-      agents={["News Scout"]}
+      checkedAt={checkedAt}
+      agents={[SENDABLE]}
       busy={false}
       notice={notice}
+      deploy={null}
       canAct
       actions={NOTHING}
     />,
@@ -203,15 +227,27 @@ describe("the four rows on a real machine", () => {
 });
 
 describe("the deploy panel", () => {
-  const panel = (bootstrapGap: boolean, agents: string[] = ["News Scout"]): string =>
+  const panel = (
+    bootstrapGap: boolean,
+    agents: AgentDeployChoice[] = [SENDABLE],
+    over: {
+      chosenAgent?: string;
+      deploy?: DeployStanding | null;
+      report?: HostConnectState;
+      checkedAt?: string | null;
+    } = {},
+  ): string =>
     renderToStaticMarkup(
       <DeployPanel
         server={SERVER}
         agents={agents}
         busy={false}
         canAct
-        chosenAgent=""
+        chosenAgent={over.chosenAgent ?? ""}
         bootstrapGap={bootstrapGap}
+        deploy={over.deploy ?? null}
+        report={over.report ?? { step: "not_checked", label: SERVER.label }}
+        checkedAt={over.checkedAt ?? null}
         onChoose={() => undefined}
         onCancel={() => undefined}
         onDeploy={() => undefined}
@@ -244,6 +280,182 @@ describe("the deploy panel", () => {
   });
 });
 
+/* ---------------------------------------------------------------------- *
+ * MAR-577
+ * ---------------------------------------------------------------------- */
+
+describe("an agent DASH cannot send", () => {
+  const panel = (chosenAgent: string): string =>
+    renderToStaticMarkup(
+      <DeployPanel
+        server={SERVER}
+        agents={[SENDABLE, MIGRATED]}
+        busy={false}
+        canAct
+        chosenAgent={chosenAgent}
+        bootstrapGap={false}
+        deploy={null}
+        report={{ step: "not_checked", label: SERVER.label }}
+        checkedAt={null}
+        onChoose={() => undefined}
+        onCancel={() => undefined}
+        onDeploy={() => undefined}
+      />,
+    );
+
+  it("renders MAR-553's own refusal the moment the agent is chosen", () => {
+    /*
+     * The assertion the issue asks for by name, and it is against the constant
+     * rather than against a copy of its words: a sentence reworded in a
+     * component is one that stops matching the refusal main will actually give.
+     */
+    expect(panel(MIGRATED.name)).toContain(RENDERED_REFUSAL);
+  });
+
+  it("says nothing about it until that agent is the one chosen", () => {
+    expect(panel("")).not.toContain(RENDERED_REFUSAL);
+    expect(panel(SENDABLE.name)).not.toContain(RENDERED_REFUSAL);
+  });
+
+  it("keeps it in the list rather than filtering it out", () => {
+    /*
+     * A person's own agent missing from a picker, with nothing said, is a worse
+     * answer than the sentence explaining why it cannot go. It is also the
+     * failure mode that would make this bug invisible again.
+     */
+    expect(panel("")).toContain(MIGRATED.name);
+  });
+
+  it("stops the deploy rather than letting it be pressed", () => {
+    const chosen = panel(MIGRATED.name);
+    const sendable = panel(SENDABLE.name);
+    expect(chosen).toContain("disabled");
+    // The same markup with a deployable agent chosen has a live button, so the
+    // assertion above is about the refusal and not about the panel always
+    // rendering something disabled.
+    expect(sendable).not.toContain("disabled");
+  });
+});
+
+describe("a deploy while it is happening, and after", () => {
+  const withDeploy = (deploy: DeployStanding, report: HostConnectState, checkedAt: string | null): string =>
+    renderToStaticMarkup(
+      <DeployPanel
+        server={SERVER}
+        agents={[SENDABLE]}
+        busy={deploy.step === "sending"}
+        canAct
+        chosenAgent={SENDABLE.name}
+        bootstrapGap={false}
+        deploy={deploy}
+        report={report}
+        checkedAt={checkedAt}
+        onChoose={() => undefined}
+        onCancel={() => undefined}
+        onDeploy={() => undefined}
+      />,
+    );
+
+  const REACHABLE: HostConnectState = {
+    step: "reachable",
+    label: SERVER.label,
+    runner_build: "96cef120",
+    agents_running: 1,
+  };
+
+  it("says what is happening rather than only greying the button out", () => {
+    /*
+     * Installing a bundle over SSH takes long enough that a control which simply
+     * stopped responding reads as a page that has hung — which is how somebody
+     * comes to press it twice, or to close DASH mid-push.
+     */
+    const html = withDeploy(
+      { step: "sending", agent: SENDABLE.name, server: SERVER.label },
+      { step: "not_checked", label: SERVER.label },
+      null,
+    );
+    expect(html).toContain("Putting News Scout on My server");
+    expect(html).toContain("Nothing on this computer changes");
+  });
+
+  it("does not report what the server has while the push is still going", () => {
+    // The previous check's answer under "putting it there" would be DASH
+    // answering the question the person is waiting on with the previous one.
+    const html = withDeploy(
+      { step: "sending", agent: SENDABLE.name, server: SERVER.label },
+      REACHABLE,
+      "2026-08-09T14:14:37Z",
+    );
+    expect(html).not.toContain("The server reported");
+  });
+
+  it("reports the server's own answer afterwards, with when it was given", () => {
+    const html = withDeploy(
+      { step: "sent", agent: SENDABLE.name, server: SERVER.label },
+      REACHABLE,
+      "2026-08-09T14:14:37Z",
+    );
+    expect(html).toContain("The server reported 1 agent running");
+    expect(html).toContain("keeps no list of its own");
+    expect(html).toContain("August 2026");
+  });
+
+  it("never says the agent is running there, because DASH has no such record", () => {
+    /*
+     * The one sentence this surface is most likely to acquire by accident.
+     * `host.deploy` pushes a bundle, starts it and stores nothing, so the only
+     * account of what is on a server is that server's answer to a check.
+     */
+    const html = withDeploy(
+      { step: "sent", agent: SENDABLE.name, server: SERVER.label },
+      REACHABLE,
+      "2026-08-09T14:14:37Z",
+    );
+    expect(html).toContain("DASH keeps no list of what it has put on a server");
+    expect(html).not.toContain("is now running on");
+  });
+
+  it("sends a failed deploy to the server rather than claiming nothing changed", () => {
+    /*
+     * Three steps run behind one answer — produce, install, start — and DASH
+     * cannot tell which of them stopped. "Nothing was changed on your server" is
+     * the reassuring sentence and the one that would be wrong.
+     */
+    const html = withDeploy(
+      {
+        step: "failed",
+        agent: SENDABLE.name,
+        server: SERVER.label,
+        detail: MANIFEST_ONLY_DEPLOY_REFUSAL,
+      },
+      { step: "not_checked", label: SERVER.label },
+      null,
+    );
+    expect(html).toContain(RENDERED_REFUSAL);
+    expect(html).toContain("Check My server to see what is on it now");
+    expect(html).not.toContain("Nothing was changed");
+  });
+});
+
+describe("how old the server's answer is", () => {
+  it("is stamped on the card beside the count", () => {
+    const html = card(
+      { step: "reachable", label: SERVER.label, runner_build: "96cef120", agents_running: 2 },
+      SERVER,
+      null,
+      "2026-08-09T14:14:37Z",
+    );
+    expect(html).toContain("The server reported 2 agents running");
+    expect(html).toContain("DASH last asked on");
+  });
+
+  it("says nothing about when, before anything has asked", () => {
+    // The unchecked standing already says DASH has not looked. A second line
+    // saying so in different words is the wall of text this page avoids.
+    expect(card({ step: "not_checked", label: SERVER.label })).not.toContain("DASH last asked");
+  });
+});
+
 describe("a window that cannot act", () => {
   it("disables the actions rather than hiding them", () => {
     /*
@@ -255,9 +467,11 @@ describe("a window that cannot act", () => {
       <ServerCard
         server={SERVER}
         standing={{ step: "not_checked", label: SERVER.label }}
+        checkedAt={null}
         agents={[]}
         busy={false}
         notice={null}
+        deploy={null}
         canAct={false}
         actions={NOTHING}
       />,

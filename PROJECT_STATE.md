@@ -1,6 +1,7 @@
 # DASH project state
 
-Updated: 2026-08-07 (every open PR merged; the packet reconciled against master)
+Updated: 2026-08-09 (MAR-577: the deploy plane's second entry point, and its
+progress and result rendered honestly)
 
 Portfolio sequence and estimates: [`../orchestratekit-mcp/docs/PORTFOLIO_ROADMAP_2026-08-01.md`](../orchestratekit-mcp/docs/PORTFOLIO_ROADMAP_2026-08-01.md).
 
@@ -4048,3 +4049,133 @@ manifest-only refusal on a real surface).
 warning(s)** — the first zero since the warnings began accruing. A parallel
 repair PR (#98) built before #97 landed was closed as superseded; its packet
 reconciliation is what this commit carries forward.
+
+---
+
+## The other door into the deploy plane (MAR-577)
+
+The deploy plane has been complete from the IPC layer down since MAR-536, and
+had a real bundle producer since MAR-556. PR #96 gave it its **first** page
+affordance — the server card's panel, which asks *"which agent goes on this
+machine"*. The issue names two directions and the second did not exist:
+*"which machine does this agent go on"*, asked from the page a person is
+already on when they decide it. `app/_components/deploy.tsx` is that section,
+and `app/agents/detail/page.tsx` renders it directly under Run now, because it
+is the same question asked of a different machine and a person choosing
+between them should not have to find one of the two on another page.
+
+Both ends reach `submitHostCommand("deploy", …)` and neither reimplements a
+sentence: the receipt is `lib/deploy/receipt.ts`, the progress and the result
+are the new `lib/deploy/deploying.ts`, and what is on the server afterwards is
+`describeDeployed` — the Servers page's own function.
+
+### The refusal now arrives before the press, which is the load-bearing change
+
+Whether an agent can be sent anywhere at all is a fact about **DASH's own
+folder** for it. It needs no network and no server. The only way to learn it
+was to choose a server, press deploy and read what came back — and in
+`electron/main.ts` that refusal sits *after* the host-key gate, so somebody
+with an unconfirmed server was told their server's identity was unconfirmed
+and never told that the agent could not have gone anywhere either way.
+
+`AgentDeployView` is that fact on the view. `AgentRow` and `WorkspaceView` both
+carry it, built by `agentDeployStanding` from `inspectAgentFolderStanding`, and
+it is **not** the gate: `produceAgentFolderBundle` refuses again in main and
+stays the authority — the same arrangement the add-a-server form's duplicate
+check already has, for the same reason, because a page can be wrong about what
+the store holds. What it buys is that nobody is offered a control that was
+never going to work.
+
+The two surfaces refuse differently on purpose. The server card keeps the
+migrated agent **in** the picker — a person's own agent silently missing from a
+list is a worse answer than the sentence saying why it cannot go — and renders
+`MANIFEST_ONLY_DEPLOY_REFUSAL` with the deploy button disabled the moment it is
+chosen. The agent's own page renders the refusal and **no control at all**,
+which is `lib/workspace.ts`'s rule about dead controls and sharper here: a
+greyed-out picker of *servers* puts the reason next to a control about servers,
+where it reads as a claim that the server is the problem.
+
+`UNREADABLE_FOLDER_DEPLOY_REFUSAL` is new beside it. `inspectAgentFolderStanding`
+has three answers and MAR-553's sentence covers one; borrowing it for the third
+would tell somebody their build lives outside DASH and send them re-importing
+from a project that may have been fine all along.
+
+### Three things the progress and result refuse to say
+
+**That an agent is running somewhere.** DASH keeps no record of what it put
+where — `host.deploy` pushes a bundle, starts it and stores nothing — so the
+success sentence says DASH finished *asking*, and the server's own answer
+follows it, stamped with when it was given.
+
+**That nothing was changed, when a deploy fails.** Produce, install and start
+run behind one await. A refusal can arrive with nothing sent, with files copied
+and nothing started, or with something started that then stopped, and DASH
+cannot tell them apart from the answer it gets. So the copy does not: it sends
+the person to the one thing that can answer, which is the server. That is
+`describeDisconnect`'s call about a server that keeps running after DASH
+forgets it, made again — the reassuring sentence is the one that would be wrong.
+
+**What the server had, while a push is still going.** The previous check's count
+rendered under *"putting it there"* answers the question the person is waiting
+on with the answer to the previous one.
+
+The age beside the count is **absolute, not relative**, and that is
+`lib/copy/when.ts`'s standing rule rather than a choice made here: a relative
+phrase needs a clock at render time, so the same component produces different
+markup on two runs and a render test stops asserting anything.
+`readProbeStanding` in `lib/host-connect.ts` is now one reading of a probe's
+answer for both surfaces, and its `null` — a refusal DASH could not classify —
+stays null rather than being rounded to the nearest of the nine problems.
+
+### Evidence, and the screenshot that had to be retaken
+
+`pnpm state:check` valid with 0 drift warnings; `pnpm typecheck` clean;
+`pnpm brand:check` green; `pnpm vitest run tests` from PowerShell — **114 test
+files / 2318 passed / 10 skipped / 0 failed**, two files and about forty-five
+cases new; `pnpm build:renderer` and `pnpm build:shell` both green.
+
+`electron/capture-deploy.ts` is a new store-seeding harness on
+`electron/capture-servers.ts`'s terms, and it exists for that file's reason
+twice over: **two** facts here are decided by the store — an agent's folder
+standing and whether any server is saved — so a run against whatever a machine
+happens to hold photographs one branch of each and cannot say which. **76
+packaged-renderer images** across three scenes (`one-server`, `two-servers`,
+`no-server`) at 1280/768/375, in both themes and both densities, in
+`qa-screenshots-mar577/`. No frame overflowed sideways and every refusal frame
+carries the refusal — both asserted by the harness rather than by eye.
+
+**The in-flight frame had to be taken twice, and the first attempt is the
+lesson.** The harness seeded a host record with a key *name* and no key, so the
+deploy failed at `assertHostKeyProtected` before `ssh` was ever spawned — and
+the "in flight" and "failed" frames were the same picture under two names,
+which is worse than a missing image. With a real key minted by the same
+function `host.create` uses, the push reaches the transport and spends `ssh`'s
+ten-second connect timeout against an address in TEST-NET-1, so the in-flight
+frame is a state the product really sits in.
+
+**The finished-deploy frame is not here, and is not faked.** `sent` needs a
+server that accepts a bundle, which is MAR-489's attended run;
+`tests/deploy-render.test.tsx` covers that state and nothing else does.
+
+`pnpm verify:shell` was **not** run locally. A live DASH session and four other
+worktrees' Electron instances were on this machine; AGENTS.md forbids
+force-killing them and DASH is single-instance by design — the call MAR-441,
+MAR-421, MAR-492 and MAR-434's own session each made in the same situation.
+CI's Windows `shell-smoke` is the installed-shell witness for this branch.
+
+One thing the harness leaves behind is named rather than tidied away: importing
+`electron/main.ts` starts a runner against the scratch store and `app.exit(0)`
+does not stop it, so each run leaves one live runner holding a temporary
+directory. `capture.ts` and `capture-servers.ts` have always done this and
+neither says so. It cannot touch anybody's records and it *can* block the next
+`pnpm verify:shell` on the same machine, which is why the header now says to run
+it before reviewing images rather than before running the gate.
+
+### One finding filed rather than fixed
+
+The server card's picker shows an agent's **id** (`old-scout`) where the agent's
+own page shows its **display name** (`Old Scout`), so one feature names one
+agent two ways. `AgentRow` carries no title and the Agents list renders the id
+deliberately, inside `<code>`; making the picker disagree with the list a person
+picked from would trade one inconsistency for another. It is a DASH-wide naming
+decision and not this issue's to take.

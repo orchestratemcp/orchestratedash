@@ -71,6 +71,47 @@ export interface AgentOriginView {
   source_project?: string;
 }
 
+/**
+ * Whether DASH holds enough of this agent to send it to a server (MAR-577).
+ *
+ * ## Why this is on the view rather than discovered by pressing the button
+ *
+ * It is a fact about DASH's own folder for the agent, not about any server, and
+ * DASH can answer it without a network. Until this field existed the only way to
+ * learn it was to choose a server, press deploy, and read the refusal that came
+ * back — which on the server card arrives *after* the host-key gate, so somebody
+ * with an unconfirmed server was told their server's identity was unconfirmed
+ * and never told the agent could not have been sent either way.
+ *
+ * ## It is not the gate
+ *
+ * `produceAgentFolderBundle` in main refuses again and stays the authority, the
+ * same arrangement the add-a-server form's duplicate check has: a page can be
+ * wrong about what the store holds, and a renderer that was trusted would be one
+ * a stale read could talk into a deploy. What this buys is that nobody is
+ * offered a control that was never going to work.
+ *
+ * `refusal` is null exactly when `deployable` is true. It carries MAR-553's own
+ * sentence — the string, not a code — because the module that owns it reads a
+ * disk and must never be imported into a `"use client"` tree.
+ */
+export interface AgentDeployView {
+  deployable: boolean;
+  refusal: string | null;
+}
+
+/**
+ * One agent, as an option on a server's deploy panel (MAR-577).
+ *
+ * A name alone was what the panel took, and it could not tell a deployable agent
+ * from a migrated one — so the refusal had nowhere to render until after the
+ * press.
+ */
+export interface AgentDeployChoice {
+  name: string;
+  deploy: AgentDeployView;
+}
+
 export interface AgentRow {
   name: string;
   goal: string;
@@ -97,6 +138,13 @@ export interface AgentRow {
    * `lib/store.ts` is where an unreadable column is already resolved.
    */
   avatar: OName;
+  /**
+   * Whether this agent could be put on a server, and why not (MAR-577).
+   *
+   * On the row because the Servers page's deploy panel is a list of these rows
+   * and needs the answer per option. See `AgentDeployView`.
+   */
+  deploy: AgentDeployView;
 }
 
 export interface AgentsView {
@@ -697,6 +745,17 @@ export type WorkspaceView =
        * saying about itself inside the box marked as somebody else's.
        */
       manifest_gap: ManifestGapView | null;
+      /**
+       * Whether this agent could be put on a server, and why not (MAR-577).
+       *
+       * The same fact `AgentRow` carries, on the page where the agent is already
+       * chosen. Here it decides whether the deploy section offers a server at
+       * all: an agent DASH cannot send is shown the refusal and no control,
+       * which is `lib/workspace.ts`'s rule about dead controls applied to the
+       * one case where a disabled button would read as a claim about the
+       * *server* rather than about the agent.
+       */
+      deploy: AgentDeployView;
     };
 
 export type WorkInboxRow = InboxItem & {

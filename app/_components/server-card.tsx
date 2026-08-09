@@ -7,6 +7,11 @@ import {
   describeDisconnect,
   type HostConnectState,
 } from "../../lib/host-connect";
+import {
+  describeAskedAt,
+  describeUndeployable,
+  type DeployStanding,
+} from "../../lib/deploy/deploying";
 import { describeDeployArrangement } from "../../lib/deploy/receipt";
 import {
   describeAdded,
@@ -16,7 +21,8 @@ import {
   describeSameServer,
   describeSignIn,
 } from "../../lib/server-card";
-import type { SavedServerView } from "../../lib/views/types";
+import type { AgentDeployChoice, SavedServerView } from "../../lib/views/types";
+import { DeployOutcome } from "./deploy";
 
 /**
  * A saved server, as a card you manage (MAR-574).
@@ -92,19 +98,33 @@ export interface ServerCardActions {
 export function ServerCard({
   server,
   standing,
+  checkedAt,
   agents,
   busy,
   notice,
+  deploy,
   actions,
   canAct,
 }: {
   server: SavedServerView;
   standing: HostConnectState;
-  /** Every agent this DASH could put on a server. Empty is a real state. */
-  agents: readonly string[];
+  /**
+   * When the server gave the standing above, or null before anything asked
+   * (MAR-577).
+   *
+   * The card says what the server reported; this says when it said it. Without
+   * it a count that was true ten minutes ago reads as one that is true now,
+   * which is the failure this whole page was built against — see
+   * `describeAskedAt`.
+   */
+  checkedAt: string | null;
+  /** Every agent in this DASH, with whether it can be sent. Empty is a real state. */
+  agents: readonly AgentDeployChoice[];
   busy: boolean;
   /** Whatever the last command said when it failed. Null when nothing did. */
   notice: string | null;
+  /** How the last deploy from this card is going, or null when none has begun. */
+  deploy: DeployStanding | null;
   actions: ServerCardActions;
   canAct: boolean;
 }): ReactNode {
@@ -114,6 +134,7 @@ export function ServerCard({
 
   const copy = describeConnectState(standing);
   const chip = standingChip(standing);
+  const asked = describeAskedAt(checkedAt);
   const pin = describePin(server.fingerprint);
   const sameServer = describeSameServer(server.same_server_index, server.same_server_count);
   const reachableWithNothing =
@@ -166,7 +187,13 @@ export function ServerCard({
         list — is the wall of text this page is trying not to be.
       */}
       {standing.step === "not_checked" ? null : (
-        <p className="card-meta wrap">{describeDeployed(standing)}</p>
+        <p className="card-meta wrap">
+          {describeDeployed(standing)}
+          {/* MAR-577. The moment the answer was given, beside the answer. Null
+              until something has been asked, and null is right then: the
+              standing already says DASH has not looked. */}
+          {asked === null ? "" : ` ${asked}`}
+        </p>
       )}
 
       {/*
@@ -234,6 +261,9 @@ export function ServerCard({
           canAct={canAct}
           chosenAgent={chosenAgent}
           bootstrapGap={reachableWithNothing}
+          deploy={deploy}
+          report={standing}
+          checkedAt={checkedAt}
           onChoose={setChosenAgent}
           onCancel={() => {
             setDeploying(false);
@@ -273,21 +303,49 @@ export function DeployPanel({
   canAct,
   chosenAgent,
   bootstrapGap,
+  deploy,
+  report,
+  checkedAt,
   onChoose,
   onCancel,
   onDeploy,
 }: {
   server: SavedServerView;
-  agents: readonly string[];
+  agents: readonly AgentDeployChoice[];
   busy: boolean;
   canAct: boolean;
   chosenAgent: string;
   /** Whether this server answered a check with nothing running on it. */
   bootstrapGap: boolean;
+  /** How the last deploy from this card is going, or null when none has begun. */
+  deploy: DeployStanding | null;
+  /** The card's own standing, which is what the server said when last asked. */
+  report: HostConnectState;
+  checkedAt: string | null;
   onChoose: (agentId: string) => void;
   onCancel: () => void;
   onDeploy: () => void;
 }): ReactNode {
+  /*
+   * MAR-577. Whether the *chosen* agent could be sent at all.
+   *
+   * A migrated agent has its author's document and no program (ADR 0008 slice
+   * 4), so DASH has nothing to put on a server — and it knows that from its own
+   * folder, without a network. Before this, the only way to find out was to
+   * press the button: the refusal came back from main, *after* the host-key
+   * gate, so somebody with an unconfirmed server was told about the server and
+   * never told the agent could not have gone anywhere either way.
+   *
+   * The agent stays in the list rather than being filtered out. A person's own
+   * agent silently missing from a picker is a worse answer than the sentence
+   * saying why it cannot go.
+   */
+  const chosen = agents.find((agent) => agent.name === chosenAgent) ?? null;
+  const refusal =
+    chosen === null || chosen.deploy.deployable
+      ? null
+      : describeUndeployable(chosen.name, chosen.deploy.refusal ?? "");
+
   return (
     <section className="deploy-panel">
       {/*
@@ -329,12 +387,31 @@ export function DeployPanel({
             >
               <option value="">Choose an agent</option>
               {agents.map((agent) => (
-                <option key={agent} value={agent}>
-                  {agent}
+                <option key={agent.name} value={agent.name}>
+                  {agent.name}
                 </option>
               ))}
             </select>
           </label>
+
+          {/* Said the moment the agent is chosen, and above the control, so
+              nobody presses a button that was never going to work. */}
+          {refusal === null ? null : (
+            <div className="notice notice-warn wrap" role="status">
+              <p>
+                <strong>{refusal.headline}</strong>
+              </p>
+              <p>{refusal.detail}</p>
+            </div>
+          )}
+
+          {/* What is happening, or what happened, and what the server says it
+              has now. The same component the agent's own page uses, so the two
+              entry points cannot word one deploy two ways. */}
+          {deploy === null ? null : (
+            <DeployOutcome standing={deploy} report={report} checkedAt={checkedAt} />
+          )}
+
           <div className="button-row">
             <button type="button" className="button-secondary" disabled={busy} onClick={onCancel}>
               Not now
@@ -342,7 +419,7 @@ export function DeployPanel({
             <button
               type="button"
               className="button-primary"
-              disabled={busy || chosenAgent === "" || !canAct}
+              disabled={busy || chosenAgent === "" || refusal !== null || !canAct}
               onClick={onDeploy}
             >
               {busy ? "Putting it there..." : "Put it on this server"}

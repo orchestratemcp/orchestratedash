@@ -110,6 +110,9 @@ function row(name: string, avatar: OName): AgentRow {
       clearance_flagged_runs: 0,
     },
     avatar,
+    // MAR-577. Nothing in this file renders it; the field is required on the row
+    // so that a surface which does cannot be given one without an answer.
+    deploy: { deployable: false, refusal: "This agent's build lives outside DASH." },
   };
 }
 
