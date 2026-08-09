@@ -47,6 +47,7 @@ import {
 } from "../insights";
 import { listRegistrations, type ManagedRegistration } from "../registration";
 import { readAgentFolderManifest } from "../agent-folders";
+import { describeManifestGap } from "../sample-refresh";
 import {
   artifactRecordsForAgent,
   artifactRecordsForRun,
@@ -737,6 +738,13 @@ export function workspaceView(
   const workspaceManifest = manifest as WorkspaceManifest;
   const stored = readAgentDomState(agent);
   const digest = latestArtifactForAgent(agent);
+  /*
+   * Resolved once. Two consumers now ask this document different questions —
+   * `buildPanelView` what it declares, `describeManifestGap` how old it is — and
+   * `panelDocument` reads the folder off disk, so calling it twice would open
+   * the same file twice per render of a page that already polls.
+   */
+  const document = panelDocument(agent, manifest);
 
   /*
    * Everything that run produced, not only the newest thing it produced.
@@ -803,10 +811,18 @@ export function workspaceView(
     input_roles: buildInputRoles(manifest),
     // MAR-548, ADR 0008 slice 3's wiring. The authoritative document, not the
     // row's copy — see `panelDocument` for which store answers and why.
-    panel: buildPanelView(panelDocument(agent, manifest), {
+    panel: buildPanelView(document, {
       artifacts: artifactRecordsForAgent(agent),
       facts: dashFactsForAgent(agent, store),
     }),
+    // MAR-576. The same document the panel was resolved from, asked a different
+    // question: not "what does this declare" but "is this older than what DASH
+    // would write for it today". It has to be the authoritative copy for the
+    // reason the panel does — a folder edited on disk is the document the user
+    // actually has, and telling them their setup is stale on the strength of a
+    // row that disagrees with it would be DASH reporting its own index back at
+    // them as their agent.
+    manifest_gap: describeManifestGap(document),
   };
 }
 

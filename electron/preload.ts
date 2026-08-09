@@ -258,6 +258,21 @@ const dashShell = {
     send("workspace.download", { ...args }),
 
   /**
+   * Re-import an agent DASH created, from DASH's current template (MAR-576).
+   *
+   * One agent id and nothing else. There is no manifest in the payload, no
+   * template, no version and no path — page script can ask DASH to refresh an
+   * agent *from DASH's own generator*, and cannot hand DASH a document to store.
+   * Whether that agent is one DASH may regenerate at all is decided in main,
+   * against the stored manifest's own provenance.
+   *
+   * A named method rather than a generic `sample(action, target)`, for the
+   * reason the workspace trio above are three methods: a generic entry point is
+   * one whose reachable surface grows without a review.
+   */
+  refreshSampleAgent: (args: { agent_id: string }) => send("sample.refresh", { ...args }),
+
+  /**
    * The runner's own health, and its one repair (MAR-518).
    *
    * `status` carries no payload — it is a fact about the runner as a whole,
