@@ -741,6 +741,15 @@ const MIGRATIONS: readonly Migration[] = [
   // that has it while reporting an older schema version — a downgrade test, a
   // restored backup — must not die on the way back up. Reapplying the same shape
   // is safe; changing it needs a new migration.
+  //
+  // **Placed after MAR-582's `ai_key_checks` at merge time, and the order is not
+  // a preference.** Both issues authored a migration at the same index on
+  // branches cut from the same tip. MAR-582 reached master first, so every
+  // database migrated there has already recorded it at that position — putting
+  // this one ahead of it would make an already-migrated store re-run somebody
+  // else's step. Same rule MAR-553's entry states about its own position, and
+  // the next parallel pair should resolve it the same way: whichever landed
+  // first keeps its index.
   `
   CREATE TABLE IF NOT EXISTS agent_looks (
     agent          TEXT PRIMARY KEY,
