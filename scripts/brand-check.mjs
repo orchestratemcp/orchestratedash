@@ -29,7 +29,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  auditSheet,
   auditSprite,
+  checkActions,
   checkAvatarCss,
   checkBundledFonts,
   checkCast,
@@ -42,7 +44,9 @@ import {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SPRITE_DIR = path.join(ROOT, "public", "o", "1x");
+const ACTION_DIR = path.join(ROOT, "public", "o", "actions");
 const MANIFEST = path.join(ROOT, "lib", "brand", "o-cast.json");
+const ACTION_MANIFEST = path.join(ROOT, "lib", "brand", "o-actions.json");
 const CAST_MODULE = path.join(ROOT, "lib", "brand", "o-cast.ts");
 const APP_DIR = path.join(ROOT, "app");
 const STYLESHEETS = [path.join(APP_DIR, "globals.css"), path.join(APP_DIR, "tokens.css")];
@@ -103,6 +107,55 @@ if (!fs.existsSync(MANIFEST)) {
 
 if (manifest !== null) {
   failures.push(...checkCast({ names, files, manifest, measured }));
+}
+
+/* ── 1b. The idle actions (MAR-587 Phase A) ──────────────────────────────── *
+ *
+ * Vendored the same way the stills are, and audited against them: each sheet
+ * carries the hash of the still it was built from, so a character re-vendored
+ * without its animation cannot pass quietly.
+ *
+ * Absent by design when nothing has been produced yet. The cast is the thing
+ * DASH cannot render without; an action sheet is an enhancement Phase B
+ * consumes, and failing every `pnpm verify` in a repository that has not opted
+ * into animation yet would be a gate nobody thanked us for. Once a sheet
+ * exists, everything above applies to it in full.
+ */
+
+const actionFiles = fs.existsSync(ACTION_DIR)
+  ? fs
+      .readdirSync(ACTION_DIR)
+      .filter((file) => file.endsWith(".png"))
+      .map((file) => file.replace(/\.png$/, ""))
+  : [];
+
+let actionManifest = null;
+if (actionFiles.length > 0 || fs.existsSync(ACTION_MANIFEST)) {
+  if (!fs.existsSync(ACTION_MANIFEST)) {
+    failures.push(`actions: ${rel(ACTION_DIR)} holds sheets but ${rel(ACTION_MANIFEST)} is missing — re-vendor it from orchestrateweb`);
+  } else {
+    try {
+      actionManifest = JSON.parse(fs.readFileSync(ACTION_MANIFEST, "utf8"));
+    } catch (error) {
+      failures.push(`actions: ${rel(ACTION_MANIFEST)} is not readable JSON (${error.message})`);
+    }
+  }
+}
+
+const measuredSheets = {};
+if (actionManifest !== null) {
+  for (const key of actionFiles) {
+    const character = actionManifest.sheets?.[key]?.character;
+    const stillFile = path.join(SPRITE_DIR, `${character}.png`);
+    try {
+      if (character === undefined) throw new Error(`${key}.png is not recorded, so there is no still to audit it against`);
+      if (!fs.existsSync(stillFile)) throw new Error(`${key} animates ${character}, but public/o/1x/${character}.png does not exist`);
+      measuredSheets[key] = auditSheet(fs.readFileSync(path.join(ACTION_DIR, `${key}.png`)), fs.readFileSync(stillFile), key);
+    } catch (error) {
+      measuredSheets[key] = { error: error.message };
+    }
+  }
+  failures.push(...checkActions({ names, files: actionFiles, manifest: actionManifest, measured: measuredSheets }));
 }
 
 /* ── 2. The rules of use ─────────────────────────────────────────────────── */
@@ -170,8 +223,10 @@ for (const file of walk(APP_DIR)) {
 /* ── Report ──────────────────────────────────────────────────────────────── */
 
 if (failures.length === 0) {
+  const sheetFrames = Object.values(measuredSheets).reduce((total, sheet) => total + (sheet.frameCount ?? 0), 0);
   console.log(
     `✓ brand:check passed — ${names.length} characters audited against the vendored manifest, ` +
+      `${actionFiles.length} action sheet(s) / ${sheetFrames} frame(s) audited against their stills, ` +
       `${sizes.length} rendered sizes, ${surfaces} file(s) using the cast, ` +
       `${fontScanned.length} file(s) checked for remote fonts, ` +
       `${bundledFonts.length} bundled font file(s) verified`,
