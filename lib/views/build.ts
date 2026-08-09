@@ -30,7 +30,7 @@ import { describeClientOwner, describeCustody, describeDashClosedWindow } from "
 import { listReceipts, readBrokerAudit, readBrokerLapses, type BrokerLapse } from "../broker/store";
 import { describeBrokerRefusal } from "../copy/recovery";
 import { heldCredentials } from "../connection-actions";
-import { connectableFields } from "../connection-credentials";
+import { connectableFields, type CredentialKind } from "../connection-credentials";
 import { describeEvidenceRecord } from "../copy/evidence";
 import { describeStoreDamage } from "../copy/recovery";
 import { deriveConnectionRequirements, type ConnectionSourceManifest } from "../connections";
@@ -337,7 +337,7 @@ function credentialStatus(
   manifest: ConnectionSourceManifest,
 ): Map<
   string,
-  { field_id: string; masked_hint: string | null; deliverable: boolean; kind: "secret" | "oauth" }
+  { field_id: string; masked_hint: string | null; deliverable: boolean; kind: CredentialKind }
 > {
   const held = new Map<string, string | null>(
     heldCredentials(agentName).map((entry): [string, string | null] => [
@@ -352,7 +352,7 @@ function credentialStatus(
       field_id: string;
       masked_hint: string | null;
       deliverable: boolean;
-      kind: "secret" | "oauth";
+      kind: CredentialKind;
     }
   >();
 

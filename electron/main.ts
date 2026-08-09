@@ -47,6 +47,7 @@ import {
   type AgentCommandInput,
 } from "../lib/agent-dom/runner";
 import { readStoreDamage } from "../lib/agent-dom/transport";
+import { probeModelProvider } from "../lib/ai/probe";
 import { heldCredentials, performConnectionAction } from "../lib/connection-actions";
 import {
   deliverableFields,
@@ -609,6 +610,11 @@ export function registerCommandChannel(
                 RENDERER_ORIGIN,
               ),
           },
+          // MAR-582. One `GET` to a model provider's own origin, carrying the
+          // key DASH holds. No window, no vault beyond the one read the action
+          // already did, and no part of the answer beyond a status and a count —
+          // see `probeModelProvider`, which is where all of that is enforced.
+          ai: { probe: (profile, key) => probeModelProvider(profile, key) },
         }),
       // MAR-536. Main owns host keys, the host store and the SSH child. The
       // preload can name only an ordinary draft or an opaque host id; it never
@@ -1016,12 +1022,20 @@ export async function collectSpawnCredentials(agentId: string): Promise<Record<s
  * Fail loudly rather than start an agent holding a provider credential
  * (MAR-458, ADR 0002 invariants 1 and 2).
  *
- * Checks the assembled map against the manifest's *own* declaration of where an
- * OAuth credential would have been delivered. That is the check worth having: it
- * does not try to recognise a token by looking at one — which is the guessing
- * `lib/connections.ts` refuses to do, and which no pattern could do reliably
- * anyway — it asks the manifest which environment names are OAuth delivery
- * targets and refuses if any of them has a value.
+ * Checks the assembled map against the manifest's *own* declaration of where a
+ * brokered credential would have been delivered. That is the check worth having:
+ * it does not try to recognise a credential by looking at one — which is the
+ * guessing `lib/connections.ts` refuses to do, and which no pattern could do
+ * reliably anyway — it asks the manifest which environment names belong to
+ * brokered fields and refuses if any of them has a value.
+ *
+ * MAR-582 widened it from `kind === "oauth"` to every kind that is not a plain
+ * `secret`, which is the shape that survives a third custody model being added.
+ * For a model provider key the check is currently unreachable by construction —
+ * `resolveCredentialTarget` refuses a manifest that names a delivery variable
+ * for one, so no such field ever reaches `deliverableFields` — and it is here
+ * anyway, because "unreachable" is a property of a refusal somebody could
+ * relax and this is the line that would notice.
  */
 function assertNoBrokeredCredentials(
   agentId: string,
@@ -1029,11 +1043,11 @@ function assertNoBrokeredCredentials(
   credentials: Record<string, string>,
 ): void {
   for (const field of deliverableFields(agentId, manifest)) {
-    if (field.kind === "oauth" && Object.hasOwn(credentials, field.environment_name)) {
+    if (field.kind !== "secret" && Object.hasOwn(credentials, field.environment_name)) {
       throw new Error(
         `Refusing to start "${agentId}" with a provider credential in its environment: ` +
           `"${field.environment_name}" is a brokered connection, and a brokered connection is ` +
-          `reached through named operations rather than by holding a token.`,
+          `reached through named operations rather than by holding a credential.`,
       );
     }
   }

@@ -283,6 +283,230 @@ export function checkCast({ names, files, manifest, measured }) {
   return failures;
 }
 
+/* ── The idle actions: sheets ↔ manifest ↔ the stills they were built from ── *
+ *
+ * MAR-587 Phase A. An action sheet is eight 50x50 frames laid left to right,
+ * and every frame is the audited still with a prop stamped on top. The rules
+ * below are mostly the cast's rules again — vendored bytes match a recorded
+ * hash, the grid is whole — with two that only an animation can break.
+ *
+ * The first is that a sheet names the still it was built from. A character
+ * re-vendored from orchestrateweb without its sheet coming along would
+ * otherwise leave an animation of the *old* pixels playing over the new ones,
+ * and nothing would say so: both files would be individually valid.
+ *
+ * The second is the one this whole shape exists for. Each action declares the
+ * single rectangle its frames may differ from the still inside, and
+ * `checkActions` re-derives that from the pixels rather than believing the
+ * manifest. Because nothing outside the prop box can change, nothing outside
+ * the prop box can carry information — so "a costume is recognition, never
+ * status" stops being a thing a reviewer asserts about an animation and
+ * becomes a thing that is measured. A sheet that tried to encode health in,
+ * say, the ninja's eyes would fail here without anyone having to notice it.
+ */
+
+/** Emerald, as `app/tokens.css` sets `--ok` in both schemes. */
+export const EMERALD_INKS = Object.freeze([
+  Object.freeze([0x0d, 0x71, 0x45]),
+  Object.freeze([0x34, 0xd3, 0x99]),
+]);
+
+function near(pixel, ink, radius) {
+  const dr = pixel[0] - ink[0];
+  const dg = pixel[1] - ink[1];
+  const db = pixel[2] - ink[2];
+  return Math.sqrt(dr * dr + dg * dg + db * db) <= radius;
+}
+
+/**
+ * A sheet, measured frame by frame against the still it claims to animate.
+ *
+ * `stillBuffer` is the character's own PNG, so this reads both files and needs
+ * no help agreeing about which pixels are the baseline.
+ */
+export function auditSheet(buffer, stillBuffer, name, grid = 50) {
+  const sheet = decodePng(buffer, name);
+  const still = decodePng(stillBuffer, `${name} still`);
+
+  if (sheet.height !== grid) {
+    throw new Error(`${name}: sheet is ${sheet.height}px tall, not ${grid} — every frame is one cell of the grid`);
+  }
+  if (sheet.width % grid !== 0) {
+    throw new Error(`${name}: sheet is ${sheet.width}px wide, which is not a whole number of ${grid}px frames`);
+  }
+
+  const frameCount = sheet.width / grid;
+  const frames = [];
+
+  for (let f = 0; f < frameCount; f += 1) {
+    const colours = new Set();
+    let opaquePixels = 0;
+    let changedFromStill = 0;
+    let emerald = 0;
+    let left = grid;
+    let top = grid;
+    let right = -1;
+    let bottom = -1;
+    const changedBox = { left: grid, top: grid, right: -1, bottom: -1 };
+
+    for (let y = 0; y < grid; y += 1) {
+      for (let x = 0; x < grid; x += 1) {
+        const s = (y * sheet.width + f * grid + x) * 4;
+        const t = (y * grid + x) * 4;
+        const opaque = sheet.pixels[s + 3] !== 0;
+
+        if (opaque) {
+          opaquePixels += 1;
+          colours.add((sheet.pixels[s] << 16) | (sheet.pixels[s + 1] << 8) | sheet.pixels[s + 2]);
+          if (x < left) left = x;
+          if (x > right) right = x;
+          if (y < top) top = y;
+          if (y > bottom) bottom = y;
+          const px = [sheet.pixels[s], sheet.pixels[s + 1], sheet.pixels[s + 2]];
+          if (EMERALD_INKS.some((ink) => near(px, ink, 40))) emerald += 1;
+        }
+
+        const same =
+          sheet.pixels[s + 3] === still.pixels[t + 3] &&
+          (!opaque ||
+            (sheet.pixels[s] === still.pixels[t] &&
+              sheet.pixels[s + 1] === still.pixels[t + 1] &&
+              sheet.pixels[s + 2] === still.pixels[t + 2]));
+        if (same) continue;
+        changedFromStill += 1;
+        if (x < changedBox.left) changedBox.left = x;
+        if (x > changedBox.right) changedBox.right = x;
+        if (y < changedBox.top) changedBox.top = y;
+        if (y > changedBox.bottom) changedBox.bottom = y;
+      }
+    }
+
+    const corners = [
+      [0, 0],
+      [grid - 1, 0],
+      [0, grid - 1],
+      [grid - 1, grid - 1],
+    ].map(([x, y]) => sheet.pixels[(y * sheet.width + f * grid + x) * 4 + 3]);
+
+    frames.push({
+      index: f,
+      opaquePixels,
+      colors: colours.size,
+      changedFromStill,
+      emeraldPixels: emerald,
+      cornersTransparent: corners.every((a) => a === 0),
+      bounds: { left, top, right, bottom },
+      changedBox,
+    });
+  }
+
+  return {
+    width: sheet.width,
+    height: sheet.height,
+    frameCount,
+    bytes: buffer.length,
+    sha256: crypto.createHash("sha256").update(buffer).digest("hex"),
+    stillSha256: crypto.createHash("sha256").update(stillBuffer).digest("hex"),
+    frames,
+  };
+}
+
+/**
+ * The sheets, the manifest and the cast agree — and no frame says anything.
+ *
+ * `measured` is `{ [key]: auditSheet(...) | { error } }` for every sheet found.
+ */
+export function checkActions({ names, files, manifest, measured, grid = 50 }) {
+  const failures = [];
+  const recorded = Object.keys(manifest?.sheets ?? {});
+
+  for (const key of files) {
+    if (!recorded.includes(key)) {
+      failures.push(`actions: public/o/actions/${key}.png is not recorded in lib/brand/o-actions.json — an unaudited animation`);
+    }
+  }
+  for (const key of recorded) {
+    if (!files.includes(key)) {
+      failures.push(`actions: lib/brand/o-actions.json records "${key}", but public/o/actions/${key}.png does not exist`);
+    }
+  }
+
+  const frameCounts = new Set();
+
+  for (const key of recorded) {
+    const record = manifest.sheets[key];
+    const audit = measured[key];
+
+    if (!names.includes(record.character)) {
+      failures.push(`actions: "${key}" animates "${record.character}", which is not in O_NAMES — an action belongs to a character in the cast`);
+    }
+    if (audit === undefined) continue;
+    if (audit.error !== undefined) {
+      failures.push(`actions: ${audit.error}`);
+      continue;
+    }
+
+    frameCounts.add(audit.frameCount);
+
+    if (audit.sha256 !== record.sha256) {
+      failures.push(
+        `actions: ${key}.png does not match the audited hash — these sheets are vendored from orchestrateweb, so re-vendor from there rather than regenerating the manifest here`,
+      );
+    }
+    if (audit.frameCount !== record.frameCount) {
+      failures.push(`actions: ${key}.png holds ${audit.frameCount} frames, but the manifest records ${record.frameCount}`);
+    }
+    if (record.frameWidth !== grid || record.frameHeight !== grid) {
+      failures.push(`actions: ${key} declares a ${record.frameWidth}x${record.frameHeight} frame, not ${grid}x${grid} — the grid is the system`);
+    }
+
+    /*
+     * The sheet names the still it animates. Re-vendoring a character without
+     * its sheet leaves an animation of the old pixels playing over the new
+     * ones, and both files stay individually valid, so only this says so.
+     */
+    if (record.still?.sha256 !== audit.stillSha256) {
+      failures.push(
+        `actions: ${key} was built from a ${record.character}.png whose hash was ${String(record.still?.sha256).slice(0, 12)}…, but public/o/1x/${record.character}.png now hashes ${audit.stillSha256.slice(0, 12)}… — the character was re-vendored and its animation was left behind; rebuild the sheet in orchestrateweb and re-vendor both`,
+      );
+    }
+
+    for (const frame of audit.frames) {
+      if (!frame.cornersTransparent) {
+        failures.push(`actions: ${key} frame ${frame.index} has a non-transparent corner — backgrounds must be transparent`);
+      }
+      if (frame.emeraldPixels > 0) {
+        failures.push(
+          `actions: ${key} frame ${frame.index} paints ${frame.emeraldPixels} pixel(s) in emerald — app/tokens.css reserves --ok for healthy and live things, and an idle animation is never a health signal`,
+        );
+      }
+
+      const region = record.region;
+      if (region === undefined) continue;
+      const box = frame.changedBox;
+      if (box.right < 0) continue; // frame identical to the still
+      const escapes =
+        box.left < region.x ||
+        box.top < region.y ||
+        box.right >= region.x + region.w ||
+        box.bottom >= region.y + region.h;
+      if (escapes) {
+        failures.push(
+          `actions: ${key} frame ${frame.index} changes pixels at x[${box.left}..${box.right}] y[${box.top}..${box.bottom}], outside its declared region x[${region.x}..${region.x + region.w - 1}] y[${region.y}..${region.y + region.h - 1}] — an action may only disturb its own prop, because anything that can change outside it is something a costume could be made to say`,
+        );
+      }
+    }
+  }
+
+  if (frameCounts.size > 1) {
+    failures.push(
+      `actions: the sheets disagree about frame count (${[...frameCounts].sort().join(", ")}) — the cast animates in step, so one loop duration covers all of them`,
+    );
+  }
+
+  return failures;
+}
+
 /* ── Reading JSX well enough to hold it to the rules ──────────────────────── */
 
 /**

@@ -48,7 +48,15 @@ export type BrokerRefusal =
   | "unknown_connection"
   /** DASH holds no credential for it. The user has not connected it. */
   | "not_connected"
-  /** The provider no longer honours the sign-in. Needs a human, not a retry. */
+  /**
+   * The provider no longer honours the credential. Needs a human, not a retry.
+   *
+   * A withdrawn sign-in, or — since MAR-582 — a model provider key that has been
+   * deleted or rotated in the user's own account. One code for both because the
+   * agent's move is the same: stop, and report it to the person who can make a
+   * new one. Which of the two it was is a question for the Connections page,
+   * which has the connection in front of it.
+   */
   | "revoked"
   /** Connected, but the user did not grant everything this operation needs. */
   | "permission_missing"

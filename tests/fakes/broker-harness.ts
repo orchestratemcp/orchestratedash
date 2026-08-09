@@ -14,7 +14,14 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  AI_KEY_CREDENTIAL_KIND,
+  AI_KEY_CREDENTIAL_VERSION,
+  type AiKeyCredential,
+} from "../../lib/ai/credential";
+import { aiAuthHeaders, aiProviderById, aiProviders } from "../../lib/ai/providers";
 import { createBroker, type BrokerAuditRow, type CredentialRead } from "../../lib/broker/execute";
+import { isKeyCredential } from "../../lib/broker/grant";
 import type { ConnectionSourceManifest } from "../../lib/connections";
 import { OAUTH_CREDENTIAL_VERSION, type OAuthCredential } from "../../lib/oauth/credential";
 import { OAuthError } from "../../lib/oauth/flow";
@@ -36,6 +43,31 @@ export function example(name: string): ConnectionSourceManifest {
  */
 export const PLANTED_ACCESS_TOKEN = "ya29.PLANTED-ACCESS-TOKEN-MUST-NEVER-ESCAPE";
 export const PLANTED_REFRESH_TOKEN = "1//PLANTED-REFRESH-TOKEN-MUST-NEVER-ESCAPE";
+
+/**
+ * The model key equivalent (MAR-582).
+ *
+ * The same argument as the two above, applied to the kind of credential that has
+ * no short-lived stand-in: an access token is minted and expires, and a provider
+ * key is the durable thing the user pasted. So this is the value that must never
+ * appear in a response, an audit row, a liveness record or an error — and unlike
+ * the access token, it is also the exact bytes that go on the wire.
+ */
+export const PLANTED_PROVIDER_KEY = "sk-PLANTED-PROVIDER-KEY-MUST-NEVER-ESCAPE";
+
+/** A stored model key, for the harness and the key tests. */
+export function keyCredential(
+  overrides: Partial<AiKeyCredential> = {},
+): AiKeyCredential {
+  return {
+    version: AI_KEY_CREDENTIAL_VERSION,
+    kind: AI_KEY_CREDENTIAL_KIND,
+    provider: "openrouter",
+    key: PLANTED_PROVIDER_KEY,
+    obtained_at: "2026-08-09T09:00:00.000Z",
+    ...overrides,
+  };
+}
 
 export const GMAIL_READONLY = "https://www.googleapis.com/auth/gmail.readonly";
 export const GMAIL_COMPOSE = "https://www.googleapis.com/auth/gmail.compose";
@@ -148,11 +180,20 @@ export function harness(options: HarnessOptions = {}): Harness {
   const broker = createBroker({
     readManifest: () => manifest,
     readCredential: () => Promise.resolve(read),
-    mintAccessToken: () => {
+    mintAuthorization: (credential) => {
       if (options.mintError !== undefined) {
         return Promise.reject(options.mintError);
       }
-      return Promise.resolve({ access_token: PLANTED_ACCESS_TOKEN });
+      // MAR-582: the same seam now serves both custody models, so the harness
+      // answers for whichever one the test planted. A keyed credential is handed
+      // straight through by `aiAuthHeaders`, which is what makes the threat
+      // model's search for `PLANTED_PROVIDER_KEY` a search for the real value
+      // rather than for a stand-in.
+      return Promise.resolve(
+        isKeyCredential(credential)
+          ? aiAuthHeaders(aiProviderById(credential.provider) ?? aiProviders()[0]!, credential.key)
+          : { authorization: `Bearer ${PLANTED_ACCESS_TOKEN}` },
+      );
     },
     fetchImpl,
     hasHandledRequest: options.hasHandledRequest,
