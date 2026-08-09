@@ -53,6 +53,7 @@
 import type {
   AgentsView,
   ConnectionsView,
+  HostsView,
   RunView,
   RunsView,
   WorkInboxView,
@@ -82,7 +83,7 @@ export interface ReadSpec {
  * Every document the renderer may ask for. Adding an entry is the only way to
  * add a read, and is a deliberate review event.
  *
- * Six entries, one per page-shaped document. Deliberately not a general "query the store"
+ * Seven entries, one per page-shaped document. Deliberately not a general "query the store"
  * surface: the catalogue *is* the security argument above, and it only holds
  * while somebody can read it in one sitting and say what the renderer can see.
  */
@@ -111,6 +112,22 @@ export const READS = {
     returns: "One agent's safe live state, capability-driven controls, memory and audit history.",
     params: ["agent"],
   },
+  /*
+   * MAR-574. The seventh, and the one whose absence was the defect: hosts have
+   * been in the store since MAR-536 and no read returned them, so the Servers
+   * page could not know a server had ever been saved.
+   *
+   * What it returns is worth reading against the catalogue's own promise above —
+   * "no route from this channel to the vault, to `connection_secrets`, or to
+   * anything that is not already on the screen". A host record names a key on
+   * this computer, and `hostsView` drops that field rather than the renderer
+   * being trusted to ignore it.
+   */
+  "view.hosts": {
+    returns:
+      "Every server DASH has saved: what it is called, where it is, which account it signs in as, when it was added and the identity it is pinned to. Never which key it uses.",
+    params: [],
+  },
 } as const satisfies Record<string, ReadSpec>;
 
 export type ReadName = keyof typeof READS;
@@ -133,6 +150,7 @@ export interface ReadResults {
   "view.connections": ConnectionsView;
   "view.inbox": WorkInboxView;
   "view.workspace": WorkspaceView;
+  "view.hosts": HostsView;
 }
 
 type UntypedRead = Exclude<ReadName, keyof ReadResults>;
@@ -228,6 +246,13 @@ export interface DashReadApi {
   connections(): Promise<ReadResponse<ReadResults["view.connections"]>>;
   inbox(): Promise<ReadResponse<ReadResults["view.inbox"]>>;
   workspace(agent: string): Promise<ReadResponse<ReadResults["view.workspace"]>>;
+  /**
+   * Optional for the reason the command bridge's host methods are optional: a
+   * build of the shell older than MAR-574 exposes a `dashData` without it, and a
+   * page that called through would throw where the honest answer is that this
+   * window cannot see saved servers. `app/_data/source.ts` checks before calling.
+   */
+  hosts?(): Promise<ReadResponse<ReadResults["view.hosts"]>>;
 }
 
 /**

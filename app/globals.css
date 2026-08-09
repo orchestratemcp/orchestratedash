@@ -1383,6 +1383,65 @@ a.plain:hover {
 }
 
 /* ---------------------------------------------------------------------- *
+ * A saved server (MAR-574)
+ *
+ * The other state of the Servers route. There is no new card system here: it is
+ * `.row-card` with `.card-head`, the same stack the capability card below uses
+ * and for the same MAR-491 reason — the content is a person's own label, an
+ * address and DASH's own disclosure paragraphs, which are three widths DASH does
+ * not control.
+ *
+ * The measure is the wizard's, so the two states of one route are the same width
+ * and switching between them does not move the page under the reader.
+ * ---------------------------------------------------------------------- */
+.server-card {
+  max-width: 56rem;
+}
+
+/*
+ * The deploy panel, opened by a control on the card.
+ *
+ * A rule above it rather than a box around it: this is a continuation of the
+ * card it is on and not a second card, and the elevation model has no level for
+ * "inside a card but separate" that would not read as a nested panel.
+ */
+.deploy-panel {
+  margin-top: var(--density-gap);
+  padding-top: var(--density-gap);
+  border-top: 1px solid var(--line);
+}
+
+.deploy-panel > .field-label {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--density-gap);
+}
+
+/*
+ * The one recommendation on this surface, and the block is quiet on purpose.
+ *
+ * It sits under the connect form, styled as the calmest thing on the screen: no
+ * accent, no left bar, nothing that competes with the primary action. Hosting is
+ * an option and the free local path is first-class, so a block that shouted
+ * would be the copy's own rule broken by its stylesheet.
+ */
+.hosting-note {
+  max-width: 56rem;
+  margin-top: var(--density-stack);
+  padding: var(--density-card-p);
+  border: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.hosting-note p {
+  margin: 0 0 var(--space-2);
+}
+
+.hosting-note p:last-child {
+  margin-bottom: 0;
+}
+
+/* ---------------------------------------------------------------------- *
  * The capability card (MAR-533)
  *
  * One card per connection, answering four questions in order: what can this

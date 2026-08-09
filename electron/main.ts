@@ -60,7 +60,12 @@ import {
   writeDashLastAlive,
 } from "../lib/broker/store";
 import { closeDb, dataDir } from "../lib/db";
-import { checkHostRecord, type HostRecord } from "../lib/hosts";
+import {
+  checkHostRecord,
+  describeDuplicateHost,
+  findDuplicateHost,
+  type HostRecord,
+} from "../lib/hosts";
 import { produceAgentFolderBundle } from "../lib/deploy/folder-bundle";
 import type { HandoffPorts } from "../lib/handoff-flow";
 import { findDeepLink } from "../lib/shell/deep-link";
@@ -85,6 +90,7 @@ import {
 import {
   agentsView,
   connectionsView,
+  hostsView,
   runView,
   runsView,
   workInboxView,
@@ -110,6 +116,9 @@ import {
   serveRenderer,
 } from "./renderer-host";
 import { RENDERER_ENTRY_URL, RENDERER_ORIGIN } from "../lib/shell/renderer-scheme";
+<<<<<<< HEAD
+import { forgetHost, listHosts, readAgentManifest, readHost, saveHost } from "../lib/store";
+=======
 import {
   forgetHost,
   importManifest,
@@ -121,6 +130,7 @@ import {
 // before the row — see `refreshSampleAgent`.
 import { readAgentFolderManifest } from "../lib/agent-folders";
 import { isScaffoldedByDash, refreshedManifest } from "../lib/sample-refresh";
+>>>>>>> origin/master
 import {
   promptForAuthorization,
   promptForSecret,
@@ -898,6 +908,8 @@ export function registerReadChannel(): void {
           ok: true,
           data: workspaceView(review.params["agent"] ?? ""),
         } satisfies ReadResponse<ReadResults["view.workspace"]>;
+      case "view.hosts":
+        return { ok: true, data: hostsView() } satisfies ReadResponse<ReadResults["view.hosts"]>;
       default: {
         const unreachable: never = review.read;
         throw new Error(`Unhandled read: ${String(unreachable)}`);
@@ -1146,6 +1158,26 @@ async function hostAction(
       return { ok: false, detail: checked.detail };
     }
 
+    /*
+     * MAR-574. Refuse the second record for one server, before a key is minted.
+     *
+     * Before this, the wizard's only affordance was "add another" and nothing
+     * anywhere said no: Henrik's real store holds four rows for one Hostinger
+     * box, one per attempt, each with its own minted key. The refusal is here
+     * rather than only in `saveHost` because the order matters — a check after
+     * `createHostKey` would leave a key on this computer for a record that was
+     * never saved, which is the orphan the failure path below exists to avoid.
+     *
+     * It names the record that already exists. "Already added" without saying
+     * which one sends somebody hunting through a list for a server they cannot
+     * tell apart from the one they just typed.
+     */
+    const duplicate = findDuplicateHost(listHosts(), record);
+    if (duplicate !== null) {
+      const refusal = describeDuplicateHost(duplicate.label);
+      return { ok: false, detail: `${refusal.headline}. ${refusal.detail} ${refusal.next_action}.` };
+    }
+
     const tools = probeSshTools();
     if (!tools.present) {
       return {
@@ -1301,8 +1333,9 @@ async function hostAction(
     return { ok: false, detail: "The server did not answer the check DASH sent." };
   }
 
-  const running = answer.bundles.find((bundle) => bundle.running);
-  if (running === undefined) {
+  const running = answer.bundles.filter((bundle) => bundle.running);
+  const first = running[0];
+  if (first === undefined) {
     return {
       ok: false,
       detail: "DASH reached this server, and it has no agent runner running there yet.",
@@ -1315,7 +1348,11 @@ async function hostAction(
     action: "probe",
     host_id: record.host_id,
     label: record.label,
-    runner_build: running.runner_build,
+    runner_build: first.runner_build,
+    // MAR-574. Counted from the host's own answer and not from anything DASH
+    // stored, because DASH stores nothing about what it deployed where. The
+    // Servers page words it as a report for that reason.
+    agents_running: running.length,
   };
 }
 

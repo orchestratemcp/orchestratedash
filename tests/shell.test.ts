@@ -480,6 +480,9 @@ describe("dispatch", () => {
               host_id: "host-fake-1",
               label: "My server",
               runner_build: "fixture",
+              // MAR-574. The host's own count of what it has running, which the
+              // Servers page words as a report rather than as DASH's record.
+              agents_running: 2,
             });
           case "deploy":
             return Promise.resolve({

@@ -328,6 +328,9 @@ const dashData = {
   connections: () => read("view.connections"),
   inbox: () => read("view.inbox"),
   workspace: (agent: string) => read("view.workspace", { agent }),
+  // MAR-574. Without this the Servers page cannot know a server was ever saved,
+  // which is exactly the state that page shipped in.
+  hosts: () => read("view.hosts"),
   // `satisfies`, so the pages and this bridge cannot drift: the shape is
   // declared in `lib/shell/read.ts`, which a client component may import and
   // this file may not be imported by.

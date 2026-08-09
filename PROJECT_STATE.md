@@ -3795,3 +3795,102 @@ opened Henrik's records. Deleted rather than committed, on MAR-548's precedent.
 
 Non-goals held: no schema edit (`contracts/` belongs to MAR-569), no new panel
 section type.
+
+## The Servers page renders the server you have (MAR-574)
+
+**PR open, not merged.** Branch `000henrik/mar-574-servers-manage`, cut from
+`origin/master` at `bc62e61` in its own worktree beside parallel MAR-575 and
+MAR-576 sessions.
+
+The route rendered the add-a-server wizard **unconditionally**, and no read
+existed that could have told it otherwise: `readStore()` has returned hosts
+since MAR-536 and no view projected them. Found in the field on 2026-08-08 —
+a real Hostinger box passed the probe, DASH was restarted, and step 1 was
+waiting again. Nothing had been lost. A consistent snapshot of that store holds
+**four rows** for the one machine, one per attempt, because "add another" was
+the only affordance the page had and nothing anywhere refused the second.
+
+So the page had two faults and the invisible record was only the first.
+
+**Two states, decided by one read.** With a record the page *is* that server:
+its standing in a sentence before it is a chip, how DASH reaches it and since
+when, what the server says is running on it, the identity it is pinned to, and
+the three actions. With none, the connect flow — which is also what "connect
+another" opens. The wizard is a *mode* rather than a consequence of the store
+being empty, because saving a record is its second step and not its last: a page
+that switched the moment a row existed would throw somebody out of the flow
+between minting a key and installing it.
+
+**`view.hosts` is the seventh read**, and it drops `key_name` — the one field on
+a `HostRecord` that names a credential on this computer, and therefore the one
+field that must not travel to a renderer merely because it was in the row. The
+test asserts that over the projected object rather than over a field list
+somebody maintains.
+
+**The standing is not stored, and neither is what is deployed.** DASH records how
+to reach a server and records nothing about whether that worked; `host.deploy`
+pushes a bundle, starts it and keeps no record at all. So every card opens in
+`not_checked` — an honest state, not a failure — and every sentence about what is
+running there is worded as the *server's* report with an age. `host.probe`
+returns `agents_running` for the same reason: a count, never a list, because a
+list travelling through that boundary would read as DASH's inventory of somebody
+else's machine and there is no such inventory to be right or wrong about.
+
+**Dedupe refuses before a key is minted**, naming the record it duplicates, with
+the same refusal in `saveHost` behind it. The order matters: a check after
+`createHostKey` would leave a key on this computer for a record that was never
+saved. Henrik's four rows are **kept** — counted, and labelled "Record 2 of 4"
+on the card with the explanation said once above the list. Each carries its own
+minted key, which may be installed on that server, so tidying them away would
+remove the only evidence of what is where.
+
+**Step 1 is Henrik's own revision, and it is a deletion.** The four-provider card
+grid is gone; the flow starts at the form. Using that grid five times revealed
+that the choice it demanded did nothing except set one default string, so the
+provider is now an optional dropdown on the account field — with Hostinger in it
+as the one provider DASH has actually been proven against. "Something else" went
+with the grid: choosing nothing already means that, and two ways to say one thing
+is one of them being wrong later.
+
+The "do not own a server yet?" block recommends Hostinger with the free local
+path stated **first**, because hosting must never read as required. The outbound
+link is `TODO-affiliate` and renders as **text**: `createWindow` denies
+window-open and blocks navigation off the renderer's own origin, so an `<a href>`
+would do nothing in the installed app while looking like a control. Wiring it
+needs a command reaching `shell.openExternal` in main, and the real URL waits for
+MAR-489.
+
+**`host.deploy` has a page affordance for the first time.** It was dispatcher and
+preload only — the MAR-518 shape, which `tests/host-wizard-render.test.tsx`
+exists to catch and now catches for the fourth action too.
+
+**Two walls a real user still hits are rendered rather than hidden.** A record
+with no pinned fingerprint is MAR-572's state and is what *every* real record is
+in today; it says so and offers no next action, because "check it to record one"
+would be an instruction that does not work and a next action that fails is worse
+than none. MAR-573's circular bootstrap is a sentence on the deploy panel, shown
+only where it is true — `describeBootstrapGap` is what that issue deletes.
+
+Evidence: `pnpm typecheck` clean, `[state] valid` with the 19 recorded drift
+warnings, `brand:check` green, and 109 test files / 2205 passed / 8 skipped from
+PowerShell. 38 packaged-renderer screenshots at 375/768/1280 in both themes and
+both densities, no frame overflowing sideways.
+
+They were taken by a new `electron/capture-servers.ts`, and it exists because
+`electron/capture.ts` is the wrong harness for this page: that one photographs
+whatever store a machine holds, and /hosts is a two-state route whose state the
+store *decides*, so a run against one machine cannot say which of the two it
+got. This one is pointed at a store the run chooses and is run once per state.
+It does **not** import `smoke-identity`, so it took its own name, user-data
+directory and single-instance lock and ran beside three live Electron instances
+without touching anybody's records — `electron/capture-panel.ts`'s trick, and the
+alternative to a "close DASH first" step nobody should be tempted past. Its one
+caveat is in its header: the images are evidence of what the page draws for a
+given store, and evidence about nobody's real machine. The `checked` set is the
+exception worth naming — a real click on the real control against `127.0.0.1`,
+so the refusal in that frame came back through renderer → preload → main → ssh.
+
+**`pnpm verify:shell` was not run**, and it is the gap. Three unrelated Electron
+instances from parallel worktrees were live for the whole session and AGENTS.md
+forbids force-killing them; CI's Windows `shell-smoke` is what covers the
+`electron/main.ts` and preload changes here, on CI's machine and CI's store.
