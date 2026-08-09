@@ -1,7 +1,7 @@
 # DASH project state
 
-Updated: 2026-08-09 (MAR-577: the deploy plane's second entry point, and its
-progress and result rendered honestly)
+Updated: 2026-08-09 (MAR-570: Connections becomes connectors, and one consent
+reaches every agent that needs it)
 
 Portfolio sequence and estimates: [`../orchestratekit-mcp/docs/PORTFOLIO_ROADMAP_2026-08-01.md`](../orchestratekit-mcp/docs/PORTFOLIO_ROADMAP_2026-08-01.md).
 
@@ -4179,3 +4179,149 @@ agent two ways. `AgentRow` carries no title and the Agents list renders the id
 deliberately, inside `<code>`; making the picker disagree with the list a person
 picked from would trade one inconsistency for another. It is a DASH-wide naming
 decision and not this issue's to take.
+
+---
+
+## Connections becomes connectors (MAR-570)
+
+Two verdicts from the product's own first user, one layer apart. MAR-383's
+checklist: *"the current connection page makes no sense to me right now."*
+MAR-533's rebuild of it, which answers the right four questions in the right
+order: *"cluttered and a lot of text."*
+
+Both are the same fault. The first page grouped by **who holds the credential**;
+the second grouped by **which agent asked**. Neither is what a person has in
+mind, which is a service they recognise. Henrik's ruling settles the unit:
+
+> The connector is the unit that gets connected; the agent is the unit that
+> needs it.
+
+So the page is tiles — one per service, each naming the agents that depend on it
+— and MAR-533's capability card is the **receipt one click away**. Nothing
+honest is removed: `ConnectionCards` is the same component, with the same
+three-party drawing, the same nobody-asked-for-this list, the same
+wider-permission banner and the same usage history, rendered inside the
+disclosure. What changed is which question the page opens on.
+
+### The grouping key is the provider, and that is load-bearing
+
+`google-gmail` is one authorization server, one client, one consent screen. The
+`connection_id` beside it is a string each author chose — the shipped Gmail
+example calls it `gmail`, and nothing stops the next author calling it `mail`.
+Keying tiles on ids would draw two Gmail tiles and reintroduce the exact
+duplicate this page exists to kill. A test drives that case directly, and the
+screenshot harness seeds a second agent whose id deliberately differs.
+
+`service` is what a person reads, from the connection's own label, because
+`google-gmail` is machine vocabulary and `lib/copy/identifiers.ts` forbids it on
+the guided path. The capture harness counts whether it ever reached the screen.
+
+### Connect once, and it really is once
+
+This is the half that is not a view change, and it was decided rather than
+assumed: the session put three options to Henrik and he took the first.
+
+Grants are keyed `dash.connection.{agent}.{connection}.{field}`, so before this,
+two agents needing Gmail meant two trips through Google's consent screen — and
+`lib/oauth/providers.ts` sets `prompt=consent` deliberately, so the second trip
+was a real one, not a silent redirect.
+
+`findGrantSharers` and `shareGrant` write one received consent to every agent
+that named the provider **and independently qualified for it**. Every candidate
+goes through `resolveCredentialTarget`, which is the same gate the direct path
+uses — so a sharer is an agent that would have been allowed to run this exact
+sign-in itself. Each gets its own vault entry, its own masked reference, and its
+own receipt resolved from **its own** manifest.
+
+That last part is what keeps this out of broker semantics, which the issue's
+non-goals forbid touching: what the broker later resolves for a shared agent is
+indistinguishable from a grant it received directly, because it *is* one.
+Revocation stays per agent. An agent that asked for more than the consent
+covered still reads `not_issued` on the extras, which is the state MAR-533 built
+and named.
+
+**What the fan-out will not do is as decided as what it will.** OAuth only. A
+typed secret is a value a person handed DASH for a named agent, with no consent
+screen and no scopes, and copying it elsewhere would be DASH redistributing
+something given for one purpose. `describeSharedGrant` promises exactly this
+much, and a test drives an API-key tile asserting the page stays silent about
+sharing. The `listAgentIds` dependency is optional and its **absence means no
+fan-out** rather than an error, so any caller built before this connects exactly
+the agent it named.
+
+### The disclosure is before the button, and that is asserted by position
+
+One press now changes something for an agent the person is not looking at. That
+is the one consequence in DASH of that shape, and ADR 0002 amendment 2's rule —
+disclose before the grant, not after — lands squarely on it. The render test
+asserts the sentence's index is **less than** the button's, because "present
+somewhere on the card" is satisfied by a warning underneath the thing it was
+supposed to warn about.
+
+`also_connects` is computed in `connectionsView` rather than derived by a page,
+so the tile and the receipt card cannot come to disagree with the fan-out that
+actually happens.
+
+### Three defects the screenshots found, and no test was looking for any of them
+
+**Tile order was first appearance**, which is agent order, which is
+alphabetical. A store whose first agent was `invoice-reviewer` opened the page
+on two tiles DASH cannot connect and pushed Gmail below the fold — MAR-576's
+defect on a different page. Tiles a person can act on come first now, as a
+stable partition rather than a sort key, so nothing reorders under the cursor
+when something connects.
+
+**The summary counted the wrong thing.** It called a tile shared if more than
+one agent named it, so a model-provider tile DASH holds none of made the page
+say *"you connect each once"* about a thing there is nothing to connect. It
+counts by the same rule the disclosure uses now: a summary may only claim what
+the tiles under it will do.
+
+**The shared tile's own Sign in button sat below a 900px fold**, under two
+stacked bordered notes. The disclosure went from six lines to three with every
+claim kept — one sign-in, who it reaches, separate records so one can be revoked
+alone, no agent gaining an action it did not ask for — and `describeProof`'s
+`cannot` sentence became prose rather than a second box. It is unchanged,
+verbatim, and still announced as a note; what it stops doing is competing with
+the one consequence a person has to read before pressing.
+
+### Evidence
+
+`pnpm state:check` valid; `pnpm typecheck` clean; `pnpm brand:check` green;
+`pnpm vitest run tests` from PowerShell — **117 test files, 0 failed**, three
+files and about sixty cases new across `tests/connectors.test.ts`,
+`tests/connector-tile-render.test.tsx` and `tests/grant-sharing.test.ts`. The
+exact passed count is deliberately not recorded: another session's uncommitted
+brand assets sat in this working tree for every local run and move it, so the
+number this branch is answerable for is the PR's own CI rather than anything
+measured here; `pnpm build:renderer` and `pnpm build:shell`
+green.
+
+`electron/capture-connectors.ts` is a new store-seeding harness on
+`electron/capture-servers.ts`'s terms, and it exists because **no shipped
+example produces the case this issue is about** — the four v2 examples name four
+different providers, so `capture.ts` would photograph a page with nothing
+shared. 16 packaged-renderer images at 1280/768/375 in both themes and both
+densities, in `qa-screenshots-mar570/`, plus the receipt opened by clicking it
+and a partly-connected pair. The harness asserts three things a reviewer's eye
+would not: no frame overflowed sideways, no frame printed the provider id the
+tiles are keyed on, and every frame carries the shared-grant sentence.
+
+**What is not proven: any of it against real Google.** The connected and
+partly-connected frames are seeded from DASH's own secret reference, which is
+enough to draw a chip and is emphatically not evidence that a sign-in works —
+that is proof 7's job and MAR-468's. The fan-out is proven against a real vault
+in `tests/grant-sharing.test.ts` and has never run against a live provider.
+
+`pnpm verify:shell` was **not** run locally: a live DASH, four other worktrees'
+Electron instances and this session's own capture runners were on the machine,
+and AGENTS.md forbids force-killing them. CI's Windows `shell-smoke` is the
+installed-shell witness for this branch.
+
+### One thing carried forward rather than fixed
+
+The tiles and their per-agent rows print agent **ids** (`news-scout`) where an
+agent's own page prints its **display name**. `AgentRow` carries no title and
+the Agents list renders the id deliberately inside `<code>`, so this stays a
+DASH-wide naming decision rather than this issue's to take — it is now visible
+on a second surface, which is the argument for taking it soon.

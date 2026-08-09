@@ -1213,6 +1213,126 @@ a.plain:hover {
 }
 
 /* ---------------------------------------------------------------------- *
+ * Connector tiles (MAR-570)
+ *
+ * One tile per service, each naming the agents that depend on it. No new card
+ * system: it is `.row-card` with `.card-head`, the same stack the capability
+ * card and the server card use, for MAR-491's reason — the content is an
+ * author's service label, an author's purpose sentence and DASH's own
+ * disclosure paragraphs, which are three widths DASH does not control.
+ *
+ * A grid rather than a column, because a tile is a fixed set of short answers
+ * and a page of full-width ones would be a list of mostly-empty rows at 1280.
+ * `auto-fit` collapses the column count on its own rather than by a breakpoint
+ * somebody has to maintain; `28rem` is the width at which the shared-grant
+ * sentence stops needing four lines.
+ *
+ * **`min(28rem, 100%)` and not `28rem`**, and this was found by photographing
+ * it at 375px. `auto-fit` collapses the number of tracks and never the track
+ * *floor*: a bare `minmax(28rem, 1fr)` keeps a 448px column inside a 375px
+ * viewport, so the tile ran off the right-hand edge and the page grew a
+ * horizontal scrollbar — MAR-491's rule broken by the one rule written to
+ * obey it. `min(…, 100%)` lets the track shrink below its own preference when
+ * the container is narrower, which is the only form of this idiom that is
+ * safe at a width nobody tested.
+ * ---------------------------------------------------------------------- */
+.connector-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(28rem, 100%), 1fr));
+  gap: var(--density-gap);
+  align-items: start;
+}
+
+/* The list markers are already off on `.row-list`; this stops a single tile
+   stretching to the full 1280 measure, where its own paragraphs would run to a
+   line length nothing else on the page uses. */
+.connector-grid > li {
+  min-width: 0;
+  max-width: 56rem;
+}
+
+.connector-tile {
+  height: 100%;
+}
+
+.connector-dependents {
+  margin: 0 0 var(--density-gap);
+  color: var(--text);
+}
+
+.connector-agents {
+  margin: 0 0 var(--density-gap);
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-3);
+}
+
+/*
+ * One row per agent: character, name and purpose, then its own standing.
+ *
+ * The chip is last and does not shrink, so a long purpose sentence pushes the
+ * text and never the answer. `minmax(0, 1fr)` on the middle column is what
+ * actually lets it wrap — `1fr` alone floors at min-content and a long unbroken
+ * word would push the chip off the tile.
+ */
+.connector-agent {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+/*
+ * At narrow widths the standing moves under the text instead of beside it.
+ *
+ * Found by photographing 375px: three columns left the middle one about ten
+ * characters wide, so "Read meeting requests and save reply drafts" ran down
+ * eight lines next to a chip that had the room. The breakpoint is the `560px`
+ * the density control already uses, so the page has one narrow width rather
+ * than two.
+ *
+ * The chip is placed rather than left to flow: with two tracks it would
+ * otherwise land under the character, in the column that exists to hold a 50px
+ * sprite.
+ */
+@media (max-width: 560px) {
+  .connector-agent {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .connector-agent > .chip {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+.connector-agent-name {
+  margin: 0;
+  font-weight: 600;
+}
+
+.connector-agent p {
+  margin: 0;
+}
+
+.connector-receipt {
+  margin-top: var(--density-gap);
+}
+
+/* Each agent's own capability card, inside the receipt. The heading is what
+   keeps two cards from reading as one agent's two connections. */
+.connector-receipt-agent + .connector-receipt-agent {
+  margin-top: var(--density-gap);
+}
+
+.connector-lapse {
+  margin-bottom: var(--density-gap);
+  max-width: 56rem;
+}
+
+/* ---------------------------------------------------------------------- *
  * The connect-a-server wizard (MAR-498)
  *
  * The concept's numbered rail and provider grid, drawn in the Bit-Command

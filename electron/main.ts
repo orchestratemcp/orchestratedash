@@ -120,6 +120,7 @@ import {
   findHostByConnection,
   forgetHost,
   importManifest,
+  listAgentNames,
   listHosts,
   pinHostFingerprint,
   readAgentManifest,
@@ -584,6 +585,12 @@ export function registerCommandChannel(
           store: secureStore(),
           readManifest: (agentId) =>
             readAgentManifest(agentId) as ConnectionSourceManifest | null,
+          // MAR-570. What makes "connect once, both agents light up" true: the
+          // fan-out needs to know who else exists, and this module is the only
+          // place that does. `findGrantSharers` decides which of them qualify —
+          // a dependency that pre-filtered would be a second copy of the sharing
+          // rule, free to disagree with the sentence the tile shows first.
+          listAgentIds: () => listAgentNames(),
           promptForSecret: (credential, vaultLabel) =>
             promptForSecret(
               credential,

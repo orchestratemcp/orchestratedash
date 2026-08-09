@@ -662,8 +662,32 @@ export function hostsView(store: StoreShape = readStore()): HostsView {
 }
 
 export function connectionsView(store: StoreShape = readStore()): ConnectionsView {
+  const capable = listConnectionCapableAgents(store);
+
+  /*
+   * Which agents name each provider (MAR-570).
+   *
+   * Built once over every capable agent rather than per row, and keyed on
+   * `provider` rather than on a connection id: `google-gmail` is one
+   * authorization server and one consent screen, while the ids beside it are
+   * author-chosen strings that two manifests have no reason to agree on. This is
+   * the same key `findGrantSharers` fans a grant out over, so the sentence a
+   * person reads before signing in and the thing that then happens are computed
+   * from one fact.
+   */
+  const agentsByProvider = new Map<string, string[]>();
+  for (const { name, manifest } of capable) {
+    for (const row of deriveConnectionRequirements(manifest)) {
+      const named = agentsByProvider.get(row.provider) ?? [];
+      if (!named.includes(name)) {
+        named.push(name);
+      }
+      agentsByProvider.set(row.provider, named);
+    }
+  }
+
   return {
-    agents: listConnectionCapableAgents(store).map(({ name, manifest }) => {
+    agents: capable.map(({ name, manifest }) => {
       const status = credentialStatus(name, manifest);
       // Read once per agent rather than once per row: both are indexed by agent
       // and a row-level read would be one query per connection on every render.
@@ -681,6 +705,13 @@ export function connectionsView(store: StoreShape = readStore()): ConnectionsVie
           delivered_to_agent: credential?.deliverable ?? false,
           credential_kind: credential?.kind ?? null,
           broker: brokerCard(name, displayName, manifest, row.connection_id, receipts, audit),
+          // MAR-570. Everyone else who names this provider, so both surfaces
+          // that draw a Connect button can say what pressing it reaches beyond
+          // the agent on screen. Excludes this agent: the sentence is about the
+          // ones a person is *not* looking at.
+          also_connects: (agentsByProvider.get(row.provider) ?? []).filter(
+            (other) => other !== name,
+          ),
         };
       });
 

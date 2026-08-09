@@ -308,6 +308,35 @@ export interface ConnectionRowWithCredential extends ConnectionRequirementRow {
   credential_kind: "secret" | "oauth" | null;
   /** The permission card, for a connection DASH brokers. Null otherwise. */
   broker: BrokerRowView | null;
+  /**
+   * The other agents one sign-in here would also connect (MAR-570).
+   *
+   * ## Why this is on the row and not worked out by a page
+   *
+   * Because it is a statement about a **consequence of pressing a button**, and
+   * it has to be true on every surface that draws the button. The connector tile
+   * is one of them and the receipt card is the other, and a page that derived
+   * this for itself would be a second derivation free to disagree with the
+   * fan-out that actually happens in `lib/connection-actions.ts`.
+   *
+   * ## What makes two agents share
+   *
+   * The **provider**, not the connection id. `google-gmail` is one authorization
+   * server, one client and one consent screen; two agents naming it are asking
+   * for the same account, whatever they each called their connection. Author-
+   * chosen ids are not comparable across two manifests and this must never key
+   * on them.
+   *
+   * ## Empty is the ordinary case and means what it says
+   *
+   * No other agent needs this provider, so a sign-in here connects exactly what
+   * the person is looking at. It does **not** mean sharing is off.
+   *
+   * Names, not ids, because the sentence built from this is read by somebody who
+   * is deciding whether to sign in — and it is the one disclosure on this page
+   * that describes something happening to an agent they are not looking at.
+   */
+  also_connects: string[];
 }
 
 /**

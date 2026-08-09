@@ -260,6 +260,19 @@ await Promise.all([
     format: "esm",
   }),
 
+  // The Connections page's own screenshot harness (MAR-570), on the same terms.
+  // Separate from `capture.ts` because that one photographs whatever store the
+  // machine holds, and this page's subject is a relationship *between* agents —
+  // two of them needing one service. No shipped example produces that, so a run
+  // against a real store photographs the case the issue is not about. See
+  // `electron/capture-connectors.ts`.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-connectors.ts")],
+    outfile: path.join(outDir, "capture-connectors.mjs"),
+    format: "esm",
+  }),
+
   // MAR-423. "Try a sample agent" scaffolds a project, and a scaffold needs the
   // same `scripts/open-in-dash.mjs` the Agent Kit copies in, so the user can
   // re-add their agent later from their own folder without DASH.

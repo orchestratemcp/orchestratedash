@@ -44,6 +44,9 @@ function gmailRow(
     connection_id: "mail",
     service: "Gmail",
     provider: "google-gmail",
+    // MAR-570. No other agent shares this provider in these fixtures, which is
+    // the ordinary case and is not the same as sharing being off.
+    also_connects: [],
     purpose: "Read meeting requests and write you a reply to look at.",
     capabilities: [],
     ownership: "dash",
