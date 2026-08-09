@@ -155,6 +155,7 @@ export function describeDeployed(state: HostConnectState): string {
 
     case "not_checked":
     case "awaiting_key_install":
+    case "confirm_host_key":
     case "no_host":
       return "DASH does not know what is running there. It asks the server each time you check, and keeps no list of its own.";
   }

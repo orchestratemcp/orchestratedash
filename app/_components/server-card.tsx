@@ -68,6 +68,8 @@ export function standingChip(state: HostConnectState): { label: string; tone: st
         : { label: "Cannot reach", tone: "chip-err" };
     case "awaiting_key_install":
       return { label: "Waiting for its key", tone: "chip-warn" };
+    case "confirm_host_key":
+      return { label: "Needs your confirmation", tone: "chip-warn" };
     case "no_host":
       return { label: "Not connected", tone: "chip-muted" };
   }

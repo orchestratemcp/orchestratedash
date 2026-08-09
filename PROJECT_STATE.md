@@ -4016,3 +4016,46 @@ would have contended for the single-instance lock or hung silently, and
 AGENTS.md forbids force-killing either. CI's Windows `shell-smoke` is the
 installed-shell witness for this branch, the same call MAR-548 and MAR-492 each
 recorded for the same reason.
+
+---
+
+## 2026-08-09 — master repaired: committed conflict markers, and the union the merges skipped (coordinator session)
+
+Master went red at `4438bbc` (merge of PR #96) and stayed red at `d7fc1e0`
+(merge of PR #94). The cause was not either PR's own work: the branch-side
+"Merge origin/master: rebuild packet" commits (`83714cf`, `8e49b0b`) had
+committed **literal git conflict markers** in `electron/main.ts`,
+`lib/host-connect.ts` and `lib/host-wizard.ts` — including one nested
+conflict-inside-a-conflict in main.ts's store imports. Both PRs were merged
+while that was true (#96 with its checks still running), so `verify` failed on
+TS1185 and `shell-smoke` on a Turbopack parse error, on master itself.
+
+The repair is a real unification, not a side-pick, because both sides were
+right: MAR-572's `confirm_host_key` state and MAR-574's `not_checked` state
+both exist; the store imports are the union of the enrollment family
+(`findHostByConnection`, `pinHostFingerprint`) and the manage/dedupe family
+(`listHosts`, `importManifest`) plus MAR-576's sample-refresh imports; the
+wizard copy sweep carries MAR-573's setup step AND MAR-574's hosting
+recommendation. Typecheck then found the one integration the markers had been
+hiding: `server-card`'s exhaustive switches never learned `confirm_host_key`,
+so the chip ("Needs your confirmation", warn tone) and `describeDeployed`'s
+does-not-know branch gained the case. That case was unrepresentable in either
+PR alone — it only exists where both land.
+
+Same commit, the packet reconciliation the handoff asked for: the 19 recorded
+lifecycle drift warnings are resolved — 17 issues moved to Done in Linear
+(git said merged for weeks; Linear had never moved), 2 were already Done and
+only the packet was stale — and the weekend batch's five entries
+(MAR-572/573/574/575/576) go `planned → merged` with their merge commits,
+since every "PR OPEN, NOT MERGED" note is now false. `pnpm state:check`:
+**valid, 0 drift warnings**, the first zero since the warnings began accruing.
+
+Evidence here: typecheck clean; the seven test files over every touched
+surface — host-connect, host-wizard (+render), server-card (+render), shell,
+hosts-view — 197 passed, 0 failed; `build:renderer` completes (the exact step
+shell-smoke died on); brand:check green. Full CI runs on the fix PR.
+
+Lesson, recorded for the next packet rebuild: "rebuild packet from master" is
+a *state-file* resolution and must never be committed while `git grep` still
+finds markers in code — the two reds this cost were the gate saying exactly
+that.
