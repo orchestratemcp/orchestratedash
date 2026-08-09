@@ -553,6 +553,9 @@ function rowWith(options: {
     connection_id: options.connection_id ?? DECLARED_CONNECTION,
     service: "Gmail",
     provider: "google-gmail",
+    // MAR-570. No other agent shares this provider in these fixtures, which is
+    // the ordinary case and is not the same as sharing being off.
+    also_connects: [],
     purpose: "Read the morning mail",
     capabilities: [],
     ownership: "dash",

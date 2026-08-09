@@ -260,6 +260,19 @@ await Promise.all([
     format: "esm",
   }),
 
+  // The Connections page's own screenshot harness (MAR-570), on the same terms.
+  // Separate from `capture.ts` because that one photographs whatever store the
+  // machine holds, and this page's subject is a relationship *between* agents —
+  // two of them needing one service. No shipped example produces that, so a run
+  // against a real store photographs the case the issue is not about. See
+  // `electron/capture-connectors.ts`.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-connectors.ts")],
+    outfile: path.join(outDir, "capture-connectors.mjs"),
+    format: "esm",
+  }),
+
   // The fleet's glance chips (MAR-586), on the same terms and for the sharpest
   // version of the reason: a chip exists only when the fact behind it is true,
   // so a run against whatever a machine holds photographs one of sixteen

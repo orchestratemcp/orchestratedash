@@ -137,6 +137,20 @@ export interface ConnectionActionDeps {
    */
   oauth: OAuthOperations;
   /**
+   * Every agent DASH has imported, for the shared-grant fan-out (MAR-570).
+   *
+   * A list of names rather than a resolver, so this module does the deciding: a
+   * dependency that answered "who shares this provider" would be a second place
+   * the sharing rule lives, free to disagree with the sentence
+   * `lib/connectors.ts` shows the person before they sign in.
+   *
+   * Optional, and its absence means **no fan-out** rather than an error. A
+   * caller built before this feature — every existing test, and any host that
+   * has not been updated — connects exactly the agent it named, which is what it
+   * has always done and is never wrong, only narrower.
+   */
+  listAgentIds?(): string[];
+  /**
    * Asking a model provider whether a key still works (MAR-582).
    *
    * The third seam, beside the prompt and the sign-in, injected for the reason
@@ -825,6 +839,30 @@ async function performOAuthAction(
     recordReceipt(resolvedGrant.grant, new Date().toISOString());
   }
 
+  /*
+   * MAR-570. One consent, every agent that needs this provider.
+   *
+   * After the granting agent's own write, never instead of it: if the fan-out
+   * throws, the person's sign-in is already stored and their agent works. The
+   * provider comes from this manifest's own declaration rather than from the
+   * flow, because the flow serves several services through one authorization
+   * server and it is the *service* two agents share.
+   *
+   * The disclosure for this is on the tile, before the button —
+   * `describeSharedGrant`. This is where it comes true.
+   */
+  const declaredProvider = manifestForGrant.agent_dom?.connections?.find(
+    (connection) => connection.id === target.connection_id,
+  )?.provider;
+  const alsoConnected =
+    declaredProvider === undefined
+      ? []
+      : await shareGrant(
+          findGrantSharers(declaredProvider, target, stored, deps),
+          stored,
+          deps,
+        );
+
   const missing = missingPermissions(stored);
   if (missing.length > 0) {
     // Stored anyway. The user did grant something, it is real, and the agent can
@@ -844,8 +882,178 @@ async function performOAuthAction(
     ok: true,
     state: "connected",
     masked_hint: hint,
-    detail: `${service} is connected. DASH keeps the sign-in in ${vaultLabel} and never writes it to its own files.`,
+    // The fan-out is reported rather than left to be noticed. A person who
+    // pressed one button and silently granted a second agent access would have
+    // learned it from a receipt later, which is the shape of consequence ADR
+    // 0002 amendment 2 exists to stop.
+    detail:
+      alsoConnected.length === 0
+        ? `${service} is connected. DASH keeps the sign-in in ${vaultLabel} and never writes it to its own files.`
+        : `${service} is connected for this agent and for ${listNames(alsoConnected)}. DASH keeps the sign-in in ${vaultLabel} and never writes it to its own files.`,
   };
+}
+
+/** Names in a sentence, with the comma rules a list of two does not need. */
+function listNames(names: readonly string[]): string {
+  if (names.length === 1) {
+    return names[0] as string;
+  }
+  const last = names[names.length - 1] as string;
+  return names.length === 2
+    ? `${names[0] as string} and ${last}`
+    : `${names.slice(0, -1).join(", ")} and ${last}`;
+}
+
+/* ---------------------------------------------------------------------- *
+ * One consent, every agent that needs it (MAR-570)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * One other agent the grant DASH just received also belongs to.
+ *
+ * `missing` is that agent's own shortfall, computed against **its** declared
+ * scopes rather than the granting agent's. Two agents naming one provider can
+ * ask for different things, and a fan-out that assumed otherwise would report a
+ * connection as complete for an agent whose actions the consent never covered.
+ */
+export interface GrantSharer {
+  agent_id: string;
+  target: CredentialTarget;
+  missing: string[];
+}
+
+/**
+ * Which other agents a sign-in for this provider also connects.
+ *
+ * ## Why this exists at all
+ *
+ * Henrik's ruling on MAR-570: *"connecting Gmail once lights up both agents that
+ * need it."* Before this, a grant was keyed `dash.connection.{agent}.{connection}
+ * .{field}` and stopped at the agent it was made for, so a person with two agents
+ * needing Gmail signed in twice. The tile that now says otherwise is only honest
+ * because of this function.
+ *
+ * ## What it will not do
+ *
+ * **Only OAuth.** A typed secret is a value a person handed DASH for a named
+ * agent, with no consent screen and no scopes; copying it elsewhere would be
+ * DASH redistributing something it was given for one purpose. A sign-in is
+ * different in kind — the provider issued a grant, DASH is recording who may use
+ * it, and the person is told before they press. The narrower rule is the safe
+ * one and `describeSharedGrant` promises only this much.
+ *
+ * **Only what each agent independently qualifies for.** Every candidate goes
+ * through `resolveCredentialTarget`, which is the same gate the direct path
+ * uses: it refuses an agent whose manifest declared no scopes, asked for access
+ * DASH does not offer, or named an environment variable DASH will not use. A
+ * sharer is therefore an agent that would have been allowed to run this exact
+ * sign-in itself.
+ *
+ * **Never the granting agent.** It is excluded by name, because it has already
+ * been written by the caller and a second write would re-record its receipt.
+ */
+export function findGrantSharers(
+  provider: string,
+  granting: ConnectionActionTarget,
+  granted: OAuthCredential,
+  deps: Pick<ConnectionActionDeps, "listAgentIds" | "readManifest">,
+): GrantSharer[] {
+  const listed = deps.listAgentIds?.() ?? [];
+  const sharers: GrantSharer[] = [];
+
+  for (const agentId of listed) {
+    if (agentId === granting.agent_id) {
+      continue;
+    }
+    const manifest = deps.readManifest(agentId);
+    if (manifest === null) {
+      continue;
+    }
+    for (const connection of manifest.agent_dom?.connections ?? []) {
+      if (connection.provider !== provider) {
+        continue;
+      }
+      for (const field of connection.fields) {
+        const resolved = resolveCredentialTarget(agentId, manifest, connection.id, field.id);
+        // A refusal here is not an error and is not reported: it means this
+        // agent could not have run this sign-in itself, so a grant made for
+        // somebody else must not appear on its behalf either.
+        if (!resolved.ok || resolved.target.kind !== "oauth") {
+          continue;
+        }
+        sharers.push({
+          agent_id: agentId,
+          target: resolved.target,
+          // This agent's own declared scopes against what the consent actually
+          // issued. Its shortfall, not the granting agent's — which is the whole
+          // reason a sharer is resolved rather than assumed.
+          missing: missingScopes(granted, resolved.target.oauth?.scopes ?? []),
+        });
+      }
+    }
+  }
+
+  return sharers;
+}
+
+/**
+ * Write one received grant to every agent that shares the provider.
+ *
+ * Each write is the same three steps the direct path takes — the vault entry,
+ * the masked reference, and the receipt resolved from *that agent's* manifest —
+ * so what the broker later resolves for a shared agent is indistinguishable from
+ * a grant it received directly. That is the property that keeps the fan-out out
+ * of broker semantics: nothing downstream can tell, because there is nothing to
+ * tell.
+ *
+ * **A failure here does not fail the connect.** The person's sign-in worked and
+ * their credential is stored; a vault that refused a second write is a smaller
+ * problem than a page reporting that the whole thing failed, and the agent it
+ * failed for simply reads as not connected — which is true. The names that did
+ * succeed come back so the caller can say what happened.
+ */
+export async function shareGrant(
+  sharers: readonly GrantSharer[],
+  granted: OAuthCredential,
+  deps: Pick<ConnectionActionDeps, "store" | "readManifest">,
+): Promise<string[]> {
+  const connected: string[] = [];
+
+  for (const sharer of sharers) {
+    try {
+      await deps.store.set(sharer.target.secret_name, serializeOAuthCredential(granted));
+    } catch {
+      continue;
+    }
+    recordSecretReference({
+      agent: sharer.agent_id,
+      connection_id: sharer.target.connection_id,
+      field_id: sharer.target.field_id,
+      secret_name: sharer.target.secret_name,
+      masked_hint:
+        granted.account === null ? maskSecret(granted.refresh_token) : maskAccount(granted.account),
+      backend: deps.store.describeBacking().backend,
+    });
+
+    const manifest = deps.readManifest(sharer.agent_id);
+    if (manifest !== null) {
+      const resolvedGrant = resolveGrant(
+        sharer.agent_id,
+        manifest,
+        sharer.target.connection_id,
+        granted,
+        sharer.target.secret_name,
+      );
+      if (resolvedGrant.ok) {
+        recordReceipt(resolvedGrant.grant, new Date().toISOString());
+      }
+    }
+    if (!connected.includes(sharer.agent_id)) {
+      connected.push(sharer.agent_id);
+    }
+  }
+
+  return connected;
 }
 
 /* ---------------------------------------------------------------------- *

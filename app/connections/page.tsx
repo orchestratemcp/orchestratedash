@@ -2,42 +2,54 @@
 
 import { useState, type ReactNode } from "react";
 
-import { BrokerLapseNotice, ConnectionCards } from "../_components/connection-card";
-import { OAvatar } from "../_components/o-avatar";
+import { BrokerLapseNotice } from "../_components/connection-card";
+import { ConnectorTile } from "../_components/connector-tile";
 import { HostNotice, ViewFailed, ViewLoading } from "../_components/view-state";
 import { submitConnectionCommand } from "../_data/source";
-import { useHost, useView } from "../_data/use-view";
-import { summarisePage } from "../../lib/connection-card";
+import { useCanAct, useHost, useView } from "../_data/use-view";
+import { buildConnectorTiles, summariseConnectors } from "../../lib/connectors";
+import type { AgentConnections } from "../../lib/views/types";
 
 /**
- * The Connections page (MAR-533).
+ * The Connections page, as connectors (MAR-570).
  *
- * Henrik, 2026-08-07: *"the current connection page makes no sense to me right
- * now."* This is the rebuild, and what it changes is the question the page is
- * answering rather than how that answer is dressed.
+ * ## Two verdicts, one page
  *
- * The page it replaces was MAR-383's **checklist**: what does each agent still
- * need connecting, grouped by who holds the credential. That was the right page
- * during a first install and it is the wrong page ever afterwards — it opens on
- * an inventory sorted by a distinction the reader has no reason to care about,
- * with the permission card, which is the actual content, three scrolls down and
- * underneath the buttons.
+ * Henrik on MAR-383's checklist: *"the current connection page makes no sense to
+ * me right now."* MAR-533 answered that — four questions per connection, in the
+ * order a person arrives with them — and drew one card per **agent per
+ * connection**. Henrik on that: *"cluttered and a lot of text."*
  *
- * Each connection is now one card answering, in order: **what can this reach, on
- * whose account, since when, and what has it actually been used for** — with the
- * receipt one click away. See `lib/connection-card.ts` for the model and
- * `app/_components/connection-card.tsx` for the card.
+ * Both verdicts are about the same thing, one layer apart: the page was
+ * organised by DASH's own bookkeeping. The first page grouped by who holds the
+ * credential; the second grouped by which agent asked. Neither is what a person
+ * has in mind, which is a service they recognise.
  *
- * ## The test this page is written against
+ * > The connector is the unit that gets connected; the agent is the unit that
+ * > needs it.
+ *
+ * So the page is tiles — one per service, each naming the agents that depend on
+ * it — and MAR-533's capability card is the **receipt one click away**. Nothing
+ * honest is removed. The three-party drawing, the nobody-asked-for-this list,
+ * the wider-permission banner and the usage history are all still rendered by
+ * the same component; they are one click deep instead of being the front page.
+ *
+ * ## Connect once, and it really is once
+ *
+ * Two agents that need Gmail used to mean two sign-ins, because a grant is keyed
+ * per agent. That is still true of the *record* — each agent has its own vault
+ * entry, its own receipt and its own revocation — and it is no longer true of
+ * the *act*: `findGrantSharers` writes one received consent to every agent that
+ * named the provider and independently qualified for it.
+ *
+ * The sentence that discloses this is on the tile, above the button, and it is
+ * built by `describeSharedGrant` rather than written here, so the page cannot
+ * soften a consequence that lands on an agent the reader is not looking at.
+ *
+ * ## The test this page is written against, unchanged
  *
  * *Could someone who has never heard of OAuth look at this and say what DASH is
  * allowed to do?*
- *
- * Which is why the summary line at the top counts rather than reassures, why the
- * three-party intersection is drawn on every brokered card, and why a connection
- * DASH is **not** in the middle of gets the same headings with the answers
- * missing. A page where only the brokered cards had a "what has it been used
- * for" section would let a reader assume the others simply had not been used.
  *
  * ## Still no credential input here
  *
@@ -48,20 +60,21 @@ import { summarisePage } from "../../lib/connection-card";
  */
 export default function ConnectionsPage(): ReactNode {
   // Bumped after any command that changed something, so the page re-reads the
-  // view rather than trusting its own optimistic idea of what happened. The
-  // cards carry masked hints from the store, and the store is the thing that
-  // just changed.
+  // view rather than trusting its own optimistic idea of what happened. That
+  // matters more than it did: a connect now changes rows belonging to agents
+  // other than the one whose button was pressed, and only a re-read shows it.
   const [revision, setRevision] = useState(0);
   const state = useView((source) => source.connections(), revision);
   const host = useHost();
+  const canAct = useCanAct();
 
   return (
     <>
       <h1>Connections</h1>
       <p className="lede">
-        What your agents can reach outside this computer, and what DASH can prove
-        about it. Anything DASH holds is kept in this computer&rsquo;s credential
-        vault.
+        The services your agents reach outside this computer. Connect one and
+        every agent that needs it is connected — anything DASH holds is kept in
+        this computer&rsquo;s credential vault.
       </p>
       <HostNotice host={host} />
 
@@ -70,86 +83,108 @@ export default function ConnectionsPage(): ReactNode {
       ) : state.status === "failed" ? (
         <ViewFailed recovery={state.recovery} />
       ) : (
-        <>
-          {state.data.agents.length === 0 ? (
-            <div className="empty">
-              <p>
-                No agent here has asked to reach anything outside this computer.
-              </p>
-              <p>
-                <a href="/agents/add">Add an agent</a> to see what it would need.
-              </p>
-            </div>
-          ) : (
-            <>
-              {/*
-                The page's thesis, counted rather than asserted. Both numbers come
-                from `classifyProof`, so this line cannot drift from the cards
-                under it — which is the failure mode of every hand-written summary
-                that has ever sat at the top of a list.
-              */}
-              <p className="page-summary wrap">
-                {summarisePage(state.data.agents.flatMap((agent) => agent.rows))}
-              </p>
-
-              {state.data.agents.map(({ name, avatar, rows, lapses }) => (
-                <section key={name} className="agent-connections">
-                  {/*
-                    The agent's own character beside its name (MAR-501's grammar,
-                    a fourth surface). This page is a list of *somebody's* agents
-                    and it used to head each group with a bare code element — and
-                    the whole question underneath is "what is this one allowed to
-                    touch", which is the question a character is there to make
-                    concrete.
-
-                    `avatar` is the stored value and nothing here chooses it; a
-                    null draws nothing rather than a guess.
-                  */}
-                  <div className="agent-identity">
-                    {avatar === null ? null : <OAvatar name={avatar} size={50} />}
-                    <div>
-                      <h2>{name}</h2>
-                    </div>
-                  </div>
-                  {/* MAR-467, above the cards rather than below them: somebody who
-                      opened this page because an agent did less than they expected
-                      is looking for exactly this, and burying it under the cards
-                      would reproduce the empty-history problem one scroll lower.
-                      It is a one-line disclosure now rather than an open wall of
-                      machine timestamps. */}
-                  <BrokerLapseNotice lapses={lapses} />
-                  <ConnectionCards
-                    rows={rows}
-                    act={async (action, target) => {
-                      const result = await submitConnectionCommand(action, {
-                        agent_id: name,
-                        ...target,
-                      });
-                      if (result.ok) {
-                        setRevision((current) => current + 1);
-                      }
-                      return {
-                        ok: result.ok,
-                        detail: result.detail,
-                        recovery: result.recovery,
-                      };
-                    }}
-                  />
-                </section>
-              ))}
-            </>
-          )}
-
-          {state.data.older_agent_names.length > 0 ? (
-            <p className="muted wrap">
-              {state.data.older_agent_names.length === 1
-                ? "1 agent here was added in an older format that cannot say what it needs to reach"
-                : `${state.data.older_agent_names.length} agents here were added in an older format that cannot say what they need to reach`}
-              : {state.data.older_agent_names.join(", ")}. DASH does not guess.
-            </p>
-          ) : null}
-        </>
+        <ConnectorList
+          agents={state.data.agents}
+          older={state.data.older_agent_names}
+          canAct={canAct}
+          onChanged={() => {
+            setRevision((current) => current + 1);
+          }}
+        />
       )}
+    </>
+  );
+}
+
+/**
+ * The tiles, and the two things that are not tiles.
+ *
+ * Split out so a render test can drive the whole surface from a view document
+ * without a data source — the shape `DeployPanel` and `ServerCard` established,
+ * and the reason MAR-574's card states: a photograph proves a state was drawn
+ * once, a render test proves it is still drawn on every run.
+ */
+export function ConnectorList({
+  agents,
+  older,
+  canAct,
+  onChanged,
+}: {
+  agents: readonly AgentConnections[];
+  older: readonly string[];
+  canAct: boolean;
+  onChanged: () => void;
+}): ReactNode {
+  const tiles = buildConnectorTiles(agents);
+
+  if (tiles.length === 0) {
+    return (
+      <div className="empty">
+        <p>No agent here has asked to reach anything outside this computer.</p>
+        <p>
+          <a href="/agents/add">Add an agent</a> to see what it would need.
+        </p>
+      </div>
+    );
+  }
+
+  /*
+   * Every agent's lapse notices, above the tiles rather than inside them.
+   *
+   * MAR-467's argument for putting these first is unchanged — somebody who
+   * opened this page because an agent did less than they expected is looking for
+   * exactly this. What changed is that a lapse belongs to an *agent* and the
+   * tiles below are services, so it cannot live on one of them without being
+   * filed under whichever service happened to be first.
+   */
+  const lapsing = agents.filter((agent) => agent.lapses.length > 0);
+
+  return (
+    <>
+      {/* Counted rather than asserted, over the tiles this page actually drew,
+          so the line cannot drift from what is under it. */}
+      <p className="page-summary wrap">{summariseConnectors(tiles)}</p>
+
+      {lapsing.map((agent) => (
+        <div key={agent.name} className="connector-lapse">
+          <p className="eyebrow">{agent.name}</p>
+          <BrokerLapseNotice lapses={agent.lapses} />
+        </div>
+      ))}
+
+      <ul className="row-list connector-grid">
+        {tiles.map((tile) => (
+          <li key={tile.provider}>
+            <ConnectorTile
+              tile={tile}
+              canAct={canAct}
+              act={(agent) => async (action, target) => {
+                const result = await submitConnectionCommand(action, {
+                  agent_id: agent,
+                  ...target,
+                });
+                if (result.ok) {
+                  onChanged();
+                }
+                return {
+                  ok: result.ok,
+                  detail: result.detail,
+                  recovery: result.recovery,
+                };
+              }}
+            />
+          </li>
+        ))}
+      </ul>
+
+      {older.length > 0 ? (
+        <p className="muted wrap">
+          {older.length === 1
+            ? "1 agent here was added in an older format that cannot say what it needs to reach"
+            : `${String(older.length)} agents here were added in an older format that cannot say what they need to reach`}
+          : {older.join(", ")}. DASH does not guess.
+        </p>
+      ) : null}
     </>
   );
 }
