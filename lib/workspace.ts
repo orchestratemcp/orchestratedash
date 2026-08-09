@@ -233,11 +233,56 @@ const STATUS_DETAIL: Record<WorkspaceStatus, string> = {
   stalled: "This agent has a schedule but has not reported activity within the window DASH expected.",
 };
 
-/** Run statuses that mean the agent is doing something right now (MAR-441). */
-function hasActiveRun(state: AgentDomState): boolean {
+/**
+ * Run statuses that mean the agent is doing something right now (MAR-441).
+ *
+ * Exported for MAR-586, which asks the same question from outside a workspace:
+ * a fleet card must not call an agent overdue while a run of it is in flight,
+ * and the definition of "in flight" should be this one rather than a second one
+ * beside it.
+ */
+export function hasActiveRun(state: AgentDomState): boolean {
   return (state.runs ?? []).some(
     (run) => run.status === "running" || run.status === "queued",
   );
+}
+
+/**
+ * Whether a schedule's own expectation has gone by (MAR-441's arithmetic,
+ * MAR-586's second caller).
+ *
+ * Lifted out of `deriveStatus` below rather than copied into the fleet card, and
+ * the split is where the responsibility sits. **This function answers only "is
+ * the gap longer than the declared interval".** Every reason *not* to say so
+ * anyway — a paused agent, a run happening now, a runner that has already
+ * confirmed the process is gone — stays in `deriveStatus`, because those are
+ * judgments about a status field and the fleet card makes its own.
+ *
+ * Three ways to answer false, and each is a refusal to guess rather than a
+ * negative finding:
+ *
+ * - a trigger that is not a schedule has no expected window at all, and
+ *   "has simply not been asked to run" is correct behaviour;
+ * - a schedule with no declared interval yields no expectation, because
+ *   `schedule` itself is free text DASH does not parse;
+ * - no activity timestamp means there is nothing to measure a gap from.
+ */
+export function pastScheduleExpectation(
+  trigger: WorkspaceTrigger | undefined,
+  lastActivityAt: string | null,
+  now: Date,
+): boolean {
+  if (trigger?.type !== "schedule" || trigger.expected_interval_seconds === undefined) {
+    return false;
+  }
+  if (lastActivityAt === null) {
+    return false;
+  }
+  const elapsedMs = now.getTime() - Date.parse(lastActivityAt);
+  if (Number.isNaN(elapsedMs)) {
+    return false;
+  }
+  return elapsedMs > trigger.expected_interval_seconds * 1000;
 }
 
 /**
@@ -318,17 +363,10 @@ function deriveStatus(
   if (NEVER_OVERRIDE.has(baseStatus) || hasActiveRun(state)) {
     return baseStatus;
   }
-  if (trigger?.type !== "schedule" || trigger.expected_interval_seconds === undefined) {
-    return baseStatus;
-  }
-  if (lastActivity === null) {
-    return baseStatus;
-  }
-  const elapsedMs = now.getTime() - Date.parse(lastActivity);
-  if (Number.isNaN(elapsedMs)) {
-    return baseStatus;
-  }
-  return elapsedMs > trigger.expected_interval_seconds * 1000 ? "stalled" : baseStatus;
+  // The last three guards are `pastScheduleExpectation`'s own — a non-schedule
+  // trigger, an undeclared interval, an unmeasurable gap — and they moved there
+  // so the fleet card asks the same question rather than a similar one.
+  return pastScheduleExpectation(trigger, lastActivity, now) ? "stalled" : baseStatus;
 }
 
 export function buildOverview(

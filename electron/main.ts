@@ -124,6 +124,7 @@ import {
   pinHostFingerprint,
   readAgentManifest,
   readHost,
+  recordAgentLook,
   saveHost,
 } from "../lib/store";
 // MAR-576. The folder is authoritative (ADR 0008), so the re-import reads it
@@ -626,6 +627,14 @@ export function registerCommandChannel(
       // the ownership gate that makes that safe lives inside it rather than at
       // the seam — see `refreshSampleAgent`.
       sampleAction: (_action, target) => Promise.resolve(refreshSampleAgent(target.agent_id)),
+      // MAR-586. The one command in DASH about the reader rather than about
+      // anything DASH supervises. Main stamps the moment from its own clock —
+      // `recordAgentLook`'s default — so a renderer cannot mark an agent as read
+      // at a time it chose.
+      glanceAction: (_action, target) => {
+        recordAgentLook(target.agent_id);
+        return Promise.resolve({ ok: true });
+      },
     });
   });
 }

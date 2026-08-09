@@ -11,6 +11,7 @@ import {
 import type {
   CommandAuditRecord,
   ConnectionAction,
+  GlanceAction,
   HostAction,
   SampleAction,
   WorkspaceAction,
@@ -150,6 +151,13 @@ describe("the audited command chokepoint", () => {
       // id: page script can ask DASH to regenerate an agent *from DASH's own
       // template* and has no way to hand DASH a document to store.
       "sample.refresh",
+      // MAR-586. A sixth family, and the only command in DASH about the person
+      // at the keyboard rather than about anything DASH supervises: it writes
+      // down that an agent's page was opened, so a fleet card can say what has
+      // arrived since. The payload is one agent id and deliberately no time —
+      // main stamps its own clock, so page script cannot mark an agent as read
+      // at a moment it chose and silence its card for good.
+      "glance.looked",
       // MAR-536. Servers are independent of agents. Create accepts only the
       // four ordinary connection facts; main mints both names and returns only
       // the public key, while probe and forget take the opaque host id.
@@ -412,12 +420,17 @@ describe("dispatch", () => {
     // MAR-576. Recorded rather than performed: the real one rewrites the agent
     // folder and the store through `importManifest`, and neither exists here.
     const samples: Array<{ action: SampleAction; target: { agent_id: string } }> = [];
+    // MAR-586. Recorded rather than performed, like everything else here: the
+    // real one writes a row through `node:sqlite`, which this process has no
+    // store for.
+    const looks: Array<{ action: GlanceAction; target: { agent_id: string } }> = [];
     return {
       audited,
       inputs,
       lifecycle,
       connections,
       samples,
+      looks,
       hosts,
       workspaces,
       menus,
@@ -440,6 +453,14 @@ describe("dispatch", () => {
       // the ownership gate lives in `electron/main.ts`, beside the real write.
       sampleAction: (action: SampleAction, target: { agent_id: string }) => {
         samples.push({ action, target });
+        return Promise.resolve({ ok: true });
+      },
+      // MAR-586. Recorded, not performed, for `sampleAction`'s reason directly
+      // above: the real one writes a row, and what these tests are about is that
+      // the command is reviewed, audited and routed to this seam rather than to
+      // another one.
+      glanceAction: (action: GlanceAction, target: { agent_id: string }) => {
+        looks.push({ action, target });
         return Promise.resolve({ ok: true });
       },
       showApplicationMenu: (at: { x: number; y: number } | undefined) => {

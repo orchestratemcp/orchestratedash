@@ -33,6 +33,7 @@ import { AgentPortrait } from "../app/agents/detail/page";
 import { FleetStripScript, fleetStripLinks } from "../app/_components/fleet-strip";
 import { agentWorkspaceHref } from "../app/_data/routes";
 import { SAMPLE_AGENT_ID } from "../lib/sample-agent";
+import { GLANCE_ALL_CLEAR } from "../lib/copy/glance";
 import { O_NAMES, oFor, type OName } from "../lib/brand/o-cast";
 import {
   DEFAULT_FLEET_STRIP,
@@ -113,6 +114,10 @@ function row(name: string, avatar: OName): AgentRow {
     // MAR-577. Nothing in this file renders it; the field is required on the row
     // so that a surface which does cannot be given one without an answer.
     deploy: { deployable: false, refusal: "This agent's build lives outside DASH." },
+    // MAR-586. Same standing as `deploy` directly above: this file is about the
+    // characters, and a row with no answer to the four questions is not a row
+    // any surface may be handed.
+    glance: [GLANCE_ALL_CLEAR],
   };
 }
 
