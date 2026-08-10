@@ -5,6 +5,7 @@ import "./globals.css";
 import { AppChrome } from "./_components/app-chrome";
 import { DensityScript } from "./_components/density-toggle";
 import { FleetStrip, FleetStripScript } from "./_components/fleet-strip";
+import { WindowVisibility } from "./_components/window-visibility";
 import { RENDERER_TITLE } from "../lib/shell/preflight";
 
 export const metadata = {
@@ -86,6 +87,14 @@ export default function RootLayout({
           nothing and would be the first thing a keyboard user reaches in a
           one-question dialog. One check now removes both.
         */}
+        {/*
+          MAR-587. Renders nothing; it writes `data-window="hidden"` on the root
+          while nobody can see the window, which is what stops the fleet's idle
+          loops burning a core behind a maximised browser. It is in the layout
+          rather than beside the sprites because visibility is a fact about the
+          window, read once for everything inside it.
+        */}
+        <WindowVisibility />
         <AppChrome />
         <main id="main" tabIndex={-1}>
           {children}

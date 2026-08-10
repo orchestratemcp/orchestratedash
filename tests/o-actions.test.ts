@@ -1,0 +1,153 @@
+/**
+ * The fleet's idle loops, as a contract rather than as a picture (MAR-587
+ * Phase B).
+ *
+ * A screenshot cannot show motion. That is stated plainly in the state packet
+ * rather than worked around, and it is why this file exists: everything about
+ * the loop that a still frame could not settle — that the duration is a token
+ * and therefore zero under reduced motion, that the frame count reaches the
+ * stylesheet from the manifest instead of being typed into it twice, that the
+ * animation stops when nobody is looking, and that MAR-586's chips were left
+ * exactly where they were — is settled here, in CI, on every run.
+ *
+ * The rules about *pixels* live in `tests/brand-check.test.ts`; these are the
+ * rules about the loop the pixels are played at.
+ */
+
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+
+import { O_ACTIONS, O_ACTION_FRAMES, actionFor, oActionSrc } from "../lib/brand/o-actions";
+import { O_NAMES } from "../lib/brand/o-cast";
+import { WINDOW_VISIBILITY_ATTRIBUTE } from "../app/_components/window-visibility";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const read = (...parts: string[]): string => readFileSync(path.join(repoRoot, ...parts), "utf8");
+
+const tokens = read("app", "tokens.css");
+const globals = read("app", "globals.css");
+const fleetPage = read("app", "page.tsx");
+const layout = read("app", "layout.tsx");
+
+/** The stylesheet with its prose removed — a design comment is not a rule. */
+const rules = globals.replace(/\/\*[\s\S]*?\*\//g, "");
+
+describe("the loop rides a token, so stillness costs no per-surface code", () => {
+  it("declares --motion-idle in both halves of the reduced-motion switch", () => {
+    const reduce = /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\n\}/.exec(tokens)?.[0] ?? "";
+    const moving = /@media not \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\n\}/.exec(tokens)?.[0] ?? "";
+    expect(reduce).toContain("--motion-idle: 0ms");
+    expect(moving).toContain("--motion-idle: 1800ms");
+  });
+
+  it("is its own token rather than a second use of --motion-beckon", () => {
+    // They carry the same number today and mean opposite things: beckon is the
+    // rhythm of "a decision is waiting on you", which exists to be tuned until
+    // it reads from across the room. Sharing one would let that tuning re-time
+    // every costume in the fleet, or stop the tuning happening because it would.
+    expect(tokens).toContain("--motion-beckon: 1800ms");
+    expect(rules).toMatch(/\.o-avatar\.is-action\s*\{[^}]*var\(--motion-idle\)/);
+    expect(rules).not.toMatch(/\.o-avatar\.is-action\s*\{[^}]*var\(--motion-beckon\)/);
+  });
+
+  it("gives the sprite no literal duration anywhere", () => {
+    // `checkAvatarCss` fails this for real; asserted here too because it is the
+    // single line that decides whether somebody who asked for stillness gets it.
+    const action = /\.o-avatar\.is-action\s*\{([^}]*)\}/.exec(rules)?.[1] ?? "";
+    expect(action).not.toMatch(/\d+m?s\b/);
+  });
+});
+
+describe("the frame count reaches the stylesheet from the manifest", () => {
+  it("steps and sizes by var(--o-frames) rather than by a number typed twice", () => {
+    const action = /\.o-avatar\.is-action\s*\{([^}]*)\}/.exec(rules)?.[1] ?? "";
+    expect(action).toContain("steps(var(--o-frames))");
+    expect(action).toContain("calc(var(--o-size) * var(--o-frames))");
+    const frames = /@keyframes o-action\s*\{[\s\S]*?\n\}/.exec(rules)?.[0] ?? "";
+    expect(frames).toContain("background-position: 0 0");
+    expect(frames).toContain("calc(var(--o-size) * var(--o-frames) * -1)");
+  });
+
+  it("agrees with the audited sheets", () => {
+    const manifest = JSON.parse(read("lib", "brand", "o-actions.json")) as {
+      frameCount: number;
+      sheets: Record<string, { frameCount: number; file: string }>;
+    };
+    expect(O_ACTION_FRAMES).toBe(manifest.frameCount);
+    for (const action of O_ACTIONS) {
+      expect(manifest.sheets[action.key]?.frameCount).toBe(O_ACTION_FRAMES);
+      // The path the renderer asks for is the path the manifest recorded.
+      expect(oActionSrc(action)).toBe(`/${String(manifest.sheets[action.key]?.file)}`);
+    }
+  });
+});
+
+describe("nothing moves while nobody is looking", () => {
+  it("pauses every loop under the attribute the layout's listener writes", () => {
+    expect(rules).toMatch(
+      /:root\[data-window="hidden"\] \.o-avatar\.is-action\s*\{[^}]*animation-play-state:\s*paused/,
+    );
+    expect(WINDOW_VISIBILITY_ATTRIBUTE).toBe("data-window");
+  });
+
+  it("reads visibility once, in the layout, rather than once per sprite", () => {
+    // A fleet of twelve agents would otherwise register twelve listeners for one
+    // document-wide fact, and the count would grow with somebody's fleet.
+    expect(layout).toContain("<WindowVisibility />");
+    expect(fleetPage).not.toContain("visibilitychange");
+    const component = read("app", "_components", "window-visibility.tsx");
+    expect(component).toContain('document.addEventListener("visibilitychange"');
+    expect(component).toContain('document.removeEventListener("visibilitychange"');
+  });
+});
+
+describe("the fleet asks for the loop, and asks for nothing else", () => {
+  it("draws the character-select tile at a whole multiple of the source", () => {
+    expect(fleetPage).toContain("<OAvatar name={agent.avatar} size={200} action />");
+  });
+
+  it("decides to animate in the source, never from the agent", () => {
+    // `checkCostume` fails an expression here for real. This is the same claim
+    // read from the other end: whatever else this file learns about an agent,
+    // none of it reaches the avatar.
+    const usages = [...fleetPage.matchAll(/<OAvatar[^>]*>/g)].map((match) => match[0]);
+    expect(usages.length).toBeGreaterThan(0);
+    for (const usage of usages) {
+      expect(usage).not.toMatch(/action=\{(?!true\}|false\})/);
+    }
+  });
+
+  it("leaves MAR-586's chips exactly where they were", () => {
+    // The chips carry every fact on this card. A costume that grew by taking
+    // room or attention from them would be this issue undoing the last one.
+    expect(fleetPage).toContain("<GlanceChips agent={agent.name} chips={agent.glance} />");
+    const portrait = fleetPage.indexOf('<div className="fleet-portrait">');
+    const goal = fleetPage.indexOf('<p className="muted wrap">');
+    const chips = fleetPage.indexOf("<GlanceChips");
+    expect(portrait).toBeGreaterThan(-1);
+    expect(portrait).toBeLessThan(goal);
+    expect(goal).toBeLessThan(chips);
+    expect(rules).not.toMatch(/\.glance[^{}]*\{[^}]*--o-/);
+  });
+
+  it("orders the fleet by nothing this issue touched", () => {
+    // "Three of eleven characters animate" must never become "the animated ones
+    // come first", which would make DASH's asset library look like a ranking.
+    expect(fleetPage).not.toContain("actionFor");
+    expect(fleetPage).not.toContain("O_ACTIONS");
+    expect(fleetPage).not.toMatch(/\.sort\(/);
+  });
+});
+
+describe("a character with no sheet is a character with no sheet", () => {
+  it("answers null for the eight, and its own action for the three", () => {
+    const animated = O_NAMES.filter((name) => actionFor(name) !== null);
+    expect(animated).toEqual(["ninja", "wizard", "knight"]);
+    expect(O_NAMES.length - animated.length).toBe(8);
+    for (const name of animated) {
+      expect(actionFor(name)?.character).toBe(name);
+    }
+  });
+});
