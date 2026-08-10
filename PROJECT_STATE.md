@@ -1,5 +1,10 @@
 # DASH project state
 
+Updated: 2026-08-10 (MAR-593: a connection exists before an agent does — fleet
+connections, per-agent grants materialized from them, ADR 0013)
+
+---
+
 Updated: 2026-08-10 (MAR-592: one Settings entry in the sidebar; Connections,
 Notifications, Servers and Add agent become tabs on one page)
 
@@ -5462,6 +5467,90 @@ work" would be false about the charge, and the sentence says they were charged
 and that the amount went with the row.
 
 **Zero changes under `runner/`.** The runner does not know this feature exists.
+
+## A connection exists before an agent does (MAR-593)
+
+Henrik's test plan, step 1: *clear DASH of all agents and settings.* Step 2:
+*configure DASH — sign in to Google, add OpenRouter, a Discord webhook and a
+server.* On 2026-08-10 step 2 was impossible, and the Connections page he opened
+was empty.
+
+It was right to be. `lib/connections.ts` derives every row from
+`agent_dom.connections`, `connection_secrets` is keyed by agent, and
+`connectableFields` takes an agent id and a manifest. **A connection was a thing
+an agent had asked for**, so with no agents there was nothing to configure. That
+model survived three redesigns of the page — MAR-383's checklist, MAR-533's four
+answers, MAR-570's tiles — because none of them changed the noun.
+
+**The noun changes here.** A connection is an account or a key the person gave
+DASH, recorded against a provider. An agent's *grant* is unchanged: still
+per-agent, still its own vault entry, its own receipt and its own revocation, and
+now materialized from the fleet connection rather than being the only way one can
+exist. ADR 0013 records it.
+
+### Nothing about the broker changed, and that is the safety argument
+
+`lib/broker/execute.ts` computes the same per-agent vault name it always has,
+reads the same envelope and resolves the same three-party intersection. So "what
+the broker resolves for a materialized agent is indistinguishable from a grant it
+received directly" is not a property that had to be tested for — it is a property
+of not touching the read path. `tests/fleet-connections.test.ts` drives it
+anyway, through `connectionSecretName` and `resolveGrant` directly, for an agent
+nobody signed in.
+
+ADR 0002's three parties are all still there and still in the same hands. DASH
+built the operation; **the agent's own manifest** declared the scopes it needs;
+the person granted them at the provider. Moving where the third party's answer is
+recorded does not move the second, and the second is the one that stops an author
+widening their own access.
+
+### DASH now decides what to ask a provider for, and it is derived
+
+A fleet sign-in has no manifest, so the scope set is DASH's. It is not a
+hand-written list: it is the union of `required_scopes` over the operations DASH
+has built for that provider, which makes **DASH never asks for a scope no
+operation uses** true by construction rather than by review. `unused_scopes` on a
+fleet grant is empty because there is nothing spare to ask for.
+
+### An agent that arrives later is not connected silently
+
+MAR-570's ruling — *connecting Gmail once lights up both agents that need it* —
+holds for every agent present when the connection is made. An agent imported
+**afterwards** is named on the card as waiting, with one button that gives it the
+consent DASH already holds; it asks for nothing and contacts no provider. A
+consent given before a piece of software existed is not a consent to that
+software, and extending it silently is the shape of consequence ADR 0002
+amendment 2 exists to stop.
+
+Revoking one agent is the button its own row already had. Disconnecting an agent
+from a connection DASH holds at fleet level **is** withholding it, and the
+decision is remembered — without which the next share or re-key would put back
+access somebody deliberately took away.
+
+### The page, and the heading MAR-592 left
+
+`/settings` is two things now, in the order somebody needs them: **Accounts and
+keys**, which exists on an empty DASH, and **What your agents need**, which is
+MAR-570's tiles unchanged with MAR-533's receipt still one click under them.
+
+MAR-592's note asked for a decision on the tab word appearing twice, one line
+above itself. The Connections tab's `<h1>` now says what a connection *is* rather
+than repeating where you are — a novice arriving at an empty page needs that more
+than they need the word they just pressed. **Servers, Notifications and Add agent
+still repeat theirs**, and add-agent is still under Henrik's hold.
+
+### What is not proven
+
+No installed proof connects a fleet connection — `electron/smoke.ts` does not
+visit this, so its 85 proofs witness that nothing installed broke rather than
+that this works. And **a fleet sign-in to Google is not evidence that signing in
+to Google works**: `loopback-fixtures-cannot-refuse` still stands, and MAR-594
+owns it.
+
+**Zero changes under `runner/`, `electron/main.ts` or `agent-kit/`.** The fleet
+commands ride the `connectionAction` dependency main already injects, because
+every seam they need — the vault, the credential prompt, the sign-in window, the
+provider probe, the agent list — was already being supplied to the per-agent one.
 
 ## The sidebar stops being a list of everything (MAR-592)
 

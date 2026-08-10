@@ -39,6 +39,12 @@ import type {
 } from "../agent-dom/runner";
 import type { ConnectionActionResult } from "../connection-actions";
 import type { Recovery } from "../copy/recovery";
+// The one value import in this file, and it is a string constant from a module
+// with no imports of its own — see `lib/fleet/principal.ts` for why it lives
+// there rather than beside the action layer that also needs it. Anything the
+// fleet's action layer imports would break this module's promise to stay
+// loadable from a sandboxed preload.
+import { FLEET_PRINCIPAL } from "../fleet/principal";
 import type { FolderChangeReport } from "../folder-changes";
 import type { HostReachProblem } from "../host-connect";
 import type { AgentCommand } from "../workspace";
@@ -695,6 +701,64 @@ export const COMMANDS = {
     irreversible: false,
   },
 
+  // MAR-593, ADR 0013. The same acts against a connection that belongs to no
+  // agent.
+  //
+  // A family of its own rather than four more `connection.*` entries, and the
+  // reason is what an audit line is read for. Every sentence above says "one
+  // declared connection", meaning one an agent's manifest asked for; these name a
+  // provider and no agent at all, and they differ in the direction that matters —
+  // `fleet.disconnect` ends access for every agent at once, which is not a thing
+  // `connection.disconnect` can do. Somebody working out what happened from a log
+  // should not have to know that `agent_id` was a reserved word on three of these
+  // lines and an agent on the others.
+  //
+  // They carry no `agent_id` for the same reason, and the dispatcher supplies
+  // `FLEET_PRINCIPAL` itself: a renderer able to name the principal would be a
+  // renderer able to aim a fleet act at an agent, or an agent act at the fleet.
+  "fleet.connect": {
+    effect:
+      "Ask for an account sign-in or a key for one service, store it in this computer's vault, and " +
+      "give it to every agent that already asked for that service.",
+    payload_keys: ["provider"],
+    required_keys: ["provider"],
+    mutates: true,
+    irreversible: false,
+  },
+  "fleet.test": {
+    effect:
+      "Check that the sign-in or key DASH holds for one service still works, by asking that service.",
+    payload_keys: ["provider"],
+    required_keys: ["provider"],
+    // Reads the vault and writes down what the provider said, which is state.
+    // Marked honestly rather than conveniently, as `connection.test` is.
+    mutates: true,
+    irreversible: false,
+  },
+  "fleet.disconnect": {
+    effect:
+      "Delete the sign-in or key for one service from this computer's vault, and take it away from " +
+      "every agent DASH gave it to.",
+    payload_keys: ["provider"],
+    required_keys: ["provider"],
+    mutates: true,
+    // Not `irreversible` in this catalogue's sense — no message is sent, no
+    // money moves, and connecting again restores it. What it is, and what
+    // `connection.disconnect` is not, is wide: it ends access for agents the
+    // person is not looking at. That is disclosed on the card before the press,
+    // which is where ADR 0002 amendment 2 says a consequence belongs.
+    irreversible: false,
+  },
+  "fleet.share": {
+    effect:
+      "Give agents that asked for one service the sign-in or key DASH already holds. Asks for " +
+      "nothing and contacts no service.",
+    payload_keys: ["provider"],
+    required_keys: ["provider"],
+    mutates: true,
+    irreversible: false,
+  },
+
   "agent.approve": {
     effect: "Approve a guarded action the agent is waiting on. The runner performs it.",
     payload_keys: ["agent_id", "task_id", "approval_id", "action_id", "observed_at", "reason"],
@@ -1050,6 +1114,36 @@ export function isConnectionCommandName(value: CommandName): value is Connection
 }
 
 /**
+ * The fleet family (MAR-593, ADR 0013).
+ *
+ * Four names of its own and — deliberately — the same **verbs**, because the
+ * trusted side performs them through the same `connectionAction` dependency.
+ * That is not an economy: every seam a fleet connection needs was already being
+ * injected for the per-agent one — the vault, the credential prompt, the sign-in
+ * window, the model-provider probe and the agent list — and inventing a second
+ * dependency carrying the same five things would have been a second place for
+ * them to be wired differently.
+ *
+ * `share` is the one verb with no `connection.*` twin. It gives out a consent
+ * DASH already holds and asks for nothing, which is meaningless for a connection
+ * that belongs to a single agent — `performConnectionAction` refuses it there in
+ * so many words.
+ */
+export const FLEET_ACTIONS = {
+  "fleet.connect": "connect",
+  "fleet.test": "test",
+  "fleet.disconnect": "disconnect",
+  "fleet.share": "share",
+} as const;
+
+export type FleetCommandName = keyof typeof FLEET_ACTIONS;
+export type FleetAction = (typeof FLEET_ACTIONS)[FleetCommandName];
+
+export function isFleetCommandName(value: CommandName): value is FleetCommandName {
+  return Object.hasOwn(FLEET_ACTIONS, value);
+}
+
+/**
  * The server commands, and what each one asks main to do (MAR-536).
  *
  * Deliberately a sixth family rather than runner lifecycle: a runner is a
@@ -1105,6 +1199,7 @@ type UnroutedCommand = Exclude<
   | AgentCommandChannelName
   | RunnerCommandName
   | ConnectionCommandName
+  | FleetCommandName
   | HostCommandName
   | ShellUiCommandName
   | WorkspaceCommandName
@@ -1371,6 +1466,10 @@ export function executeCommand(review: CommandReview): CommandResult {
     isAgentCommandName(review.command) ||
     isRunnerCommandName(review.command) ||
     isConnectionCommandName(review.command) ||
+    // MAR-593. Every one of them opens the vault, and three of them open a
+    // window or contact a provider. Same reason as the line above it, on a
+    // target that names no agent.
+    isFleetCommandName(review.command) ||
     isHostCommandName(review.command) ||
     isShellUiCommandName(review.command) ||
     // MAR-507. In this list for the plainest reason of all: performing one
@@ -1644,7 +1743,7 @@ export interface DispatchContext {
    * to render and to log.
    */
   connectionAction(
-    action: ConnectionAction,
+    action: ConnectionAction | FleetAction,
     target: { agent_id: string; connection_id: string; field_id: string },
   ): Promise<ConnectionActionResult>;
   /**
@@ -1877,6 +1976,35 @@ export async function dispatchCommand(
       agent_id: String(review.payload["agent_id"]),
       connection_id: String(review.payload["connection_id"]),
       field_id: String(review.payload["field_id"]),
+    });
+    return {
+      ok: result.ok,
+      request_id: review.audit.request_id,
+      detail: result.detail,
+      recovery: result.recovery,
+      data: { state: result.state, masked_hint: result.masked_hint ?? "" },
+    };
+  }
+
+  if (isFleetCommandName(review.command)) {
+    /*
+     * MAR-593, ADR 0013. The principal is supplied here, never accepted.
+     *
+     * `fleet.*` declares one payload key and it is a provider, so there is no
+     * member a renderer could put an agent id in — the same shape the audit
+     * catalogue argues for above, and the same argument `registerCommandChannel`
+     * makes about the actor: the request that arrived over IPC is not consulted
+     * for who it is on behalf of, and cannot be.
+     *
+     * `field_id` is empty on purpose. The catalogue owns which field a fleet
+     * connector holds; `performFleetAction` resolves it and ignores whatever is
+     * here, so a value in this slot could only ever be a lie about a decision
+     * this side does not make.
+     */
+    const result = await context.connectionAction(FLEET_ACTIONS[review.command], {
+      agent_id: FLEET_PRINCIPAL,
+      connection_id: String(review.payload["provider"]),
+      field_id: "",
     });
     return {
       ok: result.ok,

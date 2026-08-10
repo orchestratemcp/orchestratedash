@@ -71,6 +71,19 @@ export interface ConnectionCommandArgs {
 }
 
 /**
+ * What the renderer may say about a fleet command (MAR-593, ADR 0013).
+ *
+ * One id, and it is a provider. There is no agent here and no field: a fleet act
+ * names a service, and which credential that service holds is the catalogue's
+ * answer rather than a page's. The absence is the same one
+ * `ConnectionCommandArgs` has about a value, for the same reason — a member a
+ * page could fill is a decision a page could get wrong.
+ */
+export interface FleetCommandArgs {
+  provider: string;
+}
+
+/**
  * The unsecret server facts a renderer may offer DASH (MAR-536).
  *
  * Key material and paths are deliberately not representable. Main owns those
@@ -227,6 +240,19 @@ interface DashShellClient {
   connectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   testConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   disconnectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
+  /**
+   * The four fleet commands (MAR-593, ADR 0013).
+   *
+   * Optional for the reason every method added since the host family is, and the
+   * degradation here is the one worth stating: a shell older than these draws
+   * the Connections page — the catalogue and what DASH holds both come through
+   * the view and need no bridge — and cannot connect anything on it. So the page
+   * reads correctly and refuses to act, which is the right way round.
+   */
+  connectFleet?(args: FleetCommandArgs): Promise<CommandResult>;
+  testFleet?(args: FleetCommandArgs): Promise<CommandResult>;
+  disconnectFleet?(args: FleetCommandArgs): Promise<CommandResult>;
+  shareFleet?(args: FleetCommandArgs): Promise<CommandResult>;
   /**
    * Optional for the same reason as the workspace and runner methods: a shell
    * built before the host command family has a bridge, but cannot make, check
@@ -929,6 +955,44 @@ export async function submitConnectionCommand(
       throw new Error(`Unhandled connection command: ${String(unreachable)}`);
     }
   }
+}
+
+/**
+ * Submit one fleet action through its named preload method (MAR-593).
+ *
+ * The switch is `submitConnectionCommand`'s and exists for its reason: a generic
+ * `fleet(action, provider)` would let page script address whatever the fifth
+ * verb turns out to be. Nothing in the arguments or the return value can hold a
+ * credential — `connect` asks main to open its own prompt or its own sign-in
+ * window, and what happens in either never comes back through here.
+ *
+ * A missing method is a shell older than this feature, and it refuses with the
+ * sentence that names the actual next step rather than throwing on a control the
+ * person just pressed.
+ */
+export async function submitFleetCommand(
+  action: "connect" | "test" | "disconnect" | "share",
+  args: FleetCommandArgs,
+): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  const method =
+    action === "connect"
+      ? bridge?.connectFleet
+      : action === "test"
+        ? bridge?.testFleet
+        : action === "disconnect"
+          ? bridge?.disconnectFleet
+          : bridge?.shareFleet;
+
+  if (bridge === undefined || method === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to connect a service.",
+    };
+  }
+  return method.call(bridge, args);
 }
 
 /**

@@ -284,6 +284,25 @@ const dashShell = {
   disconnectConnection: (args: ConnectionArgs) => send("connection.disconnect", { ...args }),
 
   /**
+   * The four fleet commands (MAR-593, ADR 0013).
+   *
+   * The same discipline one line up, on a target that names no agent: each
+   * carries a provider and nothing else. Page script cannot name the principal a
+   * fleet act stands under — `lib/shell/ipc.ts` supplies it — so it can neither
+   * aim a fleet act at an agent nor an agent act at the fleet.
+   *
+   * `shareFleet` is the only one of the four that opens no window and contacts
+   * nobody: it hands agents a consent DASH already holds. It is a separate named
+   * method rather than a flag on `connectFleet` for this object's standing
+   * reason — a reviewer counting the ways page script can cause a sign-in should
+   * find them by name.
+   */
+  connectFleet: (args: { provider: string }) => send("fleet.connect", { ...args }),
+  testFleet: (args: { provider: string }) => send("fleet.test", { ...args }),
+  disconnectFleet: (args: { provider: string }) => send("fleet.disconnect", { ...args }),
+  shareFleet: (args: { provider: string }) => send("fleet.share", { ...args }),
+
+  /**
    * The host actions (MAR-536/MAR-556), one named method each.
    *
    * `createHost` receives only ordinary connection facts and returns only the

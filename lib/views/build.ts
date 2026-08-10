@@ -36,6 +36,10 @@ import { connectableFields, type CredentialKind } from "../connection-credential
 import { describeEvidenceRecord } from "../copy/evidence";
 import { describeStoreDamage } from "../copy/recovery";
 import { deriveConnectionRequirements, type ConnectionSourceManifest } from "../connections";
+import { fleetCatalogue } from "../fleet/catalogue";
+import { describeFleetReach, fleetReach } from "../fleet/grants";
+import { readFleetConnection, withheldAgents } from "../fleet/store";
+import { describePermissions, oauthProviderById } from "../oauth/providers";
 import { sameHostIdentity } from "../hosts";
 import {
   readAgentDomState,
@@ -107,6 +111,7 @@ import type {
   BrokerRowView,
   ConnectionRowWithCredential,
   ConnectionsView,
+  FleetConnectorView,
   HostsView,
   NotificationsView,
   PlannedStepView,
@@ -848,6 +853,11 @@ export function connectionsView(store: StoreShape = readStore()): ConnectionsVie
   }
 
   return {
+    // MAR-593. What DASH can connect, computed from the catalogue and the fleet
+    // tables rather than from any of the agents above — which is the whole point
+    // of it, and why this line still produces cards on a store holding no agents
+    // at all.
+    fleet: fleetConnectorViews(capable),
     agents: capable.map(({ name, manifest }) => {
       const rows = connectionRowsFor(name, manifest, agentsByProvider);
 
@@ -868,6 +878,85 @@ export function connectionsView(store: StoreShape = readStore()): ConnectionsVie
       .filter((agent) => agent.manifest_version === 1)
       .map((agent) => agent.name),
   };
+}
+
+/**
+ * The fleet cards (MAR-593, ADR 0013).
+ *
+ * Every connector DASH offers, whether or not it is connected and whether or not
+ * any agent has asked for it. A catalogue entry with nothing connected is not an
+ * empty state to be filtered out — it is the thing a person came to this page to
+ * do, and the page that hid it is the one this issue exists to replace.
+ *
+ * The reach is computed with `fleetReach` rather than restated, so the sentence
+ * a person reads before they press and the list the press actually walks are one
+ * fact. `capable` arrives already read: this runs inside `connectionsView`, which
+ * has the manifests in hand, and re-reading them per connector would be a query
+ * per card on every render.
+ */
+export function fleetConnectorViews(
+  capable: ReadonlyArray<{ name: string; manifest: ConnectionSourceManifest }>,
+): FleetConnectorView[] {
+  const candidates = capable.map(({ name, manifest }) => ({
+    agent_id: name,
+    manifest,
+  }));
+
+  return fleetCatalogue().map((connector) => {
+    const stored = readFleetConnection(connector.provider);
+    const reach = fleetReach(connector, candidates, withheldAgents(connector.provider));
+    const flow =
+      connector.oauth === null ? null : oauthProviderById(connector.oauth.provider_id);
+
+    const agents = reach.materializes.map((one) => ({
+      agent: one.agent_id,
+      // Whether this agent holds it *now*, from the same reference table
+      // `credentialStatus` reads — never from the fleet row, which says what the
+      // person gave DASH and not what reached each agent.
+      connected: heldCredentials(one.agent_id).some(
+        (entry) =>
+          entry.connection_id === one.target.connection_id &&
+          entry.field_id === one.target.field_id &&
+          entry.masked_hint !== null,
+      ),
+    }));
+
+    return {
+      provider: connector.provider,
+      service: connector.service,
+      connector_kind: connector.connector_kind,
+      purpose: connector.purpose,
+      help: connector.help,
+      capabilities: connector.capabilities.map((capability) => ({
+        id: capability.id,
+        label: capability.label,
+        access: capability.access,
+        consequence: capability.consequence,
+      })),
+      wider_permissions: connector.wider_permissions,
+      held:
+        stored === null
+          ? null
+          : {
+              masked_hint: stored.masked_hint,
+              account_hint: stored.account_hint,
+              since: plainDay(stored.connected_at) ?? null,
+              // DASH's own sentences for what the consent issued. Raw scopes are
+              // forbidden on a guided surface by `lib/copy/identifiers.ts`, and
+              // an empty list for a key is the true answer rather than a gap —
+              // ADR 0002 amendment 5: there is nothing to intersect.
+              permissions: flow === null ? [] : describePermissions(flow, stored.scopes),
+            },
+      agents,
+      skipped: reach.skipped.map((one) => ({ agent: one.agent_id, reason: one.reason })),
+      // Only meaningful once something is connected: with nothing held, every
+      // qualifying agent is waiting for a connection rather than for a share,
+      // and a card offering to hand out a credential DASH does not have would be
+      // the dead button this codebase keeps closing vocabularies to prevent.
+      waiting: stored === null ? [] : agents.filter((one) => !one.connected).map((one) => one.agent),
+      reach_sentence: describeFleetReach(connector, reach),
+    };
+  });
 }
 
 /* ---------------------------------------------------------------------- *

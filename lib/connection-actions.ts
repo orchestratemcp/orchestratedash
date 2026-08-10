@@ -52,6 +52,8 @@ import {
   serializeOAuthCredential,
   type OAuthCredential,
 } from "./oauth/credential";
+import { adoptFleetCredential, noteAgentDecision, performFleetAction } from "./fleet/actions";
+import { isFleetPrincipal } from "./fleet/principal";
 import { describePermissions, oauthProviderById } from "./oauth/providers";
 import {
   forgetSecretReference,
@@ -96,7 +98,17 @@ export type CredentialState =
   /** DASH may not hold this one — agent-managed, external, or not declared. */
   | "not_held_by_dash";
 
-export type ConnectionActionName = "connect" | "test" | "disconnect";
+/**
+ * `share` is a fleet verb and is refused for an agent (MAR-593).
+ *
+ * Widened here rather than given a dependency of its own, and that is the whole
+ * reason the fleet commands need no change in `electron/main.ts`: main injects
+ * `connectionAction` as an arrow whose parameter types come from this union, so
+ * a fourth member arrives at `performConnectionAction` with the vault, the
+ * prompt, the sign-in and the provider probe already wired. Every seam a fleet
+ * connection needs was already being supplied to the per-agent one.
+ */
+export type ConnectionActionName = "connect" | "test" | "disconnect" | "share";
 
 export interface ConnectionActionResult {
   ok: boolean;
@@ -349,6 +361,20 @@ export async function performConnectionAction(
   target: ConnectionActionTarget,
   deps: ConnectionActionDeps,
 ): Promise<ConnectionActionResult> {
+  /*
+   * MAR-593, ADR 0013. A target standing for the fleet rather than an agent.
+   *
+   * First, before the manifest read, because there is no manifest to read: a
+   * fleet connection is resolved against `lib/fleet/catalogue.ts` instead. The
+   * branch is here rather than at the IPC seam so that both kinds of target
+   * reach the vault through one function with one set of dependencies — the
+   * property that let the fleet commands ship without `electron/main.ts`
+   * learning about them.
+   */
+  if (isFleetPrincipal(target.agent_id)) {
+    return performFleetAction(action, target.connection_id, deps);
+  }
+
   const manifest = deps.readManifest(target.agent_id);
   if (manifest === null) {
     return {
@@ -382,6 +408,92 @@ export async function performConnectionAction(
   const credential = resolved.target;
   const backing = deps.store.describeBacking();
 
+  /*
+   * MAR-593. What this agent's connection is a connection *to*.
+   *
+   * Non-null by construction — `resolveCredentialTarget` found the connection in
+   * order to succeed — and read again here rather than carried on the target,
+   * because `CredentialTarget` deliberately holds the *service* a person reads
+   * and not the provider string, and adding one for this would put machine
+   * vocabulary on a type that crosses to the credential prompt.
+   */
+  const declaredProvider =
+    manifest.agent_dom?.connections?.find(
+      (connection) => connection.id === target.connection_id,
+    )?.provider ?? "";
+
+  if (action === "share") {
+    // A fleet verb aimed at an agent. Refused rather than quietly treated as a
+    // connect: `share` means "give out a consent DASH already holds", and there
+    // is no such thing to give out for a connection that belongs to one agent.
+    return {
+      ok: false,
+      state: "not_held_by_dash",
+      masked_hint: hintFor(target),
+      detail: `${credential.service} is connected for one agent at a time here, so there is nothing to share.`,
+    };
+  }
+
+  if (action === "connect") {
+    /*
+     * The consent DASH already holds, rather than a second consent screen.
+     *
+     * Null when there is no fleet connection for this provider, or when this
+     * agent does not qualify for it — in which case the ordinary flow below runs
+     * exactly as it always has. This is also what puts a revoked agent back:
+     * pressing Connect on its own row is the decision, and `adoptFleetCredential`
+     * records it before it writes.
+     */
+    const adopted = await adoptFleetCredential(declaredProvider, target.agent_id, deps);
+    if (adopted !== null) {
+      return adopted;
+    }
+  }
+
+  const result = await performDeclaredAction(
+    action,
+    target,
+    credential,
+    manifest,
+    backing,
+    deps,
+  );
+
+  /*
+   * The decision this press just made about a fleet connection.
+   *
+   * After the action and only when it succeeded, so a refused disconnect leaves
+   * no decision behind it. Silent when the provider has no fleet connection,
+   * which is every connection DASH held before ADR 0013.
+   */
+  if (result.ok && (action === "connect" || action === "disconnect")) {
+    noteAgentDecision(
+      declaredProvider,
+      target.agent_id,
+      action === "connect" ? "granted" : "withheld",
+      new Date().toISOString(),
+    );
+  }
+  return result;
+}
+
+/**
+ * The three verbs against a connection an agent declared — everything this
+ * function did before MAR-593 gave it a caller.
+ *
+ * Split out so `performConnectionAction` above can wrap it: the fleet branch, the
+ * adoption and the decision record all have to happen either side of this body,
+ * and threading them through it would have put fleet knowledge inside three
+ * branches that have no business holding any.
+ */
+async function performDeclaredAction(
+  action: Exclude<ConnectionActionName, "share">,
+  target: ConnectionActionTarget,
+  credential: CredentialTarget,
+  manifest: ConnectionSourceManifest,
+  backing: ReturnType<SecureStore["describeBacking"]>,
+  deps: ConnectionActionDeps,
+): Promise<ConnectionActionResult> {
   if (credential.kind === "oauth") {
     return performOAuthAction(action, credential, backing.label, manifest, deps);
   }
@@ -513,7 +625,7 @@ export async function performConnectionAction(
  * person approves is the list a request will actually be allowed to use.
  */
 async function performProviderKeyAction(
-  action: ConnectionActionName,
+  action: Exclude<ConnectionActionName, "share">,
   credential: CredentialTarget,
   vaultLabel: string,
   manifestForGrant: ConnectionSourceManifest,
@@ -613,7 +725,7 @@ async function readGrant(store: SecureStore, secretName: string): Promise<Stored
  * `lib/oauth/providers.ts`.
  */
 async function performOAuthAction(
-  action: ConnectionActionName,
+  action: Exclude<ConnectionActionName, "share">,
   credential: CredentialTarget,
   vaultLabel: string,
   /** The agent's manifest, for resolving the grant a receipt describes (MAR-458). */
