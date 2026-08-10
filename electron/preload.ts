@@ -151,6 +151,52 @@ function sendHostCreate(args: HostCreateArgs): Promise<CommandResult> {
   }) as Promise<CommandResult>;
 }
 
+/**
+ * One step's level, as a mixed string/number payload (MAR-583).
+ *
+ * `sendHostCreate`'s shape and its rule: every field copied explicitly, so a
+ * page cannot put anything at the command boundary merely to have it refused
+ * later. It is the second command in DASH that carries a number and the second
+ * function here that can send one, rather than `send` being widened — which
+ * would let every string-only method start carrying numbers on the day one of
+ * them needed to.
+ */
+function sendStepLevel(args: {
+  agent_id: string;
+  step: number;
+  level?: string;
+}): Promise<CommandResult> {
+  return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
+    command: "model.step",
+    request_id: requestId(),
+    payload:
+      args.level === undefined
+        ? { agent_id: args.agent_id, step: args.step }
+        : { agent_id: args.agent_id, step: args.step, level: args.level },
+  }) as Promise<CommandResult>;
+}
+
+/**
+ * Drop the optional fields a caller left unset (MAR-583).
+ *
+ * `fields` above does the same for the Agent DOM commands, from an allowlist of
+ * keys. This one works over a caller's own object because the three model
+ * methods each declare their own shape in the API type above, and the boundary
+ * denies a payload key it did not declare either way. What it buys is that an
+ * absent value stays absent: sending `model_id: undefined` would serialise to a
+ * key with no value, and an empty string is exactly what `dispatchCommand` reads
+ * as "not set" — so the two agree instead of relying on one of them being right.
+ */
+function dropUnset(args: Record<string, string | undefined>): Record<string, string> {
+  const payload: Record<string, string> = {};
+  for (const [key, value] of Object.entries(args)) {
+    if (value !== undefined) {
+      payload[key] = value;
+    }
+  }
+  return payload;
+}
+
 /** Drop unset optional fields: the boundary denies a payload key it did not declare. */
 function fields(args: AgentCommandArgs, keys: readonly (keyof AgentCommandArgs)[]): Record<string, string> {
   const payload: Record<string, string> = {};
@@ -331,6 +377,42 @@ const dashShell = {
    * whose reachable surface grows without a review.
    */
   markAgentLooked: (args: { agent_id: string }) => send("glance.looked", { ...args }),
+
+  /**
+   * The three model commands (MAR-583).
+   *
+   * Three named methods rather than one `model(action, target)`, like every group
+   * above: a generic entry point is one whose reachable surface grows without a
+   * review.
+   *
+   * `chooseModel` is the only method on this bridge that carries a value taken
+   * from a **provider's** answer — a model id, which arrived in a `listModels`
+   * result and went back through the page. That is why main checks it with
+   * `isModelId` rather than trusting its provenance: a value that has been
+   * through page script is a value page script could have replaced, and the fact
+   * that DASH itself produced the list a moment ago says nothing about what came
+   * back.
+   *
+   * Omitting `model_id` is how an agent goes back to matching each step, and
+   * omitting `level` is how one step goes back to what its plan asked for. The
+   * absent field is the instruction, so neither needs a second method and neither
+   * can be spelled as a magic value main would have to recognise.
+   */
+  chooseModel: (args: {
+    agent_id: string;
+    connection_id?: string;
+    field_id?: string;
+    model_id?: string;
+  }) => send("model.choose", dropUnset(args)),
+  setStepLevel: (args: { agent_id: string; step: number; level?: string }) =>
+    // Explicit fields rather than a spread, `sendHostCreate`'s rule, and the one
+    // command outside the host form that carries a number. An absent `level` is
+    // the instruction to put that step back on its plan's own answer, so it is
+    // dropped rather than sent as an empty string the boundary would have to
+    // interpret.
+    sendStepLevel(args),
+  listModels: (args: { agent_id: string; connection_id: string; field_id: string }) =>
+    send("model.list", { ...args }),
 
   /**
    * The runner's own health, and its one repair (MAR-518).

@@ -43,6 +43,7 @@ function run(agent: string, status: RunRow["status"], lastEventAt: string): RunR
     has_sequence_gap: false,
     known_agent: true,
     analysis: null,
+    model: null,
   };
 }
 

@@ -3397,3 +3397,138 @@ button:disabled {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ── Which model an agent uses (MAR-583) ─────────────────────────────────── */
+
+.model-choice {
+  display: grid;
+  gap: var(--density-gap);
+}
+
+/*
+ * What DASH would use right now, and the one line on this section a person
+ * reads if they read nothing else. Given the accent so it separates from the
+ * explanation above it without becoming a heading — this is a *state*, and a
+ * second heading would make it look like a second topic.
+ */
+.model-in-force {
+  margin: 0;
+  padding: var(--space-3);
+  border-left: var(--active-bar) solid var(--accent);
+  background: var(--surface-2);
+  font-weight: 600;
+}
+
+/* The one next step, when there is nothing to choose yet. */
+.model-next {
+  margin: 0;
+  font-weight: 600;
+}
+
+.model-picker {
+  display: grid;
+  gap: var(--space-2);
+  /* Capped so a dropdown of model names does not stretch the full width of a
+     1280px window; the same cap the folder note takes for its caption. */
+  max-width: 46ch;
+}
+
+.model-picker-ask {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.model-picker-ask .muted {
+  margin: 0;
+  font-size: var(--text-sm);
+  max-width: 46ch;
+}
+
+/*
+ * The per-step levels, folded away. `details` and not a toggle we drew: it is
+ * the platform's own disclosure, it keeps its state without a hook, and a
+ * keyboard reaches it without anything being wired.
+ */
+.model-steps > summary {
+  cursor: pointer;
+  padding: var(--space-2) 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.model-steps > summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.model-steps > .muted {
+  margin: 0 0 var(--space-3);
+  max-width: 60ch;
+}
+
+.model-step-list {
+  margin-top: var(--space-2);
+}
+
+.model-step {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--density-card-p);
+  border: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.model-step-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.model-step-number {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.model-step p {
+  margin: 0;
+  max-width: 60ch;
+}
+
+.model-step .field {
+  max-width: 32ch;
+}
+
+/* The read-only rendering, for a window that cannot act. */
+.model-step-static {
+  font-weight: 600;
+}
+
+/*
+ * What a run started under. Not a status and not a verdict, so it carries no
+ * colour from the green/amber/red system — it is a fact about a setting, and a
+ * fleet of coloured model lines would dilute the one colour vocabulary on this
+ * page that means something about health.
+ */
+.run-model {
+  margin: 0 0 var(--density-stack);
+  max-width: 80ch;
+}
+
+.run-model-line {
+  margin: 0;
+}
+
+.run-model-label {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}

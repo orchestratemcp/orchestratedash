@@ -1,0 +1,453 @@
+/**
+ * Which model an agent uses, as a decision a person made (MAR-583).
+ *
+ * Two questions, kept apart because they have different owners:
+ *
+ * 1. **What does each step need?** The agent's author answered that, per step,
+ *    in `planned_route[].default_model_level`. `lib/ai/model-levels.ts` reads it.
+ * 2. **Which model does that become?** The person running the agent answers
+ *    that, and this module is their answer.
+ *
+ * Pure, with no store and no network. `lib/ai/model-store.ts` persists what is
+ * decided here and `lib/views/build.ts` projects it; a test drives every state
+ * with three plain objects.
+ *
+ * ## Absence is the recommended answer, and that is deliberate
+ *
+ * A person who never opens this control gets `match_each_step`: every step runs
+ * at the level its author declared for it. There is no row until somebody
+ * chooses otherwise, so "nobody has touched this" and "somebody chose the
+ * default" are the same state and DASH does not have to tell them apart. The
+ * same argument `ai_key_checks` makes for having no row until a provider is
+ * asked.
+ *
+ * ## What DASH will not say
+ *
+ * **What any of this costs.** Not an estimate, not a per-token price, not a
+ * comparison. MAR-299 owns cost, and it owns it because a number DASH made up
+ * about somebody else's bill is worse than no number — a person who is told an
+ * agent costs "about a cent a run" and finds four dollars on their statement has
+ * been misled by DASH, not by the provider. So every sentence below is about
+ * *capability*: cheaper models are described as smaller, and the reason to pick
+ * one is that the step does not need more. When actual numbers exist, they join
+ * onto the run rows this module already records against.
+ *
+ * **Which model actually ran.** DASH makes no completion call — MAR-582's
+ * recorded boundary is that the key layer has one operation and it lists models
+ * — so DASH has never observed a model doing an agent's work. What it records
+ * per run is *its own setting at the moment the run started*, which it did
+ * observe, and every sentence says so in those words. `agent_deploys` keeps the
+ * same discipline about somebody else's server.
+ */
+
+import {
+  strongestLevel,
+  levelLabel,
+  type DefaultModelLevel,
+  type ModelStep,
+} from "./model-levels";
+
+/* ---------------------------------------------------------------------- *
+ * The choice
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What a person decided for one agent.
+ *
+ * Two members and no third. There is no "cheapest available" or "whatever is
+ * fastest" option, because DASH would have to rank somebody else's catalogue to
+ * honour one, and a ranking DASH invented is exactly the made-up number the
+ * header refuses.
+ */
+export type AgentModelChoice =
+  /**
+   * Every step runs at the level its author declared. The default, and what an
+   * agent with no stored row is in.
+   */
+  | { kind: "match_each_step" }
+  /** One named model for the whole agent, whatever any step declared. */
+  | { kind: "one_model"; provider_id: string; model_id: string };
+
+/** The choice an agent with no stored row is in. */
+export function matchEachStep(): AgentModelChoice {
+  return { kind: "match_each_step" };
+}
+
+/**
+ * One step, with what its author asked for and what is in force.
+ *
+ * `declared` and `level` are both present even when they agree, so a surface can
+ * say "this is the plan's own answer" without inferring it from an equality
+ * check it might get backwards.
+ */
+export interface ResolvedModelStep extends ModelStep {
+  /** The level the manifest declared. Never changes with a person's choice. */
+  declared: DefaultModelLevel;
+  /** True when a person set this step's level to something else. */
+  overridden: boolean;
+}
+
+/**
+ * Fold a person's per-step overrides onto what the manifest declared.
+ *
+ * An override naming a step this manifest no longer has is dropped rather than
+ * appended. A manifest is re-imported whenever its author publishes, and a plan
+ * that lost a step should not leave a control on screen pointing at nothing —
+ * `aiKeyConnections` drops a vault entry for an undeclared field for the same
+ * reason, and states it: the manifest is the list of what to show.
+ */
+export function resolveModelSteps(
+  steps: readonly ModelStep[],
+  overrides: ReadonlyMap<number, DefaultModelLevel>,
+): ResolvedModelStep[] {
+  return steps.map((step) => {
+    const override = overrides.get(step.step);
+    return {
+      ...step,
+      declared: step.level,
+      level: override ?? step.level,
+      overridden: override !== undefined && override !== step.level,
+    };
+  });
+}
+
+/* ---------------------------------------------------------------------- *
+ * What the surface is allowed to offer
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Why there is no model to choose, when there is not.
+ *
+ * A closed set, in `ConnectFlowRefusal`'s shape and for its reason: a control
+ * that is absent with no sentence beside it is a dead end the surface cannot
+ * describe. Every member below has a sentence in `describeNoChoice`.
+ */
+export type NoModelChoiceReason =
+  /** The plan has no step that needs a language model. Nothing to decide. */
+  | "no_model_needed"
+  /**
+   * The plan needs a model and this agent declares no connection DASH can ask
+   * for a model list — either it arranges its own, or it names a service outside
+   * `lib/ai/providers.ts`. The sentence covers both because the manifest does not
+   * distinguish them and DASH must not guess which one it is looking at.
+   */
+  | "no_provider_key"
+  /** There is a connection DASH could ask, and no key in the vault yet. */
+  | "no_key_held";
+
+export interface NoModelChoice {
+  can_choose: false;
+  reason: NoModelChoiceReason;
+  headline: string;
+  detail: string;
+  /** Null exactly when there is nothing for the person to do. */
+  next_action: string | null;
+}
+
+export interface ModelChoiceAvailable {
+  can_choose: true;
+  provider_id: string;
+  provider_label: string;
+  connection_id: string;
+  headline: string;
+  detail: string;
+  next_action: string | null;
+}
+
+export type ModelChoiceStanding = NoModelChoice | ModelChoiceAvailable;
+
+/**
+ * What DASH can say when there is no model to pick.
+ *
+ * Each of the three blames the right thing. `no_model_needed` blames nobody and
+ * offers nothing to do. `no_provider_key` describes an arrangement rather than a
+ * fault — an agent that manages its own model is a perfectly ordinary agent, and
+ * sending its owner off to connect something would send them looking for a
+ * screen that could not help — and it says both of the things it might be,
+ * because the manifest does not distinguish them. `no_key_held` is the one with
+ * a real next step.
+ */
+export function describeNoChoice(
+  reason: NoModelChoiceReason,
+  providerLabel: string | null,
+): NoModelChoice {
+  switch (reason) {
+    case "no_model_needed":
+      return {
+        can_choose: false,
+        reason,
+        headline: "This agent does not use a language model",
+        detail:
+          "Every step in its plan does something fixed — fetching, reading, writing a file — " +
+          "so there is no model to choose and nothing here would change what it does.",
+        next_action: null,
+      };
+
+    case "no_provider_key":
+      return {
+        can_choose: false,
+        reason,
+        headline: "DASH does not choose this agent's model",
+        detail:
+          "Its plan needs a language model, and DASH is not what decides which one. Either the " +
+          "agent is set up with its own, or it names a service DASH has not been built to ask. " +
+          "Either way there is no list of models DASH could show you, and it will not invent one.",
+        next_action: null,
+      };
+
+    case "no_key_held":
+      return {
+        can_choose: false,
+        reason,
+        headline: `Connect a ${providerLabel ?? "provider"} key to choose a model`,
+        detail:
+          "This agent's plan needs a language model, and DASH holds no key for the service it " +
+          "named. Until it does there is nothing to choose between — DASH will not offer you a " +
+          "menu it has not been able to ask for.",
+        next_action: "Connect the key on the Connections page",
+      };
+  }
+}
+
+/**
+ * What DASH says once there really is a choice to make.
+ *
+ * The detail names what the default does, because the default is what almost
+ * everybody should leave it on and a control whose recommended setting is
+ * unexplained is a control people change for no reason.
+ */
+export function describeChoiceAvailable(
+  providerLabel: string,
+  stepCount: number,
+): { headline: string; detail: string } {
+  return {
+    headline: `Choose which ${providerLabel} model this agent uses`,
+    detail:
+      stepCount === 0
+        ? "This agent was exported before its steps could say what they need, so DASH has no " +
+          "per-step answer for it. Pick one model and every step that needs one will use it."
+        : stepCount === 1
+          ? "One step in this agent's plan needs a model. Left as it is, that step runs at the " +
+            "level its plan asked for; name a model instead and it uses that one."
+          : `${String(stepCount)} steps in this agent's plan need a model, and they do not all ` +
+            "need the same strength. Left as it is, each runs at the level its plan asked for; " +
+            "name a model instead and every one of them uses that.",
+  };
+}
+
+/* ---------------------------------------------------------------------- *
+ * What is in force, in one sentence
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What DASH would use right now, said plainly.
+ *
+ * The one sentence a person reads to know where they stand, and it is written to
+ * be true whether or not they have ever opened the control. It names the model
+ * when a model is named and describes the levels when it is not; it never
+ * reports a level as though it were a model, because the whole point of a level
+ * is that no model has been picked yet.
+ */
+export function describeInForce(
+  choice: AgentModelChoice,
+  steps: readonly ResolvedModelStep[],
+): string {
+  if (choice.kind === "one_model") {
+    return `Every step that needs a model uses ${choice.model_id}.`;
+  }
+  if (steps.length === 0) {
+    return "DASH has no per-step answer for this agent, so nothing here is set.";
+  }
+  const strongest = strongestLevel(steps.map((step) => step.level));
+  const distinct = new Set(steps.map((step) => step.level));
+  if (distinct.size === 1 && strongest !== null) {
+    return steps.length === 1
+      ? `The one step that needs a model asks for: ${levelLabel(strongest).toLowerCase()}.`
+      : `All ${String(steps.length)} steps that need a model ask for the same thing: ${levelLabel(strongest).toLowerCase()}.`;
+  }
+  return (
+    `${String(steps.length)} steps need a model and they ask for different strengths — ` +
+    `the most demanding wants ${levelLabel(strongest ?? "frontier").toLowerCase()}.`
+  );
+}
+
+/**
+ * The sentence under the step disclosure when it is not in force.
+ *
+ * Returned rather than the disclosure being hidden, because hiding a control
+ * whose settings still exist is how somebody comes back in a month and finds an
+ * agent behaving in a way nothing on screen explains.
+ */
+export function describeStepsNotInForce(modelId: string): string {
+  return (
+    `These are set aside while every step uses ${modelId}. They come back into force if you ` +
+    "go back to matching each step."
+  );
+}
+
+/* ---------------------------------------------------------------------- *
+ * What travels in a deploy bundle (MAR-583)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The choice, as a document that can go on a server.
+ *
+ * **Configuration and never a credential.** There is no key in this shape and
+ * there is no field one could be put in: what travels is which model the person
+ * picked and what each step asked for, which is a setting, and the key stays in
+ * this computer's vault. `produceAgentFolderBundle` refuses the deploy outright
+ * for the case where that difference would matter — see its own note.
+ *
+ * Levels are frozen into it rather than left to be re-read from the manifest on
+ * the far side. The manifest travels in the same bundle, so re-reading would
+ * agree today; freezing them means the document says what DASH resolved,
+ * including a person's overrides, which the manifest does not know about.
+ */
+export interface BundledModelChoice {
+  agent_id: string;
+  choice: AgentModelChoice["kind"];
+  /** Set exactly when `choice` is `one_model`. */
+  provider_id: string | null;
+  model_id: string | null;
+  steps: Array<{ step: number; level: DefaultModelLevel }>;
+}
+
+/**
+ * The document, from what DASH resolved.
+ *
+ * Pure, and it takes the resolved steps rather than a manifest, so the one place
+ * a level is decided stays `resolveModelSteps` — a second resolution here would
+ * be free to disagree with the one the person is looking at on screen.
+ */
+export function bundledModelChoice(
+  agentId: string,
+  choice: AgentModelChoice,
+  steps: readonly ResolvedModelStep[],
+): BundledModelChoice {
+  return {
+    agent_id: agentId,
+    choice: choice.kind,
+    provider_id: choice.kind === "one_model" ? choice.provider_id : null,
+    model_id: choice.kind === "one_model" ? choice.model_id : null,
+    steps: steps.map((step) => ({ step: step.step, level: step.level })),
+  };
+}
+
+/**
+ * Why a bundle was refused over its model, in DASH's own words.
+ *
+ * Exported as a constant for `MANIFEST_ONLY_DEPLOY_REFUSAL`'s reason: it reaches
+ * the audited command result, a test pins it by value, and a sentence composed
+ * where the refusal happens is a sentence that gets reworded by the next person
+ * who touches that function.
+ *
+ * It says the *smaller true thing*. Not "this agent cannot run there" — DASH has
+ * no idea what is on that server — but "the key DASH holds is not going, so the
+ * copy DASH would put there has nothing to reach a model with". That is a fact
+ * about what DASH does, which is the only kind of claim `lib/server-card.ts`
+ * lets DASH make about somebody else's machine.
+ */
+export const MODEL_KEY_STAYS_HOME_REFUSAL =
+  "This agent's plan needs a language model, and the key for it is one DASH keeps in this " +
+  "computer's vault. DASH does not send keys to a server, so the copy it would put there " +
+  "would have no way to reach a model. Nothing was sent.";
+
+/* ---------------------------------------------------------------------- *
+ * The run record
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What DASH's setting was when one run started.
+ *
+ * Stored per run and never revised — see `lib/ai/model-store.ts` for why the
+ * first observation wins. `recorded_at` is DASH's own clock, so this is a fact
+ * DASH witnessed rather than one an agent reported.
+ */
+export interface RunModelRecord {
+  choice: AgentModelChoice;
+  recorded_at: string;
+}
+
+/**
+ * What a run row says about its model.
+ *
+ * Short, because it goes in a list beside a status and a time. The long form is
+ * `describeRunModelDetail`, which the run's own page has room for.
+ *
+ * **Never a cost.** There is no field here for one and there will not be until
+ * MAR-299 has numbers that came from a provider rather than from arithmetic DASH
+ * did over a price list it does not have.
+ */
+export function describeRunModel(record: RunModelRecord | null): string | null {
+  if (record === null) {
+    return null;
+  }
+  return record.choice.kind === "one_model"
+    ? record.choice.model_id
+    : "Matched to each step";
+}
+
+/**
+ * The same fact with the caveat that makes it honest.
+ *
+ * DASH did not watch a model answer. It watched its own setting, and the
+ * difference matters most on exactly the page where somebody is trying to work
+ * out why a run went the way it did.
+ */
+export function describeRunModelDetail(record: RunModelRecord | null): string | null {
+  if (record === null) {
+    return null;
+  }
+  if (record.choice.kind === "one_model") {
+    return (
+      `When this run started, this agent was set to use ${record.choice.model_id}. That is ` +
+      "DASH's own record of the setting, not a report from the model — DASH does not sit " +
+      "between this agent and its provider, so it cannot confirm which model answered."
+    );
+  }
+  return (
+    "When this run started, this agent was set to match each step to the level its plan asked " +
+    "for. DASH holds no record of which model each step then used: it does not sit between " +
+    "this agent and its provider."
+  );
+}
+
+/* ---------------------------------------------------------------------- *
+ * The copy sweep
+ * ---------------------------------------------------------------------- */
+
+/** Every sentence this module can produce, for the plain-language check. */
+export function everyModelChoiceSentence(): string[] {
+  const reasons: NoModelChoiceReason[] = ["no_model_needed", "no_provider_key", "no_key_held"];
+  const steps: ResolvedModelStep[] = [
+    { step: 1, component_id: "a", level: "cheap", declared: "cheap", overridden: false },
+    { step: 2, component_id: "b", level: "frontier", declared: "standard", overridden: true },
+  ];
+  const named: AgentModelChoice = {
+    kind: "one_model",
+    provider_id: "openrouter",
+    model_id: "a-model",
+  };
+
+  return [
+    ...reasons.flatMap((reason) => {
+      const sentence = describeNoChoice(reason, "OpenRouter");
+      return [
+        sentence.headline,
+        sentence.detail,
+        ...(sentence.next_action === null ? [] : [sentence.next_action]),
+      ];
+    }),
+    ...[0, 1, 2].flatMap((count) => {
+      const sentence = describeChoiceAvailable("OpenRouter", count);
+      return [sentence.headline, sentence.detail];
+    }),
+    describeInForce(matchEachStep(), []),
+    describeInForce(matchEachStep(), steps.slice(0, 1)),
+    describeInForce(matchEachStep(), steps),
+    describeInForce(matchEachStep(), [{ ...steps[1]!, level: "frontier" }]),
+    describeStepsNotInForce("a-model"),
+    describeRunModelDetail({ choice: named, recorded_at: "2026-08-10T09:00:00Z" }) ?? "",
+    describeRunModelDetail({ choice: matchEachStep(), recorded_at: "2026-08-10T09:00:00Z" }) ?? "",
+  ];
+}

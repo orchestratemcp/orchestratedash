@@ -14,6 +14,7 @@ import type {
   FolderAction,
   GlanceAction,
   HostAction,
+  ModelAction,
   SampleAction,
   WorkspaceAction,
 } from "../lib/shell/ipc";
@@ -166,6 +167,16 @@ describe("the audited command chokepoint", () => {
       // approval transfer to whatever an editor last saved. The payload is one
       // agent id — page script cannot supply the document, only name the agent
       // whose folder DASH should read.
+      // MAR-583. An eighth family: which model an agent uses. Two write DASH's
+      // own choice rows and reach nobody; the third presents the key DASH holds
+      // to a model provider and records the same liveness observation
+      // `connection.test` does. The renderer names an agent, a connection and a
+      // field — never a provider, an origin, a path or a key — and the one value
+      // it does supply from a provider's own answer, a model id, is checked
+      // again by main rather than trusted for having come from a list DASH made.
+      "model.choose",
+      "model.step",
+      "model.list",
       "folder.check",
       "folder.adopt",
       "folder.reveal",
@@ -440,6 +451,13 @@ describe("dispatch", () => {
     // `importManifest` and — for `reveal` — calls an Electron main API, none of
     // which exists in this process.
     const folders: Array<{ action: FolderAction; target: { agent_id: string } }> = [];
+    // MAR-583. Recorded rather than performed, for the same reason as the rest:
+    // two of the three write rows through `node:sqlite` and the third opens the
+    // operating system's vault and reaches a provider, none of which exists in
+    // this process. The fake holds no key and could not usefully: no credential
+    // is an argument to or a result of this call, which is `connectionAction`'s
+    // property one layer along.
+    const models: Array<{ action: ModelAction; target: Record<string, unknown> }> = [];
     return {
       audited,
       inputs,
@@ -448,6 +466,11 @@ describe("dispatch", () => {
       samples,
       looks,
       folders,
+      models,
+      modelAction: (action: ModelAction, target: Record<string, unknown>) => {
+        models.push({ action, target });
+        return Promise.resolve({ ok: true, detail: `${action} ok` });
+      },
       hosts,
       workspaces,
       menus,

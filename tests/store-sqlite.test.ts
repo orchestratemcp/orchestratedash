@@ -91,11 +91,12 @@ describe("schema", () => {
     // MAR-586's record of when the reader last opened an agent's page —
     // authored as 12, renumbered at the merge because MAR-582 reached master
     // first and installed databases had already recorded it — and 14 is
-    // MAR-584's record of what DASH sent to which server (ADR 0010).
+    // MAR-584's record of what DASH sent to which server (ADR 0010), and 15 is
+    // MAR-583's three tables for which model an agent uses.
     // Asserted as a number rather than as MIGRATIONS.length so that appending a
     // migration is a deliberate edit here too.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(15);
+    expect(version.user_version).toBe(16);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -123,6 +124,13 @@ describe("schema", () => {
     // there — the ADR bounds the columns, and the migration's own note says why
     // there is no `running` column for a later feature to reach for.
     expect(tables).toContain("agent_deploys");
+    // MAR-583. Three, and every one of them empty for an agent nobody has
+    // configured — the recommended setting needs no row to be in force. None of
+    // them has a cost column and none may grow one until MAR-299 has numbers
+    // that came from a provider rather than from DASH's own arithmetic.
+    expect(tables).toContain("agent_model_choice");
+    expect(tables).toContain("agent_step_levels");
+    expect(tables).toContain("run_models");
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -472,7 +480,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(15);
+    ).toBe(16);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

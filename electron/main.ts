@@ -52,9 +52,25 @@ import { heldCredentials, performConnectionAction } from "../lib/connection-acti
 import {
   deliverableFields,
   deliverableSecretFields,
+  resolveCredentialTarget,
   type CredentialTarget,
 } from "../lib/connection-credentials";
 import type { ConnectionSourceManifest } from "../lib/connections";
+import { listAiKeyModels } from "../lib/ai/actions";
+import {
+  bundledModelChoice,
+  resolveModelSteps,
+  type BundledModelChoice,
+} from "../lib/ai/model-choice";
+import { stepsNeedingAModel } from "../lib/ai/model-levels";
+import {
+  clearAgentModelChoice,
+  clearStepLevelOverride,
+  readAgentModelChoice,
+  readStepLevelOverrides,
+  writeAgentModelChoice,
+  writeStepLevelOverride,
+} from "../lib/ai/model-store";
 import {
   readDashLastAlive,
   recordClosedWindow,
@@ -175,6 +191,7 @@ import {
 } from "./ssh-host";
 import { authorizedKeysLine, buildBootstrapScript } from "../lib/host-bootstrap";
 import { classifyHostFailure, type HostReachProblem } from "../lib/host-connect";
+import type { Recovery } from "../lib/copy/recovery";
 
 /**
  * Where the renderer loads from.
@@ -625,7 +642,7 @@ export function registerCommandChannel(
           // key DASH holds. No window, no vault beyond the one read the action
           // already did, and no part of the answer beyond a status and a count —
           // see `probeModelProvider`, which is where all of that is enforced.
-          ai: { probe: (profile, key) => probeModelProvider(profile, key) },
+          ai: { probe: (profile, key, wantIds) => probeModelProvider(profile, key, fetch, wantIds) },
         }),
       // MAR-536. Main owns host keys, the host store and the SSH child. The
       // preload can name only an ordinary draft or an opaque host id; it never
@@ -657,6 +674,12 @@ export function registerCommandChannel(
       // the reads and the write it guards, for `refreshSampleAgent`'s reason.
       folderAction: (action, target) =>
         Promise.resolve(performFolderAction(dataDir, action, target.agent_id)),
+      // MAR-583. Which model an agent uses. Two of the three touch only DASH's
+      // own choice rows; the third opens the vault and makes one `GET` to a
+      // provider — the same request `connection.test` makes, keeping more of the
+      // answer. Every gate is inside `performModelAction`, beside the reads it
+      // guards, for `refreshSampleAgent`'s reason.
+      modelAction: (action, target) => performModelAction(action, target),
     });
   });
 }
@@ -699,6 +722,164 @@ export function registerCommandChannel(
  * replaced is DASH's copy of the manifest, which is what decides what DASH
  * draws — and that is the entire scope of the defect this repairs.
  */
+/**
+ * Choose a model, set one step's level, or ask what models there are (MAR-583).
+ *
+ * ## Every gate is here, beside the write
+ *
+ * The seam in `lib/shell/ipc.ts` describes these three commands and, by
+ * construction, cannot perform them. So the checks live here, in the same
+ * argument `refreshSampleAgent` makes for its ownership gate: a rule stated at
+ * the seam is a rule a second implementation could forget, and a rule stated
+ * beside the write is unavoidable by anything that actually writes.
+ *
+ * There are three of them and each refuses a different kind of nonsense. The
+ * agent has to be one DASH holds a manifest for. The connection and field have
+ * to resolve to a target DASH would take a key for, through the same
+ * `resolveCredentialTarget` the connect flow uses — so a renderer cannot name a
+ * connection the manifest does not declare, or one belonging to a different
+ * agent. And the target has to be a `provider_key`: naming an ordinary secret
+ * field or a sign-in gets a refusal rather than a model choice filed against a
+ * credential that has nothing to do with models.
+ *
+ * ## Putting it back is an absent field, not a value
+ *
+ * `model.choose` with no model id clears the row, and `model.step` with no level
+ * clears that step's. Neither needs the connection to resolve, because there is
+ * nothing to resolve *to* — deleting DASH's own row is not an act against a
+ * provider, and requiring a live connection to undo a setting would strand
+ * somebody who had disconnected their key.
+ */
+async function performModelAction(
+  action: "choose" | "step" | "list",
+  target: {
+    agent_id: string;
+    connection_id?: string;
+    field_id?: string;
+    model_id?: string;
+    step?: number;
+    level?: string;
+  },
+): Promise<{ ok: boolean; detail?: string; recovery?: Recovery; models?: string[] }> {
+  const now = new Date().toISOString();
+
+  if (action === "step") {
+    if (target.step === undefined) {
+      return { ok: false, detail: "DASH was not told which step to change." };
+    }
+    if (target.level === undefined) {
+      clearStepLevelOverride(target.agent_id, target.step);
+      return { ok: true, detail: "That step is back to what its plan asked for." };
+    }
+    const written = writeStepLevelOverride(target.agent_id, target.step, target.level, now);
+    return written
+      ? { ok: true, detail: "Saved." }
+      : { ok: false, detail: "DASH does not recognise that strength." };
+  }
+
+  if (action === "choose" && target.model_id === undefined) {
+    clearAgentModelChoice(target.agent_id);
+    return { ok: true, detail: "This agent is matching each step to what that step needs again." };
+  }
+
+  const manifest = readAgentManifest(target.agent_id) as ConnectionSourceManifest | null;
+  if (manifest === null) {
+    return { ok: false, detail: "DASH has no saved setup for that agent." };
+  }
+  const resolution = resolveCredentialTarget(
+    target.agent_id,
+    manifest,
+    target.connection_id ?? "",
+    target.field_id ?? "",
+  );
+  if (!resolution.ok || resolution.target.kind !== "provider_key") {
+    return {
+      ok: false,
+      detail: "This agent does not have a model provider DASH can act on.",
+    };
+  }
+
+  if (action === "list") {
+    const listed = await listAiKeyModels(
+      resolution.target,
+      secureStore().describeBacking().label,
+      aiKeyDeps(),
+    );
+    return {
+      ok: listed.ok,
+      detail: listed.detail,
+      recovery: listed.recovery,
+      models: listed.models,
+    };
+  }
+
+  // `ai_provider_id` is non-null by construction for a `provider_key` target —
+  // `resolveCredentialTarget` sets the kind and the id together or neither — and
+  // `writeAgentModelChoice` resolves it against the registry anyway rather than
+  // trusting that, which is what makes a dropped provider a refusal instead of a
+  // row nothing can read back.
+  const written = writeAgentModelChoice(
+    target.agent_id,
+    resolution.target.ai_provider_id ?? "",
+    target.model_id ?? "",
+    now,
+  );
+  return written
+    ? { ok: true, detail: "Saved." }
+    : { ok: false, detail: "DASH will not store that as a model name." };
+}
+
+/**
+ * The model setting this agent would take to a server, or nothing (MAR-583).
+ *
+ * Undefined when the agent's plan declares no step that needs a model **and**
+ * nobody has named one — which is the ordinary case and produces no file in the
+ * bundle. An absence there says there was nothing to decide, which is a
+ * different thing from a document recording that somebody chose the default; see
+ * `ProduceFolderBundleOptions.models`.
+ *
+ * Reads the row's manifest rather than the folder's. The folder is authoritative
+ * under ADR 0008 and the producer reads it for everything else — but this
+ * function runs before the producer has opened anything, and what it needs is
+ * only the planned route, which is the part of a manifest that cannot differ
+ * between the two without the folder having been edited into a different agent.
+ * `folder.check` is the surface for that disagreement.
+ */
+function bundledModelChoiceFor(agentId: string): BundledModelChoice | undefined {
+  const manifest = readAgentManifest(agentId);
+  if (manifest === null) {
+    return undefined;
+  }
+  const declared = stepsNeedingAModel(manifest.planned_route);
+  const choice = readAgentModelChoice(agentId);
+  if (declared.length === 0 && choice.kind === "match_each_step") {
+    return undefined;
+  }
+  return bundledModelChoice(
+    agentId,
+    choice,
+    resolveModelSteps(declared, readStepLevelOverrides(agentId)),
+  );
+}
+
+/**
+ * The vault and the one provider request, for the model list.
+ *
+ * The same three dependencies `performConnectionAction` is given, minus the two
+ * it does not need: there is no prompt because nothing here asks for a key, and
+ * `promptForSecret` is stubbed to a refusal rather than wired, so a future edit
+ * that made this path ask for a credential would produce a cancelled prompt
+ * instead of a window nobody expected.
+ */
+function aiKeyDeps(): Parameters<typeof listAiKeyModels>[2] {
+  return {
+    store: secureStore(),
+    promptForSecret: () => Promise.resolve(null),
+    ai: { probe: (profile, key, wantIds) => probeModelProvider(profile, key, fetch, wantIds) },
+    now: () => new Date(),
+  };
+}
+
 function refreshSampleAgent(agentId: string): { ok: boolean; refusal?: string; detail?: string } {
   const folder = readAgentFolderManifest(dataDir, agentId);
   let stored: unknown = null;
@@ -1421,6 +1602,11 @@ async function hostAction(
         path.dirname(fileURLToPath(import.meta.url)),
         "runner-standalone",
       ),
+      // MAR-583. The setting travels with the folder. Resolved here rather than
+      // inside the producer, so that module stays a reader of one folder with no
+      // store behind it — and resolved through the same two functions the page
+      // reads, so what goes on the server is what the person is looking at.
+      models: bundledModelChoiceFor(target.agent_id),
     });
   }
   if (produced !== null && !produced.ok) {

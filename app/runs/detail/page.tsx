@@ -85,6 +85,17 @@ function RunDetail(): ReactNode {
       </p>
       <HostNotice host={host} />
 
+      {/* MAR-583. What this agent was set to use when the run started, with the
+          caveat that makes it honest: DASH watched its own setting, not a model.
+          There is no cost here and will not be one until MAR-299 has numbers
+          that came from a provider. */}
+      {view.model === null ? null : (
+        <p className="run-model wrap">
+          <span className="run-model-label">{view.model.label}</span>{" "}
+          <span className="muted">{view.model.detail}</span>
+        </p>
+      )}
+
       <div className={clean ? "findings is-clean" : "findings"}>
         <h2>Plan-vs-actual</h2>
         <RunVerdictChips analysis={analysis} />
@@ -164,6 +175,16 @@ function RunDetail(): ReactNode {
                       <dt>Model tier</dt>
                       <dd>{entry.model_tier}</dd>
                     </div>
+                    {/* MAR-583. Only for a step whose author declared one, which
+                        is a step that needs a model at all. A fixed step draws
+                        nothing here rather than a fourth level meaning "none" —
+                        the honest absence the emitter writes. */}
+                    {entry.model_level_label === null ? null : (
+                      <div>
+                        <dt>Asks for</dt>
+                        <dd>{entry.model_level_label}</dd>
+                      </div>
+                    )}
                   </dl>
                 </article>
               </li>

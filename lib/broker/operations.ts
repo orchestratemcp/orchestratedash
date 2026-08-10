@@ -813,8 +813,16 @@ const GMAIL_DRAFT_CREATE: WriteOperation = {
  */
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(\/[A-Za-z0-9][A-Za-z0-9._:-]{0,63})?$/;
 
-/** A model id DASH is willing to name, structure and characters both. */
-function isModelId(id: string): boolean {
+/**
+ * A model id DASH is willing to name, structure and characters both.
+ *
+ * Exported since MAR-583, which gave a *person* a model id to choose and DASH a
+ * row to write it into. One predicate for both directions is the point: the ids
+ * offered to an agent through the brokered list and the ids stored as somebody's
+ * choice come from the same catalogue, and two spellings of "acceptable" would
+ * eventually disagree about one of them.
+ */
+export function isModelId(id: string): boolean {
   return MODEL_ID.test(id) && !id.includes("..");
 }
 
