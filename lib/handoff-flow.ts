@@ -955,12 +955,33 @@ export async function removeAgent(
     }
   }
 
-  const cleanup = removeRegistration(ports.dataDir, agentId);
+  // A manifest-only agent (ADR 0008 slice 4) has no registration, and
+  // `removeRegistration` would answer "DASH has no agent called X" about an
+  // agent whose row and folder are plainly there — MAR-597's second wall,
+  // found the same evening the first one fell. No registration is nothing to
+  // remove at this layer, not a refusal; the store row and folder below are
+  // DASH's whole picture of such an agent.
+  const cleanup =
+    existing === null
+      ? { ok: true as const, agent_id: agentId, removed: [], left_alone: [] }
+      : removeRegistration(ports.dataDir, agentId);
   if (!cleanup.ok) {
     return { ...cleanup, headline: cleanup.refusal ?? `DASH did not remove “${displayName}”.` };
   }
 
   const forgotten = ports.forgetAgent(agentId, { deleteFolder: deleteFiles });
+  if (existing === null && !forgotten.existed) {
+    // Nothing registered, nothing stored: this one really does not exist.
+    const refusal = `DASH has no agent called “${displayName}”.`;
+    return {
+      ok: false,
+      agent_id: agentId,
+      removed: [],
+      left_alone: [],
+      refusal,
+      headline: refusal,
+    };
+  }
   if (forgotten.existed) {
     cleanup.removed.push("DASH's record of what it is currently doing");
   }
