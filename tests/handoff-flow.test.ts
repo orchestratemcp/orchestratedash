@@ -768,6 +768,32 @@ describe("removing an agent", () => {
     expect(context.forgotten).toEqual([]);
   });
 
+  /* MAR-597's second wall, found the same evening the first one fell: a
+   * manifest-only agent (ADR 0008 slice 4) has no registration at all, and
+   * `removeRegistration` answered "DASH has no agent called X" about an agent
+   * whose store row and folder were plainly there. Two real agents on Henrik's
+   * machine could not be removed by any button. */
+  it("removes a manifest-only agent, which has no registration to remove", async () => {
+    const report = await removeAgent("manifest-only-scout", context.ports);
+
+    expect(report.ok).toBe(true);
+    // The store row and folder are DASH's whole picture of such an agent.
+    expect(context.forgotten).toEqual(["manifest-only-scout"]);
+    // The stop is still asked for — the runner's list is the authority on
+    // whether it is running (lib/runner-lifecycle.ts) — and the runner reloads.
+    expect(context.runnerCalls).toEqual(["stop:manifest-only-scout", "reload"]);
+  });
+
+  it("still refuses an agent that exists nowhere at all", async () => {
+    const report = await removeAgent("never-heard-of-it", {
+      ...context.ports,
+      forgetAgent: () => ({ existed: false }),
+    });
+
+    expect(report.ok).toBe(false);
+    expect(report.refusal).toMatch(/has no agent/);
+  });
+
   /* MAR-595 finding 18. Both of DASH's removal actions run through this same
    * function; only `deleteFiles` differs. */
   describe("with deleteFiles: false — remove from DASH, keep files", () => {
