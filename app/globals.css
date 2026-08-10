@@ -1059,8 +1059,17 @@ code {
    * 19rem is the floor a card stops being legible below: the goal is one to two
    * lines of an author's own prose, and the glance sentences under it are full
    * sentences rather than labels.
+   *
+   * MAR-590: that floor is a length, and a track minimum that is a length does
+   * not consult the container — at 375px the sidebar rail and page padding
+   * leave about 280px for this grid, so a flat `19rem` (304px) forced a single
+   * track 24px wider than its container and the row scrolled sideways.
+   * `min(19rem, 100%)` keeps 19rem as the floor everywhere it fits and only
+   * gives way to the container's own width below that, which is the one width
+   * this was already a single column at — auto-fit already put 375px on one
+   * track, so nothing here changes what a wider window draws.
    */
-  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(19rem, 100%), 1fr));
   /* Cards keep their own height rather than stretching to the tallest in the
      row — except that `.fleet-card` below opts back in, so a row of cards with
      unequal prose still lines its buttons up. */
