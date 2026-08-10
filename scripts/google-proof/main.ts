@@ -63,7 +63,7 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 
 import { IPC_ORIGIN } from "../../lib/agent-dom/ipc-fetch";
-import { readBrokerAudit } from "../../lib/broker/store";
+import { listReceipts, readBrokerAudit } from "../../lib/broker/store";
 import { describeGrant, resolveGrant } from "../../lib/broker/grant";
 import { brokerProfileFor } from "../../lib/broker/providers";
 import { performConnectionAction } from "../../lib/connection-actions";
@@ -72,6 +72,7 @@ import type { ConnectionSourceManifest } from "../../lib/connections";
 import { closeDb, dataDir } from "../../lib/db";
 import { parseOAuthCredential, type OAuthCredential } from "../../lib/oauth/credential";
 import { loopbackProofOrigin, oauthProviderById } from "../../lib/oauth/providers";
+import { listSecretReferences } from "../../lib/secret-refs";
 import {
   BUNDLED_NODE_COMMAND,
   removeRegistration,
@@ -327,6 +328,8 @@ const SEARCH_QUERY = `subject:"${PROOF_SUBJECT}"`;
  * than a check that nothing asked for anything.
  */
 const ENVIRONMENT_NAME = "GMAIL_OAUTH_TOKEN";
+/** MAR-594 exit-evidence mode: one real read, no mailbox write, preserve rows. */
+const MAR594_SEARCH_ONLY = process.env["DASH_GOOGLE_PROOF_MAR594"] === "1";
 
 /* ---------------------------------------------------------------------- *
  * The proof
@@ -358,7 +361,7 @@ async function run(): Promise<void> {
    */
   const expiresAt = new Date(startedAt.getTime() + 7 * 24 * 60 * 60 * 1000);
   say("");
-  say(`[proof] MAR-468 attended real-Google proof`);
+  say(`[proof] ${MAR594_SEARCH_ONLY ? "MAR-594" : "MAR-468"} attended real-Google proof`);
   say(`[proof] date: ${startedAt.toISOString()}`);
   say(`[proof] regime: Google Testing mode, named test user, restricted scopes`);
   say(`[proof] this grant expires: ${expiresAt.toISOString().slice(0, 10)} (seven days)`);
@@ -566,12 +569,19 @@ async function run(): Promise<void> {
       .catch(() => null);
     credential = storedRaw === null ? null : parseOAuthCredential(storedRaw);
 
+    // Prove the stored grant is self-contained. The attended shell supplies the
+    // client for the first code exchange; every broker refresh below runs after
+    // it has been removed from this process (MAR-594).
+    delete process.env["DASH_GOOGLE_CLIENT_ID"];
+    delete process.env["DASH_GOOGLE_CLIENT_SECRET"];
+
     check(
       "G3. Google returned a refresh token and named the account, in DASH's own envelope",
       credential !== null &&
         credential.provider === "google" &&
         credential.refresh_token.length > 0 &&
-        credential.account !== null,
+        credential.account !== null &&
+        credential.client !== undefined,
       credential === null
         ? "nothing readable in the vault"
         : {
@@ -582,6 +592,8 @@ async function run(): Promise<void> {
             account_present: credential.account !== null,
             scope_count: credential.scopes.length,
             obtained_at: credential.obtained_at,
+            client_persisted: credential.client !== undefined,
+            process_client_secret_present: process.env["DASH_GOOGLE_CLIENT_SECRET"] !== undefined,
           },
     );
 
@@ -703,6 +715,15 @@ async function run(): Promise<void> {
         const found = await askBroker("gmail.search", { query: ${JSON.stringify(SEARCH_QUERY)}, max_results: 5 });
         note("search ok=" + String(found.ok) + " refusal=" + String(found.refusal));
         record({ search: found, found_count: found.ok ? (found.result.messages || []).length : 0 });
+
+        if (${JSON.stringify(MAR594_SEARCH_ONLY)}) {
+          record({
+            search: found,
+            found_count: found.ok ? (found.result.messages || []).length : 0,
+            complete: true
+          });
+          return;
+        }
 
         const first = found.ok ? (found.result.messages || [])[0] : null;
         const read = first
@@ -927,6 +948,12 @@ async function run(): Promise<void> {
       signal: AbortSignal.timeout(5_000),
     });
 
+    let consent = "draft";
+    if (MAR594_SEARCH_ONLY) {
+      say("");
+      say("[proof] MAR-594 mode makes one read-only gmail.search and preserves its evidence.");
+      say("[proof] It creates no draft and asks no attended question beyond Google sign-in.");
+    } else {
     say("");
     say("[proof] ⚠  The next step creates a REAL DRAFT in the REAL Drafts folder of");
     say(`[proof] ⚠  the account you just connected. It is addressed and written, and`);
@@ -934,7 +961,8 @@ async function run(): Promise<void> {
     say("[proof] ⚠  operation that could. DASH also has no operation that DELETES a");
     say("[proof] ⚠  draft, so you will be asked to delete it in Gmail yourself.");
     say("");
-    const consent = await ask("[proof] Type 'draft' to continue, or anything else to stop: ");
+    consent = await ask("[proof] Type 'draft' to continue, or anything else to stop: ");
+    }
     if (consent !== "draft") {
       say("[proof] stopped before the write, at the operator's request.");
       skipEverythingNotYetReported(
@@ -997,6 +1025,50 @@ async function run(): Promise<void> {
     // Held where the cleanup can print it, so a run that dies after the write
     // still tells the operator what is sitting in their mailbox.
     draftId = reported?.draft_id ?? partial?.draft_id ?? null;
+
+    if (MAR594_SEARCH_ONLY) {
+      const reference = listSecretReferences(AGENT_ID).find(
+        (row) => row.connection_id === CONNECTION_ID && row.field_id === FIELD_ID,
+      );
+      const receipt = listReceipts(AGENT_ID).find(
+        (row) => row.connection_id === CONNECTION_ID && row.field_id === FIELD_ID,
+      );
+      const audit = readBrokerAudit(AGENT_ID).find(
+        (row) => row.connection_id === CONNECTION_ID && row.operation === "gmail.search",
+      );
+
+      check("M594-1. a real gmail.search completed through the broker", reported?.search?.ok === true, {
+        decision: reported?.search?.ok === true ? "allowed" : (reported?.search?.refusal ?? "no report"),
+        messages_found: reported?.found_count ?? partial?.found_count ?? null,
+      });
+      check(
+        "M594-2. connection_secrets retained a protected real-account reference",
+        reference !== undefined,
+        {
+          agent: reference?.agent ?? null,
+          connection_id: reference?.connection_id ?? null,
+          field_id: reference?.field_id ?? null,
+          masked_hint: reference?.masked_hint ?? null,
+          backend: reference?.backend ?? null,
+        },
+      );
+      check("M594-3. broker_grants retained the resolved grant", receipt !== undefined, receipt ?? null);
+      check(
+        "M594-4. broker_audit retained an allowed gmail.search",
+        audit?.decision === "allowed",
+        audit === undefined
+          ? null
+          : {
+              id: audit.id,
+              operation: audit.operation,
+              decision: audit.decision,
+              result_count: audit.result_count,
+              account_hint: audit.account_hint,
+              decided_at: audit.decided_at,
+            },
+      );
+      return;
+    }
 
     check(
       "G8a. Gmail answered both read operations through the broker",
@@ -1365,7 +1437,7 @@ async function run(): Promise<void> {
      * finished proof into a crash — but it is reported, because a grant this
      * harness could not withdraw is one the operator has to withdraw by hand.
      */
-    if (credential !== null && !revokedAtGoogle) {
+    if (!MAR594_SEARCH_ONLY && credential !== null && !revokedAtGoogle) {
       const late = await providerOperations()
         .revoke(credential)
         .catch(() => false);
@@ -1394,11 +1466,15 @@ async function run(): Promise<void> {
       });
     }
 
-    await secureStore()
-      .delete(secretName)
-      .catch(() => undefined);
+    if (!MAR594_SEARCH_ONLY) {
+      await secureStore()
+        .delete(secretName)
+        .catch(() => undefined);
+    }
     removeRegistration(dataDir, AGENT_ID);
-    forgetAgent(AGENT_ID);
+    if (!MAR594_SEARCH_ONLY) {
+      forgetAgent(AGENT_ID);
+    }
     try {
       rmSync(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     } catch (error: unknown) {
@@ -1415,6 +1491,11 @@ async function run(): Promise<void> {
     // piece of litter it must never leave in somebody's mailbox.
     if (draftId !== null) {
       say(`[proof] cleanup: a real draft (id ${draftId}) exists in Gmail. DELETE IT. Do not send it.`);
+    }
+
+    if (MAR594_SEARCH_ONLY) {
+      say("[proof] MAR-594 evidence preserved: vault grant, connection_secrets, broker_grants, and broker_audit.");
+      say("[proof] The temporary runner registration was removed; the stopped proof agent remains in DASH until evidence cleanup.");
     }
 
     say("");

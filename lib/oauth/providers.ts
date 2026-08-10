@@ -50,6 +50,21 @@ export interface PermissionCopy {
   access: "read" | "write";
 }
 
+/**
+ * The client values a desktop authorization server expects (MAR-594).
+ *
+ * They are kept separate from scopes and endpoints: a renderer may supply these
+ * two values, but it can never influence where DASH sends them or what access
+ * DASH asks for. `configureOAuthProvider` overlays only the client pair onto a
+ * provider selected in main from the validated manifest.
+ */
+export interface OAuthClientConfiguration {
+  client_id: string;
+  client_secret: string;
+}
+
+export type OAuthClientConfigurationKind = "built_in" | "user_supplied";
+
 export interface OAuthProvider {
   /** DASH's own id for the flow, e.g. `google`. */
   id: string;
@@ -73,6 +88,12 @@ export interface OAuthProvider {
    * a careless caller could still send.
    */
   client_secret?: string;
+  /**
+   * Whether the client is part of this build or supplied by the person using
+   * it. Google is user-supplied: a real desktop client is created in the user's
+   * Cloud project and its values are stored with the grant in the OS vault.
+   */
+  client_configuration: OAuthClientConfigurationKind;
   authorization_endpoint: string;
   token_endpoint: string;
   revocation_endpoint: string;
@@ -128,12 +149,20 @@ function googleClientSecret(): string | undefined {
   return value !== undefined && value.length > 0 ? value : undefined;
 }
 
+function googleClientId(): string {
+  const value = process.env["DASH_GOOGLE_CLIENT_ID"];
+  return value !== undefined && value.length > 0
+    ? value
+    : "521961057282-69kbonobgup2vhhffqb2o6vds3figov7.apps.googleusercontent.com";
+}
+
 function googleProvider(): OAuthProvider {
   return {
     id: "google",
     label: "Google",
-    client_id: "521961057282-69kbonobgup2vhhffqb2o6vds3figov7.apps.googleusercontent.com",
+    client_id: googleClientId(),
     client_secret: googleClientSecret(),
+    client_configuration: "user_supplied",
     authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
     token_endpoint: "https://oauth2.googleapis.com/token",
     revocation_endpoint: "https://oauth2.googleapis.com/revoke",
@@ -266,6 +295,7 @@ function proofProvider(): OAuthProvider | null {
     id: LOOPBACK_PROOF_PROVIDER_ID,
     label: "Loopback mail (proof harness)",
     client_id: "dash-loopback-proof-client",
+    client_configuration: "built_in",
     authorization_endpoint: `${origin}/authorize`,
     token_endpoint: `${origin}/token`,
     revocation_endpoint: `${origin}/revoke`,
@@ -322,6 +352,64 @@ export function oauthProviderById(id: string): OAuthProvider | null {
     return proofProvider();
   }
   return id === "google" ? googleProvider() : null;
+}
+
+/**
+ * Read a client pair received from the credential-only renderer.
+ *
+ * No coercion, no trimming, and no echo on failure. Whitespace and control
+ * characters are refused rather than repaired so the exact bytes stored are the
+ * exact bytes Google receives. The generous caps are denial-of-service bounds,
+ * not guesses about Google's current format.
+ */
+export function parseOAuthClientConfiguration(value: unknown): OAuthClientConfiguration | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const candidate = value as Record<string, unknown>;
+  const clientId = candidate["client_id"];
+  const clientSecret = candidate["client_secret"];
+  if (
+    typeof clientId !== "string" ||
+    clientId.length === 0 ||
+    clientId.length > 1024 ||
+    clientId.trim() !== clientId ||
+    typeof clientSecret !== "string" ||
+    clientSecret.length === 0 ||
+    clientSecret.length > 4096 ||
+    clientSecret.trim() !== clientSecret ||
+    /[\u0000-\u001f\u007f]/u.test(clientId) ||
+    /[\u0000-\u001f\u007f]/u.test(clientSecret)
+  ) {
+    return null;
+  }
+  return { client_id: clientId, client_secret: clientSecret };
+}
+
+/**
+ * Bind a user-supplied client to endpoints and policy selected by DASH.
+ *
+ * A built-in provider ignores renderer input entirely. For a user-supplied
+ * provider the two client fields are the only members replaced; authorization,
+ * token and revocation endpoints, scopes, copy and extra parameters remain the
+ * provider registry's.
+ */
+export function configureOAuthProvider(
+  provider: OAuthProvider,
+  value: unknown,
+): OAuthProvider | null {
+  if (provider.client_configuration === "built_in") {
+    return provider;
+  }
+  const configured = parseOAuthClientConfiguration(value);
+  if (configured === null) {
+    return null;
+  }
+  return {
+    ...provider,
+    client_id: configured.client_id,
+    client_secret: configured.client_secret,
+  };
 }
 
 /**

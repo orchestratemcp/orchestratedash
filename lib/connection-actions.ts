@@ -54,7 +54,11 @@ import {
 } from "./oauth/credential";
 import { adoptFleetCredential, noteAgentDecision, performFleetAction } from "./fleet/actions";
 import { isFleetPrincipal } from "./fleet/principal";
-import { describePermissions, oauthProviderById } from "./oauth/providers";
+import {
+  describePermissions,
+  oauthProviderById,
+  type OAuthClientConfiguration,
+} from "./oauth/providers";
 import {
   forgetSecretReference,
   listSecretReferences,
@@ -193,7 +197,11 @@ export interface OAuthOperations {
    */
   authorize(
     target: CredentialTarget,
-    options: { login_hint: string | null },
+    options: {
+      login_hint: string | null;
+      /** The client stored with an existing grant, so reconnect needs no re-entry. */
+      client: OAuthClientConfiguration | null;
+    },
   ): Promise<AuthorizationOutcome>;
   /**
    * Ask the provider whether a stored grant still works.
@@ -885,12 +893,17 @@ async function performOAuthAction(
   // that will not open here is not worth failing over — the sign-in below works
   // without a hint.
   let loginHint: string | null = null;
+  let existingClient: OAuthClientConfiguration | null = null;
   const existing = await readGrant(deps.store, credential.secret_name);
   if (existing.kind === "found") {
     loginHint = existing.credential.account;
+    existingClient = existing.credential.client ?? null;
   }
 
-  const outcome = await deps.oauth.authorize(credential, { login_hint: loginHint });
+  const outcome = await deps.oauth.authorize(credential, {
+    login_hint: loginHint,
+    client: existingClient,
+  });
   if (!outcome.ok) {
     const hint = hintFor(target);
     const recovery = describeAuthorizationFailure(outcome.code, { service });

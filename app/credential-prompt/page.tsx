@@ -31,6 +31,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import type {
   CredentialPromptDescription,
+  OAuthClientInput,
   OAuthPromptDescription,
 } from "../../lib/shell/credential-prompt";
 
@@ -38,7 +39,7 @@ interface CredentialBridge {
   describe(): Promise<CredentialPromptDescription | null>;
   submit(value: string): Promise<void>;
   cancel(): Promise<void>;
-  authorize(): Promise<void>;
+  authorize(client: OAuthClientInput | null): Promise<void>;
 }
 
 function bridge(): CredentialBridge | null {
@@ -51,16 +52,16 @@ function bridge(): CredentialBridge | null {
 /**
  * The sign-in mode (MAR-446).
  *
- * There is no input on this page and no `submit`. Everything it can do is press
- * one button that asks main to open a browser, or cancel — which is the whole
- * capability difference between this mode and the typed-secret one, and the
- * reason reusing the window costs nothing in surface.
+ * A first user-owned Google connection accepts only a Desktop app client id and
+ * secret before it asks main to open the browser. The renderer can never name
+ * the provider, endpoints, scopes, redirect, or account. Reconnect has no input
+ * because main reuses the client protected inside the existing grant.
  *
  * What it renders that the provider's own consent screen will not: which agent
  * wants this, why, and the permissions in DASH's plain-language words. Google's
  * screen says what Google is granting; only this can say what it is for.
  */
-function AuthorizationPrompt({
+export function AuthorizationPrompt({
   description,
   busy,
   onBusy,
@@ -69,9 +70,13 @@ function AuthorizationPrompt({
   busy: boolean;
   onBusy: (busy: boolean) => void;
 }): ReactNode {
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
   // `waiting` comes back from main once the browser has been opened; `busy`
   // covers the moment between the click and that being true.
   const waiting = busy || description.waiting;
+  const canAuthorize =
+    !description.client_setup || (clientId.length > 0 && clientSecret.length > 0);
 
   return (
     <div className="credential-prompt">
@@ -99,6 +104,42 @@ function AuthorizationPrompt({
       ) : null}
 
       {description.help !== null ? <p className="muted">{description.help}</p> : null}
+
+      {description.client_setup ? (
+        <>
+          <p className="muted">
+            Enter the credentials for a <strong>Desktop app</strong> OAuth client
+            from your Google Cloud project. DASH protects them with the grant so
+            reconnects and token refreshes do not depend on launch-time environment variables.
+          </p>
+          <label htmlFor="oauth-client-id">OAuth client ID</label>
+          <input
+            id="oauth-client-id"
+            type="text"
+            value={clientId}
+            onChange={(event) => setClientId(event.target.value)}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            disabled={waiting}
+            required
+          />
+          <label htmlFor="oauth-client-secret">OAuth client secret</label>
+          <input
+            id="oauth-client-secret"
+            type="password"
+            value={clientSecret}
+            onChange={(event) => setClientSecret(event.target.value)}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            disabled={waiting}
+            required
+          />
+        </>
+      ) : null}
 
       <p className="muted">
         {/* Said before the browser opens, not after. A user who has already left
@@ -128,10 +169,17 @@ function AuthorizationPrompt({
         <button
           type="button"
           className="button-primary"
-          disabled={waiting}
+          disabled={waiting || !canAuthorize}
           onClick={() => {
+            if (!canAuthorize) {
+              return;
+            }
             onBusy(true);
-            void bridge()?.authorize();
+            void bridge()?.authorize(
+              description.client_setup
+                ? { client_id: clientId, client_secret: clientSecret }
+                : null,
+            );
           }}
         >
           {waiting ? "Waiting…" : `Continue to ${description.provider_label}`}

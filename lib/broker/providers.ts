@@ -45,16 +45,10 @@ export type TokenCustodian =
 /**
  * Whose OAuth client the consent screen belongs to.
  *
- * ADR 0002 records the open problem plainly: "The Google desktop client ID is
- * currently compiled into DASH… this means DASH's Google Cloud project owns the
- * consent screen." That is a fact about the connection a user is entitled to see
- * on the card, and it is not the same fact as who holds the token afterwards —
- * so it is a separate field rather than a fifth custodian value.
- *
- * Bring-your-own-client *onboarding* — settings, validation, guided setup, the
- * honest weekly-expiry story — is explicitly ordered after this slice by ADR
- * 0002's own rollout. What this slice owes is that the card stops being silent
- * about which of the two is in force.
+ * This is not the same fact as who holds the token afterwards, so it remains a
+ * separate field rather than a fifth custodian value. MAR-594 closes ADR 0002's
+ * compiled-client gap: Google now uses the Desktop app client entered in the
+ * credential-only window and protected with the grant.
  */
 export type OAuthClientOwner =
   /** DASH's own Google Cloud project. The consent screen says DASH. */
@@ -121,7 +115,9 @@ const GMAIL: BrokerProviderProfile = {
   label: "Gmail",
   credential_kind: "oauth_grant",
   token_custodian: "dash_vault",
-  client_owner: "dash_project",
+  // MAR-594: the Desktop app client is created in the user's Google Cloud
+  // project and stored with the grant, rather than compiled into DASH.
+  client_owner: "user_project",
   api_origin: "https://gmail.googleapis.com",
 };
 

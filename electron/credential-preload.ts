@@ -39,6 +39,7 @@ import {
   CREDENTIAL_DESCRIBE_CHANNEL,
   CREDENTIAL_SUBMIT_CHANNEL,
   type CredentialPromptDescription,
+  type OAuthClientInput,
 } from "../lib/shell/credential-prompt";
 
 const dashCredential = {
@@ -65,18 +66,17 @@ const dashCredential = {
   /**
    * Ask main to run a provider sign-in (MAR-446).
    *
-   * Write-only in the same sense as `submit`, and emptier: it sends nothing and
-   * resolves with nothing. Everything that happens — the loopback port, the
-   * browser, the token exchange — happens in main, and the only thing this
-   * renderer learns is that it is over, because main closes the window.
+   * Write-only in the same sense as `submit`: a first Google connection may
+   * send its Desktop app client pair and the call resolves with nothing. The
+   * loopback port, browser and token exchange all remain in main.
    *
    * There is deliberately no way to influence what is authorized. The provider,
    * the scopes and the account are resolved in main from the validated manifest
    * before this window opens; a page that could name them would be a page that
    * could ask Google for more than the agent declared.
    */
-  authorize: async (): Promise<void> => {
-    await ipcRenderer.invoke(CREDENTIAL_AUTHORIZE_CHANNEL);
+  authorize: async (client: OAuthClientInput | null = null): Promise<void> => {
+    await ipcRenderer.invoke(CREDENTIAL_AUTHORIZE_CHANNEL, client);
   },
 };
 

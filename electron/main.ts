@@ -734,6 +734,7 @@ export function registerCommandChannel(
                 alreadyHeld(credential),
                 heldHintFor(credential),
                 options.login_hint,
+                options.client,
                 appWindow(),
                 RENDERER_ORIGIN,
               ),

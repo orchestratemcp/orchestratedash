@@ -44,7 +44,12 @@ import {
 } from "../lib/oauth/flow";
 import { isLoopbackError, startLoopback, type LoopbackListener } from "../lib/oauth/loopback";
 import { createPkcePair, createState } from "../lib/oauth/pkce";
-import { oauthProviderById, type OAuthProvider } from "../lib/oauth/providers";
+import {
+  configureOAuthProvider,
+  oauthProviderById,
+  type OAuthClientConfiguration,
+  type OAuthProvider,
+} from "../lib/oauth/providers";
 
 /**
  * A sign-in in progress.
@@ -96,11 +101,29 @@ export function startAuthorization(
   provider: OAuthProvider,
   scopes: readonly string[],
   loginHint: string | null,
+  client: OAuthClientConfiguration | null = null,
 ): AuthorizationSession {
   let listener: LoopbackListener | null = null;
   let cancelled = false;
 
+  // A locally supplied environment pair remains useful for attended proofs and
+  // automation, but the ordinary product no longer depends on it. When present
+  // it is treated exactly like the pair entered in the credential-only window,
+  // then persisted with the grant by `exchangeAuthorizationCode`.
+  const configuredProvider = configureOAuthProvider(
+    provider,
+    client ??
+      (provider.client_secret === undefined
+        ? null
+        : { client_id: provider.client_id, client_secret: provider.client_secret }),
+  );
+
   const outcome = (async (): Promise<AuthorizationOutcome> => {
+    if (configuredProvider === null) {
+      // Before a port is bound or a browser is opened. A consent whose code can
+      // never be exchanged is the precise MAR-594 failure this guard removes.
+      return { ok: false, code: "client_misconfigured" };
+    }
     const state = createState();
     const pkce = createPkcePair();
 
@@ -113,7 +136,7 @@ export function startAuthorization(
         return { ok: false, code: "cancelled" };
       }
 
-      const url = buildAuthorizationUrl(provider, {
+      const url = buildAuthorizationUrl(configuredProvider, {
         redirect_uri: listener.redirect_uri,
         scopes,
         challenge: pkce.challenge,
@@ -128,7 +151,7 @@ export function startAuthorization(
 
       const code = await listener.wait();
 
-      const exchanged = await exchangeAuthorizationCode(provider, {
+      const exchanged = await exchangeAuthorizationCode(configuredProvider, {
         code,
         verifier: pkce.verifier,
         redirect_uri: listener.redirect_uri,

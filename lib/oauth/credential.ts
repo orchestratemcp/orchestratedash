@@ -40,6 +40,24 @@
  */
 export const OAUTH_CREDENTIAL_VERSION = 1;
 
+/**
+ * The installed-app client that obtained a grant (MAR-594).
+ *
+ * Google requires both values again when a refresh token is exchanged. Keeping
+ * them beside the refresh token makes a stored grant self-contained: the broker
+ * does not depend on the environment of whichever PowerShell happened to launch
+ * DASH on the day the user signed in.
+ *
+ * The client secret is inside the same vault envelope as the refresh token. A
+ * desktop client cannot keep this value confidential from its user, but it is
+ * still a credential Google asks DASH to present and it belongs nowhere in
+ * SQLite, renderer state, logs, or the repository.
+ */
+export interface OAuthClientCredential {
+  client_id: string;
+  client_secret: string;
+}
+
 export interface OAuthCredential {
   version: typeof OAUTH_CREDENTIAL_VERSION;
   /** The `OAuthProvider.id` that issued it, e.g. `google`. */
@@ -56,6 +74,14 @@ export interface OAuthCredential {
   account: string | null;
   /** When this credential was obtained, ISO-8601. For display only. */
   obtained_at: string;
+  /**
+   * The client that obtained this grant, when its provider requires one.
+   *
+   * Optional for backwards compatibility with grants written before MAR-594
+   * and for proof providers that genuinely need no client secret. New Google
+   * grants always carry it.
+   */
+  client?: OAuthClientCredential;
 }
 
 /**
@@ -122,6 +148,27 @@ export function parseOAuthCredential(stored: string): OAuthCredential | null {
     return null;
   }
 
+  const client = candidate["client"];
+  let parsedClient: OAuthClientCredential | undefined;
+  if (client !== undefined) {
+    if (typeof client !== "object" || client === null || Array.isArray(client)) {
+      return null;
+    }
+    const clientCandidate = client as Record<string, unknown>;
+    if (
+      typeof clientCandidate["client_id"] !== "string" ||
+      clientCandidate["client_id"] === "" ||
+      typeof clientCandidate["client_secret"] !== "string" ||
+      clientCandidate["client_secret"] === ""
+    ) {
+      return null;
+    }
+    parsedClient = {
+      client_id: clientCandidate["client_id"],
+      client_secret: clientCandidate["client_secret"],
+    };
+  }
+
   return {
     version: OAUTH_CREDENTIAL_VERSION,
     provider: candidate["provider"],
@@ -129,6 +176,7 @@ export function parseOAuthCredential(stored: string): OAuthCredential | null {
     scopes: scopes as string[],
     account,
     obtained_at: obtainedAt,
+    ...(parsedClient === undefined ? {} : { client: parsedClient }),
   };
 }
 

@@ -940,6 +940,7 @@ if (oauthTarget !== null) {
     false,
     null,
     null,
+    null,
     window,
     RENDERER_ORIGIN,
   );
@@ -996,8 +997,17 @@ if (oauthTarget !== null) {
   /**
    * The press. Deliberately not awaited: `authorize` resolves only when the
    * whole sign-in settles, and this one settles when we cancel it below.
+   *
+   * The client pair rides the press (MAR-594): the guard refuses to open a
+   * browser for a consent whose code could never be exchanged, and this
+   * machine has no Google client in its environment — CI never did. Main
+   * treats the pair exactly like one typed into the window, and proof 5h
+   * below is what keeps it honest: the secret must never reach the URL.
+   * The sign-in is cancelled before any exchange, so nothing is persisted.
    */
-  void prompt.webContents.executeJavaScript(`window.dashCredential.authorize()`);
+  void prompt.webContents.executeJavaScript(
+    `window.dashCredential.authorize({ client_id: "smoke-client.apps.googleusercontent.com", client_secret: "smoke-client-secret" })`,
+  );
 
   // Poll for the capture rather than sleeping a fixed time: binding a port and
   // building a URL is fast, but a fixed wait is either flaky or slow.
