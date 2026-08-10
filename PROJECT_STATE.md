@@ -5457,3 +5457,94 @@ work" would be false about the charge, and the sentence says they were charged
 and that the amount went with the row.
 
 **Zero changes under `runner/`.** The runner does not know this feature exists.
+
+---
+
+## MAR-590 - the 375px fleet grid stops scrolling sideways (planned)
+
+**One line.** `app/globals.css`'s `.row-list.fleet-grid` track floor changes
+from `minmax(19rem, 1fr)` to `minmax(min(19rem, 100%), 1fr)`. MAR-587's own
+note named both the defect and this exact fix and left it for whoever owned the
+file: a track minimum that is a length does not consult its container, so a
+flat `19rem` (304px) forced a single track against a ~280px container at 375px
+— the sidebar rail and page padding taken — and the fleet grid scrolled
+sideways by 24px. `min(19rem, 100%)` keeps 19rem as the floor everywhere it
+already fit and only yields to the container's own width below that, which is
+the one width this was already a single column at.
+
+### The one-line fix wears a full evidence bar, because the code isn't the work
+
+**`page_overflows` read false while the defect was live**, and MAR-587's own
+note says so: the overflow was on `.row-list.fleet-grid` itself, one level
+inside `main`, which is its own `overflow: auto` container. That box contains
+its child's overflow rather than growing the document, so
+`document.documentElement.scrollWidth > document.documentElement.clientWidth`
+never saw it — a screenshot of an overflowing frame and a fitting one are the
+same PNG either way. So `electron/capture-actions.ts`'s `layout()` was
+extended to read the grid track directly rather than trust a page-level signal
+that already had one proven blind spot: `fleet_grid` now records the track's
+own `scroll_width`/`client_width`/`overflow` and every track's computed width
+(from `getComputedStyle(...).gridTemplateColumns`, what the browser actually
+laid out rather than what the rule asked for), and `fleet_grid_scrolls` is
+`true` whenever that element's own overflow is nonzero. A second check,
+`portrait_fit`/`portrait_cropped`, was added for the same reason on MAR-587's
+side of this: `.fleet-portrait` clips rather than resizes anything narrower
+than its 200px sprite (`overflow: hidden`), so a card narrowed by this fix
+could crop the portrait without ever scrolling the page, and a cropped sprite
+photographs exactly like an uncropped one unless the two widths are compared.
+
+### Evidence
+
+`pnpm state:check` valid; `pnpm typecheck` clean; `pnpm brand:check` green (11
+characters, 3 action sheets / 24 frames audited, 3 rendered sizes); `pnpm test`
+from PowerShell — **136 test files / 2726 passed / 10 skipped / 0 failed**.
+Two files (`tests/agent-folders.test.ts`, `tests/store-sqlite.test.ts`) timed
+out under the full parallel run and passed clean alone (40/40) — the recorded
+MCP-suite-under-load flakiness, not a regression; nothing under `app/globals.css`
+or `electron/capture-actions.ts` touches either file's subject. `pnpm
+build:renderer` and `pnpm build:shell` both green.
+
+**`qa-screenshots-mar590/`**: 20 packaged-renderer frames from
+`electron/capture-actions.ts` (MAR-587's harness, reused rather than forked —
+it already exercises 375/768/1280 in both themes and both densities with real
+200px portraits on the fleet page, which is exactly the surface this issue is
+about) at 375/768/1280, both themes, both densities, plus the all-cards,
+loop-parked and reduced-motion frames it always writes. `layout.json` reports,
+across all twelve measured frames:
+
+- **`fleet_grid.overflow` is `0` and `fleet_grid_scrolls` is `false` in every
+  frame**, including all four 375px frames — `track_count: 1`, and the track's
+  own width equals the container's (`280`/`284` comfortable/compact, matching
+  `client_width` exactly): the grid track is bounded by its container rather
+  than forcing one 24px wider than it.
+- **`portrait_cropped` is `0` in every frame.** At 375px the `.fleet-portrait`
+  tile measures `246`/`258`px (comfortable/compact) against a 200px sprite —
+  MAR-587's portrait still fits with room over, not merely without erroring.
+- **Nothing regresses at the wider widths.** At 768px the track is 2 columns
+  at 313–318px; at 1280px it is 3 columns at 309–315px — both above the 304px
+  `19rem` floor, so `min(19rem, 100%)` never engages there and the layout is
+  byte-for-byte what MAR-586 shipped. `cards: 5`, `animated: 3`, `order`
+  matches `expected_order`, and `chips`/`chip_links`/`inert_chips` are
+  unchanged in all twelve frames — this is a track-width fix and nothing else
+  on the surface moved.
+- `page_overflows` is `false` and `widest_overflow` is the recorded
+  `span.visually-hidden`/`span.density-label` red herring (150/175px, clipped
+  by its own `overflow-x: hidden`) in every frame — unchanged from prior
+  sessions' readings and not this issue's.
+
+**`pnpm verify:shell` was not run on this machine**: other worktrees' Electron
+instances were live and AGENTS.md forbids force-killing them. CI's Windows
+`shell-smoke` is this branch's installed witness — nothing in this change is
+reachable by a path the smoke does not already walk, since it is one grid-track
+value on a page the smoke loads.
+
+### What is not proven
+
+**Nothing here was seen on a real machine's own fleet.** The store is the same
+seeded scratch directory MAR-587's harness always writes to, so the frames are
+evidence of what this track draws for five seeded agents and not evidence about
+anybody's actual fleet size or card content.
+
+**CI IS THE INSTALLED WITNESS AND IT IS GREEN.** PR #122, run `31391651472` at
+`e7de977` — both buckets pass: `verify` (1m17s) and the Windows `shell-smoke`
+job (1m42s). Not merged yet; lifecycle promotes when it is.
