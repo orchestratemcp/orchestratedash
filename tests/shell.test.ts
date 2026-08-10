@@ -14,6 +14,7 @@ import type {
   FolderAction,
   GlanceAction,
   HostAction,
+  AskAction,
   ModelAction,
   NotifyAction,
   SampleAction,
@@ -178,6 +179,12 @@ describe("the audited command chokepoint", () => {
       "model.choose",
       "model.step",
       "model.list",
+      // MAR-545. The tenth family, one member, and the first command in this
+      // catalogue that costs the person money. The renderer names an agent, a
+      // connection, a field and a question — never a model, because which model
+      // answers is read in main from the row a person set through
+      // `model.choose`.
+      "ask.question",
       "folder.check",
       "folder.adopt",
       "folder.reveal",
@@ -471,6 +478,7 @@ describe("dispatch", () => {
     // is an argument to or a result of this call, which is `connectionAction`'s
     // property one layer along.
     const models: Array<{ action: ModelAction; target: Record<string, unknown> }> = [];
+    const asks: Array<{ action: AskAction; target: Record<string, string> }> = [];
     // MAR-588. Recorded, not performed, for `folderAction`'s reason and one
     // more: the real implementation opens the credential window and reaches
     // Discord, and a fake that did either would make these tests -- which are
@@ -486,6 +494,7 @@ describe("dispatch", () => {
       looks,
       folders,
       models,
+      asks,
       modelAction: (action: ModelAction, target: Record<string, unknown>) => {
         models.push({ action, target });
         return Promise.resolve({ ok: true, detail: `${action} ok` });
@@ -534,6 +543,13 @@ describe("dispatch", () => {
       },
       notifyAction: (action: NotifyAction, target: { kind?: string; enabled?: boolean }) => {
         notifications.push({ action, target });
+        return Promise.resolve({ ok: true });
+      },
+      // MAR-545. Recorded, not performed, for `sampleAction`'s reason — and here
+      // the reason has teeth: the real one bills somebody's account, so a fake
+      // that did anything at all would be a test suite that spends money.
+      askAction: (action: AskAction, target: Record<string, string>) => {
+        asks.push({ action, target });
         return Promise.resolve({ ok: true });
       },
       showApplicationMenu: (at: { x: number; y: number } | undefined) => {

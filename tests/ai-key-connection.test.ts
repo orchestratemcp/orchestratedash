@@ -300,7 +300,12 @@ describe("connect", () => {
     await performConnectionAction("connect", TARGET, deps(vault(), KEY));
     const receipts = listReceipts(AGENT);
     expect(receipts).toHaveLength(1);
-    expect(receipts[0]?.operations).toEqual(["openrouter.models.list"]);
+    // Spend first and read second, which is `byAccess`'s ordering: the line
+    // worth reading must not sit under the line that is not (MAR-545).
+    expect(receipts[0]?.operations).toEqual([
+      "openrouter.chat.completion",
+      "openrouter.models.list",
+    ]);
     // A key names nobody, so there is no account hint to invent from it.
     expect(receipts[0]?.account_hint).toBeNull();
   });
@@ -406,7 +411,13 @@ describe("the view the Connections page consumes", () => {
     expect(card?.liveness.checked_at).toBeNull();
     expect(card?.liveness.headline).toContain("has not checked this key");
     expect(card?.provider_label).toBe("OpenRouter");
-    expect(card?.capabilities.map((one) => one.id)).toEqual(["openrouter.models.list"]);
+    expect(card?.capabilities.map((one) => one.id)).toEqual([
+      "openrouter.chat.completion",
+      "openrouter.models.list",
+    ]);
+    // The one that costs money is the one that has to carry a consequence
+    // sentence, and the one that does not must not invent one (MAR-545).
+    expect(card?.capabilities.map((one) => one.consequence !== null)).toEqual([true, false]);
     expect(card?.connect.channel).toBe("connection.connect");
     expect(card?.check.channel).toBe("connection.test");
     expect(card?.disconnect.channel).toBe("connection.disconnect");

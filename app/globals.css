@@ -3627,3 +3627,210 @@ button:disabled {
   font-family: var(--font-mono);
   font-weight: 600;
 }
+
+/* ---------------------------------------------------------------------- *
+ * Talking to an agent (MAR-545)
+ * ---------------------------------------------------------------------- */
+
+.ask {
+  display: grid;
+  gap: var(--density-gap);
+}
+
+/*
+ * The conversation. An ordered list because it *is* one — the order carries
+ * meaning, a screen reader announces the count, and nothing here had to be
+ * wired for either.
+ */
+.ask-history {
+  display: grid;
+  gap: var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * One exchange, marked by the accent bar rather than by a bubble.
+ *
+ * Bit-Command has zero corners and no chat-app furniture, and a rounded speech
+ * bubble here would be the fiction layer arriving through a component nobody
+ * reviewed for it. The bar is the same device `.model-in-force` uses to say
+ * "this is the live state" and reads as one column of conversation rather than
+ * as two people texting.
+ */
+.ask-turn {
+  display: grid;
+  gap: var(--space-2);
+  padding-left: var(--space-3);
+  border-left: var(--active-bar) solid var(--line-strong);
+}
+
+/* What the person asked. Their own words, so they lead. */
+.ask-question {
+  margin: 0;
+  font-weight: 700;
+  max-width: 70ch;
+}
+
+.ask-when,
+.ask-selection,
+.ask-charge {
+  margin: 0;
+  font-size: var(--text-sm);
+  max-width: 70ch;
+}
+
+/*
+ * The answer.
+ *
+ * `pre-wrap` so the paragraphs a model wrote survive, and nothing more: this is
+ * a text node, and the whole safety argument in `app/_components/ask.tsx` is
+ * that it is never anything else. `overflow-wrap` because an answer can quote a
+ * long unbroken string out of a headline and a page that scrolls sideways is the
+ * defect three capture runs have already found.
+ */
+.ask-answer {
+  margin: 0;
+  max-width: 70ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * A question that did not get answered. Warm rather than red: nothing broke on
+ * this computer, the usual causes are a key or a balance, and the red band in
+ * this palette means an agent failed.
+ */
+.ask-failed {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--warn-bg);
+  border-left: var(--active-bar) solid var(--warn);
+}
+
+.ask-failed p {
+  margin: 0;
+  max-width: 70ch;
+}
+
+/*
+ * What the answer was built from, folded away. `details` for `.model-steps`'
+ * reason: the platform's own disclosure, stateful without a hook, reachable
+ * from a keyboard without anything being wired.
+ */
+.ask-sources > summary {
+  cursor: pointer;
+  padding: var(--space-2) 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.ask-sources > summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.ask-sources ul {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ask-sources li {
+  max-width: 70ch;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The number the answer can refer to. Monospace so a reader matching "[3]" in
+ * an answer to a row in this list is comparing two identical shapes.
+ */
+.ask-cite-index {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.ask-compose {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+/*
+ * What sending will do. Given the accent bar, because it is the one line on
+ * this section a person should read before they press the button — the same
+ * standing `.model-in-force` has for the setting above it.
+ */
+.ask-estimate {
+  margin: 0;
+  padding: var(--space-3);
+  border-left: var(--active-bar) solid var(--accent);
+  background: var(--surface-2);
+  font-weight: 600;
+  max-width: 70ch;
+}
+
+.ask-compose > .muted {
+  margin: 0;
+  font-size: var(--text-sm);
+  max-width: 70ch;
+}
+
+.ask-field {
+  display: block;
+  width: 100%;
+  max-width: 70ch;
+}
+
+/*
+ * The box.
+ *
+ * `field-sizing: content` where it is supported, so two lines of question grow
+ * to three rather than scrolling inside a two-row box — and a plain `rows={2}`
+ * everywhere else, which is why the rows attribute is on the element rather
+ * than a height here.
+ */
+.ask-input {
+  width: 100%;
+  padding: var(--space-3);
+  background: var(--surface-0);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  line-height: var(--leading-normal);
+  resize: vertical;
+  field-sizing: content;
+}
+
+.ask-input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-color: var(--accent);
+}
+
+.ask-input:disabled {
+  color: var(--text-faint);
+  background: var(--surface-2);
+  cursor: not-allowed;
+}
+
+/* Where the words go, said once, under the control rather than over it. */
+.ask-custody {
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-2);
+}
+
+/* The one next step, when there is nothing to ask with. */
+.ask-next {
+  margin: 0;
+  font-weight: 600;
+}

@@ -343,6 +343,45 @@ export const COMMANDS = {
   },
 
   /*
+   * MAR-545. Asking an agent a question about what it has found.
+   *
+   * **A tenth family with one member, and the first command in this file that
+   * costs the person money.** Every other entry here changes something on this
+   * computer, starts or stops something DASH launched, reaches a provider for
+   * free, or sends a message. This one bills an account.
+   *
+   * That is why `irreversible` is **true**, and it is worth saying exactly what
+   * the flag means here as against on `agent.approve`. An approval running twice
+   * does a thing in the world twice. A question running twice does nothing in
+   * the world at all -- nothing is created, nothing is sent, and the second
+   * answer overwrites nobody's anything. What cannot be undone is the *charge*,
+   * and a charge is precisely the "harm no one can undo" the flag was written
+   * for: DASH cannot ask a provider for its money back. Somebody reading the
+   * audit deserves to see that a repeated question is not a repeated pause.
+   *
+   * `question` is the one free-text payload value in this whole catalogue, and
+   * the only one that is neither an id nor a number. It is bounded at the
+   * operation -- `MAX_QUESTION_CHARS` in `lib/broker/operations.ts` -- rather
+   * than here, because that is where it is interpolated into something, and a
+   * second length rule at this boundary would be a second place for the two to
+   * disagree about what is too long.
+   *
+   * The renderer names an agent, a connection and a field, exactly as the model
+   * family does. It cannot name a provider, an origin, a path, a key or a model:
+   * which model answers is read in main from the row a person set through
+   * `model.choose`, so a compromised page cannot spend somebody's money on the
+   * most expensive thing their key reaches.
+   */
+  "ask.question": {
+    effect:
+      "Ask this agent's model a question about what the agent has saved, and charge your own account with that provider for the answer.",
+    payload_keys: ["agent_id", "connection_id", "field_id", "question"],
+    required_keys: ["agent_id", "connection_id", "field_id", "question"],
+    mutates: true,
+    irreversible: true,
+  },
+
+  /*
    * MAR-584. An outside editor changed an agent's folder; these three are how a
    * person finds it, hears what changed, and decides.
    *
@@ -951,6 +990,31 @@ export function isModelCommandName(value: CommandName): value is ModelCommandNam
 }
 
 /**
+ * Talking to an agent (MAR-545).
+ *
+ * A tenth family with one member, on the terms the eighth and ninth were created
+ * under. The question it answers alone is one nothing else in this file can:
+ * **what in DASH can spend the person's money?** One map, one member, and a
+ * reviewer gets a complete answer without reading the other nine.
+ *
+ * Not `model.*`, though it uses the same three ids and the same key. That family
+ * decides *which* model an agent uses and every one of its members is free to
+ * run; this one runs one. Folding a billed call in beside three settings changes
+ * would put the only expensive thing in DASH inside a family whose name promises
+ * a preference.
+ */
+export const ASK_ACTIONS = {
+  "ask.question": "question",
+} as const;
+
+export type AskCommandName = keyof typeof ASK_ACTIONS;
+export type AskAction = (typeof ASK_ACTIONS)[AskCommandName];
+
+export function isAskCommandName(value: CommandName): value is AskCommandName {
+  return Object.hasOwn(ASK_ACTIONS, value);
+}
+
+/**
  * Where DASH posts when an agent needs somebody (MAR-588).
  *
  * A ninth family, on the terms the eighth was created under. A reviewer
@@ -1049,6 +1113,7 @@ type UnroutedCommand = Exclude<
   | FolderCommandName
   | ModelCommandName
   | NotifyCommandName
+  | AskCommandName
   | "shell.ping"
 >;
 const _allCommandsAreRouted: UnroutedCommand extends never ? true : never = true;
@@ -1335,7 +1400,11 @@ export function executeCommand(review: CommandReview): CommandResult {
     // `notify.test` matters most: succeeding here would report a message
     // delivered to a channel nothing contacted, which is precisely the
     // reassurance that command exists to make checkable.
-    isNotifyCommandName(review.command)
+    isNotifyCommandName(review.command) ||
+    // MAR-545. Opens the vault, reaches a provider and bills an account.
+    // Succeeding here would report a question asked that nothing asked, beside
+    // a cost sentence about a charge nobody made.
+    isAskCommandName(review.command)
   ) {
     // Not a denial and not a result: a caller that reached here bypassed the
     // trusted side entirely. Throwing is the only honest answer — returning a
@@ -1689,6 +1758,26 @@ export interface DispatchContext {
       level?: string;
     },
   ): Promise<{ ok: boolean; detail?: string; recovery?: Recovery; models?: string[] }>;
+  /**
+   * Ask this agent's model a question about what the agent has saved (MAR-545).
+   *
+   * Injected for the reason the eight above are, and here three reasons apply at
+   * once: it opens the OS vault, it puts bytes on the network, and it writes a
+   * row through `node:sqlite`. A pure module importable from a sandboxed preload
+   * can do none of them.
+   *
+   * **The answer does not come back through this seam**, and that is deliberate
+   * rather than incidental. What returns is whether the question was asked and a
+   * sentence about it; the answer itself lands in the store and reaches the page
+   * on the next poll, with the rest of the agent's view. So there is exactly one
+   * path by which an answer becomes something on screen, and it is the same path
+   * a conversation reopened tomorrow takes -- rather than a second rendering of
+   * an answer that exists only in one window's memory.
+   */
+  askAction(
+    action: AskAction,
+    target: { agent_id: string; connection_id: string; field_id: string; question: string },
+  ): Promise<{ ok: boolean; detail?: string; recovery?: Recovery }>;
   /**
    * Compare, accept, or open an agent's folder (MAR-584).
    *
@@ -2095,6 +2184,32 @@ export async function dispatchCommand(
       detail: result.detail,
       recovery: result.recovery,
       models: result.models,
+    };
+  }
+
+  if (isAskCommandName(review.command)) {
+    /*
+     * MAR-545. Four fields, every one copied explicitly for
+     * `toAgentCommandInput`'s reason, and all four required -- there is no
+     * "put it back" case for a question, so nothing here is optional and main
+     * never has to decide what a missing field meant.
+     *
+     * Note what is absent: no model id. The renderer cannot choose what this
+     * question is answered by, because main reads that from the row a person set
+     * through `model.choose`. A page that could name a model would be a page
+     * that could pick the most expensive one somebody's key reaches.
+     */
+    const result = await context.askAction(ASK_ACTIONS[review.command], {
+      agent_id: String(review.payload["agent_id"]),
+      connection_id: String(review.payload["connection_id"]),
+      field_id: String(review.payload["field_id"]),
+      question: String(review.payload["question"]),
+    });
+    return {
+      ok: result.ok,
+      request_id: review.audit.request_id,
+      detail: result.detail,
+      recovery: result.recovery,
     };
   }
 

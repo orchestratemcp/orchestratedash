@@ -327,6 +327,19 @@ await Promise.all([
     format: "esm",
   }),
 
+  // The conversation (MAR-545), on the same terms. Five states, and which one is
+  // drawn depends on the vault, on a settings row and on what the agent has
+  // saved. This one seeds five agents, one per state, opens the sources
+  // disclosure by clicking it, and photographs both densities as well as both
+  // themes. See `electron/capture-ask.ts`, including the paragraph saying that
+  // no provider was contacted and nobody was charged to produce those images.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-ask.ts")],
+    outfile: path.join(outDir, "capture-ask.mjs"),
+    format: "esm",
+  }),
+
   // MAR-423. "Try a sample agent" scaffolds a project, and a scaffold needs the
   // same `scripts/open-in-dash.mjs` the Agent Kit copies in, so the user can
   // re-add their agent later from their own folder without DASH.

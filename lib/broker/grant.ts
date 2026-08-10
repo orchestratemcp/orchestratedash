@@ -51,7 +51,12 @@
 import type { AiKeyCredential } from "../ai/credential";
 import type { ConnectionSourceManifest, ManifestConnection, ManifestConnectionField } from "../connections";
 import type { OAuthCredential } from "../oauth/credential";
-import { operationsForProvider, type BrokerOperation } from "./operations";
+import {
+  hasFrozenPath,
+  operationsForProvider,
+  type BrokerAccess,
+  type BrokerOperation,
+} from "./operations";
 import {
   brokerProfileFor,
   describeClientOwner,
@@ -141,18 +146,38 @@ export type GrantRefusal =
 export interface GrantedOperation {
   id: string;
   label: string;
-  access: "read" | "write";
+  access: BrokerAccess;
   /**
-   * What a person will be able to see and do because this ran, or null for a
-   * read (MAR-469).
+   * What happens to the person because this ran, or null for a read (MAR-469,
+   * MAR-545).
    *
    * Carried on the granted operation rather than looked up beside it, for the
    * reason `label` is: a card rendered from the grant cannot describe a
    * different set from the one the broker will honour. A write whose
    * consequence went missing between here and the page would be a capability
    * list that reads like a read, which is the failure this field exists to stop.
+   *
+   * Non-null for a spend as well as for a write, and the type does not tell them
+   * apart, because a card reader's question is the same for both: what will this
+   * do to me? Which of the two it was is `access`, one field along, where a
+   * surface that wants to word them differently can look.
    */
   consequence: string | null;
+}
+
+/**
+ * Card order: what appears in your account, then what costs you money, then what
+ * is merely read (MAR-469, MAR-545).
+ *
+ * One function rather than the two-filter idiom this had grown at three call
+ * sites. `describePermissions` orders a consent screen this way for the reason
+ * stated there — the line worth reading must not sit under the line that is not
+ * — and a third access kind turned "writes, then reads" into an ordering with a
+ * silent third bucket landing wherever the input happened to leave it.
+ */
+function byAccess(operations: readonly GrantedOperation[]): GrantedOperation[] {
+  const rank: Record<BrokerAccess, number> = { write: 0, spend: 1, read: 2 };
+  return [...operations].sort((left, right) => rank[left.access] - rank[right.access]);
 }
 
 export interface BrokerGrant {
@@ -357,7 +382,7 @@ export function resolveGrant(
       id: operation.id,
       label: operation.label,
       access: operation.access,
-      consequence: operation.access === "write" ? operation.consequence : null,
+      consequence: hasFrozenPath(operation) ? operation.consequence : null,
     });
   }
 
@@ -382,13 +407,7 @@ export function resolveGrant(
       profile,
       secret_name: secretName,
       account: credential.account,
-      // Write operations first, for the reason `describePermissions` orders a
-      // consent screen that way: the line worth reading should not be under the
-      // line that is not.
-      operations: [
-        ...operations.filter((operation) => operation.access === "write"),
-        ...operations.filter((operation) => operation.access === "read"),
-      ],
+      operations: byAccess(operations),
       unused_scopes: credential.scopes.filter(
         (scope) => !used.has(scope) && declared.has(scope),
       ),
@@ -431,7 +450,7 @@ function resolveKeyGrant(
     id: operation.id,
     label: operation.label,
     access: operation.access,
-    consequence: operation.access === "write" ? operation.consequence : null,
+    consequence: hasFrozenPath(operation) ? operation.consequence : null,
   }));
 
   if (operations.length === 0) {
@@ -450,10 +469,7 @@ function resolveKeyGrant(
       profile,
       secret_name: secretName,
       account: null,
-      operations: [
-        ...operations.filter((operation) => operation.access === "write"),
-        ...operations.filter((operation) => operation.access === "read"),
-      ],
+      operations: byAccess(operations),
       unused_scopes: [],
       missing_scopes: [],
     },

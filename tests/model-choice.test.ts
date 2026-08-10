@@ -22,7 +22,7 @@
  *    than a broken push.
  */
 
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -597,20 +597,94 @@ describe("what a run records about its model", () => {
     expect(describeRunModelDetail({ setting: null, reported: [] })).toBeNull();
   });
 
-  it("reads telemetry v1's cost field nowhere", () => {
+  it("still reads telemetry v1's cost field nowhere in the model surface", () => {
     /*
-     * `cost_usd` sits beside `model` on the same frozen event and is deliberately
-     * not read. MAR-299 owns spend and needs an answer to "whose number is this"
-     * before any surface repeats one; drawing it here because the field happened
-     * to be adjacent is exactly how an unexamined figure reaches a screen.
+     * **This test used to say "nowhere", and MAR-545 changed what it guards
+     * rather than deleting it.**
      *
-     * Asserted over the source rather than over a rendering, because the point is
-     * that nothing reads it at all.
+     * `cost_usd` sits beside `model` on the same frozen event. MAR-583 drew
+     * `model` and left this one alone with the condition written down: MAR-299
+     * owns spend and needed an answer to "whose number is this" before any
+     * surface repeated one. MAR-545 answered it — DASH shows amounts other
+     * people stated and says who — and `lib/views/ask.ts` is the one reader,
+     * where the sentence beside the figure attributes it to the agent.
+     *
+     * What survives unchanged is the narrower thing this file has always been
+     * about: the *model* surface says which model ran and never what it cost.
+     * A run row that grew an amount because the field happened to be adjacent is
+     * still exactly the defect the original assertion was written against, and
+     * it would still fail here.
      */
     const read = readFileSync(path.join(repoRoot, "lib", "views", "models.ts"), "utf8");
     expect(read).not.toContain("cost_usd");
     expect(readFileSync(path.join(repoRoot, "lib", "ai", "model-choice.ts"), "utf8")).not.toContain(
       "tokens_in",
+    );
+  });
+
+  it("names every file whose code touches the cost field", () => {
+    /*
+     * The complement of the assertion above, and the reason it is safe to have
+     * relaxed one. "Nothing reads it" was a strong guarantee and this is the
+     * strongest available replacement: the files whose *code* touches the field
+     * are listed here, and a new one is a diff somebody has to make against this
+     * test. An unattributed amount on a screen is the failure both versions of
+     * this test exist to prevent.
+     *
+     * Comments are stripped before the scan, which is not a convenience. Three
+     * files in this repository discuss `cost_usd` at length precisely because
+     * they decided not to read it, and a grep over raw text would report those
+     * as readers — turning a guard about behaviour into a guard about how often
+     * a decision is explained.
+     */
+    const withoutComments = (source: string): string =>
+      source.replaceAll(/\/\*[\s\S]*?\*\//g, "").replaceAll(/\/\/.*/g, "");
+
+    const readers: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+          continue;
+        }
+        if (!/\.tsx?$/.test(entry.name)) {
+          continue;
+        }
+        if (withoutComments(readFileSync(full, "utf8")).includes("cost_usd")) {
+          readers.push(path.relative(repoRoot, full).replaceAll("\\", "/"));
+        }
+      }
+    };
+    for (const root of ["lib", "app", "electron"]) {
+      walk(path.join(repoRoot, root));
+    }
+
+    expect(readers.sort()).toEqual(
+      [
+        // The contract's own type. Declaring the field is not reading it.
+        "lib/contracts.ts",
+        // A provider's own statement of what it charged, projected at the
+        // broker boundary and carried in DASH's own shape. Both are about a
+        // question DASH asked, not about a run.
+        "lib/broker/operations.ts",
+        "lib/ai/ask.ts",
+        // The one reader of the field on a run event, which attributes the
+        // total to the agent in the sentence beside it.
+        "lib/views/ask.ts",
+        // Not a reader: a capture harness that *seeds* two run events carrying
+        // one, so the sentence attributing the agent's own figure is actually in
+        // the photographs. Named here rather than excluded by a path rule,
+        // because "which files touch this" is the question, and a rule that
+        // skipped `electron/capture-*` would skip a real writer too.
+        "electron/capture-ask.ts",
+      ].sort(),
+    );
+
+    // And the attribution itself, so the list above cannot be satisfied by a
+    // reader that shows the number without saying whose it is.
+    expect(readFileSync(path.join(repoRoot, "lib", "copy", "ask.ts"), "utf8")).toContain(
+      "not something DASH watched",
     );
   });
 });

@@ -395,11 +395,17 @@ export interface RunModelRecord {
  *   inside — which makes it the *better* answer to "which model ran" and still
  *   not an observation DASH made.
  *
- * **There is no cost here.** Telemetry v1 also carries `cost_usd`, and it is
- * deliberately not read: MAR-299 owns spend and needs a story about whose number
- * that is before any surface repeats it. Drawing it here because the field
- * happened to be next to `model` is exactly how an unexamined number reaches a
- * screen.
+ * **There is still no cost here, and that is now a choice about this surface
+ * rather than about DASH.** Telemetry v1 also carries `cost_usd`. MAR-583 left
+ * it unread because MAR-299 needed a story about whose number that is; MAR-545
+ * settled it — DASH shows amounts other people stated and says who — and
+ * `lib/views/ask.ts` reads the field, attributing the total to the agent that
+ * reported it.
+ *
+ * This type stays free of it anyway. It answers "which model ran", and folding
+ * an amount in because the field happened to be next to `model` is exactly how
+ * an unattributed number reaches a screen — the sentence that says whose figure
+ * it is has to travel with the figure, and there is nowhere here to put one.
  */
 export interface RunModelStanding {
   setting: RunModelRecord | null;

@@ -903,6 +903,66 @@ const MIGRATIONS: readonly Migration[] = [
     send_reports   INTEGER NOT NULL DEFAULT 1
   );
   `,
+
+  // MAR-545. The conversation: what a person asked one agent, what came back,
+  // and what the provider said that cost.
+  //
+  // **This is the first cost column in DASH, and MAR-583 said there was none.**
+  // Its three tables carry no amount, deliberately, because MAR-299 needed an
+  // answer to "whose number is this" before any surface repeated one. The answer
+  // is here in the schema rather than only in a document: `amount_usd` is
+  // nullable and is written **only** from a figure the provider stated in the
+  // reply it charged for. Nothing in DASH multiplies a token count by a rate,
+  // so there is no code path that could fill this column with DASH's own
+  // arithmetic, and a provider that prices nothing leaves it null forever.
+  //
+  // The question and the answer are stored in full, which is a departure worth
+  // naming beside `broker_audit.input_keys` -- that table records the *names* of
+  // an agent's inputs and never their values, because a durable record of every
+  // phrase an agent searched for is something nobody asked DASH to keep. This is
+  // the opposite case: a person typed these words into a conversation, on their
+  // own computer, expecting to be able to scroll back through it. A chat that
+  // forgot everything when the page closed would not be a conversation.
+  //
+  // `citations_json` is DASH's own record of which saved things went with the
+  // question -- see `AskCitation` in `lib/ai/ask.ts`. It is stored rather than
+  // recomputed because the reports behind an old answer can change, and an
+  // answer shown beside a list of what it was *actually* built from is the only
+  // version of that list worth having.
+  //
+  // `IF NOT EXISTS` for the reason every migration since the hosts one states.
+  `
+  CREATE TABLE IF NOT EXISTS agent_questions (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent          TEXT NOT NULL,
+    -- DASH's own clock at the moment the question was sent.
+    asked_at       TEXT NOT NULL,
+    question       TEXT NOT NULL,
+    -- The answer's text, or NULL when the question produced none.
+    answer         TEXT,
+    -- Which failure, when there is no answer. One of AskFailureReason.
+    failure        TEXT,
+    -- Why these saved things and not others: one of SelectionBasis. An enum and
+    -- never a sentence -- the words live in lib/copy/ask.ts, and a column
+    -- holding prose would be copy no sweep ever looks at. Stored rather than
+    -- re-derived from the citation list, because selection searched each item's
+    -- summary as well and a citation keeps only its headline: re-deriving would
+    -- report "nothing mentioned that" about an answer that matched on a summary.
+    basis          TEXT NOT NULL,
+    -- Which provider was asked, from DASH's own closed registry.
+    provider_id    TEXT NOT NULL,
+    -- The model the provider says answered, which may not be the one asked for.
+    model_id       TEXT,
+    tokens_in      INTEGER,
+    tokens_out     INTEGER,
+    -- The provider's own figure for what it charged. NULL means it stated none.
+    amount_usd     REAL,
+    citations_json TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS agent_questions_by_agent
+    ON agent_questions (agent, id DESC);
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

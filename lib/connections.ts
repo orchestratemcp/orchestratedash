@@ -31,7 +31,17 @@ export interface RequiredCapability {
   id: string;
   /** Plain-language capability name, safe to render directly. */
   label: string;
-  access: "read" | "write";
+  /**
+   * `BrokerAccess`, restated rather than imported (MAR-545).
+   *
+   * This module declares itself importless and safe to call from anywhere, and
+   * a type import from `lib/broker/` would point a base module at one above it
+   * for a value that is erased at compile time anyway. Restated in
+   * `AiKeyActionResult`'s shape and pinned the way that one is: a one-line
+   * compile-time assignment in `tests/broker-spend.test.ts` fails the moment the
+   * two drift.
+   */
+  access: "read" | "write" | "spend";
 }
 
 export interface ConnectionRequirementRow {
