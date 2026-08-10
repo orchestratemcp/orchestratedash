@@ -35,14 +35,10 @@ import {
   inspectAgentFolderStanding,
   storedDigestSummary,
 } from "../agent-folders";
-import {
-  MODEL_KEY_STAYS_HOME_REFUSAL,
-  type BundledModelChoice,
-} from "../ai/model-choice";
-import { planNeedsAModel } from "../ai/model-levels";
-import { aiProviderFor } from "../ai/providers";
-import type { ManifestConnection } from "../connections";
-import { validateManifest, type AnyAgentManifest } from "../contracts";
+import type { BundledModelChoice } from "../ai/model-choice";
+import type { ConnectionSourceManifest } from "../connections";
+import { validateManifest } from "../contracts";
+import { assessConnectionTravel, describeTravelRefusal } from "./connection-travel";
 import type { AgentRegistration } from "../registration";
 import {
   BUNDLE_ENTRY_POINT,
@@ -73,8 +69,16 @@ export type FolderBundleProblem =
   | "manifest_unreadable"
   | "registration_unreadable"
   | "runner_unreadable"
-  /** MAR-583: the plan needs a model and the key for it is not going. */
-  | "model_key_stays_home";
+  /**
+   * MAR-583, widened by MAR-591: this agent's file says it needs something DASH
+   * holds the credential for, and credentials do not travel.
+   *
+   * Renamed from `model_key_stays_home` when the model key stopped being the
+   * only case. The **sentence** for that case is unchanged and still pinned by
+   * value — see `describeTravelRefusal` — which is the part MAR-583's proof was
+   * ever about; this member is internal vocabulary no renderer reads.
+   */
+  | "credential_stays_home";
 
 export type FolderBundleResult =
   | {
@@ -171,36 +175,41 @@ export function produceAgentFolderBundle(
   }
 
   /*
-   * MAR-583. The plan needs a model and the key for it is one DASH holds.
+   * MAR-583, generalised by MAR-591. A connection DASH holds the credential for,
+   * on an agent this agent's own file says needs it.
    *
    * Second only to the manifest-only refusal, and before the runner is read for
    * the same reason that one is: there is no half-bundle to accidentally send,
    * and the sentence reaches the audited command result rather than a partial
    * push somebody has to undo.
    *
-   * **What it is checking, exactly.** Not whether DASH holds a key right now —
-   * that is a fact about this computer's vault, and a deploy that succeeded or
-   * failed depending on whether somebody had connected yet would be a rule
+   * **What it is checking, exactly.** Not whether DASH holds a credential right
+   * now — that is a fact about this computer's vault, and a deploy that succeeded
+   * or failed depending on whether somebody had connected yet would be a rule
    * nobody could predict. It checks the *shape of the arrangement*: this agent
-   * asks DASH to hold its model key, and DASH does not send keys to servers. That
-   * is true whether or not a key has been typed, so the refusal is stable.
+   * asks DASH to hold this, and DASH does not send credentials to servers. That
+   * is true whether or not anything has been typed, so the refusal is stable.
    *
-   * An agent that manages its own model key is not refused. It reaches a provider
-   * by arrangements DASH has no part in, wherever it runs, and DASH has no
-   * standing to stop it.
+   * An agent that manages its own credentials is not refused. It reaches its
+   * services by arrangements DASH has no part in, wherever it runs, and DASH has
+   * no standing to stop it.
    *
-   * The general case — a `dash_managed` connection of any kind on an agent going
-   * to a server — is wider than this issue and is **not** fixed here. It is named
-   * in this repository's state packet rather than quietly half-solved: making the
-   * model choice travel is what created the obligation to say something about the
-   * model key, and inventing a rule for Gmail on the way past would be a decision
-   * taken in the wrong issue.
+   * **This is the gate, and it is not the disclosure.** Both deploy panels call
+   * the same `assessConnectionTravel` before the press and say what will not
+   * travel — including the cases that warn rather than refuse, which never reach
+   * this function. What arrives here is a page that was ignored, or a store that
+   * has drifted from this folder; either way the sentence is `describeTravelRefusal`'s
+   * and the model-key case still gets MAR-583's own words.
    */
-  if (dashHeldModelKey(manifest.value)) {
+  const travel = assessConnectionTravel(
+    options.agent_id,
+    manifest.value as ConnectionSourceManifest,
+  );
+  if (travel.verdict === "refuse") {
     return {
       ok: false,
-      problem: "model_key_stays_home",
-      detail: MODEL_KEY_STAYS_HOME_REFUSAL,
+      problem: "credential_stays_home",
+      detail: describeTravelRefusal(travel),
     };
   }
 
@@ -285,32 +294,6 @@ export function produceAgentFolderBundle(
     files,
   });
   return assembled.ok ? { ...assembled, runner_build: runnerBuild } : assembled;
-}
-
-/**
- * Whether this agent asks DASH to hold a key for a model provider (MAR-583).
- *
- * Two conditions and both are read off the manifest alone: the plan has a step
- * above `model_tier: "none"`, and at least one `dash_managed` connection names a
- * provider `lib/ai/providers.ts` knows. The second is what makes it a *model*
- * key rather than any credential — a `dash_managed` ledger secret is somebody
- * else's problem and not this refusal's.
- *
- * `planNeedsAModel` and not `stepsNeedingAModel`, deliberately. An agent
- * exported before MAR-583's emitter declares no levels at all and still needs a
- * model; refusing only the agents whose steps say so would let exactly the older
- * agents through, which is the wrong way round for a safety refusal.
- */
-function dashHeldModelKey(manifest: AnyAgentManifest): boolean {
-  if (!planNeedsAModel(manifest.planned_route)) {
-    return false;
-  }
-  const connections = (manifest as { agent_dom?: { connections?: ManifestConnection[] } }).agent_dom
-    ?.connections;
-  return (connections ?? []).some(
-    (connection) =>
-      connection.ownership === "dash_managed" && aiProviderFor(connection.provider) !== null,
-  );
 }
 
 function unreadableFolder(): FolderBundleResult {

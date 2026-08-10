@@ -18,6 +18,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { DeployPanel, ServerCard, standingChip } from "../app/_components/server-card";
 import { MANIFEST_ONLY_DEPLOY_REFUSAL } from "../lib/agent-folders";
+import { NOTHING_STRANDED } from "../lib/deploy/connection-travel";
 import type { DeployStanding } from "../lib/deploy/deploying";
 import { HOST_REACH_PROBLEMS, type HostConnectState } from "../lib/host-connect";
 import type { AgentDeployChoice, SavedServerView } from "../lib/views/types";
@@ -54,11 +55,15 @@ const RENDERED_REFUSAL = MANIFEST_ONLY_DEPLOY_REFUSAL.replaceAll("'", "&#x27;");
 /** An agent DASH holds a build for, and one it does not (MAR-577). */
 const SENDABLE: AgentDeployChoice = {
   name: "News Scout",
-  deploy: { deployable: true, refusal: null },
+  deploy: { deployable: true, refusal: null, travel: NOTHING_STRANDED },
 };
 const MIGRATED: AgentDeployChoice = {
   name: "Old Scout",
-  deploy: { deployable: false, refusal: MANIFEST_ONLY_DEPLOY_REFUSAL },
+  deploy: {
+    deployable: false,
+    refusal: MANIFEST_ONLY_DEPLOY_REFUSAL,
+    travel: NOTHING_STRANDED,
+  },
 };
 
 /** Every standing a saved server can be shown in. */
@@ -283,6 +288,84 @@ describe("the deploy panel", () => {
 
   it("says so plainly when there is no agent to put anywhere", () => {
     expect(panel([])).toContain("no agent here");
+  });
+
+  describe("what the chosen agent leaves behind (MAR-591)", () => {
+    const STRANDED: AgentDeployChoice = {
+      name: "Meeting Assistant",
+      deploy: {
+        deployable: true,
+        refusal: null,
+        travel: {
+          verdict: "warn",
+          stranded: [
+            {
+              connection_id: "gmail",
+              service: "Your Gmail",
+              custody: "oauth",
+              need: "undeclared",
+            },
+          ],
+        },
+      },
+    };
+    const BLOCKED: AgentDeployChoice = {
+      name: "Meeting Assistant",
+      deploy: {
+        deployable: true,
+        refusal: null,
+        travel: {
+          verdict: "refuse",
+          stranded: [
+            {
+              connection_id: "gmail",
+              service: "Your Gmail",
+              custody: "oauth",
+              need: "run_needs_it",
+            },
+          ],
+        },
+      },
+    };
+
+    it("says nothing until an agent is chosen", () => {
+      // The panel opens on "Choose an agent". A sentence about somebody's Gmail
+      // before they have named an agent would be about no agent in particular.
+      expect(panel([STRANDED])).not.toContain("Your Gmail");
+    });
+
+    it("says it the moment the agent is chosen, from the agent page's component", () => {
+      /*
+       * `ConnectionTravelNotice` is `app/_components/deploy.tsx`'s, imported
+       * here rather than restated — the same arrangement `DeployOutcome` has,
+       * and for the same reason: two entry points that worded one consequence
+       * twice would be two places it could be softened.
+       */
+      const html = panel([STRANDED], { chosenAgent: STRANDED.name });
+      expect(html).toContain("Your Gmail");
+      expect(html).toContain(`stays on this computer`);
+    });
+
+    it("stops the deploy when the agent's own file says it needs what stays here", () => {
+      const html = panel([BLOCKED], { chosenAgent: BLOCKED.name });
+      expect(html).toContain('role="alert"');
+      expect(html).toContain(`needs something DASH cannot send to ${SERVER.label}`);
+      expect(html).toContain("disabled");
+    });
+
+    it("keeps the migrated-agent refusal beside it rather than instead of it", () => {
+      /*
+       * Two separate things can be wrong with one agent. Showing one would leave
+       * the other to be discovered after the first was fixed.
+       */
+      const both: AgentDeployChoice = {
+        name: MIGRATED.name,
+        deploy: { ...MIGRATED.deploy, travel: STRANDED.deploy.travel },
+      };
+      const html = panel([both], { chosenAgent: both.name });
+      expect(html).toContain(RENDERED_REFUSAL);
+      expect(html).toContain("Your Gmail");
+    });
   });
 });
 

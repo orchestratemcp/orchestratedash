@@ -1880,6 +1880,43 @@ a.plain:hover {
 }
 
 /*
+ * What DASH holds that is not going with the agent (MAR-591).
+ *
+ * Always a `.notice`, so the tone and the spacing already come from there; this
+ * rule only separates the per-connection lines from the sentence introducing
+ * them. Each line is two clauses — why it cannot travel, and what this agent's
+ * own file says about needing it — so they are long, and a list packed against
+ * its headline reads as one paragraph that has been bulleted by accident.
+ */
+.travel-notice .permission-list {
+  margin-top: var(--density-gap);
+}
+
+/*
+ * The way out, separated from the list above it.
+ *
+ * Without this the sentence sat flush against the last bullet and read as that
+ * bullet's continuation — a screenshot at 1280 is what showed it, and at 375 it
+ * was worse because the bullet itself wrapped to three lines. `.next-action`
+ * carries no top margin of its own anywhere it is used inside a notice.
+ */
+.travel-notice .next-action {
+  margin-top: var(--density-gap);
+}
+
+/*
+ * A control that is off, not a control that is busy.
+ *
+ * `button:disabled` sets `cursor: wait` because nearly every disabled button in
+ * DASH is disabled by `busy`. A deploy refused over a connection is not coming
+ * back while this agent and this server are what they are, and a wait cursor
+ * over it promises otherwise.
+ */
+button.button-unavailable:disabled {
+  cursor: not-allowed;
+}
+
+/*
  * The one recommendation on this surface, and the block is quiet on purpose.
  *
  * It sits under the connect form, styled as the calmest thing on the screen: no

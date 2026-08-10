@@ -22,7 +22,7 @@ import {
 } from "../../lib/server-card";
 import { describeSetupStep } from "../../lib/host-wizard";
 import type { AgentDeployChoice, SavedServerView } from "../../lib/views/types";
-import { DeployOutcome } from "./deploy";
+import { ConnectionTravelNotice, DeployOutcome } from "./deploy";
 
 /**
  * A saved server, as a card you manage (MAR-574).
@@ -435,6 +435,23 @@ export function DeployPanel({
             </div>
           )}
 
+          {/* MAR-591. Which of the chosen agent's connections stay on this
+              computer, from the same function and the same component the agent's
+              own page uses — the two entry points cannot word one consequence
+              two ways any more than they can word one deploy two ways.
+
+              Drawn beside the refusal above rather than instead of it: a
+              migrated agent with a stranded Gmail has two separate things wrong
+              with it, and showing one would leave the other to be discovered
+              after the first was fixed. */}
+          {chosen === null ? null : (
+            <ConnectionTravelNotice
+              travel={chosen.deploy.travel}
+              agent={chosen.name}
+              server={server.label}
+            />
+          )}
+
           {/* What is happening, or what happened, and what the server says it
               has now. The same component the agent's own page uses, so the two
               entry points cannot word one deploy two ways. */}
@@ -448,8 +465,18 @@ export function DeployPanel({
             </button>
             <button
               type="button"
-              className="button-primary"
-              disabled={busy || chosenAgent === "" || refusal !== null || !canAct}
+              className={
+                refusal !== null || chosen?.deploy.travel.verdict === "refuse"
+                  ? "button-primary button-unavailable"
+                  : "button-primary"
+              }
+              disabled={
+                busy ||
+                chosenAgent === "" ||
+                refusal !== null ||
+                chosen?.deploy.travel.verdict === "refuse" ||
+                !canAct
+              }
               onClick={onDeploy}
             >
               {busy ? "Putting it there..." : "Put it on this server"}

@@ -397,6 +397,20 @@ export function resolveCredentialTarget(
  * *manifest*, so a credential left in the vault by a manifest that has since
  * stopped declaring the field is not delivered to anything. The vault is not the
  * list of what to deliver; the manifest is.
+ *
+ * ## A connection with no field list is skipped, not thrown on (MAR-591)
+ *
+ * `fields` is required by the v2 schema and every caller until now handed this a
+ * document that had just passed it. `agentDeployStanding` does not: it runs over
+ * a **store row**, which may be a document that arrived some other way or a row
+ * that has taken damage, and its own contract is that it never throws — "a view
+ * that threw there would take the whole agents list down over a row that simply
+ * cannot be deployed".
+ *
+ * Skipping is the right answer rather than a shrug. A connection whose fields
+ * DASH cannot read is one DASH holds no credential for, which is exactly what
+ * yielding no targets means to every caller here: nothing to prompt for, nothing
+ * to deliver at spawn, and nothing that fails to travel.
  */
 export function connectableFields(
   agentId: string,
@@ -404,6 +418,9 @@ export function connectableFields(
 ): CredentialTarget[] {
   const targets: CredentialTarget[] = [];
   for (const connection of manifest.agent_dom?.connections ?? []) {
+    if (!Array.isArray(connection?.fields)) {
+      continue;
+    }
     for (const field of connection.fields) {
       const resolved = resolveCredentialTarget(agentId, manifest, connection.id, field.id);
       if (resolved.ok) {
