@@ -1,7 +1,7 @@
 # DASH project state
 
-Updated: 2026-08-09 (MAR-570: Connections becomes connectors, and one consent
-reaches every agent that needs it)
+Updated: 2026-08-10 (MAR-584: an outside editor changes an agent's folder, and
+DASH says what changed instead of quietly adopting it)
 
 Portfolio sequence and estimates: [`../orchestratekit-mcp/docs/PORTFOLIO_ROADMAP_2026-08-01.md`](../orchestratekit-mcp/docs/PORTFOLIO_ROADMAP_2026-08-01.md).
 
@@ -4602,3 +4602,138 @@ agent's own page prints its **display name**. `AgentRow` carries no title and
 the Agents list renders the id deliberately inside `<code>`, so this stays a
 DASH-wide naming decision rather than this issue's to take — it is now visible
 on a second surface, which is the argument for taking it soon.
+
+## The folder is the contract, and DASH stopped adopting it silently (MAR-584)
+
+Henrik's lane 1: *"Go to your AI, find the agents folder and ask it to add
+features. When Claude Code is done, the agent updates in DASH."* Most of the
+groundwork existed — ADR 0008 made the folder authoritative, MAR-576 built the
+re-import — and what was missing was the last mile: noticing, saying what
+changed, refusing an invalid edit, and re-pushing.
+
+**The runner's working directory really is that folder.** `lib/handoff-flow.ts`
+sets `cwd` to `code/` inside it, and nothing verifies its contents before
+spawning. So an edit lands on the program DASH runs, which is the feature — and
+is exactly why DASH must not simply pick it up.
+
+### The silent swap was already happening, in two places
+
+Both were in DASH's own code and neither had a surface.
+
+`workspaceView` read the **folder** for the panel and the **row** for the title,
+goal, permission receipt and input roles. On a page that polls every five
+seconds, an outside edit therefore moved half of it immediately, unannounced,
+while the other half went on describing the version the person approved. The
+panel now reads the row.
+
+`reconcileAgentFolders` projected any differing folder over the row at every
+startup. Two very different events reached that line: **index drift** — DASH
+committed the folder and died before writing the row, where the folder is what
+DASH accepted and projecting is a repair — and **an external edit**, where the
+row is the approved version and the folder is a proposal nobody has looked at.
+The registration's `manifest_sha256` tells them apart, and only the first is
+projected now. An edit is deliberately *not* recorded as a folder issue:
+`describeStoreDamage` renders every one of those as store damage and tells the
+person to re-import, which is neither true nor useful here.
+
+### The headline sentence needed two files
+
+*"Adds 2 sources and changes the schedule"* spans `code/sources.json` and
+`agent_dom.trigger`. A manifest-only detector would have reported *no changes*
+on the exact scenario the issue was opened for, so the comparison covers the
+document and the declared program files.
+
+That needed a baseline DASH can recompute. `files_sha256` is hashed over the
+**declared** handoff paths and a folder cannot produce them back — a project's
+`agent.mjs` and its `code/agent.mjs` are stored in the same place. So the
+registration now carries `accepted_files` (per stored path, per digest) and
+`accepted_sources` (the source *names*, because a folder holds only the current
+copy of a file and "which sources were added" cannot be answered by re-reading
+it). **Absent means no baseline**, which is its own reported state and never
+"nothing has changed".
+
+**It reads the recorded paths and never walks.** The sample agent writes into
+`code/reports/` and `code/runs/`, inside the folder a walk would enumerate — so a
+walk would report an agent's own work as somebody's edit, on the flagship agent,
+every check. The cost of that choice is that a file an editor *adds* is not
+reported, and `FOLDER_CHECK_COPY` tells the person so.
+
+### The sentence that was false
+
+`FOLDER_CHANGED` first read *"DASH is still running the version you approved."*
+It is not, and could not be: the program runs from the folder either way. The
+card now says that plainly, and the accept button's caption says what accepting
+is actually *for* — bringing DASH's own description into line with the folder, so
+the page describes the agent that runs. Same distinction ADR 0003 draws about
+`network: read`: a declaration DASH renders, not a boundary DASH enforces.
+
+### Accepting does not go through the import door
+
+`importManifest` stages a complete replacement folder and swaps it in, so
+anything not re-declared is gone afterwards — including `code/reports/`, which
+for the sample agent is everything it has ever produced. `acceptFolderManifest`
+updates the row and nothing else, because the person's own editor already wrote
+the bytes. The gates are the same two, from the same functions, so an edit
+refused at the front door is refused here in the same words — and the invalid
+path reuses `explainImportFailure` verbatim, DASH's headline over the
+validator's own raw errors.
+
+### ADR 0010, which reverses half of a stated rule
+
+MAR-574 wrote *"DASH keeps no record of what it has deployed where."* The
+reasoning — no inventory of somebody else's machine — is kept, and is still why
+`host.probe` returns a count rather than names. What it got wrong was also
+forbidding DASH to remember **its own act**. `agent_deploys` holds agent, host,
+`sent_at` and the digests of what went across, and will never hold a `running`
+column. Every sentence derived from it is past tense and every one ends by
+saying DASH has not asked the server. `host.forget` deletes the rows, because
+after the label is gone a row could only render as an orphaned claim.
+
+### Evidence
+
+`qa-screenshots-mar584/{unchanged,changed,invalid,behind}/` — **108
+packaged-renderer frames**, three widths, both themes, both densities, every one
+with the real "Check for changes" button pressed for that frame. No frame
+overflows sideways and no checked frame is missing its answer, both asserted by
+the harness rather than by eye.
+
+`electron/capture-folder.ts` is a new store-seeding harness on
+`capture-deploy.ts`'s terms, and **its own witness caught two real defects**: the
+first run used the v1 example manifest, which has no Agent DOM block, so the
+schedule half of the headline sentence was silently absent from every frame; and
+the invalid card told the reader to fix "what is listed below" while the
+validator's block renders above it.
+
+123 test files / 2492 tests green from PowerShell, with `state:check`,
+`typecheck` and `brand:check`.
+
+### What is not proven, said rather than left
+
+**`verify:shell` did not run *on this machine*.** The smoke printed its store
+line and exited before any proof, with the Windows cache-contention errors that
+mean another Electron already held the app's single-instance lock — roughly
+twenty orphan Electron processes from earlier sessions were alive here, and
+AGENTS.md forbids force-killing them.
+
+**CI is the installed witness and it is green.** PR #112, run `31343842867` at
+`bc4aa22`: both buckets pass, and the Windows `shell-smoke` job's raw log
+carries **85 PASS proof lines and 0 FAIL**, ending at 9g — the installed shell's
+own five-second poll bringing an output into DASH's store. How that was read is
+worth recording: `gh run view --log` shows four `[smoke]` lines for that job and
+none of the 85, while the raw log fetched through `/actions/jobs/{id}/logs` is
+complete. That is the same log-reader truncation MAR-575 investigated, so the
+raw log is what is cited.
+
+**No real outside editor was used.** The scenes' edits were written by the
+harness. That costs nothing about the surface — DASH compares bytes and cannot
+tell which editor wrote them — but these are not photographs of a Claude Code
+session.
+
+**No push to a real server.** The `behind` scene's row is a real `agent_deploys`
+record with genuinely disagreeing digests, written directly; a real push needs
+MAR-489's attended run.
+
+**A file an editor adds is not detected**, for the reason above, and **an edited
+program runs at the next run whether or not it was accepted**, because the
+runner spawns from the folder without verifying it. Both are on screen rather
+than only in a header.

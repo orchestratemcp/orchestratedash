@@ -90,11 +90,12 @@ describe("schema", () => {
     // what a model provider last said about a key DASH holds, and 13 is
     // MAR-586's record of when the reader last opened an agent's page —
     // authored as 12, renumbered at the merge because MAR-582 reached master
-    // first and installed databases had already recorded it.
+    // first and installed databases had already recorded it — and 14 is
+    // MAR-584's record of what DASH sent to which server (ADR 0010).
     // Asserted as a number rather than as MIGRATIONS.length so that appending a
     // migration is a deliberate edit here too.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(14);
+    expect(version.user_version).toBe(15);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -117,6 +118,11 @@ describe("schema", () => {
     expect(tables).toContain("evidence_pulls");
     expect(tables).toContain("hosts");
     expect(tables).toContain("ai_key_checks");
+    expect(tables).toContain("agent_looks");
+    // MAR-584, ADR 0010. What DASH sent to a server, and never what is running
+    // there — the ADR bounds the columns, and the migration's own note says why
+    // there is no `running` column for a later feature to reach for.
+    expect(tables).toContain("agent_deploys");
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -466,7 +472,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(14);
+    ).toBe(15);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

@@ -11,6 +11,7 @@ import {
 import type {
   CommandAuditRecord,
   ConnectionAction,
+  FolderAction,
   GlanceAction,
   HostAction,
   SampleAction,
@@ -158,6 +159,16 @@ describe("the audited command chokepoint", () => {
       // main stamps its own clock, so page script cannot mark an agent as read
       // at a moment it chose and silence its card for good.
       "glance.looked",
+      // MAR-584. A seventh family, and the only route in DASH that accepts a
+      // document somebody else's editor wrote. Three members and the split
+      // between the first two is the point: comparing is a read and accepting
+      // is a write, and anything that could do both in one call would make an
+      // approval transfer to whatever an editor last saved. The payload is one
+      // agent id — page script cannot supply the document, only name the agent
+      // whose folder DASH should read.
+      "folder.check",
+      "folder.adopt",
+      "folder.reveal",
       // MAR-536. Servers are independent of agents. Create accepts only the
       // four ordinary connection facts; main mints both names and returns only
       // the public key, while probe and forget take the opaque host id.
@@ -424,6 +435,11 @@ describe("dispatch", () => {
     // real one writes a row through `node:sqlite`, which this process has no
     // store for.
     const looks: Array<{ action: GlanceAction; target: { agent_id: string } }> = [];
+    // MAR-584. Recorded rather than performed, for the same reason as the rest:
+    // the real one reads the agent folder off disk, writes through
+    // `importManifest` and — for `reveal` — calls an Electron main API, none of
+    // which exists in this process.
+    const folders: Array<{ action: FolderAction; target: { agent_id: string } }> = [];
     return {
       audited,
       inputs,
@@ -431,6 +447,7 @@ describe("dispatch", () => {
       connections,
       samples,
       looks,
+      folders,
       hosts,
       workspaces,
       menus,
@@ -461,6 +478,15 @@ describe("dispatch", () => {
       // another one.
       glanceAction: (action: GlanceAction, target: { agent_id: string }) => {
         looks.push({ action, target });
+        return Promise.resolve({ ok: true });
+      },
+      // MAR-584. Recorded, not performed, for `sampleAction`'s reason: these
+      // tests are about the three commands being reviewed, audited and routed
+      // to this seam. Whether an edited folder is described correctly is
+      // `tests/folder-changes.test.ts`, over fixtures, and whether it is read
+      // correctly is `tests/agent-folders.test.ts`, over a real directory.
+      folderAction: (action: FolderAction, target: { agent_id: string }) => {
+        folders.push({ action, target });
         return Promise.resolve({ ok: true });
       },
       showApplicationMenu: (at: { x: number; y: number } | undefined) => {

@@ -53,6 +53,12 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+// Type-only, and it has to stay that way: `lib/agent-folders.ts` imports
+// `AgentRegistration` from this module, so a value import here would close a
+// cycle between the two. The shape is declared there because that is where the
+// stored layout is decided.
+import type { StoredFileDigest } from "./agent-folders";
+
 /**
  * What the runner needs in order to supervise an agent.
  *
@@ -156,6 +162,33 @@ export interface RegistrationOwnership {
   manifest_sha256: string;
   /** Of the declared folder file set. Absent on pre-folder registrations. */
   files_sha256?: string;
+  /**
+   * The bytes DASH accepted, per stored file (MAR-584).
+   *
+   * `files_sha256` above answers "is this the same handoff" and cannot answer
+   * "is the folder still what I was handed" — see `StoredFileDigest` in
+   * `lib/agent-folders.ts` for why the aggregate is not recomputable from disk.
+   * This is the recomputable form, and the only reason there are two.
+   *
+   * **Absent means DASH has no baseline, and that is a reportable state rather
+   * than a default.** Every agent registered before MAR-584 has no list here,
+   * and a detector that treated the absence as "nothing has changed" would tell
+   * a person their folder was untouched on the strength of never having looked.
+   * `lib/folder-changes.ts` gives it its own answer.
+   */
+  accepted_files?: StoredFileDigest[];
+  /**
+   * The source names in the accepted `sources.json`, when there was one.
+   *
+   * Names, and only for the one file DASH's own scaffold writes — see
+   * `readSourceNames` for the argument that this exception is narrow rather
+   * than the first of many. Held here because the folder carries only the
+   * *current* copy of a file, so "which sources were added" is a question no
+   * amount of re-reading the folder can answer: the previous list has to have
+   * been kept, and it has to have been kept where the digests are, so the two
+   * can never describe different moments.
+   */
+  accepted_sources?: string[];
 }
 
 export interface ManagedRegistration extends AgentRegistration {
@@ -289,7 +322,42 @@ function ownershipOf(parsed: Partial<ManagedRegistration>): RegistrationOwnershi
     registered_at: String(block.registered_at ?? ""),
     manifest_sha256: String(block.manifest_sha256 ?? ""),
     files_sha256: typeof block.files_sha256 === "string" ? block.files_sha256 : undefined,
+    // Read defensively for the reason the whole function is written this way:
+    // this file is on disk, an external editor can reach it, and a baseline
+    // read as `[{}]` would compare a real folder against undefined digests and
+    // report every file as changed. A malformed list is no list.
+    accepted_files: readStoredFileDigests(block.accepted_files),
+    accepted_sources: readStringList(block.accepted_sources),
   };
+}
+
+function readStoredFileDigests(value: unknown): StoredFileDigest[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const digests: StoredFileDigest[] = [];
+  for (const entry of value) {
+    if (
+      typeof entry !== "object" ||
+      entry === null ||
+      typeof (entry as StoredFileDigest).path !== "string" ||
+      typeof (entry as StoredFileDigest).sha256 !== "string"
+    ) {
+      return undefined;
+    }
+    digests.push({
+      path: (entry as StoredFileDigest).path,
+      sha256: (entry as StoredFileDigest).sha256,
+    });
+  }
+  return digests;
+}
+
+function readStringList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    return undefined;
+  }
+  return value as string[];
 }
 
 /* ---------------------------------------------------------------------- *
@@ -367,13 +435,20 @@ export type WriteOutcome = "created" | "updated" | "unchanged";
 
 export interface WriteRegistrationInput {
   registration: AgentRegistration;
-  ownership: Omit<RegistrationOwnership, "manifest_sha256" | "files_sha256">;
+  ownership: Omit<
+    RegistrationOwnership,
+    "manifest_sha256" | "files_sha256" | "accepted_files" | "accepted_sources"
+  >;
   /** The manifest, already validated as v2 by the caller. Stored verbatim. */
   manifestJson: string;
   /** The authoritative folder manifest, already durably written by import. */
   storedManifestPath?: string;
   /** Digest of the declared folder files, so a code-only update is not silent. */
   filesDigest?: string;
+  /** Per stored file, so a later external edit is attributable (MAR-584). */
+  acceptedFiles?: StoredFileDigest[];
+  /** The source names in the accepted sources file, when there was one (MAR-584). */
+  acceptedSources?: string[];
 }
 
 /**
@@ -390,6 +465,13 @@ export interface WriteRegistrationInput {
  * enforced upstream in `lib/handoff.ts` — so this is defence in depth rather
  * than the defence.
  */
+/** The two MAR-584 fields, so the backfill above and the write below agree. */
+function baselineOf(
+  input: WriteRegistrationInput,
+): Pick<RegistrationOwnership, "accepted_files" | "accepted_sources"> {
+  return { accepted_files: input.acceptedFiles, accepted_sources: input.acceptedSources };
+}
+
 export function writeRegistration(
   dataDir: string,
   input: WriteRegistrationInput,
@@ -405,6 +487,8 @@ export function writeRegistration(
       ...input.ownership,
       manifest_sha256: manifestDigest(input.manifestJson),
       files_sha256: input.filesDigest,
+      accepted_files: input.acceptedFiles,
+      accepted_sources: input.acceptedSources,
     },
   };
 
@@ -412,6 +496,36 @@ export function writeRegistration(
   if (existing !== null) {
     const changes = describeRegistrationChange(existing, proposed);
     if (changes.length === 0) {
+      /*
+       * One reason to write a file that describes no change (MAR-584).
+       *
+       * `describeRegistrationChange` deliberately ignores the per-file baseline
+       * — see its own note on why the comparison is about *what would be
+       * spawned against what plan*, and a record of the bytes DASH accepted is
+       * neither. But an agent registered before MAR-584 has no baseline at all,
+       * and re-opening its handoff is byte-for-byte identical, so without this
+       * it would return `unchanged` forever and never acquire one. The person
+       * would then press Check for changes and be told DASH never wrote down
+       * what it was handed — on the very agent they had just re-added.
+       *
+       * Narrow on purpose: only when there was no baseline and there now is
+       * one. A baseline that *disagrees* with the stored one is not repaired
+       * here, because that disagreement is exactly what the detector exists to
+       * report, and silently overwriting it would be the auto-swap ADR 0008
+       * refuses performed by the wrong function entirely.
+       */
+      if (existing.dash.accepted_files === undefined && input.acceptedFiles !== undefined) {
+        persist(
+          dataDir,
+          { ...existing, dash: { ...existing.dash, ...baselineOf(input) } },
+          input.storedManifestPath === undefined ? input.manifestJson : null,
+        );
+        return {
+          outcome: "unchanged",
+          changes,
+          registration: { ...existing, dash: { ...existing.dash, ...baselineOf(input) } },
+        };
+      }
       return { outcome: "unchanged", changes, registration: existing };
     }
     persist(

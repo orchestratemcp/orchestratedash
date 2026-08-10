@@ -53,9 +53,13 @@ import {
   agentFolderMatchesImport,
   agentFolderManifestPath,
   inspectAgentFolderName,
+  storedFileDigests,
+  storedRelativePath,
   validateAgentFolderFiles,
   type AgentFolderFile,
 } from "./agent-folders";
+import { readSourceNames } from "./agent-sources";
+import { STORED_SOURCES_PATH } from "./folder-changes";
 import type { HandoffOutcome, HandoffRecord } from "./handoff-ledger";
 import { checkManifestConstraints } from "./manifest-constraints";
 import {
@@ -592,6 +596,12 @@ async function register(
     manifestJson,
     storedManifestPath: storedManifest,
     filesDigest,
+    // MAR-584. The baseline the folder detector compares against, recorded at
+    // the one moment DASH is certain what it accepted: here, immediately after
+    // `importManifest` wrote those exact bytes. Recomputing it later from the
+    // folder would be recording whatever is there now and calling it approved.
+    acceptedFiles: handoff.files === undefined ? undefined : storedFileDigests(handoff.files),
+    acceptedSources: handoff.files === undefined ? undefined : acceptedSourceNames(handoff.files),
   });
 
   const started = await ensureRunning(handoff.agent_id, ports);
@@ -619,6 +629,24 @@ async function register(
     detail: started.detail,
     running: started.running,
   };
+}
+
+/**
+ * The source names in the handoff DASH is accepting, or undefined (MAR-584).
+ *
+ * Undefined for a project with no sources file and for one whose sources file
+ * DASH cannot read as a list — two different situations that produce the same
+ * answer here on purpose, because both mean *DASH has no previous list to
+ * compare against later*, and the detector says exactly that rather than
+ * inventing an empty one.
+ */
+function acceptedSourceNames(files: readonly AgentFolderFile[]): string[] | undefined {
+  for (const file of files) {
+    if (storedRelativePath(file.path) === STORED_SOURCES_PATH) {
+      return readSourceNames(file.contents) ?? undefined;
+    }
+  }
+  return undefined;
 }
 
 /**

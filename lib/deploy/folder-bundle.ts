@@ -33,6 +33,7 @@ import {
   agentFolderManifestPath,
   agentFolderRegistrationPath,
   inspectAgentFolderStanding,
+  storedDigestSummary,
 } from "../agent-folders";
 import { validateManifest } from "../contracts";
 import type { AgentRegistration } from "../registration";
@@ -212,6 +213,57 @@ function unreadableFolder(): FolderBundleResult {
     ok: false,
     problem: "folder_unreadable",
     detail: "DASH could not read this agent's folder, so no bundle was made.",
+  };
+}
+
+/**
+ * What went across, as two digests DASH can compare against later (MAR-584,
+ * ADR 0010).
+ *
+ * Derived from the install request rather than re-read from the folder, and the
+ * difference is the whole point of computing it here. A second read could see
+ * different bytes — an editor is, by hypothesis, capable of changing this folder
+ * at any moment — and the record would then describe a push that did not happen.
+ * These are the digests of the files that were in the request, computed by
+ * `assembleBundle` over the bytes it encoded.
+ *
+ * ## `tracked` is what makes the program digest mean anything
+ *
+ * A bundle carries the whole of `code/`, and for the sample agent that includes
+ * `code/reports/` and `code/runs/` — everything it has ever produced. A digest
+ * over all of it would differ on every single push, so "the server has an older
+ * copy" would be true the moment the agent ran once, which is not a fact about
+ * the agent's program at all.
+ *
+ * So the caller passes the stored paths DASH recorded as this agent's program
+ * (`accepted_files`), and only those are hashed, through the same
+ * `storedDigestSummary` the baseline itself reduces through. That is what makes
+ * the two comparable: same paths, same function, two moments. The runner is
+ * excluded by the same rule — DASH replaces it on every push, and it is not in
+ * any agent's baseline.
+ *
+ * Null when nothing was tracked, which is every agent registered before MAR-584
+ * kept a baseline. Null means *not comparable* to every reader of the record,
+ * and the surface says it cannot tell rather than guessing either way.
+ */
+export function describeBundleContents(
+  request: InstallRequest,
+  tracked: readonly string[],
+): { manifest_sha256: string; files_sha256: string | null } {
+  const prefix = `${BUNDLE_AGENT_DIRECTORY}/`;
+  const wanted = new Set(tracked);
+  const manifest = request.files.find(
+    (file) => file.path === `${prefix}agent.manifest.json`,
+  );
+
+  const program = request.files
+    .filter((file) => file.path.startsWith(prefix))
+    .map((file) => ({ path: file.path.slice(prefix.length), sha256: file.sha256 }))
+    .filter((file) => wanted.has(file.path));
+
+  return {
+    manifest_sha256: manifest?.sha256 ?? "",
+    files_sha256: storedDigestSummary(program),
   };
 }
 

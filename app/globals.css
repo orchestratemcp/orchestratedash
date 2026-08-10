@@ -1678,6 +1678,99 @@ a.plain:hover {
   border-top: 1px solid var(--line);
 }
 
+/* ---------------------------------------------------------------------- *
+ * Changing an agent from outside DASH (MAR-584)
+ * ---------------------------------------------------------------------- */
+
+/* Two controls stacked, each with its caption directly beneath it.
+   `align-items: flex-start` on the pair rather than a button row, because the
+   captions are sentences: a button stretched to its row's width would draw
+   "Check for changes" at the width of the paragraph under it. */
+.folder-update {
+  display: grid;
+  gap: var(--density-gap);
+}
+
+.folder-update-do {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.folder-update-do .muted {
+  font-size: var(--text-sm);
+  margin: 0;
+  /* Capped at a readable line so a caption does not run the full width of a
+     1280px window and turn a one-line note into a banner. */
+  max-width: 46ch;
+}
+
+.folder-report {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.folder-report p {
+  margin: 0;
+}
+
+/* The change list. Bulleted rather than run together: each line is one
+   independent fact and the person is deciding about all of them at once. */
+.folder-changes {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.folder-invalid {
+  display: grid;
+  gap: 0.5rem;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+
+/* The contract checker's own output, drawn as what it is: evidence quoted from
+   something that is not DASH. Monospaced, and scrolling inside its own box —
+   the discipline `.setup-script` keeps — so a long validator message cannot
+   stretch the notice sideways and give the page a horizontal scrollbar. */
+.folder-errors {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-0);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  max-height: 12rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  /* Validator paths have no spaces to break at. Without this a long pointer
+     forces the box wider than its column on a 375px screen. */
+  overflow-wrap: anywhere;
+}
+
+/* Servers this agent has already been sent to (ADR 0010). */
+.sent-servers {
+  margin-top: var(--density-gap);
+  display: grid;
+  gap: var(--density-gap);
+}
+
+.sent-server {
+  display: grid;
+  justify-items: start;
+  gap: 0.4rem;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.sent-server p {
+  margin: 0;
+}
+
 /*
  * The one-paste bootstrap (MAR-573, MAR-579). A long multi-line script, so it
  * scrolls inside its own box rather than stretching the card sideways — the

@@ -39,6 +39,7 @@ import {
   readAgentFolderManifest,
   recoverAgentFolderSwaps,
 } from "./agent-folders";
+import { listRegistrations, manifestDigest } from "./registration";
 
 /* ---------------------------------------------------------------------- *
  * Location
@@ -759,6 +760,49 @@ const MIGRATIONS: readonly Migration[] = [
     last_looked_at TEXT NOT NULL
   );
   `,
+  // MAR-584, ADR 0010. What DASH sent to a server, and when.
+  //
+  // **Read ADR 0010 before adding a column here.** This table records DASH's own
+  // outbound act and nothing about the machine it reached. MAR-574 forbade
+  // "a record of what it has deployed where" on the grounds that DASH has no
+  // inventory of somebody else's computer -- which is still true, and is still
+  // why host.probe returns a count from the server's own answer rather than a
+  // list of names. What that rule got wrong was its scope: it also forbade DASH
+  // remembering what DASH did, which is the one thing DASH is entitled to know.
+  //
+  // So there is no `running` column, no `status`, no `last_seen_at`, and there
+  // never will be. Those are properties of the remote machine, and a row here
+  // asserting one would be exactly the inventory the previous rule was right to
+  // refuse. The columns that exist are four facts DASH observed at the moment it
+  // acted, and `sent_at` is what keeps every sentence derived from them in the
+  // past tense.
+  //
+  // manifest_sha256 and files_sha256 are of the bundle **as it left**. They are
+  // here so the agent page can answer "is what I sent still what this agent is?"
+  // by comparing two things DASH holds -- never by claiming anything about what
+  // is on the server now.
+  //
+  // One row per (agent, host), overwritten. A history of every push would be a
+  // log nobody asked for; the question a surface asks is "did DASH ever send
+  // this there, and was it before or after the change I just accepted".
+  //
+  // No foreign key to `hosts`, for `agent_looks`'s reason -- but note that
+  // host.forget deletes these rows explicitly (see ADR 0010): once the label is
+  // gone the row could only produce an orphaned present-tense claim.
+  //
+  // `IF NOT EXISTS` for the reason the two migrations above state.
+  `
+  CREATE TABLE IF NOT EXISTS agent_deploys (
+    agent           TEXT NOT NULL,
+    host_id         TEXT NOT NULL,
+    sent_at         TEXT NOT NULL,
+    manifest_sha256 TEXT NOT NULL,
+    files_sha256    TEXT,
+    PRIMARY KEY (agent, host_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS agent_deploys_by_agent ON agent_deploys (agent, sent_at);
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *
@@ -1032,6 +1076,23 @@ export function reconcileAgentFolders(
   const byName = new Map(rows.rows.map((row) => [String(row["name"]), row]));
   const folderNames = listAgentFolderNames(dataDir);
   const folders = new Set(folderNames);
+  /*
+   * The digest of the document DASH accepted, per agent it owns (MAR-584).
+   *
+   * Read once for the whole pass rather than per agent, and only for
+   * registrations DASH wrote: an `external` block carries an empty
+   * `manifest_sha256`, which is not a digest of anything and must not be
+   * compared against one. Absent from this map means "no baseline", which the
+   * projection below treats as the pre-MAR-584 behaviour.
+   */
+  const accepted = new Map(
+    listRegistrations(dataDir)
+      .filter(
+        (registration) =>
+          registration.dash.owner === "dash_handoff" && registration.dash.manifest_sha256 !== "",
+      )
+      .map((registration) => [registration.agent_id, registration.dash.manifest_sha256]),
+  );
 
   transact(database, () => {
     for (const agent of folderNames) {
@@ -1074,6 +1135,38 @@ export function reconcileAgentFolders(
         String(existing["manifest_json"]) !== read.json ||
         Number(existing["manifest_version"]) !== validation.value.manifest_version
       ) {
+        /*
+         * Two very different events reach this line, and until MAR-584 both got
+         * the same treatment (MAR-553, ADR 0008).
+         *
+         * **Index drift** is the one this projection was built for: DASH
+         * committed the folder and died before writing the row, so the folder is
+         * what DASH accepted and the row is stale. Projecting is a repair.
+         *
+         * **An external edit** is the opposite. Claude Code changed the folder
+         * after DASH accepted it; the row is the version the person approved and
+         * the folder is a proposal nobody has looked at. Projecting *that* is the
+         * silent swap MAR-584 exists to stop — and it happened on every restart,
+         * quietly, with no surface anywhere saying an agent's declaration had
+         * been replaced.
+         *
+         * The registration tells them apart, because it records the digest of
+         * the document DASH accepted at the moment it accepted it. A folder that
+         * still hashes to that digest is the accepted document and the row is
+         * behind it; a folder that does not is somebody's edit, and
+         * `lib/folder-changes.ts` is where it gets read out and offered.
+         *
+         * No baseline, no registration, or a registration DASH did not write:
+         * project, exactly as before. Those are the row-only and hand-written
+         * standings MAR-553 keeps supported on purpose, and a rule that needed a
+         * digest they never had would strand them on a stale index forever.
+         */
+        const acceptedDigest = accepted.get(agent);
+        if (acceptedDigest !== undefined && manifestDigest(read.json) !== acceptedDigest) {
+          // An edit, not drift. The row stays; nothing here reports it, because
+          // it is not damage and `describeStoreDamage` would render it as some.
+          continue;
+        }
         database
           .prepare(
             "UPDATE agents SET manifest_version = ?, manifest_json = ? WHERE name = ?",

@@ -656,6 +656,85 @@ export function importManifest(input: unknown, options: ImportManifestOptions = 
   });
 }
 
+/**
+ * Accept the document already in the folder as this agent's setup (MAR-584).
+ *
+ * ## Why this is not `importManifest`
+ *
+ * It looks like the same operation and it is nearly the opposite one.
+ * `importManifest` **writes the folder** — `writeAgentFolder` stages a complete
+ * replacement and swaps it in, so anything not declared in the call is gone
+ * afterwards, including `code/reports/` and `code/runs/`, which is where the
+ * sample agent keeps everything it has ever produced. Routing an externally
+ * edited folder through that door would mean re-declaring every file back to
+ * DASH in order to keep it, and getting that wrong once would delete an agent's
+ * work as a side effect of accepting a change to it.
+ *
+ * There is also nothing to write. The person's own editor already put the new
+ * bytes in the folder, and the folder is authoritative (ADR 0008). What was out
+ * of date is DASH's projection of it, and this updates exactly that.
+ *
+ * ## The gates are `importManifest`'s, deliberately not a second set
+ *
+ * Schema first, then `checkManifestConstraints` — the same two, in the same
+ * order, from the same functions. An edit that would have been refused at first
+ * import is refused here, and refused in the same words, which is the property
+ * MAR-584 needs for "an invalid external edit refuses with the schema's own
+ * error": there is one validator and one vocabulary, not one for the front door
+ * and a lenient one for the side.
+ *
+ * The name must also still be the agent's. A folder whose document has been
+ * renamed is not an update to this agent, it is a different agent in this
+ * agent's folder, and accepting it would leave a row keyed on one name holding a
+ * document naming another — the disagreement `reconcileAgentFolders` refuses to
+ * create for itself.
+ */
+export function acceptFolderManifest(agent: string, manifestJson: string): ImportResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(manifestJson);
+  } catch {
+    return { ok: false, errors: ["/manifest is not readable JSON"] };
+  }
+
+  const result = validateManifest(parsed);
+  if (!result.ok) {
+    return { ok: false, errors: result.errors };
+  }
+  const contradictions = checkManifestConstraints(result.value);
+  if (contradictions.length > 0) {
+    return { ok: false, errors: contradictions };
+  }
+  if (result.value.agent.name !== agent) {
+    return {
+      ok: false,
+      errors: [
+        "/agent/name no longer matches the agent this folder belongs to, so this is a different agent rather than an update to this one",
+      ],
+    };
+  }
+
+  const database = db();
+  return transact(database, () => {
+    const existing = database.prepare("SELECT 1 FROM agents WHERE name = ?").get(agent);
+    if (existing === undefined) {
+      return { ok: false as const, errors: ["DASH has no record of that agent."] };
+    }
+    database
+      .prepare(
+        "UPDATE agents SET manifest_version = ?, manifest_json = ? WHERE name = ?",
+      )
+      .run(result.value.manifest_version, manifestJson, agent);
+    // `avatar` and `imported_at` are untouched, which is stronger than
+    // `importManifest`'s `ON CONFLICT` omission of the first: this statement
+    // names two columns and cannot reach the others. The character survives an
+    // accepted edit for MAR-500's reason, and the day the agent was added is
+    // still the day it was added.
+    clearAgentFolderIssue(database, agent);
+    return { ok: true as const, agent, replaced: true };
+  });
+}
+
 export interface IngestResult {
   accepted: number;
   rejected: Array<{ index: number; errors: string[] }>;
@@ -1235,6 +1314,85 @@ export function recordAgentLook(agent: string, at: string = new Date().toISOStri
 export function readAgentLooks(): Map<string, string> {
   const rows = db().prepare("SELECT agent, last_looked_at FROM agent_looks").all();
   return new Map(rows.map((row) => [text(row, "agent"), text(row, "last_looked_at")]));
+}
+
+/* ---------------------------------------------------------------------- *
+ * What DASH sent to a server (MAR-584, ADR 0010)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * One past deploy, as DASH observed it happen.
+ *
+ * Every field is something DASH knew at the moment it acted. There is nothing
+ * here about the server's current state and the type is the place that has to
+ * keep it that way — see ADR 0010, and the migration's note on why no `running`
+ * column will ever be added.
+ */
+export interface AgentDeployRecord {
+  agent: string;
+  host_id: string;
+  sent_at: string;
+  /** Of the document that went across, so "is this still current" is answerable. */
+  manifest_sha256: string;
+  /** Of the program that went with it. Null for a manifest-only bundle. */
+  files_sha256: string | null;
+}
+
+/**
+ * Write down that DASH sent this agent to this server.
+ *
+ * Called after the push succeeded, never before it and never on a refusal. A
+ * deploy is three steps behind one answer — bundle, install, start — and
+ * `lib/deploy/deploying.ts` explains why DASH cannot tell which of them a
+ * failure stopped at. A row written on a failed attempt would claim DASH sent
+ * something when it may not have; a row written only on success claims the one
+ * thing DASH does know, which is that the server accepted the push and said so.
+ *
+ * Overwrites per (agent, server), for `recordAgentLook`'s reason: the question
+ * is "did DASH send this there, and was it before the change I just accepted",
+ * and no earlier push changes that answer.
+ */
+export function recordAgentDeploy(
+  record: Omit<AgentDeployRecord, "sent_at">,
+  at: string = new Date().toISOString(),
+): void {
+  db()
+    .prepare(
+      "INSERT INTO agent_deploys (agent, host_id, sent_at, manifest_sha256, files_sha256) " +
+        "VALUES (?, ?, ?, ?, ?) ON CONFLICT (agent, host_id) DO UPDATE SET " +
+        "sent_at = excluded.sent_at, manifest_sha256 = excluded.manifest_sha256, " +
+        "files_sha256 = excluded.files_sha256",
+    )
+    .run(record.agent, record.host_id, at, record.manifest_sha256, record.files_sha256);
+}
+
+/** Every server DASH has sent this agent to, most recent first. */
+export function readAgentDeploys(agent: string): AgentDeployRecord[] {
+  const rows = db()
+    .prepare(
+      "SELECT agent, host_id, sent_at, manifest_sha256, files_sha256 FROM agent_deploys " +
+        "WHERE agent = ? ORDER BY sent_at DESC",
+    )
+    .all(agent);
+  return rows.map((row) => ({
+    agent: text(row, "agent"),
+    host_id: text(row, "host_id"),
+    sent_at: text(row, "sent_at"),
+    manifest_sha256: text(row, "manifest_sha256"),
+    files_sha256: row["files_sha256"] === null ? null : text(row, "files_sha256"),
+  }));
+}
+
+/**
+ * Forget every deploy to one server.
+ *
+ * ADR 0010 requires this and it is not tidiness. `host.forget` removes the key
+ * and the label, and a surviving row would name a server DASH can no longer
+ * reach or even name — which could only ever render as an orphaned claim about
+ * a machine, the exact thing the ADR bounds DASH away from.
+ */
+export function forgetHostDeploys(hostId: string): void {
+  db().prepare("DELETE FROM agent_deploys WHERE host_id = ?").run(hostId);
 }
 
 /**

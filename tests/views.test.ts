@@ -476,17 +476,28 @@ describe("the panel on the workspace view", () => {
     expect(view.found && view.panel).toEqual({ kind: "none" });
   });
 
-  it("reads the folder's document, not the row's, when the two disagree", async () => {
+  it("keeps drawing the accepted document when an editor changes the folder", async () => {
     /*
-     * ADR 0008's authority rule, driven rather than asserted about. The row is
-     * left exactly as `importManifest` wrote it and the *folder* is rewritten
-     * with a different panel title; the view must show the folder's.
+     * MAR-584, and this test asserted the opposite until now (MAR-548, ADR 0008).
      *
-     * This is the load-bearing test of `panelDocument`. Both documents are
-     * present, both are readable, and both declare a legal panel — so a wiring
-     * that reached for `readAgentManifest`'s value would pass every other
-     * assertion in this file and be wrong in the one case ADR 0008 wrote a rule
-     * for.
+     * The folder is still authoritative. What changed is *when its authority
+     * arrives*: through `folder.adopt`, which a person presses, rather than
+     * through a render. The old wiring read the folder here, on a page that
+     * polls every five seconds — so an outside editor moved the panel
+     * immediately and silently while the title, the goal, the permission
+     * receipt and the input roles, all of which come from the row, went on
+     * describing the version the person approved. Half the page moved and
+     * nothing said so. That is the silent swap MAR-584 exists to stop, and it
+     * was in DASH's own view builder rather than anywhere exotic.
+     *
+     * So this drives the same disagreement and asserts the other answer. Both
+     * documents are present, both readable, both declaring a legal panel — a
+     * wiring that reached back for the folder would pass every other assertion
+     * in this file and be wrong in exactly the case the issue is about.
+     *
+     * The folder's version is neither lost nor ignored: `folder.check` reports
+     * it and accepting it moves the row. `tests/folder-changes.test.ts` covers
+     * that half.
      */
     const { writeAgentFolder } = await import("../lib/agent-folders");
     importManifest(workspaceManifest);
@@ -498,7 +509,9 @@ describe("the panel on the workspace view", () => {
     writeAgentFolder({ dataDir, agent: AGENT, manifestJson: JSON.stringify(edited) });
 
     const view = workspaceView(AGENT, BEFORE_WORK_EXPIRY);
-    expect(view.found && view.panel.kind === "declared" && view.panel.title).toBe("Edited on disk");
+    expect(view.found && view.panel.kind === "declared" && view.panel.title).toBe(
+      "Replies this assistant has drafted",
+    );
   });
 
   it("still draws a panel for a row-indexed agent with no folder at all", async () => {

@@ -102,6 +102,37 @@ export interface AgentDeployView {
 }
 
 /**
+ * One server DASH has sent this agent to, and whether what it sent is still
+ * what this agent is (MAR-584, ADR 0010).
+ *
+ * **Read ADR 0010 before adding a field.** Every value here is something DASH
+ * observed about its own act: it built a bundle, pushed it, the server took it,
+ * and this was the date and these were the bytes. There is no field for whether
+ * the agent is running there, whether the server is reachable, or what is on it
+ * now — those are properties of somebody else's machine, DASH has not asked, and
+ * a field would invite a surface to imply an answer.
+ *
+ * The two booleans carry the distinction that makes this honest, and the second
+ * one earns its place. `behind` means something only when `comparable` is true;
+ * an agent with no recorded baseline, or a push made before DASH kept one,
+ * produces `comparable: false`, and the page says DASH cannot tell rather than
+ * defaulting to reassurance or to alarm.
+ */
+export interface AgentDeployTarget {
+  host_id: string;
+  /** What the person calls this server. */
+  label: string;
+  /** DASH's own clock at the moment the push finished. */
+  sent_at: string;
+  /** The same moment as a person would say it, or null for an unreadable date. */
+  sent_on: string | null;
+  /** Whether DASH holds enough on both sides to compare at all. */
+  comparable: boolean;
+  /** True only when `comparable` and the two digests disagree. */
+  behind: boolean;
+}
+
+/**
  * One agent, as an option on a server's deploy panel (MAR-577).
  *
  * A name alone was what the panel took, and it could not tell a deployable agent
@@ -807,6 +838,32 @@ export type WorkspaceView =
        * *server* rather than about the agent.
        */
       deploy: AgentDeployView;
+      /**
+       * Every server DASH has sent this agent to (MAR-584, ADR 0010).
+       *
+       * Empty for an agent DASH has never pushed, which is almost all of them,
+       * and an empty list draws nothing. It is on the workspace and not on
+       * `AgentRow` on purpose: the fleet card asks whether an agent needs you,
+       * and "a server has an older copy" is a fact about a decision you already
+       * made rather than something waiting for you.
+       *
+       * Newest first, so the server most likely to be on somebody's mind is the
+       * one they read first.
+       */
+      deploy_targets: AgentDeployTarget[];
+      /**
+       * Whether DASH can offer to compare this agent's folder (MAR-584).
+       *
+       * The comparison itself is not here, and that is the design rather than an
+       * omission: `folder.check` is a command a person presses, and a report
+       * computed inside this view would be DASH looking at the folder on every
+       * five-second poll — hashing every recorded file of every open agent page
+       * — while telling the person on that page that it only looks when asked.
+       *
+       * False for an agent with no folder of DASH's own, where there is nothing
+       * to open and nothing to compare.
+       */
+      folder_checkable: boolean;
     };
 
 export type WorkInboxRow = InboxItem & {

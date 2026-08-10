@@ -21,6 +21,8 @@
  * separation from the other side by exercising these against a real store.
  */
 
+import { existsSync } from "node:fs";
+
 import { analyzeGrounding } from "../analyze";
 import { isDigestArtifact } from "../contracts";
 import type { ManifestPermissions, PermissionGrant } from "../contracts";
@@ -46,13 +48,15 @@ import {
   eventsForRun,
   listAnalyzedRuns,
 } from "../insights";
-import { listRegistrations, type ManagedRegistration } from "../registration";
+import { listRegistrations, readRegistration, type ManagedRegistration } from "../registration";
 import {
   MANIFEST_ONLY_DEPLOY_REFUSAL,
   UNREADABLE_FOLDER_DEPLOY_REFUSAL,
+  agentFolderPath,
   inspectAgentFolderStanding,
-  readAgentFolderManifest,
+  storedDigestSummary,
 } from "../agent-folders";
+import { plainDay } from "../copy/when";
 import { describeManifestGap } from "../sample-refresh";
 import { glanceReader } from "./glance";
 import {
@@ -64,8 +68,10 @@ import {
   listConnectionCapableAgents,
   listRuns,
   readAgentAvatar,
+  readAgentDeploys,
   readAgentManifest,
   readEvidencePulls,
+  readHost,
   resolveArtifactAvailability,
   readStore,
   type EvidencePullRecord,
@@ -82,6 +88,7 @@ import {
   type WorkspaceManifest,
 } from "../workspace";
 import type {
+  AgentDeployTarget,
   AgentDeployView,
   AgentOriginView,
   AgentsView,
@@ -990,41 +997,116 @@ export function workspaceView(
     // agent is already chosen — so its deploy section can refuse before it
     // offers a server rather than after somebody picks one.
     deploy: agentDeployStanding(agent),
+    // MAR-584, ADR 0010. Where DASH has sent this agent, and whether what it
+    // sent is still what this agent is. Both facts about DASH's own record;
+    // neither about the servers.
+    deploy_targets: agentDeployTargets(agent),
+    // MAR-584. Whether there is a folder to open and compare. The comparison
+    // itself is a command — see the field's own note for why it is not computed
+    // here on a five-second poll.
+    folder_checkable: agentFolderExists(agent),
   };
 }
 
 /**
- * Which of the two stored copies of an author's document the panel is drawn
- * from (MAR-548, ADR 0008 / MAR-553).
+ * The servers DASH has pushed this agent to, newest first (MAR-584, ADR 0010).
  *
- * The folder's `agent.manifest.json` is authoritative and the row's
- * `manifest_json` is a projection of it, so the folder is asked first. This is
- * the rule `lib/views/panel.ts` states in prose and cannot state in a type: that
- * module has to stay free of `node:fs` to reach the renderer bundle, so the
- * choice is made here, where the disk is already being read.
+ * ## What "behind" is computed from, and what it is not
  *
- * **The row is a fallback, not an equal.** It answers for every agent that
- * predates MAR-553's migration and every agent whose name failed the component
- * guard — a standing MAR-553 keeps supported on purpose, and one that must not
- * cost those agents their panel.
+ * Two digests DASH holds: the ones recorded when the push finished, and the ones
+ * on the registration now. Nothing here reaches the network, and nothing claims
+ * the server still has what DASH sent it — the machine may have been rebuilt,
+ * the agent stopped, the folder replaced by hand. What is being compared is
+ * *DASH's own copy then* against *DASH's own copy now*, which is a comparison
+ * DASH is entitled to make and is the one a person actually needs after
+ * accepting an update.
  *
- * A folder that is present and unreadable falls back to the row too, and that
- * is not the silent repair ADR 0008 forbids: `reconcileAgentFolders` has already
- * recorded it as a `folder_unreadable` issue at startup and routed it through
- * the same damage surface `readStore`'s unreadable rows use. The disagreement is
- * surfaced; it is surfaced by the thing that observed it, rather than guessed at
- * again by a view builder that only has one of the two documents in front of it.
+ * `comparable` is false whenever either side lacks a program digest. That is not
+ * an edge case to be smoothed over: an agent registered before MAR-584 kept a
+ * baseline has no `accepted_files`, so its pushes recorded a null program
+ * digest, and a comparison of the manifests alone would report "up to date" over
+ * a code change nobody could see. Saying DASH cannot tell is the only honest
+ * answer available, and it is the one the surface renders.
+ *
+ * A row whose host DASH no longer holds is dropped. `host.forget` deletes these
+ * rows, so this should never fire — it is here because the alternative to
+ * dropping is rendering a server with no name.
  */
-function panelDocument(agent: string, row: unknown): unknown {
-  const folder = readAgentFolderManifest(dataDir, agent);
-  if (!folder.ok) {
-    return row;
+function agentDeployTargets(agent: string): AgentDeployTarget[] {
+  const records = readAgentDeploys(agent);
+  if (records.length === 0) {
+    return [];
   }
+
+  const registration = readRegistration(dataDir, agent);
+  const currentManifest = registration?.dash.manifest_sha256 ?? "";
+  const currentFiles = storedDigestSummary(registration?.dash.accepted_files ?? []);
+
+  const targets: AgentDeployTarget[] = [];
+  for (const record of records) {
+    const host = readHost(record.host_id);
+    if (host === null) {
+      continue;
+    }
+    const comparable =
+      currentManifest !== "" && currentFiles !== null && record.files_sha256 !== null;
+    targets.push({
+      host_id: record.host_id,
+      label: host.label,
+      sent_at: record.sent_at,
+      sent_on: plainDay(record.sent_at),
+      comparable,
+      behind:
+        comparable &&
+        (record.manifest_sha256 !== currentManifest || record.files_sha256 !== currentFiles),
+    });
+  }
+  return targets;
+}
+
+/** Whether DASH holds a folder of its own for this agent, at all. */
+function agentFolderExists(agent: string): boolean {
   try {
-    return JSON.parse(folder.json) as unknown;
+    return existsSync(agentFolderPath(dataDir, agent));
   } catch {
-    return row;
+    // A legacy name that cannot be a path component has no folder by design —
+    // the row-only standing MAR-553 keeps supported. There is nothing to open
+    // and nothing to compare, which is exactly what `false` says here.
+    return false;
   }
+}
+
+/**
+ * Which stored copy of an author's document this page is drawn from
+ * (MAR-548, ADR 0008 / MAR-553, and then MAR-584).
+ *
+ * ## It used to read the folder, and that was the silent swap
+ *
+ * MAR-548 read the folder here, because the folder is authoritative and the row
+ * is a projection of it. That is still the ADR and it is still true — but it
+ * produced a page that was **half live**: the panel was redrawn from the folder
+ * on every five-second poll while the title, the goal, the permission receipt
+ * and the input roles came from the row. An outside editor changing the folder
+ * therefore changed half of this page immediately, with nothing on screen
+ * saying so, and the other half at the next restart when
+ * `reconcileAgentFolders` projected it over the row.
+ *
+ * MAR-584 is the issue that says a running agent's program must not swap
+ * silently, and this was the swap. Both halves now read the row, which is
+ * DASH's projection of the folder **as it was accepted** — kept that way by
+ * `reconcileAgentFolders`, which no longer projects an externally edited folder
+ * over it. The folder is still authoritative and is still where an update comes
+ * from; what changed is that it arrives through `folder.adopt`, which a person
+ * presses, instead of through a render.
+ *
+ * The function stays, rather than the call site being replaced with `row`,
+ * because the question it answers — *which of DASH's two copies does a surface
+ * show* — is the one ADR 0008 makes and is worth having an answer written down
+ * for. A reader who goes looking for the folder read finds this instead of
+ * finding nothing.
+ */
+function panelDocument(_agent: string, row: unknown): unknown {
+  return row;
 }
 
 /**
