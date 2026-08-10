@@ -5245,3 +5245,7 @@ value on a page the smoke loads.
 seeded scratch directory MAR-587's harness always writes to, so the frames are
 evidence of what this track draws for five seeded agents and not evidence about
 anybody's actual fleet size or card content.
+
+**CI IS THE INSTALLED WITNESS AND IT IS GREEN.** PR #122, run `31391651472` at
+`e7de977` — both buckets pass: `verify` (1m17s) and the Windows `shell-smoke`
+job (1m42s). Not merged yet; lifecycle promotes when it is.
