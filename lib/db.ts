@@ -963,6 +963,80 @@ const MIGRATIONS: readonly Migration[] = [
   CREATE INDEX IF NOT EXISTS agent_questions_by_agent
     ON agent_questions (agent, id DESC);
   `,
+
+  // MAR-593, ADR 0013. A connection that exists before an agent does.
+  //
+  // Every other connection table here is keyed by agent, because until now a
+  // connection was a thing an agent asked for. `connection_secrets` is the
+  // per-agent credential and `broker_grants` the per-agent receipt. Neither is
+  // changed by this migration and neither is repurposed: this is the *consent*,
+  // and those two stay the *grant*.
+  //
+  // The split is what makes the boundary claim free. `lib/broker/execute.ts`
+  // computes the same per-agent vault name it always has, so what the broker
+  // resolves for an agent is indistinguishable from a grant that agent received
+  // directly — not because a test says so, but because the read path was not
+  // touched. See docs/adr/0013-fleet-connections.md.
+  //
+  // `IF NOT EXISTS` for the reason every migration since the hosts one states.
+  `
+  CREATE TABLE IF NOT EXISTS fleet_connections (
+    -- The manifest's provider string, e.g. google-gmail. The key everywhere in
+    -- this feature: the same one buildConnectorTiles groups on and
+    -- findGrantSharers fans out over. One account per provider is a v1 limit and
+    -- is why this is the primary key rather than a column beside an id.
+    provider       TEXT PRIMARY KEY,
+    -- One of CONNECTOR_KINDS_V1. Stored rather than re-derived, so a row written
+    -- by a build that offered a kind this one does not can be read and shown
+    -- rather than silently reinterpreted as the other one.
+    connector_kind TEXT NOT NULL,
+    field_id       TEXT NOT NULL,
+    -- A key into the OS vault, never a value, in the dash.fleet. namespace that
+    -- connectionSecretName cannot produce for any agent name.
+    secret_name    TEXT NOT NULL,
+    -- Masked at the point the value is in hand and accepted only in masked form:
+    -- isDisplayableHint in lib/secret-refs.ts is what a raw credential cannot
+    -- pass, and lib/fleet/store.ts applies it before writing.
+    masked_hint    TEXT,
+    -- Which of the person's accounts this is, masked. NULL for a key, which
+    -- identifies nobody — ADR 0002 amendment 5.
+    account_hint   TEXT,
+    -- What the consent actually issued, as a JSON array of scope strings. The
+    -- credential's own copy is authoritative and is in the vault; this is the
+    -- readable projection, with broker_grants.operations' standing: a row that
+    -- has gone stale shows out-of-date wording and grants nobody anything.
+    scopes         TEXT NOT NULL,
+    backend        TEXT NOT NULL,
+    -- The date the person first connected this. Survives a re-key, for
+    -- recordReceipt's reason: it is the one number somebody would use to notice
+    -- access they no longer remember giving.
+    connected_at   TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+  );
+
+  -- A decision a person made about one agent's access to one fleet connection.
+  --
+  -- **Only decisions somebody made.** No row means nobody has decided, which
+  -- materializes — that is Henrik's MAR-570 ruling ("connect once, every agent
+  -- that needs it lights up"), and a default of withheld would break it.
+  --
+  -- A withheld row exists so that importing a second agent, or re-pasting a key,
+  -- cannot silently re-grant an agent whose access somebody deliberately took
+  -- away. That is the failure CredentialState.revoked already guards one level
+  -- down: somebody withdrew this access, and that somebody may have been the
+  -- user on purpose.
+  CREATE TABLE IF NOT EXISTS fleet_grants (
+    provider   TEXT NOT NULL,
+    agent      TEXT NOT NULL,
+    -- 'granted' or 'withheld'. A granted row only ever appears after a withheld
+    -- one was reversed; absence is the ordinary state and is not this value.
+    standing   TEXT NOT NULL,
+    decided_at TEXT NOT NULL,
+    PRIMARY KEY (provider, agent)
+  );
+
+  CREATE INDEX IF NOT EXISTS fleet_grants_by_agent ON fleet_grants (agent);
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

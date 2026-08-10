@@ -230,6 +230,18 @@ describe("the audited command chokepoint", () => {
       "connection.connect",
       "connection.test",
       "connection.disconnect",
+      // MAR-593, ADR 0013. An eleventh family, reaching the same vault on a
+      // target that names no agent. Note the payloads: one provider each, and
+      // no agent id at all — `dispatchCommand` supplies the principal a fleet
+      // act stands under, so page script can neither aim a fleet act at an agent
+      // nor an agent act at the fleet.
+      "fleet.connect",
+      "fleet.test",
+      "fleet.disconnect",
+      // The one command in this catalogue that touches the vault while opening
+      // no window and contacting nobody: it hands agents a consent DASH already
+      // holds, rather than asking for a second one.
+      "fleet.share",
       "agent.approve",
       "agent.reject",
       "agent.choose",
