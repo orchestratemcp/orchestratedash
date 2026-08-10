@@ -1037,6 +1037,15 @@ code {
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--accent-bg);
+  /*
+   * MAR-587 made the character 200px, which fits the narrowest card DASH draws
+   * — 375px of viewport leaves a card about 310px wide inside its padding — and
+   * this is what happens below that anyway. A sprite may be cropped; it may not
+   * be resampled to fit (that is `image-rendering: pixelated`'s whole argument)
+   * and it may not push the page sideways, which is a defect the capture
+   * harness fails a frame for.
+   */
+  overflow: hidden;
 }
 
 /*
@@ -2878,6 +2887,67 @@ button:disabled {
   width: var(--o-size);
   height: var(--o-size);
   flex: none;
+}
+
+/* ------------------------------------------------------------------------ *
+ * The idle actions (MAR-587)
+ *
+ * A sheet is eight 50px frames laid left to right, and every frame is the
+ * audited still with a prop stamped on top — so what moves is the costume and
+ * nothing else. `pnpm brand:check` re-derives that from the pixels: a frame may
+ * only differ from the still inside the rectangle its manifest entry declares,
+ * which is what makes "a costume is recognition, never status" a measurement
+ * rather than a promise.
+ *
+ * `OAvatar` sets `--o-action`, `--o-frames` and `--o-size` inline; nothing here
+ * knows which character it is drawing or how many frames a sheet holds. A frame
+ * count written into this file would be a second copy of a number the manifest
+ * owns, free to disagree with the pixels the moment a sheet is re-vendored.
+ *
+ * ## The duration is a token, and that is the whole reduced-motion story
+ *
+ * `--motion-idle` is 0ms under `prefers-reduced-motion: reduce` (app/tokens.css),
+ * which leaves the element on its base `background-position` — frame 0, the
+ * character standing with its prop. So stillness costs no rule here, and the
+ * brand check refuses a literal duration on an avatar rule to keep it that way.
+ *
+ * ## Bounded on purpose
+ *
+ * `steps()`, not a smooth interpolation: eight repaints per 1800ms cycle rather
+ * than one per frame the display can draw, and no JavaScript and no timer at any
+ * point. There is deliberately no `will-change` — it would promote every card in
+ * the fleet to its own compositor layer to save repaints `steps()` has already
+ * removed.
+ * ------------------------------------------------------------------------ */
+.o-avatar.is-action {
+  /* A span, not a replaced element: it needs a box of its own to paint in. */
+  display: block;
+  background-image: var(--o-action);
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  background-size: calc(var(--o-size) * var(--o-frames)) var(--o-size);
+  animation: o-action var(--motion-idle) steps(var(--o-frames)) infinite;
+}
+
+/*
+ * Nobody is looking, so nothing moves.
+ *
+ * `app/_components/window-visibility.tsx` writes the attribute. There is no
+ * media query for "the window is hidden", and a minimised DASH repainting a
+ * fleet of sprites is the one cost this feature could impose on somebody who is
+ * not even looking at it.
+ */
+:root[data-window="hidden"] .o-avatar.is-action {
+  animation-play-state: paused;
+}
+
+@keyframes o-action {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: calc(var(--o-size) * var(--o-frames) * -1) 0;
+  }
 }
 
 /* ------------------------------------------------------------------------ *

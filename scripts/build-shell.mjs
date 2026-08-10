@@ -286,6 +286,21 @@ await Promise.all([
     format: "esm",
   }),
 
+  // The fleet as character select (MAR-587 Phase B), on the same terms and for
+  // a reason of its own: an agent's character is a hash of its name, so a run
+  // against whatever store a machine holds photographs whichever costumes that
+  // machine happens to wear — and only three of the eleven have sheets. This one
+  // seeds five agents whose names were chosen to put an animated and a still
+  // character alternately on screen, and writes the two things a photograph
+  // cannot hold: the loop advancing, and the loop stopping when nobody is
+  // looking. See `electron/capture-actions.ts`.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-actions.ts")],
+    outfile: path.join(outDir, "capture-actions.mjs"),
+    format: "esm",
+  }),
+
   // The folder-update surface (MAR-584), on the same terms and for the sharpest
   // version of the reason yet: what this section draws is decided entirely by a
   // disagreement between two things on disk, so a run against a real store

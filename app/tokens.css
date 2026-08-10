@@ -395,17 +395,35 @@
     --motion-stroll: 0ms;
     --motion-boot: 0ms;
     --motion-blink: 0ms;
+    --motion-idle: 0ms;
   }
 }
 
 /*
- * The behaviour durations (MAR-544). The first two are transition speeds; these
- * five are cycle lengths for motion that *is* state — an O hopping while its
- * agent works, beckoning while a decision waits, pacing while recently active,
- * the boot glyph assembling, the boot cursor blinking. They live here and
- * nowhere else so that a person who asked for stillness gets the whole fleet
- * still with the two zeroes above extended to seven, and no surface has to
- * remember.
+ * The behaviour durations (MAR-544, MAR-587). The first two are transition
+ * speeds; the next five are cycle lengths for motion that *is* state — an O
+ * hopping while its agent works, beckoning while a decision waits, pacing while
+ * recently active, the boot glyph assembling, the boot cursor blinking. They
+ * live here and nowhere else so that a person who asked for stillness gets the
+ * whole fleet still with the two zeroes above extended to eight, and no surface
+ * has to remember.
+ *
+ * `--motion-idle` is the exception to the sentence above, and it needs its own
+ * name precisely because it is one: it is the cycle length of motion that is
+ * emphatically **not** state — the fleet's costume loops, where a ninja tossing
+ * a shuriken says "this is the ninja" and nothing else (MAR-587).
+ *
+ * It carries 1800ms, the same number `--motion-beckon` carries today, and it is
+ * still a second token rather than a reuse. `--motion-beckon` is the rhythm of
+ * "a decision is waiting on you"; that rhythm exists to be tuned until it reads
+ * correctly from across the room, and the day somebody tunes it, a shared token
+ * would silently re-time every costume in the fleet — or worse, stop the tuning
+ * happening because it would. One duration, two meanings, is the shape that
+ * makes a designer choose between two surfaces that have nothing to do with
+ * each other.
+ *
+ * 1800ms over the eight audited frames is 225ms a frame, which is what
+ * `docs/mar-587-o-actions-preview.html` was reviewed at.
  */
 @media not (prefers-reduced-motion: reduce) {
   :root {
@@ -416,5 +434,6 @@
     --motion-stroll: 3600ms;
     --motion-boot: 1200ms;
     --motion-blink: 1060ms;
+    --motion-idle: 1800ms;
   }
 }

@@ -507,6 +507,103 @@ export function checkActions({ names, files, manifest, measured, grid = 50 }) {
   return failures;
 }
 
+/**
+ * The typed view and the audit record describe the same three sheets
+ * (MAR-587 Phase B).
+ *
+ * `lib/brand/o-actions.ts` is what the renderer compiles against;
+ * `lib/brand/o-actions.json` is the vendored, hash-audited truth. The component
+ * cannot read the second — it is 233 lines of per-frame pixel counts that exist
+ * to be measured, not shipped — so the two are held together here, exactly as
+ * `checkCast` holds `O_NAMES` to `o-cast.json`.
+ *
+ * The failure this exists for is quiet. Re-vendor a fourth sheet, add it to the
+ * manifest, forget the array, and everything passes: `checkActions` audits the
+ * pixels and finds them perfect, and the character simply never animates with no
+ * line anywhere saying why. The reverse — an entry in the array for a sheet that
+ * was never vendored — is a 404 on the fleet's first screen.
+ *
+ * Parsed rather than imported for `readCastModule`'s reason: this script runs
+ * under bare Node before anything is compiled, and parsing reads the file a
+ * reviewer reads.
+ */
+export function checkActionModule({ source, manifest, names }) {
+  const failures = [];
+
+  const framesMatch = source.match(/O_ACTION_FRAMES\s*=\s*(\d+)/);
+  if (framesMatch === null) {
+    failures.push("lib/brand/o-actions.ts: could not parse O_ACTION_FRAMES");
+  }
+
+  const arrayMatch = source.match(/O_ACTIONS\s*:\s*readonly OAction\[\]\s*=\s*\[([\s\S]*?)\];/);
+  if (arrayMatch === null) {
+    failures.push("lib/brand/o-actions.ts: could not parse O_ACTIONS");
+    return failures;
+  }
+
+  const declared = [
+    ...arrayMatch[1].matchAll(
+      /key:\s*"([^"]+)"\s*,\s*character:\s*"([^"]+)"\s*,\s*action:\s*"([^"]+)"/g,
+    ),
+  ].map(([, key, character, action]) => ({ key, character, action }));
+
+  if (declared.length === 0) {
+    failures.push("lib/brand/o-actions.ts: O_ACTIONS is empty, or its entries are not readable");
+  }
+
+  const recorded = Object.keys(manifest?.sheets ?? {});
+
+  for (const { key, character, action } of declared) {
+    const record = manifest?.sheets?.[key];
+    if (record === undefined) {
+      failures.push(
+        `actions: lib/brand/o-actions.ts offers "${key}", which lib/brand/o-actions.json does not record — the renderer would ask for a sheet nothing has audited`,
+      );
+      continue;
+    }
+    if (record.character !== character) {
+      failures.push(
+        `actions: lib/brand/o-actions.ts says "${key}" animates ${character}, but the manifest says ${String(record.character)} — the wrong character would wear it`,
+      );
+    }
+    if (record.action !== action) {
+      failures.push(
+        `actions: lib/brand/o-actions.ts calls "${key}" ${action}, but the manifest calls it ${String(record.action)}`,
+      );
+    }
+    if (!names.includes(character)) {
+      failures.push(
+        `actions: lib/brand/o-actions.ts animates "${character}", which is not in O_NAMES`,
+      );
+    }
+    if (framesMatch !== null && record.frameCount !== Number(framesMatch[1])) {
+      failures.push(
+        `actions: O_ACTION_FRAMES is ${framesMatch[1]}, but the manifest records ${String(record.frameCount)} frames in "${key}" — the renderer steps the sheet by that number, so a sheet would play part of itself or run off the end`,
+      );
+    }
+  }
+
+  for (const key of recorded) {
+    if (!declared.some((entry) => entry.key === key)) {
+      failures.push(
+        `actions: lib/brand/o-actions.json records "${key}", which lib/brand/o-actions.ts does not offer — the sheet is vendored and audited and no surface can reach it, which is the shape of a re-vendor that forgot half of itself`,
+      );
+    }
+  }
+
+  const characters = declared.map((entry) => entry.character);
+  for (const character of characters) {
+    if (characters.filter((other) => other === character).length > 1) {
+      failures.push(
+        `actions: lib/brand/o-actions.ts gives "${character}" more than one action — actionFor returns the first, so the others would be vendored bytes nothing draws; pick one until a surface exists that chooses between them`,
+      );
+      break;
+    }
+  }
+
+  return failures;
+}
+
 /* ── Reading JSX well enough to hold it to the rules ──────────────────────── */
 
 /**
@@ -607,6 +704,27 @@ export function checkCostume(file, source, labelAllowlist = new Set()) {
     if (/\blabel=/.test(usage.props) && !labelAllowlist.has(file)) {
       failures.push(
         `costume: ${file} passes label= to an avatar — decoration must be silent, and an announced costume is a costume a screen reader reports as a fact about the agent; if the character genuinely IS the information here, add the file to LABEL_ALLOWLIST with a reason`,
+      );
+    }
+
+    /*
+     * The third way a costume could become status, and the one MAR-587 opened
+     * (BRAND-05 / MAR-503's binding line: "the idle action is COSTUME flavor,
+     * never status").
+     *
+     * `name={…}` above is caught by looking for conditions and status words,
+     * because a character has to come from *somewhere* and most of those
+     * somewheres are legitimate. Whether a surface animates does not: it is a
+     * decision about the surface, taken once, so the only honest forms are the
+     * bare attribute and an explicit literal. That makes the rule exact rather
+     * than heuristic — `action={agent.needsYou}` and `action={hasNewOutput}`
+     * both fail without the check having to recognise either phrase, which is
+     * what the `name={…}` rule cannot promise.
+     */
+    const action = usage.props.match(/\baction=(\{[\s\S]*?\}|"[^"]*"|'[^']*')/)?.[1];
+    if (action !== undefined && !/^\{\s*(?:true|false)\s*\}$/.test(action)) {
+      failures.push(
+        `costume: ${file} decides an avatar's idle action from an expression ("action=${action.trim()}") — an idle action is costume flavour, never status, and a loop that starts or stops is a fact about the agent readable only from the character; pass a bare \`action\` (or nothing) and let MAR-586's glance chips carry the meaning`,
       );
     }
   }

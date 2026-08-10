@@ -1,0 +1,685 @@
+{
+  "captured_at": "2026-08-10T07:22:00.110Z",
+  "expected_order": [
+    "budget-digest",
+    "deal-finder",
+    "ledger-notes",
+    "news-scout",
+    "uptime-sorter"
+  ],
+  "measurements": [
+    {
+      "surface": "fleet",
+      "viewport": 1279,
+      "theme": "light",
+      "density": "comfortable",
+      "focused": true,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "widest_overflow": 150,
+      "widest_overflow_at": [
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 142,
+          "overflow_x": "hidden"
+        }
+      ],
+      "sideways_scrollers": [],
+      "cards": 5,
+      "order": [
+        "budget-digest",
+        "deal-finder",
+        "ledger-notes",
+        "news-scout",
+        "uptime-sorter"
+      ],
+      "animated": 3,
+      "stills": 2,
+      "sprite_width": 200,
+      "sprite_background_size": "1600px 200px",
+      "sprite_image_rendering": "pixelated",
+      "sprite_animation_name": "o-action",
+      "sprite_animation_duration": "1.8s",
+      "sprite_play_state": "running",
+      "chips": 6,
+      "chip_links": 5,
+      "inert_chips": 0,
+      "portrait_below_chips": 0
+    },
+    {
+      "surface": "fleet",
+      "viewport": 1279,
+      "theme": "light",
+      "density": "compact",
+      "focused": true,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "widest_overflow": 150,
+      "widest_overflow_at": [
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 142,
+          "overflow_x": "hidden"
+        }
+      ],
+      "sideways_scrollers": [],
+      "cards": 5,
+      "order": [
+        "budget-digest",
+        "deal-finder",
+        "ledger-notes",
+        "news-scout",
+        "uptime-sorter"
+      ],
+      "animated": 3,
+      "stills": 2,
+      "sprite_width": 200,
+      "sprite_background_size": "1600px 200px",
+      "sprite_image_rendering": "pixelated",
+      "sprite_animation_name": "o-action",
+      "sprite_animation_duration": "1.8s",
+      "sprite_play_state": "running",
+      "chips": 6,
+      "chip_links": 5,
+      "inert_chips": 0,
+      "portrait_below_chips": 0
+    },
+    {
+      "surface": "fleet",
+      "viewport": 767,
+      "theme": "light",
+      "density": "comfortable",
+      "focused": true,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "widest_overflow": 150,
+      "widest_overflow_at": [
+        {
+          "at": "span.density-label",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        }
+      ],
+      "sideways_scrollers": [],
+      "cards": 5,
+      "order": [
+        "budget-digest",
+        "deal-finder",
+        "ledger-notes",
+        "news-scout",
+        "uptime-sorter"
+      ],
+      "animated": 3,
+      "stills": 2,
+      "sprite_width": 200,
+      "sprite_background_size": "1600px 200px",
+      "sprite_image_rendering": "pixelated",
+      "sprite_animation_name": "o-action",
+      "sprite_animation_duration": "1.8s",
+      "sprite_play_state": "running",
+      "chips": 6,
+      "chip_links": 5,
+      "inert_chips": 0,
+      "portrait_below_chips": 0
+    },
+    {
+      "surface": "fleet",
+      "viewport": 767,
+      "theme": "light",
+      "density": "compact",
+      "focused": true,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "widest_overflow": 175,
+      "widest_overflow_at": [
+        {
+          "at": "span.density-label",
+          "gap": 175,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        }
+      ],
+      "sideways_scrollers": [],
+      "cards": 5,
+      "order": [
+        "budget-digest",
+        "deal-finder",
+        "ledger-notes",
+        "news-scout",
+        "uptime-sorter"
+      ],
+      "animated": 3,
+      "stills": 2,
+      "sprite_width": 200,
+      "sprite_background_size": "1600px 200px",
+      "sprite_image_rendering": "pixelated",
+      "sprite_animation_name": "o-action",
+      "sprite_animation_duration": "1.8s",
+      "sprite_play_state": "running",
+      "chips": 6,
+      "chip_links": 5,
+      "inert_chips": 0,
+      "portrait_below_chips": 0
+    },
+    {
+      "surface": "fleet",
+      "viewport": 374,
+      "theme": "light",
+      "density": "comfortable",
+      "focused": true,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "widest_overflow": 150,
+      "widest_overflow_at": [
+        {
+          "at": "span.density-label",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 142,
+          "overflow_x": "hidden"
+        }
+      ],
+      "sideways_scrollers": [
+        {
+          "at": "ol.row-list.fleet-grid",
+          "gap": 24,
+          "overflow_x": "visible"
+        },
+        {
+          "at": "main",
+          "gap": 8,
+          "overflow_x": "auto"
+        }
+      ],
+      "cards": 5,
+      "order": [
+        "budget-digest",
+        "deal-finder",
+        "ledger-notes",
+        "news-scout",
+        "uptime-sorter"
+      ],
+      "animated": 3,
+      "stills": 2,
+      "sprite_width": 200,
+      "sprite_background_size": "1600px 200px",
+      "sprite_image_rendering": "pixelated",
+      "sprite_animation_name": "o-action",
+      "sprite_animation_duration": "1.8s",
+      "sprite_play_state": "running",
+      "chips": 6,
+      "chip_links": 5,
+      "inert_chips": 0,
+      "portrait_below_chips": 0
+    },
+    {
+      "surface": "fleet",
+      "viewport": 374,
+      "theme": "light",
+      "density": "compact",
+      "focused": true,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "widest_overflow": 175,
+      "widest_overflow_at": [
+        {
+          "at": "span.density-label",
+          "gap": 175,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 142,
+          "overflow_x": "hidden"
+        }
+      ],
+      "sideways_scrollers": [
+        {
+          "at": "ol.row-list.fleet-grid",
+          "gap": 20,
+          "overflow_x": "visible"
+        },
+        {
+          "at": "main",
+          "gap": 4,
+          "overflow_x": "auto"
+        }
+      ],
+      "cards": 5,
+      "order": [
+        "budget-digest",
+        "deal-finder",
+        "ledger-notes",
+        "news-scout",
+        "uptime-sorter"
+      ],
+      "animated": 3,
+      "stills": 2,
+      "sprite_width": 200,
+      "sprite_background_size": "1600px 200px",
+      "sprite_image_rendering": "pixelated",
+      "sprite_animation_name": "o-action",
+      "sprite_animation_duration": "1.8s",
+      "sprite_play_state": "running",
+      "chips": 6,
+      "chip_links": 5,
+      "inert_chips": 0,
+      "portrait_below_chips": 0
+    },
+    {
+      "surface": "fleet",
+      "viewport": 1279,
+      "theme": "dark",
+      "density": "comfortable",
+      "focused": true,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "widest_overflow": 150,
+      "widest_overflow_at": [
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 142,
+          "overflow_x": "hidden"
+        }
+      ],
+      "sideways_scrollers": [],
+      "cards": 5,
+      "order": [
+        "budget-digest",
+        "deal-finder",
+        "ledger-notes",
+        "news-scout",
+        "uptime-sorter"
+      ],
+      "animated": 3,
+      "stills": 2,
+      "sprite_width": 200,
+      "sprite_background_size": "1600px 200px",
+      "sprite_image_rendering": "pixelated",
+      "sprite_animation_name": "o-action",
+      "sprite_animation_duration": "1.8s",
+      "sprite_play_state": "running",
+      "chips": 6,
+      "chip_links": 5,
+      "inert_chips": 0,
+      "portrait_below_chips": 0
+    },
+    {
+      "surface": "fleet",
+      "viewport": 1279,
+      "theme": "dark",
+      "density": "compact",
+      "focused": true,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "widest_overflow": 150,
+      "widest_overflow_at": [
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 142,
+          "overflow_x": "hidden"
+        }
+      ],
+      "sideways_scrollers": [],
+      "cards": 5,
+      "order": [
+        "budget-digest",
+        "deal-finder",
+        "ledger-notes",
+        "news-scout",
+        "uptime-sorter"
+      ],
+      "animated": 3,
+      "stills": 2,
+      "sprite_width": 200,
+      "sprite_background_size": "1600px 200px",
+      "sprite_image_rendering": "pixelated",
+      "sprite_animation_name": "o-action",
+      "sprite_animation_duration": "1.8s",
+      "sprite_play_state": "running",
+      "chips": 6,
+      "chip_links": 5,
+      "inert_chips": 0,
+      "portrait_below_chips": 0
+    },
+    {
+      "surface": "fleet",
+      "viewport": 767,
+      "theme": "dark",
+      "density": "comfortable",
+      "focused": true,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "widest_overflow": 150,
+      "widest_overflow_at": [
+        {
+          "at": "span.density-label",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        }
+      ],
+      "sideways_scrollers": [],
+      "cards": 5,
+      "order": [
+        "budget-digest",
+        "deal-finder",
+        "ledger-notes",
+        "news-scout",
+        "uptime-sorter"
+      ],
+      "animated": 3,
+      "stills": 2,
+      "sprite_width": 200,
+      "sprite_background_size": "1600px 200px",
+      "sprite_image_rendering": "pixelated",
+      "sprite_animation_name": "o-action",
+      "sprite_animation_duration": "1.8s",
+      "sprite_play_state": "running",
+      "chips": 6,
+      "chip_links": 5,
+      "inert_chips": 0,
+      "portrait_below_chips": 0
+    },
+    {
+      "surface": "fleet",
+      "viewport": 767,
+      "theme": "dark",
+      "density": "compact",
+      "focused": true,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "widest_overflow": 175,
+      "widest_overflow_at": [
+        {
+          "at": "span.density-label",
+          "gap": 175,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        }
+      ],
+      "sideways_scrollers": [],
+      "cards": 5,
+      "order": [
+        "budget-digest",
+        "deal-finder",
+        "ledger-notes",
+        "news-scout",
+        "uptime-sorter"
+      ],
+      "animated": 3,
+      "stills": 2,
+      "sprite_width": 200,
+      "sprite_background_size": "1600px 200px",
+      "sprite_image_rendering": "pixelated",
+      "sprite_animation_name": "o-action",
+      "sprite_animation_duration": "1.8s",
+      "sprite_play_state": "running",
+      "chips": 6,
+      "chip_links": 5,
+      "inert_chips": 0,
+      "portrait_below_chips": 0
+    },
+    {
+      "surface": "fleet",
+      "viewport": 374,
+      "theme": "dark",
+      "density": "comfortable",
+      "focused": true,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "widest_overflow": 150,
+      "widest_overflow_at": [
+        {
+          "at": "span.density-label",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 142,
+          "overflow_x": "hidden"
+        }
+      ],
+      "sideways_scrollers": [
+        {
+          "at": "ol.row-list.fleet-grid",
+          "gap": 24,
+          "overflow_x": "visible"
+        },
+        {
+          "at": "main",
+          "gap": 8,
+          "overflow_x": "auto"
+        }
+      ],
+      "cards": 5,
+      "order": [
+        "budget-digest",
+        "deal-finder",
+        "ledger-notes",
+        "news-scout",
+        "uptime-sorter"
+      ],
+      "animated": 3,
+      "stills": 2,
+      "sprite_width": 200,
+      "sprite_background_size": "1600px 200px",
+      "sprite_image_rendering": "pixelated",
+      "sprite_animation_name": "o-action",
+      "sprite_animation_duration": "1.8s",
+      "sprite_play_state": "running",
+      "chips": 6,
+      "chip_links": 5,
+      "inert_chips": 0,
+      "portrait_below_chips": 0
+    },
+    {
+      "surface": "fleet",
+      "viewport": 374,
+      "theme": "dark",
+      "density": "compact",
+      "focused": true,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "widest_overflow": 175,
+      "widest_overflow_at": [
+        {
+          "at": "span.density-label",
+          "gap": 175,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 150,
+          "overflow_x": "hidden"
+        },
+        {
+          "at": "span.visually-hidden",
+          "gap": 142,
+          "overflow_x": "hidden"
+        }
+      ],
+      "sideways_scrollers": [
+        {
+          "at": "ol.row-list.fleet-grid",
+          "gap": 20,
+          "overflow_x": "visible"
+        },
+        {
+          "at": "main",
+          "gap": 4,
+          "overflow_x": "auto"
+        }
+      ],
+      "cards": 5,
+      "order": [
+        "budget-digest",
+        "deal-finder",
+        "ledger-notes",
+        "news-scout",
+        "uptime-sorter"
+      ],
+      "animated": 3,
+      "stills": 2,
+      "sprite_width": 200,
+      "sprite_background_size": "1600px 200px",
+      "sprite_image_rendering": "pixelated",
+      "sprite_animation_name": "o-action",
+      "sprite_animation_duration": "1.8s",
+      "sprite_play_state": "running",
+      "chips": 6,
+      "chip_links": 5,
+      "inert_chips": 0,
+      "portrait_below_chips": 0
+    }
+  ],
+  "proofs": {
+    "parked_frame_0_light": 3,
+    "parked_frame_4_light": 3,
+    "reduced_motion_light": {
+      "matches": true,
+      "token": "0s",
+      "animation_duration": "0s",
+      "background_position": "0px 0px",
+      "sprite_visible": true
+    },
+    "parked_frame_0_dark": 3,
+    "parked_frame_4_dark": 3,
+    "reduced_motion_dark": {
+      "matches": true,
+      "token": "0s",
+      "animation_duration": "0s",
+      "background_position": "0px 0px",
+      "sprite_visible": true
+    },
+    "loop_samples": {
+      "sampled": 10,
+      "positions": [
+        "0px 0px",
+        "-200px 0px",
+        "-400px 0px",
+        "-600px 0px",
+        "-800px 0px",
+        "-1000px 0px",
+        "-1200px 0px",
+        "-1400px 0px",
+        "0px 0px",
+        "-200px 0px"
+      ],
+      "distinct": 8
+    },
+    "hidden_pause": {
+      "before": {
+        "visibility": "visible",
+        "attribute": null,
+        "play_state": "running"
+      },
+      "hidden": {
+        "visibility": "hidden",
+        "attribute": "hidden",
+        "play_state": "paused"
+      },
+      "after": {
+        "visibility": "visible",
+        "attribute": null,
+        "play_state": "running"
+      }
+    }
+  }
+}

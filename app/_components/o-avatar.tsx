@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 
+import { O_ACTION_FRAMES, actionFor, oActionSrc } from "../../lib/brand/o-actions";
 import type { OName, OSize } from "../../lib/brand/o-cast";
 
 /**
@@ -34,17 +35,26 @@ import type { OName, OSize } from "../../lib/brand/o-cast";
  * ring that surface has to fight, so the avatar stays a picture and whatever
  * wraps it owns its own focus.
  *
- * **No motion.** MAR-435's sprite animation is BRAND-05, and the static-first
- * line is documented there. When motion arrives it moves on `var(--motion-*)`
- * from `app/tokens.css`, which already zeroes those durations under
- * `prefers-reduced-motion: reduce` — so stillness needs no per-surface code, and
- * the brand check refuses a literal duration on an avatar rule to keep it that
- * way.
- *
  * **No character choosing.** `name` is a value the caller already holds — the
  * one persisted on the agent's record at creation. A costume is recognition,
  * never status: the brand check fails a `name={…}` that reads as a condition or
  * a status word.
+ *
+ * ## Motion arrived in MAR-587, and only where a surface asks for it
+ *
+ * `action` opts a surface into the character's vendored idle loop — the ninja
+ * tosses a shuriken, the knight swings, the wizard throws a fireball. It is
+ * **opt-in per surface and never a default**, because the bottom-edge fleet
+ * strip already animates and its animation means something: MAR-544 moves those
+ * O's from real signals, and a costume loop running underneath a state loop
+ * would be two motions in one sprite with only one of them true.
+ *
+ * The loop rides `var(--motion-idle)` from `app/tokens.css`, which is zeroed
+ * under `prefers-reduced-motion: reduce` — so stillness needs no per-surface
+ * code, and the brand check refuses a literal duration on an avatar rule to
+ * keep it that way. It also pauses whole while the window is hidden
+ * (`WindowVisibility`), and it steps rather than eases: eight repaints per
+ * cycle, no JavaScript per frame, no timer.
  */
 export interface OAvatarProps {
   /**
@@ -73,10 +83,65 @@ export interface OAvatarProps {
    */
   label?: string;
   className?: string;
+  /**
+   * Draw the character's idle loop where one has been vendored (MAR-587).
+   *
+   * **A literal, never an expression.** `scripts/brand-rules.mjs` fails
+   * `action={anything}` that is not `true` or `false`, because the whole rule
+   * this feature lives under is that an idle action is costume flavour and never
+   * status — and `action={agent.isHealthy}` is precisely the shape that would
+   * make "is it moving?" a fact about the agent. Whether a surface animates is a
+   * decision about the surface, taken once, in the source.
+   *
+   * Where the character has no sheet — eight of the eleven, today — this changes
+   * nothing at all and the audited still is drawn exactly as it was before. No
+   * stand-in loop, and no reordering to put the animated ones first: both would
+   * turn DASH's asset library into something a reader tries to read.
+   */
+  action?: boolean;
 }
 
-export function OAvatar({ name, size, label, className }: OAvatarProps): ReactNode {
+export function OAvatar({ name, size, label, className, action = false }: OAvatarProps): ReactNode {
   const decorative = label === undefined;
+  const idle = action ? actionFor(name) : null;
+  const classes = className === undefined ? "o-avatar" : `o-avatar ${className}`;
+
+  if (idle !== null) {
+    /*
+     * A `<span>` painted with the sheet, not an `<img>` with a background: the
+     * sprite has a transparent background and the still would show *through*
+     * the frames, drawing the character twice a few pixels apart.
+     *
+     * The sheet is eight frames laid left to right, so the box stays one frame
+     * wide and `.o-avatar.is-action` steps `background-position` across it.
+     * Both numbers it needs travel as custom properties rather than being
+     * written into the stylesheet — the frame count belongs to the manifest
+     * `pnpm brand:check` audits, and a second copy of it in CSS is a second copy
+     * that can disagree with the pixels.
+     */
+    return (
+      <span
+        className={`${classes} is-action`}
+        style={
+          {
+            "--o-size": `${size}px`,
+            "--o-frames": O_ACTION_FRAMES,
+            "--o-action": `url(${oActionSrc(idle)})`,
+          } as CSSProperties
+        }
+        /*
+         * Decorative by default, like the still. `role="img"` only when a
+         * caller passed a name — a background image has no `alt`, so the
+         * accessible name has to be attached rather than inherited from the
+         * markup, and an unnamed `role="img"` would announce "image" and
+         * nothing else.
+         */
+        role={decorative ? undefined : "img"}
+        aria-label={decorative ? undefined : label}
+        aria-hidden={decorative ? true : undefined}
+      />
+    );
+  }
 
   return (
     <img
@@ -91,7 +156,7 @@ export function OAvatar({ name, size, label, className }: OAvatarProps): ReactNo
       height={50}
       alt={decorative ? "" : label}
       aria-hidden={decorative ? true : undefined}
-      className={className === undefined ? "o-avatar" : `o-avatar ${className}`}
+      className={classes}
       style={{ "--o-size": `${size}px` } as CSSProperties}
       decoding="async"
       draggable={false}

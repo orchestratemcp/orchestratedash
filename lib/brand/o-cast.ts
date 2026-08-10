@@ -58,19 +58,27 @@ export type OName = (typeof O_NAMES)[number];
 /**
  * The rendered sizes DASH offers, in whole multiples of the 50px source.
  *
- * 50 is a card; 100 is a portrait. Nothing between them, because
- * `image-rendering: pixelated` upscales by nearest neighbour: at 120px some
- * source pixels land on two screen pixels and some on three, and on a 50px
- * shape that unevenness is the difference between pixel art and a mistake.
+ * 50 is a card; 100 is a portrait; 200 is the fleet's character-select tile
+ * (MAR-587). Nothing between them, because `image-rendering: pixelated` upscales
+ * by nearest neighbour: at 120px some source pixels land on two screen pixels
+ * and some on three, and on a 50px shape that unevenness is the difference
+ * between pixel art and a mistake.
+ *
+ * 150 is a legal whole multiple and is deliberately **not** in the union. A size
+ * is here because a surface draws at it, which is the same argument
+ * `OAvatarProps.size` makes for having no default: an unused size is a number
+ * chosen by whoever widened this union for a surface that did not exist yet.
+ * Henrik's MAR-587 ask was "make them big" after MAR-586 had already answered
+ * "bigger" with 100, so the fleet takes 4× the source rather than 3× and 150
+ * arrives the day something needs it.
  *
  * SITE's `OSize` also offers 25 — an exact half-step for its wordmark, where a
  * 50px character would tower over a 16px nav. DASH has no wordmark and no
- * surface that small, so the union stays at two and the brand check enforces the
- * literal rule (`% 50 === 0`) rather than SITE's looser one. Widening it is a
- * one-line diff here plus a matching one in the check, which is the point: it
- * becomes a decision a reviewer sees.
+ * surface that small, so the brand check enforces the literal rule
+ * (`% 50 === 0`) rather than SITE's looser one. Widening this union is a
+ * one-line diff, which is the point: it becomes a decision a reviewer sees.
  */
-export type OSize = 50 | 100;
+export type OSize = 50 | 100 | 200;
 
 /**
  * The character for a given seed.
