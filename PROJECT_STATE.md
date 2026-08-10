@@ -4738,7 +4738,7 @@ program runs at the next run whether or not it was accepted**, because the
 runner spawns from the folder without verifying it. Both are on screen rather
 than only in a header.
 
-## MAR-588 - DASH tells you in Discord when an agent needs you (outbound half, planned)
+## MAR-588 - DASH tells you in Discord when an agent needs you (outbound half, planned, PR #115)
 
 **The outbound half only.** New-report and needs-approval notifications go to a
 Discord channel through a channel webhook. No bot, no gateway, no hosted relay,
