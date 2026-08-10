@@ -1,7 +1,7 @@
 # DASH project state
 
-Updated: 2026-08-10 (MAR-584: an outside editor changes an agent's folder, and
-DASH says what changed instead of quietly adopting it)
+Updated: 2026-08-10 (MAR-583: a person chooses which model an agent uses, each
+step says what strength it needs, and a run says which model it reported)
 
 Portfolio sequence and estimates: [`../orchestratekit-mcp/docs/PORTFOLIO_ROADMAP_2026-08-01.md`](../orchestratekit-mcp/docs/PORTFOLIO_ROADMAP_2026-08-01.md).
 
@@ -4737,3 +4737,140 @@ MAR-489's attended run.
 program runs at the next run whether or not it was accepted**, because the
 runner spawns from the folder without verifying it. Both are on screen rather
 than only in a header.
+
+## Choosing a model, per agent and per step (MAR-583, DASH half)
+
+The MCP half is merged (OrchestrateKIT-MCP `3abe6e9`, ADR-MAR-583): the emitter
+writes `planned_route[].default_model_level` for every AI-needing step, using a
+closed vocabulary of **levels rather than model names**. Names age and belong to
+one provider; "this step needs a cheap model" is a fact about the agent that
+survives the catalogue changing underneath it. Its own ADR records that DASH had
+no typed property for the field and that the DASH schema, settings surface,
+deploy propagation and run recording were the companion dependency. This is that
+companion, and its judgments are `docs/adr/0011-which-model-an-agent-uses.md`.
+
+Henrik's question — *"the better we build the agents the lesser/cheaper AI model
+we can use, is this correct?"* — is answered yes with a boundary, and the
+boundary is why the level is per **step**: extraction and summarising run fine on
+small models while planning and code-writing degrade sharply below a capability
+floor. One agent-wide setting would force the expensive answer onto both.
+
+### The contract mirror, and the fallback that was refused
+
+`agent.manifest.v2.schema.json` gains the optional enum, `lib/contracts.ts` types
+it, and `lib/ai/model-levels.ts` is the pure reader beside the schema — no
+imports, vocabulary by value, reachable from the renderer chunk Ajv cannot be.
+`tests/model-levels.test.ts` runs every corpus case through both and requires the
+same verdict, which is MAR-555's mechanism on its third issue.
+`contract.lock.json` is untouched: it locks the frozen telemetry v1 pair and v2
+was never in it.
+
+**The reader never falls back to `model_tier`**, and that is a decision rather
+than an omission. Both fields describe the same underlying thing, and the mapping
+between them is ADR-MAR-583's table — putting a second copy in DASH would put it
+where nobody updates it. The consequence is stated to the person: an agent
+exported before that emitter declares no levels, gets no per-step choice, and
+re-exporting is the fix.
+
+### The recommended setting has no row
+
+An agent nobody has configured matches each step to what its plan asked for, and
+choosing that setting *back* deletes the row rather than storing the default —
+`agent_step_levels`' own note in `lib/db.ts` says why, and it is `avatar`'s trap
+one table along: a stored copy of a manifest's answer goes stale the moment its
+author publishes. So "nobody touched this" and "somebody chose the default" are
+the same state and DASH never has to tell them apart.
+
+Three tables, migration 15, and **not one of them has a cost column**.
+
+### The catalogue is asked for, and kept by nobody
+
+`ai_key_checks` records a count and never a list, because which models a key can
+reach is the provider's own content under ADR 0002 invariant 7. That constraint
+survives intact: `probeModelProvider` gained a `wantIds` parameter defaulting to
+the narrower answer, `classifyProbe` drops the ids on the floor, and the list
+travels from a provider's reply to the page that asked and dies with it.
+`tests/model-choice.test.ts` searches the whole SQLite file for the ids it
+scripted, so a future column, blob or cache would all fail it.
+
+The cost is a button rather than an automatic load, and it is paid deliberately:
+the agent page polls every five seconds while a run is going, and a page that
+fetched a catalogue on mount would contact a third party on every one of them.
+
+### The run row, and the field nobody had read
+
+**This is a correction to what MAR-583 was about to claim, and a test fixture
+found it.** The issue asks for the chosen model on every run row. DASH makes no
+completion call — MAR-582's boundary — so the first design recorded only DASH's
+own setting at first sight of the run, worded as a setting.
+
+Then an event fixture failed validation and showed that **telemetry v1 has
+carried `model` on every run event since the contract was frozen, and nothing in
+DASH had ever drawn it.** That is the better answer to "which model ran": it
+comes from inside the process that ran it. It is still the agent's claim rather
+than something DASH watched, so both are carried, in ADR 0005's shape — one thing
+DASH did, one thing DASH was told — and every sentence names which it is quoting.
+The `run_models` row is written once and never revised, so changing a setting
+mid-run cannot rewrite what an earlier run reports. Where the two disagree, that
+is reported rather than resolved: a run that used a model DASH was not set to
+give it is the interesting case, not a discrepancy to smooth over.
+
+**`cost_usd` sits on the same frozen event and is deliberately still unread.**
+MAR-299 owns spend and needs an answer to *whose number is this*; a test asserts
+over the source that nothing reads the field.
+
+### The choice travels, and a key that cannot travel refuses the deploy
+
+`data/models/{agent}.json` is generated beside the generated registration and
+never inside `agent/` — that directory is the author's folder byte-for-byte, and
+MAR-584 compares what DASH sent against what DASH holds by hashing exactly those
+paths, so a DASH-written file in there would make every agent read as changed the
+moment somebody picked a model.
+
+A bundle is **refused outright** when the plan needs a model and the agent asks
+DASH to hold the key for it: DASH does not send keys to servers, so the copy it
+would put there would arrive with a model named and nothing to reach it with.
+The check is on the shape of the arrangement rather than on the vault's current
+contents, because a deploy whose outcome depended on whether somebody had
+connected yet would be unpredictable. An agent that manages its own key is not
+refused. **The general case — a `dash_managed` connection of any kind on an agent
+going to a server — is not fixed here and is named rather than half-solved.**
+
+### What is proven, and what is not
+
+`pnpm state:check` valid, `typecheck` clean, `brand:check` green, full Vitest from
+PowerShell **129 files / 2,612 passed / 10 skipped / 0 failed**, up from 126 /
+2,540. Both builds green. `electron/capture-models.ts` wrote **24
+packaged-renderer frames** — four states at 375/768/1280 in both themes — with its
+own witness reporting 0 overflowing frames, 0 frames without the section, 0
+frames where the recommended option was not first, and 0 frames showing an
+amount.
+
+That witness earned its keep three times before an image was reviewed: the first
+run refused all four seeded manifests and produced a full set of photographs of a
+page saying it had no such agent; "Connect a OpenRouter key" was on screen at
+every width, and since all three brokered providers begin with a vowel sound the
+fix is "your key" rather than an article rule; and a disabled step control sat at
+full contrast beside a sentence saying it was set aside, with its longest option
+truncated mid-word.
+
+**NO REAL MODEL PROVIDER HAS BEEN CONTACTED.** The capture harness writes a
+`connection_secrets` row through the ordinary door with a masked hint and puts no
+key in the vault, so pressing "See what OpenRouter offers" in those images would
+fail; the harness does not press it. The list path is driven in
+`tests/model-choice.test.ts` against a scripted probe, and against a real
+loopback server in MAR-582's own suite. Nothing here may be described as proven
+against OpenRouter, Anthropic or OpenAI.
+
+`pnpm verify:shell` was **not** run locally — several worktrees' Electron
+instances were live on this machine and AGENTS.md forbids force-killing them.
+CI's Windows `shell-smoke` is the installed witness for this branch. Nothing in
+this slice changes the installed journey's existing paths: the section draws
+nothing at all for an agent whose plan uses no model, which is every shipped
+example.
+
+**No completion call, no streaming, no embedding, and zero changes under
+`runner/`.** MAR-582's boundary stands, so choosing a model is now possible and
+nothing in DASH yet sends a prompt to one. Nothing reads the deployed
+`data/models` file: the choice being present where the agent runs is what this
+slice delivers, and a runtime that resolves it needs the cost story too.
