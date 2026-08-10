@@ -216,6 +216,23 @@ never holds the store lock.
 
 ---
 
+## Machine state a new session inherits
+
+DASH is **running** on the real store
+(`C:\Users\henri\AppData\Roaming\orchestratedash`), launched from this worktree
+and having **adopted** runner pid 13868 rather than starting a second on the same
+SQLite file. Two `runner.mjs` processes are alive (13868 and 37844) and neither
+holds the store lock.
+
+It had to be launched twice. The first attempt ran through a tracked background
+task and exited cleanly the moment that task ended — after the session had
+already reported it as running, which was wrong and was corrected. Use
+`Start-Process` to detach, and confirm by process list rather than by the launch
+returning.
+
+`qa-screenshots-mar593/`'s scratch stores are under the session scratchpad, not
+in the repo.
+
 ## Left for somebody else
 
 1. **The other three tabs still repeat their heading.** MAR-592's open question
