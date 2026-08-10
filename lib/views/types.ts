@@ -36,6 +36,7 @@ import type { PanelView } from "./panel";
 import type { ManifestGapView } from "../sample-refresh";
 import type { Recovery } from "../copy/recovery";
 import type { ConnectionRequirementRow } from "../connections";
+import type { ConnectionTravel } from "../deploy/connection-travel";
 import type { ManifestPermissions, PermissionGrant, RunArtifact, RunEvent } from "../contracts";
 import type { AgentCompliance } from "../insights";
 import type { OName } from "../brand/o-cast";
@@ -99,6 +100,23 @@ export interface AgentOriginView {
 export interface AgentDeployView {
   deployable: boolean;
   refusal: string | null;
+  /**
+   * Which of this agent's connections would not go with it (MAR-591).
+   *
+   * The assessment and **not** its sentences, which is the opposite call to
+   * `refusal` one line up and is deliberate. That string comes from a module
+   * that reads a disk, so it has to be worded before it crosses; this one comes
+   * from `lib/deploy/connection-travel.ts`, which imports nothing that reaches a
+   * disk and is therefore callable from both `"use client"` deploy panels. The
+   * two panels name a different agent and a different server in every sentence,
+   * so wording it here would mean wording it for one of them and letting the
+   * other invent its own.
+   *
+   * `NOTHING_STRANDED` for an agent with nothing DASH holds, which is most of
+   * them. Never null: an absent assessment and an assessment that found nothing
+   * would render identically and only one of them is a claim.
+   */
+  travel: ConnectionTravel;
 }
 
 /**

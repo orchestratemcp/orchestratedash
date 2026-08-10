@@ -56,6 +56,7 @@ import {
   inspectAgentFolderStanding,
   storedDigestSummary,
 } from "../agent-folders";
+import { assessConnectionTravel } from "../deploy/connection-travel";
 import { plainDay } from "../copy/when";
 import { describeNotificationState } from "../notify/settings";
 import { describeManifestGap } from "../sample-refresh";
@@ -150,21 +151,36 @@ export function agentOrigin(registration: ManagedRegistration | undefined): Agen
  * be a folder component — a legacy row is allowed to be one — and a view that
  * threw there would take the whole agents list down over a row that simply
  * cannot be deployed. That is the answer either way, so it is the answer given.
+ *
+ * `manifest` is passed in rather than read here (MAR-591). Both callers already
+ * hold one — `workspaceView` from `readAgentManifest`, `agentsView` from the
+ * store row it is already iterating — and a read inside this function would open
+ * a file per row on a list that redraws while an agent runs.
  */
-export function agentDeployStanding(agent: string): AgentDeployView {
+export function agentDeployStanding(
+  agent: string,
+  manifest: ConnectionSourceManifest | null = null,
+): AgentDeployView {
+  // MAR-591. Assessed for every standing, including the ones that refuse for
+  // another reason: a person looking at a migrated agent is entitled to the same
+  // account of what would not travel, and computing it only on the deployable
+  // path would make the sentence appear when the folder was fixed rather than
+  // when it was true.
+  const travel = assessConnectionTravel(agent, manifest);
+
   let standing: ReturnType<typeof inspectAgentFolderStanding>;
   try {
     standing = inspectAgentFolderStanding(dataDir, agent);
   } catch {
-    return { deployable: false, refusal: UNREADABLE_FOLDER_DEPLOY_REFUSAL };
+    return { deployable: false, refusal: UNREADABLE_FOLDER_DEPLOY_REFUSAL, travel };
   }
   switch (standing.kind) {
     case "complete":
-      return { deployable: true, refusal: null };
+      return { deployable: true, refusal: null, travel };
     case "manifest_only":
-      return { deployable: false, refusal: MANIFEST_ONLY_DEPLOY_REFUSAL };
+      return { deployable: false, refusal: MANIFEST_ONLY_DEPLOY_REFUSAL, travel };
     case "unreadable":
-      return { deployable: false, refusal: UNREADABLE_FOLDER_DEPLOY_REFUSAL };
+      return { deployable: false, refusal: UNREADABLE_FOLDER_DEPLOY_REFUSAL, travel };
   }
 }
 
@@ -204,7 +220,15 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
       // MAR-577. One folder inspection per row, beside the registration read
       // this function already does per row. It is what lets the Servers page's
       // deploy panel say which of these agents it could actually send.
-      deploy: agentDeployStanding(agent.name),
+      //
+      // MAR-591. The manifest comes from the store row rather than from
+      // `readAgentManifest`, which is `glanceFacts`' own source for the same
+      // document one function along — the fleet list must not open a file per
+      // card to answer a question about connections it already holds.
+      deploy: agentDeployStanding(
+        agent.name,
+        (store.agents[agent.name]?.manifest ?? null) as ConnectionSourceManifest | null,
+      ),
       // MAR-586. The four questions a card answers at a glance, already worded.
       // Composed here rather than in the page for `damage`'s reason directly
       // below: both hosts must hand the renderer the same sentences.
@@ -1065,7 +1089,14 @@ export function workspaceView(
     // MAR-577. The same fact the agents list carries, on the page where the
     // agent is already chosen — so its deploy section can refuse before it
     // offers a server rather than after somebody picks one.
-    deploy: agentDeployStanding(agent),
+    //
+    // MAR-591. `manifest` here and `store.agents[name].manifest` in `agentsView`
+    // are the same column read two ways, which is what makes the two deploy
+    // panels answer identically. Neither is the folder `produceAgentFolderBundle`
+    // reads, and that gap is the arrangement MAR-577 already stated: main
+    // assesses again and stays the authority, so a store that has drifted from
+    // the folder costs a refusal after the press rather than a bad deploy.
+    deploy: agentDeployStanding(agent, manifest as ConnectionSourceManifest),
     // MAR-584, ADR 0010. Where DASH has sent this agent, and whether what it
     // sent is still what this agent is. Both facts about DASH's own record;
     // neither about the servers.

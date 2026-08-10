@@ -16,6 +16,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { DeployOutcome, DeployToServerPanel } from "../app/_components/deploy";
 import { MANIFEST_ONLY_DEPLOY_REFUSAL } from "../lib/agent-folders";
+import {
+  NOTHING_STRANDED,
+  type ConnectionTravel,
+} from "../lib/deploy/connection-travel";
 import type { DeployStanding } from "../lib/deploy/deploying";
 import type { HostConnectState } from "../lib/host-connect";
 import type {
@@ -49,10 +53,15 @@ const SERVER: SavedServerView = {
 
 const SECOND: SavedServerView = { ...SERVER, host_id: "host-2", label: "The spare" };
 
-const SENDABLE: AgentDeployView = { deployable: true, refusal: null };
+const SENDABLE: AgentDeployView = {
+  deployable: true,
+  refusal: null,
+  travel: NOTHING_STRANDED,
+};
 const MIGRATED: AgentDeployView = {
   deployable: false,
   refusal: MANIFEST_ONLY_DEPLOY_REFUSAL,
+  travel: NOTHING_STRANDED,
 };
 
 function panel(
@@ -192,6 +201,84 @@ describe("which machine", () => {
     });
     expect(html).toContain("record 1 of 2");
     expect(html).toContain("record 2 of 2");
+  });
+});
+
+describe("what stays on this computer (MAR-591)", () => {
+  /** One brokered sign-in DASH holds, with the agent's file silent about it. */
+  const WARNED: ConnectionTravel = {
+    verdict: "warn",
+    stranded: [
+      { connection_id: "gmail", service: "Your Gmail", custody: "oauth", need: "undeclared" },
+    ],
+  };
+  /** The same connection, on an agent whose file says it needs it. */
+  const REFUSED: ConnectionTravel = {
+    verdict: "refuse",
+    stranded: [
+      { connection_id: "gmail", service: "Your Gmail", custody: "oauth", need: "run_needs_it" },
+    ],
+  };
+
+  it("says it before the press, not after", () => {
+    /*
+     * ADR 0002 amendment 2's rule, which is the whole shape of this issue: a
+     * disclosure that arrives after the grant describes a window the person was
+     * already inside. Before MAR-591 the only account of a stranded connection
+     * was the producer's refusal, which arrives *after* the button.
+     */
+    const html = panel({ deploy: { ...SENDABLE, travel: WARNED } });
+    expect(html).toContain("Your Gmail");
+    expect(html).toContain("DASH does the signing in for these");
+    expect(html.indexOf("Your Gmail")).toBeLessThan(html.indexOf(`Put ${TITLE} on`));
+  });
+
+  it("leaves the button pressable on a warning and says what it will be like", () => {
+    // DASH does not decide which of a person's connections matter. The file did
+    // not say a run needs this, so the deploy is theirs to make.
+    const html = panel({ deploy: { ...SENDABLE, travel: WARNED } });
+    expect(html).toContain("anyway");
+    expect(html).not.toContain("disabled");
+  });
+
+  it("disables the button on a refusal, with the reason directly above it", () => {
+    /*
+     * Disabled rather than hidden, unlike the migrated-agent case: that agent
+     * has no program and the picker itself is wrong, while this one is sendable
+     * and it is *this server* it cannot usefully go to.
+     */
+    const html = panel({ deploy: { ...SENDABLE, travel: REFUSED } });
+    expect(html).toContain("disabled");
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("needs something DASH cannot send");
+  });
+
+  it("says nothing at all for an agent DASH holds nothing for", () => {
+    // Which is almost every agent. A section that drew an empty reassurance
+    // would be inventing a problem in front of somebody who has none.
+    expect(panel()).not.toContain("stays on this computer");
+  });
+
+  it("says what is missing from a copy it already sent", () => {
+    /*
+     * MAR-584's row says DASH put this agent there. This says what DASH did not
+     * put there — a second fact about DASH's own act, not a claim about the
+     * server.
+     */
+    const html = panel({
+      deploy: { ...SENDABLE, travel: WARNED },
+      targets: [
+        {
+          host_id: SERVER.host_id,
+          label: SERVER.label,
+          sent_at: "2026-08-09T14:14:37Z",
+          sent_on: "9 August",
+          comparable: true,
+          behind: false,
+        },
+      ],
+    });
+    expect(html).toContain(`The copy on ${SERVER.label} does not have Your Gmail`);
   });
 });
 

@@ -333,8 +333,11 @@ describe("the folder bundle producer", () => {
       runner_artifact_dir: path.join(dataDir, "not-a-runner"),
     });
     expect(produced).toEqual({
+      // MAR-591 renamed the code when the model key stopped being the only
+      // credential that cannot travel. The **sentence** is unchanged and still
+      // asserted by value here, which is the half MAR-583's proof was about.
       ok: false,
-      problem: "model_key_stays_home",
+      problem: "credential_stays_home",
       detail: MODEL_KEY_STAYS_HOME_REFUSAL,
     });
   });
@@ -388,6 +391,120 @@ describe("the folder bundle producer", () => {
       runner_artifact_dir: artifact,
     });
     expect(produced.ok).toBe(true);
+  }, 60_000);
+
+  it("refuses any connection the agent's own file says it needs, not only a model key", async () => {
+    /*
+     * MAR-591. The general case MAR-583 named and deliberately did not fix.
+     *
+     * The example manifest's Gmail is `dash_managed` and MAR-569's block is
+     * added declaring it required, so DASH's own document says every run needs
+     * something DASH will not send. The sentence is the general one — MAR-583's
+     * is reserved for the model key alone, and a test above pins it by value.
+     */
+    const dataDir = freshDir("needed-connection");
+    const artifact = freshDir("needed-connection-artifact");
+    const agentId = "gmail-agent";
+    await buildStandaloneRunner({ repoRoot, outDir: artifact });
+    const manifest = JSON.parse(manifestJson()) as Record<string, unknown>;
+    const agentDom = manifest["agent_dom"] as Record<string, unknown>;
+    agentDom["connection_requirements"] = {
+      requirements_version: 1,
+      requirements: [
+        {
+          id: "gmail_access",
+          name: "Your Gmail",
+          connector_kind: "google_oauth_broker",
+          connection_id: "gmail",
+        },
+      ],
+    };
+    writeAgentFolder({
+      dataDir,
+      agent: agentId,
+      manifestJson: JSON.stringify(manifest),
+      registration: registration(agentId),
+      files: [{ path: "agent.mjs", contents: "setInterval(() => {}, 1000);\n" }],
+    });
+
+    const produced = produceAgentFolderBundle({
+      data_dir: dataDir,
+      agent_id: agentId,
+      bundle_id: agentId,
+      runner_artifact_dir: artifact,
+    });
+    expect(produced.ok).toBe(false);
+    if (produced.ok) return;
+    expect(produced.problem).toBe("credential_stays_home");
+    expect(produced.detail).toContain("Gmail");
+    expect(produced.detail).toContain("Nothing was sent.");
+    expect(produced.detail).not.toBe(MODEL_KEY_STAYS_HOME_REFUSAL);
+  }, 60_000);
+
+  it("still sends an agent whose file never says a run needs what stays here", async () => {
+    /*
+     * The other half of MAR-591's rule, and the one a safety-minded reading gets
+     * wrong. The shipped example has two `dash_managed` sign-ins and no
+     * requirements block, so DASH does not know whether a run needs them — and
+     * refusing on that would refuse every agent of this shape that exists. The
+     * panel warns; the producer sends.
+     */
+    const dataDir = freshDir("undeclared-connection");
+    const artifact = freshDir("undeclared-connection-artifact");
+    const agentId = "undeclared-agent";
+    await buildStandaloneRunner({ repoRoot, outDir: artifact });
+    writeAgentFolder({
+      dataDir,
+      agent: agentId,
+      manifestJson: manifestJson(),
+      registration: registration(agentId),
+      files: [{ path: "agent.mjs", contents: "setInterval(() => {}, 1000);\n" }],
+    });
+
+    const produced = produceAgentFolderBundle({
+      data_dir: dataDir,
+      agent_id: agentId,
+      bundle_id: agentId,
+      runner_artifact_dir: artifact,
+    });
+    expect(produced.ok).toBe(true);
+  }, 60_000);
+
+  it("puts no credential in the bundle it does send", async () => {
+    /*
+     * The assertion the whole issue rests on, made over the bytes rather than
+     * over the design. Nothing under `agent/` or `data/` may carry a vault name
+     * or a delivery variable's value — MAR-591 is an honesty layer over a
+     * boundary that must already hold, and a bundle that quietly carried a
+     * secret would make every sentence above a lie in the safe direction.
+     */
+    const dataDir = freshDir("no-credential");
+    const artifact = freshDir("no-credential-artifact");
+    const agentId = "clean-agent";
+    await buildStandaloneRunner({ repoRoot, outDir: artifact });
+    writeAgentFolder({
+      dataDir,
+      agent: agentId,
+      manifestJson: manifestJson(),
+      registration: registration(agentId),
+      files: [{ path: "agent.mjs", contents: "setInterval(() => {}, 1000);\n" }],
+    });
+
+    const produced = produceAgentFolderBundle({
+      data_dir: dataDir,
+      agent_id: agentId,
+      bundle_id: agentId,
+      runner_artifact_dir: artifact,
+    });
+    expect(produced.ok).toBe(true);
+    if (!produced.ok) return;
+    const generated = produced.request.files.filter((file) => file.path.startsWith("data/"));
+    expect(generated.length).toBeGreaterThan(0);
+    for (const file of generated) {
+      expect(Buffer.from(file.content_base64, "base64").toString("utf8")).not.toContain(
+        "dash.connection.",
+      );
+    }
   }, 60_000);
 
   it("is consumed by MAR-497's unchanged standalone runner and starts the folder's agent", async () => {

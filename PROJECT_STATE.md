@@ -1,5 +1,10 @@
 # DASH project state
 
+Updated: 2026-08-10 (MAR-591: a deploy says which of an agent's connections
+stay on this computer, before the press, in both entry points)
+
+---
+
 Updated: 2026-08-10 (MAR-583: a person chooses which model an agent uses, each
 step says what strength it needs, and a run says which model it reported)
 
@@ -5158,3 +5163,134 @@ processes from earlier sessions hold the single-instance lock and AGENTS.md
 forbids force-killing them. Nothing in this change is reachable by the installed
 smoke anyway — no proof drives a notification — so CI's Windows `shell-smoke` is
 the witness that the change breaks nothing installed, not that it works.
+
+---
+
+## MAR-591 — the deploy stops stranding connections
+
+`host.deploy` copies an agent's folder, DASH's own runner and a generated
+registration onto a machine the user administers. It copies **no credential**,
+and it never will from here: ADR 0006/0007 put the broker on this computer and
+`deliverableSecretFields` puts a typed secret in a child process on this
+computer. What that meant for a `dash_managed` connection was precise and, until
+this branch, entirely unsaid — the copy on the server starts with nothing to sign
+in with, fails at whichever step needed it, and DASH does not watch runs there,
+so nothing on this machine ever says so.
+
+`lib/deploy/connection-travel.ts` is the assessment, `ConnectionTravelNotice` is
+the one component both entry points render, and `produceAgentFolderBundle` calls
+the same assessment so the renderer is never the gate.
+
+### The handoff was half wrong about MAR-583, and the code said so
+
+The brief described MAR-583 as having "built the exact pattern for its own case —
+the model-key travel refusal **on the deploy panel**". It had not.
+`MODEL_KEY_STAYS_HOME_REFUSAL` was reachable from exactly one place,
+`produceAgentFolderBundle`, and arrived through `DeployStanding.step === "failed"`
+— which is **after the press**. There was no disclosure to generalise; there was
+a refusal to generalise, plus the disclosure this issue had to write. That is why
+this branch touches both components rather than one.
+
+### The rule, and the two findings that shaped it
+
+> A `dash_managed` connection cannot travel. It **refuses** the deploy when the
+> agent's own document says a run needs it, and **warns** with the consequence
+> when the document does not say that.
+
+The coordinator's prior — warn for what the agent can live without, refuse when
+every run would fail — survives, with `ConnectionRequirementV1.optional` as the
+declaration that decides it and `planNeedsAModel` as MAR-583's second one. Two
+things about *silence* went the other way from the obvious reading, and both are
+the same mistake in opposite directions:
+
+**An agent with no requirements block warns.** Not one manifest in `examples/`
+declares MAR-569's block, so a rule that refused on silence would refuse every
+agent with a `dash_managed` connection that exists today — on a guess about
+whether a run needs it. The line says DASH cannot tell, which is MAR-584's
+`comparable: false` discipline on a different fact.
+
+**A declared block that does not name a connection also says nothing about it.**
+The first draft read a declared block as authoritative over the whole connection
+list, so an agent declaring Gmail required and saying nothing about its calendar
+drew *"This agent's own file says it can work without Google Calendar"* — a claim
+its file had never made, inferred from an omission. A screenshot caught it.
+`lib/views/glance.ts` **is** right to treat the block as authoritative, because
+its question is *which things need connecting* and a list answers that by being a
+list; the question here is *can this agent work without this one*, and a list is
+silent about anything outside it. Only an explicit `optional: true` earns
+"can work without", which is `optional`'s own rule read in both directions.
+
+### The custody vocabulary is the spawn path's, not a second reading
+
+`connectableFields` is what `collectSpawnCredentials` iterates, and its
+`CredentialKind` already draws the distinction: `oauth` is a grant the broker
+holds, `provider_key` is a model key DASH presents itself, `secret` is a typed
+value DASH writes into a child's environment *here*. All three are stranded, and
+a connection whose every field DASH refuses to hold never reaches the module —
+which is right rather than a gap, since DASH holds nothing for it.
+
+Both surfaces say the custody reason **once per custody** and one short line per
+connection. That split was also made by a screenshot: with the reason on every
+line, an agent with Gmail and a calendar drew the same paragraph twice, word for
+word, which at 375px is where a person stops reading.
+
+### The post-deploy card does not exist, and no fifth standing was added
+
+The brief asked for the agent's *connection-requirements card* to reflect the
+stranded state through MAR-569's resolution states. **There is no such card.**
+MAR-570 shipped connector tiles with MAR-533's capability card behind them, and
+`resolveRequirements` has exactly one consumer — `lib/views/glance.ts`, which
+counts. So there was no surface to land on.
+
+Nor should MAR-569's standings have been stretched to reach one. They are the
+intersection of three parties — DASH implements it, the manifest declared it, the
+provider issued it — and **none of the three is the server**. `rollUpStanding([])`
+answers `awaiting_you`, which is literally true of the copy over there and renders
+as an invitation to sign in; the Connect button beside it fires
+`connection.connect`, which writes to *this* computer's vault and changes nothing
+on the server. That is the "button DASH cannot fire" MAR-569 exists to prevent,
+and a fifth standing would ripple through every `switch` MAR-533 owns for one row.
+
+So the deployed copy is not a row in that model. What DASH can say about it is
+what MAR-584 says about everything on that surface: a fact about **DASH's own
+act**. `describeStrandedCopy` says it on the sent-server row — DASH put this agent
+there, DASH did not put this there, and DASH does not watch runs there.
+
+### What is proven, and what is not
+
+`pnpm state:check` valid, `typecheck` clean, `brand:check` green, full Vitest from
+PowerShell **137 files / 2,750 passed / 10 skipped / 0 failed** (137 / 2,747 on
+this base). Both builds green. `electron/capture-deploy.ts` gained a `stranded`
+scene: **60 packaged-renderer frames**, five surfaces at 375/768/1280 in both
+themes and both densities, with its own witness reporting 0 frames overflowing
+sideways, 0 stranded frames carrying no lines, and 0 blocked frames leaving the
+deploy pressable.
+
+That witness earned its keep twice before an image was reviewed — a
+`says_stranded` check looking for a service name the shipped example does not use,
+which read false on twenty-four frames that all showed the notice; and a `focus`
+on `.deploy-section` that put the notice below the fold at 375, producing twelve
+photographs of a receipt under filenames claiming otherwise.
+
+**No bundle has been sent to a real server.** That a deployed agent actually fails
+on a stranded connection is a reading of the code — no vault and no broker on the
+far side — rather than something watched. The attended VPS run is where that is
+observed, and it is the run this branch was cut for.
+
+**`pnpm verify:shell` did not run locally**: this session's own capture runners are
+live against scratch stores and AGENTS.md forbids force-killing them. CI's Windows
+`shell-smoke` is the installed witness. Nothing here changes an installed path —
+the notice draws nothing at all for an agent with no `dash_managed` connection,
+which is every shipped example.
+
+**No credential sync and no server-side broker**, per the issue's own boundary.
+`FolderBundleProblem.model_key_stays_home` was renamed `credential_stays_home`;
+`MODEL_KEY_STAYS_HOME_REFUSAL` is unchanged and still pinned by value, because the
+sentence is the half of MAR-583's proof that reached an audited command result.
+
+**One thing observed and not fixed** (MAR-577's, now visible in one more sentence):
+the server card's agent picker renders `AgentDeployChoice.name`, which is the
+agent id — so its copy reads "meeting-assistant" where the agent's own page reads
+"Meeting Assistant". `lib/copy/identifiers.ts` refuses slugs on a guided surface;
+the fix is a display label on `AgentDeployChoice`, and it belongs to whoever owns
+that picker rather than to this issue.

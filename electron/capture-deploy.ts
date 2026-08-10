@@ -20,6 +20,12 @@
  *                    agent page ask *which* one.
  * - `no-server`    — none, where the honest answer is that the agent already
  *                    runs on this computer and nothing is missing.
+ * - `stranded`     — MAR-591. One saved server and two agents carrying
+ *                    `dash_managed` connections DASH cannot send: one whose file
+ *                    never says whether a run needs them (warned, still
+ *                    pressable) and one whose file says it does (refused before
+ *                    the press). Both entry points are photographed, because the
+ *                    issue's requirement is that both say it.
  *
  * ## What is real here, and the two things that are not
  *
@@ -144,6 +150,26 @@ const SENDABLE = "news-scout";
 const MIGRATED = "old-scout";
 
 /**
+ * The two agents the `stranded` scene adds (MAR-591).
+ *
+ * Both are `complete` folders — sendable, in MAR-577's sense — and both carry
+ * `dash_managed` connections DASH cannot send to a server. The difference
+ * between them is the whole of MAR-591's rule:
+ *
+ * - `meeting-assistant` declares no `connection_requirements`, so its own file
+ *   never says whether a run needs Gmail. DASH warns and the button stays
+ *   pressable, which is the case every agent on a real machine is in today.
+ * - `meeting-blocked` declares the same connections *and* MAR-569's block naming
+ *   Gmail as required. DASH refuses before the press.
+ *
+ * A screenshot is the point here rather than a nicety: these lines are two
+ * clauses each in a bulleted list, they are the longest sentences on the deploy
+ * surface, and 375px is where that stops being theoretical.
+ */
+const STRANDED = "meeting-assistant";
+const BLOCKED = "meeting-blocked";
+
+/**
  * An address in TEST-NET-1 (RFC 5737), which is reserved for documentation and
  * routed nowhere.
  *
@@ -163,6 +189,46 @@ function scratchManifest(name: string, displayName: string): Record<string, unkn
   const agent = source["agent"] as Record<string, unknown>;
   agent["name"] = name;
   agent["display_name"] = displayName;
+  return source;
+}
+
+/**
+ * An agent with connections DASH holds, from the shipped example (MAR-591).
+ *
+ * `gmail-meeting-assistant.manifest.v2.example.json` rather than a document
+ * written here, for `tests/folder-bundle.test.ts`'s reason: it already declares
+ * two `dash_managed` sign-ins and passes every other rule, so what these images
+ * show is the notice firing rather than a hand-made manifest wearing its name.
+ */
+function connectedManifest(
+  name: string,
+  displayName: string,
+  requireGmail: boolean,
+): Record<string, unknown> {
+  const source = JSON.parse(
+    readFileSync(
+      path.resolve(process.cwd(), "examples", "gmail-meeting-assistant.manifest.v2.example.json"),
+      "utf8",
+    ),
+  ) as Record<string, unknown>;
+  const agent = source["agent"] as Record<string, unknown>;
+  agent["name"] = name;
+  agent["display_name"] = displayName;
+  if (requireGmail) {
+    const agentDom = source["agent_dom"] as Record<string, unknown>;
+    agentDom["connection_requirements"] = {
+      requirements_version: 1,
+      requirements: [
+        {
+          id: "gmail_access",
+          name: "Your Gmail",
+          connector_kind: "google_oauth_broker",
+          connection_id: "gmail",
+          why: "It reads the meeting requests this agent answers.",
+        },
+      ],
+    };
+  }
   return source;
 }
 
@@ -195,13 +261,41 @@ function seed(): void {
   const migrated = scratchManifest(MIGRATED, "Old Scout");
   importManifest(migrated, { manifestJson: JSON.stringify(migrated) });
 
+  // MAR-591. Only in the scene that is about them: elsewhere they would add two
+  // agents to every picker on every frame and change what MAR-577's own images
+  // are of.
+  if (SCENE === "stranded") {
+    for (const [name, label, required] of [
+      [STRANDED, "Meeting Assistant", false],
+      [BLOCKED, "Meeting Assistant (needs Gmail)", true],
+    ] as const) {
+      const manifest = connectedManifest(name, label, required);
+      const json = JSON.stringify(manifest);
+      importManifest(manifest, {
+        manifestJson: json,
+        registration: {
+          agent_id: name,
+          manifest_path: "agent.manifest.json",
+          command: "node",
+          args: ["agent.mjs"],
+          cwd: "code",
+          env: {},
+        },
+        files: [
+          { path: "agent.manifest.json", contents: json },
+          { path: "agent.mjs", contents: "process.stdout.write('ready')\n" },
+        ],
+      });
+    }
+  }
+
   /*
    * Two records mean two addresses, and not for realism.
    * `saveHost` refuses a second record naming one address and one account
    * (MAR-574's own duplicate rule), so a scene seeded with the same address
    * twice dies at the seed — which it did, on the first attempt.
    */
-  const servers =
+  const servers: Array<{ host_id: string; label: string; address: string }> =
     SCENE === "no-server"
       ? []
       : SCENE === "two-servers"
@@ -445,6 +539,28 @@ async function layout(target: BrowserWindow): Promise<unknown> {
            deploy_outcomes: document.querySelectorAll(".deploy-outcome").length,
            says_refusal: text.includes("build lives outside DASH"),
            says_runs_here: text.includes("runs on this computer"),
+           /*
+            * MAR-591's own three counters, and the second is the load-bearing
+            * one. A notice that rendered blank, or one whose lines scrolled
+            * below the fold, photographs exactly like a notice that is not
+            * there — and the whole issue is a sentence being on screen before
+            * somebody presses a button.
+            */
+           travel_notices: document.querySelectorAll(".travel-notice").length,
+           travel_lines: document.querySelectorAll(".travel-notice li").length,
+           travel_reasons: document.querySelectorAll(".travel-notice > p").length,
+           /*
+            * A phrase from the notice's own headlines, not a service name. The
+            * first run of this scene looked for "Your Gmail" and read false on
+            * twenty-four frames that all showed the notice: the label is the
+            * *author's*, and the shipped example calls it "Gmail".
+            */
+           says_stranded:
+             text.includes("cannot send to") || text.includes("stays on this computer"),
+           deploy_button_disabled:
+             [...document.querySelectorAll("button")].some(
+               (node) => node.textContent.includes("Put") && node.disabled,
+             ),
            widest_overflow: widest,
          };
        })()`,
@@ -503,6 +619,49 @@ function surfaces(): Surface[] {
         await chooseAgent(target, SENDABLE);
       },
       focus: ".deploy-panel",
+    });
+  }
+  if (SCENE === "stranded") {
+    /*
+     * MAR-591's four, and they are four rather than two because the issue's own
+     * requirement is that **both** entry points say it. A pair of images from
+     * the agent page alone would prove the sentence exists and nothing about
+     * whether the server card shows it.
+     */
+    /*
+     * Focused on `.travel-notice` rather than on the section, unlike every
+     * surface above. The first run of this scene scrolled to the section and the
+     * notice was below the fold at 375 in all four frames — twelve photographs
+     * of a receipt, filed under names claiming to show the thing this issue
+     * added. `focus` exists to make a viewport-sized image be of its subject.
+     */
+    list.push({
+      name: "agent-warned",
+      route: agentRoute(STRANDED),
+      focus: ".travel-notice",
+    });
+    list.push({
+      name: "agent-blocked",
+      route: agentRoute(BLOCKED),
+      focus: ".travel-notice",
+    });
+    list.push({
+      name: "servers-warned",
+      route: "/hosts",
+      prepare: async (target) => {
+        await clickByText(target, "Put an agent here");
+        await chooseAgent(target, STRANDED);
+      },
+      focus: ".travel-notice",
+    });
+    list.push({
+      name: "servers-blocked",
+      route: "/hosts",
+      prepare: async (target) => {
+        await clickByText(target, "Put an agent here");
+        await chooseAgent(target, BLOCKED);
+      },
+      focus: ".travel-notice",
     });
   }
   return list;
@@ -618,10 +777,29 @@ async function run(): Promise<void> {
       (entry as { surface: string }).surface.endsWith("refused") &&
       !(entry as { says_refusal: boolean }).says_refusal,
   );
+  /*
+   * MAR-591's own two, in the shape MAR-583's witness earned its keep in: a
+   * frame filed under `agent-warned` that carries no notice, and a frame filed
+   * under `agent-blocked` whose button is still pressable, are both pictures of
+   * the feature not working that look exactly like pictures of it working.
+   */
+  const silent = measurements.filter((entry) => {
+    const one = entry as { surface: string; travel_lines?: number };
+    return (
+      (one.surface.endsWith("warned") || one.surface.endsWith("blocked")) &&
+      (one.travel_lines ?? 0) === 0
+    );
+  });
+  const pressable = measurements.filter((entry) => {
+    const one = entry as { surface: string; deploy_button_disabled?: boolean };
+    return one.surface.endsWith("blocked") && one.deploy_button_disabled !== true;
+  });
   console.log(
     `\n[deploy] wrote ${String(written.length)} images and layout.json to ${OUT}\n` +
       `[deploy] ${overflowed.length === 0 ? "no frame overflowed sideways" : `${String(overflowed.length)} FRAMES OVERFLOWED`}\n` +
-      `[deploy] ${refusals.length === 0 ? "every refusal frame carries the refusal" : `${String(refusals.length)} REFUSAL FRAMES DID NOT SAY IT`}`,
+      `[deploy] ${refusals.length === 0 ? "every refusal frame carries the refusal" : `${String(refusals.length)} REFUSAL FRAMES DID NOT SAY IT`}\n` +
+      `[deploy] ${silent.length === 0 ? "every stranded frame carries its lines" : `${String(silent.length)} STRANDED FRAMES SAID NOTHING`}\n` +
+      `[deploy] ${pressable.length === 0 ? "no blocked frame left the deploy pressable" : `${String(pressable.length)} BLOCKED FRAMES LEFT IT PRESSABLE`}`,
   );
 
   app.exit(0);

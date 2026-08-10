@@ -10,6 +10,11 @@ import {
   describeUndeployable,
   type DeployStanding,
 } from "../../lib/deploy/deploying";
+import {
+  describeConnectionTravel,
+  describeStrandedCopy,
+  type ConnectionTravel,
+} from "../../lib/deploy/connection-travel";
 import { describeDeployReceipt } from "../../lib/deploy/receipt";
 import { describeSentServer, SENT_SERVERS_HEADING } from "../../lib/copy/folder";
 import { readProbeStanding, type HostConnectState } from "../../lib/host-connect";
@@ -110,6 +115,82 @@ export function DeployOutcome({
   );
 }
 
+/**
+ * What DASH holds that will not go with the agent (MAR-591).
+ *
+ * ## Why it is one component rather than a paragraph in each panel
+ *
+ * `describeDeployReceipt`'s discipline, one issue on: a deploy can begin in two
+ * places, and a consequence written in both is a consequence that gets softened
+ * in one. This is the whole of that sentence for both — the server card renders
+ * it against the agent somebody picked from its list, the agent page against the
+ * server somebody picked from its own, and neither composes a word of it.
+ *
+ * ## Where it sits, and why not lower
+ *
+ * Above the button and below the receipt, in the place MAR-577 put the
+ * undeployable refusal, and for the reason stated there: nobody should press a
+ * button that was never going to work — and in the warn case, nobody should
+ * press one whose consequence they were told about afterwards. ADR 0002
+ * amendment 2's rule about a disclosure that arrives after the grant is the same
+ * rule; this one arrives before the press or it is not a disclosure.
+ *
+ * ## Announced, not merely present
+ *
+ * `role="alert"` on the refusal and `role="status"` on the warning, which is
+ * `DeployOutcome`'s split. The picker changes what this says — choose a
+ * different agent on the server card and a sentence about Gmail appears out of
+ * nowhere — so a reader who is not looking at this part of the page has to be
+ * told the page changed under them.
+ */
+export function ConnectionTravelNotice({
+  travel,
+  agent,
+  server,
+}: {
+  travel: ConnectionTravel;
+  /** The agent's display name, as its own page's heading shows it. */
+  agent: string;
+  /** What the person calls the server. Never an address. */
+  server: string;
+}): ReactNode {
+  const notice = describeConnectionTravel(travel, agent, server);
+  if (notice === null) {
+    return null;
+  }
+  const refused = travel.verdict === "refuse";
+  return (
+    <section
+      className={refused ? "notice notice-err travel-notice" : "notice notice-warn travel-notice"}
+      role={refused ? "alert" : "status"}
+    >
+      <p className="wrap">
+        <strong>{notice.headline}</strong>
+      </p>
+      {/*
+        Why, once, before what. The reasons are about the arrangement and the
+        list is about this agent's connections — see `TravelNotice.reasons` for
+        the two identical paragraphs that split them apart.
+      */}
+      {notice.reasons.map((reason) => (
+        <p key={reason} className="wrap">
+          {reason}
+        </p>
+      ))}
+      <ul className="permission-list">
+        {notice.lines.map((line) => (
+          <li key={line} className="wrap">
+            {line}
+          </li>
+        ))}
+      </ul>
+      {notice.next_action === null ? null : (
+        <p className="next-action wrap">{notice.next_action}</p>
+      )}
+    </section>
+  );
+}
+
 /* ---------------------------------------------------------------------- *
  * The agent-side section
  * ---------------------------------------------------------------------- */
@@ -133,11 +214,14 @@ export function DeployOutcome({
  */
 function SentServers({
   targets,
+  travel,
   busy,
   canAct,
   onSendAgain,
 }: {
   targets: readonly AgentDeployTarget[];
+  /** MAR-591. What DASH held back from every one of these pushes. */
+  travel: ConnectionTravel;
   busy: boolean;
   canAct: boolean;
   onSendAgain: (hostId: string) => void;
@@ -155,12 +239,24 @@ function SentServers({
           comparable: target.comparable,
           behind: target.behind,
         });
+        /*
+         * MAR-591. What is not over there, on the row that says something is.
+         *
+         * Recomputed from today's manifest rather than recorded at push time,
+         * which is the honest direction: the record MAR-584 keeps is of bytes
+         * DASH sent, and DASH has never sent a credential to any server on any
+         * day. So this is not "what was held back that time" — it is the
+         * standing fact that this agent's connections live here, said beside the
+         * copy it is true of.
+         */
+        const stranded = describeStrandedCopy(travel, target.label);
         return (
           <div className="sent-server" key={target.host_id}>
             <p className="wrap">
               <strong>{copy.headline}</strong>
             </p>
             <p className="card-meta wrap">{copy.meaning}</p>
+            {stranded === null ? null : <p className="card-meta wrap">{stranded}</p>}
             {/*
               Offered on every row, not only the behind ones. A person who wants
               to push again over an unchanged copy is entitled to — the reasons
@@ -311,6 +407,7 @@ export function DeployToServerPanel({
       */}
       <SentServers
         targets={targets}
+        travel={deploy.travel}
         busy={busy}
         canAct={canAct}
         onSendAgain={onSendAgain}
@@ -340,13 +437,38 @@ export function DeployToServerPanel({
         </p>
       </section>
 
+      {/*
+        MAR-591. After the receipt and before the button, because it is the same
+        kind of sentence the receipt is — what this arrangement is actually like
+        — and because the receipt is the general case while this is about *this*
+        agent's own connections.
+      */}
+      <ConnectionTravelNotice travel={deploy.travel} agent={title} server={chosen.label} />
+
       {standing === null ? null : (
         <DeployOutcome standing={standing} report={report} checkedAt={checkedAt} />
       )}
 
       {canAct ? (
         <div className="button-row">
-          <button type="button" className="button-primary" disabled={busy} onClick={onDeploy}>
+          {/*
+            Disabled on a refusal rather than hidden, unlike the undeployable
+            case at the top of this function. The difference is what the person
+            would do about it: a migrated agent has no program and there is
+            nothing to choose, so the picker itself is wrong; here the agent is
+            sendable and it is *this server* it cannot usefully go to, so the
+            control stays where it was with the reason directly above it.
+          */}
+          <button
+            type="button"
+            className={
+              deploy.travel.verdict === "refuse"
+                ? "button-primary button-unavailable"
+                : "button-primary"
+            }
+            disabled={busy || deploy.travel.verdict === "refuse"}
+            onClick={onDeploy}
+          >
             {busy ? "Putting it there..." : `Put ${title} on ${chosen.label}`}
           </button>
         </div>
