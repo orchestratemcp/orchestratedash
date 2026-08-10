@@ -71,6 +71,8 @@ import { describeBundleContents, produceAgentFolderBundle } from "../lib/deploy/
 import { readRegistration } from "../lib/registration";
 import type { HandoffPorts } from "../lib/handoff-flow";
 import { findDeepLink } from "../lib/shell/deep-link";
+import { OPEN_HOST, deepLinkAuthority, parseOpenLink } from "../lib/open-link";
+import { agentWorkspaceHref } from "../app/_data/routes";
 import { applicationMenu, type MenuAction, type MenuItemSpec } from "../lib/shell/menu";
 import {
   SHELL_COMMAND_CHANNEL,
@@ -93,6 +95,7 @@ import {
   agentsView,
   connectionsView,
   hostsView,
+  notificationsView,
   runView,
   runsView,
   workInboxView,
@@ -128,6 +131,7 @@ import {
   pinHostFingerprint,
   readAgentManifest,
   readHost,
+  readNotificationSettings,
   recordAgentDeploy,
   recordAgentLook,
   saveHost,
@@ -142,6 +146,7 @@ import {
   registerCredentialChannels,
 } from "./credential-prompt";
 import { performFolderAction } from "./folder-update";
+import { buildNotifyConfiguration, performNotifyAction } from "./notify-settings";
 import { providerOperations } from "./oauth-session";
 import { startBroker } from "./broker-host";
 import { ensureRunner, runnerFetch, stopRunner, type RunnerHandle } from "./runner-process";
@@ -296,8 +301,91 @@ function drainHandoffQueue(ports: HandoffPorts): void {
   handoffContext = ports;
   const queued = pendingHandoffs.splice(0, pendingHandoffs.length);
   for (const url of queued) {
-    enqueueHandoff(url);
+    // Back through the dispatcher rather than straight to `enqueueHandoff`
+    // (MAR-588). The queue holds both kinds of link now, and re-deciding here is
+    // what keeps a cold-start `dash://open` from being opened as a handoff and
+    // refused as a malformed one.
+    enqueueDeepLink(url);
   }
+}
+
+/**
+ * Route one arriving `dash://` link by its authority (MAR-588).
+ *
+ * There are two now. `lib/handoff.ts` anticipated this — "a fixed word rather
+ * than a free-form path so that adding a second kind of deep link later is a new
+ * authority with its own parser" — and this is the fork that keeps the two
+ * apart at the top rather than inside either parser.
+ *
+ * The asymmetry between the branches is the point and is worth reading twice. A
+ * handoff can end with DASH registering a program somebody else wrote, so it
+ * goes through a consent dialog, a nonce, a TTL and a serialised queue. An open
+ * link can only ever end with a page being shown, so it goes through a parser
+ * and a navigation and nothing else. Giving the second one the first one's
+ * apparatus would not make it safer; it would make a person clicking a link in
+ * their own Discord channel answer a security question about looking at their
+ * own agent.
+ *
+ * An unknown authority falls through to the handoff branch deliberately, rather
+ * than being dropped here. `lib/shell/deep-link.ts` states the rule: a malformed
+ * link must reach the layer that produces a user-facing refusal, because a link
+ * silently ignored looks, to the person who clicked it, exactly like DASH being
+ * broken.
+ */
+function enqueueDeepLink(url: string): void {
+  if (handoffContext === null) {
+    // A cold start *is* the link, for both kinds, so both queue. Without this an
+    // `open` link that launched DASH would arrive before there was a window to
+    // navigate and would be silently lost — the exact failure the handoff queue
+    // was built to avoid, arriving through the new door.
+    pendingHandoffs.push(url);
+    return;
+  }
+  if (deepLinkAuthority(url) === OPEN_HOST) {
+    openDeepLink(url);
+    return;
+  }
+  enqueueHandoff(url);
+}
+
+/**
+ * Show the surface a `dash://open?…` link named.
+ *
+ * `loadURL` rather than a message to the renderer, because the renderer is a
+ * static export in which every surface is its own page, and because a link may
+ * arrive before any window has been told anything — a cold start *is* the link.
+ * The route is built from `agentWorkspaceHref`, so the address this opens and the
+ * address the agents list links to are the same string from the same function.
+ *
+ * A link that does not parse surfaces the window and stops. That is the honest
+ * response to "somebody sent DASH an address it will not act on": the app comes
+ * forward, where the person can see their agents and find whatever they were
+ * looking for. Nothing is registered, nothing is answered, and nothing is
+ * approved — see `lib/open-link.ts` for why that list is exhaustive.
+ */
+function openDeepLink(url: string): void {
+  surfaceWindow();
+
+  const parsed = parseOpenLink(url);
+  if (!parsed.ok) {
+    console.warn(`[dash-shell] ignored a link DASH would not have written (${parsed.refusal})`);
+    return;
+  }
+
+  const window = appWindow();
+  if (window === null) {
+    return;
+  }
+  // The run is deliberately not used to pick a different page. An agent's own
+  // workspace is where its latest report and its pending approvals both are, so
+  // one destination answers both kinds of message — and a report link that
+  // landed on a run's history page would put a person one click further from the
+  // thing they came back to do.
+  void window.webContents
+    .loadURL(`${RENDERER_ORIGIN}${agentWorkspaceHref(parsed.target.agent)}`)
+    .catch((error: unknown) => {
+      console.error(`[dash-shell] a deep link could not open its page: ${String(error)}`);
+    });
 }
 
 function rendererUrl(): string {
@@ -657,8 +745,68 @@ export function registerCommandChannel(
       // the reads and the write it guards, for `refreshSampleAgent`'s reason.
       folderAction: (action, target) =>
         Promise.resolve(performFolderAction(dataDir, action, target.agent_id)),
+      // MAR-588. The only route in DASH that can send something off this machine
+      // without an agent asking it to. Every gate is inside
+      // `electron/notify-settings.ts`, beside the vault read and the write, for
+      // `performFolderAction`'s reason — and the address is reachable from
+      // exactly this one entry in exactly this one context object, which is the
+      // same standing `connectionAction` has.
+      notifyAction: (action, target) =>
+        performNotifyAction(action, target, {
+          store: secureStore(),
+          promptForSecret: (request) =>
+            promptForSecret(
+              request,
+              secureStore().describeBacking().label,
+              readNotificationSettings().configured,
+              appWindow(),
+              RENDERER_ORIGIN,
+            ),
+          pushToRunner: () => pushNotifyConfiguration(runner),
+        }),
     });
   });
+}
+
+/**
+ * Hand the runner the channel it should post to, or take it away (MAR-588).
+ *
+ * Called after every settings change and once at startup. Never throws and never
+ * reports: a runner that is down, starting, or built without the route is a
+ * temporary state, and refusing somebody's setting because of it would be DASH
+ * making a person's preference contingent on a process they cannot see.
+ *
+ * What it costs to be wrong is silence, and silence is the failure this whole
+ * feature exists to prevent — which is why this is called more often than it
+ * strictly needs to be rather than less.
+ */
+async function pushNotifyConfiguration(runner: RunnerHandle | null): Promise<void> {
+  if (runner === null) {
+    return;
+  }
+  try {
+    const body = await buildNotifyConfiguration(secureStore());
+    const response = await runnerFetch(runner)(`${runner.origin}/notify/discord`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${runner.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      // The status and nothing else. The body that failed held the address.
+      console.warn(
+        `[dash-shell] the runner would not take the notification settings (status ${String(response.status)})`,
+      );
+    }
+  } catch (error: unknown) {
+    console.warn(
+      `[dash-shell] the notification settings could not reach the runner: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
 }
 
 /**
@@ -947,6 +1095,11 @@ export function registerReadChannel(): void {
         } satisfies ReadResponse<ReadResults["view.workspace"]>;
       case "view.hosts":
         return { ok: true, data: hostsView() } satisfies ReadResponse<ReadResults["view.hosts"]>;
+      case "view.notifications":
+        return {
+          ok: true,
+          data: notificationsView(),
+        } satisfies ReadResponse<ReadResults["view.notifications"]>;
       default: {
         const unreachable: never = review.read;
         throw new Error(`Unhandled read: ${String(unreachable)}`);
@@ -1914,21 +2067,21 @@ if (typeof app !== "undefined") {
     // so it is in our own argv and there is no `second-instance` event coming.
     const launchLink = findDeepLink(process.argv);
     if (launchLink !== null) {
-      enqueueHandoff(launchLink);
+      enqueueDeepLink(launchLink);
     }
 
     app.on("second-instance", (_event, argv) => {
       surfaceWindow();
       const url = findDeepLink(argv);
       if (url !== null) {
-        enqueueHandoff(url);
+        enqueueDeepLink(url);
       }
     });
 
     // macOS does not use argv for this at all.
     app.on("open-url", (event, url) => {
       event.preventDefault();
-      enqueueHandoff(url);
+      enqueueDeepLink(url);
     });
   }
 
@@ -2008,6 +2161,22 @@ if (typeof app !== "undefined") {
     if (channels !== null) {
       stopPolling = startPolling(channels);
     }
+
+    /*
+     * MAR-588. Hand the runner the notification channel, if there is one.
+     *
+     * Here rather than lazily on the first agent event, and not awaited. The
+     * runner is what posts, it holds the address in memory only, and it has just
+     * either been spawned with nothing or adopted from a previous launch that
+     * may have been told a different address — so this is the moment the two
+     * processes agree, and it must happen before any agent has a chance to need
+     * an approval.
+     *
+     * Not awaited because nothing later in startup depends on it and a slow
+     * local socket must not hold up the window. `pushNotifyConfiguration` never
+     * throws and reports its own failures.
+     */
+    void pushNotifyConfiguration(runner);
 
     // MAR-467. Before the broker starts, and before the heartbeat moves: the
     // window being recorded is the one that ended when this launch began, and

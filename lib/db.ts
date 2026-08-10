@@ -803,6 +803,43 @@ const MIGRATIONS: readonly Migration[] = [
 
   CREATE INDEX IF NOT EXISTS agent_deploys_by_agent ON agent_deploys (agent, sent_at);
   `,
+  // MAR-588. Where DASH is set up to post when an agent needs somebody, and
+  // which kinds of thing it posts about.
+  //
+  // **There is no column an address could go in, and that is the design.** The
+  // Discord webhook address is a credential -- anybody holding it can post to
+  // that channel -- so it lives in the OS vault under one name, and this table
+  // holds what every other connection in DASH holds beside a vault entry: a
+  // masked hint and a date. The same rule `connection_secrets` follows, and
+  // `tests/redaction.test.ts` is what checks the database bytes never contain
+  // the value.
+  //
+  // One row, not one per agent. The channel is a property of the *person* --
+  // this is where they want to be told -- and a per-agent table would invite a
+  // surface asking somebody to configure notifications once per agent, which is
+  // exactly the setup burden this feature exists to remove.
+  //
+  // `CHECK (id = 1)` states that singleton to SQLite rather than to a reader: a
+  // second row cannot be inserted, so no code path has to decide which of two
+  // rows is the real one.
+  //
+  // The two switches default to on. Somebody who has just pasted an address
+  // wants messages, and making them then turn both on would be a setup step that
+  // exists only because a schema was cautious.
+  //
+  // `IF NOT EXISTS` for the reason every migration since the hosts one states.
+  `
+  CREATE TABLE IF NOT EXISTS notify_discord (
+    id             INTEGER PRIMARY KEY CHECK (id = 1),
+    -- Four trailing characters of the webhook's token, masked. Never a value:
+    -- isMaskedHint in lib/secret-refs.ts is what a raw credential cannot pass.
+    masked_hint    TEXT NOT NULL,
+    -- DASH's own clock at the moment it was stored.
+    configured_at  TEXT NOT NULL,
+    send_approvals INTEGER NOT NULL DEFAULT 1,
+    send_reports   INTEGER NOT NULL DEFAULT 1
+  );
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

@@ -151,6 +151,22 @@ function sendHostCreate(args: HostCreateArgs): Promise<CommandResult> {
   }) as Promise<CommandResult>;
 }
 
+/**
+ * The one command whose payload carries a boolean (MAR-588).
+ *
+ * Its own function for `sendHostCreate`'s reason: `send` stays string-only, so
+ * every other caller is constrained by its type rather than by convention, and
+ * the single place a page can put a `true` on the command channel is one a
+ * reviewer finds by name. Both fields are copied explicitly rather than spread.
+ */
+function sendNotificationKind(kind: string, enabled: boolean): Promise<CommandResult> {
+  return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
+    command: "notify.setKind",
+    request_id: requestId(),
+    payload: { kind, enabled },
+  }) as Promise<CommandResult>;
+}
+
 /** Drop unset optional fields: the boundary denies a payload key it did not declare. */
 function fields(args: AgentCommandArgs, keys: readonly (keyof AgentCommandArgs)[]): Record<string, string> {
   const payload: Record<string, string> = {};
@@ -320,6 +336,28 @@ const dashShell = {
   revealFolder: (args: { agent_id: string }) => send("folder.reveal", { ...args }),
 
   /**
+   * The four notification commands (MAR-588).
+   *
+   * **Three of them take no arguments at all**, which is the whole security
+   * story of this group written as a type. Page script cannot supply a channel
+   * address, cannot ask which one DASH holds, and cannot compose a message: it
+   * asks main to open the credential window, asks main to forget what it has, or
+   * asks for one fixed test message. Every real notification is composed in the
+   * runner from something an agent actually did, on a path no renderer touches.
+   *
+   * `setNotificationKind` takes the one word and the one boolean the payload
+   * rules allow. The word is checked against the two known settings in main,
+   * beside the write.
+   *
+   * Four named methods rather than one `notify(action)`, like every group above.
+   */
+  connectNotifications: () => send("notify.connect", {}),
+  disconnectNotifications: () => send("notify.disconnect", {}),
+  testNotifications: () => send("notify.test", {}),
+  setNotificationKind: (args: { kind: string; enabled: boolean }) =>
+    sendNotificationKind(args.kind, args.enabled),
+
+  /**
    * Remember that this agent's page has just been opened (MAR-586).
    *
    * One agent id and nothing else — in particular, no time. The moment recorded
@@ -391,6 +429,10 @@ const dashData = {
   // MAR-574. Without this the Servers page cannot know a server was ever saved,
   // which is exactly the state that page shipped in.
   hosts: () => read("view.hosts"),
+  // MAR-588. Whether DASH is set up to post to Discord — never where. See the
+  // `view.notifications` entry in `lib/shell/read.ts` for why this read cannot
+  // become a route to the vault.
+  notifications: () => read("view.notifications"),
   // `satisfies`, so the pages and this bridge cannot drift: the shape is
   // declared in `lib/shell/read.ts`, which a client component may import and
   // this file may not be imported by.

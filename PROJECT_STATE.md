@@ -1,7 +1,7 @@
 # DASH project state
 
-Updated: 2026-08-10 (MAR-584: an outside editor changes an agent's folder, and
-DASH says what changed instead of quietly adopting it)
+Updated: 2026-08-10 (MAR-588: DASH tells you in Discord when an agent is waiting
+for you or has published a report - outbound half only)
 
 Portfolio sequence and estimates: [`../orchestratekit-mcp/docs/PORTFOLIO_ROADMAP_2026-08-01.md`](../orchestratekit-mcp/docs/PORTFOLIO_ROADMAP_2026-08-01.md).
 
@@ -4737,3 +4737,113 @@ MAR-489's attended run.
 program runs at the next run whether or not it was accepted**, because the
 runner spawns from the folder without verifying it. Both are on screen rather
 than only in a header.
+
+## MAR-588 - DASH tells you in Discord when an agent needs you (outbound half, planned)
+
+**The outbound half only.** New-report and needs-approval notifications go to a
+Discord channel through a channel webhook. No bot, no gateway, no hosted relay,
+no recurring cost. Inbound is untouched and unbuilt: nothing reads from Discord,
+no command arrives from a channel, and no query is answered there. That half is
+MAR-545's.
+
+`docs/mar-588-discord-outbound.md` carries the exact payload, the recorded HTTP
+exchange, and the two things this session did **not** prove.
+
+**The sender is in the runner, and that is the whole design.** The setup copy
+tells a person, before they paste anything, that with DASH closed and the
+computer on messages are still sent, and that with the computer off nothing is
+sent unless the agent lives on a server. The first of those is only true because
+`electron/runner-process.ts` spawns the runner **detached** — the flag that
+already makes "closing the DASH window leaves running agents running" true — so
+the thing that notices an agent needs somebody outlives the window that would
+otherwise be watching. A notifier beside `electron/approval-notifier.ts` would
+have been a third of the size and would have made that sentence a lie: the poll
+loop filling the work inbox is main's, so with the app closed nothing would be
+looking.
+
+The second sentence is the cost of that, stated rather than closed. The runner
+holds the address in **memory only** — never in `runner.sqlite`, never in a file,
+never in a log — so a restart leaves it with nothing, and there is no restart
+policy anywhere in DASH on purpose. DASH re-hands it over at startup and after
+every settings change. `tests/notify-runner.test.ts` asserts the placement
+structurally, so moving the sender into main to reach the vault more easily fails
+a check rather than quietly falsifying a promise on a page.
+
+**The message is DASH's own words, the agent's name, and a link.** Not the
+approval's label, not the report's title, not a line of what the agent read or
+wrote. MAR-421's OS toast does carry the action label and is right to — that
+message stays on the user's screen. This one lands where a channel's members can
+read it. The runner test drives an approval labelled `Wire 4,000 EUR to Acme Ltd`
+and asserts neither string reaches the wire.
+
+**`allowed_mentions.parse` is empty on every message**, which is the guarantee
+escaping cannot give: nothing stops an author naming their agent `@everyone`, and
+`@` is not markdown. The name is additionally collapsed to one line, capped and
+markdown-escaped, so it cannot end DASH's sentence and begin one that reads as
+DASH speaking.
+
+**`dash://open` is a second deep-link authority**, which `lib/handoff.ts`
+reserved in writing — "a new authority with its own parser". It names an agent
+and optionally a run, and `parseOpenLink` **refuses** a URL carrying any third
+parameter, so MAR-421's no-approval-token-in-a-URL rule is enforced by shape
+rather than by a deny-list of names somebody has to keep current. Following one
+opens a page; it registers nothing, answers nothing and approves nothing, which
+is why it needs none of the handoff's nonce, TTL and consent dialog.
+
+**Discord shows the link as text, not a button.** It linkifies `http` and
+`https` and not custom schemes. The only fix is an `https://` redirector on a
+host DASH owns, which is a server, which is a recurring cost — so the `$0` rule
+decides it and the settings page says so in the disclosure rather than leaving it
+to be discovered.
+
+**The address is a credential and is treated as one.** It goes into the vault
+under `notify.discord-webhook`, through the existing credential window rather
+than a new one, and only a masked hint and a date reach SQLite. The store refuses
+anything that is not a mask; `tests/notify-settings.test.ts` scans the database
+bytes including `-wal` for the value, the way `tests/redaction.test.ts` does.
+`parseDiscordWebhook` accepts only `https://` on a closed list of Discord hosts —
+`discord.com.example.net` contains "discord.com" and is somebody else's
+collector.
+
+**The settings surface is new**, at `/notifications`, because there was nowhere
+notification settings naturally sat. It is the seventh sidebar destination and
+the first that is about the *person* rather than an agent or a machine: one
+channel serves the whole fleet, so adding an agent never comes with a
+notification setup step. Liveness and what-goes-in-the-channel are **above** the
+field, where they can change the decision, rather than under it where they
+confirm one already made.
+
+### Proof
+
+`pnpm state:check && pnpm typecheck && pnpm brand:check && pnpm test` from
+PowerShell: state valid, typecheck clean, brand green, **132 test files / 2611
+passed / 10 skipped / 0 failed** (up from 126/2537).
+
+**The merged bar is met.** `tests/notify-transport.test.ts` runs the real
+`deliverDiscordMessage` against a real `node:http` listener on loopback and
+asserts the method, the headers and the exact JSON body for both event kinds and
+the test message, plus the 429, 429-clamped, 404, 503 and unreachable branches.
+The transcript is in `docs/mar-588-discord-outbound.md`, produced by that test
+with `DASH_NOTIFY_TRANSCRIPT` set.
+
+### Not proven
+
+**No real webhook has been fired at a real Discord channel.** Nothing in this
+session contacted Discord. That the live endpoint accepts this body is a reading
+of Discord's documentation, not an observation; that the message renders as it
+reads here, and that `dash://open?…` survives as copyable text, are both
+unobserved. The attended run is: `/notifications` → **Add a channel address** →
+paste → **Send a test message** → screenshot. `notify.test` posts a message that
+says in itself that nothing has happened to any agent, so a wrong channel learns
+nothing about anybody's work.
+
+**The end-to-end path with DASH closed is unproven.** Each piece is covered — the
+supervisor calls the notifier on the line an agent wrote, the notifier posts, the
+runner is detached — and nothing has run an agent to an approval with the window
+shut and watched a message arrive.
+
+**`pnpm verify:shell` did not run**, for MAR-584's reason: orphan Electron
+processes from earlier sessions hold the single-instance lock and AGENTS.md
+forbids force-killing them. Nothing in this change is reachable by the installed
+smoke anyway — no proof drives a notification — so CI's Windows `shell-smoke` is
+the witness that the change breaks nothing installed, not that it works.

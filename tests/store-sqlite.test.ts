@@ -91,11 +91,13 @@ describe("schema", () => {
     // MAR-586's record of when the reader last opened an agent's page —
     // authored as 12, renumbered at the merge because MAR-582 reached master
     // first and installed databases had already recorded it — and 14 is
-    // MAR-584's record of what DASH sent to which server (ADR 0010).
+    // MAR-584's record of what DASH sent to which server (ADR 0010), and 15 is
+    // MAR-588's record of where DASH posts when an agent needs somebody -- a
+    // masked hint and two switches, with no column an address could go in.
     // Asserted as a number rather than as MIGRATIONS.length so that appending a
     // migration is a deliberate edit here too.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(15);
+    expect(version.user_version).toBe(16);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -115,6 +117,9 @@ describe("schema", () => {
     expect(tables).toContain("broker_grants");
     expect(tables).toContain("broker_audit");
     expect(tables).toContain("workspace_artifacts");
+    // MAR-588. Named here beside the rest so that "which tables exist" stays a
+    // list somebody reads rather than one the schema reports about itself.
+    expect(tables).toContain("notify_discord");
     expect(tables).toContain("evidence_pulls");
     expect(tables).toContain("hosts");
     expect(tables).toContain("ai_key_checks");
@@ -472,7 +477,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(15);
+    ).toBe(16);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

@@ -57,6 +57,7 @@ import {
   storedDigestSummary,
 } from "../agent-folders";
 import { plainDay } from "../copy/when";
+import { describeNotificationState } from "../notify/settings";
 import { describeManifestGap } from "../sample-refresh";
 import { glanceReader } from "./glance";
 import {
@@ -72,6 +73,7 @@ import {
   readAgentManifest,
   readEvidencePulls,
   readHost,
+  readNotificationSettings,
   resolveArtifactAvailability,
   readStore,
   type EvidencePullRecord,
@@ -98,6 +100,7 @@ import type {
   ConnectionRowWithCredential,
   ConnectionsView,
   HostsView,
+  NotificationsView,
   PlannedStepView,
   RunView,
   RunsView,
@@ -675,6 +678,33 @@ export function hostsView(store: StoreShape = readStore()): HostsView {
         same_server_count: sameServer.length,
       };
     }),
+  };
+}
+
+/**
+ * Whether DASH is set up to post to Discord, and what it is posting (MAR-588).
+ *
+ * A projection of one row plus one sentence, and the sentence is why this is a
+ * view function rather than a page reading the store shape directly: two hosts
+ * build this document, and `describeNotificationState` is the one place the
+ * wording of "what is DASH doing right now" is decided.
+ *
+ * **Nothing here opens the vault.** `readNotificationSettings` reads a masked
+ * hint and two booleans out of SQLite; the address is never consulted. That
+ * matters for the reason `BrokerRowView` gives about its own reads — a vault
+ * read on a render would pop an OS unlock prompt at the moment somebody merely
+ * looked at a settings page — and for the stronger one in `lib/views/types.ts`:
+ * there is no field on the view it could travel in.
+ */
+export function notificationsView(): NotificationsView {
+  const settings = readNotificationSettings();
+  return {
+    configured: settings.configured,
+    masked_hint: settings.masked_hint,
+    configured_at: settings.configured_at,
+    send_approvals: settings.send_approvals,
+    send_reports: settings.send_reports,
+    state_sentence: describeNotificationState(settings),
   };
 }
 

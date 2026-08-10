@@ -46,6 +46,7 @@ import {
   type RunnerEndpoint,
 } from "./endpoint";
 import { DASH_LOCAL_PRINCIPAL } from "./execute";
+import { DiscordNotifier } from "./notify";
 import { createRunnerServer } from "./server";
 import { RUNNER_BUILD_ID, RUNNER_PROTOCOL_VERSION } from "./identity";
 import { channelSecretFingerprint, clearSessionKey, writeSessionKey } from "./session-key";
@@ -176,13 +177,36 @@ async function main(): Promise<void> {
    */
   let workspace: TaskWorkspaceApi | null = null;
 
-  const supervisor = new Supervisor(registrations, undefined, (agentId, message) => {
-    if (workspace === null) {
-      console.warn(`[runner] ${agentId} published a file before the workspace was open`);
-      return;
-    }
-    workspace.onArtifactFile(agentId, message);
-  });
+  /**
+   * The notifier (MAR-588).
+   *
+   * Constructed unconditionally and idle until DASH posts an address to
+   * `POST /notify/discord`: with no configuration it accepts observations and
+   * drops them, so there is no branch anywhere else in this file for "was a
+   * channel set up". It holds the address in memory only and is gone with this
+   * process — `runner/notify.ts` explains why that is the honest shape rather
+   * than a gap to close.
+   */
+  const notifier = new DiscordNotifier();
+
+  const supervisor = new Supervisor(
+    registrations,
+    undefined,
+    (agentId, message) => {
+      if (workspace === null) {
+        console.warn(`[runner] ${agentId} published a file before the workspace was open`);
+        return;
+      }
+      workspace.onArtifactFile(agentId, message);
+    },
+    (agentId, title, event) => {
+      if (event.kind === "artifact") {
+        notifier.observeArtifact(agentId, title, event.artifact);
+        return;
+      }
+      notifier.observeState(agentId, title, event.state);
+    },
+  );
 
   /**
    * Attach the workspace to whatever store is currently open (MAR-506).
@@ -213,6 +237,11 @@ async function main(): Promise<void> {
     shuttingDown = true;
     console.warn(`[runner] ${signal}: stopping agents`);
     supervisor.stopAll();
+    // Before the store closes and the socket goes. A queued notification whose
+    // delivery outlived the runner would be a message about an agent that is no
+    // longer running, arriving after the fact, from a process that is meant to
+    // be gone (MAR-588).
+    notifier.stop();
     const finish = (): never => {
       store?.close();
       releaseEndpoint(endpoint);
@@ -232,6 +261,9 @@ async function main(): Promise<void> {
     supervisor,
     database: () => store?.database ?? null,
     workspace: () => workspace ?? undefined,
+    configureNotifier: (configuration) => {
+      notifier.configure(configuration);
+    },
     storeDamage: () => storeDamage,
     /**
      * MAR-520. The second half of MAR-506's two detections, connected.

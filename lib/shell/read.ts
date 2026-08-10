@@ -54,6 +54,7 @@ import type {
   AgentsView,
   ConnectionsView,
   HostsView,
+  NotificationsView,
   RunView,
   RunsView,
   WorkInboxView,
@@ -128,6 +129,21 @@ export const READS = {
       "Every server DASH has saved: what it is called, where it is, which account it signs in as, when it was added and the identity it is pinned to. Never which key it uses.",
     params: [],
   },
+  /*
+   * MAR-588. The eighth, and the one most worth reading against the catalogue's
+   * own promise — "no route from this channel to the vault".
+   *
+   * What comes back is whether a channel is set up, four masked characters, the
+   * date, and two switches. The address itself is in the vault under one name,
+   * `notificationsView` never opens it, and there is no field on
+   * `NotificationsView` it could be assigned to. So this read cannot become a
+   * route to the credential even if somebody later adds a caller that wants one.
+   */
+  "view.notifications": {
+    returns:
+      "Whether DASH is set up to post to Discord, when it was set up, and which kinds of message it sends. Never the channel address.",
+    params: [],
+  },
 } as const satisfies Record<string, ReadSpec>;
 
 export type ReadName = keyof typeof READS;
@@ -151,6 +167,7 @@ export interface ReadResults {
   "view.inbox": WorkInboxView;
   "view.workspace": WorkspaceView;
   "view.hosts": HostsView;
+  "view.notifications": NotificationsView;
 }
 
 type UntypedRead = Exclude<ReadName, keyof ReadResults>;
@@ -253,6 +270,8 @@ export interface DashReadApi {
    * window cannot see saved servers. `app/_data/source.ts` checks before calling.
    */
   hosts?(): Promise<ReadResponse<ReadResults["view.hosts"]>>;
+  /** Optional for `hosts`'s reason: a shell older than MAR-588 has no such read. */
+  notifications?(): Promise<ReadResponse<ReadResults["view.notifications"]>>;
 }
 
 /**

@@ -26,6 +26,8 @@ import {
   type HostRecord,
 } from "./hosts";
 import { checkManifestConstraints } from "./manifest-constraints";
+import { NO_NOTIFICATIONS, type NotificationSettings } from "./notify/settings";
+import { isMaskedHint } from "./secret-refs";
 import {
   AgentFolderValidationError,
   listAgentFolderNames,
@@ -1393,6 +1395,98 @@ export function readAgentDeploys(agent: string): AgentDeployRecord[] {
  */
 export function forgetHostDeploys(hostId: string): void {
   db().prepare("DELETE FROM agent_deploys WHERE host_id = ?").run(hostId);
+}
+
+/* ---------------------------------------------------------------------- *
+ * Discord notifications (MAR-588)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What DASH is set up to post, and where it is *not* recorded.
+ *
+ * Everything in `NotificationSettings` except the two switches is derived from
+ * the presence of a row: a row exists exactly when a webhook address is in the
+ * vault, so `configured` is a fact about the store and about the vault agreeing.
+ * They can disagree — a vault wiped by a profile move, a row lost to store
+ * damage — and the honest answer is that this reports what the store holds while
+ * `notify.test` is the only thing that reports what the vault holds. Two
+ * different questions, answered by two different things, neither pretending to
+ * be the other.
+ */
+export function readNotificationSettings(): NotificationSettings {
+  const row = db()
+    .prepare(
+      "SELECT masked_hint, configured_at, send_approvals, send_reports FROM notify_discord WHERE id = 1",
+    )
+    .get() as Record<string, unknown> | undefined;
+
+  if (row === undefined) {
+    return NO_NOTIFICATIONS;
+  }
+
+  const hint = text(row, "masked_hint");
+  return {
+    // Re-checked on the way out, the same discipline `Vault.listNames` applies
+    // to its own directory: this column is on the user's disk and anything could
+    // have been written into it. A hint that would not have been accepted going
+    // in is not handed to a page as if DASH had produced it.
+    configured: isMaskedHint(hint),
+    masked_hint: isMaskedHint(hint) ? hint : null,
+    configured_at: text(row, "configured_at"),
+    send_approvals: row["send_approvals"] !== 0,
+    send_reports: row["send_reports"] !== 0,
+  };
+}
+
+/**
+ * Record that an address is now in the vault.
+ *
+ * Refuses anything that is not a mask. A caller that reached here with a real
+ * credential in hand has made the one mistake this whole feature is shaped
+ * around, and it should fail loudly at the call rather than land in a column
+ * that `tests/redaction.test.ts` then finds by scanning the database bytes.
+ *
+ * The two switches are preserved across a re-connect: somebody replacing an
+ * address they had turned reports off for did not ask for reports back.
+ */
+export function recordNotificationWebhook(
+  maskedHint: string,
+  at: string = new Date().toISOString(),
+): void {
+  if (!isMaskedHint(maskedHint)) {
+    throw new Error("recordNotificationWebhook was given something that is not a masked hint.");
+  }
+  db()
+    .prepare(
+      "INSERT INTO notify_discord (id, masked_hint, configured_at) VALUES (1, ?, ?) " +
+        "ON CONFLICT (id) DO UPDATE SET masked_hint = excluded.masked_hint, " +
+        "configured_at = excluded.configured_at",
+    )
+    .run(maskedHint, at);
+}
+
+/** Turn one kind of message on or off. No effect when nothing is configured. */
+export function setNotificationKind(
+  kind: "needs_approval" | "new_report",
+  enabled: boolean,
+): void {
+  const column = kind === "needs_approval" ? "send_approvals" : "send_reports";
+  db()
+    .prepare(`UPDATE notify_discord SET ${column} = ? WHERE id = 1`)
+    .run(enabled ? 1 : 0);
+}
+
+/**
+ * Forget the channel.
+ *
+ * The row goes, including the switches. Deliberately not "keep the preferences
+ * in case they come back": a person who disconnected asked DASH to stop knowing
+ * about their channel, and a surviving row would be DASH remembering something
+ * about a connection it was told to forget. Removing the vault entry is the
+ * caller's job and happens first — see `electron/main.ts`.
+ */
+export function forgetNotificationWebhook(): void {
+  db().prepare("DELETE FROM notify_discord WHERE id = 1").run();
 }
 
 /**

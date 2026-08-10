@@ -59,6 +59,7 @@ import {
   classifyStoreError,
   type RunnerStoreDamage,
 } from "./store-damage";
+import type { NotifyConfiguration } from "./notify";
 import { buildAgentDomState, type ProcessReport } from "./state";
 import type { AdoptionResult, Supervisor } from "./supervisor";
 import type { TaskWorkspaceApi } from "./task-api";
@@ -108,6 +109,15 @@ export interface RunnerServerOptions {
    * built on the store, so retiring a damaged store replaces it.
    */
   workspace?: TaskWorkspaceApi | (() => TaskWorkspaceApi | undefined);
+  /**
+   * Take, replace or clear the Discord channel this runner posts to (MAR-588).
+   *
+   * Optional for the reason `reload` and `workspace` are: a runner built without
+   * one answers 501 rather than reporting a channel configured that nothing will
+   * ever post to. In practice `runner/main.ts` always supplies it — the notifier
+   * costs nothing until DASH hands it an address.
+   */
+  configureNotifier?: (configuration: NotifyConfiguration | null) => void;
   /** Graceful process shutdown, supplied only by the standalone runner. */
   shutdown?: () => void;
   /**
@@ -362,6 +372,67 @@ async function handle(
         `-${String(summary.removed.length)} deferred=${String(summary.deferred.length)} ` +
         `skipped=${String(summary.skipped.length)}`,
     );
+    return;
+  }
+
+  // POST /notify/discord — hand the runner the channel it should post to, or
+  // take it away (MAR-588).
+  //
+  // **The one route in this file that carries a credential inbound**, and it is
+  // worth reading `runner/notify.ts`'s header for why it has to exist at all:
+  // the sender lives here because this process outlives the DASH window, and a
+  // sender in a process that outlives the window needs the address in that
+  // process.
+  //
+  // Three things bound it. It is on the authenticated channel like everything
+  // else, so a caller has to hold `runner.key`. The value is handed to
+  // `DiscordNotifier.configure` and nowhere else — it is never written to the
+  // store, never to a file and never logged, which is a property of that class
+  // rather than a promise here. And the reply says only whether a channel is
+  // now configured, never which: a route that echoed what it had just been
+  // given would make the credential readable by anything that could ask.
+  //
+  // `webhook_url: null` clears it, and clearing is the same route rather than a
+  // DELETE because the two are one setting with two values, and a person
+  // pressing Disconnect in DASH is entitled to have that reach the runner as
+  // reliably as pressing Connect did.
+  if (
+    request.method === "POST" &&
+    segments.length === 2 &&
+    segments[0] === "notify" &&
+    segments[1] === "discord"
+  ) {
+    if (options.configureNotifier === undefined) {
+      send(response, 501, {
+        ok: false,
+        detail: "This runner was started without the ability to post notifications.",
+      });
+      return;
+    }
+    const raw = await readBody(request);
+    if (raw === null) {
+      send(response, 413, { ok: false, detail: "The request body was too large." });
+      return;
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      // No echo of the body. It may have held the address.
+      send(response, 400, { ok: false, detail: "The request body was not valid JSON." });
+      return;
+    }
+    const parsed = readNotifyConfiguration(body);
+    if (parsed === "malformed") {
+      send(response, 400, { ok: false, detail: "The notification settings were not understood." });
+      return;
+    }
+    options.configureNotifier(parsed);
+    send(response, 200, { ok: true, configured: parsed !== null });
+    // Logged as a state change and never with the value, so a support session
+    // can see that DASH handed one over without the log becoming the place the
+    // credential ends up.
+    log(`[runner] notifications ${parsed === null ? "cleared" : "configured"}`);
     return;
   }
 
@@ -1003,6 +1074,45 @@ export function isLocalPeer(request: IncomingMessage): boolean {
     address === "::ffff:127.0.0.1" ||
     address.startsWith("127.")
   );
+}
+
+/**
+ * Read the notification settings out of a request body (MAR-588).
+ *
+ * Three answers, not two: a configuration, `null` for "clear it", and the string
+ * `"malformed"` for anything else. Folding the last two together would mean a
+ * body DASH did not understand silently switched somebody's notifications off,
+ * which is the failure where a person believes they are being told about their
+ * agents and is not.
+ *
+ * The address is checked for shape only — non-empty, and not absurdly long. It
+ * is **not** re-validated against `parseDiscordWebhook` here, and that is
+ * deliberate: main is what a person's paste passes through, main is what refuses
+ * a URL that is not Discord's, and a second copy of that rule in a process that
+ * receives an already-accepted value would be a second place for the two to
+ * disagree about what is allowed. What this route protects is the runner, and
+ * what protects the runner is that only a caller holding `runner.key` reaches it.
+ */
+function readNotifyConfiguration(body: unknown): NotifyConfiguration | null | "malformed" {
+  if (typeof body !== "object" || body === null) {
+    return "malformed";
+  }
+  const record = body as Record<string, unknown>;
+  const url = record["webhook_url"];
+  if (url === null) {
+    return null;
+  }
+  if (typeof url !== "string" || url === "" || url.length > 2_048) {
+    return "malformed";
+  }
+  return {
+    endpoint: url,
+    // Absent means on. A caller that named an address and no preferences is
+    // asking for notifications, and defaulting to off would leave a person who
+    // just connected a channel wondering why it is silent.
+    send_approvals: record["send_approvals"] !== false,
+    send_reports: record["send_reports"] !== false,
+  };
 }
 
 /**

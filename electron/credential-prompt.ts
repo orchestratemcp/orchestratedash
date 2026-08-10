@@ -317,7 +317,24 @@ function openPrompt(
  * on the way.
  */
 export async function promptForSecret(
-  target: CredentialTarget,
+  /**
+   * Narrowed to the five fields the prompt renders (MAR-588).
+   *
+   * It took a whole `CredentialTarget` until MAR-588 needed the same window for
+   * a credential that belongs to no agent and no declared connection — the
+   * Discord channel address, which is a property of the person. Widening the
+   * type would have meant inventing an `agent_id` and a `connection_id` for
+   * something that has neither, which is the kind of placeholder that later gets
+   * looked up.
+   *
+   * A `Pick` rather than a new interface, so `CredentialTarget` still satisfies
+   * it structurally and every existing caller is unchanged. Nothing was added to
+   * what this window can render: these are exactly the fields it already read.
+   */
+  target: Pick<
+    CredentialTarget,
+    "service" | "field_label" | "purpose" | "help" | "ai_provider_id"
+  >,
   vaultLabel: string,
   replacing: boolean,
   parent: BrowserWindow | null,

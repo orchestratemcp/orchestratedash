@@ -346,6 +346,22 @@ interface Supervised {
   /** The agent's most recent self-report, or null if it has not sent one. */
   report: Record<string, unknown> | null;
   commands: AgentCommand[];
+  /**
+   * What a person calls this agent — the manifest's `display_name`, falling back
+   * to the id (MAR-588).
+   *
+   * Read here because a notification that leaves this machine says the agent's
+   * name, and the id is not one: `lib/copy/identifiers.ts` is the rule, and
+   * `workInboxView` resolves the same two fields in the same order for every
+   * surface inside DASH. Doing it differently in the one place the words are
+   * read by somebody who cannot see the screen would be the worst place to
+   * disagree.
+   *
+   * Re-read whenever the manifest is, so an author who retitles their agent is
+   * announced under the new name at the next reload rather than at the next
+   * restart.
+   */
+  title: string;
   pending: Map<string, (result: DeliveryResult) => void>;
 }
 
@@ -463,6 +479,31 @@ export class Supervisor {
      * the agent meant to publish.
      */
     private readonly onArtifactFile?: (agentId: string, message: AgentArtifactFileMessage) => void,
+    /**
+     * Somebody outside this machine may want to hear about this (MAR-588).
+     *
+     * Injected for `onArtifactFile`'s reason and with a sharper version of it:
+     * this class supervises processes, and deciding whether a channel is
+     * configured, composing a message and reaching Discord is none of its
+     * business. `runner/notify.ts` owns all three; this passes on two facts it
+     * already has, at the moment it has them.
+     *
+     * **Not buffered, and not derived from the drains.** Telemetry, artifacts
+     * and broker requests are buffered for DASH to collect, which means they
+     * only move when DASH is running — and the entire reason the notifier is in
+     * this process is that DASH may not be. So this is called on the line, in
+     * the same place `onArtifactFile` is, and reads the same two message kinds
+     * the drains do without consuming either.
+     *
+     * Absent means no notifier, which is what a runner started by hand for
+     * debugging gets. Nothing is logged for it: nobody configured a channel, so
+     * nothing was expected.
+     */
+    private readonly onNotifiable?: (
+      agentId: string,
+      title: string,
+      event: { kind: "state"; state: unknown } | { kind: "artifact"; artifact: unknown },
+    ) => void,
   ) {
     for (const registration of registrations) {
       this.agents.set(registration.agent_id, this.entryFor(registration));
@@ -562,6 +603,7 @@ export class Supervisor {
       },
       report: null,
       commands: manifest.ok ? manifest.commands : [],
+      title: manifest.ok ? manifest.display_name : registration.agent_id,
       pending: new Map(),
     };
   }
@@ -723,6 +765,7 @@ export class Supervisor {
       return { ok: false, problem: "invalid_manifest", detail: manifest.detail };
     }
     entry.commands = manifest.commands;
+    entry.title = manifest.display_name;
 
     // Resolved here, at the moment of spawning, and never written down: see
     // `BUNDLED_NODE_COMMAND`. The runner still chooses nothing about *what*
@@ -872,7 +915,9 @@ export class Supervisor {
 
   private readManifest(
     registration: AgentRegistration,
-  ): { ok: true; commands: AgentCommand[] } | { ok: false; detail: string } {
+  ):
+    | { ok: true; commands: AgentCommand[]; display_name: string }
+    | { ok: false; detail: string } {
     let raw: unknown;
     try {
       raw = JSON.parse(readFileSync(registration.manifest_path, "utf8"));
@@ -904,7 +949,15 @@ export class Supervisor {
     const commands = Array.isArray(control?.commands)
       ? (control.commands as AgentCommand[])
       : [];
-    return { ok: true, commands };
+    // The same two fields in the same order `workInboxView` reads (MAR-588).
+    // Validation has already run, so `agent.name` is a non-empty string; the
+    // fallback is for a manifest that declared no display name at all.
+    const agent = validation.value.agent as { name: string; display_name?: unknown };
+    const displayName =
+      typeof agent.display_name === "string" && agent.display_name.length > 0
+        ? agent.display_name
+        : agent.name;
+    return { ok: true, commands, display_name: displayName };
   }
 
   private attach(entry: Supervised, child: ChildProcess): void {
@@ -972,6 +1025,11 @@ export class Supervisor {
 
     if (message.type === "state") {
       entry.report = message.state;
+      // Before the return, and not inside a later drain: see `onNotifiable`.
+      // Wrapped because a notifier that threw would take down the line reader
+      // for an agent that did nothing wrong — the same best-effort posture
+      // every other poller in this family keeps.
+      this.notify(entry, { kind: "state", state: message.state });
       return;
     }
 
@@ -990,6 +1048,12 @@ export class Supervisor {
         message.artifact,
         Buffer.byteLength(line, "utf8"),
       );
+      // Announced even when the buffer above refused it. The two answer
+      // different questions: the buffer is whether DASH will get the document to
+      // render, and this is whether a person is told their agent produced one.
+      // A full buffer is a reason DASH's page is missing something, not a reason
+      // to leave somebody uninformed that their agent finished.
+      this.notify(entry, { kind: "artifact", artifact: message.artifact });
       return;
     }
 
@@ -1033,6 +1097,26 @@ export class Supervisor {
             detail: message.detail ?? "The agent refused the command.",
           },
     );
+  }
+
+  /**
+   * Hand one observation to the notifier, if there is one, without letting it
+   * become this class's problem (MAR-588).
+   */
+  private notify(
+    entry: Supervised,
+    event: { kind: "state"; state: unknown } | { kind: "artifact"; artifact: unknown },
+  ): void {
+    if (this.onNotifiable === undefined) {
+      return;
+    }
+    try {
+      this.onNotifiable(entry.registration.agent_id, entry.title, event);
+    } catch (error: unknown) {
+      this.log(
+        `[runner] the notifier threw on a line from ${entry.registration.agent_id}: ${String(error)}`,
+      );
+    }
   }
 
   private bufferTelemetry(agentId: string, event: unknown, bytes: number): void {

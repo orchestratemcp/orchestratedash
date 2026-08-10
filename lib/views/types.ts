@@ -625,6 +625,38 @@ export interface HostsView {
 }
 
 /* ---------------------------------------------------------------------- *
+ * Discord notifications (MAR-588)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What the notification settings surface renders.
+ *
+ * This file's second rule — narrowed on purpose, not by accident — at its
+ * sharpest. The record behind this is one row and one vault entry, and the vault
+ * entry is a credential anybody holding it could post to somebody's Discord
+ * channel with. **There is no field here it could be assigned to**, so "the
+ * address is never rendered back" is a property of the type rather than
+ * something the page has to remember, and `notificationsView` could not leak it
+ * if it tried.
+ *
+ * `state_sentence` travels rather than being composed by the page, for the
+ * reason `AgentRow.glance` gives: two hosts build this document, and a page
+ * assembling its own sentence from three booleans would be a second place the
+ * claim could soften.
+ */
+export interface NotificationsView {
+  configured: boolean;
+  /** `••••` plus four characters of the webhook's token, or null. Never a value. */
+  masked_hint: string | null;
+  /** DASH's own clock at the moment it was stored, or null. */
+  configured_at: string | null;
+  send_approvals: boolean;
+  send_reports: boolean;
+  /** What DASH is doing right now, in one sentence. See `describeNotificationState`. */
+  state_sentence: string;
+}
+
+/* ---------------------------------------------------------------------- *
  * Live workspace
  * ---------------------------------------------------------------------- */
 
