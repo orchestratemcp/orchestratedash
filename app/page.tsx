@@ -44,6 +44,27 @@ export default function AgentsPage(): ReactNode {
       <p className="lede">
         Every agent this DASH knows about, and where each one came from.
       </p>
+      {/*
+        The entrance "Add agent" lost when it stopped being a sidebar row
+        (MAR-592).
+
+        It is here rather than only inside the empty state below, and the
+        difference is the whole reason this exists: the empty state is shown to
+        somebody with *no* agents, and the person who needs this most is the one
+        who has one and wants a second. Before this issue that person pressed a
+        sidebar row; the row is now a tab inside Settings, and "add a thing" is
+        not a question anybody thinks to ask a settings page.
+
+        A link, not a button, and it goes to the same page the tab does. There is
+        one add-agent surface and this is a second door onto it — the argument
+        `lib/shell/menu.ts` made about its own menu item, which is why that item
+        and this link and the tab are three entrances and one implementation.
+      */}
+      <div className="page-actions">
+        <Link className="button-link" href="/settings/add-agent">
+          Add agent
+        </Link>
+      </div>
       <HostNotice host={host} />
       {/*
         Above everything, including the loading state below: a damaged runner
@@ -92,7 +113,7 @@ export default function AgentsPage(): ReactNode {
               <div className="empty">
                 <p>
                   Nothing here yet. Start with AI News Scout above, or{" "}
-                  <a href="/agents/add">add an agent you built yourself</a>.
+                  <a href="/settings/add-agent">add an agent you built yourself</a>.
                 </p>
               </div>
             )

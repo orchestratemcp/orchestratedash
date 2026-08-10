@@ -1079,7 +1079,7 @@ function WorkspaceBody({
       <section className="section" aria-labelledby="workspace-connections">
         <div className="section-heading">
           <h2 id="workspace-connections">Connections</h2>
-          <Link href="/connections">Open Connection Center</Link>
+          <Link href="/settings">Open Connection Center</Link>
         </div>
         {snapshot.connections.length === 0 ? (
           <p className="muted">The agent has not reported connection health.</p>

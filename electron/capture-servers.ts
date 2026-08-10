@@ -5,7 +5,7 @@
  * `electron/capture.ts` walks every surface and photographs whatever the machine
  * happens to hold. That is the right harness for surfaces whose content is
  * incidental, and the wrong one for this page, because **the store is the
- * subject**: /hosts is a two-state route and which state it draws is decided
+ * subject**: /settings/servers is a two-state route and which state it draws is decided
  * entirely by whether a host record exists. A run against one machine's store
  * photographs one of the two states and cannot say which one it got.
  *
@@ -15,7 +15,7 @@
  * ## What is real here, and the one thing that is not
  *
  * Real: the packaged renderer, its compiled stylesheet, the bundled faces, the
- * `dash-app://ui/hosts` route itself, the view arriving over the read channel
+ * `dash-app://ui/settings/servers` route itself, the view arriving over the read channel
  * from `hostsView()`, `app/tokens.css` resolved against a `color-scheme` the
  * operating system's own signal moved, the density attribute written by pressing
  * the real control, and the viewport arithmetic at each width.
@@ -283,13 +283,13 @@ async function run(): Promise<void> {
     await settle(300);
 
     for (const viewport of VIEWPORTS) {
-      await go(window, "/hosts");
+      await go(window, "/settings/servers");
       const at = await resizeTo(window, viewport.width, viewport.height);
       // Reloaded after the resize as well: the page reads its view once, on
       // mount, and a card list laid out at the previous width would be
       // photographed under this width's filename.
-      await go(window, "/hosts");
-      console.log(`[servers] /hosts at ${viewport.name}/${theme} (window reports ${String(at)}px)`);
+      await go(window, "/settings/servers");
+      console.log(`[servers] /settings/servers at ${viewport.name}/${theme} (window reports ${String(at)}px)`);
 
       for (const density of ["comfortable", "compact"] as const) {
         if (density === "compact" && (await pressDensityToggle(window)) === null) {

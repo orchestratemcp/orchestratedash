@@ -604,7 +604,7 @@ function surfaces(): Surface[] {
     });
     list.push({
       name: "servers-refused",
-      route: "/hosts",
+      route: "/settings/servers",
       prepare: async (target) => {
         await clickByText(target, "Put an agent here");
         await chooseAgent(target, MIGRATED);
@@ -613,7 +613,7 @@ function surfaces(): Surface[] {
     });
     list.push({
       name: "servers-chosen",
-      route: "/hosts",
+      route: "/settings/servers",
       prepare: async (target) => {
         await clickByText(target, "Put an agent here");
         await chooseAgent(target, SENDABLE);
@@ -647,7 +647,7 @@ function surfaces(): Surface[] {
     });
     list.push({
       name: "servers-warned",
-      route: "/hosts",
+      route: "/settings/servers",
       prepare: async (target) => {
         await clickByText(target, "Put an agent here");
         await chooseAgent(target, STRANDED);
@@ -656,7 +656,7 @@ function surfaces(): Surface[] {
     });
     list.push({
       name: "servers-blocked",
-      route: "/hosts",
+      route: "/settings/servers",
       prepare: async (target) => {
         await clickByText(target, "Put an agent here");
         await chooseAgent(target, BLOCKED);

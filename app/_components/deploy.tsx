@@ -353,7 +353,7 @@ export function DeployToServerPanel({
         </p>
         <p className="wrap">{copy.detail}</p>
         <p className="next-action">
-          <Link href="/hosts">{copy.next_action}</Link>
+          <Link href="/settings/servers">{copy.next_action}</Link>
         </p>
       </section>
     );

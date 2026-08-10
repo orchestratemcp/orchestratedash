@@ -21,7 +21,7 @@
  *
  * ## What is real here, and the two things that are not
  *
- * Real: the packaged renderer and its stylesheet, the `dash-app://ui/connections`
+ * Real: the packaged renderer and its stylesheet, the `dash-app://ui/settings`
  * route, `connectionsView()` over the read channel, `buildConnectorTiles`
  * grouping by provider, `also_connects` computed on the trusted side, the
  * density attribute written by pressing the real control, and the receipt opened
@@ -374,12 +374,12 @@ async function run(): Promise<void> {
 
     for (const viewport of VIEWPORTS) {
       for (const density of DENSITIES) {
-        await go(window, "/connections");
+        await go(window, "/settings");
         const at = await resizeTo(window, viewport.width, viewport.height);
         // Reloaded after the resize as well: a page reads its view once, on
         // mount, and a grid laid out at the previous width would be
         // photographed under this width's filename.
-        await go(window, "/connections");
+        await go(window, "/settings");
 
         if (density === "compact" && (await pressDensityToggle(window)) === null) {
           console.log(`[connectors] no density control at ${viewport.name} — compact skipped`);
@@ -406,7 +406,7 @@ async function run(): Promise<void> {
      * screenshots, and the claim being evidenced here is only that it is still
      * reachable in one click.
      */
-    await go(window, "/connections");
+    await go(window, "/settings");
     await resizeTo(window, 1280, 900);
     if (await openReceipt(window)) {
       await shoot(window, `connectors-receipt-1280-${theme}-comfortable`);
@@ -423,9 +423,9 @@ async function run(): Promise<void> {
   for (const theme of THEMES) {
     nativeTheme.themeSource = theme;
     await settle(300);
-    await go(window, "/connections");
+    await go(window, "/settings");
     await resizeTo(window, 1280, 900);
-    await go(window, "/connections");
+    await go(window, "/settings");
     const measured = await layout(window);
     measurements.push({ viewport: "1280", theme, density: "comfortable", partly: true, ...(measured as object) });
     console.log(`[connectors] partly ${theme} ${JSON.stringify(measured)}`);

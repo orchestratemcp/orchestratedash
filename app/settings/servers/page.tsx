@@ -18,23 +18,23 @@ import {
   type HostDraft,
   type ProviderId,
   type WizardStep,
-} from "../../lib/host-wizard";
+} from "../../../lib/host-wizard";
 import {
   HOST_REACH_PROBLEMS,
   describeConnectState,
   readProbeStanding,
   type HostConnectState,
   type HostReachProblem,
-} from "../../lib/host-connect";
-import type { DeployStanding } from "../../lib/deploy/deploying";
-import { describeDuplicateHost, findDuplicateHost } from "../../lib/hosts";
-import { describeDuplicateRecords, summariseServers } from "../../lib/server-card";
-import { describeDeployArrangement } from "../../lib/deploy/receipt";
-import { ServerCard } from "../_components/server-card";
-import { HostNotice, ViewFailed, ViewLoading } from "../_components/view-state";
-import { submitHostCommand } from "../_data/source";
-import { useCanAct, useHost, useView } from "../_data/use-view";
-import type { SavedServerView } from "../../lib/views/types";
+} from "../../../lib/host-connect";
+import type { DeployStanding } from "../../../lib/deploy/deploying";
+import { describeDuplicateHost, findDuplicateHost } from "../../../lib/hosts";
+import { describeDuplicateRecords, summariseServers } from "../../../lib/server-card";
+import { describeDeployArrangement } from "../../../lib/deploy/receipt";
+import { ServerCard } from "../../_components/server-card";
+import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
+import { submitHostCommand } from "../../_data/source";
+import { useCanAct, useHost, useView } from "../../_data/use-view";
+import type { SavedServerView } from "../../../lib/views/types";
 
 /**
  * Servers: manage the one you have, or connect one (MAR-498, MAR-536, MAR-574).

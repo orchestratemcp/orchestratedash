@@ -84,7 +84,7 @@ describe("every chip is a way in (MAR-586, MAR-547's clickability)", () => {
      * report on connections it already has, which is a different question and
      * the wrong place to send somebody told something is missing.
      */
-    expect(html).toContain('href="/connections"');
+    expect(html).toContain('href="/settings"');
 
     // Four questions, four destinations, no chip left as inert text.
     expect(html.match(/<a /g) ?? []).toHaveLength(4);

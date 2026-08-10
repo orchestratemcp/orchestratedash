@@ -236,7 +236,7 @@ await Promise.all([
 
   // The Servers route's own screenshot harness (MAR-574), on the same terms.
   // Separate from `capture.ts` because that one photographs whatever store the
-  // machine happens to hold, and /hosts is a two-state route whose state that
+  // machine happens to hold, and /settings/servers is a two-state route whose state that
   // store *decides* — so a run against one machine's store photographs one of
   // the two and cannot say which. This one is pointed at a store the run
   // chooses, and is run once per state. See `electron/capture-servers.ts`.

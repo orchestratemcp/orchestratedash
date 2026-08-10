@@ -130,11 +130,30 @@ const THEMES = ["light", "dark"] as const;
 const SURFACES = [
   { name: "agents", path: "/", density: true, tall: false },
   { name: "runs", path: "/runs", density: false, tall: false },
-  { name: "connections", path: "/connections", density: false, tall: true },
   { name: "work", path: "/work", density: false, tall: false },
+  /*
+   * Settings' four tabs (MAR-592).
+   *
+   * Listed individually, and each is photographed at the route it actually
+   * has — a tab held in React state would have made this harness learn to
+   * click, and MAR-577 already paid for what a harness that clicks gets wrong.
+   *
+   * Two of the four were already in this matrix under their old addresses. The
+   * other two are new to it, which is the honest consequence of Notifications
+   * and Add agent becoming surfaces a person reaches by pressing a tab: the
+   * strip above them is now part of what a screenshot of them has to show.
+   */
+  { name: "settings-connections", path: "/settings", density: false, tall: true },
+  {
+    name: "settings-notifications",
+    path: "/settings/notifications",
+    density: false,
+    tall: false,
+  },
   /* MAR-498. `tall` because the wizard's last step carries the deploy receipt
      under the probe's own answer, and a viewport frame shows the probe. */
-  { name: "hosts", path: "/hosts", density: false, tall: true },
+  { name: "settings-servers", path: "/settings/servers", density: false, tall: true },
+  { name: "settings-add-agent", path: "/settings/add-agent", density: false, tall: false },
   { name: "workspace", path: null, density: true, tall: true },
 ] as const;
 

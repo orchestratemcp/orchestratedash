@@ -224,7 +224,7 @@ export function describeProviderChoice(id: ProviderId | null): {
  *    stated first in the rendering order.
  * 2. **The outbound link is an affiliate link, and it appears only after the
  *    attended proof passes** (MAR-489). Until then `link_label` is a label with
- *    nothing behind it — see `app/hosts/page.tsx`, which renders it as text and
+ *    nothing behind it — see `app/settings/servers/page.tsx`, which renders it as text and
  *    carries the `TODO-affiliate` marker rather than shipping a control that
  *    does nothing when pressed.
  *

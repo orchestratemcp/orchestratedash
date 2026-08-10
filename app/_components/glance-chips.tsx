@@ -46,7 +46,7 @@ import type { GlanceChip, GlanceQuestion } from "../../lib/copy/glance";
 const ANSWERED_AT: Record<GlanceQuestion, (agent: string) => string> = {
   new_output: (agent) => `${agentWorkspaceHref(agent)}#outputs-heading`,
   needs_you: (agent) => `${agentWorkspaceHref(agent)}#waiting-work`,
-  not_connected: () => "/connections",
+  not_connected: () => "/settings",
   overdue: (agent) => `${agentWorkspaceHref(agent)}#workspace-overview`,
 };
 
