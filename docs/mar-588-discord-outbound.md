@@ -116,6 +116,19 @@ would fail those two checks.
 | Rate limits, refusals and outages are told apart | 429 / 404 / 503 / unreachable each exercised against the real listener |
 | An unreachable host is reported without naming it | Node's own error carries the host in `cause`; the transport discards it |
 
+### What the gates caught that nothing local could
+
+**CI's Windows `shell-smoke` failed on the first push**, at proof 2c — *the
+preload exposes only the named read methods*. That proof pins the read-method
+list **by value** so that widening what a renderer may ask for has to be typed
+into a blocking gate by whoever widened it, and `notifications` is the eighth
+read. Its own comment says the line going red on a first push is the gate working
+rather than a maintenance chore, and this is that.
+
+Nothing in `pnpm test` could have found it. `tests/shell.test.ts` pins the
+*command* catalogue; the read bridge is only ever asserted against the real
+installed preload, which is exactly where a list like this belongs.
+
 ### Not proven — attended, for Henrik
 
 **A real webhook fired at a real Discord channel.** Nothing here has contacted
