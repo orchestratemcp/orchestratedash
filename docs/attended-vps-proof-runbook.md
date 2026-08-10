@@ -1,6 +1,16 @@
 # Runbook: the attended VPS proof (MAR-489)
 
-Status: **written 2026-08-09, before the run.** Not executed. Written first on
+Status: **attempted 2026-08-10 against `be90d84`, runner build
+`da222f419086048178d2`, and NOT completed.** Part A reached `V-A1` only; **`V0`
+through `V10` were not started.** The log is
+[`mar-489-attended-run-2026-08-10.md`](mar-489-attended-run-2026-08-10.md), and
+it promotes nothing — a green prefix is not a pass, which is this file's own
+rule. The host was the **reinstalled** 2026-08-08 Hostinger box rather than a
+newly rented one; the reasoning and the recorded caveat are in that log. Fifteen
+findings came out of the attempt, three of which (the manifest blocks no producer
+emits) make `V-A2`/`V-A3` unperformable as worded below.
+
+Originally written 2026-08-09, before any run. Written first on
 purpose — this is the MAR-468 promotion rule (`docs/real-google-proof-runbook.md`)
 and ADR 0004's rule pointed at a host instead of at Google: a runbook is not a
 run, and deciding what counts as pass *after* a green log is how a proof comes to
@@ -67,7 +77,19 @@ and pastes the result of, and nothing in CI runs it.
 
 ---
 
-## Before you can run this at all — the two UI gates
+## Before you can run this at all — the two UI gates (BOTH NOW CLOSED)
+
+> **Corrected 2026-08-10.** Both gates below have shipped and this section is
+> kept for the reasoning, not as a current blocker. **MAR-579 merged** (PR #100):
+> the wizard's key step shows the one-paste snippet and the restricted
+> `authorized_keys` line rather than the bare key, `host_key_not_trusted` renders
+> the fingerprint with a Confirm wired to `host.trust`, and `describeBootstrapGap`
+> is deleted. **MAR-577 merged** (PR #101), so prefer its result surface and
+> record that you did. **MAR-570 also merged** (PR #109), so the requirement card
+> exists — but see the run log: no producer emits the
+> `agent_dom.connection_requirements` block it renders, so `V-A2`/`V-A3` cannot be
+> witnessed as worded regardless of the surface being present.
+
 
 The deploy plane is complete from the IPC layer down (MAR-536, MAR-556, MAR-484,
 MAR-487, MAR-497, MAR-488, all merged), and the Servers page renders a saved
@@ -152,9 +174,12 @@ already cleared.
 2. **The tree you are making a claim about.** `git rev-parse HEAD`, and `pnpm
    verify` green on it from PowerShell (the Windows shell smoke is part of that;
    Git Bash's `whoami` fakes channel-secret failures — run it from PowerShell).
-   Record the commit. Record the runner-standalone build id too
-   (`node scripts/runner-build-id.mjs` over `dist/runner-standalone`), because
-   `V7` checks the host reports the build this DASH shipped.
+   Record the commit. Record the runner-standalone build id too — run
+   `pnpm build:runner-standalone`, which **prints** it (`runner_build=…`).
+   (Corrected 2026-08-10: `scripts/runner-build-id.mjs` is a module with no CLI
+   entry point, and it hashes `runner/`, `lib/` and `contracts/` rather than
+   `dist/`, so the previous instruction here could not be followed.) `V7` checks
+   the host reports the build this DASH shipped.
 3. **The preflight for an orphan runner.** Before starting, confirm no leftover
    runner from an interrupted proof is holding a data directory — the MAR-520
    lesson, and the orphan **pid 44632** MAR-548's note already names may still be
