@@ -32,6 +32,7 @@ import { NO_NOTIFICATIONS, type NotificationSettings } from "./notify/settings";
 import { isMaskedHint } from "./secret-refs";
 import {
   AgentFolderValidationError,
+  isAgentFolderLocked,
   listAgentFolderNames,
   removeAgentFolder,
   writeAgentFolder,
@@ -460,13 +461,24 @@ export function forgetHost(hostId: string): HostRecord | null {
  *
  * Returns whether there was anything to forget, so the caller can tell "removed"
  * from "was never here" instead of reporting both as success.
+ *
+ * `deleteFolder` (MAR-595 finding 18) is the switch between DASH's two removal
+ * actions. Default `true` because every existing caller — the real
+ * `runner.remove` path and every cleanup call in `electron/smoke.ts` — already
+ * depends on the folder going with the row; only "remove from DASH, keep
+ * files" passes `false`.
  */
-export function forgetAgent(name: string): { existed: boolean } {
+export function forgetAgent(
+  name: string,
+  options: { deleteFolder?: boolean } = {},
+): { existed: boolean } {
   const database = db();
+  const deleteFolder = options.deleteFolder ?? true;
   // Folder first, row second: if the process stops between them, the surviving
   // row renders as named damage instead of a folder resurrecting an agent the
-  // user removed.
-  const folderExisted = removeAgentFolder(dataDir, name);
+  // user removed. Skipped entirely for "remove from DASH, keep files" — the
+  // whole point of that action is that this call leaves the folder alone.
+  const folderExisted = deleteFolder && removeAgentFolder(dataDir, name);
   return transact(database, () => {
     const existed = database.prepare("SELECT 1 FROM agents WHERE name = ?").get(name) !== undefined;
     database.prepare("DELETE FROM agents WHERE name = ?").run(name);
@@ -545,7 +557,7 @@ export function listAgentNames(): string[] {
 
 export type ImportResult =
   | { ok: true; agent: string; replaced: boolean }
-  | { ok: false; errors: string[] };
+  | { ok: false; errors: string[]; locked?: boolean };
 
 export interface ImportManifestOptions {
   /** Folder-carrying handoff files. Omitted for a manifest-only import. */
@@ -621,6 +633,18 @@ export function importManifest(input: unknown, options: ImportManifestOptions = 
   } catch (error: unknown) {
     if (error instanceof AgentFolderValidationError) {
       return { ok: false, errors: error.errors };
+    }
+    // MAR-595 finding 15. The agent runs from this exact folder
+    // (`AGENT_CODE_DIRECTORY`), so an EBUSY here almost always means the
+    // running copy still has a file open — distinct from every other write
+    // failure, and worth telling apart so the caller can say so honestly
+    // rather than blaming a "build" that was never the problem.
+    if (isAgentFolderLocked(error)) {
+      return {
+        ok: false,
+        errors: ["DASH could not replace the agent's folder because it is running."],
+        locked: true,
+      };
     }
     return {
       ok: false,

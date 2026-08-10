@@ -11,11 +11,13 @@
  * history because the thing it happened to is gone is not a monitor.
  */
 
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it, vi } from "vitest";
+
+import { agentFolderPath } from "../lib/agent-folders";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -31,6 +33,7 @@ afterAll(() => {
 });
 
 async function freshStore(): Promise<{
+  dataDir: string;
   store: typeof import("../lib/store");
   ledger: typeof import("../lib/handoff-ledger");
 }> {
@@ -41,7 +44,7 @@ async function freshStore(): Promise<{
   const store = await import("../lib/store");
   const ledger = await import("../lib/handoff-ledger");
   opened.push({ dataDir, closeDb: db.closeDb });
-  return { store, ledger };
+  return { dataDir, store, ledger };
 }
 
 function example(name: string): Record<string, unknown> {
@@ -141,5 +144,32 @@ describe("forgetting an agent", () => {
   it("says plainly when there was nothing to forget", async () => {
     const { store } = await freshStore();
     expect(store.forgetAgent("never-existed")).toEqual({ existed: false });
+  });
+
+  /* MAR-595 finding 18: DASH's two removal actions differ only in whether
+   * this function's caller also loses its own copy of the agent's folder. */
+  describe("deleteFolder: false — remove from DASH, keep files", () => {
+    it("drops the manifest but leaves the agent's own folder on disk", async () => {
+      const { store, dataDir } = await freshStore();
+      store.importManifest(example("gmail-meeting-assistant.manifest.v2.example.json"));
+      expect(existsSync(agentFolderPath(dataDir, AGENT))).toBe(true);
+
+      expect(store.forgetAgent(AGENT, { deleteFolder: false })).toEqual({ existed: true });
+
+      expect(store.listAgents()).toHaveLength(0);
+      expect(existsSync(agentFolderPath(dataDir, AGENT))).toBe(true);
+    });
+  });
+
+  describe("deleteFolder: true (the default) — remove and delete all files", () => {
+    it("drops the manifest and the agent's own folder", async () => {
+      const { store, dataDir } = await freshStore();
+      store.importManifest(example("gmail-meeting-assistant.manifest.v2.example.json"));
+      expect(existsSync(agentFolderPath(dataDir, AGENT))).toBe(true);
+
+      expect(store.forgetAgent(AGENT)).toEqual({ existed: true });
+
+      expect(existsSync(agentFolderPath(dataDir, AGENT))).toBe(false);
+    });
   });
 });

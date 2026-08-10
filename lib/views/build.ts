@@ -31,6 +31,7 @@ import { hasFrozenPath, operationById, type BrokerOperation } from "../broker/op
 import { describeClientOwner, describeCustody, describeDashClosedWindow } from "../broker/providers";
 import { listReceipts, readBrokerAudit, readBrokerLapses, type BrokerLapse } from "../broker/store";
 import { describeBrokerRefusal } from "../copy/recovery";
+import { humanizeAgentName } from "../copy/agent-name";
 import { heldCredentials } from "../connection-actions";
 import { connectableFields, type CredentialKind } from "../connection-credentials";
 import { describeEvidenceRecord } from "../copy/evidence";
@@ -1131,7 +1132,11 @@ export function workspaceView(
   return {
     found: true,
     agent,
-    title: workspaceManifest.agent.display_name ?? workspaceManifest.agent.name,
+    // MAR-595 finding 10. `display_name` is what every DASH-authored manifest
+    // carries; an MCP-planned one may not (finding 4). Humanized rather than
+    // the raw `agent.name`, so a machine slug never stands in for a title.
+    title:
+      workspaceManifest.agent.display_name ?? humanizeAgentName(workspaceManifest.agent.name),
     goal: workspaceManifest.agent.goal,
     /*
      * MAR-502. Read from the store rather than from the manifest above, and
@@ -1171,7 +1176,7 @@ export function workspaceView(
       manifest,
       store.events.filter((event) => event.agent === agent),
       // The author's own name for it, never the id. See `buildAgentAsk`.
-      workspaceManifest.agent.display_name ?? workspaceManifest.agent.name,
+      workspaceManifest.agent.display_name ?? humanizeAgentName(workspaceManifest.agent.name),
     ),
     // MAR-548, ADR 0008 slice 3's wiring. The authoritative document, not the
     // row's copy — see `panelDocument` for which store answers and why.
@@ -1364,7 +1369,8 @@ export function workInboxView(now: Date = new Date()): WorkInboxView {
       continue;
     }
     const workspaceManifest = manifest as WorkspaceManifest;
-    const title = workspaceManifest.agent.display_name ?? workspaceManifest.agent.name;
+    const title =
+      workspaceManifest.agent.display_name ?? humanizeAgentName(workspaceManifest.agent.name);
 
     items.push(
       ...buildWorkInbox(workspaceManifest, stored.state, now).map((item) => ({

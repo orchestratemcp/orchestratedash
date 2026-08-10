@@ -52,6 +52,7 @@ import {
   agentFolderFilesDigest,
   agentFolderMatchesImport,
   agentFolderManifestPath,
+  agentFolderPath,
   inspectAgentFolderName,
   storedFileDigests,
   storedRelativePath,
@@ -148,9 +149,12 @@ export interface HandoffPorts {
       registration?: AgentRegistration;
       manifestJson?: string;
     },
-  ): { ok: boolean; errors?: string[] };
+  ): { ok: boolean; errors?: string[]; locked?: boolean };
   /** Drop DASH's current picture of an agent. History is kept; see lib/store.ts. */
-  forgetAgent(agentId: string): { existed: boolean };
+  forgetAgent(
+    agentId: string,
+    options?: { deleteFolder?: boolean },
+  ): { existed: boolean };
   recordHandoff(record: HandoffRecord): void;
   readHandoffRecord(handoffId: string): HandoffRecord | null;
   /** Null on a machine where DASH could not start a runner. */
@@ -557,6 +561,19 @@ async function register(
   });
   if (!imported.ok) {
     ports.log(`[dash-shell] the store refused an agent folder: ${handoff.agent_id}`);
+    // MAR-595 finding 15. `existing !== null` here means this is a re-import
+    // over an agent DASH already knows, which is the only shape a running
+    // copy's open files can block — a first import has no folder yet to
+    // collide with. The old message blamed a bad build even then, which sent
+    // people rebuilding something that was never broken.
+    if (imported.locked) {
+      return refuse(
+        ports,
+        handoff,
+        `DASH could not update “${handoff.display_name}” because it is running.`,
+        "Stop the agent, then open it in DASH again to finish updating it.",
+      );
+    }
     return refuse(
       ports,
       handoff,
@@ -900,8 +917,23 @@ export interface RemovalReport extends CleanupReport {
  * a fresh reading. Any other order leaves a live process whose registration no
  * longer exists — a child nobody has a record of, which is the one outcome worse
  * than failing to remove it.
+ *
+ * `deleteFiles` (MAR-595 finding 18) is DASH's two removal actions in one
+ * function rather than two: "remove from DASH" (`false`) leaves the folder
+ * `writeAgentFolder` staged under DASH's data directory exactly where it is —
+ * DASH stops running the agent and forgets it, but its copy of the code, the
+ * manifest and anything it wrote survives — and "remove and delete all files"
+ * (`true`, the default and the only behaviour this function had before this
+ * issue) also deletes that folder. Neither one ever touches the agent's
+ * *original* project on the user's own disk; DASH only ever took a copy of
+ * that, and nothing here or in `removeAgentFolder` has a path to it.
  */
-export async function removeAgent(agentId: string, ports: HandoffPorts): Promise<RemovalReport> {
+export async function removeAgent(
+  agentId: string,
+  ports: HandoffPorts,
+  options: { deleteFiles?: boolean } = {},
+): Promise<RemovalReport> {
+  const deleteFiles = options.deleteFiles ?? true;
   const existing = readRegistration(ports.dataDir, agentId);
   const displayName = existing?.dash.display_name ?? agentId;
 
@@ -928,15 +960,25 @@ export async function removeAgent(agentId: string, ports: HandoffPorts): Promise
     return { ...cleanup, headline: cleanup.refusal ?? `DASH did not remove “${displayName}”.` };
   }
 
-  const forgotten = ports.forgetAgent(agentId);
+  const forgotten = ports.forgetAgent(agentId, { deleteFolder: deleteFiles });
   if (forgotten.existed) {
     cleanup.removed.push("DASH's record of what it is currently doing");
   }
   cleanup.left_alone.push("the history of what it did, which stays under Runs");
+  if (deleteFiles) {
+    cleanup.removed.push("DASH's own copy of the agent's code and what it wrote");
+  } else {
+    cleanup.left_alone.push(
+      `DASH's own copy of the agent's code and what it wrote, at ${agentFolderPath(ports.dataDir, agentId)}`,
+    );
+  }
 
   if (ports.runner !== null) {
     await ports.runner.reload();
   }
 
-  return { ...cleanup, headline: `“${displayName}” has been removed from DASH.` };
+  const headline = deleteFiles
+    ? `“${displayName}” and its files have been removed from DASH.`
+    : `“${displayName}” has been removed from DASH. Its files are still on this computer.`;
+  return { ...cleanup, headline };
 }

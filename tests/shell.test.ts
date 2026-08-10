@@ -145,6 +145,11 @@ describe("the audited command chokepoint", () => {
       // because removing an agent is a sequence of file, store and process
       // operations only the shell can order correctly.
       "runner.remove",
+      // MAR-595 finding 18. Same family and the same handling, and a distinct
+      // command rather than a payload flag on `runner.remove` above: two names
+      // cannot be silenced by a caller forgetting a boolean the way one name
+      // with a flag could be.
+      "runner.removeKeepFiles",
       // MAR-518. Same family, and names no agent: a damaged store is a fact
       // about the runner, not about any one of the agents it supervises.
       "runner.retireStore",

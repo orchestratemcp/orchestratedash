@@ -689,6 +689,28 @@ export class AgentFolderValidationError extends Error {
 }
 
 /**
+ * Whether `writeAgentFolder`'s commit failed because a live process still has
+ * one of the folder's files open (MAR-595 finding 15).
+ *
+ * The commit is `renameSync(folder, backup)` then `renameSync(staging,
+ * folder)` above. Windows refuses to rename a directory containing a file
+ * another process holds open with `EBUSY`, which is otherwise
+ * indistinguishable, once caught, from any other write failure — the caller
+ * needs this to tell a running agent apart from a disk that is out of space
+ * or a permissions problem, so it can say "stop the agent first" only when
+ * that is actually true. Not `EPERM`: this codebase already uses that code
+ * elsewhere (`durableWrite`, above) for a read-only handle, an unrelated
+ * cause this must not be confused with.
+ */
+export function isAgentFolderLocked(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as NodeJS.ErrnoException).code === "EBUSY"
+  );
+}
+
+/**
  * Migration helper: create only the manifest folder, and never replace a full
  * folder that may have arrived during a crash between folder and row commits.
  */

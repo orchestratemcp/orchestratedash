@@ -431,6 +431,8 @@ controls it.
 
 If you change what the agent *does* in a way that changes what it is allowed to
 do, edit \`agent.manifest.json\` and run \`npm run open-in-dash\` again. DASH
-will ask you to confirm the change rather than applying it quietly.
+asks you to confirm the change rather than applying it quietly — but only if
+the agent is stopped first. DASH cannot replace files a running copy still has
+open, and will say so rather than applying the change.
 `;
 }

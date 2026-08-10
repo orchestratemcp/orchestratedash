@@ -225,6 +225,16 @@ interface DashShellClient {
   runnerStatus?(): Promise<CommandResult>;
   retireRunnerStore?(): Promise<CommandResult>;
   /**
+   * DASH's two removal actions (MAR-595 finding 18).
+   *
+   * Optional for the same reason as everything above: a shell built before
+   * this feature has a `dashShell` without them. `removeAgent` also deletes
+   * DASH's own copy of the agent's files; `removeAgentKeepFiles` leaves that
+   * copy where it is.
+   */
+  removeAgent?(args: { agent_id: string }): Promise<CommandResult>;
+  removeAgentKeepFiles?(args: { agent_id: string }): Promise<CommandResult>;
+  /**
    * The four notification commands (MAR-588).
    *
    * Optional for the same reason as everything above. Note what three of them
@@ -916,6 +926,49 @@ export async function retireRunnerStore(): Promise<CommandResult> {
     };
   }
   return bridge.retireRunnerStore();
+}
+
+/**
+ * DASH's two removal actions (MAR-595 finding 18).
+ *
+ * Two functions rather than one taking a boolean, mirroring the two named
+ * preload methods they call: `removeAgent` also deletes DASH's own copy of
+ * the agent's files, `removeAgentKeepFiles` leaves that copy in place. Both
+ * refuse honestly in a host with no bridge, or an installed shell old enough
+ * not to have the method yet — the same shape as `retireRunnerStore` above.
+ */
+export async function removeAgent(args: { agent_id: string }): Promise<CommandResult> {
+  return removeCommand("removeAgent", args, "remove an agent");
+}
+
+export async function removeAgentKeepFiles(args: { agent_id: string }): Promise<CommandResult> {
+  return removeCommand("removeAgentKeepFiles", args, "remove an agent");
+}
+
+async function removeCommand(
+  method: "removeAgent" | "removeAgentKeepFiles",
+  args: { agent_id: string },
+  cannot: string,
+): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: `Open the installed DASH app to ${cannot}.`,
+    };
+  }
+  const call = bridge[method];
+  if (call === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: `This version of the DASH app cannot ${cannot} yet.`,
+    };
+  }
+  return call(args);
 }
 
 /**

@@ -32,6 +32,8 @@ import { assertStoreLocation } from "./data-dir";
 // development tree and wrong in an install, which is the worst combination.
 import { assertContractsLocation } from "./resources";
 
+import { ignoreBrokenPipeErrors } from "../lib/shell/pipe-guard";
+
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from "electron";
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -198,6 +200,15 @@ import {
 import { authorizedKeysLine, buildBootstrapScript } from "../lib/host-bootstrap";
 import { classifyHostFailure, type HostReachProblem } from "../lib/host-connect";
 import type { Recovery } from "../lib/copy/recovery";
+
+// MAR-595 finding 12. Every import above can log through `console.warn` or
+// `console.error` as a side effect, and every module-level statement below
+// does too — either can be the write that hits a reader that is already gone.
+// This has to run before any of them, which under ES module evaluation order
+// means "first statement after the last import", since the imports above have
+// already run by the time execution reaches here regardless of where in this
+// file they were written. See `lib/shell/pipe-guard.ts`.
+ignoreBrokenPipeErrors([process.stdout, process.stderr]);
 
 /**
  * Where the renderer loads from.
@@ -2064,7 +2075,7 @@ async function runnerLifecycle(
   action: string,
   agentId: string | undefined,
 ): Promise<RunnerLifecycleResult> {
-  if (action === "remove") {
+  if (action === "remove" || action === "removeKeepFiles") {
     // Handled here rather than at the runner, because removing an agent is a
     // sequence — stop the process, delete DASH's registration and manifest
     // copy, forget the store row, have the runner take a fresh reading — and
@@ -2079,7 +2090,14 @@ async function runnerLifecycle(
     // Deliberately reachable with no runner. A machine that could not start one
     // can still have a registration on disk from a previous launch, and
     // "DASH cannot remove this because it cannot run it" would be a trap.
-    return removeAgentWithReport(agentId, handoffContext);
+    //
+    // MAR-595 finding 18. Two commands, one sequence: "remove" also deletes
+    // DASH's own copy of the agent's files, "removeKeepFiles" stops here and
+    // leaves them where `writeAgentFolder` put them. See `removeAgent`'s own
+    // header in `lib/handoff-flow.ts` for what each one actually touches.
+    return removeAgentWithReport(agentId, handoffContext, {
+      deleteFiles: action === "remove",
+    });
   }
 
   if (runner === null) {
@@ -2224,9 +2242,17 @@ function reportSecureStoreBacking(): void {
  * right, and this makes it visible. "Which database did that audit row land in"
  * is otherwise a question you can only answer by guessing at the platform's
  * conventions for `userData`.
+ *
+ * MAR-595 finding 11. `app_name` is printed beside the path because the path
+ * alone does not explain itself: `userData` is derived from `app.getName()`,
+ * which `electron .` reads from `package.json` and `electron
+ * dist/electron/main.mjs` never sees — same binary, same build, two different
+ * DASHes, and until now the only trace of which one this launch is was the
+ * path itself, unexplained. Seeing `app_name=Electron` beside the path is what
+ * makes "this is the wrong DASH" legible without already knowing the trap.
  */
 function reportStoreLocation(): void {
-  console.warn(`[dash-shell] store: ${dataDir}`);
+  console.warn(`[dash-shell] store: ${dataDir} (app_name=${app.getName()})`);
 }
 
 if (typeof app !== "undefined") {
