@@ -4709,12 +4709,20 @@ validator's block renders above it.
 
 ### What is not proven, said rather than left
 
-**`verify:shell` did not run.** The smoke printed its store line and exited
-before any proof, with the Windows cache-contention errors that mean another
-Electron already held the app's single-instance lock — roughly twenty orphan
-Electron processes from earlier sessions were alive on this machine, and
-AGENTS.md forbids force-killing them. CI's Windows `shell-smoke` is this
-branch's installed witness.
+**`verify:shell` did not run *on this machine*.** The smoke printed its store
+line and exited before any proof, with the Windows cache-contention errors that
+mean another Electron already held the app's single-instance lock — roughly
+twenty orphan Electron processes from earlier sessions were alive here, and
+AGENTS.md forbids force-killing them.
+
+**CI is the installed witness and it is green.** PR #112, run `31343842867` at
+`bc4aa22`: both buckets pass, and the Windows `shell-smoke` job's raw log
+carries **85 PASS proof lines and 0 FAIL**, ending at 9g — the installed shell's
+own five-second poll bringing an output into DASH's store. How that was read is
+worth recording: `gh run view --log` shows four `[smoke]` lines for that job and
+none of the 85, while the raw log fetched through `/actions/jobs/{id}/logs` is
+complete. That is the same log-reader truncation MAR-575 investigated, so the
+raw log is what is cited.
 
 **No real outside editor was used.** The scenes' edits were written by the
 harness. That costs nothing about the surface — DASH compares bytes and cannot
