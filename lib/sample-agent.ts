@@ -45,6 +45,7 @@ import {
   handoffUrl,
   type AgentHandoff,
 } from "./handoff";
+import { humanizeAgentName } from "./copy/agent-name";
 import { BUNDLED_NODE_COMMAND } from "./registration";
 
 /**
@@ -115,7 +116,7 @@ export function planSampleAgent(request: SampleRequest): SampleResult {
       // DASH would refuse the handoff as a conflicting registration if they
       // shared a name — so the id follows the folder.
       agent_id: folder,
-      display_name: folder === SAMPLE_AGENT_ID ? SAMPLE_DISPLAY_NAME : titleCase(folder),
+      display_name: folder === SAMPLE_AGENT_ID ? SAMPLE_DISPLAY_NAME : humanizeAgentName(folder),
       summary: SAMPLE_SUMMARY,
       kit_version: request.kitVersion,
       now: request.now,
@@ -129,7 +130,7 @@ export function planSampleAgent(request: SampleRequest): SampleResult {
   const built = buildHandoff(
     {
       agent_id: folder,
-      display_name: folder === SAMPLE_AGENT_ID ? SAMPLE_DISPLAY_NAME : titleCase(folder),
+      display_name: folder === SAMPLE_AGENT_ID ? SAMPLE_DISPLAY_NAME : humanizeAgentName(folder),
       summary: SAMPLE_SUMMARY,
       project_dir: directory,
       manifest_path: path.join(directory, "agent.manifest.json"),
@@ -219,10 +220,4 @@ function freeFolderName(base: string, taken: readonly string[]): string {
   // A thousand samples in one folder is not a case worth designing for, but
   // returning something colliding would be worse than a name with a timestamp.
   return `${base}-${String(Date.now())}`;
-}
-
-/** "folder-digest-2" becomes "Folder digest 2": a name, not an identifier. */
-function titleCase(value: string): string {
-  const words = value.replace(/[-_.]+/g, " ").trim();
-  return words.length === 0 ? value : words[0].toUpperCase() + words.slice(1);
 }

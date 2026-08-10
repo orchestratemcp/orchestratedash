@@ -145,6 +145,11 @@ describe("the audited command chokepoint", () => {
       // because removing an agent is a sequence of file, store and process
       // operations only the shell can order correctly.
       "runner.remove",
+      // MAR-595 finding 18. Same family and the same handling, and a distinct
+      // command rather than a payload flag on `runner.remove` above: two names
+      // cannot be silenced by a caller forgetting a boolean the way one name
+      // with a flag could be.
+      "runner.removeKeepFiles",
       // MAR-518. Same family, and names no agent: a damaged store is a fact
       // about the runner, not about any one of the agents it supervises.
       "runner.retireStore",
@@ -230,6 +235,18 @@ describe("the audited command chokepoint", () => {
       "connection.connect",
       "connection.test",
       "connection.disconnect",
+      // MAR-593, ADR 0013. An eleventh family, reaching the same vault on a
+      // target that names no agent. Note the payloads: one provider each, and
+      // no agent id at all — `dispatchCommand` supplies the principal a fleet
+      // act stands under, so page script can neither aim a fleet act at an agent
+      // nor an agent act at the fleet.
+      "fleet.connect",
+      "fleet.test",
+      "fleet.disconnect",
+      // The one command in this catalogue that touches the vault while opening
+      // no window and contacting nobody: it hands agents a consent DASH already
+      // holds, rather than asking for a second one.
+      "fleet.share",
       "agent.approve",
       "agent.reject",
       "agent.choose",

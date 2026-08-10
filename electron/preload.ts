@@ -284,6 +284,25 @@ const dashShell = {
   disconnectConnection: (args: ConnectionArgs) => send("connection.disconnect", { ...args }),
 
   /**
+   * The four fleet commands (MAR-593, ADR 0013).
+   *
+   * The same discipline one line up, on a target that names no agent: each
+   * carries a provider and nothing else. Page script cannot name the principal a
+   * fleet act stands under — `lib/shell/ipc.ts` supplies it — so it can neither
+   * aim a fleet act at an agent nor an agent act at the fleet.
+   *
+   * `shareFleet` is the only one of the four that opens no window and contacts
+   * nobody: it hands agents a consent DASH already holds. It is a separate named
+   * method rather than a flag on `connectFleet` for this object's standing
+   * reason — a reviewer counting the ways page script can cause a sign-in should
+   * find them by name.
+   */
+  connectFleet: (args: { provider: string }) => send("fleet.connect", { ...args }),
+  testFleet: (args: { provider: string }) => send("fleet.test", { ...args }),
+  disconnectFleet: (args: { provider: string }) => send("fleet.disconnect", { ...args }),
+  shareFleet: (args: { provider: string }) => send("fleet.share", { ...args }),
+
+  /**
    * The host actions (MAR-536/MAR-556), one named method each.
    *
    * `createHost` receives only ordinary connection facts and returns only the
@@ -489,6 +508,20 @@ const dashShell = {
    */
   runnerStatus: () => send("runner.status", {}),
   retireRunnerStore: () => send("runner.retireStore", {}),
+
+  /**
+   * DASH's two removal actions (MAR-595 finding 18).
+   *
+   * `removeAgent` also deletes DASH's own copy of the agent's files;
+   * `removeAgentKeepFiles` stops the agent and forgets it but leaves that copy
+   * where it is. Two named methods rather than one taking a boolean, for the
+   * reason every other group on this object is named methods rather than a
+   * generic `command(name, payload)`: page script should not be one flag away
+   * from a much larger blast radius than the button it clicked promised.
+   */
+  removeAgent: (args: { agent_id: string }) => send("runner.remove", { ...args }),
+  removeAgentKeepFiles: (args: { agent_id: string }) =>
+    send("runner.removeKeepFiles", { ...args }),
 
   approve: (args: AgentCommandArgs) => send("agent.approve", fields(args, APPROVAL_FIELDS)),
   reject: (args: AgentCommandArgs) => send("agent.reject", fields(args, APPROVAL_FIELDS)),

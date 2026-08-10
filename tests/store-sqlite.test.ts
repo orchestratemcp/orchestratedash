@@ -96,11 +96,13 @@ describe("schema", () => {
     // MAR-588's record of where DASH posts when an agent needs somebody -- a
     // masked hint and two switches, with no column an address could go in —
     // authored as 15, renumbered at the merge because MAR-583 reached master
-    // first and installed databases had already recorded it.
+    // first and installed databases had already recorded it, and 18 is
+    // MAR-593's two fleet tables (ADR 0013) — a connection that exists before
+    // any agent does, and the per-agent decisions somebody made about it.
     // Asserted as a number rather than as MIGRATIONS.length so that appending a
     // migration is a deliberate edit here too.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(18);
+    expect(version.user_version).toBe(19);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -143,6 +145,12 @@ describe("schema", () => {
     expect(tables).toContain("run_models");
     // MAR-545. The conversation, and the one table in DASH that holds money.
     expect(tables).toContain("agent_questions");
+    // MAR-593, ADR 0013. The first connection tables in this list that are not
+    // keyed by agent: one row per service the person connected, and one row per
+    // decision they made about which agent may use it. `connection_secrets`
+    // above is untouched and still means what it always did.
+    expect(tables).toContain("fleet_connections");
+    expect(tables).toContain("fleet_grants");
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -492,7 +500,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(18);
+    ).toBe(19);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

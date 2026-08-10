@@ -26,6 +26,7 @@ import { InputsPanel, type SelectedInput } from "../../_components/inputs";
 import { OAvatar } from "../../_components/o-avatar";
 import { OutputsPanel } from "../../_components/outputs";
 import { AgentPanel } from "../../_components/panel";
+import { RemoveAgent } from "../../_components/remove-agent";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import { WorkingLine } from "../../_components/working";
 import { AGENT_WORKSPACE_PARAMS, runDetailHref } from "../../_data/routes";
@@ -568,6 +569,12 @@ function AgentWorkspace(): ReactNode {
           snapshot={view.snapshot}
         />
       )}
+
+      {/* MAR-595 finding 18. Last on the page, and deliberately below every
+          record and every control above it: this is the one section that ends
+          the workspace rather than acting inside it, and it is the only agent
+          control on this page that is not undone by pressing it again. */}
+      <RemoveAgent agentId={view.agent} displayName={view.title} canAct={canAct} />
     </>
   );
 }

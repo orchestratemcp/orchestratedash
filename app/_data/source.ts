@@ -71,6 +71,19 @@ export interface ConnectionCommandArgs {
 }
 
 /**
+ * What the renderer may say about a fleet command (MAR-593, ADR 0013).
+ *
+ * One id, and it is a provider. There is no agent here and no field: a fleet act
+ * names a service, and which credential that service holds is the catalogue's
+ * answer rather than a page's. The absence is the same one
+ * `ConnectionCommandArgs` has about a value, for the same reason — a member a
+ * page could fill is a decision a page could get wrong.
+ */
+export interface FleetCommandArgs {
+  provider: string;
+}
+
+/**
  * The unsecret server facts a renderer may offer DASH (MAR-536).
  *
  * Key material and paths are deliberately not representable. Main owns those
@@ -212,6 +225,16 @@ interface DashShellClient {
   runnerStatus?(): Promise<CommandResult>;
   retireRunnerStore?(): Promise<CommandResult>;
   /**
+   * DASH's two removal actions (MAR-595 finding 18).
+   *
+   * Optional for the same reason as everything above: a shell built before
+   * this feature has a `dashShell` without them. `removeAgent` also deletes
+   * DASH's own copy of the agent's files; `removeAgentKeepFiles` leaves that
+   * copy where it is.
+   */
+  removeAgent?(args: { agent_id: string }): Promise<CommandResult>;
+  removeAgentKeepFiles?(args: { agent_id: string }): Promise<CommandResult>;
+  /**
    * The four notification commands (MAR-588).
    *
    * Optional for the same reason as everything above. Note what three of them
@@ -227,6 +250,19 @@ interface DashShellClient {
   connectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   testConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   disconnectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
+  /**
+   * The four fleet commands (MAR-593, ADR 0013).
+   *
+   * Optional for the reason every method added since the host family is, and the
+   * degradation here is the one worth stating: a shell older than these draws
+   * the Connections page — the catalogue and what DASH holds both come through
+   * the view and need no bridge — and cannot connect anything on it. So the page
+   * reads correctly and refuses to act, which is the right way round.
+   */
+  connectFleet?(args: FleetCommandArgs): Promise<CommandResult>;
+  testFleet?(args: FleetCommandArgs): Promise<CommandResult>;
+  disconnectFleet?(args: FleetCommandArgs): Promise<CommandResult>;
+  shareFleet?(args: FleetCommandArgs): Promise<CommandResult>;
   /**
    * Optional for the same reason as the workspace and runner methods: a shell
    * built before the host command family has a bridge, but cannot make, check
@@ -893,6 +929,49 @@ export async function retireRunnerStore(): Promise<CommandResult> {
 }
 
 /**
+ * DASH's two removal actions (MAR-595 finding 18).
+ *
+ * Two functions rather than one taking a boolean, mirroring the two named
+ * preload methods they call: `removeAgent` also deletes DASH's own copy of
+ * the agent's files, `removeAgentKeepFiles` leaves that copy in place. Both
+ * refuse honestly in a host with no bridge, or an installed shell old enough
+ * not to have the method yet — the same shape as `retireRunnerStore` above.
+ */
+export async function removeAgent(args: { agent_id: string }): Promise<CommandResult> {
+  return removeCommand("removeAgent", args, "remove an agent");
+}
+
+export async function removeAgentKeepFiles(args: { agent_id: string }): Promise<CommandResult> {
+  return removeCommand("removeAgentKeepFiles", args, "remove an agent");
+}
+
+async function removeCommand(
+  method: "removeAgent" | "removeAgentKeepFiles",
+  args: { agent_id: string },
+  cannot: string,
+): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: `Open the installed DASH app to ${cannot}.`,
+    };
+  }
+  const call = bridge[method];
+  if (call === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: `This version of the DASH app cannot ${cannot} yet.`,
+    };
+  }
+  return call(args);
+}
+
+/**
  * Submit one connection command through a named preload method (MAR-383).
  *
  * The same shape as `submitAgentCommand` and for the same reasons: an
@@ -929,6 +1008,44 @@ export async function submitConnectionCommand(
       throw new Error(`Unhandled connection command: ${String(unreachable)}`);
     }
   }
+}
+
+/**
+ * Submit one fleet action through its named preload method (MAR-593).
+ *
+ * The switch is `submitConnectionCommand`'s and exists for its reason: a generic
+ * `fleet(action, provider)` would let page script address whatever the fifth
+ * verb turns out to be. Nothing in the arguments or the return value can hold a
+ * credential — `connect` asks main to open its own prompt or its own sign-in
+ * window, and what happens in either never comes back through here.
+ *
+ * A missing method is a shell older than this feature, and it refuses with the
+ * sentence that names the actual next step rather than throwing on a control the
+ * person just pressed.
+ */
+export async function submitFleetCommand(
+  action: "connect" | "test" | "disconnect" | "share",
+  args: FleetCommandArgs,
+): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  const method =
+    action === "connect"
+      ? bridge?.connectFleet
+      : action === "test"
+        ? bridge?.testFleet
+        : action === "disconnect"
+          ? bridge?.disconnectFleet
+          : bridge?.shareFleet;
+
+  if (bridge === undefined || method === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to connect a service.",
+    };
+  }
+  return method.call(bridge, args);
 }
 
 /**

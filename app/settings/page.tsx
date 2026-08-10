@@ -4,11 +4,12 @@ import { useState, type ReactNode } from "react";
 
 import { BrokerLapseNotice } from "../_components/connection-card";
 import { ConnectorTile } from "../_components/connector-tile";
+import { FleetConnectorCard } from "../_components/fleet-connector";
 import { HostNotice, ViewFailed, ViewLoading } from "../_components/view-state";
-import { submitConnectionCommand } from "../_data/source";
+import { submitConnectionCommand, submitFleetCommand } from "../_data/source";
 import { useCanAct, useHost, useView } from "../_data/use-view";
 import { buildConnectorTiles, summariseConnectors } from "../../lib/connectors";
-import type { AgentConnections } from "../../lib/views/types";
+import type { AgentConnections, FleetConnectorView } from "../../lib/views/types";
 
 /**
  * The Connections page, as connectors (MAR-570).
@@ -51,12 +52,43 @@ import type { AgentConnections } from "../../lib/views/types";
  * *Could someone who has never heard of OAuth look at this and say what DASH is
  * allowed to do?*
  *
+ * ## The third verdict: there was nothing here at all (MAR-593)
+ *
+ * Henrik, 2026-08-10, on a DASH he had just cleared of agents, following his own
+ * test plan's step 2 — *configure DASH: sign in to Google, add OpenRouter, a
+ * Discord webhook and a server.* The page was empty, and it was right to be: every
+ * tile above comes from an agent's manifest, and there were no agents.
+ *
+ * So the page is now two things, in the order somebody actually needs them:
+ *
+ * 1. **What you can connect** — the fleet cards, from `lib/fleet/catalogue.ts`,
+ *    which exist whether or not anything is imported.
+ * 2. **What your agents need** — the tiles above, unchanged, which is where a
+ *    person looks once agents exist and something is not working.
+ *
+ * The second is not a lesser version of the first. A connection is fleet-level
+ * and a *grant* is per agent, so "which of my agents can actually do this" stays
+ * a real question with its own answer, and MAR-533's receipt is still one click
+ * away underneath it. See ADR 0013.
+ *
+ * ## The heading does not repeat the tab
+ *
+ * MAR-592 put a tab strip above this page whose active tab reads "Connections",
+ * two lines above an `<h1>` that read "Connections". The fix is not a hidden
+ * heading — the visual anchor is worth keeping — and it is not moving the title
+ * into the layout, which MAR-592 argued against for reasons that still hold.
+ *
+ * It is that the `<h1>` now says what a connection *is*, which a novice arriving
+ * at an empty page needs more than they need the word they just pressed. The tab
+ * is where you are; the heading is what is here.
+ *
  * ## Still no credential input here
  *
  * Unchanged and load-bearing. Connect opens a window main owns with its own
  * preload; the value goes from that window to the operating system's vault
- * without passing through this page. What this page sends is three ids, and what
- * it gets back is a state, a masked hint and a sentence.
+ * without passing through this page. What this page sends is three ids — or, for
+ * a fleet card, one provider — and what it gets back is a state, a masked hint
+ * and a sentence.
  */
 export default function ConnectionsPage(): ReactNode {
   // Bumped after any command that changed something, so the page re-reads the
@@ -68,31 +100,116 @@ export default function ConnectionsPage(): ReactNode {
   const host = useHost();
   const canAct = useCanAct();
 
+  const bump = (): void => {
+    setRevision((current) => current + 1);
+  };
+
   return (
     <>
-      <h1>Connections</h1>
+      <h1>Accounts and keys</h1>
+      {/*
+        Two sentences, and the length was found by photographing it: the first
+        draft ran to six lines at 375px and pushed every card's own button far
+        below the fold, on a page whose whole job is to have something to press.
+        The claim it lost — "connect one and every agent that needs it is
+        connected" — is not gone; it is on each card, naming the agents, where a
+        person can check it.
+      */}
       <p className="lede">
-        The services your agents reach outside this computer. Connect one and
-        every agent that needs it is connected — anything DASH holds is kept in
-        this computer&rsquo;s credential vault.
+        What DASH can reach outside this computer, for you. Anything it holds
+        stays in this computer&rsquo;s credential vault and no agent ever
+        receives it.
       </p>
       <HostNotice host={host} />
 
       {state.status === "loading" ? (
-        <ViewLoading what="what your agents can reach" />
+        <ViewLoading what="what DASH can reach" />
       ) : state.status === "failed" ? (
         <ViewFailed recovery={state.recovery} />
       ) : (
-        <ConnectorList
-          agents={state.data.agents}
-          older={state.data.older_agent_names}
-          canAct={canAct}
-          onChanged={() => {
-            setRevision((current) => current + 1);
-          }}
-        />
+        <>
+          <FleetConnectors
+            connectors={state.data.fleet}
+            canAct={canAct}
+            onChanged={bump}
+          />
+          <ConnectorList
+            agents={state.data.agents}
+            older={state.data.older_agent_names}
+            canAct={canAct}
+            onChanged={bump}
+          />
+        </>
       )}
     </>
+  );
+}
+
+/**
+ * What you can connect, before any agent is involved (MAR-593).
+ *
+ * Split out for `ConnectorList`'s reason: a render test can drive the whole
+ * surface from a view document without a data source, and a photograph proves a
+ * state was drawn once while a render test proves it is still drawn on every
+ * run.
+ *
+ * An empty catalogue draws nothing rather than an empty state. It cannot happen
+ * through `fleetCatalogue`, which is a by-value list with entries in it, and if
+ * it ever did the true statement would be that this build offers no connectors —
+ * not that the person has nothing connected.
+ */
+export function FleetConnectors({
+  connectors,
+  canAct,
+  onChanged,
+}: {
+  connectors: readonly FleetConnectorView[];
+  canAct: boolean;
+  onChanged: () => void;
+}): ReactNode {
+  if (connectors.length === 0) {
+    return null;
+  }
+
+  const connected = connectors.filter((one) => one.held !== null).length;
+
+  return (
+    <section className="fleet-connectors">
+      {/*
+        Counted rather than asserted, over the cards this page actually drew, so
+        the line cannot drift from what is under it — `summariseConnectors`' rule
+        applied to the surface above it.
+      */}
+      <p className="page-summary wrap">
+        {connected === 0
+          ? `${String(connectors.length)} ${connectors.length === 1 ? "service" : "services"} DASH can connect for you. None is connected yet.`
+          : connected === connectors.length
+            ? `${String(connectors.length)} ${connectors.length === 1 ? "service" : "services"}, and ${connectors.length === 1 ? "it is" : "all of them are"} connected.`
+            : `${String(connectors.length)} services DASH can connect for you. ${String(connected)} of them ${connected === 1 ? "is" : "are"} connected.`}
+      </p>
+
+      <ul className="row-list">
+        {connectors.map((connector) => (
+          <li key={connector.provider}>
+            <FleetConnectorCard
+              connector={connector}
+              canAct={canAct}
+              act={async (action, provider) => {
+                const result = await submitFleetCommand(action, { provider });
+                if (result.ok) {
+                  onChanged();
+                }
+                return {
+                  ok: result.ok,
+                  detail: result.detail,
+                  recovery: result.recovery,
+                };
+              }}
+            />
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -118,13 +235,22 @@ export function ConnectorList({
   const tiles = buildConnectorTiles(agents);
 
   if (tiles.length === 0) {
+    /*
+     * Quieter than it was, because it is no longer the whole page (MAR-593).
+     * Before the fleet cards above existed, this sentence was what somebody with
+     * a cleared DASH saw and it read as a dead end. It is now a true note under a
+     * page they can act on, so it says the smaller thing and does not repeat the
+     * invitation the empty state used to have to carry.
+     */
     return (
-      <div className="empty">
-        <p>No agent here has asked to reach anything outside this computer.</p>
-        <p>
-          <a href="/settings/add-agent">Add an agent</a> to see what it would need.
+      <section className="agent-connections">
+        <h2>What your agents need</h2>
+        <p className="muted wrap">
+          No agent here has asked to reach anything outside this computer. Add
+          one and what it needs will appear here, connected already if you have
+          connected it above.
         </p>
-      </div>
+      </section>
     );
   }
 
@@ -140,7 +266,12 @@ export function ConnectorList({
   const lapsing = agents.filter((agent) => agent.lapses.length > 0);
 
   return (
-    <>
+    <section className="agent-connections">
+      {/* The section this page's second half is about, said once. A person
+          scrolling past the fleet cards needs to know the unit changed: above is
+          what you connected, here is what each agent may do with it. */}
+      <h2>What your agents need</h2>
+
       {/* Counted rather than asserted, over the tiles this page actually drew,
           so the line cannot drift from what is under it. */}
       <p className="page-summary wrap">{summariseConnectors(tiles)}</p>
@@ -185,6 +316,6 @@ export function ConnectorList({
           : {older.join(", ")}. DASH does not guess.
         </p>
       ) : null}
-    </>
+    </section>
   );
 }

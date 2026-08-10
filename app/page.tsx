@@ -13,6 +13,7 @@ import { useCanAct, useHost, useView } from "./_data/use-view";
 import { agentWorkspaceHref } from "./_data/routes";
 import { oFor } from "../lib/brand/o-cast";
 import { describeRunnerStoreDamage, type RunnerStoreDamageKind } from "../lib/copy/recovery";
+import { onWindowFocus } from "../lib/shell/focus-refresh";
 import type { CommandResult } from "../lib/shell/ipc";
 
 /**
@@ -33,7 +34,8 @@ export const SAMPLE_AGENT_SEED = "ai-news-scout";
  * unchanged; where the data comes from is not. See `app/_data/source.ts`.
  */
 export default function AgentsPage(): ReactNode {
-  const state = useView((source) => source.agents());
+  const focusKey = useRefreshOnWindowFocus();
+  const state = useView((source) => source.agents(), focusKey);
   const host = useHost();
   const canAct = useCanAct();
   const storeDamage = useRunnerStoreDamage(canAct);
@@ -250,6 +252,20 @@ export default function AgentsPage(): ReactNode {
       )}
     </>
   );
+}
+
+/**
+ * MAR-595 finding 13. Bumped every time the window regains OS focus, and
+ * passed to `useView` as its `refreshKey` above, so this page rereads the
+ * agents list rather than staying on whatever it read at mount — the case
+ * that matters is `npm run open-in-dash`'s native consent dialog adding an
+ * agent while this page was underneath it the whole time. See
+ * `lib/shell/focus-refresh.ts` for why `focus` rather than a poll.
+ */
+function useRefreshOnWindowFocus(): number {
+  const [key, setKey] = useState(0);
+  useEffect(() => onWindowFocus(window, () => { setKey((value) => value + 1); }), []);
+  return key;
 }
 
 /**

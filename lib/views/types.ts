@@ -676,7 +676,80 @@ export interface AgentConnections {
   lapses: BrokerLapseView[];
 }
 
+/**
+ * One service DASH can hold an account or a key for, whether or not any agent
+ * has ever asked for it (MAR-593, ADR 0013).
+ *
+ * The first thing on this view that does not come from a manifest. Everything
+ * else here is derived from what an agent declared, which is why a DASH with no
+ * agents had an empty Connections page — the exact thing Henrik hit on
+ * 2026-08-10, when his test plan asked him to configure DASH before importing
+ * anything.
+ */
+export interface FleetConnectorView {
+  /** The manifest's provider string. The key, and never rendered. */
+  provider: string;
+  /** What a person reads: "Gmail". */
+  service: string;
+  /** `google_oauth_broker` or `api_key` — which of the two flows the button starts. */
+  connector_kind: string;
+  /** Why somebody would connect it, in their terms rather than DASH's. */
+  purpose: string;
+  /** Where to get the credential, when there is somewhere. Null for a sign-in. */
+  help: string | null;
+  /** What DASH can do once it is connected, from the operation table and nowhere else. */
+  capabilities: BrokerCapabilityView[];
+  /**
+   * Permissions DASH must ask for that are wider than what it will do with them.
+   *
+   * Rendered **before** the connect as well as after — ADR 0002 amendment 2's
+   * rule, and the reason this sits here rather than on `held` below, where it
+   * would be invisible to the person who has not connected yet, who is the one
+   * it is for.
+   */
+  wider_permissions: string[];
+  /** What DASH holds right now. Null when nothing is connected. */
+  held: {
+    masked_hint: string | null;
+    /** Which of the person's accounts, masked. Null for a key, which names nobody. */
+    account_hint: string | null;
+    /** "since 10 August 2026", or null when the stored date cannot be read. */
+    since: string | null;
+    /** What the consent actually issued, in DASH's own sentences. Empty for a key. */
+    permissions: string[];
+  } | null;
+  /** Every agent this connection reaches, and whether it has it yet. */
+  agents: Array<{ agent: string; connected: boolean }>;
+  /**
+   * Agents that name this service and are not reached, each with why.
+   *
+   * `reason` is a `FleetSkip`, carried as a code rather than a sentence so the
+   * copy stays in `describeSkip` — a view that shipped prose would be prose no
+   * plain-language sweep ever looks at.
+   */
+  skipped: Array<{ agent: string; reason: string }>;
+  /**
+   * Agents that qualify and do not have it yet — what `fleet.share` would give.
+   *
+   * Non-empty exactly when somebody imported an agent after connecting this, and
+   * deliberately not emptied on its own: a consent given before a piece of
+   * software existed is not a consent to that software. The card names them and
+   * offers one button instead.
+   */
+  waiting: string[];
+  /** The disclosure that has to be read before the button. Null when it reaches nobody. */
+  reach_sentence: string | null;
+}
+
 export interface ConnectionsView {
+  /**
+   * What DASH can connect, before and regardless of any agent (MAR-593).
+   *
+   * First on the type because it is first on the page: somebody arriving at
+   * Settings with nothing imported has exactly this to do, and the agent
+   * checklists below are what those connections then light up.
+   */
+  fleet: FleetConnectorView[];
   agents: AgentConnections[];
   /**
    * Names of imported agents whose manifest is too old to declare connections.
