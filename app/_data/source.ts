@@ -39,6 +39,7 @@ import type {
   AgentsView,
   ConnectionsView,
   HostsView,
+  NotificationsView,
   RunView,
   RunsView,
   WorkInboxView,
@@ -194,6 +195,19 @@ interface DashShellClient {
    */
   runnerStatus?(): Promise<CommandResult>;
   retireRunnerStore?(): Promise<CommandResult>;
+  /**
+   * The four notification commands (MAR-588).
+   *
+   * Optional for the same reason as everything above. Note what three of them
+   * take: nothing. Page script cannot name a channel address, cannot ask which
+   * one DASH holds, and cannot compose a message — see the `notify.*` entries in
+   * `lib/shell/ipc.ts`, where the absence of a payload is the security argument
+   * rather than a convenience.
+   */
+  connectNotifications?(): Promise<CommandResult>;
+  disconnectNotifications?(): Promise<CommandResult>;
+  testNotifications?(): Promise<CommandResult>;
+  setNotificationKind?(args: { kind: string; enabled: boolean }): Promise<CommandResult>;
   connectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   testConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   disconnectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
@@ -284,6 +298,7 @@ export interface DashDataSource {
   inbox(): Promise<ViewResult<WorkInboxView>>;
   workspace(agent: string): Promise<ViewResult<WorkspaceView>>;
   hosts(): Promise<ViewResult<HostsView>>;
+  notifications(): Promise<ViewResult<NotificationsView>>;
 }
 
 /**
@@ -313,6 +328,9 @@ function shellSource(bridge: DashReadApi): DashDataSource {
    * narrowing has to survive into the closure below.
    */
   const readHosts = bridge.hosts?.bind(bridge);
+  /* MAR-588. Same treatment, same reason: a shell older than this read has no
+     such method, and the narrowing has to survive into the closure. */
+  const readNotifications = bridge.notifications?.bind(bridge);
   return {
     host: "shell",
     can_act: typeof window !== "undefined" && window.dashShell !== undefined,
@@ -332,6 +350,10 @@ function shellSource(bridge: DashReadApi): DashDataSource {
       readHosts === undefined
         ? Promise.resolve({ ok: false, recovery: describeViewFailure("refused") })
         : fromBridge(readHosts),
+    notifications: () =>
+      readNotifications === undefined
+        ? Promise.resolve({ ok: false, recovery: describeViewFailure("refused") })
+        : fromBridge(readNotifications),
   };
 }
 
@@ -371,6 +393,7 @@ function browserSource(): DashDataSource {
     workspace: (agent) =>
       fromHttp(`/api/views/workspace?agent=${encodeURIComponent(agent)}`),
     hosts: () => fromHttp("/api/views/hosts"),
+    notifications: () => fromHttp("/api/views/notifications"),
   };
 }
 
@@ -569,6 +592,75 @@ export async function adoptAgentFolder(args: { agent_id: string }): Promise<Comm
 
 export async function revealAgentFolder(args: { agent_id: string }): Promise<CommandResult> {
   return folderCommand("revealFolder", args, "open this agent's folder");
+}
+
+/**
+ * The four notification commands (MAR-588).
+ *
+ * One helper for `folderCommand`'s reason, and the browser-tab refusal is the
+ * one worth reading. A page served over HTTP has no preload and therefore no way
+ * to reach the vault or the credential window — which is correct and is also the
+ * whole answer to "could somebody set this up from a browser tab": no.
+ *
+ * The sentence sends them to the installed app rather than explaining the
+ * boundary, because the boundary is not the reader's problem. `lib/copy/host.ts`
+ * is where DASH says what a read-only window is, and this page renders that too.
+ */
+async function notifyCommand(
+  method:
+    | "connectNotifications"
+    | "disconnectNotifications"
+    | "testNotifications",
+  cannot: string,
+): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: `Open the installed DASH app to ${cannot}.`,
+    };
+  }
+  const call = bridge[method];
+  if (call === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: `This version of the DASH app cannot ${cannot}.`,
+    };
+  }
+  return call();
+}
+
+export async function connectNotifications(): Promise<CommandResult> {
+  return notifyCommand("connectNotifications", "set up Discord messages");
+}
+
+export async function disconnectNotifications(): Promise<CommandResult> {
+  return notifyCommand("disconnectNotifications", "stop Discord messages");
+}
+
+export async function testNotifications(): Promise<CommandResult> {
+  return notifyCommand("testNotifications", "send a test message");
+}
+
+export async function setNotificationKind(args: {
+  kind: "needs_approval" | "new_report";
+  enabled: boolean;
+}): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  const call = bridge?.setNotificationKind;
+  if (call === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to change what DASH sends to Discord.",
+    };
+  }
+  return call(args);
 }
 
 /**

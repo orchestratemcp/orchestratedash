@@ -57,6 +57,13 @@ const GLYPHS: Readonly<Record<string, readonly Px[]>> = {
     [1, 2, 10, 3],
     [1, 7, 10, 3],
   ],
+  /* A bell: body, shoulders, and the clapper under it (MAR-588). */
+  "/notifications": [
+    [5, 1, 2, 1],
+    [3, 2, 6, 5],
+    [2, 7, 8, 2],
+    [5, 10, 2, 1],
+  ],
   /* Plus. */
   "/agents/add": [
     [5, 2, 2, 8],

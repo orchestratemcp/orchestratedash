@@ -15,6 +15,7 @@ import type {
   GlanceAction,
   HostAction,
   ModelAction,
+  NotifyAction,
   SampleAction,
   WorkspaceAction,
 } from "../lib/shell/ipc";
@@ -203,6 +204,18 @@ describe("the audited command chokepoint", () => {
       // reason `shell.menu` is: it changes nothing about the agent, the store,
       // or the world the agent acts on.
       "workspace.download",
+      // MAR-588. An eighth family, and the only route in DASH that can send
+      // something off this machine without an agent asking it to. Note the
+      // payloads: three of the four have none at all, so page script can ask
+      // main to open the credential window, ask it to forget the channel it
+      // holds, or ask for one fixed test message -- and can neither name an
+      // address nor learn the one DASH holds. The fourth carries a setting name
+      // and a boolean, which is the only `boolean` payload value in this
+      // catalogue.
+      "notify.connect",
+      "notify.disconnect",
+      "notify.test",
+      "notify.setKind",
       // MAR-383. A third family, and the only one that reaches the OS vault.
       // Note what is *not* in any of their payloads: no key here could carry a
       // credential, which is what keeps "no secrets cross this boundary" true
@@ -458,6 +471,12 @@ describe("dispatch", () => {
     // is an argument to or a result of this call, which is `connectionAction`'s
     // property one layer along.
     const models: Array<{ action: ModelAction; target: Record<string, unknown> }> = [];
+    // MAR-588. Recorded, not performed, for `folderAction`'s reason and one
+    // more: the real implementation opens the credential window and reaches
+    // Discord, and a fake that did either would make these tests -- which are
+    // about review, audit and routing -- depend on a network.
+    const notifications: Array<{ action: NotifyAction; target: { kind?: string; enabled?: boolean } }> =
+      [];
     return {
       audited,
       inputs,
@@ -471,6 +490,7 @@ describe("dispatch", () => {
         models.push({ action, target });
         return Promise.resolve({ ok: true, detail: `${action} ok` });
       },
+      notifications,
       hosts,
       workspaces,
       menus,
@@ -510,6 +530,10 @@ describe("dispatch", () => {
       // correctly is `tests/agent-folders.test.ts`, over a real directory.
       folderAction: (action: FolderAction, target: { agent_id: string }) => {
         folders.push({ action, target });
+        return Promise.resolve({ ok: true });
+      },
+      notifyAction: (action: NotifyAction, target: { kind?: string; enabled?: boolean }) => {
+        notifications.push({ action, target });
         return Promise.resolve({ ok: true });
       },
       showApplicationMenu: (at: { x: number; y: number } | undefined) => {
