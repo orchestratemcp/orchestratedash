@@ -197,9 +197,18 @@ export function describeNoChoice(
 
     case "no_key_held":
       return {
+        /*
+         * "your … key" rather than "a … key", and the packaged capture is what
+         * caught it: the first run photographed "Connect a OpenRouter key" at
+         * every width. All three providers DASH brokers happen to start with a
+         * vowel sound, so an article chosen by hand would be wrong for all of
+         * them and a rule that picked one would be wrong for the first provider
+         * that does not. "Your" is correct for every name and is the more
+         * accurate word anyway — the key is one from the person's own account.
+         */
         can_choose: false,
         reason,
-        headline: `Connect a ${providerLabel ?? "provider"} key to choose a model`,
+        headline: `Connect your ${providerLabel ?? "provider"} key to choose a model`,
         detail:
           "This agent's plan needs a language model, and DASH holds no key for the service it " +
           "named. Until it does there is nothing to choose between — DASH will not offer you a " +

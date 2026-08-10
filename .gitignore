@@ -36,3 +36,10 @@ verify-shell-*.log
 # its console has to go somewhere. Same reason again: one machine's transcript —
 # this one names the pipe its runner is on and the store path it opened.
 dash-launch.*.log
+
+# MAR-583. Every capture harness is pointed at a scratch store through
+# `DASH_DATA_DIR`, and pointing it inside the worktree is the convenient place
+# to put one. It is a whole SQLite database plus an agents folder — one
+# machine's, from one run, and never a repo fact. The evidence is the images
+# beside it, which are committed.
+scratch-*/

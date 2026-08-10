@@ -3504,8 +3504,33 @@ button:disabled {
   max-width: 60ch;
 }
 
+/*
+ * Wide enough for its longest option, which is the one naming the plan's own
+ * answer. The first capture ran at 32ch and photographed "What the plan asked
+ * for — sma…" in every frame: a native select truncates rather than wraps, so a
+ * cap narrower than the copy turns a sentence into a fragment. Measured against
+ * the longest label the three levels can produce, not guessed.
+ */
 .model-step .field {
-  max-width: 32ch;
+  max-width: 46ch;
+}
+
+/*
+ * A control that is set aside has to look set aside.
+ *
+ * The step selects are disabled while one named model overrides every step, and
+ * `describeStepsNotInForce` says so in words — but a person scanning a page sees
+ * controls before they read a caption, and the same capture showed a disabled
+ * select at full contrast beside a sentence saying it was inert. Native
+ * `:disabled` styling is close to invisible in this palette, so the state is
+ * drawn: faint text on the surface below the card, which is the direction every
+ * other unavailable thing in DASH moves.
+ */
+.model-choice .field:disabled {
+  color: var(--text-faint);
+  background: var(--surface-2);
+  border-color: var(--line);
+  cursor: not-allowed;
 }
 
 /* The read-only rendering, for a window that cannot act. */
