@@ -436,6 +436,21 @@ export function describeAskFailure(
         next_action: `Check the model this agent is set to use, and your balance at ${service}.`,
         actor: "user",
       };
+    case "answer_lost":
+      // The worst outcome this feature has, and the only one where the person is
+      // out of pocket with nothing at all: the provider answered and charged,
+      // and DASH could not write the row. Said plainly rather than reported as a
+      // failed question, because "it did not work" would be false about the
+      // charge — and the amount is gone with the row, so the sentence cannot
+      // name one.
+      return {
+        headline: `${service} answered, and DASH could not keep the answer.`,
+        meaning:
+          "Something went wrong writing to this computer's own records after the answer arrived. " +
+          "You were charged for it, and DASH cannot show you what it said or what it cost.",
+        next_action: "Ask again. If it keeps happening, this is a fault in DASH.",
+        actor: "dash",
+      };
     case "empty_answer":
       return {
         headline: `${service} answered with nothing.`,
@@ -456,6 +471,7 @@ export function describeAskFailure(
 
 export type AskFailureReason =
   | "not_connected"
+  | "answer_lost"
   | "key_refused"
   | "too_many"
   | "provider_unavailable"

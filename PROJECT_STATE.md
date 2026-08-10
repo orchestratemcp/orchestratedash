@@ -5262,7 +5262,7 @@ everything when the page closes is not one.
 ### What is proven
 
 `pnpm state:check` valid with 0 drift warnings, `typecheck` clean, `brand:check`
-green, full Vitest from PowerShell **139 files / 2,778 passed / 10 skipped / 0
+green, full Vitest from PowerShell **139 files / 2,779 passed / 10 skipped / 0
 failed**, up from 136 / 2,717 on this branch's base. Both builds green.
 
 `electron/capture-ask.ts` wrote **60 packaged-renderer frames** — five states at
@@ -5299,5 +5299,13 @@ AGENTS.md forbids force-killing them. CI's Windows `shell-smoke` is this
 branch's installed witness. Nothing in this slice is reachable by the installed
 smoke — no proof asks a question — so it witnesses that the change breaks
 nothing installed, not that it works.
+
+### The outcome worth knowing about
+
+A provider that answered and charged, whose row DASH then failed to write, is
+reported as `answer_lost`. It is the only outcome this feature can produce where
+somebody is out of pocket with nothing at all to show for it — so "it did not
+work" would be false about the charge, and the sentence says they were charged
+and that the amount went with the row.
 
 **Zero changes under `runner/`.** The runner does not know this feature exists.

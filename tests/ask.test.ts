@@ -268,6 +268,7 @@ describe("reading an answer", () => {
 
     const reasons: AskFailureReason[] = [
       "not_connected",
+      "answer_lost",
       "key_refused",
       "too_many",
       "provider_unavailable",
@@ -284,6 +285,15 @@ describe("reading an answer", () => {
     // line of compile-time check, which is `AiKeyActionResult`'s mechanism.
     const pinned: AskFailureReason = "dash_error" as AskFailureReasonName;
     expect(pinned).toBe("dash_error");
+  });
+
+  it("tells somebody they were charged when DASH lost the answer", () => {
+    // The one outcome where a person is out of pocket with nothing to show for
+    // it. "It did not work" would be false about the charge, and the amount is
+    // gone with the row, so the sentence cannot name one.
+    const recovery = describeAskFailure("answer_lost", { service: "OpenRouter" });
+    expect(recovery.meaning).toContain("You were charged");
+    expect(recovery.headline).toContain("could not keep the answer");
   });
 
   it("never says the newest nothing went with a question", () => {

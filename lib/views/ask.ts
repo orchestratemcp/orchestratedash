@@ -335,6 +335,7 @@ function toExchangeView(exchange: AskExchange): AskExchangeView {
 function failureReason(stored: string | null): AskFailureReason {
   const known: readonly AskFailureReason[] = [
     "not_connected",
+    "answer_lost",
     "key_refused",
     "too_many",
     "provider_unavailable",

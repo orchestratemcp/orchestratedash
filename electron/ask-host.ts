@@ -84,13 +84,25 @@ export async function performAskAction(
   if (profile === null) {
     return refused("dash_error", resolution.target.service);
   }
+  /*
+   * DASH's name for the provider, not the author's name for the connection.
+   *
+   * The scrollback words every stored row from the profile, and this is the
+   * sentence a person sees the instant they press Ask — two spellings of the
+   * same failure, one saying "Your model provider is not connected" and the
+   * next line down saying "OpenRouter is not connected", is the kind of drift
+   * that makes somebody wonder whether they are two different things. It is
+   * also the more useful of the two here: the next action sends them to the
+   * provider's own site.
+   */
+  const service = profile.label;
 
   // Read in main from the row a person set, never taken from the request. A
   // renderer that could name a model would be a renderer that could spend
   // somebody's money on the most expensive thing their key reaches.
   const choice = readAgentModelChoice(target.agent_id);
   if (choice.kind !== "one_model") {
-    return refused("dash_error", resolution.target.service);
+    return refused("dash_error", service);
   }
 
   const selection = selectMaterial(savedThingsForAgent(target.agent_id), target.question);
@@ -99,7 +111,7 @@ export async function performAskAction(
     // Refused here rather than sent. An empty question is a charge for nothing,
     // and the surface already says an agent that has saved nothing cannot be
     // asked — reaching this means the page was open while that changed.
-    return refused("dash_error", resolution.target.service);
+    return refused("dash_error", service);
   }
 
   const askedAt = new Date().toISOString();
@@ -126,13 +138,23 @@ export async function performAskAction(
     "person",
   );
 
+  /**
+   * Write one row, and say whether it landed.
+   *
+   * The return value is read on the success path and only there, which is the
+   * asymmetry worth stating: a failed question whose row is lost costs the
+   * person nothing, and an **answered** one whose row is lost costs them the
+   * charge and leaves them with nothing to show for it. That is the one outcome
+   * this whole feature can produce where somebody is out of pocket and DASH has
+   * no record — so it gets its own sentence rather than a cheerful `ok: true`.
+   */
   const write = (
     answer: string | null,
     failure: AskFailureReasonName | null,
     model: string | null,
     charge: AnswerCharge | null,
-  ): void => {
-    recordExchange({
+  ): boolean => {
+    return recordExchange({
       agent: target.agent_id,
       asked_at: askedAt,
       question: target.question,
@@ -145,13 +167,13 @@ export async function performAskAction(
       tokens_out: charge?.tokens_out ?? null,
       amount_usd: charge?.amount_usd ?? null,
       citations: chosen,
-    });
+    }) !== null;
   };
 
   if (!response.ok) {
     const reason = askFailureFor(response.refusal);
     write(null, reason, null, null);
-    return refused(reason, resolution.target.service);
+    return refused(reason, service);
   }
 
   const answer = readAnswer(response.result, statesCost);
@@ -161,10 +183,12 @@ export async function performAskAction(
     // the question failed with no cost beside it would be a false statement
     // about somebody's money.
     write(null, "empty_answer", null, readCharge(response.result, statesCost));
-    return refused("empty_answer", resolution.target.service);
+    return refused("empty_answer", service);
   }
 
-  write(answer.text, null, answer.model, answer.charge);
+  if (!write(answer.text, null, answer.model, answer.charge)) {
+    return refused("answer_lost", service);
+  }
   return { ok: true };
 }
 

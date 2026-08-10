@@ -506,6 +506,7 @@ export function askFailureFor(refusal: string): AskFailureReasonName {
  */
 export type AskFailureReasonName =
   | "not_connected"
+  | "answer_lost"
   | "key_refused"
   | "too_many"
   | "provider_unavailable"
