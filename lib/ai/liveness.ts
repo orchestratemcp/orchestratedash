@@ -107,6 +107,22 @@ export interface AiProbeOutcome {
   status: number | null;
   /** How many models the answer listed, or null when it did not list any. */
   model_count: number | null;
+  /**
+   * The ids the answer listed, when DASH asked for them (MAR-583).
+   *
+   * **On the outcome and deliberately not on the record.** An outcome is one
+   * moment's answer, held in memory for as long as it takes to hand to whoever
+   * asked; `AiLivenessRecord` is a durable row, and which models a key can reach
+   * is the provider's own content (ADR 0002 invariant 7) — a table of them would
+   * be a record nobody asked DASH to keep, which is the same refusal
+   * `broker_audit.result_count` makes. `classifyProbe` drops this field on the
+   * floor, and `tests/model-choice.test.ts` asserts that it does.
+   *
+   * Null when nothing was asked for or nothing readable came back, which is not
+   * the same as an empty array: an empty array is a provider saying this key
+   * reaches no models, and null is DASH having no answer to report.
+   */
+  model_ids?: readonly string[] | null;
 }
 
 /**

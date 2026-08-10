@@ -9,6 +9,8 @@ import {
   type RunEvent,
 } from "./contracts";
 import { isOName, oFor, type OName } from "./brand/o-cast";
+import type { AgentModelChoice } from "./ai/model-choice";
+import { readAgentModelChoice, recordRunModel } from "./ai/model-store";
 import {
   clearAgentFolderIssue,
   dataDir,
@@ -783,9 +785,34 @@ export function ingestEvents(input: unknown, options: IngestOptions = {}): Inges
   if (accepted.length > 0) {
     const database = db();
     const receivedAt = new Date().toISOString();
+    /*
+     * MAR-583. Which model each agent was set to, resolved once for the batch.
+     *
+     * Read outside the transaction and before it, so a batch of a hundred events
+     * costs one lookup per distinct agent rather than one per event. The value is
+     * DASH's own setting at this instant, which is exactly what the row is a
+     * record of; `recordRunModel` then refuses to overwrite an existing row, so a
+     * later batch for the same run cannot revise it.
+     *
+     * Recorded for every run rather than only for runs whose plan needs a model.
+     * Deciding that here would mean reading and parsing a manifest on the ingest
+     * path — and the honest place for it is the read side, where the same
+     * manifest is already open and where a plan that has since changed is
+     * visible. `runModelForRun` in `lib/views/build.ts` is what draws the line.
+     */
+    const choices = new Map<string, AgentModelChoice>();
+    for (const event of accepted) {
+      if (!choices.has(event.agent)) {
+        choices.set(event.agent, readAgentModelChoice(event.agent));
+      }
+    }
     transact(database, () => {
       for (const event of accepted) {
         insertEventRow(database, event, receivedAt);
+        const choice = choices.get(event.agent);
+        if (choice !== undefined) {
+          recordRunModel(database, event.agent, event.run_id, choice, receivedAt);
+        }
       }
     });
   }

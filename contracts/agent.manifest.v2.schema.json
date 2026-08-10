@@ -29,7 +29,8 @@
           "step": { "type": "integer", "minimum": 1 },
           "component_id": { "type": "string", "minLength": 1 },
           "risk_level": { "enum": ["low", "medium", "high", "critical"] },
-          "model_tier": { "enum": ["none", "small", "standard", "frontier"] }
+          "model_tier": { "enum": ["none", "small", "standard", "frontier"] },
+          "default_model_level": { "enum": ["cheap", "standard", "frontier"] }
         }
       }
     },

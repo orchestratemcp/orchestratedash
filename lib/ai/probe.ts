@@ -25,6 +25,7 @@
  * phrasing of one of them.
  */
 
+import { isModelId } from "../broker/operations";
 import { aiAuthHeaders, aiModelsUrl, type AiProviderProfile } from "./providers";
 import type { AiProbeOutcome } from "./liveness";
 
@@ -60,6 +61,7 @@ export async function probeModelProvider(
   profile: AiProviderProfile,
   key: string,
   fetchImpl: typeof fetch = fetch,
+  wantIds = false,
 ): Promise<AiProbeOutcome> {
   let response: Response;
   try {
@@ -92,17 +94,39 @@ export async function probeModelProvider(
     return { status: response.status, model_count: null };
   }
 
-  return { status: response.status, model_count: countModels(text) };
+  const listed = readModels(text);
+  return {
+    status: response.status,
+    model_count: listed === null ? null : listed.length,
+    // Only when somebody asked (MAR-583). A probe run to answer "does this key
+    // still work" hands back no catalogue at all, so the ids cannot reach a
+    // caller that did not want them and would have nowhere to put them. The
+    // durable record never carries them either way — see `AiProbeOutcome`.
+    model_ids: wantIds ? listed : null,
+  };
 }
 
 /**
- * How many models the answer listed, or null.
+ * The model ids the answer listed, or null.
  *
- * All three providers answer with an object carrying a `data` array. Anything
- * else is null rather than zero: zero is a claim that the key reaches no models,
- * and a shape DASH did not recognise supports no claim at all.
+ * All three providers answer with an object carrying a `data` array of objects
+ * with an `id`. Anything else is null rather than an empty array: an empty array
+ * is a claim that the key reaches no models, and a shape DASH did not recognise
+ * supports no claim at all.
+ *
+ * Ids only. Not descriptions, not context lengths, not prices — the same
+ * projection rule `modelsListOperation` states for the agent-facing list, for
+ * the same reason: a provider's marketing copy reaching a surface is the
+ * injection channel ADR 0002 invariant 7 is about.
+ *
+ * **An id DASH would not be willing to write down is not counted.** `isModelId`
+ * is the filter, and it is applied before the count rather than after, so the
+ * number a card reports is the number of models a person could actually pick.
+ * A count over entries nothing can be chosen from would be a figure with nothing
+ * behind it, which is exactly what MAR-547 ruled out. Sorted and de-duplicated,
+ * so the picker's order is DASH's and not the provider's.
  */
-function countModels(text: string): number | null {
+function readModels(text: string): string[] | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -110,7 +134,18 @@ function countModels(text: string): number | null {
     return null;
   }
   const data = (parsed as { data?: unknown } | null)?.data;
-  return Array.isArray(data) ? data.length : null;
+  if (!Array.isArray(data)) {
+    return null;
+  }
+
+  const ids = new Set<string>();
+  for (const entry of data) {
+    const id = (entry as { id?: unknown } | null)?.id;
+    if (typeof id === "string" && isModelId(id)) {
+      ids.add(id);
+    }
+  }
+  return [...ids].sort((a, b) => a.localeCompare(b));
 }
 
 /** Read a response body, giving up past a ceiling. `readBounded`'s shape. */

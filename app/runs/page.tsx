@@ -199,6 +199,20 @@ export default function RunsPage(): ReactNode {
                   a disclosure is a caveat for the people who already suspected
                   something.
                 */}
+                {/*
+                  MAR-583. What this agent was set to use when the run started,
+                  on the primary face because the reason to switch models is
+                  cost and a setting nobody can see is a setting nobody checks.
+                  The short form only — the caveat that DASH watched its own
+                  setting rather than a model is on the run's own page, which has
+                  room for it. Never a cost: MAR-299 owns spend, and it owns it
+                  because a number DASH derived is not somebody's bill.
+                */}
+                {run.model === null ? null : (
+                  <p className="card-meta run-model-line" title={run.model.detail}>
+                    <span className="run-model-label">{run.model.label}</span>
+                  </p>
+                )}
                 {run.has_sequence_gap || !run.known_agent ? (
                   <p className="card-meta">
                     {run.has_sequence_gap ? <span className="flag">sequence gap</span> : null}

@@ -219,6 +219,8 @@ export interface AgentsView {
 
 export interface RunRow extends RunSummary {
   analysis: RunAnalysis | null;
+  /** What this agent's model setting was when the run started (MAR-583). */
+  model: RunModelView | null;
 }
 
 export interface RunsView {
@@ -256,6 +258,90 @@ export interface PlannedStepView {
   risk_level: string;
   model_tier: string;
   executed: boolean;
+  /**
+   * The capability level this step's author declared for it (MAR-583), already
+   * turned into words, or null when the step needs no model.
+   *
+   * The words rather than the stored value, for `AiKeyLivenessView`'s reason: a
+   * sentence composed in a component is a sentence the copy sweep does not see.
+   */
+  model_level_label: string | null;
+}
+
+/* ---------------------------------------------------------------------- *
+ * Models (MAR-583)
+ * ---------------------------------------------------------------------- */
+
+/** One of an agent's steps that needs a model, as a row in the disclosure. */
+export interface ModelStepView {
+  step: number;
+  component_id: string;
+  /** The level in force: the person's override, or the plan's own answer. */
+  level: string;
+  label: string;
+  meaning: string;
+  /** The plan's own answer, so the control can offer a way back to it. */
+  declared: string;
+  declared_label: string;
+  overridden: boolean;
+}
+
+/**
+ * Which model an agent uses, as the page draws it (MAR-583).
+ *
+ * **The list of models is deliberately not here.** A view is built on every
+ * five-second poll of the workspace, and a field on it that named the models a
+ * key can reach would mean either contacting a provider on that poll or keeping
+ * a durable copy of somebody else's catalogue — and `lib/db.ts` refuses the
+ * second in as many words. The list arrives through the `model.list` command,
+ * when a person asks for it, and lives in the page's own state.
+ */
+export type AgentModelSettingsView =
+  | {
+      can_choose: false;
+      reason: string;
+      headline: string;
+      detail: string;
+      next_action: string | null;
+      /** Drawn even here, so an agent's declared levels are readable. */
+      steps: ModelStepView[];
+    }
+  | {
+      can_choose: true;
+      /** The registry id. Travels back on the command; never rendered. */
+      provider_id: string;
+      provider_label: string;
+      connection_id: string;
+      field_id: string;
+      headline: string;
+      detail: string;
+      /** The model named for this agent, or null for matching each step. */
+      chosen_model_id: string | null;
+      /** What DASH would use right now, in one sentence. */
+      in_force: string;
+      steps: ModelStepView[];
+      /** False while one named model overrides every step's own level. */
+      steps_in_force: boolean;
+      /** Why the step controls are set aside. Null when they are in force. */
+      steps_note: string | null;
+    };
+
+/**
+ * What one run was set to use when it started (MAR-583).
+ *
+ * Null when DASH has no record — every run that finished before this was
+ * recorded, and every agent whose plan needs no model. Null renders as nothing
+ * rather than as today's setting, which would be a claim about the past made out
+ * of the present.
+ *
+ * **There is no cost field and will not be one until MAR-299 has numbers that
+ * came from a provider.** `label` names a model or says the setting matched each
+ * step; `detail` carries the caveat that DASH watched its own setting rather
+ * than a model.
+ */
+export interface RunModelView {
+  label: string;
+  detail: string;
 }
 
 /**
@@ -275,6 +361,8 @@ export type RunView =
       events: RunEvent[];
       analysis: RunAnalysis | null;
       planned_route: PlannedStepView[];
+      /** What this agent's model setting was when the run started (MAR-583). */
+      model: RunModelView | null;
       /**
        * Whether the agent's manifest has been imported. `analysis` being null
        * already implies it, but a page that has to infer "there is no plan" from
@@ -793,6 +881,15 @@ export type WorkspaceView =
        * files, which is not the same as taking anything — see `buildInputRoles`.
        */
       input_roles: InputRoleView[];
+      /**
+       * Which model this agent uses, and what its steps asked for (MAR-583).
+       *
+       * Never absent, so a page cannot have to decide what a missing setting
+       * means: the union's `can_choose: false` arm carries the sentence for every
+       * agent there is nothing to choose for, including the ordinary case of an
+       * agent whose plan uses no model at all.
+       */
+      models: AgentModelSettingsView;
       /**
        * The panel this agent's author declared, bound to what the agent has
        * produced (MAR-548, ADR 0008 slice 3).

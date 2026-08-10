@@ -20,6 +20,7 @@ import {
    than the next person following it. */
 import { DeployToServer } from "../../_components/deploy";
 import { FolderUpdate } from "../../_components/folder-update";
+import { ModelChoice } from "../../_components/model-choice";
 import { InputsPanel, type SelectedInput } from "../../_components/inputs";
 import { OAvatar } from "../../_components/o-avatar";
 import { OutputsPanel } from "../../_components/outputs";
@@ -452,6 +453,22 @@ function AgentWorkspace(): ReactNode {
         onDispatch={dispatchTask}
         pending={pending}
         snapshot={view.snapshot}
+      />
+
+      {/* MAR-583. Directly under Run now, because it is the setting that decides
+          what pressing that button will cost — and, being a control rather than
+          content, it belongs below the agent's own work for MAR-576's reason.
+
+          Above the deploy section deliberately: the choice travels in the bundle,
+          so a person who is about to put this agent on a server should have met
+          it before they pick one. Renders nothing at all for an agent whose plan
+          uses no model, which is most of them today. */}
+      <ModelChoice
+        agent={view.agent}
+        settings={view.models}
+        canAct={canAct}
+        onChanged={() => setRefreshKey((value) => value + 1)}
+        setFeedback={setFeedback}
       />
 
       {/* MAR-577. Directly under Run now, because it is the same question asked

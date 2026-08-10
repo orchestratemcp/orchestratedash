@@ -162,6 +162,29 @@ interface DashShellClient {
    */
   markAgentLooked?(args: { agent_id: string }): Promise<CommandResult>;
   /**
+   * The three model commands (MAR-583).
+   *
+   * Optional for the same reason as everything above, and the degradation is the
+   * kind worth naming: a shell older than these draws an agent's declared levels
+   * — those come from the manifest through the view and need no bridge — and
+   * cannot change any of them. So the page reads correctly and refuses to act,
+   * which is the right way round. A page that could offer a control it had no way
+   * to honour would be the dead button `lib/connection-spec.ts` closes its
+   * vocabulary to prevent.
+   */
+  chooseModel?(args: {
+    agent_id: string;
+    connection_id?: string;
+    field_id?: string;
+    model_id?: string;
+  }): Promise<CommandResult>;
+  setStepLevel?(args: { agent_id: string; step: number; level?: string }): Promise<CommandResult>;
+  listModels?(args: {
+    agent_id: string;
+    connection_id: string;
+    field_id: string;
+  }): Promise<CommandResult>;
+  /**
    * The runner's own health, and its one repair (MAR-518).
    *
    * Optional on top of the bridge already being optional, like `openAppMenu`
@@ -546,6 +569,74 @@ export async function adoptAgentFolder(args: { agent_id: string }): Promise<Comm
 
 export async function revealAgentFolder(args: { agent_id: string }): Promise<CommandResult> {
   return folderCommand("revealFolder", args, "open this agent's folder");
+}
+
+/**
+ * The three model commands, and the two refusals they share (MAR-583).
+ *
+ * `folderCommand`'s shape, and the same argument for one helper rather than
+ * three. What differs is the sentence naming the action, which each caller
+ * supplies.
+ *
+ * The wording matters most on the second branch, as it did for the folder. A
+ * shell older than these commands **can still show** which level each step asked
+ * for — that comes off the manifest through the view and needs no bridge — so
+ * the sentence says this version cannot *change* it, never anything a reader
+ * could take as "DASH does not know".
+ */
+async function modelCommand(
+  method: "chooseModel" | "setStepLevel" | "listModels",
+  args: Record<string, unknown>,
+  cannot: string,
+): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: `Open the installed DASH app to ${cannot}.`,
+    };
+  }
+  const call = bridge[method];
+  if (call === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: `This version of the DASH app cannot ${cannot}. What each step asks for is shown above and is unchanged.`,
+    };
+  }
+  // The cast is the one place this module's generic helper meets three different
+  // argument shapes. Each caller below builds the shape its own method declares,
+  // and the preload allowlists the payload keys again on the other side, so a
+  // wrong field here reaches a refusal rather than main.
+  return (call as (input: Record<string, unknown>) => Promise<CommandResult>)(args);
+}
+
+export async function chooseAgentModel(args: {
+  agent_id: string;
+  connection_id?: string;
+  field_id?: string;
+  model_id?: string;
+}): Promise<CommandResult> {
+  return modelCommand("chooseModel", args, "change which model this agent uses");
+}
+
+export async function setAgentStepLevel(args: {
+  agent_id: string;
+  step: number;
+  level?: string;
+}): Promise<CommandResult> {
+  return modelCommand("setStepLevel", args, "change what one step of this agent's plan asks for");
+}
+
+export async function listAgentModels(args: {
+  agent_id: string;
+  connection_id: string;
+  field_id: string;
+}): Promise<CommandResult> {
+  return modelCommand("listModels", args, "ask this agent's provider which models it offers");
 }
 
 /**

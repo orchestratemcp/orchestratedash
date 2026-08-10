@@ -86,7 +86,17 @@ import { forgetLivenessCheck, recordLivenessCheck } from "./store";
  * classification is `classifyProbe`'s, in a pure function a test can drive.
  */
 export interface AiKeyOperations {
-  probe(profile: AiProviderProfile, key: string): Promise<AiProbeOutcome>;
+  /**
+   * `wantIds` asks the same question and keeps more of the answer (MAR-583).
+   *
+   * One operation and not two, because it *is* one request: the model picker's
+   * list and the liveness check are the same call to the same path with the same
+   * key, and a second method would be a second place for the URL, the headers
+   * and the timeout to be decided. What changes is only how much of the reply
+   * survives the projection, and it defaults to the narrower answer so a caller
+   * that has nowhere to put a catalogue cannot accidentally receive one.
+   */
+  probe(profile: AiProviderProfile, key: string, wantIds?: boolean): Promise<AiProbeOutcome>;
 }
 
 export interface AiKeyActionDeps {
@@ -291,7 +301,7 @@ async function connect(
   // works, and the moment they are still looking at the screen is the only cheap
   // moment to tell them. The key is already stored before the question is asked:
   // a provider that is down must not cost the user the key they just pasted.
-  const record = await runProbe(target, profile, key, deps);
+  const { record } = await runProbe(target, profile, key, deps);
   const outcome = fromLiveness(record, profile, hint);
 
   return {
@@ -336,7 +346,8 @@ async function check(
     };
   }
 
-  return fromLiveness(await runProbe(target, profile, stored.key, deps), profile, hintFor(target));
+  const { record } = await runProbe(target, profile, stored.key, deps);
+  return fromLiveness(record, profile, hintFor(target));
 }
 
 async function disconnect(
@@ -395,10 +406,11 @@ async function runProbe(
   profile: AiProviderProfile,
   key: string,
   deps: AiKeyActionDeps,
-): Promise<AiLivenessRecord> {
+  wantIds = false,
+): Promise<{ record: AiLivenessRecord; models: readonly string[] | null }> {
   let outcome: AiProbeOutcome;
   try {
-    outcome = await deps.ai.probe(profile, key);
+    outcome = await deps.ai.probe(profile, key, wantIds);
   } catch {
     // `AiKeyOperations.probe` is documented never to throw, and this is what
     // holds that documentation to something. The caught value is dropped rather
@@ -408,5 +420,94 @@ async function runProbe(
   }
   const record = classifyProbe(outcome, deps.now().toISOString());
   recordLivenessCheck(target.agent_id, target.connection_id, record);
-  return record;
+  // The ids come back from this function and are never handed to
+  // `recordLivenessCheck`, which takes the record and not the outcome. That is
+  // the seam that keeps a provider's catalogue out of the database — see
+  // `AiProbeOutcome.model_ids`.
+  return { record, models: outcome.model_ids ?? null };
+}
+
+/* ---------------------------------------------------------------------- *
+ * The models a key can reach (MAR-583)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What one ask produced: a list to pick from, or a reason there is none.
+ *
+ * `models` is an array and never null. An empty array is a real answer — this
+ * key reaches nothing DASH can name — and it is reported with `ok: false` and
+ * the liveness sentence beside it, because a picker with no options and no
+ * explanation is the dead end `ConnectFlowRefusal` exists to prevent.
+ */
+export interface AiKeyModelList {
+  ok: boolean;
+  models: string[];
+  detail: string;
+  recovery?: Recovery;
+}
+
+/**
+ * Ask a provider which models this agent's key can reach.
+ *
+ * **The same request `test` makes**, with more of the answer kept. So it records
+ * the same liveness observation: a person who presses this and is told the key
+ * was refused has performed a check, and the card beside it must not go on
+ * reporting last week's verdict because the button had a different label.
+ *
+ * The list is returned and never stored. It exists for as long as the window
+ * showing the picker does, which is what keeps a provider's catalogue out of
+ * DASH's tables — the constraint `ai_key_checks` was designed around and the one
+ * thing about this feature that could quietly stop being true.
+ */
+export async function listAiKeyModels(
+  target: CredentialTarget,
+  vaultLabel: string,
+  deps: AiKeyActionDeps,
+): Promise<AiKeyModelList> {
+  const profile = aiProviderById(target.ai_provider_id);
+  if (profile === null) {
+    return {
+      ok: false,
+      models: [],
+      detail: `This version of DASH no longer knows how to reach ${target.service}.`,
+    };
+  }
+
+  let raw: string;
+  try {
+    raw = await deps.store.get(target.secret_name);
+  } catch (error: unknown) {
+    if (isSecureStoreError(error)) {
+      const failed = fromStoreError(error, target.service, vaultLabel, hintFor(target));
+      return { ok: false, models: [], detail: failed.detail, recovery: failed.recovery };
+    }
+    throw error;
+  }
+
+  const stored = parseAiKeyCredential(raw);
+  if (stored === null || stored.provider !== profile.id) {
+    // The two-envelope refusal, restated here rather than shared with `check`:
+    // both refuse the same document for the same reason, and what differs is the
+    // shape of the answer. See `check` for the argument.
+    return {
+      ok: false,
+      models: [],
+      detail: `DASH has no usable ${profile.label} key.`,
+      recovery: {
+        headline: `${target.service} is not connected.`,
+        meaning: "DASH has nothing it can use to ask which models are available.",
+        next_action: `Connect ${target.service}.`,
+        actor: "user",
+      },
+    };
+  }
+
+  const { record, models } = await runProbe(target, profile, stored.key, deps, true);
+  if (record.state !== "live" || models === null) {
+    const outcome = fromLiveness(record, profile, hintFor(target));
+    return { ok: false, models: [], detail: outcome.detail, recovery: outcome.recovery };
+  }
+
+  const sentence = describeLiveness(record, profile.label);
+  return { ok: models.length > 0, models: [...models], detail: sentence.headline };
 }

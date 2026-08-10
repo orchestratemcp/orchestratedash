@@ -334,7 +334,10 @@ describe("the probe, over real HTTP", () => {
     answer = { status: 200, body: JSON.stringify({ data: [{ id: "a" }, { id: "b" }] }) };
     const outcome = await probeModelProvider(loopback(), PLANTED_PROVIDER_KEY);
 
-    expect(outcome).toEqual({ status: 200, model_count: 2 });
+    // `model_ids` is null because nothing asked for it (MAR-583). The narrower
+    // answer is the default, so a caller with nowhere to put a catalogue cannot
+    // accidentally receive one — see `AiKeyOperations.probe`.
+    expect(outcome).toEqual({ status: 200, model_count: 2, model_ids: null });
     const request = seen[seen.length - 1];
     expect(request?.url).toBe("/api/v1/models");
     expect(request?.headers["authorization"]).toBe(`Bearer ${PLANTED_PROVIDER_KEY}`);
@@ -379,7 +382,7 @@ describe("the probe, over real HTTP", () => {
   it("does not treat an unreadable answer as an acceptance", async () => {
     answer = { status: 200, body: "not json at all" };
     const outcome = await probeModelProvider(loopback(), PLANTED_PROVIDER_KEY);
-    expect(outcome).toEqual({ status: 200, model_count: null });
+    expect(outcome).toEqual({ status: 200, model_count: null, model_ids: null });
     expect(classifyProbe(outcome, "2026-08-09T20:00:00.000Z")).toMatchObject({
       state: "provider_error",
     });

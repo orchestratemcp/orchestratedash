@@ -279,6 +279,70 @@ export const COMMANDS = {
   },
 
   /*
+   * MAR-583. Which model an agent uses.
+   *
+   * **An eighth family, and it is one because the question it answers is one.**
+   * A reviewer asking "what in DASH decides which model an agent's steps run on?"
+   * gets a complete answer from three entries: a person names a model, a person
+   * sets one step's level, or DASH asks the provider what there is to choose
+   * between. Nothing else touches it.
+   *
+   * Not `connection.*`, though the third contacts a provider with a key DASH
+   * holds and records the same liveness observation `connection.test` does.
+   * That family is about *whether DASH may reach a service at all*, and its three
+   * members grant, check and withdraw access. These three change nothing about
+   * access: with the key connected they are all still available, and with it
+   * disconnected none of them has anything to act on. Deriving a model command
+   * from a connection verb would put DASH's routing decision inside its
+   * permission model, where a later reader would reasonably expect a refusal to
+   * mean something about access.
+   *
+   * **The renderer cannot name a provider, an origin, a path or a key.** It names
+   * an agent, a connection and a field — the three ids `ConnectFlow` already
+   * carries — and main resolves the rest from the manifest and the vault. A model
+   * id does cross on `model.choose`, and it is checked with `isModelId` on the
+   * way in rather than trusted for having come from a list DASH itself produced:
+   * the page is where a provider's catalogue was rendered, and a page is not a
+   * place a value stays trustworthy.
+   */
+  "model.choose": {
+    effect:
+      "Set which model this agent uses, or put it back to matching each step to what that step needs. Contacts nobody.",
+    payload_keys: ["agent_id", "connection_id", "field_id", "model_id"],
+    required_keys: ["agent_id"],
+    mutates: true,
+    // Nothing in the world changes and the previous setting is one click away.
+    // What it affects is what the *next* run is recorded as having started under;
+    // runs already recorded are never revised. See `recordRunModel`.
+    irreversible: false,
+  },
+  "model.step": {
+    effect:
+      "Set the strength one step of this agent's plan asks for, or put that step back to what its plan asked. Contacts nobody.",
+    payload_keys: ["agent_id", "step", "level"],
+    payload_types: { step: "number" },
+    required_keys: ["agent_id", "step"],
+    mutates: true,
+    irreversible: false,
+  },
+  /*
+   * `mutates` is true, and it is worth saying why for a command whose name reads
+   * like a read. It presents a key DASH holds to a third party over the network
+   * and records what that party said, in the same row `connection.test` writes.
+   * `shell.ping` is the only command in this file that can honestly say false;
+   * this one reaches a provider, and a flag claiming otherwise would understate
+   * an outbound act in the audit line a person reads.
+   */
+  "model.list": {
+    effect:
+      "Ask this agent's model provider which models its key can reach, and record what the provider said about the key.",
+    payload_keys: ["agent_id", "connection_id", "field_id"],
+    required_keys: ["agent_id", "connection_id", "field_id"],
+    mutates: true,
+    irreversible: false,
+  },
+
+  /*
    * MAR-584. An outside editor changed an agent's folder; these three are how a
    * person finds it, hears what changed, and decides.
    *
@@ -787,6 +851,28 @@ export function isFolderCommandName(value: CommandName): value is FolderCommandN
   return Object.hasOwn(FOLDER_ACTIONS, value);
 }
 
+/**
+ * Which model an agent uses (MAR-583).
+ *
+ * An eighth family with three members. The catalogue entries above argue why it
+ * is its own family rather than three additions to `CONNECTION_ACTIONS`; what
+ * the map itself buys is the same thing every other one does — the trusted-side
+ * switch and the named preload methods are both exhaustive over it, so a fourth
+ * member cannot be added without both of them stopping compiling.
+ */
+export const MODEL_ACTIONS = {
+  "model.choose": "choose",
+  "model.step": "step",
+  "model.list": "list",
+} as const;
+
+export type ModelCommandName = keyof typeof MODEL_ACTIONS;
+export type ModelAction = (typeof MODEL_ACTIONS)[ModelCommandName];
+
+export function isModelCommandName(value: CommandName): value is ModelCommandName {
+  return Object.hasOwn(MODEL_ACTIONS, value);
+}
+
 export const CONNECTION_ACTIONS = {
   "connection.connect": "connect",
   "connection.test": "test",
@@ -862,6 +948,7 @@ type UnroutedCommand = Exclude<
   | SampleCommandName
   | GlanceCommandName
   | FolderCommandName
+  | ModelCommandName
   | "shell.ping"
 >;
 const _allCommandsAreRouted: UnroutedCommand extends never ? true : never = true;
@@ -1083,6 +1170,21 @@ export interface CommandResult {
    * did the thing.
    */
   folder?: FolderChangeReport;
+  /**
+   * `model.list` only (MAR-583): the model ids this agent's key can reach.
+   *
+   * Its own field rather than something folded into `data`, which takes one
+   * primitive per key and could not hold a list at all. Ids and nothing else —
+   * no description, no context length, no price — the same projection
+   * `modelsListOperation` keeps for the agent-facing list and for the same
+   * reason: a provider's own prose reaching a surface is the channel ADR 0002
+   * invariant 7 is about.
+   *
+   * **Not stored anywhere.** It travels from a provider's answer to the page that
+   * asked, and when that page closes it is gone. A durable table of which models
+   * a key can reach is the record `lib/db.ts` refuses in as many words.
+   */
+  models?: string[];
 }
 
 /**
@@ -1122,7 +1224,12 @@ export function executeCommand(review: CommandReview): CommandResult {
     // matters most here despite changing nothing: succeeding without looking
     // would tell a person their folder is unchanged on the strength of a
     // function that cannot see a folder.
-    isFolderCommandName(review.command)
+    isFolderCommandName(review.command) ||
+    // MAR-583. Two write rows through `node:sqlite` and the third opens the
+    // operating system's vault and reaches a provider over the network. The
+    // third is the one that matters most: succeeding here would hand a page an
+    // empty list of models as though a provider had answered with none.
+    isModelCommandName(review.command)
   ) {
     // Not a denial and not a result: a caller that reached here bypassed the
     // trusted side entirely. Throwing is the only honest answer — returning a
@@ -1428,6 +1535,31 @@ export interface DispatchContext {
    * start reasoning about a value it has no business holding.
    */
   glanceAction(action: GlanceAction, target: { agent_id: string }): Promise<{ ok: boolean }>;
+  /**
+   * Choose a model, set one step's level, or ask what models there are (MAR-583).
+   *
+   * Injected for the reason the six above are, and here in two forms at once: the
+   * real implementation reaches `node:sqlite` for the choice rows and the
+   * operating system's vault plus the network for the list. A sandboxed preload
+   * may hold neither.
+   *
+   * `models` is the only field of the result that carries anything the renderer
+   * did not already know, and it is a list of ids that lives for as long as the
+   * answer does. Nothing persists it — see `listAiKeyModels` — so a page that
+   * closes forgets the catalogue, which is the property `ai_key_checks` was
+   * designed to keep and the one thing here that could quietly stop being true.
+   */
+  modelAction(
+    action: ModelAction,
+    target: {
+      agent_id: string;
+      connection_id?: string;
+      field_id?: string;
+      model_id?: string;
+      step?: number;
+      level?: string;
+    },
+  ): Promise<{ ok: boolean; detail?: string; recovery?: Recovery; models?: string[] }>;
   /**
    * Compare, accept, or open an agent's folder (MAR-584).
    *
@@ -1753,6 +1885,42 @@ export async function dispatchCommand(
       agent_id: String(review.payload["agent_id"]),
     });
     return { ok: result.ok, request_id: review.audit.request_id };
+  }
+
+  if (isModelCommandName(review.command)) {
+    /*
+     * MAR-583. Every field copied explicitly, `toAgentCommandInput`'s rule: a
+     * spread would mean that the day somebody adds a payload key it silently
+     * becomes part of what main acts on, without anyone deciding it should.
+     *
+     * The three optional string fields are optional in the type as well as in
+     * the payload rules, and that is what carries the "put it back" cases. An
+     * absent `model_id` on `model.choose` means matching each step again, and an
+     * absent `level` on `model.step` means that step goes back to what its plan
+     * asked for — so removing a setting needs no second command and cannot be
+     * spelled as a magic value main would have to recognise.
+     */
+    const optional = (key: string): string | undefined =>
+      typeof review.payload[key] === "string" && review.payload[key] !== ""
+        ? (review.payload[key] as string)
+        : undefined;
+    const step = review.payload["step"];
+
+    const result = await context.modelAction(MODEL_ACTIONS[review.command], {
+      agent_id: String(review.payload["agent_id"]),
+      connection_id: optional("connection_id"),
+      field_id: optional("field_id"),
+      model_id: optional("model_id"),
+      step: typeof step === "number" ? step : undefined,
+      level: optional("level"),
+    });
+    return {
+      ok: result.ok,
+      request_id: review.audit.request_id,
+      detail: result.detail,
+      recovery: result.recovery,
+      models: result.models,
+    };
   }
 
   if (isRunnerCommandName(review.command)) {

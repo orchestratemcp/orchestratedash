@@ -306,6 +306,22 @@ export interface AgentManifestBody {
     component_id: string;
     risk_level: "low" | "medium" | "high" | "critical";
     model_tier: "none" | "small" | "standard" | "frontier";
+    /**
+     * What capability floor this step needs, when its author declared one
+     * (MAR-583, ADR-MAR-583 in the MCP repository).
+     *
+     * Optional, and absent is the whole point: a deterministic step has no model
+     * default, and emitting `none` would make it look configurable. The emitter
+     * omits the property for `model_tier: "none"` and DASH reads the absence the
+     * same way — the honest-absence rule `agent_dom.panel` and
+     * `connection_requirements` already keep.
+     *
+     * Typed here as the union rather than as a string, and mirrored by value in
+     * `lib/ai/model-levels.ts` for the renderer, which cannot reach Ajv. The two
+     * are held together by `tests/model-levels.test.ts` running one corpus
+     * through both.
+     */
+    default_model_level?: "cheap" | "standard" | "frontier";
   }>;
   safety_contract: {
     automation_clearance: string;

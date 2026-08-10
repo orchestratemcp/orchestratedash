@@ -315,6 +315,18 @@ await Promise.all([
     format: "esm",
   }),
 
+  // The model-choice section (MAR-583), on the same terms. Which of its four
+  // states is drawn depends on what is in the vault, so a run against a real
+  // store photographs whichever one that machine happens to be in and cannot
+  // say which. This one seeds four agents, one per state, and opens the step
+  // disclosure by clicking it. See `electron/capture-models.ts`.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-models.ts")],
+    outfile: path.join(outDir, "capture-models.mjs"),
+    format: "esm",
+  }),
+
   // MAR-423. "Try a sample agent" scaffolds a project, and a scaffold needs the
   // same `scripts/open-in-dash.mjs` the Agent Kit copies in, so the user can
   // re-add their agent later from their own folder without DASH.

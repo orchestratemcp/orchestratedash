@@ -35,7 +35,14 @@ import {
   inspectAgentFolderStanding,
   storedDigestSummary,
 } from "../agent-folders";
-import { validateManifest } from "../contracts";
+import {
+  MODEL_KEY_STAYS_HOME_REFUSAL,
+  type BundledModelChoice,
+} from "../ai/model-choice";
+import { planNeedsAModel } from "../ai/model-levels";
+import { aiProviderFor } from "../ai/providers";
+import type { ManifestConnection } from "../connections";
+import { validateManifest, type AnyAgentManifest } from "../contracts";
 import type { AgentRegistration } from "../registration";
 import {
   BUNDLE_ENTRY_POINT,
@@ -47,6 +54,17 @@ import type { InstallRequest } from "./verbs";
 
 export const BUNDLE_AGENT_DIRECTORY = "agent";
 export const BUNDLE_REGISTRATION_DIRECTORY = "data/agents";
+/**
+ * Where the model choice lands (MAR-583).
+ *
+ * Beside the generated registration and under `data/` rather than inside
+ * `agent/`, and the split is ADR 0008's: `agent/` is the author's folder,
+ * byte-for-byte as DASH holds it, and `data/` is what DASH generates for this
+ * particular installation. A setting a person chose in DASH is DASH's document,
+ * not the author's, and writing it into `agent/` would make the folder DASH sent
+ * differ from the folder DASH has — which is the comparison MAR-584 relies on.
+ */
+export const BUNDLE_MODEL_DIRECTORY = "data/models";
 
 export type FolderBundleProblem =
   | BundleProblem
@@ -54,7 +72,9 @@ export type FolderBundleProblem =
   | "folder_unreadable"
   | "manifest_unreadable"
   | "registration_unreadable"
-  | "runner_unreadable";
+  | "runner_unreadable"
+  /** MAR-583: the plan needs a model and the key for it is not going. */
+  | "model_key_stays_home";
 
 export type FolderBundleResult =
   | {
@@ -71,6 +91,20 @@ export interface ProduceFolderBundleOptions {
   bundle_id: string;
   /** Root of `dist/runner-standalone`, or its packaged sibling. */
   runner_artifact_dir: string;
+  /**
+   * Which model this agent is set to use (MAR-583).
+   *
+   * Passed in rather than read here, so this module stays what it already is: a
+   * reader of one folder and a writer of two generated files, with no store
+   * behind it. The caller resolves it through `readAgentModelChoice` and
+   * `resolveModelSteps`, which is the one place a level is decided.
+   *
+   * Omitted means "this agent has no model setting to send", which is the
+   * ordinary case and produces no extra file. It is not the same as a document
+   * saying `match_each_step`: that one records a decision, and an absence
+   * records that there was nothing to decide.
+   */
+  models?: BundledModelChoice;
 }
 
 /**
@@ -136,6 +170,40 @@ export function produceAgentFolderBundle(
     };
   }
 
+  /*
+   * MAR-583. The plan needs a model and the key for it is one DASH holds.
+   *
+   * Second only to the manifest-only refusal, and before the runner is read for
+   * the same reason that one is: there is no half-bundle to accidentally send,
+   * and the sentence reaches the audited command result rather than a partial
+   * push somebody has to undo.
+   *
+   * **What it is checking, exactly.** Not whether DASH holds a key right now —
+   * that is a fact about this computer's vault, and a deploy that succeeded or
+   * failed depending on whether somebody had connected yet would be a rule
+   * nobody could predict. It checks the *shape of the arrangement*: this agent
+   * asks DASH to hold its model key, and DASH does not send keys to servers. That
+   * is true whether or not a key has been typed, so the refusal is stable.
+   *
+   * An agent that manages its own model key is not refused. It reaches a provider
+   * by arrangements DASH has no part in, wherever it runs, and DASH has no
+   * standing to stop it.
+   *
+   * The general case — a `dash_managed` connection of any kind on an agent going
+   * to a server — is wider than this issue and is **not** fixed here. It is named
+   * in this repository's state packet rather than quietly half-solved: making the
+   * model choice travel is what created the obligation to say something about the
+   * model key, and inventing a rule for Gmail on the way past would be a decision
+   * taken in the wrong issue.
+   */
+  if (dashHeldModelKey(manifest.value)) {
+    return {
+      ok: false,
+      problem: "model_key_stays_home",
+      detail: MODEL_KEY_STAYS_HOME_REFUSAL,
+    };
+  }
+
   let registrationBytes: Buffer;
   let registration: AgentRegistration;
   try {
@@ -185,6 +253,17 @@ export function produceAgentFolderBundle(
           "utf8",
         ),
       ),
+      // MAR-583. The second generated file, and the only one whose contents came
+      // from a person rather than from the folder. No file at all when there is
+      // no setting to send — see `ProduceFolderBundleOptions.models`.
+      ...(options.models === undefined
+        ? []
+        : [
+            sourceFile(
+              `${BUNDLE_MODEL_DIRECTORY}/${options.agent_id}.json`,
+              Buffer.from(`${JSON.stringify(options.models, null, 2)}\n`, "utf8"),
+            ),
+          ]),
     ];
   } catch {
     return {
@@ -206,6 +285,32 @@ export function produceAgentFolderBundle(
     files,
   });
   return assembled.ok ? { ...assembled, runner_build: runnerBuild } : assembled;
+}
+
+/**
+ * Whether this agent asks DASH to hold a key for a model provider (MAR-583).
+ *
+ * Two conditions and both are read off the manifest alone: the plan has a step
+ * above `model_tier: "none"`, and at least one `dash_managed` connection names a
+ * provider `lib/ai/providers.ts` knows. The second is what makes it a *model*
+ * key rather than any credential — a `dash_managed` ledger secret is somebody
+ * else's problem and not this refusal's.
+ *
+ * `planNeedsAModel` and not `stepsNeedingAModel`, deliberately. An agent
+ * exported before MAR-583's emitter declares no levels at all and still needs a
+ * model; refusing only the agents whose steps say so would let exactly the older
+ * agents through, which is the wrong way round for a safety refusal.
+ */
+function dashHeldModelKey(manifest: AnyAgentManifest): boolean {
+  if (!planNeedsAModel(manifest.planned_route)) {
+    return false;
+  }
+  const connections = (manifest as { agent_dom?: { connections?: ManifestConnection[] } }).agent_dom
+    ?.connections;
+  return (connections ?? []).some(
+    (connection) =>
+      connection.ownership === "dash_managed" && aiProviderFor(connection.provider) !== null,
+  );
 }
 
 function unreadableFolder(): FolderBundleResult {

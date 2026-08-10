@@ -60,6 +60,12 @@ import { plainDay } from "../copy/when";
 import { describeManifestGap } from "../sample-refresh";
 import { glanceReader } from "./glance";
 import {
+  buildAgentModelSettings,
+  buildRunModel,
+  stepLevelLabel,
+  type ModelSourceManifest,
+} from "./models";
+import {
   artifactRecordsForAgent,
   artifactRecordsForRun,
   latestArtifactForAgent,
@@ -227,7 +233,27 @@ export function runsView(
   store: StoreShape = readStore(),
   pulls: readonly EvidencePullRecord[] = readEvidencePulls(),
 ): RunsView {
-  return { runs: listAnalyzedRuns(store), evidence: describeEvidenceRecord(pulls) };
+  return {
+    // MAR-583. The model setting each run started under, folded on here rather
+    // than inside `listAnalyzedRuns`: that function is `lib/insights.ts`'s and
+    // works on the store alone, while this needs the manifest to know whether a
+    // model was ever part of the agent's work. See `buildRunModel` for the line.
+    runs: listAnalyzedRuns(store).map((run) => ({
+      ...run,
+      model: buildRunModel(
+        run.agent,
+        run.run_id,
+        store.agents[run.agent]?.manifest.planned_route,
+        // The run's own events, filtered here rather than re-queried: `store`
+        // already holds every event this list was derived from, and a second
+        // read per row would turn one pass over the store into one per run.
+        store.events.filter(
+          (event) => event.agent === run.agent && event.run_id === run.run_id,
+        ),
+      ),
+    })),
+    evidence: describeEvidenceRecord(pulls),
+  };
 }
 
 /**
@@ -261,6 +287,9 @@ export function runView(
       risk_level: entry.risk_level,
       model_tier: entry.model_tier,
       executed: executed.has(entry.component_id),
+      // MAR-583. Null for a step that needs no model, which is the honest
+      // absence the emitter writes rather than a fourth level meaning "none".
+      model_level_label: stepLevelLabel(entry.default_model_level),
     }));
 
   // Only meaningful when there is a plan to be unplanned against: with no
@@ -292,6 +321,11 @@ export function runView(
     events,
     analysis,
     planned_route: plannedRoute,
+    // MAR-583. The same record the runs list carries, on the page with room for
+    // the caveat that makes it honest. `events` is this run's own, already read
+    // above — and it is where `model` comes from, the telemetry v1 field nothing
+    // in DASH had ever drawn.
+    model: buildRunModel(agent, runId, manifest?.planned_route, events),
     manifest_imported: manifest !== undefined,
     unplanned_component_ids: unplanned,
     artifacts,
@@ -979,6 +1013,11 @@ export function workspaceView(
     // DASH derived from anything else would be DASH describing somebody else's
     // agent.
     input_roles: buildInputRoles(manifest),
+    // MAR-583. What each step asked for, what the person chose, and whether
+    // there is anything to choose at all. Built here rather than in the page
+    // because it reads the vault's reference table and the choice rows, and
+    // because every sentence on it belongs to `lib/ai/model-choice.ts`.
+    models: buildAgentModelSettings(agent, manifest as ModelSourceManifest),
     // MAR-548, ADR 0008 slice 3's wiring. The authoritative document, not the
     // row's copy — see `panelDocument` for which store answers and why.
     panel: buildPanelView(document, {

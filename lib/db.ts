@@ -803,6 +803,69 @@ const MIGRATIONS: readonly Migration[] = [
 
   CREATE INDEX IF NOT EXISTS agent_deploys_by_agent ON agent_deploys (agent, sent_at);
   `,
+  // MAR-583. Which model an agent uses, and what that setting was when a run
+  // started.
+  //
+  // Three tables and every one of them is **empty for an agent nobody has
+  // configured**, which is the load-bearing property rather than a space saving.
+  // `lib/ai/model-choice.ts` treats no row as "match each step to the level its
+  // plan asked for", so the recommended setting needs no row to be in force and
+  // DASH never has to tell "nobody touched this" apart from "somebody chose the
+  // default". Same argument `ai_key_checks` makes for having no row until a
+  // provider has actually been asked something.
+  //
+  // **No cost column, in any of them, deliberately.** MAR-299 owns spend, and it
+  // owns it because a number DASH derived from a price list it does not hold
+  // would be DASH's arithmetic presented as somebody's bill. When real
+  // per-request numbers exist they join onto `run_models` by (agent, run_id),
+  // which is what this table is shaped to be joinable on.
+  //
+  // `model_id` is provider content and is checked against `isModelId` before it
+  // is written -- ADR 0002 invariant 7, and the pattern MAR-582 already hardened
+  // after its first draft accepted a traversal.
+  `
+  -- One named model for the whole agent. A row exists only when somebody chose
+  -- one; deleting it is how a person goes back to matching each step.
+  CREATE TABLE IF NOT EXISTS agent_model_choice (
+    agent       TEXT PRIMARY KEY,
+    provider_id TEXT NOT NULL,
+    model_id    TEXT NOT NULL,
+    chosen_at   TEXT NOT NULL
+  );
+
+  -- One step's level, when a person set it to something other than what the
+  -- manifest declared. A row per override and never a row per step: the plan is
+  -- the default and copying it in here would make a manifest change silently
+  -- lose to a stale copy of its own old answer.
+  CREATE TABLE IF NOT EXISTS agent_step_levels (
+    agent     TEXT NOT NULL,
+    step      INTEGER NOT NULL,
+    level     TEXT NOT NULL,
+    chosen_at TEXT NOT NULL,
+    PRIMARY KEY (agent, step)
+  );
+
+  -- What the setting was when DASH first saw this run.
+  --
+  -- Written where the runs anchor is written and never revised, so changing the
+  -- setting mid-run cannot rewrite what an earlier run reports. It records
+  -- **DASH's own setting**, not an observation of a model: DASH makes no
+  -- completion call (MAR-582's boundary is one models-list operation), so it has
+  -- never watched a model do an agent's work and no column here may imply it
+  -- did. choice is 'one_model' or 'match_each_step'; the two id columns are set
+  -- exactly when it is the first.
+  --
+  -- No foreign key to the runs table, for agent_looks's reason.
+  CREATE TABLE IF NOT EXISTS run_models (
+    agent       TEXT NOT NULL,
+    run_id      TEXT NOT NULL,
+    choice      TEXT NOT NULL,
+    provider_id TEXT,
+    model_id    TEXT,
+    recorded_at TEXT NOT NULL,
+    PRIMARY KEY (agent, run_id)
+  );
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

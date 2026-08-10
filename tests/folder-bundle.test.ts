@@ -23,8 +23,10 @@ import {
   MANIFEST_ONLY_DEPLOY_REFUSAL,
   writeAgentFolder,
 } from "../lib/agent-folders";
+import { MODEL_KEY_STAYS_HOME_REFUSAL } from "../lib/ai/model-choice";
 import {
   BUNDLE_AGENT_DIRECTORY,
+  BUNDLE_MODEL_DIRECTORY,
   BUNDLE_REGISTRATION_DIRECTORY,
   produceAgentFolderBundle,
 } from "../lib/deploy/folder-bundle";
@@ -62,6 +64,40 @@ function manifestJson(): string {
     path.join(repoRoot, "examples", "gmail-meeting-assistant.manifest.v2.example.json"),
     "utf8",
   );
+}
+
+/**
+ * The shipped example, with a model-provider connection grafted on (MAR-583).
+ *
+ * Built from the real example rather than written from scratch so it stays a
+ * manifest the validator accepts for every other reason — the refusal under test
+ * has to be the one that fired, not a schema failure wearing its name.
+ */
+function keyedManifest(ownership = "dash_managed"): Record<string, unknown> {
+  const manifest = JSON.parse(manifestJson()) as Record<string, unknown>;
+  const agentDom = manifest["agent_dom"] as Record<string, unknown>;
+  agentDom["connections"] = [
+    ...((agentDom["connections"] as unknown[] | undefined) ?? []),
+    {
+      id: "models",
+      provider: "openrouter",
+      label: "Your model provider",
+      purpose: "Write the summary",
+      ownership,
+      capabilities: [{ id: "model.completion", label: "Write text", access: "write" }],
+      fields: [
+        {
+          id: "key",
+          label: "API key",
+          purpose: "So DASH can reach the provider for this agent",
+          kind: "secret",
+          required: true,
+        },
+      ],
+      validation_action: { id: "check", label: "Check", behavior: "test" },
+    },
+  ];
+  return manifest;
 }
 
 function registration(agentId: string): AgentRegistration {
@@ -191,6 +227,168 @@ describe("the folder bundle producer", () => {
       detail: MANIFEST_ONLY_DEPLOY_REFUSAL,
     });
   });
+
+  /* ------------------------------------------------------------------ *
+   * MAR-583: the model choice travels, and the key does not
+   * ------------------------------------------------------------------ */
+
+  it("carries the model choice as a generated file beside the registration", async () => {
+    const dataDir = freshDir("model-choice");
+    const artifact = freshDir("model-artifact");
+    const agentId = "model-agent";
+    await buildStandaloneRunner({ repoRoot, outDir: artifact });
+    writeAgentFolder({
+      dataDir,
+      agent: agentId,
+      manifestJson: manifestJson(),
+      registration: registration(agentId),
+      files: [{ path: "agent.mjs", contents: "setInterval(() => {}, 1000);\n" }],
+    });
+
+    const choice = {
+      agent_id: agentId,
+      choice: "one_model" as const,
+      provider_id: "openrouter",
+      model_id: "anthropic/claude-sonnet-5",
+      steps: [{ step: 3, level: "frontier" as const }],
+    };
+    const produced = produceAgentFolderBundle({
+      data_dir: dataDir,
+      agent_id: agentId,
+      bundle_id: agentId,
+      runner_artifact_dir: artifact,
+      models: choice,
+    });
+    expect(produced.ok).toBe(true);
+    if (!produced.ok) return;
+
+    const name = `${BUNDLE_MODEL_DIRECTORY}/${agentId}.json`;
+    expect(produced.request.files.map((file) => file.path)).toContain(name);
+    expect(JSON.parse(requestFile(produced.request, name).toString("utf8"))).toEqual(choice);
+
+    /*
+     * Under `data/` and never under `agent/`. ADR 0008 makes `agent/` the
+     * author's folder byte-for-byte, and MAR-584 compares what DASH sent against
+     * what DASH holds by hashing exactly those paths — so a DASH-generated file
+     * inside it would make every agent read as changed the moment somebody
+     * picked a model.
+     */
+    expect(produced.request.files.map((file) => file.path)).not.toContain(
+      `${BUNDLE_AGENT_DIRECTORY}/${agentId}.json`,
+    );
+  }, 60_000);
+
+  it("sends no model file when there is no setting to send", async () => {
+    const dataDir = freshDir("no-model");
+    const artifact = freshDir("no-model-artifact");
+    const agentId = "plain-agent";
+    await buildStandaloneRunner({ repoRoot, outDir: artifact });
+    writeAgentFolder({
+      dataDir,
+      agent: agentId,
+      manifestJson: manifestJson(),
+      registration: registration(agentId),
+      files: [{ path: "agent.mjs", contents: "setInterval(() => {}, 1000);\n" }],
+    });
+
+    const produced = produceAgentFolderBundle({
+      data_dir: dataDir,
+      agent_id: agentId,
+      bundle_id: agentId,
+      runner_artifact_dir: artifact,
+    });
+    expect(produced.ok).toBe(true);
+    if (!produced.ok) return;
+    // An absence, not a document saying "the default". The two are different
+    // facts — see `ProduceFolderBundleOptions.models`.
+    expect(
+      produced.request.files.some((file) => file.path.startsWith(BUNDLE_MODEL_DIRECTORY)),
+    ).toBe(false);
+  }, 60_000);
+
+  it("refuses when the plan needs a model whose key DASH keeps in this computer's vault", () => {
+    /*
+     * The refusal is the whole point of making the choice travel: a setting that
+     * arrives somewhere it cannot be honoured is worse than no setting. DASH does
+     * not send keys to servers, so an agent that asks DASH to hold its model key
+     * would land there with a model named and nothing to reach it with.
+     *
+     * Decided before a runner byte is read, like the manifest-only refusal above
+     * and for the same reason: there is no half-bundle to accidentally send.
+     */
+    const dataDir = freshDir("dash-held-key");
+    const agentId = "keyed-agent";
+    writeAgentFolder({
+      dataDir,
+      agent: agentId,
+      manifestJson: JSON.stringify(keyedManifest()),
+      registration: registration(agentId),
+      files: [{ path: "agent.mjs", contents: "setInterval(() => {}, 1000);\n" }],
+    });
+
+    const produced = produceAgentFolderBundle({
+      data_dir: dataDir,
+      agent_id: agentId,
+      bundle_id: agentId,
+      runner_artifact_dir: path.join(dataDir, "not-a-runner"),
+    });
+    expect(produced).toEqual({
+      ok: false,
+      problem: "model_key_stays_home",
+      detail: MODEL_KEY_STAYS_HOME_REFUSAL,
+    });
+  });
+
+  it("does not refuse an agent that brings its own model key", async () => {
+    // It reaches a provider by arrangements DASH has no part in, wherever it
+    // runs, and DASH has no standing to stop it.
+    const dataDir = freshDir("agent-held-key");
+    const artifact = freshDir("agent-held-artifact");
+    const agentId = "own-key-agent";
+    await buildStandaloneRunner({ repoRoot, outDir: artifact });
+    writeAgentFolder({
+      dataDir,
+      agent: agentId,
+      manifestJson: JSON.stringify(keyedManifest("agent_managed")),
+      registration: registration(agentId),
+      files: [{ path: "agent.mjs", contents: "setInterval(() => {}, 1000);\n" }],
+    });
+
+    const produced = produceAgentFolderBundle({
+      data_dir: dataDir,
+      agent_id: agentId,
+      bundle_id: agentId,
+      runner_artifact_dir: artifact,
+    });
+    expect(produced.ok).toBe(true);
+  }, 60_000);
+
+  it("does not refuse an agent whose plan needs no model at all", async () => {
+    const dataDir = freshDir("no-model-needed");
+    const artifact = freshDir("no-model-needed-artifact");
+    const agentId = "fixed-agent";
+    await buildStandaloneRunner({ repoRoot, outDir: artifact });
+    const manifest = keyedManifest();
+    // Every step deterministic, with the model connection still declared.
+    manifest["planned_route"] = [
+      { step: 1, component_id: "public_feed_fetch", risk_level: "low", model_tier: "none" },
+    ];
+    writeAgentFolder({
+      dataDir,
+      agent: agentId,
+      manifestJson: JSON.stringify(manifest),
+      registration: registration(agentId),
+      files: [{ path: "agent.mjs", contents: "setInterval(() => {}, 1000);\n" }],
+    });
+
+    const produced = produceAgentFolderBundle({
+      data_dir: dataDir,
+      agent_id: agentId,
+      bundle_id: agentId,
+      runner_artifact_dir: artifact,
+    });
+    expect(produced.ok).toBe(true);
+  }, 60_000);
 
   it("is consumed by MAR-497's unchanged standalone runner and starts the folder's agent", async () => {
     const dataDir = freshDir("data");
