@@ -410,6 +410,34 @@ async function layout(target: BrowserWindow): Promise<unknown> {
          const widest = gaps.length === 0 ? 0 : gaps[0].gap;
          const scrolls = gaps.filter((entry) => entry.overflow_x !== "hidden" && entry.overflow_x !== "clip");
 
+         /*
+          * MAR-590: \`page_overflows\` (below) reads \`document.documentElement\`,
+          * and it read false while the fleet grid scrolled sideways by 24px —
+          * because the ancestor \`main\` is its own \`overflow: auto\` container,
+          * the grid's overflow was contained a level below the document and
+          * never grew the root. A screenshot cannot tell the difference either:
+          * an overflowing frame and a fitting one are the same PNG. So this
+          * measures the grid track itself rather than trusting a page-level
+          * signal one known defect already slipped past. \`grid-template-columns\`
+          * is read from the computed style rather than assumed from the source
+          * rule, so this is what the browser actually laid out, not what the
+          * stylesheet asked for.
+          */
+         const fleetGrid = document.querySelector(".row-list.fleet-grid");
+         const gridTrackWidths = fleetGrid
+           ? getComputedStyle(fleetGrid).gridTemplateColumns.trim().split(/\\s+/).map((token) => parseFloat(token))
+           : [];
+         const fleetGridMetrics = fleetGrid
+           ? {
+               scroll_width: fleetGrid.scrollWidth,
+               client_width: fleetGrid.clientWidth,
+               overflow: fleetGrid.scrollWidth - fleetGrid.clientWidth,
+               track_count: gridTrackWidths.length,
+               track_widths: gridTrackWidths.map((w) => Math.round(w)),
+               widest_track: gridTrackWidths.length ? Math.round(Math.max(...gridTrackWidths)) : 0,
+             }
+           : { scroll_width: 0, client_width: 0, overflow: 0, track_count: 0, track_widths: [], widest_track: 0 };
+
          const cards = [...document.querySelectorAll(".fleet-card")];
          const order = cards.map((card) => (card.querySelector(".card-head code") || {}).textContent || "");
          const portraits = [...document.querySelectorAll(".fleet-portrait > .o-avatar")];
@@ -433,6 +461,34 @@ async function layout(target: BrowserWindow): Promise<unknown> {
            return tile.getBoundingClientRect().bottom > glance.getBoundingClientRect().top + 1;
          });
 
+         /*
+          * MAR-587's 200px sprite lives in \`.fleet-portrait\`, which clips
+          * rather than resizes anything that does not fit (\`overflow: hidden\`,
+          * the comment above that rule). A tile narrower than its sprite is a
+          * portrait silently cropped, and a cropped sprite photographs exactly
+          * like an uncropped one unless the two widths are compared — the same
+          * blind spot \`page_overflows\` had for the grid track. MAR-590's fix
+          * narrows the card at 375px on purpose (the container's own width
+          * replaces the 304px floor); this is what confirms 200px of sprite
+          * still fits inside it rather than assuming a narrower card is a safe
+          * card.
+          */
+         const portraitFit = cards
+           .map((card) => {
+             const tile = card.querySelector(".fleet-portrait");
+             const avatar = tile ? tile.querySelector(".o-avatar") : null;
+             if (tile === null || avatar === null) return null;
+             const tileWidth = tile.getBoundingClientRect().width;
+             const avatarWidth = avatar.getBoundingClientRect().width;
+             return {
+               tile_width: Math.round(tileWidth),
+               avatar_width: Math.round(avatarWidth),
+               cropped: tileWidth + 1 < avatarWidth,
+             };
+           })
+           .filter((entry) => entry !== null);
+         const croppedPortraits = portraitFit.filter((entry) => entry.cropped);
+
          return {
            viewport: window.innerWidth,
            page_scroll_width: root.scrollWidth,
@@ -441,6 +497,11 @@ async function layout(target: BrowserWindow): Promise<unknown> {
            widest_overflow_at: gaps.slice(0, 3),
            /* The ones that put a scrollbar under somebody's fleet. */
            sideways_scrollers: scrolls.slice(0, 3),
+           /* MAR-590: the grid track measured directly, not inferred from the page. */
+           fleet_grid: fleetGridMetrics,
+           fleet_grid_scrolls: fleetGridMetrics.overflow > 0,
+           portrait_fit: portraitFit,
+           portrait_cropped: croppedPortraits.length,
            cards: cards.length,
            order: order,
            animated: animated.length,
@@ -718,6 +779,16 @@ async function run(): Promise<void> {
   const covered = measurements.filter(
     (entry) => ((entry as Record<string, number>)["portrait_below_chips"] ?? 0) > 0,
   );
+  /*
+   * MAR-590's own checks — the grid track measured directly rather than
+   * inferred from `page_overflows`, which read false for this exact defect
+   * (see the comment in `layout()`), and the 200px portrait's fit checked
+   * rather than assumed now that the track can be narrower than 19rem.
+   */
+  const gridScrolled = measurements.filter(
+    (entry) => (entry as Record<string, unknown>)["fleet_grid_scrolls"] === true,
+  );
+  const cropped = measurements.filter((entry) => ((entry as Record<string, number>)["portrait_cropped"] ?? 0) > 0);
 
   console.log(
     `[actions] wrote ${String(written.length)} image(s) to ${OUT}; ` +
@@ -726,7 +797,9 @@ async function run(): Promise<void> {
       `${String(reordered.length)} frame(s) where the fleet was reordered; ` +
       `${String(chipless.length)} frame(s) with no glance chips; ` +
       `${String(inert.length)} frame(s) where a chip was not a link; ` +
-      `${String(covered.length)} frame(s) where the costume displaced the chips`,
+      `${String(covered.length)} frame(s) where the costume displaced the chips; ` +
+      `${String(gridScrolled.length)} frame(s) where the fleet grid track itself scrolled sideways; ` +
+      `${String(cropped.length)} frame(s) where a 200px portrait was cropped by its tile`,
   );
   app.exit(0);
 }
