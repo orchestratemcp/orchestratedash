@@ -3,8 +3,14 @@
 Worked in an isolated worktree (`../dash-mar595`, branch
 `000henrik/mar-595-agent-lifecycle-fixes`) cut from `origin/master` at
 `04dc346`. [PR #127](https://github.com/orchestratemcp/orchestratedash/pull/127)
-is open against master. CI was running at the moment this was written; check
-`gh pr checks 127` before merging.
+is open against master, head `da0326a`.
+
+**CI: both checks green.** `verify` passed in 1m54s; `shell-smoke` passed in
+1m36s — `gh run view 31408012138 --job 93518959963 --log` shows 77 distinct
+`PASS` proof labels, 0 `FAIL` lines, and closes with `[smoke] all proofs
+passed`. Not a mid-run death (the failure mode `smoke-lapse-proof-cleanup-flake`
+warns about) — the run completed and reported its own success line. Ready to
+merge; not merged yet as of this writing, since merging is Henrik's call.
 
 ## What this session was asked to fix
 
@@ -89,8 +95,8 @@ From PowerShell, in the worktree:
 
 ## Next steps
 
-1. Watch PR #127's CI (`gh pr checks 127`). If shell-smoke is green, this can
-   merge to master.
+1. Both CI checks are green — PR #127 is mergeable. Merging is Henrik's call,
+   not performed by this session.
 2. After merging: an actual installed-shell run exercising F13 (add an agent,
    watch the list refresh without swapping tabs), F18 (both removal buttons on
    a real agent), and F15 (edit a running agent's manifest, re-run
