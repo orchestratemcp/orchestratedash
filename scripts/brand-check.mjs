@@ -31,6 +31,7 @@ import { fileURLToPath } from "node:url";
 import {
   auditSheet,
   auditSprite,
+  checkActionModule,
   checkActions,
   checkAvatarCss,
   checkBundledFonts,
@@ -48,6 +49,7 @@ const ACTION_DIR = path.join(ROOT, "public", "o", "actions");
 const MANIFEST = path.join(ROOT, "lib", "brand", "o-cast.json");
 const ACTION_MANIFEST = path.join(ROOT, "lib", "brand", "o-actions.json");
 const CAST_MODULE = path.join(ROOT, "lib", "brand", "o-cast.ts");
+const ACTION_MODULE = path.join(ROOT, "lib", "brand", "o-actions.ts");
 const APP_DIR = path.join(ROOT, "app");
 const STYLESHEETS = [path.join(APP_DIR, "globals.css"), path.join(APP_DIR, "tokens.css")];
 
@@ -156,6 +158,28 @@ if (actionManifest !== null) {
     }
   }
   failures.push(...checkActions({ names, files: actionFiles, manifest: actionManifest, measured: measuredSheets }));
+
+  /*
+   * And the typed view the renderer actually compiles against (Phase B).
+   *
+   * Everything above audits pixels. This is the other half: the three
+   * descriptions of a sheet — the bytes, the manifest, and `o-actions.ts` — say
+   * the same thing, so a sheet cannot be perfectly audited and unreachable, and
+   * `actionFor` cannot name a file that was never vendored.
+   */
+  if (!fs.existsSync(ACTION_MODULE)) {
+    failures.push(
+      `actions: ${rel(ACTION_MANIFEST)} records sheets but ${rel(ACTION_MODULE)} is missing — nothing can draw them`,
+    );
+  } else {
+    failures.push(
+      ...checkActionModule({
+        source: fs.readFileSync(ACTION_MODULE, "utf8"),
+        manifest: actionManifest,
+        names,
+      }),
+    );
+  }
 }
 
 /* ── 2. The rules of use ─────────────────────────────────────────────────── */

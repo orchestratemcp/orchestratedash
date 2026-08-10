@@ -1,7 +1,7 @@
 # DASH project state
 
-Updated: 2026-08-10 (MAR-584: an outside editor changes an agent's folder, and
-DASH says what changed instead of quietly adopting it)
+Updated: 2026-08-10 (MAR-587 Phase B: the fleet draws its characters big, and
+three of them perform an idle action that means nothing)
 
 Portfolio sequence and estimates: [`../orchestratekit-mcp/docs/PORTFOLIO_ROADMAP_2026-08-01.md`](../orchestratekit-mcp/docs/PORTFOLIO_ROADMAP_2026-08-01.md).
 
@@ -4737,3 +4737,162 @@ MAR-489's attended run.
 program runs at the next run whether or not it was accepted**, because the
 runner spawns from the folder without verifying it. Both are on screen rather
 than only in a header.
+
+---
+
+## The fleet as character select (MAR-587 Phase B)
+
+Henrik, 2026-08-09: *"It would also be cool if we could animate the Os and make
+them big. For example the Ninja O — give it a shurikeen that it can toss up in
+the air and then catch. A knight swings a sword and a magican throws a fireball.
+To make the fleet look more like a game and character selection."*
+
+Phase A vendored the sheets and taught `brand:check` to measure them. This is
+the half a person can see: every fleet card draws its character at **200px**,
+and where a sheet exists the character performs its idle action.
+
+### The rule that shapes it, and the one line of code that guarantees it
+
+MAR-503's binding line survives the animation intact: **the idle action is
+costume flavour, never status.** MAR-586's chips carry every fact on the card,
+in words, from stored records — and nothing about the loop was allowed to become
+a second, wordless answer beside them.
+
+That is not a promise here; it is the shape of `actionFor`. Its only argument is
+the character, which is itself assigned once at creation from a seed and never
+recomputed from state. There is no parameter a status could arrive through, so
+"is this O moving?" answers a question about DASH's asset library and can answer
+no other. Three of the eleven characters have sheets, and the eight without draw
+the audited still they drew before this issue — no stand-in loop, and no
+reordering to put the animated ones first, which would have turned that library
+into something a reader tries to read as a ranking.
+
+The call site is fenced from the other end. `checkCostume` now fails
+`action={…}` for anything that is not a literal, and the rule is exact rather
+than heuristic — unlike `name={…}`, which has to guess at status vocabulary
+because a character legitimately comes from somewhere. Whether a surface
+animates does not: it is a decision about the surface, taken once, in the
+source. `action={agent.needsYou}` fails without the check having to recognise
+the phrase.
+
+### `--motion-idle`, and why it is not `--motion-beckon`
+
+`app/tokens.css` already held five cycle lengths, and its own comment says what
+they are: *motion that **is** state* — hopping while an agent works, beckoning
+while a decision waits, pacing while recently active. This loop is the exact
+opposite, so it gets its own name.
+
+It carries **1800ms**, the number `--motion-beckon` carries today, and is still
+a second token rather than a reuse. Beckon is the rhythm of "a decision is
+waiting on you"; that rhythm exists to be tuned until it reads from across the
+room, and the day somebody tunes it a shared token would silently re-time every
+costume in the fleet — or stop the tuning happening because it would. One
+duration with two meanings is the shape that makes a designer choose between two
+surfaces that have nothing to do with each other.
+
+Because it is a token, reduced motion needs no rule in `app/globals.css` at all:
+the token is `0ms` under `prefers-reduced-motion: reduce`, which leaves the
+sprite on its base `background-position` — frame 0, the character standing with
+its prop. That was **measured rather than assumed**, and it was the one thing
+about this design that could plausibly have gone the other way: a zero-duration
+`steps()` animation parking on the *end* of the sheet would have drawn a blank
+box. It parks on frame 0.
+
+### 200, and why not 150
+
+`OSize` gains one member. 4× the 50px source, because `image-rendering:
+pixelated` upscales by nearest neighbour and anything between whole multiples
+lands some source pixels on two screen pixels and some on three. 150 is a legal
+multiple and is deliberately **not** in the union: a size is there because a
+surface draws at it, which is the same argument the `size` prop makes for having
+no default. MAR-586 had already answered "bigger" with 100, and this ask came
+after that one.
+
+### Bounded, and stopped when nobody is looking
+
+The loop is `steps()` over `background-position`: **eight repaints per 1800ms
+cycle**, no JavaScript per frame, no timer, and deliberately no `will-change` —
+which would promote every card in the fleet to its own compositor layer to save
+repaints `steps()` has already removed.
+
+There is no media query for "the window is hidden", so one listener in the
+layout writes `data-window="hidden"` on the root and the stylesheet pauses every
+loop under it. It is in the layout rather than beside the sprites because
+visibility is a fact about the window: a fleet of twelve agents would otherwise
+register twelve listeners for one document-wide fact, and the count would grow
+with somebody's fleet. What it does **not** claim is a merely unfocused or
+partly covered window — those are still visible, and their fleet still moves,
+because somebody can see it.
+
+### Evidence
+
+`pnpm state:check` valid; `pnpm typecheck` clean; `pnpm brand:check` green
+(3 sheets / 24 frames audited, 3 rendered sizes); `pnpm test` from PowerShell —
+**127 test files / 2573 passed / 10 skipped / 0 failed**, one file new;
+`pnpm build:renderer` and `pnpm build:shell` both green.
+
+`electron/capture-actions.ts` is a new store-seeding harness on
+`electron/capture-glance.ts`'s terms, for a reason of its own: **an agent's
+character is a hash of its name**, so a run against whatever store a machine
+holds photographs whichever costumes that machine happens to wear. It seeds five
+agents whose names were chosen to land on a scene — `budget-digest` (knight),
+`deal-finder` (medic), `ledger-notes` (ninja), `news-scout` (explorer),
+`uptime-sorter` (wizard) — which is also the order `agentsView` sorts them into:
+animated, still, animated, still, animated. Each carries one of MAR-586's five
+answers, so the images show the chips in place rather than only the costume.
+
+**20 packaged-renderer frames** in `qa-screenshots-mar587/` at 1280/768/375 in
+both themes and both densities, plus per theme an all-cards frame, two
+loop-parked frames and one reduced-motion frame. Every frame was checked by the
+harness rather than by eye: 0 overflowed sideways, 0 had the wrong number of
+animated characters, 0 were reordered, 0 lost a glance chip, 0 drew a chip that
+was not a link, and 0 put the costume below the chips.
+
+### A screenshot cannot show motion, so four things were measured instead
+
+Said plainly rather than worked around, and it is why the still frames are only
+half of what the harness writes.
+
+1. **The loop advances on its own.** `background-position` sampled ten times
+   about a quarter-second apart returned seven distinct values stepping
+   `0 → -200 → -600 → -800 → -1000 → -1200 → -1400 → 0` across a 1600px sheet.
+   (Sampling at 230ms against a 225ms step aliases past one frame per cycle;
+   that is the sampler, not the loop.)
+2. **It stops when the window is hidden.** The window was hidden for real and
+   read back: `visible / no attribute / running` → `hidden / data-window=hidden
+   / paused` → `visible / no attribute / running`.
+3. **Reduced motion stills it, from the token layer alone.**
+   `prefers-reduced-motion: reduce` emulated through the DevTools protocol —
+   what Chromium's own rendering path reads — gives `--motion-idle: 0s`,
+   `animation-duration: 0s`, `background-position: 0px 0px`, sprite still drawn.
+4. **The props are in two places in two otherwise identical images.**
+   `fleet-loop-frame0-*` and `fleet-loop-frame4-*` are the same page with the
+   loops parked on two of their **own** frames, through
+   `getAnimations().currentTime` rather than a second animation the harness
+   invented.
+
+### What is not proven, and one defect found in something else
+
+**`pnpm verify:shell` was not run on this machine.** Two capture runs each leave
+a live runner against a scratch store — `electron/capture-glance.ts` documents
+why, and it is unchanged here — and a surviving runner is exactly what makes the
+next `verify:shell` unreliable. CI's Windows `shell-smoke` is this branch's
+installed witness. Nothing in this slice is reachable from a path the smoke does
+not already walk: it is one component branch and one stylesheet rule on a page
+the smoke loads.
+
+**The 375px fleet grid scrolls sideways by 24px, and it is MAR-586's, not
+this.** The harness names what overflows, and at 375 it is
+`ol.row-list.fleet-grid` (24px, `overflow-x: visible`) inside `main` (8px,
+`auto`). The cause is `minmax(19rem, 1fr)`: a fixed 304px track floor against a
+container about 280px wide once the sidebar rail and page padding are taken. It
+is independent of the portrait by construction — a track minimum that is a
+length does not consult its contents — and 200px of sprite fits the 280px that
+is there. It is left rather than fixed because the floor is a recorded MAR-586
+decision with a stated reason, and the one-line encoding that keeps that reason
+while removing the overflow (`minmax(min(19rem, 100%), 1fr)`) belongs to whoever
+owns it.
+
+**Nothing here was seen by a person on a real machine's own data.** The store is
+a scratch directory this run seeded, so the frames are evidence of what the
+fleet draws for a given store and evidence about nobody's actual machine.

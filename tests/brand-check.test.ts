@@ -26,6 +26,7 @@ import {
   auditSheet,
   auditSprite,
   BUNDLED_FONTS,
+  checkActionModule,
   checkActions,
   checkAvatarCss,
   checkBundledFonts,
@@ -122,7 +123,7 @@ describe("violation 1 — an asset that no longer matches the audit record", () 
 
 describe("violation 2 — a rendered size that is not a whole multiple of 50", () => {
   it("accepts the sizes DASH ships", () => {
-    expect(checkSizeApi([50, 100])).toEqual([]);
+    expect(checkSizeApi([50, 100, 200])).toEqual([]);
   });
 
   it.each([63, 25, 75, 0, 50.5])("fails on %s", (size) => {
@@ -136,7 +137,10 @@ describe("violation 2 — a rendered size that is not a whole multiple of 50", (
     const { names, sizes, failures } = readCastModule(source);
     expect(failures).toEqual([]);
     expect(names).toHaveLength(11);
-    expect(sizes).toEqual([50, 100]);
+    // 200 arrived with MAR-587's character-select tile. 150 is a legal whole
+    // multiple and is deliberately absent: a size is in the union because a
+    // surface draws at it.
+    expect(sizes).toEqual([50, 100, 200]);
   });
 
   it("fails loudly rather than silently when the union cannot be parsed", () => {
@@ -615,6 +619,99 @@ describe("violation 7 — an idle action that drifts, or says something (MAR-587
       measured: { [key]: audit },
     });
     expect(failures.some((failure: string) => failure.includes("not in O_NAMES"))).toBe(true);
+  });
+});
+
+describe("violation 8 — an idle action that is decided by something (MAR-587 Phase B)", () => {
+  const fixture = (props: string) => `export function Row() { return <OAvatar ${props} />; }`;
+
+  it("accepts a surface that has simply decided to animate, or not to", () => {
+    expect(checkCostume("app/x.tsx", fixture(`name={agent.avatar} size={200} action`))).toEqual([]);
+    expect(checkCostume("app/x.tsx", fixture(`name={agent.avatar} size={200} action={true}`))).toEqual([]);
+    expect(checkCostume("app/x.tsx", fixture(`name={agent.avatar} size={50} action={false}`))).toEqual([]);
+    // The still, unchanged, is still the common case and must stay silent.
+    expect(checkCostume("app/x.tsx", fixture(`name={agent.avatar} size={50}`))).toEqual([]);
+  });
+
+  it.each([
+    `name={agent.avatar} size={200} action={agent.running}`,
+    `name={agent.avatar} size={200} action={hasNewOutput}`,
+    `name={agent.avatar} size={200} action={motion !== "sleeping"}`,
+    `name={agent.avatar} size={200} action={agent.glance.length > 0}`,
+    // Not a status word between them, which is the point: the rule is exact
+    // rather than a guess at vocabulary, because there is no legitimate
+    // expression here to leave room for.
+    `name={agent.avatar} size={200} action={showIt}`,
+    `name={agent.avatar} size={200} action="yes"`,
+  ])("fails on %s", (props) => {
+    const failures = checkCostume("app/x.tsx", fixture(props));
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain("costume flavour, never status");
+  });
+
+  describe("and the typed view drifting from the audit record", () => {
+    const source = readFileSync(path.join(repoRoot, "lib", "brand", "o-actions.ts"), "utf8");
+    const actions = JSON.parse(
+      readFileSync(path.join(repoRoot, "lib", "brand", "o-actions.json"), "utf8"),
+    ) as { sheets: Record<string, { character: string; action: string; frameCount: number }> };
+    const names = ["ninja", "knight", "wizard"];
+
+    it("passes on the module as it stands", () => {
+      expect(checkActionModule({ source, manifest: actions, names })).toEqual([]);
+    });
+
+    it("reads the three sheets out of the module rather than trusting a copy", () => {
+      // A parser that quietly found nothing would report "no drift" for a file
+      // it had not read — `readCastModule`'s lesson, one module over.
+      expect(checkActionModule({ source, manifest: { sheets: {} }, names }).length).toBe(3);
+    });
+
+    it("fails on a sheet that is audited and unreachable", () => {
+      // The quiet one. The pixels are perfect, the manifest is perfect, and the
+      // character simply never animates with nothing anywhere saying why.
+      const failures = checkActionModule({
+        source,
+        manifest: { sheets: { ...actions.sheets, "chef-pan-flip": { character: "chef", action: "pan-flip", frameCount: 8 } } },
+        names: [...names, "chef"],
+      });
+      expect(failures.some((failure: string) => failure.includes("no surface can reach it"))).toBe(true);
+    });
+
+    it("fails on a module entry for a sheet that was never vendored", () => {
+      const invented = source.replace(
+        '{ key: "wizard-fireball", character: "wizard", action: "fireball" },',
+        '{ key: "wizard-fireball", character: "wizard", action: "fireball" },\n  { key: "king-crown-polish", character: "king", action: "crown-polish" },',
+      );
+      const failures = checkActionModule({ source: invented, manifest: actions, names: [...names, "king"] });
+      expect(failures.some((failure: string) => failure.includes("nothing has audited"))).toBe(true);
+    });
+
+    it("fails when the module and the manifest disagree about who wears it", () => {
+      const swapped = source.replace(
+        '{ key: "wizard-fireball", character: "wizard", action: "fireball" }',
+        '{ key: "wizard-fireball", character: "knight", action: "fireball" }',
+      );
+      const failures = checkActionModule({ source: swapped, manifest: actions, names });
+      expect(failures.some((failure: string) => failure.includes("the wrong character would wear it"))).toBe(true);
+    });
+
+    it("fails when the frame count the renderer steps by is not the sheet's", () => {
+      // `steps(--o-frames)` walks the sheet by this number, so a six here plays
+      // three quarters of every loop and a ten runs off the end into blank.
+      const miscounted = source.replace("O_ACTION_FRAMES = 8", "O_ACTION_FRAMES = 6");
+      const failures = checkActionModule({ source: miscounted, manifest: actions, names });
+      expect(failures.length).toBe(3);
+      expect(failures[0]).toContain("run off the end");
+    });
+
+    it("fails when a character is given two actions", () => {
+      const doubled = source.replace(
+        '{ key: "wizard-fireball", character: "wizard", action: "fireball" },',
+        '{ key: "wizard-fireball", character: "wizard", action: "fireball" },\n  { key: "ninja-shuriken-toss", character: "ninja", action: "shuriken-toss" },',
+      );
+      const failures = checkActionModule({ source: doubled, manifest: actions, names });
+      expect(failures.some((failure: string) => failure.includes("more than one action"))).toBe(true);
+    });
   });
 });
 
