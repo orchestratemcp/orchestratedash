@@ -51,6 +51,17 @@ export const SURFACES: readonly Surface[] = [
    * server is what a person rents.
    */
   { href: "/hosts", label: "Servers" },
+  /*
+   * MAR-588. A seventh destination, and the first that is about the *person*
+   * rather than about an agent or a machine: it is one channel for the whole
+   * fleet, so there is nothing to choose before you get here.
+   *
+   * "Notifications" rather than "Discord". The surface answers "where does DASH
+   * tell me something needs me", and Discord is today's answer to that question
+   * rather than the question — a label naming the provider would have to be
+   * renamed the first time a second one exists.
+   */
+  { href: "/notifications", label: "Notifications" },
   { href: "/agents/add", label: "Add agent" },
 ];
 

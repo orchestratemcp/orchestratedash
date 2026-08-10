@@ -523,6 +523,83 @@ export const COMMANDS = {
     irreversible: false,
   },
 
+  /*
+   * MAR-588. Where DASH posts when an agent needs somebody, as three commands
+   * and a switch.
+   *
+   * **An eighth family, and the first that is not about an agent.** Every other
+   * command in this catalogue names an agent, a run, a task, a server or a
+   * credential belonging to one of those. This names a channel the *person*
+   * chose, which is a property of them rather than of anything DASH supervises,
+   * and folding it into `connection.*` would have made "which commands touch a
+   * credential an agent asked for" a question with a qualification in the answer.
+   *
+   * The payload rule this file opens with survives intact, and is why
+   * `notify.connect` looks the way it does: **the address is absent from every
+   * payload below and there is no fifth command that would carry one.** It is
+   * typed into the window `electron/credential-prompt.ts` owns — the same window
+   * an API key goes into, reached by the same route, reviewed once — so this
+   * command asks main to *ask*, exactly as `connection.connect` does.
+   */
+  "notify.connect": {
+    effect:
+      "Ask for a Discord channel address and store it in this computer's vault, so DASH can post there when an agent needs you.",
+    payload_keys: [],
+    required_keys: [],
+    mutates: true,
+    // Replacing an address loses the old one, which DASH cannot recover — and
+    // nothing happens in the world at the moment it is stored. The same call
+    // `connection.connect` makes about the same shape of act.
+    irreversible: false,
+  },
+  "notify.disconnect": {
+    effect:
+      "Delete the Discord channel address from this computer's vault and stop posting. Messages already sent stay in Discord.",
+    payload_keys: [],
+    required_keys: [],
+    mutates: true,
+    irreversible: false,
+  },
+  /*
+   * `mutates` is true and the honest reason is the second half of the effect:
+   * this puts a message in somebody's Discord channel, which is a thing in the
+   * world DASH cannot take back.
+   *
+   * `irreversible` is nonetheless **false**, and the distinction is the one this
+   * file draws for `agent.cancel`. The flag is about the second invitation and
+   * the second payment; running this twice puts a second identical test message
+   * in a channel, which is untidy rather than harmful. What makes it safe to
+   * press is what it says — `buildTestMessage` states in the message itself that
+   * nothing has happened to any agent, so somebody who has pointed DASH at the
+   * wrong channel has told that channel nothing about their work.
+   */
+  "notify.test": {
+    effect: "Post one test message to the Discord channel DASH holds, to prove it arrives.",
+    payload_keys: [],
+    required_keys: [],
+    mutates: true,
+    irreversible: false,
+  },
+  /*
+   * The two switches, as one command taking which and whether.
+   *
+   * One rather than four (`notify.approvalsOn`, `notify.approvalsOff`, …)
+   * because the payload rules already constrain it to a declared key and a
+   * boolean, and because the audit line a person reads is more useful naming the
+   * setting than naming a verb. `kind` is checked against the two known values in
+   * main rather than here: this module is pure, and the check belongs with the
+   * write it guards.
+   */
+  "notify.setKind": {
+    effect:
+      "Turn one kind of Discord message on or off. Changes nothing about the agents themselves.",
+    payload_keys: ["kind", "enabled"],
+    payload_types: { kind: "string", enabled: "boolean" },
+    required_keys: ["kind", "enabled"],
+    mutates: true,
+    irreversible: false,
+  },
+
   // MAR-383. Three commands that name a connection and carry no credential.
   //
   // The secret is deliberately absent from every payload below, and there is no
@@ -873,6 +950,28 @@ export function isModelCommandName(value: CommandName): value is ModelCommandNam
   return Object.hasOwn(MODEL_ACTIONS, value);
 }
 
+/**
+ * Where DASH posts when an agent needs somebody (MAR-588).
+ *
+ * A ninth family, on the terms the eighth was created under. A reviewer
+ * asking "what in DASH can send something off this machine on its own?" gets a
+ * complete answer from this one map — which is a question worth being able to
+ * ask, and one no other map in this file answers.
+ */
+export const NOTIFY_ACTIONS = {
+  "notify.connect": "connect",
+  "notify.disconnect": "disconnect",
+  "notify.test": "test",
+  "notify.setKind": "set_kind",
+} as const;
+
+export type NotifyCommandName = keyof typeof NOTIFY_ACTIONS;
+export type NotifyAction = (typeof NOTIFY_ACTIONS)[NotifyCommandName];
+
+export function isNotifyCommandName(value: CommandName): value is NotifyCommandName {
+  return Object.hasOwn(NOTIFY_ACTIONS, value);
+}
+
 export const CONNECTION_ACTIONS = {
   "connection.connect": "connect",
   "connection.test": "test",
@@ -949,6 +1048,7 @@ type UnroutedCommand = Exclude<
   | GlanceCommandName
   | FolderCommandName
   | ModelCommandName
+  | NotifyCommandName
   | "shell.ping"
 >;
 const _allCommandsAreRouted: UnroutedCommand extends never ? true : never = true;
@@ -1229,7 +1329,13 @@ export function executeCommand(review: CommandReview): CommandResult {
     // operating system's vault and reaches a provider over the network. The
     // third is the one that matters most: succeeding here would hand a page an
     // empty list of models as though a provider had answered with none.
-    isModelCommandName(review.command)
+    isModelCommandName(review.command) ||
+    // MAR-588. Two of these open a window or touch the vault, and the third
+    // sends bytes to Discord — none of which a sandboxed preload may do.
+    // `notify.test` matters most: succeeding here would report a message
+    // delivered to a channel nothing contacted, which is precisely the
+    // reassurance that command exists to make checkable.
+    isNotifyCommandName(review.command)
   ) {
     // Not a denial and not a result: a caller that reached here bypassed the
     // trusted side entirely. Throwing is the only honest answer — returning a
@@ -1421,6 +1527,29 @@ export interface FolderActionResult {
   report?: FolderChangeReport;
 }
 
+/**
+ * What one notification command answers with (MAR-588).
+ *
+ * One shape for all four, the same call `FolderActionResult` makes: they fail in
+ * the same ways for the same reasons — no vault, nothing configured, Discord
+ * refused — and a discriminated union would mean four copies of those refusals
+ * for the sake of one optional field.
+ *
+ * `masked_hint` is the only value that comes back and it is a mask by
+ * construction: `recordNotificationWebhook` refuses to store anything that is
+ * not one, so a hint that reached this type is a hint that passed `isMaskedHint`
+ * on the way to the database.
+ */
+export interface NotifyActionResult {
+  ok: boolean;
+  /** A short code, for the same channel a connection or folder refusal uses. */
+  refusal?: string;
+  /** Plain language, safe to render. Never contains the address. */
+  detail?: string;
+  /** `••••` plus four characters, after a connect. Absent otherwise. */
+  masked_hint?: string;
+}
+
 export interface DispatchContext {
   runAgentCommand(input: AgentCommandInput): Promise<AgentCommandResult>;
   /**
@@ -1579,6 +1708,24 @@ export interface DispatchContext {
     action: FolderAction,
     target: { agent_id: string },
   ): Promise<FolderActionResult>;
+  /**
+   * Connect, forget, test or adjust the Discord channel (MAR-588).
+   *
+   * Injected for the reason the seven above are, and here two of them apply at
+   * once: `connect` opens the credential window and touches the OS vault, and
+   * `test` puts bytes on the network. A pure module importable from a sandboxed
+   * preload can do neither, which is exactly why this seam exists.
+   *
+   * **Nothing an address could be assigned to crosses back.** The result carries
+   * whether it worked, a sentence, and — for a surface that has just connected —
+   * the masked hint, which `lib/secret-refs.ts` defines as four characters a
+   * credential cannot be reconstructed from. There is no field for the address,
+   * on the way in or the way out.
+   */
+  notifyAction(
+    action: NotifyAction,
+    target: { kind?: string; enabled?: boolean },
+  ): Promise<NotifyActionResult>;
   /**
    * Where the IPC-level audit record goes.
    *
@@ -1870,6 +2017,34 @@ export async function dispatchCommand(
       reason: result.refusal,
       detail: result.detail,
       folder: result.report,
+    };
+  }
+
+  if (isNotifyCommandName(review.command)) {
+    /*
+     * MAR-588. Three of these take no payload at all, and the fourth takes a
+     * word and a boolean.
+     *
+     * So the widest thing a compromised renderer can do with this family is ask
+     * for the credential window to open, ask DASH to forget a channel it already
+     * holds, post one fixed test message to that same channel, or flip a switch.
+     * It cannot name an address, cannot learn the one DASH holds, and cannot
+     * cause a message about any agent to be sent — those are composed in the
+     * runner from what an agent actually did.
+     */
+    const result = await context.notifyAction(NOTIFY_ACTIONS[review.command], {
+      kind: review.payload["kind"] === undefined ? undefined : String(review.payload["kind"]),
+      enabled: review.payload["enabled"] === undefined ? undefined : review.payload["enabled"] === true,
+    });
+    return {
+      ok: result.ok,
+      request_id: review.audit.request_id,
+      reason: result.refusal,
+      detail: result.detail,
+      // The masked hint is the one value that comes back, and it rides `data`
+      // for the reason that field exists: primitives only, already safe to
+      // render, already safe to log.
+      data: result.masked_hint === undefined ? undefined : { masked_hint: result.masked_hint },
     };
   }
 
