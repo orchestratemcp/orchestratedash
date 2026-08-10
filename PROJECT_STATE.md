@@ -4873,6 +4873,13 @@ half of what the harness writes.
 
 ### What is not proven, and one defect found in something else
 
+**CI is the installed witness and it is green.** PR #114, run `31365995800`
+at `eaa08ce`: both buckets pass, and the Windows `shell-smoke` job's raw log
+carries **85 PASS proof lines and 0 FAIL**. `gh run view --log` truncates that
+job; the raw log fetched through `/actions/jobs/93384367969/logs` is complete —
+the same MAR-575 log-reader truncation, which is why the raw log is what is
+cited. Merged as `4719ea6`.
+
 **`pnpm verify:shell` was not run on this machine.** Two capture runs each leave
 a live runner against a scratch store — `electron/capture-glance.ts` documents
 why, and it is unchanged here — and a surviving runner is exactly what makes the
