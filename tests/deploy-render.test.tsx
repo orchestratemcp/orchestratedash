@@ -167,7 +167,7 @@ describe("somebody with no server", () => {
   });
 
   it("points at the Servers page rather than dead-ending", () => {
-    expect(html).toContain('href="/hosts"');
+    expect(html).toContain('href="/settings/servers"');
     expect(html).toContain("Connect a server");
   });
 });

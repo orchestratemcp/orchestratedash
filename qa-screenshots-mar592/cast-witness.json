@@ -1,0 +1,70 @@
+{
+  "captured_at": "2026-08-10T13:52:18.152Z",
+  "witnesses": [
+    {
+      "name": "reduced-motion/light",
+      "ok": true,
+      "detail": "reduce → --motion-fast: 0s, --motion-normal: 0s; no-preference → 90ms / .16s; 8 avatars and 4 standing under reduce vs 8 / 4 without it"
+    },
+    {
+      "name": "missing-asset/light",
+      "ok": true,
+      "detail": "every sprite fetched and empty: true; boxes unchanged: true ([\"200x200\",\"200x200\",\"200x200\",\"200x200\",\"50x50\",\"50x50\",\"50x50\",\"50x50\"]); main 748→748px, strip 71→71px; 4 controls keeping their names: true"
+    },
+    {
+      "name": "focus-ring/light",
+      "ok": true,
+      "detail": "4 of 4 characters reached by Tab; Open ai-news-scout: 2px solid; Open ai-news-scout-2: 2px solid; Open mar421-approval-proof: 2px solid; Open synthetic-gmail-meeting-assistant: 2px solid"
+    },
+    {
+      "name": "reduced-motion/dark",
+      "ok": true,
+      "detail": "reduce → --motion-fast: 0s, --motion-normal: 0s; no-preference → 90ms / .16s; 8 avatars and 4 standing under reduce vs 8 / 4 without it"
+    },
+    {
+      "name": "missing-asset/dark",
+      "ok": true,
+      "detail": "every sprite fetched and empty: true; boxes unchanged: true ([\"200x200\",\"200x200\",\"200x200\",\"200x200\",\"50x50\",\"50x50\",\"50x50\",\"50x50\"]); main 748→748px, strip 71→71px; 4 controls keeping their names: true"
+    },
+    {
+      "name": "focus-ring/dark",
+      "ok": true,
+      "detail": "4 of 4 characters reached by Tab; Open ai-news-scout: 2px solid; Open ai-news-scout-2: 2px solid; Open mar421-approval-proof: 2px solid; Open synthetic-gmail-meeting-assistant: 2px solid"
+    },
+    {
+      "name": "reduced-motion/workspace-light",
+      "ok": true,
+      "detail": "reduce → --motion-fast: 0s, --motion-normal: 0s; no-preference → 90ms / .16s; 5 avatars and 4 standing under reduce vs 5 / 4 without it"
+    },
+    {
+      "name": "missing-asset/workspace-light",
+      "ok": true,
+      "detail": "every sprite fetched and empty: true; boxes unchanged: true ([\"100x100\",\"50x50\",\"50x50\",\"50x50\",\"50x50\"]); main 748→748px, strip 71→71px; 4 controls keeping their names: true"
+    },
+    {
+      "name": "reduced-motion/workspace-dark",
+      "ok": true,
+      "detail": "reduce → --motion-fast: 0s, --motion-normal: 0s; no-preference → 90ms / .16s; 5 avatars and 4 standing under reduce vs 5 / 4 without it"
+    },
+    {
+      "name": "missing-asset/workspace-dark",
+      "ok": true,
+      "detail": "every sprite fetched and empty: true; boxes unchanged: true ([\"100x100\",\"50x50\",\"50x50\",\"50x50\",\"50x50\"]); main 748→748px, strip 71→71px; 4 controls keeping their names: true"
+    },
+    {
+      "name": "activation",
+      "ok": true,
+      "detail": "Enter on \"ai-news-scout\" (href /agents/detail?agent=ai-news-scout) landed on dash-app://ui/agents/detail?agent=ai-news-scout, showing \"AI News Scout\""
+    },
+    {
+      "name": "strip-off",
+      "ok": true,
+      "detail": "clicked off (stored hidden); after a reload the document says hidden with 0 standing, and the way back is still on screen"
+    },
+    {
+      "name": "overflow-bound",
+      "ok": true,
+      "detail": "at 340px the strip stands 2 and says \"+2\", row scrolls: false. NOTE: this exercises the bound with a 4-agent store, which is NOT MAR-503's \"10+ agents\" clause"
+    }
+  ]
+}

@@ -36,34 +36,108 @@ export interface Surface {
   label: string;
 }
 
+/**
+ * Settings, and the address of its first tab — the same string (MAR-592).
+ *
+ * `/settings` **is** the Connections tab rather than a page that forwards to
+ * one. A static export cannot answer a redirect: forwarding would mean shipping
+ * a page whose whole job is to run a script and navigate away, which on a slow
+ * paint is a blank Settings page, and on the packaged renderer is a blank
+ * Settings page more often than in development. Landing somewhere real is worth
+ * more than four symmetrical URLs.
+ *
+ * Connections is the tab that gets the short address because it is the one a
+ * person arrives for. The acceptance test for this issue is that somebody who
+ * has never used DASH finds where to connect Gmail without being told, and one
+ * press of Settings putting them on the page with Gmail on it is the shortest
+ * true answer to that.
+ */
+export const SETTINGS_ROOT = "/settings";
+
+/**
+ * The sidebar's destinations, and why there are four of them (MAR-592).
+ *
+ * There were seven. Four of those seven were not places you *go* — they were
+ * places you go **once**, to set something up: connect a service, add a channel
+ * address, register a server, add an agent. They sat in the same list, at the
+ * same rank, as the three surfaces a person opens DASH to look at, and the list
+ * grew by one every time a setup step was built. MAR-498 and MAR-588 each said
+ * so in their own comment here — *"a sixth destination"*, *"a seventh"* — which
+ * is the shape of a nav that has no rule about what belongs in it.
+ *
+ * The rule is now: **the sidebar is what you watch, Settings is what you
+ * arrange.** Agents, Work inbox and Runs answer "what are my agents doing, what
+ * needs me, what happened". Everything that answers "set this up once" is a tab
+ * on one page, and that page is a single sidebar row.
+ *
+ * This is a move, not a redesign. Every one of the four surfaces renders the
+ * same component tree it rendered before, at a new address. See
+ * `SETTINGS_TABS`.
+ */
 export const SURFACES: readonly Surface[] = [
   { href: "/", label: "Agents" },
   { href: "/work", label: "Work inbox" },
   { href: "/runs", label: "Runs" },
-  { href: "/connections", label: "Connections" },
-  /*
-   * MAR-498. A sixth destination, and the nav can take it: since MAR-546 the
-   * nav is a vertical sidebar, so a new destination costs a row rather than
-   * width, and no window is narrow enough to hide one. (MAR-491's wrap-not-
-   * scroll rule did this job for the horizontal nav while it existed.)
-   *
-   * "Servers" rather than "Hosts": a host is what the record is called and a
-   * server is what a person rents.
-   */
-  { href: "/hosts", label: "Servers" },
-  /*
-   * MAR-588. A seventh destination, and the first that is about the *person*
-   * rather than about an agent or a machine: it is one channel for the whole
-   * fleet, so there is nothing to choose before you get here.
-   *
-   * "Notifications" rather than "Discord". The surface answers "where does DASH
-   * tell me something needs me", and Discord is today's answer to that question
-   * rather than the question — a label naming the provider would have to be
-   * renamed the first time a second one exists.
-   */
-  { href: "/notifications", label: "Notifications" },
-  { href: "/agents/add", label: "Add agent" },
+  { href: SETTINGS_ROOT, label: "Settings" },
 ];
+
+/**
+ * Settings' tabs — four real routes, not four states of one page (MAR-592).
+ *
+ * Each of these is a page in the static export with its own address, and that
+ * is a requirement rather than an implementation detail. Three things depend on
+ * it:
+ *
+ * 1. **Deep links.** `lib/open-link.ts` names a surface and asks for it to be
+ *    shown; MAR-588 sends those links to a Discord channel. A tab held in React
+ *    state is not a surface anything outside the renderer can name.
+ * 2. **The capture harnesses.** `electron/capture.ts` and its three siblings
+ *    photograph a *route*. Tabs behind a click would be tabs photographed by a
+ *    harness that had to learn to click, and — see MAR-577's density note — a
+ *    harness that clicks is a harness that can mislabel half its images.
+ * 3. **Every link already pointing at these surfaces.** A chip on the fleet
+ *    page saying an agent is not connected has to be able to arrive *at
+ *    Connections*, not at Settings-with-luck.
+ *
+ * The labels are unchanged from the sidebar rows they replace, including
+ * "Servers" over `/settings/servers` — MAR-498's reason still holds, that a
+ * host is what the record is called and a server is what a person rents.
+ */
+export const SETTINGS_TABS: readonly Surface[] = [
+  { href: SETTINGS_ROOT, label: "Connections" },
+  { href: "/settings/notifications", label: "Notifications" },
+  { href: "/settings/servers", label: "Servers" },
+  { href: "/settings/add-agent", label: "Add agent" },
+];
+
+/** Whether a path is inside Settings at all — the tab strip's own gate. */
+export function isSettingsRoute(pathname: string): boolean {
+  return pathname === SETTINGS_ROOT || pathname.startsWith(`${SETTINGS_ROOT}/`);
+}
+
+/**
+ * The tab a path belongs to.
+ *
+ * Longest matching prefix, with `SETTINGS_ROOT` exact-only for the reason `/`
+ * is exact-only in `surfaceFor` below: it prefixes every other tab, so a
+ * prefix rule would make Connections the answer on all four.
+ */
+export function settingsTabFor(pathname: string): Surface {
+  const index = SETTINGS_TABS[0] as Surface;
+  let best = index;
+  for (const tab of SETTINGS_TABS) {
+    if (tab.href === SETTINGS_ROOT) {
+      continue;
+    }
+    if (
+      (pathname === tab.href || pathname.startsWith(`${tab.href}/`)) &&
+      tab.href.length > best.href.length
+    ) {
+      best = tab;
+    }
+  }
+  return best;
+}
 
 /**
  * The surface a path belongs to.

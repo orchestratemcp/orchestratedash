@@ -6,10 +6,13 @@ import type { ReactNode } from "react";
  * Drawn here as inline SVG rects on a 12×12 grid rather than vendored as PNGs,
  * and the difference from the O's is the point: the cast is *artwork*, audited
  * byte-for-byte against orchestrateweb's manifest, while these are *glyphs* —
- * six shapes whose whole job is to survive `currentColor` so the active link
- * can paint its icon in `--accent-contrast` and a hover can paint it in
- * `--text`. A PNG cannot change colour, and six PNGs per theme per state is a
- * sprite sheet nobody audits.
+ * shapes whose whole job is to survive `currentColor` so the active link can
+ * paint its icon in `--accent-contrast` and a hover can paint it in `--text`.
+ * A PNG cannot change colour, and one PNG per destination per theme per state
+ * is a sprite sheet nobody audits.
+ *
+ * There were seven and there are four (MAR-592): the four setup destinations
+ * became tabs on Settings, which is one row with one glyph.
  *
  * `shape-rendering="crispEdges"` is `image-rendering: pixelated` for vector
  * squares: every rect sits on whole grid units, so the glyphs scale exactly the
@@ -46,28 +49,24 @@ const GLYPHS: Readonly<Record<string, readonly Px[]>> = {
     [7, 4, 2, 4],
     [9, 5, 1, 2],
   ],
-  /* Two ends and the bridge between them. */
-  "/connections": [
-    [1, 4, 4, 4],
-    [7, 4, 4, 4],
-    [5, 5, 2, 2],
-  ],
-  /* A rack of two units. */
-  "/hosts": [
-    [1, 2, 10, 3],
-    [1, 7, 10, 3],
-  ],
-  /* A bell: body, shoulders, and the clapper under it (MAR-588). */
-  "/notifications": [
-    [5, 1, 2, 1],
-    [3, 2, 6, 5],
-    [2, 7, 8, 2],
-    [5, 10, 2, 1],
-  ],
-  /* Plus. */
-  "/agents/add": [
-    [5, 2, 2, 8],
-    [2, 5, 8, 2],
+  /*
+   * A gear: a square ring and four teeth (MAR-592).
+   *
+   * It replaces four glyphs — the bridge, the rack, the bell and the plus —
+   * because it replaces four sidebar rows. The ring is drawn as four bars
+   * rather than one block so the hole in the middle is real: these are filled
+   * rects with no stroke and no even-odd fill, so a "hollow" shape is one that
+   * was never drawn over.
+   */
+  "/settings": [
+    [5, 1, 2, 2],
+    [5, 9, 2, 2],
+    [1, 5, 2, 2],
+    [9, 5, 2, 2],
+    [3, 3, 6, 2],
+    [3, 7, 6, 2],
+    [3, 5, 2, 2],
+    [7, 5, 2, 2],
   ],
 };
 

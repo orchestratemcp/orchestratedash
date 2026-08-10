@@ -122,7 +122,7 @@ export function ConnectorList({
       <div className="empty">
         <p>No agent here has asked to reach anything outside this computer.</p>
         <p>
-          <a href="/agents/add">Add an agent</a> to see what it would need.
+          <a href="/settings/add-agent">Add an agent</a> to see what it would need.
         </p>
       </div>
     );

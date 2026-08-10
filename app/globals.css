@@ -655,6 +655,77 @@ h1 {
 }
 
 /*
+ * A page's own entrances, under its lede (MAR-592).
+ *
+ * `.button-row` already exists and is not this: it is `justify-content:
+ * flex-end` and belongs at the *bottom* of a form, where the thing you press
+ * after reading goes. This is the top of a page, where the thing you came to do
+ * goes, so it reads from the left with the heading above it.
+ */
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-5);
+}
+
+/* ---------------------------------------------------------------------- *
+ * Settings' tab strip (MAR-592)
+ *
+ * Four surfaces that used to be four sidebar rows. The sidebar draws its own
+ * active row as a **solid block** of electric blue; these deliberately do not,
+ * and the reason is that both are on screen at once. Standing on Connections,
+ * the sidebar's Settings row is already a filled blue block — a second filled
+ * blue block directly beside it would put two equal-weight claims on the screen
+ * and leave the eye to work out which is the finer grain. So the tab is the
+ * quieter idiom: accent text over a 2px accent rule, which is a tab everywhere
+ * and outranks nothing.
+ *
+ * **Wraps, never scrolls.** MAR-491 measured what a horizontal row of links
+ * does in a 375px window and the answer was a page 1425px wide; the rule that
+ * came out of it governed the old horizontal nav until MAR-546 made the nav
+ * vertical, and this is the first horizontal row of destinations since. Four
+ * uppercase labels do not fit across a phone-width window and are not asked to:
+ * they take a second line, and every tab stays visible and pressable at every
+ * width DASH is photographed at.
+ * ---------------------------------------------------------------------- */
+.settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-4);
+  border-bottom: 1px solid var(--line);
+  margin: 0 0 var(--space-5);
+}
+
+.settings-tab {
+  padding: var(--space-2) 0;
+  border-bottom: 2px solid transparent;
+  /* Pulls the tab's own rule down over the strip's, so an active tab is one
+     2px line rather than a 2px line stacked on the 1px it sits above. */
+  margin-bottom: -1px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  /* Colour only, like every other control here: nothing moves under a pointer
+     already on its way to it. */
+  transition: color var(--motion-fast) linear, border-color var(--motion-fast) linear;
+}
+
+.settings-tab:hover {
+  border-bottom-color: var(--line-strong);
+  color: var(--text);
+}
+
+.settings-tab.is-active {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+
+/*
  * Every list of records is a card list, never a table (MAR-491).
  *
  * A table's columns are a fixed width DASH does not control the content of —
