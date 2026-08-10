@@ -16,6 +16,8 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { OAvatar } from "../app/_components/o-avatar";
+import { O_ACTION_FRAMES, O_ACTIONS, actionFor } from "../lib/brand/o-actions";
+import { O_NAMES } from "../lib/brand/o-cast";
 
 describe("OAvatar", () => {
   it("draws the vendored 1x file at its intrinsic size", () => {
@@ -27,7 +29,7 @@ describe("OAvatar", () => {
     expect(html).toContain('height="50"');
   });
 
-  it.each([50, 100] as const)("renders at %spx through the size custom property", (size) => {
+  it.each([50, 100, 200] as const)("renders at %spx through the size custom property", (size) => {
     const html = renderToStaticMarkup(<OAvatar name="ninja" size={size} />);
     expect(html).toContain(`--o-size:${size}px`);
     // The class is what `app/globals.css` hangs `image-rendering: pixelated` and
@@ -58,5 +60,74 @@ describe("OAvatar", () => {
     // install over its own scheme, where deferring a 700-byte read buys nothing
     // and can cost a frame. An explicit loading attribute here would be the bug.
     expect(renderToStaticMarkup(<OAvatar name="king" size={50} />)).not.toContain("loading=");
+  });
+});
+
+/**
+ * The idle actions (MAR-587 Phase B).
+ *
+ * A screenshot cannot show motion, which is the whole reason these cases exist:
+ * everything about the loop that can be wrong without a browser — which file,
+ * how many frames, what happens to the eight characters that have no sheet — is
+ * settled here, and the capture matrix is left with the question it is actually
+ * good at.
+ */
+describe("OAvatar, animated", () => {
+  it("paints the vendored sheet, one frame wide, when a surface asks for it", () => {
+    const html = renderToStaticMarkup(<OAvatar name="ninja" size={200} action />);
+    expect(html).toContain("--o-action:url(/o/actions/ninja-shuriken-toss.png)");
+    // The frame count travels from the manifest rather than being written into
+    // the stylesheet, so `background-size` and `steps()` cannot drift from the
+    // pixels `pnpm brand:check` audits.
+    expect(html).toContain(`--o-frames:${String(O_ACTION_FRAMES)}`);
+    expect(html).toContain("--o-size:200px");
+    expect(html).toContain('class="o-avatar is-action"');
+  });
+
+  it("draws the still, exactly as before, for a character with no sheet", () => {
+    // Eight of eleven today. No stand-in loop and no substitute character:
+    // "does this O move?" must never become a fact about the agent, and it
+    // would be one the moment DASH invented motion for the ones it lacks.
+    const asked = renderToStaticMarkup(<OAvatar name="chef" size={200} action />);
+    const plain = renderToStaticMarkup(<OAvatar name="chef" size={200} />);
+    expect(asked).toBe(plain);
+    expect(asked).toContain('src="/o/1x/chef.png"');
+    expect(asked).not.toContain("is-action");
+  });
+
+  it("is still by default, on every surface that has not asked", () => {
+    for (const name of O_NAMES) {
+      expect(renderToStaticMarkup(<OAvatar name={name} size={50} />)).not.toContain("is-action");
+    }
+  });
+
+  it("stays silent, and takes a name only where one is passed", () => {
+    const quiet = renderToStaticMarkup(<OAvatar name="wizard" size={200} action />);
+    expect(quiet).toContain('aria-hidden="true"');
+    expect(quiet).not.toContain("role=");
+
+    // A background image has no alt, so an announced one has to carry the name
+    // on the element itself rather than inherit it from the markup.
+    const named = renderToStaticMarkup(<OAvatar name="wizard" size={200} action label="Wizard" />);
+    expect(named).toContain('role="img"');
+    expect(named).toContain('aria-label="Wizard"');
+    expect(named).not.toContain("aria-hidden");
+  });
+
+  it("keeps a caller's class beside its own", () => {
+    expect(renderToStaticMarkup(<OAvatar name="knight" size={200} action className="x" />)).toContain(
+      'class="o-avatar x is-action"',
+    );
+  });
+
+  it("takes the character and nothing else", () => {
+    // The strongest guarantee this feature has, and it is structural rather
+    // than a promise: the loop is a function of the costume alone, so there is
+    // no argument a status could arrive through even if a caller wanted one.
+    for (const name of O_NAMES) {
+      const action = actionFor(name);
+      expect(action === null || action.character === name).toBe(true);
+    }
+    expect(O_ACTIONS.map((action) => action.character)).toEqual(["ninja", "knight", "wizard"]);
   });
 });

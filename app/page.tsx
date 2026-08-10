@@ -143,15 +143,23 @@ export default function AgentsPage(): ReactNode {
                   position the concept gives a portrait, and nowhere near the
                   compliance chips.
 
-                  `size={100}` is the portrait size the agent page already draws.
-                  `lib/brand/o-cast.ts` allows exactly two sizes and nothing
-                  between them, because `image-rendering: pixelated` upscales by
-                  nearest neighbour and a "slightly bigger" sprite lands source
-                  pixels unevenly — so a bigger avatar here means the other
-                  whole multiple, not a chosen number.
+                  MAR-587, and Henrik's second pass at the same sentence: "it
+                  would also be cool if we could animate the Os and make them
+                  big… to make the fleet look more like a game and character
+                  selection." So the tile is the card's hero at `size={200}` —
+                  4× the 50px source, a whole multiple, because
+                  `image-rendering: pixelated` upscales by nearest neighbour and
+                  a "slightly bigger" sprite lands source pixels unevenly.
+
+                  `action` draws the character's vendored idle loop where one
+                  exists — three of eleven today. It is a literal rather than an
+                  expression, and `scripts/brand-rules.mjs` fails anything else:
+                  whether this surface animates is a decision about the surface,
+                  never a fact about the agent. Everything the fleet actually
+                  *knows* is in the chips below, in words.
                 */}
                 <div className="fleet-portrait">
-                  <OAvatar name={agent.avatar} size={100} />
+                  <OAvatar name={agent.avatar} size={200} action />
                 </div>
                 <p className="muted wrap">{agent.goal}</p>
                 {/*
