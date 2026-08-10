@@ -108,17 +108,28 @@ wrong, which is exactly what MAR-498 shipped once.
                that runs agents."
   ```
 
-  **The runner's SQLite store on this machine is damaged, and it was damaged
-  before this run.** The fleet screenshot captured earlier in the session —
-  `qa-screenshots-mar592/agents-1280-light-comfortable.png` — already shows
-  DASH's own "The part of DASH that runs your agents cannot read its own
-  records" notice and its **Set records aside** recovery button. So the store
-  damage is a fact the capture harness photographed before `verify:shell` was
-  ever invoked, rather than something this run produced.
+  **The runner's SQLite store on this machine is malformed.** What is certain:
+  nothing in this branch touches the runner, the store, any migration or any
+  command path — the diff is renderer routes, CSS and harness route strings —
+  and the damage was already on screen *before* `verify:shell` ran, because the
+  fleet screenshot captured earlier in the session
+  (`qa-screenshots-mar592/agents-1280-light-comfortable.png`) shows DASH's own
+  "The part of DASH that runs your agents cannot read its own records" notice
+  and its **Set records aside** button.
 
-  Two further reasons this local run is not a witness either way: Electron
-  instances from the main checkout were live throughout (AGENTS.md forbids
-  force-killing them), and the smoke needs the machine to itself.
+  **What this session cannot establish is that the damage predates the
+  session.** An `orchestratedash` runner was already live when the session
+  began, and running `electron/capture.ts` against the *real* store started a
+  second runner beside it — two runner processes on one SQLite file is a
+  plausible mechanism, and the store's `runner.sqlite` was last written during
+  this session's window. An earlier malformed `runner.sqlite` on this machine
+  was retired on 2026-08-06, so this is the second occurrence rather than a
+  novel one. I did not check the store's health before starting, so I cannot
+  date it, and saying "pre-existing" would be claiming more than I measured.
+
+  Either way it is not evidence about this change. Electron instances from the
+  main checkout were live throughout as well (AGENTS.md forbids force-killing
+  them), and the smoke needs the machine to itself.
 
   **CI's Windows `shell-smoke` is this branch's installed witness.** No smoke
   proof visits these routes, so it witnesses that the change breaks nothing

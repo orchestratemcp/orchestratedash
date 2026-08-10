@@ -5545,14 +5545,26 @@ establish that one press of Settings lands on a page with Gmail on it. They do
 not establish that a stranger presses Settings.
 
 `pnpm verify:shell` **ran and did not reach a verdict** — 40 PASS, 4 FAIL, then a
-`TypeError` in cleanup. All four failures are one pre-existing condition on this
-machine rather than anything on this branch: proof 4b reports
+`TypeError` in cleanup. All four failures are one condition: proof 4b reports
 `store_damaged: true`, and 6b-m2, 6b-m3 and 6c all report `database disk image is
-malformed` from the runner's own SQLite store. It was already damaged **before**
-the run, and this branch's own evidence says so —
-`qa-screenshots-mar592/agents-1280-light-comfortable.png` was captured earlier in
-the session and already shows DASH's "The part of DASH that runs your agents
-cannot read its own records" notice and its **Set records aside** button.
+malformed` from the runner's own SQLite store.
+
+Nothing in this branch touches the runner, the store, any migration or any
+command path, and the damage was on screen **before** `verify:shell` ran —
+`qa-screenshots-mar592/agents-1280-light-comfortable.png`, captured earlier in
+the session, already shows DASH's "The part of DASH that runs your agents cannot
+read its own records" notice and its **Set records aside** button.
+
+**What this session cannot establish is that the damage predates the session.**
+An `orchestratedash` runner was already live when it began, and running
+`electron/capture.ts` against the *real* store started a second runner beside it;
+two runner processes on one SQLite file is a plausible mechanism, and
+`runner.sqlite` was last written inside this session's window. An earlier
+malformed `runner.sqlite` on this machine was retired on 2026-08-06, so this is
+the second occurrence rather than a novel one. The store's health was not checked
+before starting, so calling it pre-existing would be claiming more than was
+measured.
+
 Electron instances from the main checkout were live throughout as well, which the
 smoke does not tolerate. CI's Windows `shell-smoke` is this branch's installed
 witness.
