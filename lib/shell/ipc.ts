@@ -174,7 +174,7 @@ export const COMMANDS = {
   },
   "runner.remove": {
     effect:
-      "Stop an agent DASH added and delete DASH's registration for it. The agent's own folder is untouched.",
+      "Stop an agent DASH added, and delete DASH's registration, manifest copy and its own copy of the agent's files. The agent's original project on disk is never touched.",
     payload_keys: ["agent_id"],
     required_keys: ["agent_id"],
     mutates: true,
@@ -183,6 +183,20 @@ export const COMMANDS = {
     // which is one command. What *is* deleted is DASH's own record, and
     // `removeRegistration` refuses to touch a registration DASH did not create,
     // so the blast radius is bounded by ownership rather than by this flag.
+    irreversible: false,
+  },
+  /*
+   * MAR-595 finding 18. The other of DASH's two removal actions, added
+   * alongside `runner.remove` rather than as a boolean on it — a payload flag
+   * would let a caller silence which of two behaviours with very different
+   * blast radii it was asking for; two names cannot be silenced by accident.
+   */
+  "runner.removeKeepFiles": {
+    effect:
+      "Stop an agent DASH added and delete DASH's registration for it, but keep DASH's own copy of the agent's files.",
+    payload_keys: ["agent_id"],
+    required_keys: ["agent_id"],
+    mutates: true,
     irreversible: false,
   },
   /*
@@ -850,6 +864,9 @@ export const RUNNER_LIFECYCLE = {
   // launched — and giving it a fourth command family would buy nothing but a
   // fourth place to forget the audit record.
   "runner.remove": "remove",
+  // MAR-595 finding 18. Same reasoning as `runner.remove` immediately above —
+  // shell-only sequence, handled in `electron/main.ts`'s `runnerLifecycle`.
+  "runner.removeKeepFiles": "removeKeepFiles",
   // MAR-518. A store-level repair, not a per-agent one — see the `COMMANDS`
   // entry for why it carries no `agent_id`.
   "runner.retireStore": "retireStore",

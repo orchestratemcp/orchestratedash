@@ -490,6 +490,20 @@ const dashShell = {
   runnerStatus: () => send("runner.status", {}),
   retireRunnerStore: () => send("runner.retireStore", {}),
 
+  /**
+   * DASH's two removal actions (MAR-595 finding 18).
+   *
+   * `removeAgent` also deletes DASH's own copy of the agent's files;
+   * `removeAgentKeepFiles` stops the agent and forgets it but leaves that copy
+   * where it is. Two named methods rather than one taking a boolean, for the
+   * reason every other group on this object is named methods rather than a
+   * generic `command(name, payload)`: page script should not be one flag away
+   * from a much larger blast radius than the button it clicked promised.
+   */
+  removeAgent: (args: { agent_id: string }) => send("runner.remove", { ...args }),
+  removeAgentKeepFiles: (args: { agent_id: string }) =>
+    send("runner.removeKeepFiles", { ...args }),
+
   approve: (args: AgentCommandArgs) => send("agent.approve", fields(args, APPROVAL_FIELDS)),
   reject: (args: AgentCommandArgs) => send("agent.reject", fields(args, APPROVAL_FIELDS)),
   choose: (args: AgentCommandArgs) => send("agent.choose", fields(args, CHOICE_FIELDS)),

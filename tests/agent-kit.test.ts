@@ -345,6 +345,22 @@ describe("the scaffold", () => {
     expect(readFileSync(path.join(directory, ".gitignore"), "utf8")).toContain(HANDOFF_FILE_NAME);
   });
 
+  it("does not promise the README's own re-run advice always applies (MAR-595 finding 15)", () => {
+    // `npm run open-in-dash` on a changed manifest fails honestly now when the
+    // agent is still running — DASH cannot replace files a live copy has
+    // open — instead of the old generic "could not finish copying" message.
+    // The README must say so rather than promising a confirm dialog that a
+    // running agent will not actually get.
+    const directory = scaffold();
+    const readme = readFileSync(path.join(directory, "README.md"), "utf8");
+
+    expect(readme).toMatch(/stopped first/);
+    expect(readme).toMatch(/cannot replace files a running copy still has\s+open/);
+    // The unqualified claim finding 15 flagged: "DASH will ask you to confirm
+    // the change" with no mention of the agent needing to be stopped first.
+    expect(readme).not.toContain("DASH will ask you to confirm the change rather than applying it quietly.");
+  });
+
   it("refuses a name that could not be a file name", () => {
     expect(
       planScaffold(
@@ -466,6 +482,53 @@ describe("open-in-dash", () => {
     const result = writeHandoff(temporary("not-an-agent-"), "0.1.1");
     expect(result).toMatchObject({ ok: false });
     expect(result.ok ? "" : result.problem).toMatch(/no agent here/i);
+  });
+
+  /*
+   * MAR-595 finding 9. The scaffold's own README invites rewriting `agent.mjs`
+   * to stop reading `sources.json` ("Make it yours"), and a person who then
+   * deleted the file they no longer used got "This agent's build is
+   * incomplete… Build it again" — a message that sent them rebuilding
+   * something that was never broken.
+   */
+  describe("a scaffold file the agent no longer uses", () => {
+    it("still produces a handoff when sources.json is gone", () => {
+      const directory = scaffold();
+      rmSync(path.join(directory, "sources.json"));
+
+      const written = writeHandoff(directory, "0.1.1");
+
+      expect(written.ok).toBe(true);
+      expect(written.ok && written.value.handoff.files?.map((file) => file.path)).not.toContain(
+        "sources.json",
+      );
+    });
+
+    it("still produces a handoff when README.md and .gitignore are gone too", () => {
+      const directory = scaffold();
+      rmSync(path.join(directory, "sources.json"));
+      rmSync(path.join(directory, "README.md"));
+      rmSync(path.join(directory, ".gitignore"));
+
+      const written = writeHandoff(directory, "0.1.1");
+
+      expect(written.ok).toBe(true);
+      const paths = written.ok ? written.value.handoff.files?.map((file) => file.path) ?? [] : [];
+      expect(paths).toContain("agent.mjs");
+      expect(paths).not.toContain("sources.json");
+      expect(paths).not.toContain("README.md");
+      expect(paths).not.toContain(".gitignore");
+    });
+
+    it("still refuses honestly when agent.mjs itself is gone", () => {
+      const directory = scaffold();
+      rmSync(path.join(directory, "agent.mjs"));
+
+      const result = writeHandoff(directory, "0.1.1");
+
+      expect(result).toMatchObject({ ok: false });
+      expect(result.ok ? "" : result.problem).toMatch(/build is incomplete/i);
+    });
   });
 });
 

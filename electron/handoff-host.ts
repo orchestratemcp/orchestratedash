@@ -218,7 +218,9 @@ export function handoffPorts(dataDir: string, runner: RunnerHandle | null): Hand
     confirm: askUser,
     importManifest: (manifest, options) => {
       const result = importManifest(manifest, options);
-      return result.ok ? { ok: true } : { ok: false, errors: result.errors };
+      return result.ok
+        ? { ok: true }
+        : { ok: false, errors: result.errors, locked: result.locked };
     },
     forgetAgent,
     recordHandoff,
@@ -338,8 +340,9 @@ export async function openHandoffLink(url: string, ports: HandoffPorts): Promise
 export async function removeAgentWithReport(
   agentId: string,
   ports: HandoffPorts,
+  options: { deleteFiles?: boolean } = {},
 ): Promise<{ ok: boolean; detail: string }> {
-  const report = await removeAgent(agentId, ports);
+  const report = await removeAgent(agentId, ports, options);
   const lines = [
     report.headline,
     ...(report.removed.length > 0

@@ -137,6 +137,7 @@ interface Harness {
   ledger: HandoffRecord[];
   imported: Array<{ manifest: unknown; options: Parameters<HandoffPorts["importManifest"]>[1] }>;
   forgotten: string[];
+  forgottenCalls: Array<{ agentId: string; options: Parameters<HandoffPorts["forgetAgent"]>[1] }>;
   runnerCalls: string[];
   answer: boolean;
   now: Date;
@@ -154,6 +155,7 @@ function harness(
     ledger: [],
     imported: [],
     forgotten: [],
+    forgottenCalls: [],
     runnerCalls: [],
     answer: options.answer ?? true,
     now: new Date("2026-07-28T12:00:00.000Z"),
@@ -190,8 +192,9 @@ function harness(
       state.imported.push({ manifest, options });
       return { ok: true };
     },
-    forgetAgent: (agentId) => {
+    forgetAgent: (agentId, forgetOptions) => {
       state.forgotten.push(agentId);
+      state.forgottenCalls.push({ agentId, options: forgetOptions });
       return { existed: true };
     },
     recordHandoff: (record) => {
@@ -637,6 +640,44 @@ describe("refusing a handoff", () => {
     // Untouched: still the four-field file somebody wrote.
     expect(readRegistration(context.dataDir, AGENT_ID)?.dash.owner).toBe("external");
   });
+
+  /*
+   * MAR-595 finding 15. Both of these happen *after* consent — the store
+   * only discovers it cannot write the folder once it tries — so
+   * `assertNothingHappened` above does not apply: the user was already
+   * asked, and `context.imported` legitimately has one entry.
+   */
+  it("tells the user to stop the agent when the folder write fails because it is running", async () => {
+    context.ports.importManifest = () => ({
+      ok: false,
+      errors: ["DASH could not replace the agent's folder because it is running."],
+      locked: true,
+    });
+    const project = makeProject();
+
+    const report = await openHandoff(project.url, context.ports);
+
+    expect(report).toMatchObject({ ok: false, outcome: "refused" });
+    expect(report.headline).toMatch(/because it is running/);
+    expect(report.detail).toMatch(/^Stop the agent/);
+    // The old, misdiagnosing copy must not survive beside the new one.
+    expect(report.detail).not.toMatch(/Build the agent again/);
+  });
+
+  it("blames a bad build, not the running agent, for every other import failure", async () => {
+    context.ports.importManifest = () => ({
+      ok: false,
+      errors: ["DASH could not finish writing the agent folder."],
+    });
+    const project = makeProject();
+
+    const report = await openHandoff(project.url, context.ports);
+
+    expect(report).toMatchObject({ ok: false, outcome: "refused" });
+    expect(report.headline).toContain("could not finish copying");
+    expect(report.detail).toMatch(/Build the agent again/);
+    expect(report.detail).not.toMatch(/stop the agent/i);
+  });
 });
 
 /* ---------------------------------------------------------------------- *
@@ -725,5 +766,68 @@ describe("removing an agent", () => {
     expect(report.ok).toBe(false);
     expect(existsSync(registrationPath(context.dataDir, "hand-made"))).toBe(true);
     expect(context.forgotten).toEqual([]);
+  });
+
+  /* MAR-595 finding 18. Both of DASH's removal actions run through this same
+   * function; only `deleteFiles` differs. */
+  describe("with deleteFiles: false — remove from DASH, keep files", () => {
+    it("still stops the agent, deletes the registration and reloads, exactly like the default", async () => {
+      const project = makeProject();
+      await openHandoff(project.url, context.ports);
+      context.runnerCalls.length = 0;
+
+      const report = await removeAgent(AGENT_ID, context.ports, { deleteFiles: false });
+
+      expect(report.ok).toBe(true);
+      expect(context.runnerCalls).toEqual([`stop:${AGENT_ID}`, "reload"]);
+      expect(existsSync(registrationPath(context.dataDir, AGENT_ID))).toBe(false);
+    });
+
+    it("tells forgetAgent to keep the folder", async () => {
+      const project = makeProject();
+      await openHandoff(project.url, context.ports);
+
+      await removeAgent(AGENT_ID, context.ports, { deleteFiles: false });
+
+      expect(context.forgottenCalls).toContainEqual({
+        agentId: AGENT_ID,
+        options: { deleteFolder: false },
+      });
+    });
+
+    it("says the files are kept, and where, rather than that they were deleted", async () => {
+      const project = makeProject();
+      await openHandoff(project.url, context.ports);
+
+      const report = await removeAgent(AGENT_ID, context.ports, { deleteFiles: false });
+
+      expect(report.headline).toMatch(/files are still on this computer/);
+      expect(report.left_alone.join(" ")).toContain(context.dataDir);
+      expect(report.removed.join(" ")).not.toMatch(/code and what it wrote/);
+    });
+  });
+
+  describe("with deleteFiles: true (the default) — remove and delete all files", () => {
+    it("tells forgetAgent to delete the folder", async () => {
+      const project = makeProject();
+      await openHandoff(project.url, context.ports);
+
+      await removeAgent(AGENT_ID, context.ports);
+
+      expect(context.forgottenCalls).toContainEqual({
+        agentId: AGENT_ID,
+        options: { deleteFolder: true },
+      });
+    });
+
+    it("says the files were deleted", async () => {
+      const project = makeProject();
+      await openHandoff(project.url, context.ports);
+
+      const report = await removeAgent(AGENT_ID, context.ports);
+
+      expect(report.headline).toMatch(/its files have been removed/);
+      expect(report.removed.join(" ")).toMatch(/code and what it wrote/);
+    });
   });
 });

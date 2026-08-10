@@ -36,6 +36,7 @@ import {
   handoffUrl,
   type AgentHandoff,
 } from "../lib/handoff";
+import { humanizeAgentName } from "../lib/copy/agent-name";
 
 export interface HandoffWriteResult {
   file: string;
@@ -50,15 +51,26 @@ export interface HandoffWriteResult {
  * never scoop up `.env`, `node_modules`, reports, or any other file merely
  * because it happens to be beside the agent. The Agent Kit knows which files it
  * authored, and those are the files the user is asked to let DASH copy.
+ *
+ * `required` (MAR-595 finding 9) is the fix for a real report: the README's
+ * own "Make it yours" section invites rewriting `agent.mjs` to stop reading
+ * `sources.json`, and a person who then deleted the file they no longer used
+ * got "This agent's build is incomplete… Build it again" — which nothing was
+ * going to fix, because nothing was broken. `sources.json`, `README.md` and
+ * `.gitignore` are convenience scaffolding an agent may outgrow; a missing one
+ * means this agent does not use it, not that the build failed. The program
+ * itself — the manifest, the package, the agent, and the very script running
+ * this check — has no such reading: losing one of those is a real incomplete
+ * build, and `writeHandoff` below still refuses for exactly that reason.
  */
 const AGENT_KIT_PROJECT_FILES = [
-  "agent.manifest.json",
-  "package.json",
-  "agent.mjs",
-  "scripts/open-in-dash.mjs",
-  "sources.json",
-  "README.md",
-  ".gitignore",
+  { path: "agent.manifest.json", required: true },
+  { path: "package.json", required: true },
+  { path: "agent.mjs", required: true },
+  { path: "scripts/open-in-dash.mjs", required: true },
+  { path: "sources.json", required: false },
+  { path: "README.md", required: false },
+  { path: ".gitignore", required: false },
 ] as const;
 
 /**
@@ -96,13 +108,23 @@ export function writeHandoff(
 
   let files: Array<{ path: string; contents: string }>;
   try {
-    files = AGENT_KIT_PROJECT_FILES.map((relative) => ({
-      path: relative,
-      contents:
-        relative === "agent.manifest.json"
-          ? manifestJson
-          : readFileSync(path.join(projectDir, ...relative.split("/")), "utf8"),
-    }));
+    files = [];
+    for (const entry of AGENT_KIT_PROJECT_FILES) {
+      if (entry.path === "agent.manifest.json") {
+        files.push({ path: entry.path, contents: manifestJson });
+        continue;
+      }
+      try {
+        const contents = readFileSync(path.join(projectDir, ...entry.path.split("/")), "utf8");
+        files.push({ path: entry.path, contents });
+      } catch (error) {
+        // MAR-595 finding 9. A missing optional file is this agent not using
+        // it, not a broken build — see the field's own comment above.
+        if (entry.required) {
+          throw error;
+        }
+      }
+    }
   } catch {
     return {
       ok: false,
@@ -114,8 +136,13 @@ export function writeHandoff(
   const built = buildHandoff(
     {
       agent_id: agentId,
+      // MAR-595 finding 10. A manifest with no `display_name` — the MCP
+      // planner's own export, at the time of that finding — must not hand
+      // DASH the raw slug to store and show verbatim as this agent's name.
       display_name:
-        typeof manifest.agent?.display_name === "string" ? manifest.agent.display_name : agentId,
+        typeof manifest.agent?.display_name === "string"
+          ? manifest.agent.display_name
+          : humanizeAgentName(agentId),
       summary:
         typeof manifest.agent?.goal === "string" ? manifest.agent.goal : "No description given.",
       project_dir: projectDir,

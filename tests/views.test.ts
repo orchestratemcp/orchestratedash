@@ -321,6 +321,24 @@ describe("workspaceView", () => {
     });
   });
 
+  it("humanizes the slug when the manifest has no display_name (MAR-595 finding 10)", () => {
+    // The MCP planner's export was the reported case: a manifest with no
+    // `agent.display_name` at all, which used to render its raw
+    // `agent.name` verbatim as this agent's title.
+    const noDisplayName = structuredClone(workspaceManifest) as {
+      agent: { name: string; display_name?: string };
+    };
+    delete noDisplayName.agent.display_name;
+
+    importManifest(noDisplayName);
+    const view = workspaceView("synthetic-gmail-meeting-assistant", BEFORE_WORK_EXPIRY);
+
+    expect(view).toMatchObject({
+      found: true,
+      title: "Synthetic gmail meeting assistant",
+    });
+  });
+
   it("projects the live workspace, exact approval effect and only targetable run controls", () => {
     importManifest(workspaceManifest);
     expect(putAgentDomState(workspaceState).ok).toBe(true);
