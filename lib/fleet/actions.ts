@@ -839,5 +839,5 @@ function withReach(detail: string, connected: readonly string[]): string {
       : connected.length === 2
         ? `${connected[0] as string} and ${last}`
         : `${connected.slice(0, -1).join(", ")} and ${last}`;
-  return `${detail} ${connected.length === 1 ? "It is now connected for" : "It is now connected for"} ${list}.`;
+  return `${detail} It is now connected for ${list}.`;
 }
