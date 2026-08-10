@@ -53,7 +53,14 @@ export default function NotificationsPage(): ReactNode {
 
   return (
     <>
-      <h1>Notifications</h1>
+      {/*
+        MAR-599, the same fix MAR-593 made for Connections. The tab strip above
+        this page already says "Notifications" — an `<h1>` repeating it is the
+        word the reader just pressed, said back to them. "Discord alerts" says
+        what is actually configured here: one channel, and what DASH sends to
+        it, which is the whole subject of the lede below.
+      */}
+      <h1>Discord alerts</h1>
       <p className="lede">
         DASH can post to a Discord channel when one of your agents is waiting for
         you, or has published a report.

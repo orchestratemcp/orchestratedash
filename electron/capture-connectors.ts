@@ -337,6 +337,24 @@ async function layout(target: BrowserWindow): Promise<unknown> {
          const grid = document.querySelector(".connector-grid");
          const gridOverflow = grid === null ? 0 : grid.scrollWidth - grid.clientWidth;
          const text = document.body.innerText;
+         /*
+          * MAR-599. Every check above measures the document root or a tile's
+          * own box — never where a control actually sits on first paint. That
+          * is exactly the gap that let the fleet card's Sign-in button drop
+          * below the fold at 375px behind the wider-permission and reach
+          * sentences: nothing here would have gone red, because the root
+          * never overflowed and the tile never grew wider than its column.
+          * Height is a different axis from every check above it.
+          *
+          * Measured against the fleet card specifically — ".fleet-connector"
+          * is MAR-593's own card, the one the flag was about — and against the
+          * viewport's own height rather than a fixed pixel budget, so the
+          * number stays meaningful if a later frame runs at a different
+          * height.
+          */
+         const firstCard = document.querySelector(".fleet-connectors .fleet-connector");
+         const firstButton = firstCard === null ? null : firstCard.querySelector(".button-row button");
+         const firstButtonBottom = firstButton === null ? null : firstButton.getBoundingClientRect().bottom;
          return {
            viewport: window.innerWidth,
            page_scroll_width: root.scrollWidth,
@@ -353,10 +371,36 @@ async function layout(target: BrowserWindow): Promise<unknown> {
            says_needed_by: (text.match(/Needed by/g) ?? []).length,
            leaks_provider_id: text.includes("google-gmail"),
            widest_overflow: widest,
+           first_fleet_button_found: firstButton !== null,
+           first_fleet_button_bottom: firstButtonBottom,
+           first_fleet_button_within_viewport:
+             firstButtonBottom === null ? null : firstButtonBottom <= window.innerHeight,
          };
        })()`,
     ),
   );
+}
+
+/**
+ * Force the ambient density to comfortable before the loop starts (MAR-599).
+ *
+ * `localStorage` lives in Electron's session partition, not in
+ * `DASH_DATA_DIR` — so it is shared by every unpackaged capture process that
+ * has ever run against this machine's default `Electron` userData directory,
+ * regardless of which scratch SQLite store each one pointed at. A prior run
+ * on this machine left "compact" behind, and every frame this harness labels
+ * "comfortable" was captured compact until this ran first — a wrong label
+ * nobody would catch from the image alone, because the layout is legitimately
+ * the same shape at both settings.
+ */
+async function ensureComfortable(target: BrowserWindow): Promise<void> {
+  const current = (await target.webContents.executeJavaScript(
+    `document.documentElement.getAttribute("data-density")`,
+  )) as string | null;
+  if (current === "compact") {
+    console.log("[connectors] ambient density was compact from a prior run — resetting");
+    await pressDensityToggle(target);
+  }
 }
 
 async function run(): Promise<void> {
@@ -367,6 +411,8 @@ async function run(): Promise<void> {
   const window = await appWindowLoaded();
   window.setResizable(true);
   await settle(1200);
+  await go(window, "/settings");
+  await ensureComfortable(window);
 
   for (const theme of THEMES) {
     nativeTheme.themeSource = theme;
@@ -449,11 +495,27 @@ async function run(): Promise<void> {
   const unshared = measurements.filter(
     (entry) => !(entry as { says_shared: boolean }).says_shared,
   );
+  /*
+   * MAR-599. The check that would have caught the flag MAR-593's own handoff
+   * left open: not "did anything overflow" but "is the first thing you would
+   * press actually on screen". A frame with no fleet card at all (the
+   * receipt/partly scenes, which do not seed a card the same way) reports
+   * `first_fleet_button_found: false` and is excluded rather than counted as a
+   * pass — a check that cannot find the button is not evidence the button is
+   * visible.
+   */
+  const buttonBelowFold = measurements.filter(
+    (entry) =>
+      (entry as { first_fleet_button_found: boolean }).first_fleet_button_found &&
+      (entry as { first_fleet_button_within_viewport: boolean | null }).first_fleet_button_within_viewport ===
+        false,
+  );
   console.log(
     `\n[connectors] wrote ${String(written.length)} images and layout.json to ${OUT}\n` +
       `[connectors] ${overflowed.length === 0 ? "no frame overflowed sideways, page or tile" : `${String(overflowed.length)} FRAMES OVERFLOWED`}\n` +
       `[connectors] ${leaked.length === 0 ? "no frame printed the provider id" : `${String(leaked.length)} FRAMES LEAKED THE PROVIDER ID`}\n` +
-      `[connectors] ${unshared.length === 0 ? "every frame carries the shared-grant sentence" : `${String(unshared.length)} FRAMES LACKED THE SHARED SENTENCE`}`,
+      `[connectors] ${unshared.length === 0 ? "every frame carries the shared-grant sentence" : `${String(unshared.length)} FRAMES LACKED THE SHARED SENTENCE`}\n` +
+      `[connectors] ${buttonBelowFold.length === 0 ? "the first fleet card's button is within the viewport on every frame that has one" : `${String(buttonBelowFold.length)} FRAMES HAVE THE FIRST FLEET BUTTON BELOW THE FOLD`}`,
   );
 
   app.exit(0);

@@ -273,6 +273,19 @@ await Promise.all([
     format: "esm",
   }),
 
+  // Servers, Notifications and Preferences (MAR-599), on the same terms and
+  // for the same reason `capture-connectors.ts` is separate from `capture.ts`:
+  // this one does not import `smoke-identity.ts`, so it never claims the
+  // installed app's own single-instance lock or default `userData` path — the
+  // property this branch needed to run beside an attended test on the real
+  // store without touching it. See `electron/capture-settings-polish.ts`.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-settings-polish.ts")],
+    outfile: path.join(outDir, "capture-settings-polish.mjs"),
+    format: "esm",
+  }),
+
   // The fleet's glance chips (MAR-586), on the same terms and for the sharpest
   // version of the reason: a chip exists only when the fact behind it is true,
   // so a run against whatever a machine holds photographs one of sixteen

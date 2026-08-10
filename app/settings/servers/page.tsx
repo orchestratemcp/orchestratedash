@@ -983,7 +983,15 @@ export default function HostsPage(): ReactNode {
 
   return (
     <>
-      <h1>Servers</h1>
+      {/*
+        MAR-599, the same fix MAR-593 made for Connections. The tab strip above
+        this page already says "Servers" — an `<h1>` repeating it says nothing
+        new to somebody who just read the word they pressed. "Remote machines"
+        says what a server *is* here: not a rented box in the abstract, but the
+        specific thing the lede below explains — one your agents keep running on
+        after DASH itself is closed.
+      */}
+      <h1>Remote machines</h1>
       <p className="lede">
         Put an agent on a server and it keeps working when DASH is closed. DASH
         reaches out to the server; the server never reaches back.

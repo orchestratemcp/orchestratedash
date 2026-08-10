@@ -257,10 +257,17 @@ export function describeFleetReach(connector: FleetConnector, reach: FleetReach)
         ? `${names[0] as string} and ${last}`
         : `${names.slice(0, -1).join(", ")} and ${last}`;
 
+  /*
+   * MAR-599. One sentence instead of three, on a card where it sits directly
+   * above the wider-permission sentence and the Sign-in button — together the
+   * pair were the reason that button sat below the fold at 375px, which
+   * MAR-593's own handoff flagged and left for later. Both facts survive: a
+   * separate record per agent (so one can be turned off without the others)
+   * and a grant scoped to what each agent asked for.
+   */
   return (
-    `Connecting ${connector.service} connects it for ${list}. ` +
-    `DASH keeps a separate record for each, so you can turn one off without the others, ` +
-    `and each agent only gets the actions it asked for.`
+    `Connecting ${connector.service} connects it for ${list}, each with its own ` +
+    `record and only the actions it asked for.`
   );
 }
 
