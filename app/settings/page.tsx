@@ -107,11 +107,18 @@ export default function ConnectionsPage(): ReactNode {
   return (
     <>
       <h1>Accounts and keys</h1>
+      {/*
+        Two sentences, and the length was found by photographing it: the first
+        draft ran to six lines at 375px and pushed every card's own button far
+        below the fold, on a page whose whole job is to have something to press.
+        The claim it lost — "connect one and every agent that needs it is
+        connected" — is not gone; it is on each card, naming the agents, where a
+        person can check it.
+      */}
       <p className="lede">
-        The services DASH can reach outside this computer, on your behalf.
-        Connect one here and every agent that needs it is connected — anything
-        DASH holds is kept in this computer&rsquo;s credential vault, and no
-        agent ever receives it.
+        What DASH can reach outside this computer, for you. Anything it holds
+        stays in this computer&rsquo;s credential vault and no agent ever
+        receives it.
       </p>
       <HostNotice host={host} />
 

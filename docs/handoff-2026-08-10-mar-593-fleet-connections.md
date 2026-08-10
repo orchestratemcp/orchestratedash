@@ -175,6 +175,7 @@ From PowerShell, in the worktree:
 | `brand:check` | green |
 | `test` | 142 files, 2848 passed, 10 skipped, **1 failed** |
 | `verify:shell` | **85 PASS, 0 FAIL**, `[smoke] all proofs passed` |
+| CI on [#126](https://github.com/orchestratemcp/orchestratedash/pull/126) | both buckets **pass** — `verify` 1m17s, Windows `shell-smoke` 1m31s |
 
 The one failure is `tests/channel-secret.test.ts`'s *"re-narrows an ACL that was
 widened after it was written"* under full parallel load; it passes 21/21 alone.
@@ -196,9 +197,20 @@ never holds the store lock.
   `loopback-fixtures-cannot-refuse` still stands: DASH's OAuth has never worked
   against real Google. MAR-594 owns it. What this establishes is that a consent,
   once received, is recorded and resolved fleet-wide.
-- **Nobody has used this.** No screenshots were captured and Henrik has not
-  opened the page. The novice test — can somebody who has never seen DASH find
-  where to connect Gmail — is unrun.
+- **Nobody has used this.** `qa-screenshots-mar593/` holds 16 packaged-renderer
+  frames at 375/768/1280 in both themes and densities, from
+  `electron/capture-connectors.ts` against a **seeded scratch store** — so the
+  page is photographed, not used. Nothing in them is a real grant. The novice
+  test — can somebody who has never seen DASH find where to connect Gmail — is
+  unrun, and Henrik has not opened it.
+- **The card is tall at 375px.** No frame overflows sideways, but with two
+  agents seeded the Gmail card's own Sign in button sits well below the fold,
+  behind the wider-permission sentence and the reach sentence. Both are required
+  before the press (ADR 0002 amendment 2), so the fix is shorter sentences rather
+  than a deleted claim — the page lede was already cut from six lines to three
+  for exactly this, found by photographing it. On the state MAR-593 is actually
+  about — a cleared DASH — the reach sentence is null and the card is much
+  shorter.
 - **One account per provider.** A v1 limit, not a principle: the table is keyed
   on provider, and a second account is a second row plus a choice on every card.
 
