@@ -34,7 +34,7 @@ import { localRunnerChannel } from "../lib/agent-dom/runner-channel";
 import { parseAiKeyCredential } from "../lib/ai/credential";
 import { aiAuthHeaders, aiProviderById } from "../lib/ai/providers";
 import { isKeyCredential, type BrokerCredential } from "../lib/broker/grant";
-import { createBroker, type BrokerAuditRow, type CredentialRead } from "../lib/broker/execute";
+import { createBroker, type Broker, type BrokerAuditRow, type CredentialRead } from "../lib/broker/execute";
 import {
   hasBrokerRequest,
   markBrokerAnswerUndelivered,
@@ -181,6 +181,73 @@ async function mintAuthorization(credential: BrokerCredential): Promise<Record<s
  * whose vault is prompting for an unlock would otherwise stack passes until
  * something gave.
  */
+/**
+ * Every audit row the broker has written, newest last (MAR-467).
+ *
+ * Module-level since MAR-545, because the broker is. `BrokerDeps.audit` is
+ * documented as "called exactly once per request, on every path" and `pass`
+ * awaits one `handle` at a time, so the entry appended across one `handle` call
+ * belongs to that request — but a question the *person* asked can now be
+ * awaiting a provider at the same moment, and its row lands in this array too.
+ *
+ * That is why the request id is checked before an id is used rather than the
+ * newest row being trusted. A mismatch yields no id, and no id means the
+ * delivery failure is recorded as unrecordable instead of being pinned on
+ * somebody else's row — which is the outcome that was already written down for
+ * a broker that threw, arrived at now for a second reason.
+ *
+ * Truncated at the top of every drain pass, so it is a scratchpad for the batch
+ * in hand and not a second copy of the audit table in memory.
+ */
+const written: Array<{ id: number | null; request_id: string }> = [];
+
+let broker: Broker | null = null;
+
+/**
+ * The one broker in this process, made on first use (MAR-545).
+ *
+ * It used to live inside `startBroker`'s closure, which was right while the only
+ * thing that could reach it was the loop that drains an agent's requests. It is
+ * out here now because a **person** can reach it too: the agent page's chat
+ * asks a model a question, and ADR 0002 invariant 2 says the credential exists
+ * inside one function — so the question goes through the same `handle` as
+ * everything an agent asks for, with `"person"` rather than `"agent"`.
+ *
+ * One instance and not two, which is the part worth being deliberate about. The
+ * budgets in `lib/broker/execute.ts` are per-broker, so a second instance for
+ * the chat would have been a second set of budgets — and an agent and a person
+ * reaching the same account through two independently-counted windows is twice
+ * the rate limit, arrived at by accident.
+ *
+ * Made without a runner, because it does not need one. The chat works on a
+ * machine where no agent is running at all.
+ */
+export function hostBroker(): Broker {
+  if (broker !== null) {
+    return broker;
+  }
+  broker = createBroker({
+    readManifest: (agentId: string) =>
+      readAgentManifest(agentId) as ConnectionSourceManifest | null,
+    readCredential,
+    mintAuthorization,
+    fetchImpl: fetch,
+    // The durable replay memory a write needs (MAR-469) and a spend needs
+    // (MAR-545). Supplied here rather than imported inside the broker because
+    // `lib/broker/` touches no store, and this is the same seam
+    // `readCredential` and `mintAuthorization` occupy.
+    hasHandledRequest: hasBrokerRequest,
+    audit: (row: BrokerAuditRow) => {
+      written.push({ id: recordBrokerCall(row), request_id: row.request_id });
+    },
+    touchGrant: (grant, at) => {
+      touchReceipt(grant.agent_id, grant.connection_id, at);
+    },
+    now: () => new Date(),
+  });
+  return broker;
+}
+
 export function startBroker(
   runner: RunnerHandle | null,
   log: (line: string) => void = (line) => {
@@ -188,9 +255,10 @@ export function startBroker(
   },
 ): () => void {
   if (runner === null) {
-    // No runner means no hosted agents means nothing to broker for. Returning a
+    // No runner means no hosted agents means nothing to *drain*. Returning a
     // no-op rather than looping against a null keeps the caller from having to
-    // know that.
+    // know that — and note it says nothing about the broker itself, which
+    // `hostBroker` makes on demand for the person's own questions.
     return () => undefined;
   }
 
@@ -212,41 +280,7 @@ export function startBroker(
    */
   const channel = localRunnerChannel(runner);
 
-  /**
-   * Every audit row this loop has written, in the order the broker wrote them
-   * (MAR-467).
-   *
-   * `BrokerDeps.audit` is documented as "called exactly once per request, on
-   * every path", and `pass` awaits one `handle` at a time, so the entries
-   * appended across one `handle` call belong to that request. That is a real
-   * coupling to a documented contract rather than a hopeful one — and the
-   * request id is checked anyway before the id is used, because marking the
-   * wrong decision undelivered would be a false statement in the one table that
-   * must not contain any.
-   *
-   * Truncated at the top of every pass, so it is a scratchpad for the batch in
-   * hand and not a second copy of the audit table in memory.
-   */
-  const written: Array<{ id: number | null; request_id: string }> = [];
-
-  const broker = createBroker({
-    readManifest: (agentId: string) =>
-      readAgentManifest(agentId) as ConnectionSourceManifest | null,
-    readCredential,
-    mintAuthorization,
-    fetchImpl: fetch,
-    // The durable replay memory a write needs (MAR-469). Supplied here rather
-    // than imported inside the broker because `lib/broker/` touches no store,
-    // and this is the same seam `readCredential` and `mintAuthorization` occupy.
-    hasHandledRequest: hasBrokerRequest,
-    audit: (row: BrokerAuditRow) => {
-      written.push({ id: recordBrokerCall(row), request_id: row.request_id });
-    },
-    touchGrant: (grant, at) => {
-      touchReceipt(grant.agent_id, grant.connection_id, at);
-    },
-    now: () => new Date(),
-  });
+  const broker = hostBroker();
 
   let stopped = false;
   let timer: NodeJS.Timeout | null = null;
@@ -337,7 +371,12 @@ export function startBroker(
 
       let response: BrokerResponse;
       try {
-        response = await broker.handle(candidate.agent_id, parsed);
+        // `"agent"` and never anything else, on every line this loop reads
+        // (MAR-545). This is the whole enforcement of the standing described on
+        // `BrokerOrigin`: a request that came off a child process's stdout is an
+        // agent's request, whatever it contains, because the value is decided by
+        // which function read it rather than by anything in it.
+        response = await broker.handle(candidate.agent_id, parsed, "agent");
       } catch (error: unknown) {
         // An unexpected throw is DASH's bug. The agent still gets an answer,
         // because an agent waiting forever on a DASH bug is a worse outcome than

@@ -115,7 +115,61 @@ export interface AiProviderProfile {
    * their account to look on more than they need something to click.
    */
   key_source: string;
+  /** How to ask this provider one question, and what it will say about the bill. */
+  completion: AiCompletionProfile;
 }
+
+/**
+ * How a provider takes a question and what it says about what that cost
+ * (MAR-545).
+ *
+ * MAR-582 left this field out on purpose and wrote down why: "There is no
+ * completion call, no streaming, no embedding, no image generation… a
+ * completion operation is the next slice, and it needs a cost story and a
+ * per-run budget this one deliberately does not invent." This is that field, and
+ * the two members are the two things a completion needs that a models list did
+ * not — a second path, and an answer to who says what it cost.
+ */
+export interface AiCompletionProfile {
+  /**
+   * The one path a completion for this profile will ever POST to.
+   *
+   * A literal, in `models_path`'s shape and for `WriteOperation.path`'s reason:
+   * the complete set of paths DASH will send a question to is the set spelled
+   * out in this file, and `lib/broker/operations.ts` checks each one against
+   * `SPEND_PATHS` at module load.
+   */
+  path: string;
+  /**
+   * Which request and response shape this provider speaks.
+   *
+   * A closed union of two rather than a per-profile body builder, so the JSON
+   * DASH sends is written twice in one reviewed file rather than once per
+   * provider — and so a third dialect is a `switch` that stops compiling instead
+   * of a profile that silently posts a body nobody has read.
+   */
+  dialect: AiCompletionDialect;
+  /**
+   * Whether this provider states, in the answer itself, what the answer cost.
+   *
+   * The whole of DASH's money story turns on this flag, so it is a declared
+   * property of a provider rather than something a projection infers from
+   * whichever fields happened to come back. **DASH never converts tokens into
+   * money.** When this is true the amount on screen is the provider's own,
+   * quoted; when it is false there is no amount, and the surface says the
+   * provider did not price it rather than doing arithmetic on a rate card DASH
+   * would have to keep current. See `docs/adr/0012-talking-to-an-agent.md`.
+   */
+  prices_its_own_answer: boolean;
+}
+
+/**
+ * The request and response shapes DASH knows how to build and read.
+ *
+ * Two, and they cover the three profiles: OpenRouter and OpenAI both take
+ * OpenAI's chat-completions shape, and Anthropic's messages API is its own.
+ */
+export type AiCompletionDialect = "openai_chat" | "anthropic_messages";
 
 /**
  * Anthropic's API version header value.
@@ -134,6 +188,15 @@ const OPENROUTER: AiProviderProfile = {
   models_path: "/api/v1/models",
   auth: { kind: "bearer" },
   key_source: "Your OpenRouter account has a keys page; a key made there is what DASH needs.",
+  completion: {
+    path: "/api/v1/chat/completions",
+    dialect: "openai_chat",
+    // OpenRouter is the one of the three that answers the question "what did
+    // that cost?" itself, in the same reply, when asked — see `usage: {include:
+    // true}` in `lib/broker/operations.ts`. So it is the one provider on which
+    // DASH can put an amount on screen without ever holding a price.
+    prices_its_own_answer: true,
+  },
 };
 
 const ANTHROPIC: AiProviderProfile = {
@@ -148,6 +211,13 @@ const ANTHROPIC: AiProviderProfile = {
     companion: { header: "anthropic-version", value: ANTHROPIC_API_VERSION },
   },
   key_source: "Your Anthropic console has an API keys page; a key made there is what DASH needs.",
+  completion: {
+    path: "/v1/messages",
+    dialect: "anthropic_messages",
+    // Anthropic reports how much was read and written and never a price. DASH
+    // reports the same two numbers and says so.
+    prices_its_own_answer: false,
+  },
 };
 
 const OPENAI: AiProviderProfile = {
@@ -158,6 +228,11 @@ const OPENAI: AiProviderProfile = {
   models_path: "/v1/models",
   auth: { kind: "bearer" },
   key_source: "Your OpenAI account has an API keys page; a key made there is what DASH needs.",
+  completion: {
+    path: "/v1/chat/completions",
+    dialect: "openai_chat",
+    prices_its_own_answer: false,
+  },
 };
 
 const PROFILES: readonly AiProviderProfile[] = Object.freeze([OPENROUTER, ANTHROPIC, OPENAI]);
@@ -253,6 +328,18 @@ export function aiModelsUrl(profile: AiProviderProfile): string {
   return new URL(profile.models_path, profile.api_origin).toString();
 }
 
+/**
+ * The one URL DASH will send a question to for this profile (MAR-545).
+ *
+ * Built exactly as `aiModelsUrl` is, from two frozen literals, and exported for
+ * the same reason: the broker plans this URL and a test pins it, and two
+ * constructions of one URL is two places for it to be wrong. Nothing an agent,
+ * a manifest, a stored record or a page contributes reaches it.
+ */
+export function aiCompletionUrl(profile: AiProviderProfile): string {
+  return new URL(profile.completion.path, profile.api_origin).toString();
+}
+
 /* ---------------------------------------------------------------------- *
  * Module-load checks
  * ---------------------------------------------------------------------- */
@@ -272,11 +359,24 @@ for (const profile of PROFILES) {
   if (!profile.models_path.startsWith("/") || profile.models_path.startsWith("//")) {
     throw new Error(`AI provider ${profile.id} has a models path that is not rooted at its origin`);
   }
+  if (!profile.completion.path.startsWith("/") || profile.completion.path.startsWith("//")) {
+    throw new Error(
+      `AI provider ${profile.id} has a completion path that is not rooted at its origin`,
+    );
+  }
   if (new URL(profile.api_origin).origin !== profile.api_origin) {
     throw new Error(`AI provider ${profile.id} names an API origin that is not a bare origin`);
   }
   if (new URL(aiModelsUrl(profile)).origin !== profile.api_origin) {
     throw new Error(`AI provider ${profile.id} builds a models URL off its own origin`);
+  }
+  if (new URL(aiCompletionUrl(profile)).origin !== profile.api_origin) {
+    throw new Error(`AI provider ${profile.id} builds a completion URL off its own origin`);
+  }
+  if (profile.completion.path === profile.models_path) {
+    // The two are different questions with different costs, and a profile that
+    // conflated them would make the free one bill and the billed one look free.
+    throw new Error(`AI provider ${profile.id} asks its two questions at one path`);
   }
   for (const header of Object.keys(aiAuthHeaders(profile, "probe"))) {
     if (!AI_AUTH_HEADERS.includes(header.toLowerCase())) {

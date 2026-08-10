@@ -60,6 +60,22 @@ export type BrokerRefusal =
   | "revoked"
   /** Connected, but the user did not grant everything this operation needs. */
   | "permission_missing"
+  /**
+   * The operation spends the person's money, and no person asked for it
+   * (MAR-545).
+   *
+   * Its own code rather than `not_granted`, because the two lead somewhere
+   * completely different. `not_granted` means consent is missing and could be
+   * given; this means the request arrived from a process rather than from
+   * somebody at the keyboard, and no amount of connecting or ticking boxes
+   * changes that. An agent that reports "you have not connected this" when the
+   * truth is "I am not allowed to spend on my own" would send its user to a page
+   * where there is nothing to do.
+   *
+   * See `BrokerOrigin` in `lib/broker/execute.ts` for the standing this enforces
+   * and for the one thing that has to be built before it can be relaxed.
+   */
+  | "needs_a_person"
   /** The typed input failed the operation's own narrowing. */
   | "invalid_input"
   /** This request id has been seen before from this agent. */

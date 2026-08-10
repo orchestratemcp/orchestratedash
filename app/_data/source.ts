@@ -186,6 +186,22 @@ interface DashShellClient {
     field_id: string;
   }): Promise<CommandResult>;
   /**
+   * Asking an agent a question (MAR-545).
+   *
+   * Optional for the reason every method here is, and this is the one where the
+   * degradation matters most: a shell older than this command has a bridge
+   * without it, and a page that assumed otherwise would throw on a control the
+   * person just pressed. What it degrades *to* is right, though — the whole
+   * conversation is in the view and reads perfectly in a browser tab; only
+   * asking something new needs the installed app.
+   */
+  askQuestion?(args: {
+    agent_id: string;
+    connection_id: string;
+    field_id: string;
+    question: string;
+  }): Promise<CommandResult>;
+  /**
    * The runner's own health, and its one repair (MAR-518).
    *
    * Optional on top of the bridge already being optional, like `openAppMenu`
@@ -729,6 +745,42 @@ export async function listAgentModels(args: {
   field_id: string;
 }): Promise<CommandResult> {
   return modelCommand("listModels", args, "ask this agent's provider which models it offers");
+}
+
+/**
+ * Ask this agent's model a question (MAR-545).
+ *
+ * `modelCommand`'s two refusals, worded for this surface. The second is the one
+ * worth reading: a shell that cannot ask a new question can still *show* every
+ * question and answer already recorded, because those arrive in the view like
+ * everything else — so the sentence says this version cannot ask, and never
+ * anything a reader could take as "the conversation is gone".
+ */
+export async function askAgentQuestion(args: {
+  agent_id: string;
+  connection_id: string;
+  field_id: string;
+  question: string;
+}): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to ask this agent a question.",
+    };
+  }
+  if (bridge.askQuestion === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail:
+        "This version of the DASH app cannot ask a question. Everything already asked is shown below.",
+    };
+  }
+  return bridge.askQuestion(args);
 }
 
 /**

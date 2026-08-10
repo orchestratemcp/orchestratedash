@@ -652,40 +652,50 @@ describe("responses on the wire", () => {
  * ---------------------------------------------------------------------- */
 
 describe("the shipped operations", () => {
-  it("is stage 1 and 2 of ADR 0002, plus one read per model provider", () => {
+  it("is stage 1 and 2 of ADR 0002, plus one read and one question per model provider", () => {
     // Pinned by value, which is the point: this array is the complete answer to
-    // "what can DASH do to somebody's account?", and widening it is a diff a
-    // reviewer reads. MAR-582 added three, and each of them lists models and
-    // does nothing else — there is no completion operation, so an agent holding
-    // a model key cannot spend a penny of the account behind it.
+    // "what can DASH do on somebody's behalf?", and widening it is a diff a
+    // reviewer reads.
+    //
+    // MAR-582 added three reads and wrote down that there was no completion
+    // operation, "so an agent holding a model key cannot spend a penny of the
+    // account behind it". MAR-545 adds the three completions, and that sentence
+    // stops being true of the *operation set* — it stays true of an **agent**,
+    // by a different mechanism that has its own test below and its own refusal
+    // code: a completion is refused unless a person asked for it.
     expect(allOperations().map((operation) => operation.id).sort()).toEqual([
+      "anthropic.chat.completion",
       "anthropic.models.list",
       "gmail.draft.create",
       "gmail.message.read",
       "gmail.search",
+      "openai.chat.completion",
       "openai.models.list",
+      "openrouter.chat.completion",
       "openrouter.models.list",
     ]);
   });
 
   it("nothing that writes belongs to a model provider", () => {
-    // The strongest thing the shape above makes true. A key is a bearer of
-    // whatever the account can do, and the only defence DASH has is that no
-    // operation built on one changes anything — so this is the assertion that
-    // would fail the moment somebody added a completion call without also
-    // answering the questions `WriteOperation` asks (MAR-582).
-    const keyed = allOperations().filter((operation) =>
-      operation.id.endsWith(".models.list"),
+    // Unchanged in meaning and narrowed in wording (MAR-545). A model key still
+    // reaches nothing that puts anything in anybody's account: the two kinds it
+    // reaches are a read and a spend, and `WRITE_PATHS` — the array a reader is
+    // invited to treat as the complete answer to "what can this do to my
+    // account?" — is still one Gmail path.
+    const keyed = allOperations().filter(
+      (operation) => !operation.id.startsWith("gmail."),
     );
-    expect(keyed).toHaveLength(3);
-    expect(keyed.every((operation) => operation.access === "read")).toBe(true);
+    expect(keyed).toHaveLength(6);
+    expect(keyed.some((operation) => operation.access === "write")).toBe(false);
+    expect(keyed.filter((operation) => operation.access === "read")).toHaveLength(3);
+    expect(keyed.filter((operation) => operation.access === "spend")).toHaveLength(3);
   });
 
   it("splits cleanly by profile, with no operation in two", () => {
     expect(operationsForProvider("google-gmail")).toHaveLength(3);
-    expect(operationsForProvider("openrouter")).toHaveLength(1);
-    expect(operationsForProvider("anthropic")).toHaveLength(1);
-    expect(operationsForProvider("openai")).toHaveLength(1);
+    expect(operationsForProvider("openrouter")).toHaveLength(2);
+    expect(operationsForProvider("anthropic")).toHaveLength(2);
+    expect(operationsForProvider("openai")).toHaveLength(2);
     expect(operationsForProvider("google-calendar")).toEqual([]);
   });
 
@@ -712,12 +722,16 @@ describe("the shipped operations", () => {
       now: () => new Date("2026-08-02T10:00:00.000Z"),
     });
 
-    await broker.handle(AGENT, {
-      request_id: "req-1",
-      connection_id: "gmail",
-      operation: "gmail.search",
-      input: { query: "is:unread", max_results: 3 },
-    });
+    await broker.handle(
+      AGENT,
+      {
+        request_id: "req-1",
+        connection_id: "gmail",
+        operation: "gmail.search",
+        input: { query: "is:unread", max_results: 3 },
+      },
+      "agent",
+    );
 
     const url = new URL(calls[0] ?? "");
     expect(url.origin).toBe("https://gmail.googleapis.com");

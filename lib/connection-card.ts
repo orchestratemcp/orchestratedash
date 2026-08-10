@@ -72,8 +72,11 @@ export type CapabilityStanding = "allowed" | "awaiting_you" | "not_issued" | "no
 export interface StandingCapability {
   id: string;
   label: string;
-  access: "read" | "write";
-  /** What a write leaves behind, from the operation itself. Null for a read. */
+  access: BrokerCapabilityView["access"];
+  /**
+   * What a write leaves behind or a spend costs, from the operation itself. Null
+   * for a read (MAR-469, MAR-545).
+   */
   consequence: string | null;
   standing: CapabilityStanding;
 }
