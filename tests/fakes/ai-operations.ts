@@ -32,6 +32,15 @@ export interface ScriptedAi extends AiKeyOperations {
   readonly probed: string[];
   /** Every key handed to the probe, so a test can assert the real one arrived. */
   readonly keys: string[];
+  /**
+   * Whether each probe asked for the model ids (MAR-583).
+   *
+   * Recorded so a test can assert the *narrow* direction as well as the wide
+   * one: a liveness check must not come back carrying a provider's catalogue,
+   * and the only way to see that from outside the module is to see what it asked
+   * for.
+   */
+  readonly wantedIds: boolean[];
 }
 
 /**
@@ -43,20 +52,27 @@ export interface ScriptedAi extends AiKeyOperations {
  * order for the searches elsewhere to mean something.
  */
 export function scriptedAi(
-  answer: AiProbeOutcome | ((profile: AiProviderProfile, key: string) => AiProbeOutcome) = {
+  answer:
+    | AiProbeOutcome
+    | ((profile: AiProviderProfile, key: string, wantIds: boolean) => AiProbeOutcome) = {
     status: 200,
     model_count: 3,
   },
 ): ScriptedAi {
   const probed: string[] = [];
   const keys: string[] = [];
+  const wantedIds: boolean[] = [];
   return {
     probed,
     keys,
-    probe: (profile, key) => {
+    wantedIds,
+    probe: (profile, key, wantIds = false) => {
       probed.push(profile.id);
       keys.push(key);
-      return Promise.resolve(typeof answer === "function" ? answer(profile, key) : answer);
+      wantedIds.push(wantIds);
+      return Promise.resolve(
+        typeof answer === "function" ? answer(profile, key, wantIds) : answer,
+      );
     },
   };
 }

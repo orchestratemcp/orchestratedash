@@ -240,7 +240,17 @@ export function runsView(
     // model was ever part of the agent's work. See `buildRunModel` for the line.
     runs: listAnalyzedRuns(store).map((run) => ({
       ...run,
-      model: buildRunModel(run.agent, run.run_id, store.agents[run.agent]?.manifest.planned_route),
+      model: buildRunModel(
+        run.agent,
+        run.run_id,
+        store.agents[run.agent]?.manifest.planned_route,
+        // The run's own events, filtered here rather than re-queried: `store`
+        // already holds every event this list was derived from, and a second
+        // read per row would turn one pass over the store into one per run.
+        store.events.filter(
+          (event) => event.agent === run.agent && event.run_id === run.run_id,
+        ),
+      ),
     })),
     evidence: describeEvidenceRecord(pulls),
   };
@@ -312,8 +322,10 @@ export function runView(
     analysis,
     planned_route: plannedRoute,
     // MAR-583. The same record the runs list carries, on the page with room for
-    // the caveat that makes it honest.
-    model: buildRunModel(agent, runId, manifest?.planned_route),
+    // the caveat that makes it honest. `events` is this run's own, already read
+    // above — and it is where `model` comes from, the telemetry v1 field nothing
+    // in DASH had ever drawn.
+    model: buildRunModel(agent, runId, manifest?.planned_route, events),
     manifest_imported: manifest !== undefined,
     unplanned_component_ids: unplanned,
     artifacts,

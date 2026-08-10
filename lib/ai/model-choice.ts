@@ -369,46 +369,111 @@ export interface RunModelRecord {
 }
 
 /**
+ * The two things DASH can know about a run's model, kept apart.
+ *
+ * They are different **kinds** of fact and are carried separately for ADR 0005's
+ * reason, which is the same argument `broker_lapses` makes about an attempt
+ * nobody adjudicated: a thing DASH observed and a thing somebody told DASH are
+ * not interchangeable, and keeping them apart in the data model rather than only
+ * in the copy is what stops a careless renderer merging them.
+ *
+ * - `setting` is DASH's own record of what it was configured to do. DASH wrote
+ *   it, from its own clock, at the moment it first saw the run.
+ * - `reported` is what the **run itself said**, in `model` on its own events.
+ *   That field has been in telemetry v1 since the contract was frozen and no
+ *   surface in DASH had ever drawn it; MAR-583 is the first thing that needs it.
+ *   It is the agent's claim about its own past, from a process DASH does not sit
+ *   inside — which makes it the *better* answer to "which model ran" and still
+ *   not an observation DASH made.
+ *
+ * **There is no cost here.** Telemetry v1 also carries `cost_usd`, and it is
+ * deliberately not read: MAR-299 owns spend and needs a story about whose number
+ * that is before any surface repeats it. Drawing it here because the field
+ * happened to be next to `model` is exactly how an unexamined number reaches a
+ * screen.
+ */
+export interface RunModelStanding {
+  setting: RunModelRecord | null;
+  /** Distinct models the run reported, in the order its events named them. */
+  reported: readonly string[];
+}
+
+/**
  * What a run row says about its model.
  *
  * Short, because it goes in a list beside a status and a time. The long form is
  * `describeRunModelDetail`, which the run's own page has room for.
  *
+ * The run's own report wins when there is one, because it is the answer to the
+ * question actually being asked — *which model ran* — while the setting answers
+ * *what DASH would have told it to use*. When there is none, the setting is what
+ * DASH has, and the detail says whose fact it is either way.
+ *
  * **Never a cost.** There is no field here for one and there will not be until
- * MAR-299 has numbers that came from a provider rather than from arithmetic DASH
- * did over a price list it does not have.
+ * MAR-299 has numbers it can say whose they are.
  */
-export function describeRunModel(record: RunModelRecord | null): string | null {
-  if (record === null) {
+export function describeRunModel(standing: RunModelStanding): string | null {
+  if (standing.reported.length === 1) {
+    return standing.reported[0] ?? null;
+  }
+  if (standing.reported.length > 1) {
+    return `${String(standing.reported.length)} models`;
+  }
+  if (standing.setting === null) {
     return null;
   }
-  return record.choice.kind === "one_model"
-    ? record.choice.model_id
+  return standing.setting.choice.kind === "one_model"
+    ? standing.setting.choice.model_id
     : "Matched to each step";
 }
 
 /**
- * The same fact with the caveat that makes it honest.
+ * The same fact, with whose fact it is.
  *
- * DASH did not watch a model answer. It watched its own setting, and the
- * difference matters most on exactly the page where somebody is trying to work
- * out why a run went the way it did.
+ * Every branch names its source. DASH did not watch a model answer — it makes no
+ * completion call — so a sentence that said "this run used X" without saying who
+ * says so would be DASH reporting somebody else's claim in its own voice, which
+ * is the failure `lib/server-card.ts` exists to avoid one machine along.
+ *
+ * The disagreement branch is the one worth having. A run that reported a model
+ * DASH was not set to use is a real and interesting event — a agent ignoring its
+ * configuration, or a configuration changed after the run — and reporting only
+ * one of the two would hide it.
  */
-export function describeRunModelDetail(record: RunModelRecord | null): string | null {
-  if (record === null) {
+export function describeRunModelDetail(standing: RunModelStanding): string | null {
+  const setting = standing.setting;
+  const named = setting?.choice.kind === "one_model" ? setting.choice.model_id : null;
+
+  if (standing.reported.length > 0) {
+    const said =
+      standing.reported.length === 1
+        ? `used ${String(standing.reported[0])}`
+        : `used ${String(standing.reported.length)} different models across its steps`;
+    const mismatch =
+      named !== null && !standing.reported.includes(named)
+        ? ` DASH was set to give it ${named}, so the two do not agree.`
+        : "";
+    return (
+      `This run reported that it ${said}. That is the agent's own account of its work — DASH ` +
+      `does not sit between this agent and its provider, so it is repeating what it was told ` +
+      `rather than something it watched.${mismatch}`
+    );
+  }
+
+  if (setting === null) {
     return null;
   }
-  if (record.choice.kind === "one_model") {
+  if (named !== null) {
     return (
-      `When this run started, this agent was set to use ${record.choice.model_id}. That is ` +
-      "DASH's own record of the setting, not a report from the model — DASH does not sit " +
-      "between this agent and its provider, so it cannot confirm which model answered."
+      `When this run started, this agent was set to use ${named}. The run itself said nothing ` +
+      "about which model it used, and DASH does not sit between this agent and its provider — " +
+      "so this is DASH's record of the setting and not a report of what happened."
     );
   }
   return (
     "When this run started, this agent was set to match each step to the level its plan asked " +
-    "for. DASH holds no record of which model each step then used: it does not sit between " +
-    "this agent and its provider."
+    "for. The run itself said nothing about which model it used, and DASH holds no record of " +
+    "it: DASH does not sit between this agent and its provider."
   );
 }
 
@@ -447,7 +512,25 @@ export function everyModelChoiceSentence(): string[] {
     describeInForce(matchEachStep(), steps),
     describeInForce(matchEachStep(), [{ ...steps[1]!, level: "frontier" }]),
     describeStepsNotInForce("a-model"),
-    describeRunModelDetail({ choice: named, recorded_at: "2026-08-10T09:00:00Z" }) ?? "",
-    describeRunModelDetail({ choice: matchEachStep(), recorded_at: "2026-08-10T09:00:00Z" }) ?? "",
+    ...(
+      [
+        { setting: { choice: named, recorded_at: "2026-08-10T09:00:00Z" }, reported: [] },
+        {
+          setting: { choice: matchEachStep(), recorded_at: "2026-08-10T09:00:00Z" },
+          reported: [],
+        },
+        { setting: null, reported: ["a-model"] },
+        { setting: null, reported: ["a-model", "b-model"] },
+        // The disagreement branch: DASH was set to give it one model and the run
+        // said it used another.
+        {
+          setting: { choice: named, recorded_at: "2026-08-10T09:00:00Z" },
+          reported: ["b-model"],
+        },
+      ] satisfies RunModelStanding[]
+    ).flatMap((standing) => [
+      describeRunModel(standing) ?? "",
+      describeRunModelDetail(standing) ?? "",
+    ]),
   ];
 }

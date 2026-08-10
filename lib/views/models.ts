@@ -23,7 +23,9 @@ import {
   resolveModelSteps,
   type NoModelChoiceReason,
   type ResolvedModelStep,
+  type RunModelStanding,
 } from "../ai/model-choice";
+import { isModelId } from "../broker/operations";
 import {
   isDefaultModelLevel,
   levelLabel,
@@ -142,7 +144,17 @@ function pickCard(cards: readonly AiKeyConnectionView[]): AiKeyConnectionView | 
  * ---------------------------------------------------------------------- */
 
 /**
- * What one run was set to use, or null.
+ * What one run used, as far as anybody can say, or null.
+ *
+ * Two sources joined, and `RunModelStanding` is where the argument for keeping
+ * them apart lives: DASH's own setting at the moment it first saw the run, and
+ * whatever the run itself reported in `model` on its events.
+ *
+ * **`reported` is read from the events, and this is the first thing in DASH to
+ * read that field.** It has been in telemetry v1 since the contract was frozen.
+ * Nothing drew it, so an agent that dutifully reported which model it used had
+ * that fact land in the store and stay there — which is the same class of defect
+ * as MAR-457's artifact buffer that no caller drained.
  *
  * Null for a run DASH has no record of, **and null for an agent whose plan needs
  * no model at all** — which is the line this function exists to draw. The write
@@ -160,14 +172,41 @@ export function buildRunModel(
   agent: string,
   runId: string,
   route: readonly PlannedRouteStep[] | undefined,
+  events: readonly { model?: string }[] = [],
 ): RunModelView | null {
   if (route === undefined || (!planNeedsAModel(route) && stepsNeedingAModel(route).length === 0)) {
     return null;
   }
-  const record = readRunModel(agent, runId);
-  const label = describeRunModel(record);
-  const detail = describeRunModelDetail(record);
+  const standing: RunModelStanding = {
+    setting: readRunModel(agent, runId),
+    reported: reportedModels(events),
+  };
+  const label = describeRunModel(standing);
+  const detail = describeRunModelDetail(standing);
   return label === null || detail === null ? null : { label, detail };
+}
+
+/**
+ * Distinct models a run's own events named, in the order they named them.
+ *
+ * Distinct because a run reports one per step and a plan can run the same model
+ * six times; the question is which models were involved, not how many events
+ * mentioned one. Order preserved rather than sorted, because the first model a
+ * run names is the one it started on, which is the more useful of the two
+ * orderings when the list is truncated to a count.
+ *
+ * A model id an agent reported is checked with `isModelId` like every other one:
+ * it arrives from a process DASH does not control, over the ingest boundary, and
+ * `run_events` validates the field's *type* and not its shape.
+ */
+function reportedModels(events: readonly { model?: string }[]): string[] {
+  const seen = new Set<string>();
+  for (const event of events) {
+    if (typeof event.model === "string" && isModelId(event.model)) {
+      seen.add(event.model);
+    }
+  }
+  return [...seen];
 }
 
 /** The level this planned step declared, in words, or null for a fixed step. */
