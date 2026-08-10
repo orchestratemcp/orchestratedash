@@ -137,6 +137,19 @@ interface DashShellClient {
    */
   refreshSampleAgent?(args: { agent_id: string }): Promise<CommandResult>;
   /**
+   * The three folder commands (MAR-584).
+   *
+   * Optional for the same reason as everything above, and the degradation is
+   * worth naming because it is quiet rather than loud: a shell older than these
+   * cannot notice an outside edit at all, so it goes on describing an agent with
+   * a document that is no longer the one in its folder, calmly. `checkFolder`
+   * below therefore refuses with a sentence saying DASH cannot look, never one
+   * that could be read as "nothing has changed".
+   */
+  checkFolder?(args: { agent_id: string }): Promise<CommandResult>;
+  adoptFolder?(args: { agent_id: string }): Promise<CommandResult>;
+  revealFolder?(args: { agent_id: string }): Promise<CommandResult>;
+  /**
    * Remember that this agent's page has just been opened (MAR-586).
    *
    * Optional for the same reason as the three above, and here the absence is the
@@ -481,6 +494,58 @@ export async function refreshSampleAgent(args: {
     };
   }
   return bridge.refreshSampleAgent(args);
+}
+
+/**
+ * The three folder commands, and the two refusals every one of them shares
+ * (MAR-584).
+ *
+ * One helper rather than three, because the refusals are identical and the only
+ * thing that differs is which sentence names the action. Three copies of the
+ * same two branches is three places for one of them to drift into reassurance.
+ *
+ * The wording of the second refusal is the one that had to be careful. A shell
+ * too old to have these methods cannot look at the folder — so the sentence says
+ * *this version cannot check*, and never anything a reader could take as *there
+ * is nothing to check*. That distinction is the whole of `FOLDER_NO_BASELINE`'s
+ * argument, applied one layer further out.
+ */
+async function folderCommand(
+  method: "checkFolder" | "adoptFolder" | "revealFolder",
+  args: { agent_id: string },
+  cannot: string,
+): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: `Open the installed DASH app to ${cannot}.`,
+    };
+  }
+  const call = bridge[method];
+  if (call === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: `This version of the DASH app cannot ${cannot}. Add the agent again from its own folder to bring DASH up to date with it.`,
+    };
+  }
+  return call(args);
+}
+
+export async function checkAgentFolder(args: { agent_id: string }): Promise<CommandResult> {
+  return folderCommand("checkFolder", args, "check this agent's folder for changes");
+}
+
+export async function adoptAgentFolder(args: { agent_id: string }): Promise<CommandResult> {
+  return folderCommand("adoptFolder", args, "accept a change made to this agent's folder");
+}
+
+export async function revealAgentFolder(args: { agent_id: string }): Promise<CommandResult> {
+  return folderCommand("revealFolder", args, "open this agent's folder");
 }
 
 /**

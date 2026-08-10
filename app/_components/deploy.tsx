@@ -11,9 +11,14 @@ import {
   type DeployStanding,
 } from "../../lib/deploy/deploying";
 import { describeDeployReceipt } from "../../lib/deploy/receipt";
+import { describeSentServer, SENT_SERVERS_HEADING } from "../../lib/copy/folder";
 import { readProbeStanding, type HostConnectState } from "../../lib/host-connect";
 import { describeDeployed, describeSignIn } from "../../lib/server-card";
-import type { AgentDeployView, SavedServerView } from "../../lib/views/types";
+import type {
+  AgentDeployTarget,
+  AgentDeployView,
+  SavedServerView,
+} from "../../lib/views/types";
 import { submitHostCommand } from "../_data/source";
 import { useView } from "../_data/use-view";
 
@@ -109,10 +114,84 @@ export function DeployOutcome({
  * The agent-side section
  * ---------------------------------------------------------------------- */
 
+/**
+ * What DASH has already sent, and where (MAR-584, ADR 0010).
+ *
+ * ## Why this lives in the deploy section and not beside the folder check
+ *
+ * The sentence it produces is *"you changed this agent; the copy on that server
+ * is not this agent any more"*, which arrives from the folder check — but the
+ * only useful thing to do about it is a deploy, and the deploy is here. Putting
+ * the row somewhere else would mean a second call site for `host.deploy`, which
+ * is exactly the duplication this component's own header argues against.
+ *
+ * ## Every sentence is `describeSentServer`'s
+ *
+ * Nothing is worded here. A row that composed its own copy would be a second
+ * place for ADR 0010's bound to be softened, and softening it is easy: "up to
+ * date" is shorter than what DASH is entitled to say, and reads better.
+ */
+function SentServers({
+  targets,
+  busy,
+  canAct,
+  onSendAgain,
+}: {
+  targets: readonly AgentDeployTarget[];
+  busy: boolean;
+  canAct: boolean;
+  onSendAgain: (hostId: string) => void;
+}): ReactNode {
+  if (targets.length === 0) {
+    return null;
+  }
+  return (
+    <section className="sent-servers">
+      <h3 className="label-caps">{SENT_SERVERS_HEADING}</h3>
+      {targets.map((target) => {
+        const copy = describeSentServer({
+          server: target.label,
+          sentOn: target.sent_on,
+          comparable: target.comparable,
+          behind: target.behind,
+        });
+        return (
+          <div className="sent-server" key={target.host_id}>
+            <p className="wrap">
+              <strong>{copy.headline}</strong>
+            </p>
+            <p className="card-meta wrap">{copy.meaning}</p>
+            {/*
+              Offered on every row, not only the behind ones. A person who wants
+              to push again over an unchanged copy is entitled to — the reasons
+              are theirs and DASH does not know them — and a button that appeared
+              only when DASH judged it necessary would make its absence read as
+              "you may not".
+            */}
+            {canAct ? (
+              <button
+                type="button"
+                className={target.behind ? "button-primary" : "button-secondary"}
+                disabled={busy}
+                onClick={() => {
+                  onSendAgain(target.host_id);
+                }}
+              >
+                {busy ? "Sending…" : `Send this agent to ${target.label} again`}
+              </button>
+            ) : null}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
 export function DeployToServerPanel({
   title,
   deploy,
   servers,
+  targets,
   chosenHost,
   standing,
   report,
@@ -121,11 +200,14 @@ export function DeployToServerPanel({
   canAct,
   onChoose,
   onDeploy,
+  onSendAgain,
 }: {
   /** The agent's own display name, as the page's heading shows it. */
   title: string;
   deploy: AgentDeployView;
   servers: readonly SavedServerView[];
+  /** Where DASH has already sent this agent (MAR-584). Empty for almost all. */
+  targets: readonly AgentDeployTarget[];
   chosenHost: string;
   /** Null before anything has been attempted this visit. */
   standing: DeployStanding | null;
@@ -135,6 +217,7 @@ export function DeployToServerPanel({
   canAct: boolean;
   onChoose: (hostId: string) => void;
   onDeploy: () => void;
+  onSendAgain: (hostId: string) => void;
 }): ReactNode {
   /*
    * The refusal, before a server is ever offered.
@@ -220,6 +303,19 @@ export function DeployToServerPanel({
         </label>
       )}
 
+      {/*
+        Above the receipt, because it is about pushes that already happened and
+        the receipt is about the one that has not. A person arriving after
+        accepting a folder update is here for this block, and reading a
+        disclosure first would bury it.
+      */}
+      <SentServers
+        targets={targets}
+        busy={busy}
+        canAct={canAct}
+        onSendAgain={onSendAgain}
+      />
+
       <p className="card-meta wrap">{describeSignIn(chosen)}.</p>
 
       {/*
@@ -282,12 +378,14 @@ export function DeployToServer({
   agent,
   title,
   deploy,
+  targets,
   canAct,
 }: {
   /** The agent's id, which is what the command names. */
   agent: string;
   title: string;
   deploy: AgentDeployView;
+  targets: readonly AgentDeployTarget[];
   canAct: boolean;
 }): ReactNode {
   const hosts = useView((source) => source.hosts());
@@ -300,17 +398,29 @@ export function DeployToServer({
   const servers = hosts.status === "ready" ? hosts.data.servers : [];
   const chosen = servers.find((server) => server.host_id === chosenHost) ?? servers[0];
 
-  async function put(): Promise<void> {
-    if (chosen === undefined) {
+  /**
+   * `hostId` names the server explicitly rather than being read from state
+   * (MAR-584).
+   *
+   * The re-send buttons in `SentServers` each name their own server, and a
+   * handler that set `chosenHost` and then read it back would push to whichever
+   * server was selected *before* the click — React has not re-rendered by then.
+   * The picker's own button passes nothing and gets the chosen one, which is the
+   * behaviour it has always had.
+   */
+  async function put(hostId?: string): Promise<void> {
+    const target =
+      hostId === undefined ? chosen : (servers.find((server) => server.host_id === hostId) ?? chosen);
+    if (target === undefined) {
       return;
     }
     setBusy(true);
     setReport(null);
     setCheckedAt(null);
-    setStanding({ step: "sending", agent: title, server: chosen.label });
+    setStanding({ step: "sending", agent: title, server: target.label });
 
     const result = await submitHostCommand("deploy", {
-      host_id: chosen.host_id,
+      host_id: target.host_id,
       agent_id: agent,
     });
 
@@ -319,7 +429,7 @@ export function DeployToServer({
       setStanding({
         step: "failed",
         agent: title,
-        server: chosen.label,
+        server: target.label,
         // Main's own sentence. The manifest-only refusal arrives here for an
         // agent this page believed deployable — a store that changed under a
         // rendered view — and passing it through unchanged is what keeps the
@@ -329,7 +439,7 @@ export function DeployToServer({
       return;
     }
 
-    setStanding({ step: "sent", agent: title, server: chosen.label });
+    setStanding({ step: "sent", agent: title, server: target.label });
 
     /*
      * Ask the server what it has now rather than reporting the deploy's own
@@ -337,9 +447,9 @@ export function DeployToServer({
      * request was accepted; what is running there is a separate question with a
      * separate answer, and the moment it was given is rendered beside it.
      */
-    const checked = await submitHostCommand("probe", { host_id: chosen.host_id });
+    const checked = await submitHostCommand("probe", { host_id: target.host_id });
     setBusy(false);
-    setReport(readProbeStanding(chosen.label, checked));
+    setReport(readProbeStanding(target.label, checked));
     setCheckedAt(new Date().toISOString());
   }
 
@@ -380,6 +490,7 @@ export function DeployToServer({
       title={title}
       deploy={deploy}
       servers={servers}
+      targets={targets}
       chosenHost={chosen?.host_id ?? ""}
       standing={standing}
       report={report}
@@ -395,6 +506,13 @@ export function DeployToServer({
         setCheckedAt(null);
       }}
       onDeploy={() => void put()}
+      onSendAgain={(hostId) => {
+        // The standing is about to describe this server, so the picker moves
+        // with it. Without that, a failure would render under the heading of
+        // whichever server the select still showed.
+        setChosenHost(hostId);
+        void put(hostId);
+      }}
     />
   );
 }

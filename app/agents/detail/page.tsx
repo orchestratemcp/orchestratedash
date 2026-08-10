@@ -19,6 +19,7 @@ import {
    the thing a user says is missing is a false lead, and removing it is cheaper
    than the next person following it. */
 import { DeployToServer } from "../../_components/deploy";
+import { FolderUpdate } from "../../_components/folder-update";
 import { InputsPanel, type SelectedInput } from "../../_components/inputs";
 import { OAvatar } from "../../_components/o-avatar";
 import { OutputsPanel } from "../../_components/outputs";
@@ -463,7 +464,31 @@ function AgentWorkspace(): ReactNode {
           The issue's second direction. The Servers page asks which agent goes
           on a machine; this asks which machine an agent goes on, and both reach
           the same `host.deploy`. */}
-      <DeployToServer agent={view.agent} title={view.title} deploy={view.deploy} canAct={canAct} />
+      <DeployToServer
+        agent={view.agent}
+        title={view.title}
+        deploy={view.deploy}
+        targets={view.deploy_targets}
+        canAct={canAct}
+      />
+
+      {/* MAR-584. Under the deploy section, because the order is the order of
+          the journey: an agent is run here, then put on a server, and then —
+          later, in another window — changed. It is also the honest position for
+          how often it is used: a person opens this page to read the news their
+          agent found, not to audit its folder, and a section about editing sat
+          above the output would be the ordering defect MAR-576 fixed being
+          reintroduced by a different feature.
+
+          Renders nothing at all for an agent DASH holds no folder of its own
+          for. */}
+      <FolderUpdate
+        agent={view.agent}
+        canAct={canAct}
+        checkable={view.folder_checkable}
+        onAdopted={() => setRefreshKey((value) => value + 1)}
+        setFeedback={setFeedback}
+      />
 
       <PermissionReceipt permissions={view.permissions} />
 

@@ -298,6 +298,28 @@ const dashShell = {
   refreshSampleAgent: (args: { agent_id: string }) => send("sample.refresh", { ...args }),
 
   /**
+   * The three folder commands (MAR-584).
+   *
+   * One agent id each and nothing else, for `refreshSampleAgent`'s reason in its
+   * strongest form: `adoptFolder` accepts a document *somebody else's editor
+   * wrote*, and the one thing page script must never be able to do is supply
+   * that document. It cannot. It names an agent; main reads DASH's own folder
+   * for that agent and DASH's own record of what it accepted, and the acceptance
+   * still goes through the same schema and the same constraints a first import
+   * does.
+   *
+   * `revealFolder` carries no path in either direction. The renderer does not
+   * learn where the folder is and could not have named a different one.
+   *
+   * Three named methods rather than one `folder(action, target)`, like every
+   * group above: a generic entry point is one whose reachable surface grows
+   * without a review.
+   */
+  checkFolder: (args: { agent_id: string }) => send("folder.check", { ...args }),
+  adoptFolder: (args: { agent_id: string }) => send("folder.adopt", { ...args }),
+  revealFolder: (args: { agent_id: string }) => send("folder.reveal", { ...args }),
+
+  /**
    * Remember that this agent's page has just been opened (MAR-586).
    *
    * One agent id and nothing else — in particular, no time. The moment recorded

@@ -18,7 +18,11 @@ import { DeployOutcome, DeployToServerPanel } from "../app/_components/deploy";
 import { MANIFEST_ONLY_DEPLOY_REFUSAL } from "../lib/agent-folders";
 import type { DeployStanding } from "../lib/deploy/deploying";
 import type { HostConnectState } from "../lib/host-connect";
-import type { AgentDeployView, SavedServerView } from "../lib/views/types";
+import type {
+  AgentDeployTarget,
+  AgentDeployView,
+  SavedServerView,
+} from "../lib/views/types";
 
 const TITLE = "News Scout";
 
@@ -55,6 +59,8 @@ function panel(
   over: {
     deploy?: AgentDeployView;
     servers?: readonly SavedServerView[];
+    /** MAR-584. Empty by default: almost no agent has ever been pushed. */
+    targets?: readonly AgentDeployTarget[];
     chosenHost?: string;
     standing?: DeployStanding | null;
     report?: HostConnectState | null;
@@ -68,6 +74,7 @@ function panel(
       title={TITLE}
       deploy={over.deploy ?? SENDABLE}
       servers={over.servers ?? [SERVER]}
+      targets={over.targets ?? []}
       chosenHost={over.chosenHost ?? SERVER.host_id}
       standing={over.standing ?? null}
       report={over.report ?? null}
@@ -76,6 +83,7 @@ function panel(
       canAct={over.canAct ?? true}
       onChoose={() => undefined}
       onDeploy={() => undefined}
+      onSendAgain={() => undefined}
     />,
   );
 }
@@ -257,6 +265,67 @@ describe("the outcome, which both entry points share", () => {
         "2026-08-09T14:14:37Z",
       ),
     ).toContain("DASH last asked on");
+  });
+});
+
+describe("servers this agent has already been sent to (MAR-584, ADR 0010)", () => {
+  const BEHIND: AgentDeployTarget = {
+    host_id: SERVER.host_id,
+    label: SERVER.label,
+    sent_at: "2026-08-07T09:00:00.000Z",
+    sent_on: "7 August",
+    comparable: true,
+    behind: true,
+  };
+
+  it("draws nothing for an agent DASH has never sent anywhere", () => {
+    // Which is almost every agent. An empty block with a heading would be DASH
+    // telling somebody about a thing they have not done.
+    expect(panel()).not.toContain("Servers you have sent this agent to");
+  });
+
+  it("says what DASH sent and when, and offers to send again", () => {
+    const markup = panel({ targets: [BEHIND] });
+    expect(markup).toContain("Servers you have sent this agent to");
+    expect(markup).toContain("DASH sent this agent to My server on 7 August.");
+    expect(markup).toContain("Send this agent to My server again");
+  });
+
+  it("never claims the agent is running there", () => {
+    /*
+     * ADR 0010's bound, asserted on the markup rather than only on the copy
+     * module: this is the surface where "on My server" would be shortest and
+     * most tempting. DASH sent bytes once and has not asked since.
+     */
+    const markup = panel({
+      targets: [BEHIND, { ...BEHIND, host_id: "host-2", label: "The spare", behind: false }],
+    });
+    expect(markup).not.toMatch(/is running on|is deployed|is live/i);
+    expect(markup).toContain("has not asked My server what is on it now");
+    expect(markup).toContain("has not asked The spare what is on it now");
+  });
+
+  it("offers the send on an up-to-date server too, in a quieter shape", () => {
+    /*
+     * A person who wants to push again over an unchanged copy is entitled to,
+     * for reasons DASH does not know. A button that appeared only when DASH
+     * judged it necessary would make its absence read as "you may not" — so the
+     * control is always there and only its emphasis moves.
+     */
+    const markup = panel({ targets: [{ ...BEHIND, behind: false }] });
+    expect(markup).toContain("Send this agent to My server again");
+    expect(markup).toContain("button-secondary");
+  });
+
+  it("says DASH cannot tell rather than guessing, with no record of what it sent", () => {
+    const markup = panel({ targets: [{ ...BEHIND, comparable: false, behind: false }] });
+    expect(markup).toContain("cannot tell you whether that copy matches this agent");
+  });
+
+  it("shows no send button in a window that cannot act", () => {
+    const markup = panel({ targets: [BEHIND], canAct: false });
+    expect(markup).toContain("DASH sent this agent to My server on 7 August.");
+    expect(markup).not.toContain("Send this agent to My server again");
   });
 });
 

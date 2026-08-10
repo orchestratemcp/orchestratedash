@@ -39,6 +39,7 @@ import type {
 } from "../agent-dom/runner";
 import type { ConnectionActionResult } from "../connection-actions";
 import type { Recovery } from "../copy/recovery";
+import type { FolderChangeReport } from "../folder-changes";
 import type { HostReachProblem } from "../host-connect";
 import type { AgentCommand } from "../workspace";
 
@@ -274,6 +275,79 @@ export const COMMANDS = {
     payload_keys: ["agent_id"],
     required_keys: ["agent_id"],
     mutates: true,
+    irreversible: false,
+  },
+
+  /*
+   * MAR-584. An outside editor changed an agent's folder; these three are how a
+   * person finds it, hears what changed, and decides.
+   *
+   * **A seventh family, and the split inside it is the point.** `folder.check`
+   * is a read and `folder.adopt` is the write, and they are two commands rather
+   * than one for the reason this whole issue exists: an agent's program is a
+   * thing somebody approved, and a detector that applied what it found would
+   * make the approval transfer to whatever an editor last saved. Anything that
+   * could compare and then accept in one call would be that, however carefully
+   * it was written.
+   *
+   * It is not `sample.*` either, though `folder.adopt` also rewrites a stored
+   * document. That family regenerates DASH's *own* template over an agent DASH
+   * scaffolded, and refuses anything else. This one accepts a document a
+   * **person's editor** wrote, which is the opposite provenance, and putting the
+   * two behind one name would make "what in DASH can overwrite an author's
+   * document, and on whose authority" a question with a compound answer.
+   */
+  "folder.check": {
+    effect:
+      "Compare this agent's folder with what DASH accepted, and say what is different. Changes nothing.",
+    payload_keys: ["agent_id"],
+    required_keys: ["agent_id"],
+    mutates: false,
+    irreversible: false,
+  },
+  /*
+   * `mutates` is plainly true: it replaces the stored document and the row
+   * beneath it, through the ordinary import door.
+   *
+   * `irreversible` is **false**, and — as with `sample.refresh` — the reasoning
+   * matters more than the flag. Nothing happens in the world, and the agent's
+   * identity, character, runs, outputs and connected credentials all survive.
+   * What this cannot undo is the *previous* stored document, which is gone once
+   * the folder's version is accepted. That is bounded by where the old version
+   * lives: it is DASH's projection of a folder the person's own editor changed,
+   * so the version DASH is replacing is one their editor can produce again.
+   *
+   * The bound worth stating is not this flag. It is that accepting is **not**
+   * what makes the edited program run — see `FOLDER_CHANGED`. The runner's
+   * working directory is that folder and nothing verifies it before spawning, so
+   * a changed program runs at the next run either way. What this command decides
+   * is whether DASH's description of the agent matches the agent.
+   */
+  "folder.adopt": {
+    effect:
+      "Accept the changed folder as this agent's setup, so what DASH shows and checks matches what is there.",
+    payload_keys: ["agent_id"],
+    required_keys: ["agent_id"],
+    mutates: true,
+    irreversible: false,
+  },
+  /*
+   * The step before the other two, and the one without which none of this is
+   * reachable: DASH keeps its copy inside the user's own profile, and nobody
+   * finds that path by guessing.
+   *
+   * `mutates` is false. It opens the operating system's own file browser at a
+   * folder and returns nothing. **No path crosses this boundary in either
+   * direction** — the renderer names an agent, main resolves the location, and
+   * the result is a success or a refusal. That is `workspace.download`'s
+   * discipline applied to the one other command that turns a click into a place
+   * on the user's disk.
+   */
+  "folder.reveal": {
+    effect: "Open this agent's folder in your file browser. Changes nothing.",
+    payload_keys: ["agent_id"],
+    required_keys: ["agent_id"],
+    mutates: false,
     irreversible: false,
   },
 
@@ -691,6 +765,28 @@ export function isGlanceCommandName(value: CommandName): value is GlanceCommandN
   return Object.hasOwn(GLANCE_ACTIONS, value);
 }
 
+/**
+ * An agent's folder, as edited from outside DASH (MAR-584).
+ *
+ * A seventh family with three members, and the reason it is a family rather
+ * than three additions to older maps is in the catalogue entries above: one of
+ * these compares, one accepts, and one opens a window on the user's own
+ * computer. A reviewer asking "what happens when something outside DASH changes
+ * an agent?" gets a complete answer from one map.
+ */
+export const FOLDER_ACTIONS = {
+  "folder.check": "check",
+  "folder.adopt": "adopt",
+  "folder.reveal": "reveal",
+} as const;
+
+export type FolderCommandName = keyof typeof FOLDER_ACTIONS;
+export type FolderAction = (typeof FOLDER_ACTIONS)[FolderCommandName];
+
+export function isFolderCommandName(value: CommandName): value is FolderCommandName {
+  return Object.hasOwn(FOLDER_ACTIONS, value);
+}
+
 export const CONNECTION_ACTIONS = {
   "connection.connect": "connect",
   "connection.test": "test",
@@ -765,6 +861,7 @@ type UnroutedCommand = Exclude<
   | WorkspaceCommandName
   | SampleCommandName
   | GlanceCommandName
+  | FolderCommandName
   | "shell.ping"
 >;
 const _allCommandsAreRouted: UnroutedCommand extends never ? true : never = true;
@@ -971,6 +1068,21 @@ export interface CommandResult {
    * secret: `lib/copy/recovery.ts` is given a service name and a vault label.
    */
   recovery?: Recovery;
+  /**
+   * Folder commands only (MAR-584): what DASH found when it compared.
+   *
+   * A structured value rather than something squeezed into `data`, for
+   * `recovery`'s reason and with the same shape of argument: the page renders a
+   * card and a list of sentences, and flattening that into primitives would put
+   * the job of composing them back together in the renderer. It is composed by
+   * `lib/folder-changes.ts` — the one place the comparison is worded — so the
+   * check surface and any later reader cannot describe the same folder
+   * differently.
+   *
+   * Absent on `folder.adopt` and `folder.reveal`, which report only whether they
+   * did the thing.
+   */
+  folder?: FolderChangeReport;
 }
 
 /**
@@ -1004,7 +1116,13 @@ export function executeCommand(review: CommandReview): CommandResult {
     // MAR-586. Writes a row through `node:sqlite`, which is the same reason as
     // every entry above: succeeding here would report a look recorded that was
     // not, and the fleet card would go on saying an output is new.
-    isGlanceCommandName(review.command)
+    isGlanceCommandName(review.command) ||
+    // MAR-584. Two of the three read the folder off disk and the third opens a
+    // window on it, none of which a sandboxed preload may do. `folder.check`
+    // matters most here despite changing nothing: succeeding without looking
+    // would tell a person their folder is unchanged on the strength of a
+    // function that cannot see a folder.
+    isFolderCommandName(review.command)
   ) {
     // Not a denial and not a result: a caller that reached here bypassed the
     // trusted side entirely. Throwing is the only honest answer — returning a
@@ -1177,6 +1295,25 @@ export type HostActionResult =
       host_key?: { fingerprint: string; key_type: string; offered_count: number };
     };
 
+/**
+ * What main hands back from one folder command (MAR-584).
+ *
+ * Three commands, one shape, and `report` present on exactly one of them. A
+ * discriminated union was the alternative and was declined: `check` and `adopt`
+ * fail in the same ways for the same reasons — no such agent, folder unreadable,
+ * import refused — and splitting them would mean two copies of those refusals
+ * for one extra field.
+ */
+export interface FolderActionResult {
+  ok: boolean;
+  /** A short code, for the same channel a connection or sample refusal uses. */
+  refusal?: string;
+  /** Plain language, safe to render. */
+  detail?: string;
+  /** `folder.check` only. Composed by `lib/folder-changes.ts` and nowhere else. */
+  report?: FolderChangeReport;
+}
+
 export interface DispatchContext {
   runAgentCommand(input: AgentCommandInput): Promise<AgentCommandResult>;
   /**
@@ -1291,6 +1428,25 @@ export interface DispatchContext {
    * start reasoning about a value it has no business holding.
    */
   glanceAction(action: GlanceAction, target: { agent_id: string }): Promise<{ ok: boolean }>;
+  /**
+   * Compare, accept, or open an agent's folder (MAR-584).
+   *
+   * Injected for the reason the six above are: the real implementation reads the
+   * folder with `node:fs`, writes through `importManifest`, and — for `reveal` —
+   * calls an Electron main API. None of that is reachable from a sandboxed
+   * preload, which is what lets this module name the three commands while being
+   * structurally unable to perform any of them.
+   *
+   * **`report` is the only structured value that comes back, and it is already
+   * safe to render.** It is `lib/folder-changes.ts`'s pure result: worded cards,
+   * plain-language change lines and the validator's own errors. No path, no
+   * digest and no file content crosses — the renderer learns *that two files of
+   * the program changed*, never which bytes or where they live.
+   */
+  folderAction(
+    action: FolderAction,
+    target: { agent_id: string },
+  ): Promise<FolderActionResult>;
   /**
    * Where the IPC-level audit record goes.
    *
@@ -1552,6 +1708,36 @@ export async function dispatchCommand(
       request_id: review.audit.request_id,
       reason: result.refusal,
       detail: result.detail,
+    };
+  }
+
+  if (isFolderCommandName(review.command)) {
+    /*
+     * MAR-584. One agent id, and there is nowhere for a second field to go.
+     *
+     * The payload rules permit exactly one key, so a compromised renderer's
+     * widest reach here is "compare agent X's folder", "accept whatever is in
+     * agent X's folder" or "open agent X's folder". It cannot name a path, a
+     * document, a digest or a version — everything the comparison and the
+     * acceptance run against is read by main from DASH's own record and DASH's
+     * own folder.
+     *
+     * That bound is what makes `folder.adopt` safe to expose at all. It accepts
+     * a document a person's editor wrote, which is a wider provenance than
+     * `sample.refresh` allows — but the document has to already be in the folder
+     * DASH keeps for that agent, having got there through the user's own file
+     * system, and it still goes through `importManifest` and is still refused if
+     * it does not validate.
+     */
+    const result = await context.folderAction(FOLDER_ACTIONS[review.command], {
+      agent_id: String(review.payload["agent_id"]),
+    });
+    return {
+      ok: result.ok,
+      request_id: review.audit.request_id,
+      reason: result.refusal,
+      detail: result.detail,
+      folder: result.report,
     };
   }
 

@@ -286,6 +286,20 @@ await Promise.all([
     format: "esm",
   }),
 
+  // The folder-update surface (MAR-584), on the same terms and for the sharpest
+  // version of the reason yet: what this section draws is decided entirely by a
+  // disagreement between two things on disk, so a run against a real store
+  // photographs an agent nobody has edited — one of five states, and the least
+  // interesting one. This one seeds the store, stages the edit its scene is
+  // named for, and presses the real check button. See
+  // `electron/capture-folder.ts`.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-folder.ts")],
+    outfile: path.join(outDir, "capture-folder.mjs"),
+    format: "esm",
+  }),
+
   // MAR-423. "Try a sample agent" scaffolds a project, and a scaffold needs the
   // same `scripts/open-in-dash.mjs` the Agent Kit copies in, so the user can
   // re-add their agent later from their own folder without DASH.

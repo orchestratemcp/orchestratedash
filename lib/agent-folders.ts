@@ -315,6 +315,177 @@ export function agentFolderMatchesImport(input: AgentFolderWriteInput): boolean 
   }
 }
 
+/* ---------------------------------------------------------------------- *
+ * What DASH accepted, per file (MAR-584)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * One stored file and the digest of the bytes DASH accepted for it.
+ *
+ * `path` is the **stored** location — the `mappedSegments` result, joined with
+ * forward slashes — and not the project-relative path the handoff declared.
+ * That distinction is the whole reason this type exists beside
+ * `agentFolderFilesDigest`, which hashes the declared paths and therefore
+ * **cannot be recomputed from disk**: a project's `agent.mjs` and a project's
+ * `code/agent.mjs` are both stored at `code/agent.mjs`, so the folder does not
+ * carry enough to reconstruct which of the two produced it, and the aggregate
+ * digest differs between them.
+ *
+ * The aggregate stays where it is and keeps doing its job — deciding whether a
+ * *handoff* is the same handoff. This is the other question: whether the bytes
+ * on disk are still the bytes DASH was handed.
+ */
+export interface StoredFileDigest {
+  path: string;
+  sha256: string;
+}
+
+/** Present, and either the bytes DASH holds or a reason it could not read them. */
+export type StoredFileReading =
+  | { path: string; sha256: string }
+  | { path: string; sha256: null; problem: "missing" | "unreadable" };
+
+function sha256Of(contents: string): string {
+  return createHash("sha256").update(Buffer.from(contents, "utf8")).digest("hex");
+}
+
+/**
+ * Where one declared project path is stored, or null for the manifest.
+ *
+ * Null rather than `agent.manifest.json`, because the manifest is genuinely not
+ * one of these: it is validated separately, compared separately and has its own
+ * digest on the registration. `writeAgentFolder` already skips it when writing
+ * the file set, and a baseline that listed it would compare it twice and report
+ * a manifest edit as two changes.
+ */
+export function storedRelativePath(declared: string): string | null {
+  const mapped = mappedSegments(declared);
+  if (mapped.length === 1 && mapped[0] === AGENT_MANIFEST_FILE) {
+    return null;
+  }
+  return mapped.join("/");
+}
+
+/**
+ * The per-file baseline for a folder DASH is about to write.
+ *
+ * Sorted by stored path so two imports of the same file set produce the same
+ * list whatever order the handoff listed them in — the property
+ * `agentFolderFilesDigest` gets from sorting for the same reason.
+ */
+export function storedFileDigests(files: readonly AgentFolderFile[]): StoredFileDigest[] {
+  const digests: StoredFileDigest[] = [];
+  for (const file of files) {
+    const stored = storedRelativePath(file.path);
+    if (stored === null) {
+      continue;
+    }
+    digests.push({ path: stored, sha256: sha256Of(file.contents) });
+  }
+  return digests.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * One digest over a set of stored files, so two moments can be compared.
+ *
+ * Exists because ADR 0010's deploy record and MAR-584's accepted baseline have
+ * to be comparable, and until this function there was no way to compare them:
+ * `files_sha256` on a registration is hashed over the *declared* handoff paths
+ * and a bundle's files are named under `agent/`. Both sides now reduce to this
+ * one function over the same stored path space, which is the only reason
+ * "the copy DASH sent is not the copy this agent is now" is a checkable claim
+ * rather than an assertion.
+ *
+ * Null for an empty set, and that is deliberate rather than the digest of
+ * nothing: an agent with no tracked program files and an agent whose tracked
+ * files all happen to hash to the same thing are different situations, and only
+ * the second is a comparison. A null on either side means *not comparable*, and
+ * every caller treats it that way.
+ */
+export function storedDigestSummary(files: readonly StoredFileDigest[]): string | null {
+  if (files.length === 0) {
+    return null;
+  }
+  const lines = files
+    .map((file) => `${file.path} ${file.sha256}`)
+    .sort((a, b) => a.localeCompare(b));
+  return createHash("sha256").update(lines.join("\n"), "utf8").digest("hex");
+}
+
+/**
+ * Re-read exactly the files DASH recorded, and nothing else.
+ *
+ * **The named paths, never a walk of the folder**, and that is the load-bearing
+ * decision of MAR-584's detector rather than an optimisation. The sample agent
+ * writes its digests into `code/reports/` and its event log into `code/runs/`,
+ * both inside the folder this would otherwise enumerate — so a walk would report
+ * an agent's own output as somebody's edit, on every check, for the flagship
+ * agent. `agentFolderMatchesImport` states the same rule one section up and this
+ * is the read-only half of it.
+ *
+ * The honest cost is stated where a person can see it: a file an external editor
+ * *adds* is not reported, because DASH cannot tell a new module from a report
+ * the agent just wrote. What it can tell, exactly, is whether the files it was
+ * handed still hold the bytes it was handed.
+ *
+ * A path that has left the folder is `unreadable` rather than an exception. A
+ * baseline naming something outside the agent's folder can only come from a
+ * damaged or edited registration, and the detector's answer to that is the same
+ * as its answer to a deleted file: it says so.
+ */
+export function readStoredFileDigests(
+  dataDir: string,
+  agent: string,
+  paths: readonly string[],
+): StoredFileReading[] {
+  return paths.map((relative) => {
+    const read = readStoredFile(dataDir, agent, relative);
+    return read.ok
+      ? { path: relative, sha256: sha256Of(read.contents) }
+      : { path: relative, sha256: null, problem: read.problem };
+  });
+}
+
+/**
+ * One stored file's contents, through the same containment check.
+ *
+ * The single place in DASH that resolves a stored relative path to a location,
+ * so a caller that wants a file's *text* — `lib/agent-sources.ts` reading the
+ * names out of a sources file — does not grow its own `path.join` beside a
+ * `readFileSync`. Every guard the digest walk applies applies here, because the
+ * digest walk is now this function plus a hash.
+ */
+export function readStoredFile(
+  dataDir: string,
+  agent: string,
+  relative: string,
+): { ok: true; contents: string } | { ok: false; problem: "missing" | "unreadable" } {
+  let folder: string;
+  try {
+    folder = checkedAgentFolder(dataDir, agent);
+  } catch {
+    return { ok: false, problem: "unreadable" };
+  }
+  const target = path.join(folder, ...relative.split("/"));
+  if (!containedIn(folder, target)) {
+    return { ok: false, problem: "unreadable" };
+  }
+  let stats;
+  try {
+    stats = lstatSync(target);
+  } catch {
+    return { ok: false, problem: "missing" };
+  }
+  if (stats.isSymbolicLink() || !stats.isFile()) {
+    return { ok: false, problem: "unreadable" };
+  }
+  try {
+    return { ok: true, contents: readFileSync(target, "utf8") };
+  } catch {
+    return { ok: false, problem: "unreadable" };
+  }
+}
+
 /** Write one file and flush its contents before acknowledging it. */
 function durableWrite(file: string, contents: string): void {
   mkdirSync(path.dirname(file), { recursive: true });

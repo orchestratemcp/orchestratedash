@@ -67,7 +67,8 @@ import {
   findDuplicateHost,
   type HostRecord,
 } from "../lib/hosts";
-import { produceAgentFolderBundle } from "../lib/deploy/folder-bundle";
+import { describeBundleContents, produceAgentFolderBundle } from "../lib/deploy/folder-bundle";
+import { readRegistration } from "../lib/registration";
 import type { HandoffPorts } from "../lib/handoff-flow";
 import { findDeepLink } from "../lib/shell/deep-link";
 import { applicationMenu, type MenuAction, type MenuItemSpec } from "../lib/shell/menu";
@@ -120,12 +121,14 @@ import { RENDERER_ENTRY_URL, RENDERER_ORIGIN } from "../lib/shell/renderer-schem
 import {
   findHostByConnection,
   forgetHost,
+  forgetHostDeploys,
   importManifest,
   listAgentNames,
   listHosts,
   pinHostFingerprint,
   readAgentManifest,
   readHost,
+  recordAgentDeploy,
   recordAgentLook,
   saveHost,
 } from "../lib/store";
@@ -138,6 +141,7 @@ import {
   promptForSecret,
   registerCredentialChannels,
 } from "./credential-prompt";
+import { performFolderAction } from "./folder-update";
 import { providerOperations } from "./oauth-session";
 import { startBroker } from "./broker-host";
 import { ensureRunner, runnerFetch, stopRunner, type RunnerHandle } from "./runner-process";
@@ -648,6 +652,11 @@ export function registerCommandChannel(
         recordAgentLook(target.agent_id);
         return Promise.resolve({ ok: true });
       },
+      // MAR-584. The one route in DASH that accepts a document somebody else's
+      // editor wrote. Every gate is inside `electron/folder-update.ts`, beside
+      // the reads and the write it guards, for `refreshSampleAgent`'s reason.
+      folderAction: (action, target) =>
+        Promise.resolve(performFolderAction(dataDir, action, target.agent_id)),
     });
   });
 }
@@ -1325,6 +1334,10 @@ async function hostAction(
       // again later must be confirmed again: the previous decision was about a
       // machine that may not be this one any more (MAR-572).
       forgetHostKeyPin(dataDir, record);
+      // MAR-584, ADR 0010. The ADR requires this and it is not tidiness: once
+      // the label is gone, a surviving row could only render as a claim about a
+      // machine DASH can no longer reach or even name.
+      forgetHostDeploys(record.host_id);
       forgetHost(record.host_id);
     } catch {
       return { ok: false, detail: "DASH could not forget this server safely." };
@@ -1443,6 +1456,34 @@ async function hostAction(
       if (!started.ok) {
         return { ok: false, detail: started.detail, problem: diagnosed(diagnostics, record) };
       }
+      /*
+       * MAR-584, ADR 0010. After the start succeeded and nowhere else.
+       *
+       * A deploy is three steps behind one answer and DASH cannot tell which of
+       * them a failure stopped at, so a row written on an attempt would claim
+       * DASH sent something it may not have. Written here, the row records the
+       * one thing DASH does know: the server took the bundle and started it,
+       * and these were the bytes in it.
+       *
+       * Nothing about the server's state is stored — see the migration's own
+       * note and the ADR. `sent_at` comes from DASH's clock inside
+       * `recordAgentDeploy`, which is what keeps every sentence derived from
+       * this row in the past tense.
+       */
+      recordAgentDeploy({
+        agent: produced.request.agent_id,
+        host_id: record.host_id,
+        // The paths DASH recorded as this agent's program, so the digest is over
+        // the same set the accepted baseline covers and the two can be compared
+        // later. Empty for an agent with no baseline, which yields a null
+        // program digest and a surface that says it cannot tell.
+        ...describeBundleContents(
+          produced.request,
+          (readRegistration(dataDir, produced.request.agent_id)?.dash.accepted_files ?? []).map(
+            (file) => file.path,
+          ),
+        ),
+      });
       return {
         ok: true,
         action: "deploy",
