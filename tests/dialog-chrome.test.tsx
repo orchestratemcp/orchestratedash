@@ -124,7 +124,7 @@ describe("the app chrome on an ordinary page", () => {
     // MAR-528 replaced MAR-440's 2px active bar with a solid block of electric
     // blue. The bar was never what carried the state to somebody who cannot see
     // it; this attribute was, and it has to survive the restyle.
-    expect(markupAt("/connections")).toContain('aria-current="page"');
+    expect(markupAt("/settings")).toContain('aria-current="page"');
   });
 });
 

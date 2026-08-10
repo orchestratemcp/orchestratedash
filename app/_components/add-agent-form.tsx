@@ -143,7 +143,7 @@ export function AddAgentForm(): ReactNode {
               claiming otherwise is the overreach MAR-383 warns against. */}
           <p>
             DASH now knows what this agent plans to do. It does not hold any of
-            its credentials. <a href="/connections">See what it needs to connect to</a>.
+            its credentials. <a href="/settings">See what it needs to connect to</a>.
           </p>
         </div>
       ) : null}

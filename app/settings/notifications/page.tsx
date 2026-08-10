@@ -2,23 +2,23 @@
 
 import { useState, type ReactNode } from "react";
 
-import { plainDay } from "../../lib/copy/when";
+import { plainDay } from "../../../lib/copy/when";
 import {
   NOTIFY_CONTENTS,
   NOTIFY_CUSTODY,
   NOTIFY_LIVENESS,
   NOTIFY_SETUP_STEPS,
-} from "../../lib/notify/settings";
-import { HostNotice, ViewFailed, ViewLoading } from "../_components/view-state";
+} from "../../../lib/notify/settings";
+import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import {
   connectNotifications,
   disconnectNotifications,
   setNotificationKind,
   testNotifications,
-} from "../_data/source";
-import { useCanAct, useHost, useView } from "../_data/use-view";
-import type { CommandResult } from "../../lib/shell/ipc";
-import type { NotificationsView } from "../../lib/views/types";
+} from "../../_data/source";
+import { useCanAct, useHost, useView } from "../../_data/use-view";
+import type { CommandResult } from "../../../lib/shell/ipc";
+import type { NotificationsView } from "../../../lib/views/types";
 
 /**
  * Notifications: where DASH tells you an agent needs you (MAR-588, outbound).

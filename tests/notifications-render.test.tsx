@@ -20,7 +20,7 @@ import { NOTIFY_CONTENTS, NOTIFY_LIVENESS } from "../lib/notify/settings";
 import { expectPlainLanguage } from "./helpers/plain-language";
 import type { NotificationsView } from "../lib/views/types";
 
-const { NotificationSettings } = await import("../app/notifications/page");
+const { NotificationSettings } = await import("../app/settings/notifications/page");
 
 const CONFIGURED: NotificationsView = {
   configured: true,

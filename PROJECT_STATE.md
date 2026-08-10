@@ -1,5 +1,10 @@
 # DASH project state
 
+Updated: 2026-08-10 (MAR-592: one Settings entry in the sidebar; Connections,
+Notifications, Servers and Add agent become tabs on one page)
+
+---
+
 Updated: 2026-08-10 (MAR-591: a deploy says which of an agent's connections
 stay on this computer, before the press, in both entry points)
 
@@ -5458,6 +5463,120 @@ and that the amount went with the row.
 
 **Zero changes under `runner/`.** The runner does not know this feature exists.
 
+## The sidebar stops being a list of everything (MAR-592)
+
+The sidebar had seven destinations and no rule about what belonged in it.
+MAR-498's comment in `app/_data/routes.ts` announced "a sixth destination";
+MAR-588's, one issue later, announced "a seventh". Both were correct and both
+were arguing that the *nav could take one more*, which is the shape a list has
+when it grows by one every time a setup step gets built.
+
+Four of the seven were not places you go. They were places you go **once**:
+connect a service, add a channel address, register a server, add an agent. They
+sat at the same rank as the three surfaces somebody opens DASH to look at.
+
+The rule is now **the sidebar is what you watch, Settings is what you arrange.**
+Agents, Work inbox and Runs answer "what are my agents doing, what needs me,
+what happened". Everything answering "set this up once" is a tab on one page,
+and that page is one sidebar row.
+
+### This is a move, not a redesign
+
+Every one of the four surfaces renders the same component tree it rendered
+before. The four page files were moved with `git mv`, so the diff is four
+renames plus four import paths, and nothing inside any of them changed. The
+add-agent flow in particular is **under Henrik's hold** — he is trying it in an
+attended test — so no wording, no ordering and no control on it moved.
+
+`app/settings/layout.tsx` deliberately renders **no `<h1>` of its own**. A
+"Settings" heading above the strip would push all four pages' real headings down
+to `<h2>`, which is a content change to four surfaces in a change whose whole
+claim is that it did not touch them. The title bar already says "Settings" on
+all four routes, because `surfaceFor` resolves them to one surface.
+
+### Real routes, not tab state
+
+The four tabs are four pages in the static export, and this is a requirement
+rather than an implementation detail. Three things depend on it:
+
+- **Deep links.** `lib/open-link.ts` names a surface and asks for it to be
+  shown, and MAR-588 sends those links into a Discord channel. A tab held in
+  React state is not a surface anything outside the renderer can name.
+- **The capture harnesses.** `electron/capture.ts` and its siblings photograph a
+  *route*. Tabs behind a click would be tabs photographed by a harness that had
+  to learn to click, and MAR-577 already paid for what a clicking harness gets
+  wrong.
+- **Every link already pointing at these surfaces.** A not-connected chip on the
+  fleet has to arrive *at Connections*, not at Settings-with-luck.
+
+`/settings` **is** the Connections tab rather than a page that forwards to one. A
+static export cannot answer a redirect, so forwarding would mean shipping a page
+whose whole job is to run a script and navigate away — a blank Settings page on
+any slow paint. Connections gets the short address because it is the tab a
+person arrives for.
+
+The tabs are **links with `aria-current`, not an ARIA tablist**. `role="tab"`
+promises roving arrow-key focus and a panel swapped in place; every press here is
+a real navigation. Claiming the role without the behaviour is worse than
+claiming nothing.
+
+### The fleet gained an Add agent button
+
+On the page, not only in the empty state. The empty state is shown to somebody
+with *no* agents; the person who needs this most is the one who has one and
+wants a second. It is a third *entrance* onto one implementation, beside the tab
+and `lib/shell/menu.ts`'s menu item.
+
+### What the pictures show, and the one thing they do not
+
+`qa-screenshots-mar592/` — 78 packaged-renderer frames at 375/768/1280 in both
+themes, 13/13 harness witnesses passed, and `layout.json` measuring 96 rows of
+which **zero** overflow sideways. At 375px the tab strip wraps to two lines
+rather than scrolling, which is MAR-491's rule and the one thing this layout
+could plausibly have got wrong. `qa-screenshots-mar592/servers/` is the
+repointed two-state harness photographing live content at `/settings/servers` —
+which is how a harness pointed at a dead route is told from one pointed at a
+live one, since a dead route photographs as background colour and says nothing.
+That is the failure MAR-498 shipped once.
+
+**Nobody has used this.** The acceptance test for this issue is that somebody who
+has never seen DASH finds where to connect Gmail unprompted. The images
+establish that one press of Settings lands on a page with Gmail on it. They do
+not establish that a stranger presses Settings.
+
+`pnpm verify:shell` **ran and did not reach a verdict** — 40 PASS, 4 FAIL, then a
+`TypeError` in cleanup. All four failures are one condition: proof 4b reports
+`store_damaged: true`, and 6b-m2, 6b-m3 and 6c all report `database disk image is
+malformed` from the runner's own SQLite store.
+
+Nothing in this branch touches the runner, the store, any migration or any
+command path, and the damage was on screen **before** `verify:shell` ran —
+`qa-screenshots-mar592/agents-1280-light-comfortable.png`, captured earlier in
+the session, already shows DASH's "The part of DASH that runs your agents cannot
+read its own records" notice and its **Set records aside** button.
+
+**What this session cannot establish is that the damage predates the session.**
+An `orchestratedash` runner was already live when it began, and running
+`electron/capture.ts` against the *real* store started a second runner beside it;
+two runner processes on one SQLite file is a plausible mechanism, and
+`runner.sqlite` was last written inside this session's window. An earlier
+malformed `runner.sqlite` on this machine was retired on 2026-08-06, so this is
+the second occurrence rather than a novel one. The store's health was not checked
+before starting, so calling it pre-existing would be claiming more than was
+measured.
+
+Electron instances from the main checkout were live throughout as well, which the
+smoke does not tolerate. CI's Windows `shell-smoke` is this branch's installed
+witness.
+
+One thing worth deciding after the attended test: the active tab's label and the
+page's own `<h1>` now say the same word twice, one above the other. That is the
+honest consequence of moving pages verbatim, it is what most tabbed settings
+surfaces do, and removing an `<h1>` from four pages is a redesign this change
+declined to make while the hold stands.
+
+**Zero changes under `runner/`**, and none to any view, contract, migration,
+command or broker path.
 ---
 
 ## MAR-590 - the 375px fleet grid stops scrolling sideways (planned)

@@ -143,7 +143,7 @@ export default function RunsPage(): ReactNode {
           <p>
             Agents report here as they work. If you have not made one,{" "}
             <a href="/">start with AI News Scout</a> — or{" "}
-            <a href="/agents/add">add an agent</a> you built yourself.
+            <a href="/settings/add-agent">add an agent</a> you built yourself.
           </p>
         </div>
       ) : (

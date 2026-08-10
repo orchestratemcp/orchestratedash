@@ -82,7 +82,7 @@ describe("every destination survives the move into the sidebar", () => {
   });
 
   it("announces the active surface and only the active surface", () => {
-    const markup = markupAt("/connections");
+    const markup = markupAt("/settings");
     expect(markup.match(/aria-current="page"/g)).toHaveLength(1);
   });
 

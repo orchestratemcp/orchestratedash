@@ -27,7 +27,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { CheckStep, KeyStep, StepRail } from "../app/hosts/page";
+import { CheckStep, KeyStep, StepRail } from "../app/settings/servers/page";
 import { HOST_REACH_PROBLEMS, type HostConnectState } from "../lib/host-connect";
 import { WIZARD_STEPS, describeStep } from "../lib/host-wizard";
 
@@ -88,7 +88,7 @@ describe("the live wizard's command path", () => {
      * exposes it. Reading the component is the appropriate proof here because
      * the server-rendered state intentionally does not invoke Electron.
      */
-    const source = readFileSync(path.join(repoRoot, "app", "hosts", "page.tsx"), "utf8");
+    const source = readFileSync(path.join(repoRoot, "app", "settings", "servers", "page.tsx"), "utf8");
     expect(source).toContain('submitHostCommand("create"');
     expect(source).toContain('submitHostCommand("probe"');
     expect(source).toContain('submitHostCommand("forget"');
@@ -184,7 +184,7 @@ describe("the enrollment moment on the check step (MAR-572, MAR-579)", () => {
     // The button lives in the wizard's button row, not in CheckStep. Reading the
     // source is the right proof for the same reason the command-path test does:
     // the server-rendered wizard does not invoke Electron.
-    const source = readFileSync(path.join(repoRoot, "app", "hosts", "page.tsx"), "utf8");
+    const source = readFileSync(path.join(repoRoot, "app", "settings", "servers", "page.tsx"), "utf8");
     expect(source).toContain("confirmHostKey(checkState.fingerprint)");
     expect(source).toContain("Yes, this is my server");
   });
