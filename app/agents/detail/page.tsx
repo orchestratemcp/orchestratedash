@@ -20,6 +20,7 @@ import {
    than the next person following it. */
 import { DeployToServer } from "../../_components/deploy";
 import { FolderUpdate } from "../../_components/folder-update";
+import { AskAgent } from "../../_components/ask";
 import { ModelChoice } from "../../_components/model-choice";
 import { InputsPanel, type SelectedInput } from "../../_components/inputs";
 import { OAvatar } from "../../_components/o-avatar";
@@ -453,6 +454,29 @@ function AgentWorkspace(): ReactNode {
         onDispatch={dispatchTask}
         pending={pending}
         snapshot={view.snapshot}
+      />
+
+      {/* MAR-545. Directly under the agent's own output, because the question a
+          person has is about what they have just read — "you mentioned tariffs
+          last week, what else did you find?" — and a conversation placed below
+          three controls would be a conversation about something the reader has
+          scrolled past.
+
+          Above the model picker on purpose, even though the picker is what makes
+          the chat work on an agent nobody has configured. The `no_model_chosen`
+          state says so and points down the page, which is one instruction read
+          once; the reverse order would put a setting above the thing it is a
+          setting for, on every agent, forever.
+
+          Draws in every state, including the four where nothing can be asked.
+          Each of those is a fact about this agent worth knowing, and one of them
+          — the conversation an agent had before its key was withdrawn — is
+          content rather than a control. */}
+      <AskAgent
+        ask={view.ask}
+        canAct={canAct}
+        onAsked={() => setRefreshKey((value) => value + 1)}
+        setFeedback={setFeedback}
       />
 
       {/* MAR-583. Directly under Run now, because it is the setting that decides

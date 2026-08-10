@@ -26,6 +26,10 @@
  *    Both before the vault, so a repeated or excessive write costs a query
  *    rather than a token — and the durable check has to come before anything
  *    irreversible rather than beside it.
+ * 3c. **For a spend: who asked, then the same two checks** (MAR-545). The
+ *    origin gate is first and is the cheapest refusal in the file — an agent
+ *    that may not spend does not get so far as costing DASH a database query
+ *    for asking.
  * 4. **Connection is brokered** — from the manifest.
  * 5. **Credential** — the first vault touch, and only for a request that has
  *    already survived four checks.
@@ -70,7 +74,7 @@ import {
   type BrokerCredential,
   type BrokerGrant,
 } from "./grant";
-import { operationById, planCall } from "./operations";
+import { hasFrozenPath, isSpendOperation, operationById, planCall } from "./operations";
 import { fulfil, refuse, type BrokerRefusal, type BrokerRequest, type BrokerResponse } from "./protocol";
 
 /* ---------------------------------------------------------------------- *
@@ -199,6 +203,51 @@ export const BROKER_WINDOW_MS = 60_000;
 export const BROKER_WRITES_PER_WINDOW = 3;
 
 /**
+ * How many of those calls may cost the person money (MAR-545).
+ *
+ * A third budget over the same window, on the terms the second was added under:
+ * it bounds a different harm, so it gets a different number rather than a share
+ * of somebody else's. Six a minute is more than a person can read the answers
+ * to, and it is the ceiling on what a stuck retry loop or a page rendering in a
+ * loop can cost before somebody notices — which is the failure worth bounding,
+ * because unlike a flood of reads this one arrives as a line on a bill.
+ *
+ * A question also costs a call from the general budget above, so nothing is
+ * exempt from the coarser bound by being expensive.
+ */
+export const BROKER_SPEND_PER_WINDOW = 6;
+
+/**
+ * Who asked for this (MAR-545).
+ *
+ * A required parameter of `handle` rather than a field on `BrokerRequest`,
+ * which is the whole of its value: a request cannot carry its own origin,
+ * because the origin is a fact about which code path DASH's own process took to
+ * get here and an agent could otherwise assert it. The drain loop in
+ * `electron/broker-host.ts` passes `"agent"` for every line it reads off a
+ * child's stdout, and only a call DASH itself makes because somebody pressed
+ * something passes `"person"`.
+ *
+ * **What it gates is spending, and only spending.** Every read and every write
+ * behaves identically whichever value is passed; `gmail.draft.create` is an
+ * agent's job and always was. A completion is refused for an agent because
+ * MAR-582 named the thing that has to exist first — "a cost story and a per-run
+ * budget" — and this slice builds the first and not the second. An agent that
+ * may spend without a per-run budget is an agent that can empty an account
+ * between two of DASH's five-second polls.
+ *
+ * So this is a stated, temporary standing rather than a principle: when MAR-299
+ * has a per-run budget, letting an agent spend is this gate plus that budget,
+ * and the diff is small and visible. Until then the refusal is
+ * `needs_a_person`, which says exactly that to the agent that hit it.
+ */
+export type BrokerOrigin =
+  /** A line read off an agent's stdout by the runner. */
+  | "agent"
+  /** A call DASH made because somebody at the keyboard asked for it. */
+  | "person";
+
+/**
  * How many request ids the broker remembers per agent, for replay detection.
  *
  * Bounded because the memory is the runner's lifetime and an agent chooses the
@@ -246,18 +295,26 @@ interface AgentBudget {
   calls: number[];
   /** Timestamps of recent calls that changed something (MAR-469). */
   writes: number[];
+  /** Timestamps of recent calls that cost money (MAR-545). */
+  spends: number[];
 }
 
 export interface Broker {
   /**
-   * Answer one request from one agent.
+   * Answer one request about one agent's connection.
    *
    * `agentId` is the **supervisor's** identity for the child process, never a
    * value from the request. That binding is what stops one agent asking for
    * another agent's connection: the manifest looked up below is the one DASH
    * imported for the process that actually wrote the line.
+   *
+   * `origin` is required and has no default (MAR-545). A default would be a
+   * decision about somebody's money taken by whichever call site forgot to pass
+   * it, and there is no safe side to default to: `"agent"` would break the
+   * person's own chat and `"person"` would let a child process spend. Both call
+   * sites are in `electron/`, both are one line, and both say which they are.
    */
-  handle(agentId: string, request: BrokerRequest): Promise<BrokerResponse>;
+  handle(agentId: string, request: BrokerRequest, origin: BrokerOrigin): Promise<BrokerResponse>;
 }
 
 export function createBroker(deps: BrokerDeps): Broker {
@@ -266,14 +323,18 @@ export function createBroker(deps: BrokerDeps): Broker {
   function budgetFor(agentId: string): AgentBudget {
     let budget = budgets.get(agentId);
     if (budget === undefined) {
-      budget = { seen: [], seenSet: new Set(), calls: [], writes: [] };
+      budget = { seen: [], seenSet: new Set(), calls: [], writes: [], spends: [] };
       budgets.set(agentId, budget);
     }
     return budget;
   }
 
   return {
-    async handle(agentId: string, request: BrokerRequest): Promise<BrokerResponse> {
+    async handle(
+      agentId: string,
+      request: BrokerRequest,
+      origin: BrokerOrigin,
+    ): Promise<BrokerResponse> {
       const startedAt = deps.now().getTime();
       const inputKeys = Object.keys(request.input).sort();
 
@@ -345,6 +406,30 @@ export function createBroker(deps: BrokerDeps): Broker {
           return no("rate_limited");
         }
         budget.writes.push(startedAt);
+      }
+
+      /* 3c. A spend, three times over (MAR-545).
+         The origin gate first, and before the vault for the reason every check
+         above it is: an agent that may not spend at all should not cause a
+         vault read by asking. It is also before the durable replay check, so
+         that an agent cannot learn from a refusal's *shape* which request ids
+         DASH has adjudicated before.
+
+         Then the same durable replay check a write gets — a repeated question
+         is a repeated charge, which is exactly the kind of memory that has to
+         outlive the process — and then the spend budget. */
+      if (isSpendOperation(operation)) {
+        if (origin !== "person") {
+          return no("needs_a_person");
+        }
+        if (deps.hasHandledRequest?.(agentId, request.request_id) === true) {
+          return no("duplicate_request");
+        }
+        budget.spends = budget.spends.filter((at) => at > windowStart);
+        if (budget.spends.length >= BROKER_SPEND_PER_WINDOW) {
+          return no("rate_limited");
+        }
+        budget.spends.push(startedAt);
       }
 
       /* 4. Is the connection one DASH brokers for this agent? */
@@ -419,18 +504,17 @@ export function createBroker(deps: BrokerDeps): Broker {
         return no("broker_error", accountHint);
       }
 
-      /* 8b. And for a write, the path as well (MAR-469).
+      /* 8b. And for anything carrying a frozen path, the path as well
+         (MAR-469, MAR-545).
          The origin check above would let a bug reach any path on the provider,
-         which for Gmail includes `/gmail/v1/users/me/messages/send`. This is
-         the second reading of the same fact `planCall` already guarantees
+         which for Gmail includes `/gmail/v1/users/me/messages/send` and for a
+         model provider includes every billed endpoint it has. This is the
+         second reading of the same fact `planCall` already guarantees
          structurally, and it is here for the reason step 8 is: the two are
-         cheap, and the thing on the other side of them is somebody's mailbox.
-         A mismatch is DASH's bug, so it is `broker_error` and not a refusal
-         that would read as the agent's fault. */
-      if (
-        operation.access === "write" &&
-        new URL(planned.call.url).pathname !== operation.path
-      ) {
+         cheap, and the thing on the other side of them is somebody's mailbox or
+         somebody's money. A mismatch is DASH's bug, so it is `broker_error` and
+         not a refusal that would read as the agent's fault. */
+      if (hasFrozenPath(operation) && new URL(planned.call.url).pathname !== operation.path) {
         return no("broker_error", accountHint);
       }
 

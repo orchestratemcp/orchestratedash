@@ -57,6 +57,7 @@ import {
 } from "../lib/connection-credentials";
 import type { ConnectionSourceManifest } from "../lib/connections";
 import { listAiKeyModels } from "../lib/ai/actions";
+import { performAskAction } from "./ask-host";
 import {
   bundledModelChoice,
   resolveModelSteps,
@@ -768,6 +769,11 @@ export function registerCommandChannel(
       // answer. Every gate is inside `performModelAction`, beside the reads it
       // guards, for `refreshSampleAgent`'s reason.
       modelAction: (action, target) => performModelAction(action, target),
+      // MAR-545. The only route in DASH that can spend the person's money, and
+      // the only caller anywhere that hands the broker `"person"` rather than
+      // `"agent"`. Every gate is inside `electron/ask-host.ts`, beside the call
+      // it guards, for `performFolderAction`'s reason.
+      askAction: (_action, target) => performAskAction(target),
       // MAR-588. The only route in DASH that can send something off this machine
       // without an agent asking it to. Every gate is inside
       // `electron/notify-settings.ts`, beside the vault read and the write, for

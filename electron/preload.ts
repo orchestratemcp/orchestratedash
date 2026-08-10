@@ -453,6 +453,33 @@ const dashShell = {
     send("model.list", { ...args }),
 
   /**
+   * Ask this agent's model a question about what it has saved (MAR-545).
+   *
+   * The only method on this bridge that costs the person money, and the only one
+   * carrying free text the person typed. Four explicit fields rather than a
+   * spread, `sendHostCreate`'s rule — and note which field is *not* here: no
+   * model. Which model answers is read in main from the row a person set
+   * through `chooseModel`, so page script cannot direct a charge at the most
+   * expensive model a key reaches.
+   *
+   * **No answer comes back through this call.** It resolves to whether the
+   * question was asked; the answer arrives with the rest of the agent's view on
+   * the next poll. See `DispatchContext.askAction`.
+   */
+  askQuestion: (args: {
+    agent_id: string;
+    connection_id: string;
+    field_id: string;
+    question: string;
+  }) =>
+    send("ask.question", {
+      agent_id: args.agent_id,
+      connection_id: args.connection_id,
+      field_id: args.field_id,
+      question: args.question,
+    }),
+
+  /**
    * The runner's own health, and its one repair (MAR-518).
    *
    * `status` carries no payload — it is a fact about the runner as a whole,

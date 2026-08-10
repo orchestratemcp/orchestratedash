@@ -5306,3 +5306,154 @@ agent id — so its copy reads "meeting-assistant" where the agent's own page re
 "Meeting Assistant". `lib/copy/identifiers.ts` refuses slugs on a guided surface;
 the fix is a display label on `AgentDeployChoice`, and it belongs to whoever owns
 that picker rather than to this issue.
+
+---
+
+## Talking to an agent, and the money question answered (MAR-545)
+
+Henrik, 2026-08-09: *"Have a chat in each agent page that we can use to ask
+questions to the AI. … ask it for the latest news or if it can pull all news it
+has found and stored about one topic etc."*
+
+The agent page now has a conversation. Its first capability is
+question-answering over the agent's **own saved reports**, which is the concrete
+use of files-in/reports-out the coordinator comment named. The judgments are
+`docs/adr/0012-talking-to-an-agent.md`.
+
+### The boundary MAR-582 wrote down, crossed
+
+MAR-582: *"There is no completion call… the next slice needs a cost story and a
+per-run budget this one did not invent."* This is that slice. It builds the cost
+story and **not** the per-run budget, and the missing half is why the gate below
+exists rather than being an oversight.
+
+**Spending is a third access kind, not a shade of writing.** `BrokerAccess`
+gains `spend`, and the three completions live in their own frozen `SPEND_PATHS`.
+`WRITE_PATHS` is untouched and still one Gmail path — the array a reader is
+invited to treat as the complete answer to "what can this application do to my
+account?" did not grow because a feature started spending money. A third variant
+also made every `switch` over access stop compiling, which is how four surfaces
+were made to decide what a spend looks like on a card.
+
+**A completion runs when a person asks.** `broker.handle` takes a required
+`origin`, spend operations are refused for `"agent"` with a new `needs_a_person`
+code before the vault is touched, and the value is decided by *which function
+read the request* rather than by anything in it — so the drain loop passes
+`"agent"` for every line off a child's stdout, whatever it contains. There is no
+default, because neither value is safe to default to. It gates spending and
+nothing else: `gmail.draft.create` is still an agent's job.
+
+### "Whose number is this", answered
+
+MAR-583 read `model` off a run event and refused `cost_usd` beside it, with a
+test asserting over the source that nothing read it. **MAR-545 is the reader it
+was waiting for**, and the answer is a rule rather than an exception:
+
+> Every figure with a currency symbol DASH puts on a screen was stated by
+> somebody else, and the sentence beside it says who.
+
+There is no price table and nothing multiplies a token count by a rate. So
+OpenRouter's own charge is quoted and named; Anthropic and OpenAI state none and
+DASH shows what was read and written plus one sentence saying so; and
+`cost_usd` on a run event is **the agent's** figure about its own past and is
+attributed in as many words — ADR 0005's two kinds of fact, about money, side by
+side on one surface so the difference is visible rather than explained.
+
+The estimate before a question is therefore not a prediction in money. It is a
+**ceiling DASH set itself** — at most twelve saved reports go, of the forty this
+agent has kept — plus what questions here have already cost, quoted. A first
+question shows no amount and says why.
+
+The old assertion was not deleted. `tests/model-choice.test.ts` still requires
+the *model* surface to carry no amount, and gains a second test naming every
+file whose code touches the field, so a second reader is a diff somebody makes
+against a test.
+
+### A level says how strong, never which
+
+An agent left on *match each step* has a level per step and no model name, and a
+level is not something DASH can ask a provider under. So the chat is unavailable
+for it, says so, and points at the picker one section down — **DASH does not
+choose somebody's model and does not invent a mapping to avoid asking.** What it
+does say is MAR-583's own argument handed to the person at the moment they need
+it: answering from saved reports is summarising, the cheapest kind of step, so
+the smallest model their key reaches will do.
+
+### The answer drives nothing
+
+An answer is built from web content an agent collected, which ADR 0002 invariant
+7 treats as hostile. The system prompt asks the model to treat it as quoted; that
+is worth having and is not the guarantee. **Nothing in DASH reads an answer** —
+not parsed, no link followed out of it, no command derived from it, no approval
+resolved by it, and it reaches no agent. It is stored and rendered as a text
+node.
+
+The citation list under each answer comes from **DASH's own record of the items
+it selected**, so a model that invents a source cannot make it appear beside the
+answer, and every clickable link is one the agent saved.
+
+### The tenth command family, and the one table that holds money
+
+`ask.question` is the first entry in the IPC catalogue that costs the person
+money, and the first with `irreversible: true` for a reason that is not an
+effect in the world: nothing is created and nothing is sent, and DASH cannot ask
+a provider for its money back. The renderer names an agent, a connection, a
+field and a question — never a model, which main reads from the row a person set
+through `model.choose`.
+
+`agent_questions` (migration 18) stores the question and the answer in full,
+which `broker_audit` deliberately does not do for an agent's inputs. The
+reasoning inverts cleanly and is in the migration's own note: a person typed
+these words into something shaped like a conversation, and one that forgets
+everything when the page closes is not one.
+
+### What is proven
+
+`pnpm state:check` valid with 0 drift warnings, `typecheck` clean, `brand:check`
+green, full Vitest from PowerShell **139 files / 2,779 passed / 10 skipped / 0
+failed**, up from 136 / 2,717 on this branch's base. Both builds green.
+
+`electron/capture-ask.ts` wrote **60 packaged-renderer frames** — five states at
+375/768/1280, both themes, both densities — with its own witness reporting 0
+frames overflowing sideways, 0 without the section, 0 with neither an input nor
+a next action, 0 where an answer was not plain text, and 0 using DASH's own
+filing words.
+
+That witness and the images earned their keep four times before a reviewer saw
+them. The harness's first run flipped density blindly, so half the filenames
+claimed a density the frame was not in; it seeded reports and no events, so the
+one sentence attributing the agent's own figure was in none of the sixty frames;
+and the pictures themselves caught two copy defects no measurement had: every
+sentence read **"Ask answered about anything it has saved"** — the agent's
+internal name on a guided path, which `lib/copy/identifiers.ts` exists to
+prevent and cannot see when the value arrives at runtime — and a failed question
+rendered **"the newest 0 saved things went instead"**. The overflow figure is
+also now reported with the node that produced it, so `span.visually-hidden`
+clipping its own text is evidence rather than something a reader has to
+remember.
+
+**NO MODEL PROVIDER HAS BEEN CONTACTED AND NOBODY HAS BEEN CHARGED.** The
+answers in those images were written by the harness through `recordExchange` —
+the same door `electron/ask-host.ts` writes through — so what is photographed is
+a real rendering of a real row that no provider produced. Pressing Ask in those
+images would fail; the harness does not press it. The amounts are invented for
+the scene. That OpenRouter returns `usage.cost` when asked, and that Anthropic
+and OpenAI do not, is a reading of their documentation rather than an
+observation.
+
+`pnpm verify:shell` was **not** run locally: Electron instances from the main
+checkout and from a parallel MAR-590 worktree were live on this machine and
+AGENTS.md forbids force-killing them. CI's Windows `shell-smoke` is this
+branch's installed witness. Nothing in this slice is reachable by the installed
+smoke — no proof asks a question — so it witnesses that the change breaks
+nothing installed, not that it works.
+
+### The outcome worth knowing about
+
+A provider that answered and charged, whose row DASH then failed to write, is
+reported as `answer_lost`. It is the only outcome this feature can produce where
+somebody is out of pocket with nothing at all to show for it — so "it did not
+work" would be false about the charge, and the sentence says they were charged
+and that the amount went with the row.
+
+**Zero changes under `runner/`.** The runner does not know this feature exists.

@@ -20,7 +20,12 @@ import {
   type AiKeyCredential,
 } from "../../lib/ai/credential";
 import { aiAuthHeaders, aiProviderById, aiProviders } from "../../lib/ai/providers";
-import { createBroker, type BrokerAuditRow, type CredentialRead } from "../../lib/broker/execute";
+import {
+  createBroker,
+  type BrokerAuditRow,
+  type BrokerOrigin,
+  type CredentialRead,
+} from "../../lib/broker/execute";
 import { isKeyCredential } from "../../lib/broker/grant";
 import type { ConnectionSourceManifest } from "../../lib/connections";
 import { OAUTH_CREDENTIAL_VERSION, type OAuthCredential } from "../../lib/oauth/credential";
@@ -128,7 +133,7 @@ export interface HarnessOptions {
 }
 
 export interface Harness {
-  handle(agentId: string, request: unknown): Promise<unknown>;
+  handle(agentId: string, request: unknown, origin?: BrokerOrigin): Promise<unknown>;
   readonly calls: RecordedCall[];
   readonly audit: BrokerAuditRow[];
   advance(ms: number): void;
@@ -209,8 +214,17 @@ export function harness(options: HarnessOptions = {}): Harness {
     advance: (ms: number) => {
       clock += ms;
     },
-    handle: (agentId, request) =>
-      broker.handle(agentId, request as Parameters<typeof broker.handle>[1]),
+    /**
+     * `"agent"` unless a test says otherwise (MAR-545).
+     *
+     * The default is the untrusted side on purpose: every existing test in this
+     * repository drives the boundary as an agent would, and a harness that
+     * defaulted to `"person"` would have silently upgraded all of them the day a
+     * spend operation appeared. A test about the chat passes `"person"` and says
+     * so in one visible argument.
+     */
+    handle: (agentId, request, origin = "agent") =>
+      broker.handle(agentId, request as Parameters<typeof broker.handle>[1], origin),
   };
 }
 

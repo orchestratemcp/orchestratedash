@@ -30,6 +30,7 @@
 import type { GroundingAnalysis, RunAnalysis } from "../analyze";
 import type { EvidenceNotice } from "../copy/evidence";
 import type { GlanceChip } from "../copy/glance";
+import type { AiKeyFlow } from "../ai/connection-view";
 import type { ArtifactCardView } from "./artifacts";
 import type { InputRoleView } from "./inputs";
 import type { PanelView } from "./panel";
@@ -508,7 +509,12 @@ export interface ConnectionRowWithCredential extends ConnectionRequirementRow {
 export interface BrokerCapabilityView {
   id: string;
   label: string;
-  access: "read" | "write";
+  /**
+   * `BrokerAccess`, restated rather than imported. `lib/views/types.ts` is what a
+   * page imports and it stays free of anything that reaches a store; the two are
+   * pinned equal by a compile-time assignment in `tests/broker-spend.test.ts`.
+   */
+  access: "read" | "write" | "spend";
   /**
    * What will exist in the user's account because this ran, or null for a read
    * (MAR-469).
@@ -941,6 +947,15 @@ export type WorkspaceView =
        */
       models: AgentModelSettingsView;
       /**
+       * The conversation with this agent about what it has saved (MAR-545).
+       *
+       * Never absent, for `models`' reason: the union's `can_ask: false` arm
+       * carries a sentence and a next action for every reason there is nothing
+       * to ask with, so a page cannot have to decide what a missing chat means
+       * and cannot end up drawing an input that does nothing.
+       */
+      ask: AgentAskView;
+      /**
        * The panel this agent's author declared, bound to what the agent has
        * produced (MAR-548, ADR 0008 slice 3).
        *
@@ -1040,3 +1055,118 @@ export interface WorkInboxView {
   items: WorkInboxRow[];
   stalled: StalledAgentRow[];
 }
+
+
+/* ---------------------------------------------------------------------- *
+ * Talking to an agent (MAR-545)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * One saved thing an answer was built from, as DASH recorded it.
+ *
+ * Everything here came out of DASH's own store at the moment the question was
+ * asked. Nothing on it is derived from the answer's text, which is what makes
+ * the list worth showing under an answer at all — a model that invents a source
+ * cannot put it here. See `lib/ai/ask.ts`.
+ */
+export interface AskCitationView {
+  /** The number the material used, so a mention in the answer can be found. */
+  index: number;
+  headline: string;
+  source_name: string | null;
+  /** The item's own link, as the agent recorded it. Rendered by DASH, never by the answer. */
+  item_url: string | null;
+  report_title: string;
+}
+
+/** One question and what became of it, ready to draw. */
+export interface AskExchangeView {
+  id: number;
+  question: string;
+  /** When it was asked, in words. Never a machine timestamp. */
+  asked: string;
+  /** The answer's text, or null when the question did not produce one. */
+  answer: string | null;
+  /** Why it failed, with a next action. Null exactly when there is an answer. */
+  failure: Recovery | null;
+  /** Which saved things were used and why, in one sentence. */
+  selection: string;
+  /**
+   * What it cost, said by whoever knows — the provider when it stated an amount,
+   * a count of what was read and written otherwise. Never a figure DASH derived.
+   */
+  charge: string;
+  /** The model the provider says answered. Null when it did not say. */
+  model: string | null;
+  citations: AskCitationView[];
+}
+
+/** What the chat fires when somebody asks something. */
+export interface AskFlow {
+  agent_id: string;
+  connection_id: string;
+  field_id: string;
+}
+
+/**
+ * The chat on an agent's page.
+ *
+ * A discriminated union rather than one shape with a disabled flag, so that
+ * every reason a person cannot ask something carries its own sentence and its
+ * own next action. MAR-545 asks for exactly this: "never a dead input".
+ */
+export type AgentAskView =
+  | {
+      can_ask: true;
+      heading: string;
+      purpose: { headline: string; detail: string };
+      custody: string;
+      placeholder: string;
+      submit: string;
+      working: string;
+      sources_heading: string;
+      /** DASH's friendly name for the provider being asked. Never an identifier. */
+      provider_label: string;
+      /** What sending a question will do, before anybody presses anything. */
+      estimate: { headline: string; detail: string };
+      ask: AskFlow;
+      /** Oldest first, so the conversation reads downwards. */
+      history: AskExchangeView[];
+      /** What every question here has cost so far, or null when nothing is priced. */
+      spent: string | null;
+      /**
+       * What this agent says its own runs cost, or null when they say nothing
+       * (MAR-583's unread field, MAR-545).
+       *
+       * Beside `spent` on purpose. One of these two numbers is a provider's
+       * figure for something DASH asked for, and the other is the agent's own
+       * figure about its own past — ADR 0005's two kinds of fact, about money,
+       * where a person can see both at once and the sentences say which is
+       * which.
+       */
+      reported: string | null;
+    }
+  | {
+      can_ask: false;
+      heading: string;
+      blocked: Recovery;
+      /**
+       * The connection to open, when the reason is a missing key. Null for every
+       * other reason, because there is nothing for a button to do.
+       */
+      connect: AiKeyFlow | null;
+      /** Oldest first. Kept when a key is withdrawn: the conversation happened. */
+      history: AskExchangeView[];
+      /**
+       * The heading over a citation list.
+       *
+       * On this arm as well as the other, because a conversation outlives the
+       * key that produced it: an agent whose provider has been disconnected
+       * still shows every answer it gave and what each one was built from. The
+       * component would otherwise have to supply a word of its own, and this
+       * file's whole point is that it never does.
+       */
+      sources_heading: string;
+      /** What this agent says its own runs cost. Shown whether or not it can be asked. */
+      reported: string | null;
+    };

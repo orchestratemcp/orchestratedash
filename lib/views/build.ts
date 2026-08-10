@@ -27,7 +27,7 @@ import { analyzeGrounding } from "../analyze";
 import { isDigestArtifact } from "../contracts";
 import type { ManifestPermissions, PermissionGrant } from "../contracts";
 import { brokeredField, requestedOperations, unrequestedOperations } from "../broker/grant";
-import { operationById, type BrokerOperation } from "../broker/operations";
+import { hasFrozenPath, operationById, type BrokerOperation } from "../broker/operations";
 import { describeClientOwner, describeCustody, describeDashClosedWindow } from "../broker/providers";
 import { listReceipts, readBrokerAudit, readBrokerLapses, type BrokerLapse } from "../broker/store";
 import { describeBrokerRefusal } from "../copy/recovery";
@@ -61,6 +61,7 @@ import { plainDay } from "../copy/when";
 import { describeNotificationState } from "../notify/settings";
 import { describeManifestGap } from "../sample-refresh";
 import { glanceReader } from "./glance";
+import { buildAgentAsk } from "./ask";
 import {
   buildAgentModelSettings,
   buildRunModel,
@@ -508,7 +509,7 @@ function brokerCard(
           id: operation.id,
           label: operation.label,
           access: operation.access,
-          consequence: operation.access === "write" ? operation.consequence : null,
+          consequence: hasFrozenPath(operation) ? operation.consequence : null,
         };
   };
 
@@ -535,7 +536,7 @@ function brokerCard(
       id: operation.id,
       label: operation.label,
       access: operation.access,
-      consequence: operation.access === "write" ? operation.consequence : null,
+      consequence: hasFrozenPath(operation) ? operation.consequence : null,
     })),
     // MAR-533. Everything DASH offers here that this agent did not ask for —
     // the third party in the grant, made visible. See `unrequestedOperations`.
@@ -543,7 +544,7 @@ function brokerCard(
       id: operation.id,
       label: operation.label,
       access: operation.access,
-      consequence: operation.access === "write" ? operation.consequence : null,
+      consequence: hasFrozenPath(operation) ? operation.consequence : null,
     })),
     receipt:
       receipt === null
@@ -1072,6 +1073,17 @@ export function workspaceView(
     // because it reads the vault's reference table and the choice rows, and
     // because every sentence on it belongs to `lib/ai/model-choice.ts`.
     models: buildAgentModelSettings(agent, manifest as ModelSourceManifest),
+    // MAR-545. Built here rather than fetched by the chat itself, so the whole
+    // surface arrives with the rest of the page on the same five-second poll —
+    // an answer that landed while somebody was reading appears without anything
+    // asking for it.
+    ask: buildAgentAsk(
+      agent,
+      manifest,
+      store.events.filter((event) => event.agent === agent),
+      // The author's own name for it, never the id. See `buildAgentAsk`.
+      workspaceManifest.agent.display_name ?? workspaceManifest.agent.name,
+    ),
     // MAR-548, ADR 0008 slice 3's wiring. The authoritative document, not the
     // row's copy — see `panelDocument` for which store answers and why.
     panel: buildPanelView(document, {

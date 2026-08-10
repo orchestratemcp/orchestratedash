@@ -100,7 +100,7 @@ describe("schema", () => {
     // Asserted as a number rather than as MIGRATIONS.length so that appending a
     // migration is a deliberate edit here too.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(17);
+    expect(version.user_version).toBe(18);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -133,11 +133,16 @@ describe("schema", () => {
     expect(tables).toContain("agent_deploys");
     // MAR-583. Three, and every one of them empty for an agent nobody has
     // configured — the recommended setting needs no row to be in force. None of
-    // them has a cost column and none may grow one until MAR-299 has numbers
-    // that came from a provider rather than from DASH's own arithmetic.
+    // them has a cost column, and the condition for one existing anywhere was
+    // "numbers that came from a provider rather than from DASH's own
+    // arithmetic". MAR-545 met it: `agent_questions.amount_usd` below is filled
+    // only from a figure a provider stated in the reply it charged for, and
+    // these three are still without one.
     expect(tables).toContain("agent_model_choice");
     expect(tables).toContain("agent_step_levels");
     expect(tables).toContain("run_models");
+    // MAR-545. The conversation, and the one table in DASH that holds money.
+    expect(tables).toContain("agent_questions");
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -487,7 +492,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(17);
+    ).toBe(18);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

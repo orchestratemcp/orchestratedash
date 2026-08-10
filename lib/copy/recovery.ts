@@ -845,6 +845,7 @@ export function describeBrokerRefusal(
     | "not_connected"
     | "revoked"
     | "permission_missing"
+    | "needs_a_person"
     | "invalid_input"
     | "duplicate_request"
     | "rate_limited"
@@ -902,6 +903,23 @@ export function describeBrokerRefusal(
           "Something it was asked to do needs a permission that was not granted when you signed in.",
         next_action: `Reconnect ${service} and approve everything on the sign-in screen.`,
         actor: "user",
+      };
+
+    case "needs_a_person":
+      // MAR-545. The one refusal in this list that is not about permission, a
+      // provider or a fault, and it must not be worded as any of them: nothing
+      // is missing, nothing is broken, and there is nothing for the reader to
+      // reconnect or approve. So `actor` is `dash` — DASH made this rule and
+      // DASH is keeping it — and the next action is genuinely nothing, because
+      // asking a question is something the person does from the agent's own
+      // page when they want to.
+      return {
+        headline: `${agent} tried to ask a model a question on its own, and DASH would not pay for it.`,
+        meaning:
+          "Questions to a model cost money from your own account. DASH only asks one when you ask it to, " +
+          "so this was refused before anything was sent and nothing was charged.",
+        next_action: `Nothing to do. You can ask ${agent} a question yourself on its page.`,
+        actor: "dash",
       };
 
     case "invalid_input":
