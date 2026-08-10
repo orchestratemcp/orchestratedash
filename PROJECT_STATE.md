@@ -5259,7 +5259,7 @@ there, DASH did not put this there, and DASH does not watch runs there.
 ### What is proven, and what is not
 
 `pnpm state:check` valid, `typecheck` clean, `brand:check` green, full Vitest from
-PowerShell **137 files / 2,750 passed / 10 skipped / 0 failed** (137 / 2,747 on
+PowerShell **137 files / 2,751 passed / 10 skipped / 0 failed** (137 / 2,747 on
 this base). Both builds green. `electron/capture-deploy.ts` gained a `stranded`
 scene: **60 packaged-renderer frames**, five surfaces at 375/768/1280 in both
 themes and both densities, with its own witness reporting 0 frames overflowing
@@ -5277,8 +5277,11 @@ on a stranded connection is a reading of the code — no vault and no broker on 
 far side — rather than something watched. The attended VPS run is where that is
 observed, and it is the run this branch was cut for.
 
-**`pnpm verify:shell` did not run locally**: this session's own capture runners are
-live against scratch stores and AGENTS.md forbids force-killing them. CI's Windows
+**`pnpm verify:shell` did not run locally**: a live DASH shell (`electron .` from
+the main checkout) and another worktree's Electron hold the single-instance lock,
+and AGENTS.md forbids force-killing them. This session's own capture runs left
+nothing behind — every one of their Electron processes exited on `app.exit(0)`,
+and no scratch-store runner survived. CI's Windows
 `shell-smoke` is the installed witness. Nothing here changes an installed path —
 the notice draws nothing at all for an agent with no `dash_managed` connection,
 which is every shipped example.
