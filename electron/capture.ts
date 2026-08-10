@@ -154,6 +154,14 @@ const SURFACES = [
      under the probe's own answer, and a viewport frame shows the probe. */
   { name: "settings-servers", path: "/settings/servers", density: false, tall: true },
   { name: "settings-add-agent", path: "/settings/add-agent", density: false, tall: false },
+  /*
+   * MAR-599. The fifth tab, and `density: true` for the reason `agents`
+   * carries the same flag: this is a page whose whole subject is what the two
+   * density-affected surfaces look like, so photographing only comfortable
+   * would leave the setting on this page more evidenced by prose than by a
+   * picture.
+   */
+  { name: "settings-preferences", path: "/settings/preferences", density: true, tall: false },
   { name: "workspace", path: null, density: true, tall: true },
 ] as const;
 

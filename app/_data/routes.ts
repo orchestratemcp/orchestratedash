@@ -82,7 +82,8 @@ export const SURFACES: readonly Surface[] = [
 ];
 
 /**
- * Settings' tabs — four real routes, not four states of one page (MAR-592).
+ * Settings' tabs — five real routes, not five states of one page (MAR-592,
+ * MAR-599).
  *
  * Each of these is a page in the static export with its own address, and that
  * is a requirement rather than an implementation detail. Three things depend on
@@ -99,15 +100,24 @@ export const SURFACES: readonly Surface[] = [
  *    page saying an agent is not connected has to be able to arrive *at
  *    Connections*, not at Settings-with-luck.
  *
- * The labels are unchanged from the sidebar rows they replace, including
- * "Servers" over `/settings/servers` — MAR-498's reason still holds, that a
- * host is what the record is called and a server is what a person rents.
+ * The first four labels are unchanged from the sidebar rows they replaced,
+ * including "Servers" over `/settings/servers` — MAR-498's reason still
+ * holds, that a host is what the record is called and a server is what a
+ * person rents.
+ *
+ * **Preferences is new (MAR-599).** The paused attended run's handoff named
+ * "app preferences (dark mode etc.)" as one of the five sections Henrik asked
+ * for when MAR-592 was scoped; MAR-592 itself shipped the other four. It is
+ * last, after the held add-agent flow, because it is the one tab that answers
+ * "how does DASH look" rather than "what can DASH reach" — a different
+ * question, asked less often.
  */
 export const SETTINGS_TABS: readonly Surface[] = [
   { href: SETTINGS_ROOT, label: "Connections" },
   { href: "/settings/notifications", label: "Notifications" },
   { href: "/settings/servers", label: "Servers" },
   { href: "/settings/add-agent", label: "Add agent" },
+  { href: "/settings/preferences", label: "Preferences" },
 ];
 
 /** Whether a path is inside Settings at all — the tab strip's own gate. */

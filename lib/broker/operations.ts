@@ -795,10 +795,21 @@ const GMAIL_DRAFT_CREATE: WriteOperation = {
   consequence:
     "The reply appears in your Drafts folder in Gmail, addressed and written, " +
     "and stays there until you send it or delete it yourself. DASH has no action that sends mail.",
+  /*
+   * MAR-599. Shorter than the first draft, on purpose: at 375px this sentence
+   * sat above the fleet card's own Sign-in button, and with the reach sentence
+   * below it the button was well off the bottom of the first screen — the
+   * defect MAR-593's own handoff flagged and left unfixed. Every fact survives
+   * the cut (the permission is wider than the action, DASH builds no send
+   * operation, it is revocable) — only the words explaining them are fewer.
+   * `tests/broker-boundary.test.ts` and `tests/broker-write.test.ts` pin the
+   * two clauses that must not drift: "also allows sending" and "no agent can
+   * ask DASH to send".
+   */
   wider_permission:
-    "Google has no drafts-only permission to ask for: the one this needs also allows sending. " +
-    "DASH builds nothing on that half of it, so no agent can ask DASH to send — but the " +
-    "permission itself is wider than the action, and you can withdraw it in your Google account.",
+    "Google has no drafts-only permission: it also allows sending. DASH builds " +
+    "no send action, so no agent can ask DASH to send — you can revoke it in " +
+    "your Google account.",
 
   compose(input) {
     // One bare address, held to the same `ADDRESS` the projection is held to.

@@ -90,12 +90,13 @@ describe("every tab is a route with a page behind it", () => {
 });
 
 describe("nothing was dropped on the way in", () => {
-  it("carries the four labels that used to be four sidebar rows", () => {
+  it("carries the four labels that used to be four sidebar rows, plus MAR-599's fifth", () => {
     expect(SETTINGS_TABS.map((tab) => tab.label)).toEqual([
       "Connections",
       "Notifications",
       "Servers",
       "Add agent",
+      "Preferences",
     ]);
   });
 
@@ -161,5 +162,42 @@ describe("the entrances that outlived the sidebar rows", () => {
     const { readFile } = await import("node:fs/promises");
     const source = await readFile(fleet, "utf8");
     expect(source).toContain('href="/settings/add-agent"');
+  });
+});
+
+/**
+ * The heading does not repeat the tab (MAR-593, generalised by MAR-599).
+ *
+ * MAR-593 fixed this for Connections alone — `<h1>Accounts and keys</h1>`
+ * under a CONNECTIONS tab — and its own handoff left the other three as an
+ * open item. MAR-599 fixed Servers and Notifications the same way. Add agent
+ * is the one deliberate exception: it is under Henrik's hold and moved
+ * verbatim by MAR-592, so its `<h1>Add agent</h1>` still says the tab word —
+ * on purpose, not by oversight.
+ *
+ * A source scan rather than a full render: three of these five pages read
+ * through `useView` and need a data source to render past their loading
+ * state, and the fact under test — which literal string sits inside the
+ * `<h1>` tag — is as visible in the source as it would be in the markup.
+ */
+describe("the heading does not repeat the tab it is under", () => {
+  const HELD_VERBATIM = new Set(["Add agent"]);
+
+  it("says what the surface is, not the word the tab already said", async () => {
+    const { readFile } = await import("node:fs/promises");
+    for (const tab of SETTINGS_TABS) {
+      if (HELD_VERBATIM.has(tab.label)) {
+        continue;
+      }
+      const segments = tab.href.replace(/^\//, "").split("/");
+      const file = path.join(repoRoot, "app", ...segments, "page.tsx");
+      const source = await readFile(file, "utf8");
+      const heading = /<h1>([^<]*)<\/h1>/.exec(source);
+      expect(heading, `${tab.href} has no plain <h1>text</h1>`).not.toBeNull();
+      expect(
+        (heading as RegExpExecArray)[1],
+        `${tab.href}'s <h1> repeats its tab label "${tab.label}"`,
+      ).not.toBe(tab.label);
+    }
   });
 });
