@@ -5283,6 +5283,15 @@ live against scratch stores and AGENTS.md forbids force-killing them. CI's Windo
 the notice draws nothing at all for an agent with no `dash_managed` connection,
 which is every shipped example.
 
+**One hole this branch opened and closed.** `connectableFields` iterated
+`connection.fields` unguarded, which was safe for every caller it had — they all
+hand it a document that has just passed the schema. `agentDeployStanding` does
+not: it runs over a **store row**, and its own contract is that it never throws,
+because a view that threw there would take the whole agents list down over one
+row. A connection with no readable field list is now skipped, which is the true
+answer as well as the safe one — DASH holds no credential for it, so nothing of
+DASH's fails to travel.
+
 **No credential sync and no server-side broker**, per the issue's own boundary.
 `FolderBundleProblem.model_key_stays_home` was renamed `credential_stays_home`;
 `MODEL_KEY_STAYS_HOME_REFUSAL` is unchanged and still pinned by value, because the

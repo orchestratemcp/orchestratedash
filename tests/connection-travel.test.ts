@@ -191,6 +191,30 @@ describe("what DASH holds and cannot send", () => {
     expect(travel.stranded).toHaveLength(1);
   });
 
+  it("survives a stored manifest whose connection has no field list", () => {
+    /*
+     * `agentDeployStanding` runs this over a **store row**, and its own contract
+     * is that it never throws: "a view that threw there would take the whole
+     * agents list down over a row that simply cannot be deployed". `fields` is
+     * required by the schema and a damaged row is not a validated document.
+     */
+    const broken = { ...gmail() } as unknown as Record<string, unknown>;
+    delete broken["fields"];
+    expect(() =>
+      assessConnectionTravel(
+        AGENT,
+        manifest({ connections: [broken as unknown as ManifestConnection, ledger()] }),
+      ),
+    ).not.toThrow();
+    const travel = assessConnectionTravel(
+      AGENT,
+      manifest({ connections: [broken as unknown as ManifestConnection, ledger()] }),
+    );
+    // The readable one is still reported. Skipping the damaged connection is
+    // not the same as giving up on the agent.
+    expect(travel.stranded.map((one) => one.connection_id)).toEqual(["ledger"]);
+  });
+
   it("says nothing about a connection DASH could never hold a credential for", () => {
     /*
      * A field naming a reserved delivery variable is refused at connect time, so
