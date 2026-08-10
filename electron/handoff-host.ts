@@ -40,6 +40,7 @@ import {
   type RunnerPort,
 } from "../lib/handoff-flow";
 import { readHandoffRecord, recordHandoff } from "../lib/handoff-ledger";
+import { runnerLifecycle } from "../lib/runner-lifecycle";
 import { forgetAgent, importManifest } from "../lib/store";
 import { runnerFetch, type RunnerHandle } from "./runner-process";
 
@@ -126,62 +127,9 @@ export function runnerPort(runner: RunnerHandle | null): RunnerPort | null {
   const handle = runner;
   const call = runnerFetch(handle);
   const authorized = { authorization: `Bearer ${handle.token}` };
-
-  async function waitForStopped(agentId: string): Promise<boolean> {
-    const deadline = Date.now() + 10_000;
-    while (Date.now() < deadline) {
-      try {
-        const response = await call(`${handle.origin}/agents`, {
-          headers: authorized,
-          signal: AbortSignal.timeout(2_000),
-        });
-        if (!response.ok) return false;
-        const body = (await response.json()) as {
-          agents?: Array<{ agent_id?: string; lifecycle?: string }>;
-        };
-        const facts = body.agents?.find((agent) => agent.agent_id === agentId);
-        if (
-          facts === undefined ||
-          facts.lifecycle === "stopped" ||
-          facts.lifecycle === "exited" ||
-          facts.lifecycle === "failed_to_start"
-        ) {
-          return true;
-        }
-      } catch {
-        return false;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    return false;
-  }
-
-  async function lifecycle(
-    agentId: string,
-    action: "start" | "stop",
-  ): Promise<{ ok: boolean; detail?: string }> {
-    try {
-      const response = await call(
-        `${handle.origin}/agents/${encodeURIComponent(agentId)}/lifecycle`,
-        {
-          method: "POST",
-          headers: { ...authorized, "content-type": "application/json" },
-          body: JSON.stringify({ action }),
-          signal: AbortSignal.timeout(10_000),
-        },
-      );
-      const body = (await response.json()) as { ok?: boolean; detail?: string };
-      if (action === "stop" && body.ok === true && !(await waitForStopped(agentId))) {
-        return {
-          ok: false,
-          detail: `The runner accepted the stop request for "${agentId}" but did not confirm that it stopped.`,
-        };
-      }
-      return { ok: body.ok === true, detail: body.detail };
-    } catch {
-      return { ok: false, detail: "The runner could not be reached." };
-    }
-  }
+  // The stop-is-true decision lives in lib/runner-lifecycle.ts (MAR-597),
+  // where the suite can reach it. This file only wires the transport.
+  const { lifecycle } = runnerLifecycle(call, handle.origin, authorized);
 
   return {
     async reload(): Promise<{ ok: boolean; detail?: string }> {
