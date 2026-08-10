@@ -292,8 +292,9 @@ describe("the capability card", () => {
     const card = describeGrant(resolved.grant, "Meeting Assistant");
     expect(card.token_custodian).toBe("dash_vault");
     expect(card.custody_sentence).toContain("never receives it");
-    // ADR 0002's open problem, said on the card rather than only in the ADR.
-    expect(card.client_sentence).toContain("DASH's own");
+    // MAR-594 closes ADR 0002's open problem: the card now says the consent
+    // screen belongs to the user's registered Desktop app.
+    expect(card.client_sentence).toContain("your own registered application");
   });
 
   it("says out loud that a granted permission is not used", () => {

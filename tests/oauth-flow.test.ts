@@ -37,6 +37,7 @@ import { base64Url, challengeFor, createPkcePair, createState, statesMatch } fro
 import {
   authorizationScopes,
   checkRequestedScopes,
+  configureOAuthProvider,
   describePermissions,
   oauthProviderById,
   oauthProviderFor,
@@ -170,6 +171,23 @@ describe("the provider registry", () => {
     expect(scopes).toContain("email");
     expect(new Set(scopes).size).toBe(scopes.length);
   });
+
+  it("lets the credential prompt configure only Google's client pair", () => {
+    const configured = configureOAuthProvider(google, {
+      client_id: "user-client.apps.googleusercontent.com",
+      client_secret: "user-client-secret",
+    });
+
+    expect(configured).toMatchObject({
+      client_id: "user-client.apps.googleusercontent.com",
+      client_secret: "user-client-secret",
+      authorization_endpoint: google.authorization_endpoint,
+      token_endpoint: google.token_endpoint,
+      permissions: google.permissions,
+    });
+    expect(configureOAuthProvider(google, { client_id: "user-client" })).toBeNull();
+    expect(configureOAuthProvider(google, { client_id: " user-client", client_secret: "x" })).toBeNull();
+  });
 });
 
 describe("the authorization URL", () => {
@@ -222,8 +240,13 @@ describe("exchanging and refreshing", () => {
   )}.signature`;
 
   it("turns a token response into a storable credential", async () => {
+    const configuredGoogle: OAuthProvider = {
+      ...google,
+      client_id: "desktop-client.apps.googleusercontent.com",
+      client_secret: "desktop-client-secret",
+    };
     const exchanged = await exchangeAuthorizationCode(
-      google,
+      configuredGoogle,
       {
         code: "auth-code",
         verifier: "verifier",
@@ -243,6 +266,10 @@ describe("exchanging and refreshing", () => {
     expect(exchanged.credential.refresh_token).toBe("refresh-value");
     expect(exchanged.credential.account).toBe("henrik@example.com");
     expect(exchanged.credential.provider).toBe("google");
+    expect(exchanged.credential.client).toEqual({
+      client_id: "desktop-client.apps.googleusercontent.com",
+      client_secret: "desktop-client-secret",
+    });
     expect(exchanged.access.access_token).toBe("access-value");
     expect(exchanged.access.expires_at).toBe("2026-07-30T10:59:59.000Z");
   });
@@ -472,6 +499,28 @@ describe("the client secret (MAR-508)", () => {
     expect(requests[0]?.get("client_secret")).toBe("s3cr3t-value");
   });
 
+  it("refreshes with the client stored in the grant when the process has none", async () => {
+    const { fetch: capturing, requests } = capturingFetch(200, {
+      access_token: "a",
+      expires_in: 3599,
+    });
+    const credential = storedCredential({
+      client: {
+        client_id: "stored-client.apps.googleusercontent.com",
+        client_secret: "stored-client-secret",
+      },
+    });
+
+    await refreshAccessToken(
+      { ...withoutSecret, client_id: "compiled-client-that-must-not-win" },
+      credential,
+      capturing,
+    );
+
+    expect(requests[0]?.get("client_id")).toBe("stored-client.apps.googleusercontent.com");
+    expect(requests[0]?.get("client_secret")).toBe("stored-client-secret");
+  });
+
   /**
    * The loopback proof provider's own shape: no `client_secret` declared, so
    * none is sent. Not the same assertion as the two above with the value
@@ -498,7 +547,12 @@ describe("the client secret (MAR-508)", () => {
 
 describe("the stored envelope", () => {
   it("survives a round trip", () => {
-    const credential = storedCredential();
+    const credential = storedCredential({
+      client: {
+        client_id: "desktop-client.apps.googleusercontent.com",
+        client_secret: "desktop-client-secret",
+      },
+    });
     expect(parseOAuthCredential(serializeOAuthCredential(credential))).toEqual(credential);
   });
 
@@ -513,6 +567,9 @@ describe("the stored envelope", () => {
     expect(parseOAuthCredential(JSON.stringify({ ...storedCredential(), version: 99 }))).toBeNull();
     expect(
       parseOAuthCredential(JSON.stringify({ ...storedCredential(), refresh_token: "" })),
+    ).toBeNull();
+    expect(
+      parseOAuthCredential(JSON.stringify({ ...storedCredential(), client: { client_id: "x" } })),
     ).toBeNull();
   });
 

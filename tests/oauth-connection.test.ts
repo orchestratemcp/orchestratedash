@@ -195,6 +195,12 @@ describe("connect", () => {
     await performConnectionAction("connect", TARGET, deps(store, again));
 
     expect(again.hints).toEqual(["henrik@example.com"]);
+    expect(again.clients).toEqual([
+      {
+        client_id: "desktop-client.apps.googleusercontent.com",
+        client_secret: "desktop-client-secret",
+      },
+    ]);
   });
 
   /**

@@ -23,19 +23,24 @@ export const CREDENTIAL_SUBMIT_CHANNEL = "dash:credential-submit";
 export const CREDENTIAL_CANCEL_CHANNEL = "dash:credential-cancel";
 
 /**
- * Begin a provider sign-in (MAR-446). Carries nothing in, nothing out.
+ * Begin a provider sign-in (MAR-446, MAR-594).
  *
  * A fourth channel rather than a flag on `submit`, for the reason there are
- * three rather than one: `submit` carries a value and this carries none, and the
- * difference between "the renderer sent a secret" and "the renderer asked main
- * to open a browser" should be visible in the channel name at the point somebody
- * is auditing what crosses this bridge.
+ * three rather than one: `submit` carries an API key, while this may carry the
+ * Desktop app client needed for Google's code exchange. Provider, endpoints,
+ * scopes and account still never come from the renderer.
  *
  * It resolves when the sign-in has finished, one way or another. The outcome is
  * not in the reply — main settles the prompt and the Connection Center reports
  * it, exactly as for a typed secret.
  */
 export const CREDENTIAL_AUTHORIZE_CHANNEL = "dash:credential-authorize";
+
+/** The only OAuth values the credential-only renderer may hand to main. */
+export interface OAuthClientInput {
+  client_id: string;
+  client_secret: string;
+}
 
 /**
  * The route the prompt window loads, inside the packaged renderer.
@@ -103,6 +108,8 @@ export interface OAuthPromptDescription extends CredentialPromptCommon {
   account_hint: string | null;
   /** True once the browser has been opened and DASH is waiting. */
   waiting: boolean;
+  /** True when this grant needs a Desktop app client entered before consent. */
+  client_setup: boolean;
 }
 
 export type CredentialPromptDescription = SecretPromptDescription | OAuthPromptDescription;

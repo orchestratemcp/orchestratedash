@@ -319,6 +319,14 @@ export async function exchangeAuthorizationCode(
       scopes,
       account: accountFromIdToken(response.id_token),
       obtained_at: now.toISOString(),
+      ...(provider.client_secret === undefined
+        ? {}
+        : {
+            client: {
+              client_id: provider.client_id,
+              client_secret: provider.client_secret,
+            },
+          }),
     },
     access: {
       access_token: response.access_token,
@@ -343,11 +351,17 @@ export async function refreshAccessToken(
   fetchImpl: typeof fetch = fetch,
   now: Date = new Date(),
 ): Promise<AccessToken> {
+  // MAR-594. A Google grant remembers the desktop client that obtained it.
+  // Falling back keeps pre-MAR-594 and no-secret proof credentials readable,
+  // while every new real-Google refresh is independent of the process
+  // environment that happened to exist during consent.
+  const clientId = credential.client?.client_id ?? provider.client_id;
+  const clientSecret = credential.client?.client_secret ?? provider.client_secret;
   const response = await postForm(
     provider.token_endpoint,
     {
-      client_id: provider.client_id,
-      ...(provider.client_secret !== undefined ? { client_secret: provider.client_secret } : {}),
+      client_id: clientId,
+      ...(clientSecret !== undefined ? { client_secret: clientSecret } : {}),
       refresh_token: credential.refresh_token,
       grant_type: "refresh_token",
     },

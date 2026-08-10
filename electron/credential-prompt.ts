@@ -51,7 +51,12 @@ import {
 import { aiProviderById } from "../lib/ai/providers";
 import type { AuthorizationOutcome } from "../lib/connection-actions";
 import type { CredentialTarget } from "../lib/connection-credentials";
-import { describePermissions, oauthProviderById } from "../lib/oauth/providers";
+import {
+  describePermissions,
+  oauthProviderById,
+  parseOAuthClientConfiguration,
+  type OAuthClientConfiguration,
+} from "../lib/oauth/providers";
 import { startAuthorization, type AuthorizationSession } from "./oauth-session";
 import { serveRendererIn } from "./renderer-host";
 
@@ -76,6 +81,8 @@ interface PendingOAuthDescription {
   provider_id: string;
   scopes: readonly string[];
   login_hint: string | null;
+  /** Existing or process-supplied pair. Never returned by `describe`. */
+  client: OAuthClientConfiguration | null;
 }
 
 /**
@@ -147,7 +154,7 @@ export function registerCredentialChannels(): void {
     prompt.settle({ kind: "secret", value });
   });
 
-  ipcMain.handle(CREDENTIAL_AUTHORIZE_CHANNEL, async (event) => {
+  ipcMain.handle(CREDENTIAL_AUTHORIZE_CHANNEL, async (event, value: unknown) => {
     if (!fromPrompt(event.sender)) {
       return;
     }
@@ -168,7 +175,20 @@ export function registerCredentialChannels(): void {
       return;
     }
 
-    prompt.session = startAuthorization(provider, prompt.oauth.scopes, prompt.oauth.login_hint);
+    const client = prompt.description.client_setup
+      ? parseOAuthClientConfiguration(value)
+      : prompt.oauth.client;
+    if (prompt.description.client_setup && client === null) {
+      prompt.settle({ kind: "oauth", outcome: { ok: false, code: "client_misconfigured" } });
+      return;
+    }
+
+    prompt.session = startAuthorization(
+      provider,
+      prompt.oauth.scopes,
+      prompt.oauth.login_hint,
+      client,
+    );
     // Reflected back through `describe` so a re-render shows the waiting state
     // rather than the button the user already pressed.
     prompt.description.waiting = true;
@@ -382,6 +402,7 @@ export async function promptForAuthorization(
   replacing: boolean,
   accountHint: string | null,
   loginHint: string | null,
+  existingClient: OAuthClientConfiguration | null,
   parent: BrowserWindow | null,
   rendererOrigin: string,
 ): Promise<AuthorizationOutcome> {
@@ -390,6 +411,12 @@ export async function promptForAuthorization(
     return { ok: false, code: "provider_error" };
   }
   const scopes = target.oauth?.scopes ?? [];
+  const configuredClient =
+    existingClient ??
+    (provider.client_secret === undefined
+      ? null
+      : { client_id: provider.client_id, client_secret: provider.client_secret });
+  const clientSetup = provider.client_configuration === "user_supplied" && configuredClient === null;
 
   const resolution = await openPrompt(
     {
@@ -404,9 +431,16 @@ export async function promptForAuthorization(
       permissions: describePermissions(provider, scopes),
       account_hint: accountHint,
       waiting: false,
+      client_setup: clientSetup,
     },
-    { mode: "oauth", provider_id: provider.id, scopes, login_hint: loginHint },
-    560,
+    {
+      mode: "oauth",
+      provider_id: provider.id,
+      scopes,
+      login_hint: loginHint,
+      client: configuredClient,
+    },
+    clientSetup ? 720 : 560,
     parent,
     rendererOrigin,
   );

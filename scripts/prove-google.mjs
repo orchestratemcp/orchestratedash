@@ -56,7 +56,9 @@ if (process.env.CI !== undefined) {
   process.exit(2);
 }
 
-if (!process.stdin.isTTY) {
+const mar594SearchOnly = process.env.DASH_GOOGLE_PROOF_MAR594 === "1";
+
+if (!process.stdin.isTTY && !mar594SearchOnly) {
   console.error(
     "[prove-google] refusing to run: no terminal is attached.\n" +
       "This proof stops twice to ask the operator a question — once before it\n" +
@@ -213,7 +215,9 @@ console.log("");
 
 /*
  * `stdio: "inherit"` for all three, because the harness reads from the terminal.
- * Two of its steps are questions and neither can be answered down a pipe.
+ * Two of the full proof's steps are questions and neither can be answered down
+ * a pipe. MAR-594 search-only mode asks only through Google's browser UI, so it
+ * may inherit non-TTY stdio while a person attends that browser.
  */
 const result = spawnSync(electronBinary, [path.join(outDir, "main.mjs")], {
   cwd: repoRoot,

@@ -17,6 +17,7 @@ import type { OAuthOperations, AuthorizationOutcome } from "../../lib/connection
 import type { OAuthCredential } from "../../lib/oauth/credential";
 import { OAUTH_CREDENTIAL_VERSION } from "../../lib/oauth/credential";
 import type { AuthorizationFailureCode } from "../../lib/copy/recovery";
+import type { OAuthClientConfiguration } from "../../lib/oauth/providers";
 
 /** Operations that fail the test if anything reaches them. */
 export function refusingOAuth(): OAuthOperations {
@@ -44,6 +45,8 @@ export interface ScriptedOAuth extends OAuthOperations {
   readonly calls: string[];
   /** The `login_hint` the last `authorize` was given. */
   readonly hints: Array<string | null>;
+  /** The stored client the last `authorize` was given. */
+  readonly clients: Array<OAuthClientConfiguration | null>;
 }
 
 export function oauthCredential(overrides: Partial<OAuthCredential> = {}): OAuthCredential {
@@ -59,6 +62,10 @@ export function oauthCredential(overrides: Partial<OAuthCredential> = {}): OAuth
     ],
     account: "henrik@example.com",
     obtained_at: "2026-07-30T09:00:00.000Z",
+    client: {
+      client_id: "desktop-client.apps.googleusercontent.com",
+      client_secret: "desktop-client-secret",
+    },
     ...overrides,
   };
 }
@@ -66,12 +73,15 @@ export function oauthCredential(overrides: Partial<OAuthCredential> = {}): OAuth
 export function scriptedOAuth(script: OAuthScript = {}): ScriptedOAuth {
   const calls: string[] = [];
   const hints: Array<string | null> = [];
+  const clients: Array<OAuthClientConfiguration | null> = [];
   return {
     calls,
     hints,
+    clients,
     authorize: (_target, options) => {
       calls.push("authorize");
       hints.push(options.login_hint);
+      clients.push(options.client);
       return Promise.resolve(script.authorize ?? { ok: true, credential: oauthCredential() });
     },
     check: () => {

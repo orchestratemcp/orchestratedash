@@ -940,6 +940,7 @@ if (oauthTarget !== null) {
     false,
     null,
     null,
+    null,
     window,
     RENDERER_ORIGIN,
   );
