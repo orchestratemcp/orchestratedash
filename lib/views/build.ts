@@ -218,6 +218,10 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
   return {
     agents: listAgents(store).map((agent) => ({
       name: agent.name,
+      // MAR-589. Straight from the summary for `avatar`'s own reason below: one
+      // stored precedence, read once, rather than every surface deriving its
+      // own and disagreeing with the one that just handled a rename.
+      title: agent.title,
       goal: agent.goal,
       plan_source: agent.plan_source,
       build_target: agent.build_target,
@@ -478,14 +482,20 @@ const BROKER_HISTORY_LIMIT = 20;
 /**
  * The agent's own name for itself, for recovery copy that addresses it by name.
  *
- * Falls back to the id, which is the honest degradation: a sentence reading
- * "ai-news-scout asked to do something it is not allowed to do" is worse than
- * one naming a display name and much better than one naming nothing.
+ * MAR-589. Routed through `agentDisplayName` rather than reimplementing its
+ * fallback — this was the third inline copy of `display_name ?? humanize(name)`
+ * that MAR-609's consolidation missed. Manifest-only, not store-aware: a stored
+ * rename is not threaded this deep, the same boundary `buildOverview`'s own
+ * title draws in `lib/workspace.ts`, because nothing here is one of the label
+ * surfaces the ruling named.
  */
 function displayNameOf(manifest: ConnectionSourceManifest, fallback: string): string {
   const agent = (manifest as { agent?: { display_name?: unknown; name?: unknown } }).agent;
-  const display = agent?.display_name ?? agent?.name;
-  return typeof display === "string" && display.length > 0 ? display : fallback;
+  const declared = agent?.display_name;
+  return agentDisplayName({
+    name: fallback,
+    display_name: typeof declared === "string" ? declared : undefined,
+  });
 }
 
 /**
@@ -916,6 +926,14 @@ export function connectionsView(store: StoreShape = readStore()): ConnectionsVie
 
       return {
         name,
+        // MAR-589. The stored rename outranks the manifest's own
+        // `display_name` — `AgentRow.title`'s own precedence, so the
+        // Connections page cannot name an agent differently from the fleet
+        // card a person picked it from.
+        title: agentDisplayName({
+          name,
+          display_name: store.agents[name]?.display_name ?? manifest.agent.display_name,
+        }),
         // MAR-533, and read rather than derived for MAR-502's reason exactly —
         // see the note on `AgentConnections.avatar`.
         avatar: readAgentAvatar(name),
@@ -1225,14 +1243,22 @@ export function workspaceView(
   // from a run last week is DASH's own record and survives the agent being
   // stopped, restarted or temporarily unreachable. Nesting it would make the
   // last thing the user cares about disappear whenever the process did.
+  //
+  // MAR-589. The stored column, when a rename has set one, outranks the
+  // manifest's own `display_name` — that precedence is the whole reason the
+  // column exists. `store` already holds it; recomputing from the manifest
+  // alone would show a renamed agent's old name until the process restarted.
+  const storedDisplayName = store.agents[agent]?.display_name ?? null;
+  const title = agentDisplayName({
+    name: workspaceManifest.agent.name,
+    display_name: storedDisplayName ?? workspaceManifest.agent.display_name,
+  });
+
   return {
     found: true,
     agent,
-    // MAR-595 finding 10. `display_name` is what every DASH-authored manifest
-    // carries; an MCP-planned one may not (finding 4). Humanized rather than
-    // the raw `agent.name`, so a machine slug never stands in for a title.
-    title:
-      agentDisplayName(workspaceManifest.agent),
+    title,
+    renamed: storedDisplayName !== null,
     goal: workspaceManifest.agent.goal,
     /*
      * MAR-502. Read from the store rather than from the manifest above, and
@@ -1278,8 +1304,9 @@ export function workspaceView(
       agent,
       manifest,
       store.events.filter((event) => event.agent === agent),
-      // The author's own name for it, never the id. See `buildAgentAsk`.
-      agentDisplayName(workspaceManifest.agent),
+      // The agent's one name — the stored rename if there is one, never the id.
+      // See `buildAgentAsk`.
+      title,
     ),
     // MAR-548, ADR 0008 slice 3's wiring. The authoritative document, not the
     // row's copy — see `panelDocument` for which store answers and why.
@@ -1542,6 +1569,9 @@ function declaredPermissions(manifest: unknown): PermissionGrant[] {
 export function workInboxView(now: Date = new Date()): WorkInboxView {
   const items: WorkInboxRow[] = [];
   const stalled: StalledAgentRow[] = [];
+  // MAR-589. Read once for the whole fleet rather than per agent — the same
+  // rule `glanceReader` states for the tables it reads once for every card.
+  const store = readStore();
 
   for (const agent of listAgentNames()) {
     const manifest = readAgentManifest(agent);
@@ -1550,8 +1580,13 @@ export function workInboxView(now: Date = new Date()): WorkInboxView {
       continue;
     }
     const workspaceManifest = manifest as WorkspaceManifest;
-    const title =
-      agentDisplayName(workspaceManifest.agent);
+    // The stored rename outranks the manifest's own `display_name`, exactly as
+    // `workspaceView` resolves it — the inbox names an agent it is not the
+    // page for and must not disagree with the page that is.
+    const title = agentDisplayName({
+      name: workspaceManifest.agent.name,
+      display_name: store.agents[agent]?.display_name ?? workspaceManifest.agent.display_name,
+    });
 
     items.push(
       ...buildWorkInbox(workspaceManifest, stored.state, now).map((item) => ({

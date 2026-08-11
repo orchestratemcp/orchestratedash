@@ -61,10 +61,12 @@ const RENDERED_REFUSAL = MANIFEST_ONLY_DEPLOY_REFUSAL.replaceAll("'", "&#x27;");
 /** An agent DASH holds a build for, and one it does not (MAR-577). */
 const SENDABLE: AgentDeployChoice = {
   name: "News Scout",
+  title: "News Scout",
   deploy: { deployable: true, refusal: null, travel: NOTHING_STRANDED },
 };
 const MIGRATED: AgentDeployChoice = {
   name: "Old Scout",
+  title: "Old Scout",
   deploy: {
     deployable: false,
     refusal: MANIFEST_ONLY_DEPLOY_REFUSAL,
@@ -472,6 +474,7 @@ describe("the deploy panel", () => {
   describe("what the chosen agent leaves behind (MAR-591)", () => {
     const STRANDED: AgentDeployChoice = {
       name: "Meeting Assistant",
+      title: "Meeting Assistant",
       deploy: {
         deployable: true,
         refusal: null,
@@ -490,6 +493,7 @@ describe("the deploy panel", () => {
     };
     const BLOCKED: AgentDeployChoice = {
       name: "Meeting Assistant",
+      title: "Meeting Assistant",
       deploy: {
         deployable: true,
         refusal: null,
@@ -539,6 +543,7 @@ describe("the deploy panel", () => {
        */
       const both: AgentDeployChoice = {
         name: MIGRATED.name,
+        title: MIGRATED.title,
         deploy: { ...MIGRATED.deploy, travel: STRANDED.deploy.travel },
       };
       const html = panel([both], { chosenAgent: both.name });

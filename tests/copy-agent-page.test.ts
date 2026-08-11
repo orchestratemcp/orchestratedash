@@ -105,12 +105,14 @@ describe("the agent page's copy", () => {
   /**
    * MAR-589's ruling, held to on the one surface that renders both.
    *
-   * The name row must not describe itself as editable while there is no column
-   * to write to, and the id row must say it is DASH's internal reference rather
-   * than a second name.
+   * The name row now says a rename is possible rather than claiming DASH
+   * cannot do it — the write half shipped after this test was first written —
+   * and the id row must still say it is DASH's internal reference rather than
+   * a second name.
    */
-  it("says the name cannot be changed yet and what the id is", () => {
-    expect(AGENT_SETTINGS_COPY.identity.name_source).toContain("cannot rename");
+  it("says the name is renamable and what the id is", () => {
+    expect(AGENT_SETTINGS_COPY.identity.name_source).toContain("until you rename it");
+    expect(AGENT_SETTINGS_COPY.identity.name_source).not.toContain("cannot rename");
     expect(AGENT_SETTINGS_COPY.identity.id_source).toContain("never changes");
   });
 

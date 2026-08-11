@@ -816,6 +816,18 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+/* MAR-589. A card head whose heading now travels with an id chip underneath
+   it (see `FleetCard`) — the same flex-item sizing the bare heading had, plus
+   a reset for the heading nested one level deeper inside it. */
+.card-head > .card-head-identity {
+  min-width: 0;
+}
+
+.card-head > .card-head-identity > :is(h2, h3, h4) {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 /* ---------------------------------------------------------------------- *
  * A record card's two halves (MAR-491)
  *
@@ -1332,7 +1344,7 @@ code {
  * one string that identifies the record is how two agents come to look like the
  * same agent.
  */
-.fleet-card > .card-head > h3 {
+.fleet-card > .card-head > .card-head-identity > h3 {
   font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }
@@ -4851,6 +4863,26 @@ button:disabled {
   font-weight: 700;
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
+}
+
+/* The settings drawer's name row (MAR-589): prose plus a Rename button in its
+   read state, an input plus Save/Cancel in its editing state. Both states are
+   one flex row, so the row's height does not jump between them. */
+.agent-name-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.agent-name-field .field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.agent-name-field .button-row {
+  margin-top: 0;
+  justify-content: flex-start;
 }
 
 .agent-header-controls {

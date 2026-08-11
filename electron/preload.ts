@@ -553,6 +553,17 @@ const dashShell = {
   removeAgentKeepFiles: (args: { agent_id: string }) =>
     send("runner.removeKeepFiles", { ...args }),
 
+  /**
+   * Set — or clear — the name DASH shows for one agent (MAR-589).
+   *
+   * `dropUnset` is load-bearing here, `chooseModel`'s own reason: an absent
+   * `display_name` is the field's whole vocabulary for "put this back", and
+   * sending it as `undefined` would serialise to a key with no value rather
+   * than to no key at all.
+   */
+  renameAgent: (args: { agent_id: string; display_name?: string }) =>
+    send("identity.rename", dropUnset(args)),
+
   approve: (args: AgentCommandArgs) => send("agent.approve", fields(args, APPROVAL_FIELDS)),
   reject: (args: AgentCommandArgs) => send("agent.reject", fields(args, APPROVAL_FIELDS)),
   choose: (args: AgentCommandArgs) => send("agent.choose", fields(args, CHOICE_FIELDS)),
