@@ -25,17 +25,22 @@ put one in.
 
 ```json
 {
-  "content": "AI agent news is waiting for your approval.\nOpen it in DASH: dash://open?agent=ai-agent-news",
+  "content": "AI agent news is waiting for your approval.\nIn DASH: Agents → AI agent news\nAn installed copy of DASH on this computer opens that directly: dash://open?agent=ai-agent-news",
   "allowed_mentions": { "parse": [] }
 }
 ```
 
 ```json
 {
-  "content": "AI agent news published a new report.\nOpen it in DASH: dash://open?agent=ai-agent-news&run=run-2026-08-10-01",
+  "content": "AI agent news published a new report.\nIn DASH: Agents → AI agent news → latest output\nAn installed copy of DASH on this computer opens that directly: dash://open?agent=ai-agent-news&run=run-2026-08-10-01",
   "allowed_mentions": { "parse": [] }
 }
 ```
+
+The middle line — where to look, in words — was added by MAR-617. The original
+two-line shape put the only instruction in a link Discord will not linkify and
+an unpackaged DASH never claims; see "The link is text, not a button" below,
+now revised.
 
 `allowed_mentions.parse: []` is the load-bearing half. Nothing stops an author
 naming their agent `@everyone`, and escaping does not help — `@` is not markdown.
@@ -60,7 +65,7 @@ name cannot end DASH's sentence and start a line that reads as DASH speaking.
   a link that grew an `approval_id` in transit is rejected rather than ignored.
   Following a link approves nothing; it opens a page.
 
-### The link is text, not a button
+### The link is text, not a button — and the message no longer depends on it (MAR-617)
 
 Discord linkifies `http`, `https` and a short list of other schemes. It does not
 linkify `dash://`, and a markdown link to an unknown scheme renders as its own
@@ -70,6 +75,15 @@ The alternative is an `https://` link on a host DASH owns that redirects to the
 `dash://` one — which is a server, and a server is a recurring cost. The `$0` rule
 decides it. The settings page says so in `NOTIFY_CONTENTS` rather than leaving it
 to be discovered.
+
+A second defect compounded the first: an unpackaged DASH never claims `dash://`
+at all — only `electron/handoff-host.ts`'s packaged branch calls
+`app.setAsDefaultProtocolClient`. Henrik hit both at once on the first real
+delivery (MAR-588's proof run): a link that could not be clicked, and, on the
+machine he read it from, would not have opened anything if it could. So the
+message now says where to look — Agents, then the agent's name — in DASH's own
+words, before it ever mentions the link, and the link is worded as what an
+installed DASH can do rather than as an instruction to click it.
 
 ## Why the runner sends, and the liveness sentences
 
@@ -137,8 +151,11 @@ Discord. What is unproven by the above:
 - that Discord accepts this body shape at the live endpoint (it matches the
   documented execute-webhook request, and that is a reading of documentation, not
   an observation);
-- that the message renders in a channel the way it reads here;
-- that `dash://open?…` is shown as copyable text rather than stripped.
+- that the message renders in a channel the way it reads here, across three
+  lines rather than collapsed or wrapped in a way that buries the middle one;
+- that `dash://open?…` is shown as copyable text rather than stripped — a
+  narrower question now than it was before MAR-617, since the middle line
+  carries the actual instruction and does not depend on the answer.
 
 The attended run is: open `/notifications` in the installed app, press **Add a
 channel address**, paste a webhook from a channel's Integrations settings, press
@@ -155,10 +172,12 @@ approval with the DASH window shut and watched a message arrive.
 ## Recorded exchange
 
 Produced by `DASH_NOTIFY_TRANSCRIPT=<path> pnpm vitest run tests/notify-transport.test.ts`
-on 2026-08-10. The path is rewritten to a placeholder because it carries the
-ephemeral port that run happened to bind; the headers and bodies are exactly what
-arrived. Requests 4–8 are the same test message re-sent to exercise the answer
-branches (429, 429-clamped, 404, 503, unreachable).
+on 2026-08-11, re-recorded for MAR-617's three-line message (the 2026-08-10
+transcript had the original two-line one). The path is rewritten to a
+placeholder because it carries the ephemeral port that run happened to bind;
+the headers and bodies are exactly what arrived. Requests 4–8 are the same test
+message re-sent to exercise the answer branches (429, 429-clamped, 404, 503,
+unreachable).
 
 ```http
 --- request 1 ---
@@ -166,18 +185,18 @@ POST /api/webhooks/{id}/{token} HTTP/1.1
 host: 127.0.0.1:{port}
 content-type: application/json
 user-agent: OrchestrateDASH (local notifier)
-content-length: 139
+content-length: 221
 
-{"content":"AI agent news is waiting for your approval.\nOpen it in DASH: dash://open?agent=ai-agent-news","allowed_mentions":{"parse":[]}}
+{"content":"AI agent news is waiting for your approval.\nIn DASH: Agents → AI agent news\nAn installed copy of DASH on this computer opens that directly: dash://open?agent=ai-agent-news","allowed_mentions":{"parse":[]}}
 
 --- request 2 ---
 POST /api/webhooks/{id}/{token} HTTP/1.1
 host: 127.0.0.1:{port}
 content-type: application/json
 user-agent: OrchestrateDASH (local notifier)
-content-length: 155
+content-length: 255
 
-{"content":"AI agent news published a new report.\nOpen it in DASH: dash://open?agent=ai-agent-news&run=run-2026-08-10-01","allowed_mentions":{"parse":[]}}
+{"content":"AI agent news published a new report.\nIn DASH: Agents → AI agent news → latest output\nAn installed copy of DASH on this computer opens that directly: dash://open?agent=ai-agent-news&run=run-2026-08-10-01","allowed_mentions":{"parse":[]}}
 
 --- request 3 ---
 POST /api/webhooks/{id}/{token} HTTP/1.1
