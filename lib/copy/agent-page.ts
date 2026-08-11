@@ -79,11 +79,21 @@ export const AGENT_CONTROL_COPY = {
    * opposite of a control surface.
    */
   idle: {
-    /** No Agent DOM snapshot has arrived. The state every new agent is in. */
+    /**
+     * No Agent DOM snapshot has arrived. The state every new agent is in.
+     *
+     * **"on this computer" is load-bearing and was added after MAR-602's
+     * per-server buttons moved into this panel.** Without it the panel could
+     * read "DASH has nothing to start" directly under a *Run on Hostinger*
+     * button, which is a flat contradiction: these three sentences are all
+     * about the local run, and a remote one needs neither a snapshot nor a
+     * pending task. ADR 0014's rule that a control names its machine, applied
+     * to the sentence where a control is absent.
+     */
     not_reported:
-      "This agent has not reported its state yet, so DASH has nothing to start.",
+      "This agent has not reported its state yet, so DASH has nothing to start on this computer.",
     /** A snapshot, but no task waiting to be run. */
-    nothing_waiting: "Nothing is waiting to be run.",
+    nothing_waiting: "Nothing is waiting to be run on this computer.",
     /** The window cannot act — a browser tab rather than the installed shell. */
     read_only: "This window can show this agent but cannot control it.",
   },
