@@ -1181,6 +1181,23 @@ code {
 }
 
 /*
+ * A chip that carries its own explanation (MAR-614).
+ *
+ * One flex item holding the chip and its note, so the marker travels with the
+ * chip when the row wraps. Two siblings in `.chips` would be two items, and at
+ * 375px the question mark would wrap onto the next line on its own — a control
+ * with nothing beside it to say what it is about.
+ *
+ * `align-items: center` rather than the note's own `vertical-align: middle`,
+ * which does nothing here: this box is a flex container, and vertical-align is
+ * not a property flex items read.
+ */
+.glance-chip-noted {
+  display: inline-flex;
+  align-items: center;
+}
+
+/*
  * The button onward.
  *
  * Its own row rather than beside the meta line: at 375px a control sharing a
