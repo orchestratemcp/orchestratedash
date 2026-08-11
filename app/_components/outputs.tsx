@@ -1,6 +1,8 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import type { GroundingAnalysis } from "../../lib/analyze";
+import { AGENT_OUTPUTS_COPY } from "../../lib/copy/agent-page";
 import { OUTPUTS_PANEL_COPY as COPY } from "../../lib/copy/artifacts";
 import { canPreview, type ArtifactCardView } from "../../lib/views/artifacts";
 import { DigestBody, DraftBody, DraftPlacementChip, GroundingChip } from "./digest";
@@ -40,10 +42,32 @@ import { DigestBody, DraftBody, DraftPlacementChip, GroundingChip } from "./dige
 export function OutputsPanel({
   cards,
   grounding,
+  heading,
+  emptyState,
   onDownload,
+  runHref,
 }: {
   cards: readonly ArtifactCardView[];
   grounding: GroundingAnalysis | null;
+  /**
+   * What to call this list, or absent for MAR-434's own wording.
+   *
+   * The run detail page shows one run's outputs and "Outputs" is right there.
+   * The agent page shows the latest across every run and calls it so — see
+   * `AGENT_OUTPUTS_COPY`. One component, because it is one card list, and the
+   * two callers differ in a heading rather than in a renderer.
+   */
+  heading?: string;
+  /**
+   * The two-line empty state, for the surface that has one (MAR-609).
+   *
+   * Absent keeps `COPY.empty`, the single muted sentence the run detail page
+   * has always shown. The agent page passes a headline and a detail because
+   * this is the first thing a new user meets on it — MAR-609's closing note is
+   * that the page must be sized for the empty case first — and a lone grey
+   * sentence under a heading is what "no overview" looks like.
+   */
+  emptyState?: { headline: string; detail: string };
   /**
    * Save a copy of one output, or absent (MAR-434).
    *
@@ -55,11 +79,22 @@ export function OutputsPanel({
    * about the output rather than about the window.
    */
   onDownload?: (card: ArtifactCardView) => void;
+  /**
+   * Where the run that made one card lives, or absent (MAR-609).
+   *
+   * Per card and not per panel. The agent page's list spans runs, so a single
+   * "open the run these came from" link — which is what this page had — would
+   * name one run while pointing at a list mostly produced by others.
+   *
+   * Absent on the run detail page, where the reader is already on that run's
+   * page and the link would go where they are.
+   */
+  runHref?: (card: ArtifactCardView) => string;
 }): ReactNode {
   return (
     <section className="section" aria-labelledby="outputs-heading">
       <div className="section-heading">
-        <h2 id="outputs-heading">{COPY.heading}</h2>
+        <h2 id="outputs-heading">{heading ?? COPY.heading}</h2>
       </div>
 
       {cards.length === 0 ? (
@@ -67,7 +102,16 @@ export function OutputsPanel({
            produced nothing leaves the reader unable to tell "nothing was made"
            from "DASH is not showing me what was made", and those are very
            different things to learn about an agent you are deciding to trust. */
-        <p className="muted">{COPY.empty}</p>
+        emptyState === undefined ? (
+          <p className="muted">{COPY.empty}</p>
+        ) : (
+          <div className="empty">
+            <p>
+              <strong>{emptyState.headline}</strong>
+            </p>
+            <p>{emptyState.detail}</p>
+          </div>
+        )
       ) : (
         <ol className="output-list">
           {cards.map((card, index) => (
@@ -75,6 +119,7 @@ export function OutputsPanel({
               <OutputCard
                 card={card}
                 onDownload={onDownload}
+                runHref={runHref}
                 /* Only the newest digest is graded, which is the rule
                    `lib/views/build.ts` already applies when it computes the
                    verdict. Hanging that chip on an older artifact would report
@@ -100,10 +145,12 @@ function OutputCard({
   card,
   grounding,
   onDownload,
+  runHref,
 }: {
   card: ArtifactCardView;
   grounding: GroundingAnalysis | null;
   onDownload?: (card: ArtifactCardView) => void;
+  runHref?: (card: ArtifactCardView) => string;
 }): ReactNode {
   const { artifact, role, receipt, recovery, reference } = card;
 
@@ -128,6 +175,16 @@ function OutputCard({
               it does not. MAR-420's rule, and the reason the role label above
               is set in the interface font. */}
           <h3 className="value">{artifact.title}</h3>
+          {/* MAR-609. When it was made, on the front of the card.
+
+              This list spans runs now, so two digests of the same role arrive
+              with the same role label and the same title and are otherwise
+              indistinguishable — the moment is the only thing that tells them
+              apart. It is still in the receipt below as well, and that is not
+              a duplication worth removing: the receipt is the four-fact record
+              and dropping a row out of it to avoid repeating one would make
+              the record incomplete to save a line. */}
+          <p className="output-when muted">{receipt.stated_at}</p>
         </div>
         <div className="output-chips">
           {artifact.kind === "draft" ? <DraftPlacementChip artifact={artifact} /> : null}
@@ -172,6 +229,14 @@ function OutputCard({
             {COPY.download}
           </button>
         ) : null}
+        {/* MAR-609. The route from one output back to the run that made it,
+            now that the list spans runs. Beside Save a copy rather than under
+            the panel, because it is a fact about *this* card. */}
+        {runHref === undefined ? null : (
+          <Link className="output-run-link" href={runHref(card)}>
+            {AGENT_OUTPUTS_COPY.open_run}
+          </Link>
+        )}
         <Receipt card={card} />
       </div>
 

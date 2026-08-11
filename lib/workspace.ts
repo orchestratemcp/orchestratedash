@@ -20,7 +20,7 @@
  * As everywhere in DASH, nothing here can stop an agent. A finding is a finding.
  */
 
-import { humanizeAgentName } from "./copy/agent-name";
+import { agentDisplayName } from "./copy/agent-name";
 
 export type AgentCommand =
   | "approve"
@@ -385,7 +385,7 @@ export function buildOverview(
     agent_id: state.agent_id,
     // MAR-595 finding 10. Humanized rather than the raw slug — see
     // `lib/copy/agent-name.ts`.
-    title: manifest.agent.display_name ?? humanizeAgentName(manifest.agent.name),
+    title: agentDisplayName(manifest.agent),
     goal: manifest.agent.goal,
     status,
     status_detail: STATUS_DETAIL[status],

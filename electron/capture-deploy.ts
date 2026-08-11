@@ -588,6 +588,81 @@ function surfaces(): Surface[] {
       route: agentRoute(SENDABLE),
       focus: ".deploy-section",
     },
+    /*
+     * MAR-609's four, and every one of them is of an agent that has produced
+     * nothing.
+     *
+     * That is not a limitation of this scene, it is the scene's value here. The
+     * issue's closing note is that *"an agent with no output currently renders
+     * a page full of prose"* and that whatever replaces it *"should be sized
+     * for the empty case first — that is the state every new user meets."*
+     * `SENDABLE` is imported with a manifest and a folder and has never run, so
+     * these frames are that exact state, photographed at both themes and both
+     * densities by the loop that owns them.
+     *
+     * Four rather than one because the page is now four distinct things and a
+     * single top-of-page frame would prove only the first: the header and its
+     * controls, the outputs area's empty state, the settings drawer somebody
+     * has to press to see, and the record everything else folded into.
+     */
+    {
+      name: "agent-overview",
+      route: agentRoute(SENDABLE),
+      // The header rather than the body: this frame is the answer to "you get
+      // no overview", so its subject is the block that now carries the name,
+      // the status, the controls and the four tiles.
+      focus: ".agent-header",
+    },
+    {
+      name: "agent-empty-outputs",
+      route: agentRoute(SENDABLE),
+      /*
+       * Focused on the heading rather than the section, for the reason
+       * MAR-591's `.travel-notice` frames record: at 375px a section-scoped
+       * scroll puts the subject below the fold and files a photograph of
+       * something else under its name. This empty state is two short lines and
+       * it is the most-read copy on this page.
+       */
+      focus: "#outputs-heading",
+    },
+    {
+      name: "agent-settings",
+      route: agentRoute(SENDABLE),
+      // Pressed, not URL-forced. The drawer is `useState` in the page and there
+      // is no route to it, so a harness that could not click the button could
+      // not photograph the feature — which makes the frame a check that the
+      // button works as well as a picture of what it opens.
+      prepare: async (target) => {
+        await clickByText(target, "Settings");
+      },
+      focus: ".agent-settings",
+    },
+    {
+      name: "agent-record",
+      route: agentRoute(SENDABLE),
+      /*
+       * The disclosure opened, because a closed `<details>` photographs as one
+       * grey line and would prove only that the summary exists. What is being
+       * checked is that everything MAR-609 folded away is still *there* — the
+       * permission receipt and the whole workspace record — which is the claim
+       * that this was a move rather than a deletion.
+       *
+       * `open` is set directly rather than clicked: `<summary>` is not a
+       * `<button>`, so `clickByText` cannot reach it, and setting the property
+       * is what the element's own click does.
+       */
+      prepare: async (target) => {
+        await target.webContents.executeJavaScript(
+          `(() => {
+             const box = document.querySelector("details.agent-record");
+             if (box !== null) box.open = true;
+             return box !== null;
+           })()`,
+        );
+        await settle(300);
+      },
+      focus: ".agent-record",
+    },
   ];
   if (SCENE === "one-server") {
     /*
