@@ -2312,8 +2312,18 @@ export async function dispatchCommand(
            * refused every press with "DASH did not receive the agent it should
            * start" — the exact new-member-falls-through mechanism MAR-600
            * collapsed in `electron/main.ts`, one file over.
+           *
+           * `bringHome` (MAR-611) is the third member of that arm and was
+           * written into it rather than discovered by a press, which is the only
+           * reason it is not a third bug in this list. **This chain and the
+           * switch below are two places a new host command has to be named**, and
+           * neither of them fails to compile when it is not — a `HostAction` this
+           * ternary does not mention silently becomes a host-id-only target, and
+           * one the switch does not mention falls out of the block entirely. That
+           * is the shape worth remembering here: the catalogue is exhaustive by
+           * type, and the two things that read it are exhaustive by hand.
            */
-          action === "deploy" || action === "run"
+          action === "deploy" || action === "run" || action === "bringHome"
           ? await context.hostAction(action, {
               host_id: String(review.payload["host_id"]),
               agent_id: String(review.payload["agent_id"]),
@@ -2444,6 +2454,33 @@ export async function dispatchCommand(
             label: result.label,
             agent_id: result.agent_id,
             reached: result.reached,
+          },
+        };
+      /*
+       * MAR-611, ADR 0017. The arm `run` had to be given by a bug report, given
+       * to its sibling before one could be filed.
+       *
+       * `detail` is the whole account of the act — `lib/copy/bring-home.ts`
+       * composes it from the outcome, so a page renders one sentence rather than
+       * reconstructing what happened out of flags. `files_saved` is beside it
+       * because it is the one number a surface would want to emphasise and the
+       * sentence already contains: DASH wrote that many files, on this computer,
+       * in a folder the person chose.
+       *
+       * No folder path, matching `workspace.download` one family over. The
+       * destination was chosen in a window this renderer did not draw, and it
+       * does not learn the answer.
+       */
+      case "bringHome":
+        return {
+          ok: true,
+          request_id: review.audit.request_id,
+          detail: result.detail,
+          data: {
+            host_id: result.host_id,
+            label: result.label,
+            agent_id: result.agent_id,
+            files_saved: result.files_saved,
           },
         };
       case "forget":

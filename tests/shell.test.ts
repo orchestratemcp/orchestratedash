@@ -1045,6 +1045,45 @@ describe("dispatch", () => {
       expect(result).toMatchObject({ ok: true });
     });
 
+    it("routes a bring-home with both identities, and renders what came back", async () => {
+      /*
+       * MAR-611, ADR 0017. The same two fall-throughs the test above exists for,
+       * asserted on the third member of that arm before anybody had to press it.
+       *
+       * Both halves are checked in one test because they fail in opposite ways
+       * and only together prove a round trip: a dropped agent id makes main
+       * refuse, and a missing result arm makes a press that **succeeded on the
+       * server** fall out of the switch into `executeCommand`'s trusted-side
+       * guard and throw. The second is much worse here than it was for `run` —
+       * the agent really is off the host by then, and the person's next move
+       * would be to press again.
+       */
+      const ctx = context();
+      const result = await dispatchCommand(
+        {
+          command: "host.bringHome",
+          request_id: "req-host-bring-home",
+          payload: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        },
+        ctx,
+      );
+
+      expect(ctx.hosts).toEqual([
+        {
+          action: "bringHome",
+          target: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        },
+      ]);
+      expect(result).toMatchObject({
+        ok: true,
+        request_id: "req-host-bring-home",
+        data: { host_id: "host-fake-1", agent_id: "fixture-agent", files_saved: 0 },
+      });
+      // Main's own sentence, whole. A page renders this rather than composing
+      // one from flags.
+      expect((result as { detail?: string }).detail).toContain("no longer on My server");
+    });
+
     it("renders the manifest-only refusal verbatim", async () => {
       const ctx = context();
 
