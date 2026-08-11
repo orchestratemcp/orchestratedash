@@ -1939,6 +1939,30 @@ async function hostAction(
     // stored, because DASH stores nothing about what it deployed where. The
     // Servers page words it as a report for that reason.
     agents_running: running.length,
+    /*
+     * MAR-606, ADR 0015. The same answer, no longer reduced to its length.
+     *
+     * `answer.bundles` has always carried a name per bundle and this function
+     * has always thrown them away — MAR-489's attended run is what that cost:
+     * a person put one agent on a server by two different routes, and no
+     * surface in DASH could tell him whether he had one copy there or two.
+     * There is no extra round trip here and no new question asked of the
+     * server; this is the reply it already gave, passed on instead of counted.
+     *
+     * Every bundle, not only the running ones, because "installed and stopped"
+     * is a state a person needs to see and `agents_running` above cannot
+     * express — it is the difference between an agent that was never sent and
+     * one that died, and reducing both to an absence is how the second goes
+     * unnoticed.
+     *
+     * The pid is deliberately left behind. It is a number that helps nobody
+     * this product is for, and a field that exists is a field that ends up in
+     * a sentence.
+     */
+    agents_there: answer.bundles.map((bundle) => ({
+      agent_id: bundle.agent_id,
+      running: bundle.running,
+    })),
   };
 }
 

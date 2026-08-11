@@ -26,6 +26,13 @@
  *                    pressable) and one whose file says it does (refused before
  *                    the press). Both entry points are photographed, because the
  *                    issue's requirement is that both say it.
+ * - `deployed`     — MAR-606. One saved server DASH has **already sent an agent
+ *                    to**, which is the only state in which any of that issue's
+ *                    three surfaces has anything to draw: the fleet card's
+ *                    hosting chip, the server card's "what is on this server",
+ *                    and the deploy control offering to *replace* rather than to
+ *                    send. Every other scene here has an empty `agent_deploys`
+ *                    and photographs all three as correctly absent.
  *
  * ## What is real here, and the two things that are not
  *
@@ -110,7 +117,7 @@ import { app, BrowserWindow, nativeTheme } from "electron";
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { importManifest, saveHost } from "../lib/store.js";
+import { importManifest, recordAgentDeploy, saveHost } from "../lib/store.js";
 import { dataDir } from "../lib/db.js";
 import { createHostKey } from "./ssh-host.js";
 
@@ -336,7 +343,40 @@ function seed(): void {
       added_at: "2026-08-09T09:00:00.000Z",
     });
   }
-  console.log(`[deploy] seeded scene ${SCENE}: 2 agents, ${String(servers.length)} server(s)`);
+
+  /*
+   * MAR-606. A real `agent_deploys` row, written by the same function
+   * `host.deploy` calls when a push has succeeded.
+   *
+   * This is DASH's own record of its own act, and it is the **only** seeded fact
+   * behind the three surfaces this scene photographs. There is no seeded
+   * sighting, and there could not be one: a sighting is what a server said, it
+   * is held in the window rather than in the store (ADR 0015), and inventing one
+   * would mean photographing a claim about a machine nobody asked.
+   *
+   * So these frames show the cold half of every indicator — *"sent to My
+   * server"*, *"DASH has not asked"* — which is also the half every person meets
+   * first, on every freshly opened window. The warm half, the success chip over
+   * *"reported News Scout running when DASH asked at …"*, needs a server that
+   * answers. That is MAR-489's attended run and not something a harness may
+   * invent; `tests/host-sighting-render.test.tsx` covers it, and a faked
+   * screenshot of it would be the substitution ADR 0002 amendment 1 named.
+   */
+  if (SCENE === "deployed") {
+    recordAgentDeploy(
+      {
+        agent: SENDABLE,
+        host_id: "scene-1",
+        manifest_sha256: "scene-manifest-digest",
+        files_sha256: "scene-files-digest",
+      },
+      "2026-08-10T21:00:00.000Z",
+    );
+  }
+  console.log(
+    `[deploy] seeded scene ${SCENE}: 2 agents, ${String(servers.length)} server(s)` +
+      (SCENE === "deployed" ? ", 1 deploy record" : ""),
+  );
 }
 
 /* ---------------------------------------------------------------------- *
@@ -623,6 +663,32 @@ async function layout(target: BrowserWindow): Promise<unknown> {
              [...document.querySelectorAll("button")].some(
                (node) => node.textContent.includes("Put") && node.disabled,
              ),
+           /*
+            * MAR-606's three counters, one per surface this scene added.
+            *
+            * NOTE: no backticks anywhere in this block. Everything inside the
+            * quotes is one template literal in the .ts file, and a backtick in a
+            * comment closes it — turning a page script into a parse error two
+            * hundred lines away from the mistake.
+            *
+            * hosting_chip reads the chip's own document text and never
+            * innerText: the stylesheet uppercases chips as typography, so a
+            * harness reading rendered text would find "SENT TO MY SERVER" and
+            * report false while the chip sat in the middle of the picture.
+            */
+           fleet_hosting: document.querySelectorAll(".fleet-hosting").length,
+           hosting_chip:
+             document.querySelector(".fleet-hosting .chip")?.textContent?.trim() ?? null,
+           host_contents: document.querySelectorAll(".host-content").length,
+           /*
+            * Finding 31's whole point, as a value rather than a boolean: the
+            * label a person actually reads on the primary. "Put it on this
+            * server" here would mean the offer never changed.
+            */
+           deploy_primary:
+             [...document.querySelectorAll(".deploy-panel .button-primary")]
+               .map((node) => node.textContent.trim())
+               .at(-1) ?? null,
            widest_overflow: widest,
            widest_overflow_source: widestSource,
          };
@@ -800,6 +866,47 @@ function surfaces(): Surface[] {
         await chooseAgent(target, BLOCKED);
       },
       focus: ".travel-notice",
+    });
+  }
+  if (SCENE === "deployed") {
+    /*
+     * MAR-606's three visible halves, one surface each.
+     *
+     * The fleet card is first because it is the one Henrik asked for by name —
+     * *"AN agent that is hosted online should have like an icon or somthing on
+     * its fleet card"* — and it is the only frame here taken on a page that had
+     * previously said nothing at all about servers.
+     *
+     * Focused on the block rather than on the card, `agent-warned`'s lesson
+     * exactly: a fleet card is a portrait, a goal, four chips and a meta line
+     * before it reaches this, so a viewport-sized image scrolled to the card
+     * would put the subject below the fold at 375 in every frame.
+     */
+    list.push({
+      name: "fleet-hosted",
+      route: "/",
+      focus: ".fleet-hosting",
+    });
+    list.push({
+      name: "servers-contents",
+      route: "/settings/servers",
+      focus: ".host-contents",
+    });
+    /*
+     * Finding 31. The panel opened on the agent this scene has already sent —
+     * which is the whole point of choosing *this* agent rather than the other
+     * one seeded beside it. `MIGRATED` has no deploy row, so it would draw the
+     * ordinary "Put it on this server" and file it under a name claiming to
+     * show the replace state.
+     */
+    list.push({
+      name: "servers-replace",
+      route: "/settings/servers",
+      prepare: async (target) => {
+        await clickByText(target, "Put an agent here");
+        await chooseAgent(target, SENDABLE);
+      },
+      focus: ".deploy-panel",
     });
   }
   return list;

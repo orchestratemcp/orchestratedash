@@ -20,11 +20,9 @@ import {
   type WizardStep,
 } from "../../../lib/host-wizard";
 import {
-  HOST_REACH_PROBLEMS,
   describeConnectState,
   readProbeStanding,
   type HostConnectState,
-  type HostReachProblem,
 } from "../../../lib/host-connect";
 import type { DeployStanding } from "../../../lib/deploy/deploying";
 import { describeDuplicateHost, findDuplicateHost } from "../../../lib/hosts";
@@ -32,6 +30,7 @@ import { describeDuplicateRecords, summariseServers } from "../../../lib/server-
 import { describeDeployArrangement } from "../../../lib/deploy/receipt";
 import { ServerCard } from "../../_components/server-card";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
+import { sightings } from "../../_data/sightings";
 import { submitHostCommand } from "../../_data/source";
 import { useCanAct, useHost, useView } from "../../_data/use-view";
 import type { SavedServerView } from "../../../lib/views/types";
@@ -480,12 +479,6 @@ function ConnectServer({
   const at = WIZARD_STEPS.indexOf(step);
   const label = draft.label.trim() === "" ? "this server" : draft.label.trim();
 
-  function reachProblem(value: unknown): HostReachProblem | null {
-    return typeof value === "string" && HOST_REACH_PROBLEMS.includes(value as HostReachProblem)
-      ? (value as HostReachProblem)
-      : null;
-  }
-
   async function makeKey(): Promise<void> {
     setBusy(true);
     setNotice(null);
@@ -541,46 +534,28 @@ function ConnectServer({
     const result = await submitHostCommand("probe", { host_id: hostId });
     setBusy(false);
 
-    if (result.ok) {
-      const runnerBuild = result.data?.["runner_build"];
-      const running = result.data?.["agents_running"];
-      setCheckState({
-        step: "reachable",
-        label,
-        runner_build: typeof runnerBuild === "string" && runnerBuild !== "" ? runnerBuild : null,
-        agents_running: typeof running === "number" ? running : 0,
-      });
+    /*
+     * One reading of a probe's answer, shared with the manage path below and
+     * with the agent page (MAR-577's `readProbeStanding`).
+     *
+     * This branch used to be forty lines of its own — the `ok` case, MAR-572's
+     * enrollment moment, and the problem lookup, hand-rolled here while the
+     * identical three lived in `readProbeStanding`. MAR-606 is what that cost:
+     * the server's list of what it holds arrived on the answer, the shared
+     * reader picked it up, and this copy silently did not, so the same check
+     * knew different things depending on which of two screens had asked. The
+     * drift `readProbeStanding` was written to prevent had simply moved into
+     * the surface that was written before it.
+     */
+    const standing = readProbeStanding(label, result);
+    if (standing !== null) {
+      setCheckState(standing);
       return;
     }
 
-    // The enrollment moment (MAR-572). An unpinned host answers `probe` with the
-    // fingerprint it offered rather than an error, because nothing is wrong — a
-    // person's confirmation is what is missing. Show the code; the Confirm
-    // control in the button row carries it back to `host.trust`.
-    if (result.data?.["problem"] === "host_key_not_trusted") {
-      const fingerprint = result.data["fingerprint"];
-      const keyType = result.data["key_type"];
-      const offered = result.data["offered_count"];
-      if (typeof fingerprint === "string" && typeof keyType === "string") {
-        setCheckState({
-          step: "confirm_host_key",
-          label,
-          fingerprint,
-          key_type: keyType,
-          offered_count: typeof offered === "number" ? offered : 1,
-        });
-        return;
-      }
-    }
-
-    const problem = reachProblem(result.data?.["problem"]);
-    if (problem !== null) {
-      setCheckState({ step: "unreachable", label, problem });
-      return;
-    }
-
-    // SSH diagnostics can name an account, address, port and local key path.
-    // Keep the key state visible and show the transport's safe sentence below.
+    // A refusal the transport could not classify. SSH diagnostics can name an
+    // account, address, port and local key path, so nothing of them is shown:
+    // keep the key state visible and say the transport's own safe sentence.
     setCheckState(
       publicKey === null
         ? { step: "no_host" }
@@ -827,9 +802,19 @@ export default function HostsPage(): ReactNode {
     setStandings((current) => ({ ...current, [hostId]: standing }));
   }
 
-  /** Stamped when a *server's answer* arrives, never when a check begins. */
-  function stampChecked(hostId: string): void {
-    setCheckedAt((current) => ({ ...current, [hostId]: new Date().toISOString() }));
+  /**
+   * Stamped when a *server's answer* arrives, never when a check begins.
+   *
+   * Returns the instant it recorded, so the sighting log and the card's own
+   * "DASH last asked" carry the same one. Reading the clock twice would put two
+   * moments a few milliseconds apart on one answer — which is harmless until the
+   * two land either side of a minute boundary and one surface says 21:14 while
+   * the other says 21:15 about the same reply.
+   */
+  function stampChecked(hostId: string): string {
+    const at = new Date().toISOString();
+    setCheckedAt((current) => ({ ...current, [hostId]: at }));
+    return at;
   }
 
   function setNotice(hostId: string, detail: string | null): void {
@@ -868,7 +853,27 @@ export default function HostsPage(): ReactNode {
       return;
     }
     setStanding(server.host_id, standing);
-    stampChecked(server.host_id);
+    const at = stampChecked(server.host_id);
+
+    /*
+     * MAR-606, ADR 0015. What the server named, kept for the rest of this
+     * window so the fleet card can draw it — the check happens here and the
+     * question is asked on a page that cannot run one.
+     *
+     * Recorded only where the server actually answered. A refusal establishes
+     * nothing about what is on the machine, and an entry meaning "DASH asked
+     * and does not know" would be indistinguishable on a card from one meaning
+     * "DASH asked and it was empty" — so a server that stops answering keeps
+     * its last sighting, and the timestamp on it is what says how much to trust
+     * it.
+     */
+    if (standing.step === "reachable") {
+      sightings.record(server.host_id, {
+        label: server.label,
+        agents: standing.agents_there,
+        at,
+      });
+    }
   }
 
   /**
@@ -966,6 +971,11 @@ export default function HostsPage(): ReactNode {
       setNotice(server.host_id, result.detail ?? "DASH could not forget this server safely.");
       return;
     }
+    // ADR 0010's deletion rule, applied to the session's sighting as well as to
+    // the stored rows main just removed: once the label is gone, a surviving
+    // sighting could only render as a claim about a machine DASH can no longer
+    // name.
+    sightings.forget(server.host_id);
     setRevision((current) => current + 1);
   }
 
@@ -1019,10 +1029,34 @@ export default function HostsPage(): ReactNode {
         />
       ) : (
         <>
-          {/* Counted rather than asserted, so this line cannot drift from the
-              cards under it — the failure mode of every hand-written summary
-              that has ever sat at the top of a list. */}
-          <p className="page-summary wrap">{summariseServers(servers)}</p>
+          {/*
+            Counted rather than asserted, so this line cannot drift from the
+            cards under it — the failure mode of every hand-written summary that
+            has ever sat at the top of a list.
+
+            MAR-605. It was counted and asserted anyway: the count was of saved
+            *records* and the word attached to it was "connected", which means a
+            check succeeded. The attended run photographed "1 server is
+            connected" above a card saying DASH could not get in. So the
+            standings go in with the records now, and this is the join — the
+            page holds both and `lib/server-card.ts` holds neither, which is why
+            the join is here rather than there.
+          */}
+          <p className="page-summary wrap">
+            {summariseServers(
+              servers,
+              servers.map((server) => {
+                const standing = standings[server.host_id];
+                return {
+                  // The top rung only. A server that is plainly alive and
+                  // refusing DASH's key has not proved anything this line is
+                  // counting.
+                  answered: standing !== undefined && standing.step === "reachable",
+                  at: checkedAt[server.host_id] ?? null,
+                };
+              }),
+            )}
+          </p>
 
           {/* Said once, above the list, rather than repeated on every card that
               is part of a group. Each card carries only which of them it is. */}

@@ -9,6 +9,7 @@ import {
 } from "../../lib/host-connect";
 import {
   describeAskedAt,
+  describeDeployOffer,
   describeUndeployable,
   type DeployStanding,
 } from "../../lib/deploy/deploying";
@@ -19,8 +20,14 @@ import {
   describePin,
   describeSameServer,
   describeSignIn,
+  standingChip,
 } from "../../lib/server-card";
 import { describeSetupStep } from "../../lib/host-wizard";
+import {
+  describeWhatIsOnHost,
+  summariseWhatIsOnHost,
+  type AgentHostStanding,
+} from "../../lib/host-sighting";
 import type { AgentDeployChoice, SavedServerView } from "../../lib/views/types";
 import { ConnectionTravelNotice, DeployOutcome } from "./deploy";
 
@@ -33,7 +40,12 @@ import { ConnectionTravelNotice, DeployOutcome } from "./deploy";
  * bottom:
  *
  * 1. **What is it and does it work** — the label, and the standing in its own
- *    words. The chip beside the label is the same fact at a glance.
+ *    words. The chip beside the label is the same fact at a glance, and since
+ *    MAR-605 that is literal rather than aspirational: `standingChip` moved into
+ *    `lib/server-card.ts` and builds its label out of the standing's own
+ *    `reach`, so this component no longer has the option of deciding how far
+ *    DASH got. It had that option once, and used it to draw CANNOT REACH above
+ *    a sentence reading "the server is answering".
  * 2. **How DASH reaches it, and since when** — the connection facts, which are
  *    what a person checks against their provider's own page.
  * 3. **What is on it** — reported by the server, never claimed by DASH.
@@ -47,43 +59,6 @@ import { ConnectionTravelNotice, DeployOutcome } from "./deploy";
  * next action rather than one shared shrug, and why "nothing is running there"
  * is drawn as an ordinary state and not as a fault.
  */
-
-/* ---------------------------------------------------------------------- *
- * The chip
- * ---------------------------------------------------------------------- */
-
-/**
- * The standing at a glance, in the four tones the system already has.
- *
- * `no_runner_there` is deliberately **not** an error tone. It is what a fresh
- * server looks like, the attended run's own copy calls it *"reachable, with
- * nothing running on it"*, and colouring it red would tell somebody their
- * working server is broken on the day they rented it.
- */
-export function standingChip(state: HostConnectState): { label: string; tone: string } {
-  switch (state.step) {
-    case "reachable":
-      return { label: "Connected", tone: "chip-ok" };
-    case "probing":
-      return { label: "Checking", tone: "chip-muted" };
-    case "not_checked":
-      return { label: "Not checked", tone: "chip-muted" };
-    case "unreachable":
-      return state.problem === "no_runner_there"
-        ? { label: "Nothing running", tone: "chip-warn" }
-        : { label: "Cannot reach", tone: "chip-err" };
-    case "awaiting_key_install":
-      return { label: "Waiting for its key", tone: "chip-warn" };
-    // MAR-572's enrollment moment, added at the MAR-574/572 merge. Warn rather
-    // than error for `awaiting_key_install`'s reason: nothing is wrong, the
-    // server answered and is waiting on a person — and it is the one standing
-    // whose next step only the person can take.
-    case "confirm_host_key":
-      return { label: "Waiting for you to confirm it", tone: "chip-warn" };
-    case "no_host":
-      return { label: "Not connected", tone: "chip-muted" };
-  }
-}
 
 /* ---------------------------------------------------------------------- *
  * The card
@@ -141,6 +116,21 @@ export function ServerCard({
   const asked = describeAskedAt(checkedAt);
   const pin = describePin(server.fingerprint);
   const sameServer = describeSameServer(server.same_server_index, server.same_server_count);
+  /*
+   * The two accounts of what is on this machine, reconciled (MAR-606).
+   *
+   * `seen` is null until a check has actually answered — not an empty list,
+   * which would mean "the server named nothing" and is a different claim
+   * entirely. That distinction is the whole reason `describeWhatIsOnHost` takes
+   * a nullable: an unchecked server and an empty server look identical to a
+   * renderer and mean opposite things to a reader.
+   */
+  const contents = describeWhatIsOnHost({
+    server: server.label,
+    seen: standing.step === "reachable" ? standing.agents_there : null,
+    sent: server.sent,
+    at: checkedAt,
+  });
 
   return (
     <article className="row-card server-card">
@@ -196,6 +186,24 @@ export function ServerCard({
               standing already says DASH has not looked. */}
           {asked === null ? "" : ` ${asked}`}
         </p>
+      )}
+
+      {/*
+        MAR-606 finding 3, and Henrik's own sentence: *"there is no way to see
+        what agents are acctually on the server. As far as i can tell."*
+
+        He was right, and the count above is why he was right — it said "1
+        agent" after he had deployed the same agent by two different routes, and
+        could not tell him whether that meant one copy or two. This is the same
+        answer, unreduced, beside DASH's own record of what it put here.
+
+        Drawn whenever either side has anything to say, including before any
+        check: a person who has deployed to this server should see what DASH
+        sent even when nothing has asked the machine yet. That state is what the
+        list says it is, in words, rather than an absence.
+      */}
+      {contents.length === 0 ? null : (
+        <WhatIsOnThisServer rows={contents} />
       )}
 
       {/*
@@ -309,6 +317,7 @@ export function ServerCard({
           onDeploy={() => {
             actions.deploy(chosenAgent);
           }}
+          onCheck={actions.check}
         />
       ) : null}
 
@@ -323,6 +332,49 @@ export function ServerCard({
         />
       ) : null}
     </article>
+  );
+}
+
+/**
+ * What is on this server, from both accounts (MAR-606, ADR 0015).
+ *
+ * Exported so a render test can drive it without a click, the same reason
+ * `DeployPanel` is: the sentences here are the ones that carry a timestamp, and
+ * a timestamp that disappears when somebody tidies a component is the whole
+ * failure ADR 0015 bounds against.
+ *
+ * Every row's sentence is complete on its own and carries its own moment, so
+ * the section needs no shared "as of" header — which is deliberate rather than
+ * repetitive. A header would be one clock over rows that can have been observed
+ * at different times, and the first time those diverged the header would be
+ * quietly wrong about most of the list.
+ *
+ * The chip is `lowercase` in the document. `app/globals.css` uppercases `.chip`
+ * as typography, so what a screen reader announces is what is written here —
+ * and a harness grepping for this copy must read the document rather than
+ * `innerText`, which returns the uppercased form.
+ */
+export function WhatIsOnThisServer({
+  rows,
+}: {
+  rows: readonly AgentHostStanding[];
+}): ReactNode {
+  return (
+    <section className="host-contents">
+      <h3 className="label-caps">What is on this server</h3>
+      <p className="card-meta wrap">{summariseWhatIsOnHost(rows)}</p>
+      <ul className="host-contents-list">
+        {rows.map((row) => (
+          <li key={row.agent} className="host-content">
+            <span className="host-content-head">
+              <code>{row.agent}</code>
+              <span className={`chip chip-${row.tone}`}>{row.chip}</span>
+            </span>
+            <span className="wrap muted">{row.sentence}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -346,6 +398,7 @@ export function DeployPanel({
   onChoose,
   onCancel,
   onDeploy,
+  onCheck,
 }: {
   server: SavedServerView;
   agents: readonly AgentDeployChoice[];
@@ -360,6 +413,8 @@ export function DeployPanel({
   onChoose: (agentId: string) => void;
   onCancel: () => void;
   onDeploy: () => void;
+  /** Ask the server what it has now — the offer after a push (MAR-606). */
+  onCheck: () => void;
 }): ReactNode {
   /*
    * MAR-577. Whether the *chosen* agent could be sent at all.
@@ -380,6 +435,21 @@ export function DeployPanel({
     chosen === null || chosen.deploy.deployable
       ? null
       : describeUndeployable(chosen.name, chosen.deploy.refusal ?? "");
+
+  /*
+   * MAR-606 finding 31. What the control should offer, given what DASH already
+   * did to this agent on this server.
+   *
+   * `sent_on` comes from DASH's own record on the view and not from the check,
+   * so the offer is correct before anything has asked the machine — which is
+   * the case that matters, because it is the state the card opens in.
+   */
+  const offer = describeDeployOffer({
+    agent: chosenAgent === "" ? "this agent" : chosenAgent,
+    server: server.label,
+    sent_on: server.sent.find((one) => one.agent === chosenAgent)?.sent_on ?? null,
+    just_sent: deploy?.step === "sent" && deploy.agent === chosenAgent,
+  });
 
   return (
     <section className="deploy-panel">
@@ -459,28 +529,69 @@ export function DeployPanel({
             <DeployOutcome standing={deploy} report={report} checkedAt={checkedAt} />
           )}
 
+          {/* MAR-606 finding 31. What a second press would actually do, said
+              above the control rather than discovered by pressing it. Null on a
+              first deploy, where the plain offer needs no gloss. */}
+          {offer.note === null ? null : (
+            <p className="disclosure wrap" role="note">
+              {offer.note}
+            </p>
+          )}
+
           <div className="button-row">
             <button type="button" className="button-secondary" disabled={busy} onClick={onCancel}>
-              Not now
+              {/* Once the push has landed there is nothing to decline, and
+                  "Not now" beside a finished deploy reads as an offer still
+                  standing. */}
+              {offer.asks_rather_than_sends ? "Close" : "Not now"}
             </button>
-            <button
-              type="button"
-              className={
-                refusal !== null || chosen?.deploy.travel.verdict === "refuse"
-                  ? "button-primary button-unavailable"
-                  : "button-primary"
-              }
-              disabled={
-                busy ||
-                chosenAgent === "" ||
-                refusal !== null ||
-                chosen?.deploy.travel.verdict === "refuse" ||
-                !canAct
-              }
-              onClick={onDeploy}
-            >
-              {busy ? "Putting it there..." : "Put it on this server"}
-            </button>
+            {/*
+              After a successful push the primary asks the server rather than
+              offering to send again — the finding's own complaint, and the one
+              action that can answer the question a person has at that moment.
+              Sending again stays reachable as the secondary, because replacing
+              a copy is a real thing to want and hiding it would be the opposite
+              overcorrection.
+            */}
+            {offer.asks_rather_than_sends ? (
+              <>
+                <button
+                  type="button"
+                  className="button-secondary"
+                  disabled={busy || !canAct}
+                  onClick={onDeploy}
+                >
+                  Send it again
+                </button>
+                <button
+                  type="button"
+                  className="button-primary"
+                  disabled={busy || !canAct}
+                  onClick={onCheck}
+                >
+                  {offer.label}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className={
+                  refusal !== null || chosen?.deploy.travel.verdict === "refuse"
+                    ? "button-primary button-unavailable"
+                    : "button-primary"
+                }
+                disabled={
+                  busy ||
+                  chosenAgent === "" ||
+                  refusal !== null ||
+                  chosen?.deploy.travel.verdict === "refuse" ||
+                  !canAct
+                }
+                onClick={onDeploy}
+              >
+                {busy ? "Putting it there..." : offer.label}
+              </button>
+            )}
           </div>
         </>
       )}

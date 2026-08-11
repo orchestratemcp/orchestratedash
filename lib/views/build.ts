@@ -84,6 +84,7 @@ import {
   listRuns,
   readAgentAvatar,
   readAgentDeploys,
+  readHostDeploys,
   readAgentManifest,
   readEvidencePulls,
   readHost,
@@ -106,6 +107,7 @@ import {
 } from "../workspace";
 import type {
   AgentDeployTarget,
+  AgentHostedOnView,
   AgentDeployView,
   AgentOriginView,
   AgentsView,
@@ -242,6 +244,12 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
       // Composed here rather than in the page for `damage`'s reason directly
       // below: both hosts must hand the renderer the same sentences.
       glance: glanceFor(agent.name),
+      // MAR-606. Where DASH has put this agent, from DASH's own record of doing
+      // it. One more read of a small table per row, beside the registration and
+      // folder reads this function already does per row — and, like them, it
+      // asks no server anything. See `AgentRow.hosted_on` for why this reverses
+      // `deploy_targets`'s deliberate absence from this view.
+      hosted_on: agentHostedOn(agent.name),
     })),
     // Composed here rather than in the page, so both hosts hand the renderer the
     // same sentence — the property this module exists to keep.
@@ -748,6 +756,25 @@ export function hostsView(store: StoreShape = readStore()): HostsView {
         // a card claims and the position it has cannot drift apart.
         same_server_index: sameServer.indexOf(record) + 1,
         same_server_count: sameServer.length,
+        /*
+         * MAR-606. What DASH put here, out of DASH's own record of doing it.
+         *
+         * `readHostDeploys` returns newest-first already, and `plainDay` is
+         * applied on this side for the reason every other date on a view is:
+         * the renderer is handed the sentence's ingredient rather than a
+         * timestamp to format, so both hosts say the date the same way.
+         *
+         * Note what is deliberately *not* joined in here. Nothing asks the
+         * server anything — a view function runs on every read of this page,
+         * and a probe per server on render is exactly the polling ADR 0015 and
+         * the deploy panel's own copy both refuse. What the server said arrives
+         * on the standing, when somebody presses Check.
+         */
+        sent: readHostDeploys(record.host_id).map((deploy) => ({
+          agent: deploy.agent,
+          sent_at: deploy.sent_at,
+          sent_on: plainDay(deploy.sent_at),
+        })),
       };
     }),
   };
@@ -1299,6 +1326,36 @@ function agentDeployTargets(agent: string): AgentDeployTarget[] {
     });
   }
   return targets;
+}
+
+/**
+ * Which servers DASH has put this agent on (MAR-606).
+ *
+ * The narrow half of `agentDeployTargets` next door, for the fleet card: which
+ * servers and when, with no digest comparison. The comparison is real work —
+ * it reads a registration and hashes a stored file list — and doing it per card
+ * on the agents list would be paying for an answer that page has no room to
+ * show and no control to act on.
+ *
+ * A row whose host DASH no longer holds is dropped, exactly as its sibling does
+ * and for ADR 0010's reason: `host.forget` deletes these rows, so this should
+ * never fire, and the alternative to dropping is rendering a server with no
+ * name.
+ */
+function agentHostedOn(agent: string): AgentHostedOnView[] {
+  const hosted: AgentHostedOnView[] = [];
+  for (const record of readAgentDeploys(agent)) {
+    const host = readHost(record.host_id);
+    if (host === null) {
+      continue;
+    }
+    hosted.push({
+      host_id: record.host_id,
+      label: host.label,
+      sent_on: plainDay(record.sent_at),
+    });
+  }
+  return hosted;
 }
 
 /** Whether DASH holds a folder of its own for this agent, at all. */

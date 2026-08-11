@@ -42,7 +42,190 @@
  */
 
 import { plainMoment } from "./copy/when";
-import { type HostConnectState } from "./host-connect";
+import {
+  describeConnectState,
+  HOST_REACH_PROBLEMS,
+  type HostConnectState,
+  type HostReach,
+} from "./host-connect";
+
+/* ---------------------------------------------------------------------- *
+ * The standing at a glance (MAR-605)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The chip beside a server's name.
+ *
+ * ## Why this is here and not in the component
+ *
+ * It used to be a `switch` in `app/_components/server-card.tsx`, and that
+ * location was the defect rather than a detail of it. MAR-489's attended run
+ * photographed a card whose chip read **CANNOT REACH** directly above a body
+ * reading *"The server is answering and would not let DASH in."* Two places
+ * decided one fact — the prose in `describeUnreachable`, the chip in a switch
+ * beside the JSX — and nothing obliged them to agree.
+ *
+ * So the chip is copy, it lives with the copy, and it is under the same
+ * plain-language sweep every other sentence on this card is.
+ *
+ * ## The label is built, not typed
+ *
+ * `reachWord` turns the standing's own `reach` into the first half of the
+ * label, and the switch below may only supply the second half. That is the
+ * whole mechanism: a chip cannot say "cannot reach" beside a sentence that says
+ * the server answered, because the words "Answering" and "Signed in" are
+ * generated from the same value the sentence's author set, and no branch here
+ * is given the chance to write its own.
+ *
+ * A person reading the chip should reach the same conclusion as a person
+ * reading the body. MAR-605 states the cost of the alternative exactly: *"A
+ * person reading the chip concludes their network is broken; a person reading
+ * the body concludes they have one step left."*
+ */
+export interface StandingChip {
+  label: string;
+  tone: string;
+  /** Carried so a test can assert the chip and the body agree by construction. */
+  reach: HostReach;
+}
+
+/**
+ * How far DASH got, as the two or three words a chip opens with.
+ *
+ * Null for the rungs where DASH has made no claim about the server at all —
+ * nothing has been asked, or a check is still in flight — because a chip that
+ * opened with a reach word there would be reporting a result that does not
+ * exist yet.
+ */
+function reachWord(reach: HostReach): string | null {
+  switch (reach) {
+    case "not_asked":
+    case "asking":
+      return null;
+    case "this_computer":
+      return "This computer";
+    case "no_answer":
+      return "No answer";
+    case "answering":
+      return "Answering";
+    case "signed_in":
+      return "Signed in";
+    case "connected":
+      return "Connected";
+  }
+}
+
+/**
+ * What is blocking, given that the reach word above has already said where.
+ *
+ * Short enough to sit beside it: the chip is uppercased and letter-spaced by
+ * `app/globals.css`, so the pair has to survive being read as one phrase at the
+ * narrowest frame `electron/capture-servers.ts` shoots.
+ *
+ * Null when the reach word is the whole answer. That is only the top of the
+ * ladder — DASH reached the runner and it answered, so there is nothing left
+ * to qualify — and it is why the rung exists apart from `signed_in`.
+ */
+function standingQualifier(state: HostConnectState): string | null {
+  switch (state.step) {
+    case "no_host":
+      return "Not connected";
+    case "not_checked":
+      return "Not checked";
+    case "awaiting_key_install":
+      return "Waiting for its key";
+    case "probing":
+      return "Checking";
+    case "confirm_host_key":
+      return "needs your OK";
+    case "reachable":
+      return null;
+    case "unreachable":
+      switch (state.problem) {
+        case "no_ssh_on_this_computer":
+          return "cannot reach servers yet";
+        case "ssh_tools_cannot_check_here":
+          return "could not finish the check";
+        case "no_answer_at_address":
+          return "at this address";
+        case "host_key_not_trusted":
+          return "needs your OK";
+        case "key_not_on_server":
+          return "key not installed there";
+        case "sign_in_refused":
+          return "sign-in refused";
+        case "server_identity_changed":
+          return "as a different server";
+        case "helper_not_installed":
+          return "not set up yet";
+        case "no_runner_there":
+          return "nothing running";
+        case "runner_refused_credential":
+          return "not recognised";
+      }
+  }
+}
+
+/**
+ * How loudly the chip is drawn.
+ *
+ * `no_runner_there` is deliberately **not** an error tone, and neither is
+ * `key_not_on_server`. Both are what a working server looks like before
+ * somebody has finished setting it up — the attended run's own copy calls the
+ * first *"reachable, with nothing running on it"* — and colouring them red
+ * tells a person their server is broken on the day they rented it.
+ *
+ * Red is spent on the three states where something is genuinely wrong or
+ * unknown: nothing answered, the sign-in was turned away, and the machine may
+ * not be the one DASH connected to before.
+ */
+function standingTone(state: HostConnectState): string {
+  switch (state.step) {
+    case "reachable":
+      return "chip-ok";
+    case "probing":
+    case "not_checked":
+    case "no_host":
+      return "chip-muted";
+    case "awaiting_key_install":
+    case "confirm_host_key":
+      return "chip-warn";
+    case "unreachable":
+      switch (state.problem) {
+        case "no_answer_at_address":
+        case "sign_in_refused":
+        case "server_identity_changed":
+        case "no_ssh_on_this_computer":
+        case "ssh_tools_cannot_check_here":
+          return "chip-err";
+        case "host_key_not_trusted":
+        case "key_not_on_server":
+        case "helper_not_installed":
+        case "no_runner_there":
+        case "runner_refused_credential":
+          return "chip-warn";
+      }
+  }
+}
+
+export function standingChip(state: HostConnectState): StandingChip {
+  const { reach } = describeConnectState(state);
+  const word = reachWord(reach);
+  const qualifier = standingQualifier(state);
+  /*
+   * The two halves, and neither branch lets one place write both. A reach with
+   * no word (nothing asked, or a check in flight) is carried by the qualifier
+   * alone, because there is no result to report yet; a reach with no qualifier
+   * is the top of the ladder and needs nothing added to it.
+   */
+  const label =
+    word === null
+      ? (qualifier ?? "Not checked")
+      : qualifier === null
+        ? word
+        : `${word}, ${qualifier}`;
+  return { label, tone: standingTone(state), reach };
+}
 
 /* ---------------------------------------------------------------------- *
  * The facts on the card
@@ -215,23 +398,119 @@ export function describeDuplicateRecords(): ServerFact {
 }
 
 /**
- * The one line above the list, when anything is duplicated.
+ * What one saved record's last check established, if anything (MAR-605).
  *
- * Counted rather than asserted, for the reason the Connections page's summary is
- * counted: a hand-written sentence at the top of a list is the thing that goes
- * stale first.
+ * `answered` is the server's own reply and nothing else: it is true only where
+ * `describeConnectState` reports the top rung, which is DASH having reached the
+ * runner and been answered by it. Every other standing — including the ones
+ * where the server is plainly alive and refusing the key — is `false` here,
+ * because the summary above the list is counting *proofs*, not signs of life.
+ *
+ * `at` is when the answer arrived, and it is not optional decoration. A count
+ * with no moment on it is the sentence this whole surface exists to stop.
  */
-export function summariseServers(servers: readonly { same_server_count: number }[]): string {
-  const duplicated = servers.filter((server) => server.same_server_count > 1).length;
+export interface ServerCheck {
+  answered: boolean;
+  /** DASH's own clock when the server replied, or null if nothing has asked. */
+  at: string | null;
+}
+
+/**
+ * The one line above the list.
+ *
+ * ## What it used to say, and why that was a lie the page could not see
+ *
+ * *"1 server is connected."* — printed above a card whose own body said DASH
+ * could not get in. MAR-489's attended run photographed the pair. The count was
+ * honest about the wrong noun: it counted **saved records** and then described
+ * them with a word that means *a check succeeded*, and nothing in the function
+ * had access to a check to contradict it.
+ *
+ * The codebase already had the rule this broke. `summariseConnectors` and
+ * `FleetConnectors` are counted-not-asserted precisely so a summary cannot
+ * drift from the cards underneath it; this one counted, and then asserted
+ * anyway. So the fix is not a wording change — it is giving the function the
+ * standings, so that "connected" is a thing it can only say about a server that
+ * answered, and only with the moment the answer came.
+ *
+ * ## Three separate counts, because they are three separate facts
+ *
+ * **Saved** is what DASH holds and is always knowable. **Answered** is what a
+ * check proved this session. **Unasked** is the honest majority state — a page
+ * that has just opened has checked nothing, and saying so is what stops the
+ * reader assuming silence means working.
+ */
+export function summariseServers(
+  servers: readonly { same_server_count: number }[],
+  /**
+   * The standing per server, positionally aligned with `servers`.
+   *
+   * Positional rather than keyed by host id for the reason `describeSameServer`
+   * is positional: this module is copy and must not know what a host id is, let
+   * alone hold a map of them. The page has both lists and does the join.
+   */
+  checks: readonly ServerCheck[] = [],
+): string {
   if (servers.length === 0) {
-    return "No server is connected.";
+    return "No server is saved.";
   }
-  const kept =
-    servers.length === 1 ? "1 server is connected." : `${String(servers.length)} records are saved.`;
-  if (duplicated === 0) {
-    return kept;
+
+  const saved =
+    servers.length === 1 ? "1 server is saved." : `${String(servers.length)} records are saved.`;
+  const answered = checks.filter((check) => check.answered);
+  const asked = checks.filter((check) => check.at !== null);
+
+  /*
+   * Nothing has been asked, which is the state every visit begins in. It says
+   * so rather than staying quiet: a bare "1 server is saved" invites the reader
+   * to supply the missing half themselves, and the half they supply is the
+   * reassuring one.
+   */
+  const standing =
+    asked.length === 0
+      ? "DASH has not checked since you opened it."
+      : answered.length === 0
+        ? `None answered when DASH checked${lastAsked(asked)}.`
+        : answered.length === servers.length
+          ? `${answered.length === 1 ? "It answered" : "All of them answered"} when DASH checked${lastAsked(answered)}.`
+          : `${String(answered.length)} of them answered when DASH checked${lastAsked(answered)}.`;
+
+  const duplicated = servers.filter((server) => server.same_server_count > 1).length;
+  const duplicates =
+    duplicated === 0
+      ? ""
+      : ` ${String(duplicated)} of them describe a server DASH already had — DASH kept them rather than deleting anything.`;
+
+  return `${saved} ${standing}${duplicates}`;
+}
+
+/**
+ * The moment attached to a count, or nothing when DASH cannot read the clock
+ * it was given.
+ *
+ * The newest of them, because the sentence is about the freshest thing the
+ * reader is being told — and absolute rather than relative, which is
+ * `lib/copy/when.ts`'s standing rule: a relative phrase needs a clock at render
+ * time, so the same list would produce different markup on two runs and a
+ * render test would stop asserting anything.
+ */
+function lastAsked(checks: readonly ServerCheck[]): string {
+  const moments = checks
+    .map((check) => check.at)
+    .filter((at): at is string => at !== null)
+    .sort();
+  const newest = moments[moments.length - 1];
+  if (newest === undefined) {
+    return "";
   }
-  return `${kept} ${String(duplicated)} of them describe a server DASH already had — DASH kept them rather than deleting anything.`;
+  const moment = plainMoment(newest);
+  /*
+   * " on ", not " at ". `plainMoment` already ends in a clock time — "11 August
+   * 2026 at 11:37" — so an "at" here produced "when DASH checked, at 11 August
+   * 2026 at 11:37" in the first captured frame. `describeAskedAt` next door
+   * words the same join the same way, which is the point.
+   */
+  return moment === null ? "" : ` on ${moment}`;
 }
 
 /* ---------------------------------------------------------------------- *
@@ -247,13 +526,56 @@ export function summariseServers(servers: readonly { same_server_count: number }
  */
 export function everyServerCardSentence(): string[] {
   const states: HostConnectState[] = [
+    { step: "no_host" },
     { step: "not_checked", label: "My server" },
     { step: "probing", label: "My server" },
-    { step: "reachable", label: "My server", runner_build: "96cef12082fe67afa3a6", agents_running: 0 },
-    { step: "reachable", label: "My server", runner_build: "96cef12082fe67afa3a6", agents_running: 1 },
-    { step: "reachable", label: "My server", runner_build: "96cef12082fe67afa3a6", agents_running: 2 },
-    { step: "unreachable", label: "My server", problem: "no_runner_there" },
-    { step: "unreachable", label: "My server", problem: "sign_in_refused" },
+    { step: "awaiting_key_install", label: "My server", public_key: "ssh-ed25519 AAAA… dash" },
+    {
+      step: "confirm_host_key",
+      label: "My server",
+      fingerprint: "SHA256:FCU60rvm6UzWbFXeMm0CUSO8qid2WYv9v3aymVi51HA",
+      key_type: "ssh-ed25519",
+      offered_count: 3,
+    },
+    {
+
+      step: "reachable",
+
+      label: "My server",
+
+      runner_build: BUILD,
+
+      agents_running: 0,
+
+      agents_there: [],
+
+    },
+    {
+      step: "reachable",
+      label: "My server",
+      runner_build: BUILD,
+      agents_running: 1,
+      agents_there: [{ agent_id: "News Scout", running: true }],
+    },
+    {
+      step: "reachable",
+      label: "My server",
+      runner_build: BUILD,
+      agents_running: 2,
+      // One running and one not, so `describeDeployed`'s count and the card's
+      // per-agent list are swept against a server that disagrees with a naive
+      // reading of either.
+      agents_there: [
+        { agent_id: "News Scout", running: true },
+        { agent_id: "Weather Watch", running: false },
+      ],
+    },
+    // Every problem rather than the two somebody remembered, because MAR-605
+    // added a chip label per problem and a label nobody sweeps is a label that
+    // can quietly acquire a field name.
+    ...HOST_REACH_PROBLEMS.map(
+      (problem): HostConnectState => ({ step: "unreachable", label: "My server", problem }),
+    ),
   ];
   const facts = [
     describePin(null),
@@ -268,13 +590,38 @@ export function everyServerCardSentence(): string[] {
     describeSignIn({ address: "example.com", username: "root", port: 2222 }),
     describeSameServer(2, 4) ?? "",
     ...states.map(describeDeployed),
+    // MAR-605. The chips are copy now and are swept as copy.
+    ...states.map((state) => standingChip(state).label),
     ...facts.flatMap((fact) => [
       fact.headline,
       fact.detail,
       ...(fact.next_action === null ? [] : [fact.next_action]),
     ]),
     summariseServers([]),
+    // Every branch of the summary, which is four sentences and not one: nothing
+    // asked, none answered, all answered, some answered.
     summariseServers([{ same_server_count: 1 }]),
-    summariseServers([{ same_server_count: 4 }, { same_server_count: 4 }]),
+    summariseServers([{ same_server_count: 1 }], [{ answered: false, at: CHECKED_AT }]),
+    summariseServers([{ same_server_count: 1 }], [{ answered: true, at: CHECKED_AT }]),
+    summariseServers(
+      [{ same_server_count: 1 }, { same_server_count: 1 }],
+      [
+        { answered: true, at: CHECKED_AT },
+        { answered: false, at: CHECKED_AT },
+      ],
+    ),
+    summariseServers(
+      [{ same_server_count: 4 }, { same_server_count: 4 }],
+      [
+        { answered: true, at: CHECKED_AT },
+        { answered: true, at: CHECKED_AT },
+      ],
+    ),
   ];
 }
+
+/** One fixed instant, so the sweep reads the same on two runs. */
+const CHECKED_AT = "2026-08-10T21:14:37Z";
+
+/** A real runner build's shape, because it is rendered as a value. */
+const BUILD = "96cef12082fe67afa3a6";

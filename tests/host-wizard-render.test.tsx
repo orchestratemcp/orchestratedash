@@ -40,7 +40,13 @@ const STATES: HostConnectState[] = [
   { step: "awaiting_key_install", label: LABEL, public_key: "ssh-ed25519 AAAA… orchestratedash" },
   { step: "not_checked", label: LABEL },
   { step: "probing", label: LABEL },
-  { step: "reachable", label: LABEL, runner_build: "96cef12082fe67afa3a6", agents_running: 1 },
+  {
+    step: "reachable",
+    label: LABEL,
+    runner_build: "96cef12082fe67afa3a6",
+    agents_running: 1,
+    agents_there: [{ agent_id: "News Scout", running: true }],
+  },
   {
     step: "confirm_host_key",
     label: LABEL,
@@ -240,6 +246,7 @@ describe("the deploy receipt, surfaced at last", () => {
         label: LABEL,
         runner_build: "96cef12082fe67afa3a6",
         agents_running: 1,
+        agents_there: [{ agent_id: "News Scout", running: true }],
       }}
     />,
   );

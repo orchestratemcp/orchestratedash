@@ -211,6 +211,60 @@ export interface AgentRow {
    * failed to fill in, so "nothing needs you" is a chip — see `GLANCE_ALL_CLEAR`.
    */
   glance: GlanceChip[];
+  /**
+   * The servers DASH has sent this agent to, newest first (MAR-606).
+   *
+   * ## This reverses a decision, and the reasoning it reverses is quoted below
+   *
+   * `deploy_targets` on the workspace view carries the same table, and its
+   * comment says why it is deliberately *not* here:
+   *
+   * > It is on the workspace and not on `AgentRow` on purpose: the fleet card
+   * > asks whether an agent needs you, and "a server has an older copy" is a
+   * > fact about a decision you already made rather than something waiting for
+   * > you.
+   *
+   * That is still correct **about `deploy_targets`**, and this is not it. The
+   * digest comparison stays on the workspace, where a person can act on it.
+   * What comes here is narrower: which servers, and when — because MAR-606
+   * found that the fleet card was answering a question nobody asked and staying
+   * silent on one everybody did.
+   *
+   * > *"AN agent that is hosted online should have like an icon or somthing on
+   * > its fleet card."* — Henrik
+   *
+   * "Where does this agent run" is not a stale fact about a past decision. It is
+   * the difference between an agent that stops when the laptop closes and one
+   * that does not, it is the difference between a free agent and one costing
+   * money every month, and the fleet card was the only page that could have said
+   * so at a glance.
+   *
+   * ## What it may not be used to say
+   *
+   * Nothing about whether anything is running. Every field is DASH's own act
+   * with a date on it, ADR 0010's bound exactly — the live half arrives from a
+   * check, is held for the window only, and is joined in by the renderer. See
+   * `lib/host-sightings.ts` and ADR 0015.
+   *
+   * Empty for almost every agent, and an empty list draws nothing at all.
+   */
+  hosted_on: AgentHostedOnView[];
+}
+
+/**
+ * One server an agent was sent to, as a fleet card reads it (MAR-606).
+ *
+ * `host_id` travels because the renderer joins this against the session's
+ * sighting log, which is keyed by it. It is not content and never reaches a
+ * sentence — `lib/copy/identifiers.ts` is the rule, and `label` is the name a
+ * person chose and the only one that gets rendered.
+ */
+export interface AgentHostedOnView {
+  host_id: string;
+  /** What the person calls this server. Their words, so it is content. */
+  label: string;
+  /** When DASH sent it, as a person would say it, or null for an unreadable date. */
+  sent_on: string | null;
 }
 
 export interface AgentsView {
@@ -809,6 +863,37 @@ export interface SavedServerView {
   same_server_index: number;
   /** How many records name it, including this one. 1 when nothing is duplicated. */
   same_server_count: number;
+  /**
+   * Every agent DASH has sent to this server, newest first (MAR-606, ADR 0010).
+   *
+   * DASH's own record of its own act and nothing else — read `AgentDeployTarget`
+   * before adding a field, because this is the same table seen from the server's
+   * side and it is bounded the same way. There is no entry for whether anything
+   * is running: that is the server's to say, it arrives on the standing with the
+   * moment it was said, and `lib/host-sighting.ts` is where the two accounts are
+   * put beside each other without being blended into one.
+   *
+   * Empty for a server nobody has deployed to, which is most of them.
+   */
+  sent: SentToServerView[];
+}
+
+/**
+ * One agent DASH put on one server, as the server card reads it (MAR-606).
+ *
+ * Narrower than `AgentDeployTarget` on purpose. That type carries the digest
+ * comparison an agent's own page needs in order to say *"what DASH sent is not
+ * what this agent is now"*; a server card is not asking that question, so what
+ * travels here is the name and the date and nothing that could be mistaken for
+ * a claim about the machine.
+ */
+export interface SentToServerView {
+  /** The agent's name, which is also the id its bundle carries on the server. */
+  agent: string;
+  /** DASH's own clock at the moment the push finished. */
+  sent_at: string;
+  /** The same moment as a person would say it, or null for an unreadable date. */
+  sent_on: string | null;
 }
 
 /**

@@ -1437,6 +1437,35 @@ export function readAgentDeploys(agent: string): AgentDeployRecord[] {
 }
 
 /**
+ * Every agent DASH has sent to one server, most recent first (MAR-606).
+ *
+ * The other way through the same table. `readAgentDeploys` answers *which
+ * servers has this agent been to*, which is an agent page's question; this
+ * answers *what has DASH put on this server*, which is a server card's — and
+ * until MAR-606 nothing asked it, so the Servers page could not say what DASH
+ * had sent even though DASH had recorded every push.
+ *
+ * `agent_deploys_by_agent` does not serve this direction. No second index: the
+ * table holds one row per (agent, server) and a person owns a handful of each,
+ * so a scan is the honest answer rather than an index nothing else would use.
+ */
+export function readHostDeploys(hostId: string): AgentDeployRecord[] {
+  const rows = db()
+    .prepare(
+      "SELECT agent, host_id, sent_at, manifest_sha256, files_sha256 FROM agent_deploys " +
+        "WHERE host_id = ? ORDER BY sent_at DESC",
+    )
+    .all(hostId);
+  return rows.map((row) => ({
+    agent: text(row, "agent"),
+    host_id: text(row, "host_id"),
+    sent_at: text(row, "sent_at"),
+    manifest_sha256: text(row, "manifest_sha256"),
+    files_sha256: row["files_sha256"] === null ? null : text(row, "files_sha256"),
+  }));
+}
+
+/**
  * Forget every deploy to one server.
  *
  * ADR 0010 requires this and it is not tidiness. `host.forget` removes the key

@@ -1494,8 +1494,23 @@ export interface CommandResult {
    * make anything of it.
    */
   reason?: DenialReason | string;
-  /** Command-specific, non-secret result data. `shell.ping` returns nothing. */
-  data?: Record<string, string | number | boolean>;
+  /**
+   * Command-specific, non-secret result data. `shell.ping` returns nothing.
+   *
+   * Values are scalars, or a **list of flat rows** of scalars — and one level
+   * is the whole of the widening MAR-606 made here. The flatness is a safety
+   * property rather than a style: a reviewer can read this one line and know
+   * that nothing arbitrarily nested crosses to the renderer, which is what stops
+   * a future field quietly carrying a whole record — with whatever is on it —
+   * because it happened to be in scope at the call site.
+   *
+   * `host.probe`'s `agents_there` is the list that needed it: two strings and a
+   * boolean per row, from the server's own answer. See ADR 0015.
+   */
+  data?: Record<
+    string,
+    string | number | boolean | readonly Record<string, string | number | boolean>[]
+  >;
   /** Agent commands only: the audit correlation this attempt was filed under. */
   correlation_id?: string;
   /** Agent commands only: true when an earlier identical command's result was returned. */
@@ -1720,16 +1735,36 @@ export type HostActionResult =
       resumed: boolean;
     }
   /**
-   * `agents_running` is a count from the server's own answer (MAR-574).
+   * What the server said when DASH asked it (MAR-574, then MAR-606/ADR 0015).
    *
-   * A number rather than a list of names, and that is a decision about what
-   * DASH knows rather than about what fits through the channel. DASH keeps **no
-   * record of what it has deployed where** — `host.deploy` pushes a bundle,
-   * starts it and stores nothing — so the only account of what is on a server
-   * is what that server says when it is asked. A list travelling here would
-   * read as DASH's inventory of somebody else's machine, and there is no such
-   * inventory to be right or wrong about. The count answers the question the
-   * page asks and claims nothing beyond the check that produced it.
+   * ## The count used to travel alone, and the argument for that was wrong
+   *
+   * MAR-574 sent a number and not a list, reasoning that DASH keeps no record
+   * of what it deployed where, so *"a list travelling here would read as DASH's
+   * inventory of somebody else's machine, and there is no such inventory to be
+   * right or wrong about."*
+   *
+   * The premise is still true and the conclusion did not follow from it. The
+   * count and the names come out of **the same sentence from the same server in
+   * the same round trip** — `answer.bundles` in `electron/main.ts` has always
+   * held both. Sending only the length did not make DASH more careful about
+   * what it knows: it discarded half of one answer while keeping the other half
+   * on identical evidence, and left a person unable to tell one agent on a
+   * server from the same agent apparently sent twice. MAR-489's attended run is
+   * that person.
+   *
+   * ## What each field may be used to say
+   *
+   * `agents_running` is a count from the server's own answer. `agents_there` is
+   * that same answer's names, running or not.
+   *
+   * Neither is DASH's record and neither outlives this reply. Both are worded
+   * on screen as a report with the moment it arrived attached — see ADR 0015
+   * for the bound and `lib/host-sighting.ts` for the sentences. A surface may
+   * say *"Hostinger reported News Scout running when DASH asked at 21:14."* It
+   * may not say *"News Scout is running on Hostinger"*, and the reason has not
+   * changed since ADR 0010: the second is a present-tense claim about somebody
+   * else's machine, and DASH is never in a position to make one.
    */
   | {
       ok: true;
@@ -1738,6 +1773,15 @@ export type HostActionResult =
       label: string;
       runner_build: string | null;
       agents_running: number;
+      /**
+       * Every bundle the server named, running or not.
+       *
+       * Stopped ones are included because "installed and not running" is a
+       * state a person needs to see and the count above cannot express — it is
+       * the difference between an agent that was never sent and one that died,
+       * and reducing both to an absence is how the second goes unnoticed.
+       */
+      agents_there: { agent_id: string; running: boolean }[];
     }
   | {
       ok: true;
@@ -2287,6 +2331,14 @@ export async function dispatchCommand(
             label: result.label,
             runner_build: result.runner_build ?? "",
             agents_running: result.agents_running,
+            // MAR-606. Plain objects rather than the transport's own bundle
+            // type: this crosses a channel, and what crosses it is two strings
+            // and a boolean per entry with no room for a pid to arrive later
+            // because somebody widened a type upstream.
+            agents_there: result.agents_there.map((agent) => ({
+              agent_id: agent.agent_id,
+              running: agent.running,
+            })),
           },
         };
       case "deploy":
