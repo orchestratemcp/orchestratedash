@@ -216,6 +216,17 @@ export function sshToolCandidates(
   const platform = search.platform ?? process.platform;
   const exists = search.exists ?? existsSync;
   const binary = platform === "win32" ? `${name}.exe` : name;
+  /*
+   * Joined the way the platform being described joins, not the way the machine
+   * running this one does.
+   *
+   * `platform` is a parameter here, so the separator has to be too: on Linux CI
+   * `path.join` is the POSIX one, and it would compose a Windows candidate as
+   * `C:\WINDOWS/System32/OpenSSH/ssh.exe` — a string no Windows check would
+   * recognise and no test could assert against. On a real Windows this is the
+   * same function `path.join` already was.
+   */
+  const join = platform === "win32" ? path.win32.join : path.posix.join;
 
   const directories: Array<{ dir: string; source: string }> = [];
   const override = env[OPENSSH_DIR_OVERRIDE];
@@ -228,22 +239,22 @@ export function sshToolCandidates(
     const system: Array<{ dir: string; source: string }> =
       windows === undefined
         ? []
-        : [{ dir: path.join(windows, "System32", "OpenSSH"), source: "Windows' own OpenSSH" }];
+        : [{ dir: join(windows, "System32", "OpenSSH"), source: "Windows' own OpenSSH" }];
 
     const git: Array<{ dir: string; source: string }> = [
       env["ProgramFiles"],
       env["ProgramFiles(x86)"],
       env["ProgramW6432"],
-      env["LOCALAPPDATA"] === undefined ? undefined : path.join(env["LOCALAPPDATA"], "Programs"),
+      env["LOCALAPPDATA"] === undefined ? undefined : join(env["LOCALAPPDATA"], "Programs"),
     ]
       .filter((root): root is string => root !== undefined && root.trim() !== "")
-      .map((root) => ({ dir: path.join(root, "Git", "usr", "bin"), source: "Git for Windows" }));
+      .map((root) => ({ dir: join(root, "Git", "usr", "bin"), source: "Git for Windows" }));
 
     directories.push(...(name === "ssh-keyscan" ? [...git, ...system] : [...system, ...git]));
   }
 
   const found = directories
-    .map((entry) => ({ name, command: path.join(entry.dir, binary), source: entry.source }))
+    .map((entry) => ({ name, command: join(entry.dir, binary), source: entry.source }))
     .filter((tool) => exists(tool.command));
 
   // Deduplicated by path, because `ProgramFiles` and `ProgramW6432` are the same
@@ -558,7 +569,13 @@ export type HostKeyScanResult =
  * vector, and every component of it is either fixed here or has been through
  * `checkHostRecord` — which refuses a leading `-` for exactly this reason.
  */
-export function scanHostKey(record: HostRecord, run: RunKeyscan = runKeyscan): HostKeyScanResult {
+export function scanHostKey(
+  record: HostRecord,
+  run: RunKeyscan = runKeyscan,
+  /** Which machine's OpenSSH layout to consider. Injected so the fall-through
+   * below can be tested on a CI box that has exactly one `ssh-keyscan`. */
+  search: SshToolSearch = {},
+): HostKeyScanResult {
   const checked = checkHostRecord(record);
   if (!checked.ok) {
     // A record that cannot be validated cannot be dialled. This is unreachable
@@ -600,7 +617,7 @@ export function scanHostKey(record: HostRecord, run: RunKeyscan = runKeyscan): H
    */
   let worst: HostKeyScanProblem = "no_ssh";
   const incapable: ResolvedSshTool[] = [];
-  for (const tool of sshToolCandidates("ssh-keyscan")) {
+  for (const tool of sshToolCandidates("ssh-keyscan", search)) {
     const attempt = run(tool, argv);
     if (attempt.absent) {
       continue;

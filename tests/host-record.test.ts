@@ -623,21 +623,44 @@ describe("scanning with more than one ssh-keyscan on the machine", () => {
   const banner = { ...STOCK_WINDOWS_KEYSCAN, absent: false };
   const key = { stdout: `vps.example.com ssh-ed25519 ${ED25519_BLOB}\n`, stderr: "", absent: false };
 
+  /**
+   * Henrik's machine, described rather than depended on.
+   *
+   * The fall-through only exists when there is somewhere to fall to, and CI runs
+   * on a Linux box with exactly one `ssh-keyscan` — so the layout is injected.
+   * Asserting this against whatever the test machine happens to have installed
+   * would make the interesting case skip itself on the only machine that runs it
+   * every time.
+   */
+  const bothInstalled = {
+    env: {
+      SystemRoot: "C:\\WINDOWS",
+      ProgramFiles: "C:\\Program Files",
+    } as unknown as NodeJS.ProcessEnv,
+    platform: "win32" as const,
+    exists: () => true,
+  };
+
   it("moves on to the next one when the preferred one cannot finish", () => {
     const tried: string[] = [];
-    const result = sshHost.scanHostKey(record(), (tool) => {
-      tried.push(tool.command);
-      return tried.length === 1 ? banner : key;
-    });
+    const result = sshHost.scanHostKey(
+      record(),
+      (tool) => {
+        tried.push(tool.command);
+        return tried.length === 1 ? banner : key;
+      },
+      bothInstalled,
+    );
 
     expect(result.ok).toBe(true);
     expect(result.ok ? result.offer.chosen.type : null).toBe("ssh-ed25519");
     // It really did fall through rather than getting lucky on the first one.
     expect(tried.length).toBeGreaterThan(1);
+    expect(tried[0]).toBe("C:\\Program Files\\Git\\usr\\bin\\ssh-keyscan.exe");
   });
 
   it("says it is this computer's problem when none of them can finish", () => {
-    expect(sshHost.scanHostKey(record(), () => banner)).toEqual({
+    expect(sshHost.scanHostKey(record(), () => banner, bothInstalled)).toEqual({
       ok: false,
       problem: "tool_cannot_scan",
     });
@@ -652,11 +675,16 @@ describe("scanning with more than one ssh-keyscan on the machine", () => {
      * an address that was correct all along.
      */
     let attempts = 0;
-    const result = sshHost.scanHostKey(record(), () => {
-      attempts += 1;
-      return attempts === 1 ? banner : { stdout: "", stderr: "", absent: false };
-    });
+    const result = sshHost.scanHostKey(
+      record(),
+      () => {
+        attempts += 1;
+        return attempts === 1 ? banner : { stdout: "", stderr: "", absent: false };
+      },
+      bothInstalled,
+    );
     expect(result).toEqual({ ok: false, problem: "tool_cannot_scan" });
+    expect(attempts).toBeGreaterThan(1);
   });
 
   it("stops at the first silence rather than making somebody wait twice", () => {
@@ -666,19 +694,22 @@ describe("scanning with more than one ssh-keyscan on the machine", () => {
      * make a silent address speak, so there is nothing to buy by asking one.
      */
     let attempts = 0;
-    const result = sshHost.scanHostKey(record(), () => {
-      attempts += 1;
-      return { stdout: "", stderr: "", absent: false };
-    });
+    const result = sshHost.scanHostKey(
+      record(),
+      () => {
+        attempts += 1;
+        return { stdout: "", stderr: "", absent: false };
+      },
+      bothInstalled,
+    );
     expect(result).toEqual({ ok: false, problem: "no_answer" });
     expect(attempts).toBe(1);
   });
 
   it("says the tool is missing only when every candidate really is", () => {
-    expect(sshHost.scanHostKey(record(), () => ({ stdout: "", stderr: "", absent: true }))).toEqual({
-      ok: false,
-      problem: "no_ssh",
-    });
+    expect(
+      sshHost.scanHostKey(record(), () => ({ stdout: "", stderr: "", absent: true }), bothInstalled),
+    ).toEqual({ ok: false, problem: "no_ssh" });
   });
 });
 
