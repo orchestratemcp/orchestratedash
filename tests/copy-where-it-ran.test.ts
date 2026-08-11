@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 
 import { rawIdentifiersIn } from "../lib/copy/identifiers";
 import {
+  describeRunOnHost,
   describeRunOrigin,
   describeRunTarget,
   type RunOriginNotice,
@@ -44,22 +45,55 @@ describe("which machine a run control will use", () => {
   /**
    * The attended run's second consequence, answered. One button meant the local
    * copy and nothing said so, on a page that also showed the deploy.
+   *
+   * **This assertion changed when the route was wired, and that is the point of
+   * having written it by value.** It used to require the words "cannot start",
+   * which was the honest sentence on the day ADR 0014 landed and became a lie
+   * the moment `host.run` had a caller. ADR 0014 wrote both versions in advance
+   * and said which is true when; a copy pin that could not tell them apart would
+   * have let the false one survive the commit that falsified it.
    */
-  it("names this computer, and admits the other copy cannot be started", () => {
+  it("names this computer, and names the control that starts the other copy", () => {
     const said = describeRunTarget([{ label: "Hostinger" }]);
     expect(said).toContain("copy on this computer");
     expect(said).toContain("Hostinger");
-    expect(said).toContain("cannot start");
-    // Names the control, so the sentence is tied to a button rather than
+    // Names both controls, so each sentence is tied to a button rather than
     // floating near one. See the module note about why this is not a suffix.
     expect(said).toContain("Run now");
+    expect(said).toContain("Run on Hostinger");
+    // The limit is gone because it is no longer true.
+    expect(said).not.toContain("cannot start");
   });
 
-  it("names every server rather than the first one", () => {
+  /**
+   * ADR 0007's pull cost, said at the moment of pressing rather than after it.
+   *
+   * The load-bearing half of the new sentence, and the reason it is longer than
+   * the one it replaced: a run DASH causes on a host produces evidence bounded
+   * by the host's retention and by when DASH next looks, so pressing and seeing
+   * nothing is the ordinary case. A surface that did not say so would turn a
+   * working feature into a broken-looking one.
+   */
+  it("says the evidence arrives whenever DASH can next reach the server", () => {
+    const said = describeRunTarget([{ label: "Hostinger" }]) ?? "";
+    expect(said).toContain("next time it can reach");
+    expect(said).toContain("only what the server still has then");
+  });
+
+  it("names every server rather than the first one, and gives each its own control", () => {
     const said = describeRunTarget([{ label: "Hostinger" }, { label: "the office box" }]);
-    expect(said).toContain("Hostinger");
-    expect(said).toContain("the office box");
-    expect(said).toContain("copies");
+    expect(said).toContain("Run on Hostinger");
+    expect(said).toContain("Run on the office box");
+    expect(said).toContain("each start the copy on that server");
+  });
+
+  /**
+   * The label is the person's own word for their machine and it travels
+   * unaltered — the same category `lib/copy/identifiers.ts` puts a folder the
+   * user picked in. A host id never appears.
+   */
+  it("names the second control after the server, in the person's own words", () => {
+    expect(describeRunOnHost("the office box")).toBe("Run on the office box");
   });
 
   /**

@@ -1,5 +1,33 @@
 # DASH project state
 
+Updated: 2026-08-11 (MAR-602: the run route gets a caller — DASH can start the
+copy of an agent that is on a server, and what comes back is an evidence pull it
+actually performed)
+
+ADR 0014 admitted `POST /agents/{id}/commands` and deliberately left it with no
+caller. Wiring it found the route was unreachable for two reasons nobody had
+located: `sshHostChannel` took a channel credential **nothing in DASH could
+supply** — ADR 0007 says it is the runner's own secret, and `runner/README.md`
+item 6 has recorded since May that nothing mints or exchanges one — and it passed
+no bundle id to `connect`, which joins one bundle's socket, so the helper would
+have refused into a pipe DASH was about to speak HTTP down. Neither was ever
+observed, because the function had no caller.
+
+Both widenings are argued in ADR 0014 amendment 1 against the same three
+questions the run route was held to: a seventh deploy verb (`channel`, returning
+the value `stop` has already read since MAR-487, and which DASH spends and never
+stores) and `GET /agents/{id}` on the remote channel (read *through* the store
+and never into it, because `agent_dom_state` is keyed by agent id alone and a
+deployed agent has the same id in both places).
+
+`tests/host-run-channel.test.ts` drives the real host helper against a runner on
+a real socket and writes the **first `evidence_pulls` row with
+`kind=another_machine` in this project's history** — the row `V9` was blocked on.
+`V8` is now performable and not performed: it needs one attended press, on the
+still-enrolled host, under ADR 0004's permanent rule.
+
+---
+
 Updated: 2026-08-10 (MAR-593: a connection exists before an agent does — fleet
 connections, per-agent grants materialized from them, ADR 0013)
 

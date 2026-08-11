@@ -198,6 +198,7 @@ import {
   sshDeploySpawn,
   type SshDiagnostics,
 } from "./ssh-host";
+import { runAgentOnHost } from "./host-run";
 import { authorizedKeysLine, buildBootstrapScript } from "../lib/host-bootstrap";
 import { classifyHostFailure, type HostReachProblem } from "../lib/host-connect";
 import type { Recovery } from "../lib/copy/recovery";
@@ -1744,6 +1745,36 @@ async function hostAction(
         offered_count: scan.offer.offered.length,
       },
     };
+  }
+
+  /*
+   * MAR-602, ADR 0014. Start the copy that is on this server.
+   *
+   * Below the enrollment gate and above everything else, deliberately. Asking a
+   * server DASH has not been told to trust to *run* something is the same
+   * question deploy asks with the same stakes, and the gate above is the one
+   * place it is answered — a branch that sat higher would be a second path to a
+   * host with no pin, which is what MAR-572 exists to make impossible.
+   *
+   * Every gate beyond that is inside `electron/host-run.ts`, beside the calls it
+   * guards, for `performFolderAction`'s reason. Main holds the seam: the record,
+   * the data directory, and the OS user whose name becomes the actor DASH
+   * asserts — which the runner records as DASH's *claim* and cannot verify, one
+   * machine over, exactly as ADR 0014 says out loud rather than inheriting.
+   */
+  if (action === "run") {
+    if (!("agent_id" in target)) {
+      return { ok: false, detail: "DASH did not receive the agent it should start." };
+    }
+    const toolsForRun = probeSshTools();
+    if (!toolsForRun.present) {
+      return {
+        ok: false,
+        detail: toolsForRun.detail ?? "This computer cannot reach a server.",
+        problem: "no_ssh_on_this_computer",
+      };
+    }
+    return await runAgentOnHost(record, target.agent_id, dataDir, userInfo().username);
   }
 
   let produced: ReturnType<typeof produceAgentFolderBundle> | null = null;

@@ -63,6 +63,55 @@
  * - `status` — what is installed and what is alive.
  * - `collect` — the host's own account of a bundle: log tail, endpoint identity.
  * - `connect` — join the runner's socket to stdio. The control plane (MAR-484).
+ * - `channel` — hand back the credential `connect`'s pipe has to be spoken with
+ *   (MAR-602). See below; it is the seventh, and the set is closed again.
+ *
+ * ## The seventh, and why the set opened once (MAR-602, ADR 0014 amendment 1)
+ *
+ * ADR 0007 amendment 3 fixed the six above and said "no more". This adds one,
+ * and the widening is written here rather than assumed because a closed set that
+ * grows quietly is a set that was never closed.
+ *
+ * **What forced it.** ADR 0007 runs two planes with two credentials, and the
+ * control plane's is "that runner's own channel secret". Nothing ever minted or
+ * exchanged it — `runner/README.md` item 6 has named that gap for months — so
+ * `sshHostChannel` took a `token` parameter that no caller anywhere could
+ * supply. The evidence plane was written, tested, and unreachable: a channel
+ * with no credential is a channel that answers 401 to every route on it.
+ *
+ * **Why it is a verb rather than a bundled secret.** The alternative was for
+ * DASH to mint the secret and ship it in the install payload at
+ * `data/runner.key`, which needs no new verb at all. It is rejected on two
+ * counts. `checkDeployRequest` admits exactly `0o644` and `0o755`, so a
+ * credential arriving as a bundle file lands world-readable on a machine whose
+ * home directory ordinarily is — and widening the mode set for one file would
+ * put a hole in the closed set to avoid opening a closed set. And it inverts
+ * custody: ADR 0007 says the credential is the runner's **own**, minted where
+ * `hardenOwnerOnly` already runs, and a pushed secret makes DASH the supplier of
+ * a credential for a process on a machine it does not administer.
+ *
+ * **Why it is not a widening of what the helper can do.** `stop` already reads
+ * this exact file — `{bundle}/data/runner.session.key`, MAR-520's record of the
+ * secret the runner actually resolved — and already authenticates to the
+ * runner's own `POST /shutdown` with it. The capability is three months old.
+ * What is new is returning the value instead of spending it, to a caller that
+ * signed in with the key whose `authorized_keys` line runs this program and
+ * nothing else.
+ *
+ * **Held to ADR 0014's three questions, which is the test a route joins by.**
+ * (1) *Does it carry a credential?* Yes, outbound host→DASH, and it is the only
+ * member of either plane that does — so it is the one that had to be argued
+ * rather than counted. It is not a *user's* credential and not a brokered one:
+ * it is a value the host's own runner minted for itself, and its whole authority
+ * is over that runner, on that machine, through a socket only a session `sshd`
+ * authenticated can reach. ADR 0006's line is untouched, because reaching this
+ * runner grants the evidence routes and the run route and nothing else — the
+ * broker is excluded by the *type* of the channel this credential is used on.
+ * (2) *Does it choose what runs, or only which?* Neither. It reads one file
+ * under a root the helper chose, named by an id that cannot spell a path.
+ * (3) *Can DASH describe the result honestly?* It does not have to: nothing
+ * about this verb reaches a surface. It is spent inside one action and never
+ * stored — see `electron/host-run.ts`, which is where that promise is kept.
  */
 export const DEPLOY_VERBS = [
   "install",
@@ -71,6 +120,7 @@ export const DEPLOY_VERBS = [
   "status",
   "collect",
   "connect",
+  "channel",
 ] as const;
 
 export type DeployVerb = (typeof DEPLOY_VERBS)[number];
@@ -151,6 +201,20 @@ export interface ConnectRequest {
   verb: "connect";
   bundle_id: string;
 }
+/**
+ * Ask for the credential the control plane is spoken with (MAR-602).
+ *
+ * Carries a bundle id and nothing else — deliberately not a nonce, a challenge
+ * or an expiry. Adding one would suggest this request is what authorises the
+ * answer, and it is not: the authorisation is the SSH session, whose key is
+ * pinned to a `restrict,command=` line that can run this program and no other.
+ * A second mechanism in front of that would be decoration, and decoration on a
+ * credential path is worse than none because it reads as a guarantee.
+ */
+export interface ChannelRequest {
+  verb: "channel";
+  bundle_id: string;
+}
 
 export type DeployRequest =
   | InstallRequest
@@ -158,7 +222,8 @@ export type DeployRequest =
   | StopRequest
   | StatusRequest
   | CollectRequest
-  | ConnectRequest;
+  | ConnectRequest
+  | ChannelRequest;
 
 /* ---------------------------------------------------------------------- *
  * The check, run on both ends
@@ -325,4 +390,36 @@ export type DeployAnswer =
   | { ok: true; verb: "stop"; bundle_id: string; stopped: boolean; detail: string }
   | { ok: true; verb: "status"; bundles: HostBundleStatus[] }
   | { ok: true; verb: "collect"; bundle_id: string; log: string[]; truncated: boolean }
+  /**
+   * The one answer in this union that carries a credential (MAR-602).
+   *
+   * `token` is the running runner's own channel secret. Three rules travel with
+   * it and they are enforced elsewhere, so they are named here where somebody
+   * reading the type will meet them:
+   *
+   * 1. **It never reaches a renderer.** `HostActionResult` has no member that
+   *    could carry it, which makes that a fact about the boundary rather than a
+   *    rule a future caller must remember.
+   * 2. **It is never stored.** `electron/host-run.ts` asks for it, spends it on
+   *    one exchange, and drops it. A vault entry would go stale the moment the
+   *    host's runner restarted and mint a fresh secret, and a stale bearer is a
+   *    401 with no sentence attached to it.
+   * 3. **It is never logged.** `runDeployVerb` reports the shape of an answer
+   *    it could not read and never its contents, which is the existing rule and
+   *    is why this member needs no exception to it.
+   *
+   * `fingerprint` is `channel_secret_fingerprint` from the runner's own
+   * `runner.json` — a truncated SHA-256, published on purpose, and not a
+   * secret. It lets DASH check it was handed the credential the *running*
+   * runner is using rather than one left behind by a previous install, which
+   * turns a bare 401 into a named answer. That is `runner/session-key.ts`'s
+   * argument, used one machine over by the only caller that ever could.
+   */
+  | {
+      ok: true;
+      verb: "channel";
+      bundle_id: string;
+      token: string;
+      fingerprint: string | null;
+    }
   | { ok: false; problem: string; detail: string };

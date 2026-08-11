@@ -544,6 +544,34 @@ export const COMMANDS = {
     mutates: true,
     irreversible: false,
   },
+  /*
+   * MAR-602, ADR 0014. Start the copy of an agent that is on a server.
+   *
+   * A **second named action** rather than a mode of `agent.retry`, which is the
+   * choice ADR 0014 made after rejecting three others: running both copies from
+   * one press, silently re-targeting the existing button once a deploy exists,
+   * and asking every time. The rule underneath it is that *deploying an agent
+   * never changes what a control already on screen does*, and the way that stays
+   * true is that this is its own command with its own name.
+   *
+   * It takes the same two ids `host.deploy` does, and no others. In particular
+   * it takes no task id: **which** task is read from the host's own snapshot at
+   * the moment of the press, so a renderer cannot name a target on a machine it
+   * has never seen. That is `runner/README.md`'s rule — the API chooses which
+   * registration to start, never what to run — arriving at the surface.
+   *
+   * `irreversible` is false and `mutates` is true, matching `agent.retry`: a
+   * manual-first run can be started again, and the agent refuses a concurrent
+   * one itself.
+   */
+  "host.run": {
+    effect:
+      "Ask one saved server to start the copy of one agent that is on it. DASH will only see what it did the next time it can reach that server.",
+    payload_keys: ["host_id", "agent_id"],
+    required_keys: ["host_id", "agent_id"],
+    mutates: true,
+    irreversible: false,
+  },
   "host.forget": {
     effect:
       "Stop using one server and remove DASH's key for it. Anything already running there keeps running.",
@@ -1174,6 +1202,7 @@ export const HOST_ACTIONS = {
   "host.trust": "trust",
   "host.setup": "setup",
   "host.deploy": "deploy",
+  "host.run": "run",
   "host.forget": "forget",
 } as const;
 
@@ -1675,6 +1704,32 @@ export type HostActionResult =
       bundle_id: string;
       runner_build: string;
       detail: string;
+    }
+  /**
+   * What DASH asked a server to do, and what it could see straight afterwards
+   * (MAR-602).
+   *
+   * **There is no token here, and that is the point of spelling this member out
+   * one field at a time rather than adding a data bag.** The `channel` verb is
+   * the only thing on either plane that carries a credential, and this union is
+   * the boundary it must never cross — the same reason `host.create` returns a
+   * public key and a key *name* instead of a host record that could grow a path.
+   *
+   * `reached` is about DASH's own looking and not about the run. It says whether
+   * the server answered when DASH looked immediately after pressing, which is
+   * almost always *before the run has produced anything*. A surface must not
+   * render it as "the run worked": the honest reading is "DASH got to look", and
+   * a false one here would be exactly the invisible-consequence button ADR 0014's
+   * third admission question refuses.
+   */
+  | {
+      ok: true;
+      action: "run";
+      host_id: string;
+      label: string;
+      agent_id: string;
+      detail: string;
+      reached: boolean;
     }
   | { ok: true; action: "forget"; host_id: string; label: string }
   | {
