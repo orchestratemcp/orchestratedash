@@ -29,6 +29,17 @@ const read = (...parts: string[]): string => readFileSync(path.join(repoRoot, ..
 const tokens = read("app", "tokens.css");
 const globals = read("app", "globals.css");
 const fleetPage = read("app", "page.tsx");
+/**
+ * The card, and the list that lays it out.
+ *
+ * Both were the body of `app/page.tsx` until MAR-612 split them out so three
+ * views could draw one card. The assertions below moved with the markup rather
+ * than being relaxed: what they hold is where the portrait sits relative to the
+ * chips, and what `action` is allowed to be, and neither became less true for
+ * living in its own file.
+ */
+const fleetCard = read("app", "_components", "fleet-card.tsx");
+const fleetList = read("app", "_components", "fleet-list.tsx");
 const layout = read("app", "layout.tsx");
 
 /** The stylesheet with its prose removed — a design comment is not a rule. */
@@ -97,6 +108,9 @@ describe("nothing moves while nobody is looking", () => {
     // document-wide fact, and the count would grow with somebody's fleet.
     expect(layout).toContain("<WindowVisibility />");
     expect(fleetPage).not.toContain("visibilitychange");
+    // The card is where a per-sprite listener would now be written, so it is
+    // held to the same rule the page was.
+    expect(fleetCard).not.toContain("visibilitychange");
     const component = read("app", "_components", "window-visibility.tsx");
     expect(component).toContain('document.addEventListener("visibilitychange"');
     expect(component).toContain('document.removeEventListener("visibilitychange"');
@@ -105,14 +119,14 @@ describe("nothing moves while nobody is looking", () => {
 
 describe("the fleet asks for the loop, and asks for nothing else", () => {
   it("draws the character-select tile at a whole multiple of the source", () => {
-    expect(fleetPage).toContain("<OAvatar name={agent.avatar} size={200} action />");
+    expect(fleetCard).toContain("<OAvatar name={agent.avatar} size={200} action />");
   });
 
   it("decides to animate in the source, never from the agent", () => {
     // `checkCostume` fails an expression here for real. This is the same claim
     // read from the other end: whatever else this file learns about an agent,
     // none of it reaches the avatar.
-    const usages = [...fleetPage.matchAll(/<OAvatar[^>]*>/g)].map((match) => match[0]);
+    const usages = [...fleetCard.matchAll(/<OAvatar[^>]*>/g)].map((match) => match[0]);
     expect(usages.length).toBeGreaterThan(0);
     for (const usage of usages) {
       expect(usage).not.toMatch(/action=\{(?!true\}|false\})/);
@@ -122,22 +136,35 @@ describe("the fleet asks for the loop, and asks for nothing else", () => {
   it("leaves MAR-586's chips exactly where they were", () => {
     // The chips carry every fact on this card. A costume that grew by taking
     // room or attention from them would be this issue undoing the last one.
-    expect(fleetPage).toContain("<GlanceChips agent={agent.name} chips={agent.glance} />");
-    const portrait = fleetPage.indexOf('<div className="fleet-portrait">');
-    const goal = fleetPage.indexOf('<p className="muted wrap">');
-    const chips = fleetPage.indexOf("<GlanceChips");
+    expect(fleetCard).toContain("<GlanceChips agent={agent.name} chips={agent.glance} />");
+    const portrait = fleetCard.indexOf('<div className="fleet-portrait">');
+    const goal = fleetCard.indexOf('<p className="muted wrap">');
+    const chips = fleetCard.indexOf("<GlanceChips");
     expect(portrait).toBeGreaterThan(-1);
     expect(portrait).toBeLessThan(goal);
     expect(goal).toBeLessThan(chips);
     expect(rules).not.toMatch(/\.glance[^{}]*\{[^}]*--o-/);
   });
 
+  it("keeps the portrait above the chips in every view MAR-612 added", () => {
+    /*
+     * The order above is markup order, and it is now one markup for three
+     * layouts. What could still undo MAR-586 is a *view* moving the portrait
+     * across the chips in CSS, so this is the same claim read from the
+     * stylesheet: the rows view moves the character into a column beside the
+     * reading matter, and nothing anywhere reorders the chips.
+     */
+    expect(rules).not.toMatch(/\[data-fleet-view[^{}]*\.glance[^{}]*\{[^}]*order:/);
+  });
+
   it("orders the fleet by nothing this issue touched", () => {
     // "Three of eleven characters animate" must never become "the animated ones
     // come first", which would make DASH's asset library look like a ranking.
-    expect(fleetPage).not.toContain("actionFor");
-    expect(fleetPage).not.toContain("O_ACTIONS");
-    expect(fleetPage).not.toMatch(/\.sort\(/);
+    for (const source of [fleetPage, fleetCard, fleetList]) {
+      expect(source).not.toContain("actionFor");
+      expect(source).not.toContain("O_ACTIONS");
+      expect(source).not.toMatch(/\.sort\(/);
+    }
   });
 });
 

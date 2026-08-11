@@ -379,6 +379,21 @@ await Promise.all([
     format: "esm",
   }),
 
+  // The fleet's three layouts (MAR-612), on the same terms and for two reasons
+  // at once: the store decides whether a spotlight has neighbours to turn, and a
+  // stored preference decides what shape the page draws at all. A run against
+  // whatever a machine holds photographs one of six combinations and cannot say
+  // which. This one seeds five agents, writes both preferences and reloads
+  // rather than clicking anything, and reads each frame's labels back off the
+  // document before it takes the picture — the mislabelling hazard MAR-612's own
+  // issue names. See `electron/capture-fleet-views.ts`.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-fleet-views.ts")],
+    outfile: path.join(outDir, "capture-fleet-views.mjs"),
+    format: "esm",
+  }),
+
   // MAR-423. "Try a sample agent" scaffolds a project, and a scaffold needs the
   // same `scripts/open-in-dash.mjs` the Agent Kit copies in, so the user can
   // re-add their agent later from their own folder without DASH.
