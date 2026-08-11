@@ -35,6 +35,7 @@ import {
   FOLDER_CANNOT_BE_STORED,
   FOLDER_DECLINED,
   FOLDER_NOT_AN_AGENT,
+  READY_TO_START,
   WILL_START,
   describeFolderAdded,
   describeFolderNotRead,
@@ -74,19 +75,25 @@ const RECEIPTS: Record<string, AddAgentCard> = {
     display_name: "AI News Scout",
     destination: DESTINATION,
     replaced: false,
-    startable: true,
+    start: "ready",
+  }),
+  copied_new_runner_unreached: describeFolderAdded({
+    display_name: "AI News Scout",
+    destination: DESTINATION,
+    replaced: false,
+    start: "next_open",
   }),
   copied_new_plan_only: describeFolderAdded({
     display_name: "AI News Scout",
     destination: DESTINATION,
     replaced: false,
-    startable: false,
+    start: "none",
   }),
   copied_replacing: describeFolderAdded({
     display_name: "AI News Scout",
     destination: DESTINATION,
     replaced: true,
-    startable: true,
+    start: "ready",
   }),
 };
 
@@ -203,6 +210,7 @@ describe("the receipt", () => {
     // knows what to write.
     expect(Object.keys(RECEIPTS).sort()).toEqual([
       "copied_new_plan_only",
+      "copied_new_runner_unreached",
       "copied_new_startable",
       "copied_replacing",
     ]);
@@ -256,18 +264,25 @@ describe("the receipt", () => {
 describe("when the agent actually runs", () => {
   it("never says it is running now", () => {
     /*
-     * The claim that would be false. Adding an agent does not make the part of
-     * DASH that supervises agents re-read its list, so an agent added here is
-     * stored, complete and not started — and a receipt implying otherwise would
-     * send somebody to a page to watch for activity that is not coming.
+     * The claim that would be false, in both sentences. Since MAR-616 the
+     * import asks the supervisor to re-read its list, which makes a Start press
+     * *reachable* — it does not press it. So the ready receipt may say "you can
+     * start it" and must not say it started, and the fallback receipt keeps the
+     * old promise for the one start DASH is still sure of.
      *
      * Asserted as the absence of the false claim *and* the presence of the true
      * one, because a sentence that simply said less would pass the first half.
      */
+    expect(READY_TO_START).not.toMatch(/is running|it is now running|started it|has started/i);
+    expect(READY_TO_START).toMatch(/you can start it/i);
     expect(WILL_START).not.toMatch(/is running|it is now running|started it|has started/i);
     expect(WILL_START).toMatch(/next time you open DASH/i);
-    const startable = RECEIPTS["copied_new_startable"] as AddAgentCard;
-    expect(startable.meaning).toContain(WILL_START);
+    const ready = RECEIPTS["copied_new_startable"] as AddAgentCard;
+    expect(ready.meaning).toContain(READY_TO_START);
+    expect(ready.meaning).not.toContain(WILL_START);
+    const unreached = RECEIPTS["copied_new_runner_unreached"] as AddAgentCard;
+    expect(unreached.meaning).toContain(WILL_START);
+    expect(unreached.meaning).not.toContain(READY_TO_START);
   });
 
   it("says what DASH can still do with an agent it cannot start", () => {

@@ -120,7 +120,7 @@ describe("what DASH says it did", () => {
         display_name: "AI News Scout",
         destination: DESTINATION,
         replaced: false,
-        startable: true,
+        start: "ready",
       }),
       failure: null,
     });

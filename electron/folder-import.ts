@@ -73,6 +73,7 @@ import {
   inspectChosenFolder,
   isSkippedFolderEntry,
 } from "../lib/folder-import";
+import type { RunnerPort } from "../lib/handoff-flow";
 import { explainImportFailure } from "../lib/import-feedback";
 import { writeRegistration } from "../lib/registration";
 import { importManifest, readAgentManifest } from "../lib/store";
@@ -85,8 +86,16 @@ import type { FolderActionResult } from "../lib/shell/ipc";
  * this command that differs from its three siblings — and the reason
  * `performFolderAction` returns a union of a value and a promise rather than
  * making the other three pretend to be asynchronous.
+ *
+ * `runner` is the same port the handoff door already holds (MAR-616): after a
+ * registration is written, the supervisor is asked to re-read its list, so a
+ * Start press in this same session reaches the agent that was just added
+ * instead of being refused as unknown. The receipt reports which claim is true.
  */
-export async function chooseAgentFolder(dataDir: string): Promise<FolderActionResult> {
+export async function chooseAgentFolder(
+  dataDir: string,
+  runner: Pick<RunnerPort, "reload"> | null,
+): Promise<FolderActionResult> {
   const chosen = await askForFolder();
   if (chosen === null) {
     /*
@@ -175,8 +184,20 @@ export async function chooseAgentFolder(dataDir: string): Promise<FolderActionRe
     };
   }
 
+  /*
+   * The re-read, and why its failure is not one.
+   *
+   * A runner that cannot be reached right now changes nothing about what was
+   * just stored — the registration is on disk and the next DASH open reads it,
+   * which is exactly the sentence the receipt falls back to. So an unreachable
+   * runner degrades the *claim*, never the import: `"next_open"` is the old
+   * receipt, still true, rather than an error about a step the person did not
+   * ask for.
+   */
+  let start: "ready" | "next_open" | "none" = "none";
   if (decision.registration !== undefined) {
     recordRegistration(dataDir, decision.agent, decision);
+    start = runner !== null && (await runner.reload()).ok ? "ready" : "next_open";
   }
 
   return {
@@ -187,7 +208,7 @@ export async function chooseAgentFolder(dataDir: string): Promise<FolderActionRe
         display_name: decision.display_name,
         destination: decision.destination,
         replaced: decision.replaced,
-        startable: decision.registration !== undefined,
+        start,
       }),
       failure: null,
     },

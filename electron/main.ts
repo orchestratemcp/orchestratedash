@@ -132,6 +132,7 @@ import {
   openHandoffLink,
   registerProtocolClient,
   removeAgentWithReport,
+  runnerPort,
   surfaceWindow,
 } from "./handoff-host";
 import {
@@ -776,7 +777,7 @@ export function registerCommandChannel(
       // editor wrote. Every gate is inside `electron/folder-update.ts`, beside
       // the reads and the write it guards, for `refreshSampleAgent`'s reason.
       folderAction: (action, target) =>
-        Promise.resolve(performFolderAction(dataDir, action, target.agent_id)),
+        Promise.resolve(performFolderAction(dataDir, action, target.agent_id, runnerPort(runner))),
       // MAR-583. Which model an agent uses. Two of the three touch only DASH's
       // own choice rows; the third opens the vault and makes one `GET` to a
       // provider — the same request `connection.test` makes, keeping more of the

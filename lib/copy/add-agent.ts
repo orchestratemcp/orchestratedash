@@ -124,8 +124,15 @@ export function describeFolderAdded(input: {
   destination: string;
   /** True when this replaced an agent DASH already had. */
   replaced: boolean;
-  /** True when the folder carried a program DASH knows how to start. */
-  startable: boolean;
+  /**
+   * What is true about starting it, decided after the import actually ran.
+   *
+   * `"ready"` means the supervisor has re-read its list and a Start press would
+   * reach this agent; `"next_open"` means the re-read could not be confirmed, so
+   * the only claim that is certain is the old one; `"none"` means the folder
+   * carried no program DASH knows how to start.
+   */
+  start: "ready" | "next_open" | "none";
 }): AddAgentCard {
   const headline = input.replaced
     ? `“${input.display_name}” has been updated from that folder.`
@@ -133,9 +140,15 @@ export function describeFolderAdded(input: {
   const where =
     `DASH took its own copy of that folder and keeps it here: ${input.destination}. ` +
     "Your own folder was not moved, changed or deleted.";
+  const startSentence =
+    input.start === "ready"
+      ? READY_TO_START
+      : input.start === "next_open"
+        ? WILL_START
+        : CANNOT_START;
   return {
     headline,
-    meaning: `${where} ${input.startable ? WILL_START : CANNOT_START}`,
+    meaning: `${where} ${startSentence}`,
     /*
      * The next step is the one that makes the copy make sense. A person who has
      * just been told DASH runs a copy needs to know which folder to point an
@@ -147,18 +160,25 @@ export function describeFolderAdded(input: {
 }
 
 /**
+ * The receipt when the supervisor has confirmed it now knows this agent.
+ *
+ * Still deliberately **not a promise that it is running** — the re-read makes a
+ * Start press reachable, it does not press it. The person decides when it runs,
+ * which is the same standing every other control in DASH gives them (MAR-616).
+ */
+export const READY_TO_START = "It is ready — you can start it from its page now.";
+
+/**
  * When the agent actually runs, said rather than left to be discovered.
  *
  * **This is the honest half of "DASH does the rest" and it is deliberately not
- * a promise that it is running now.** The part of DASH that supervises agents
- * reads its list of them when DASH opens, and adding one does not make it
- * re-read — so an agent added here is stored, complete and not yet started, and
- * a receipt claiming otherwise would send somebody to a page to watch for
- * activity that is not coming.
- *
- * Saying "the next time you open DASH" rather than "press Start" is not
- * softening it: pressing Start in this same session reaches the same part of
- * DASH that has not re-read its list, and would refuse.
+ * a promise that it is running now.** Since MAR-616 the import asks the part of
+ * DASH that supervises agents to re-read its list, and when that re-read is
+ * confirmed the receipt says `READY_TO_START` instead. This sentence remains in
+ * two places where it is the only certain claim: the consent dialog, which
+ * speaks *before* the import runs, and the receipt of an import whose re-read
+ * could not be confirmed — in both, "the next time you open DASH" is the one
+ * start DASH can still promise.
  */
 export const WILL_START = "DASH starts it the next time you open DASH.";
 

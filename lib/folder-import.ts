@@ -415,10 +415,11 @@ export function describeChosenFolder(input: {
    * `startSentence` is the handoff's own and answers *what*: the program DASH
    * will spawn, named, because a dialog that asks permission to execute
    * something while declining to say what would be worse than the jargon it was
-   * avoiding. `WILL_START` answers *when*, and the honest answer is not "now":
-   * the part of DASH that supervises agents reads its list when DASH opens, and
-   * this command does not make it re-read. A button labelled "Add and start"
-   * over that would be a promise nothing here keeps.
+   * avoiding. `WILL_START` answers *when*, and it stays the conservative claim
+   * here on purpose: this dialog speaks *before* the import runs, and the
+   * re-read that would make "you can start it now" true (MAR-616) has not
+   * happened yet and can fail. The receipt reports which claim held; a consent
+   * dialog promising the better outcome would sometimes promise wrongly.
    */
   const programLines = program === undefined ? [CANNOT_START] : [startSentence(program), WILL_START];
 

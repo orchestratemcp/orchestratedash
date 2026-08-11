@@ -89,14 +89,19 @@ const NO_SUCH_AGENT: FolderActionResult = {
  * two native dialogs and waits for a person. Main already wraps this call in
  * `Promise.resolve`, which flattens one and passes the other three through
  * untouched — so this needed no line in `electron/main.ts`.
+ *
+ * `runner` is `choose`'s alone (MAR-616): the door that writes a registration is
+ * the door that must ask the supervisor to re-read its list. The other three
+ * verbs never register anything, so none of them takes the port.
  */
 export function performFolderAction(
   dataDir: string,
   action: FolderAction,
   agentId: string | undefined,
+  runner: Parameters<typeof chooseAgentFolder>[1],
 ): FolderActionResult | Promise<FolderActionResult> {
   if (action === "choose") {
-    return chooseAgentFolder(dataDir);
+    return chooseAgentFolder(dataDir, runner);
   }
   if (agentId === undefined) {
     return NO_SUCH_AGENT;
