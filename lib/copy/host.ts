@@ -74,6 +74,13 @@ export function describeReadOnlyHost(host: RenderHost): HostNotice | null {
  * like every other effect, and that is a change to the command catalogue rather
  * than to a page.
  *
+ * MAR-598 changed the second sentence and the change was not cosmetic. It used
+ * to say *"the two steps above are the way to add an agent"*, which was true
+ * when two terminal commands led this page. They are now below this notice and
+ * behind a disclosure, and the way to add an agent is a button — so the old
+ * sentence pointed a person at the wrong part of the screen for the wrong thing.
+ * A stale direction is worse than no direction: it is checkable, and it fails.
+ *
  * Returns null in the browser, where the form works and should simply be shown.
  */
 export function describeImportUnavailable(host: RenderHost): HostNotice | null {
@@ -83,6 +90,6 @@ export function describeImportUnavailable(host: RenderHost): HostNotice | null {
   return {
     headline: "Reading a plan from a file you already have is not available in the app yet.",
     meaning:
-      "It works when DASH is run from its own source folder, which is how people building agents run it. In this window, the two steps above are the way to add an agent — and they do more, because an agent added that way also runs.",
+      "It works when DASH is run from its own source folder, which is how people building agents run it. In this window, choosing the agent's folder is the way to add it — and that does more, because DASH takes its own copy and can run it.",
   };
 }

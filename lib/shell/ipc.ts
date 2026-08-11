@@ -38,7 +38,9 @@ import type {
   AgentCommandResult,
 } from "../agent-dom/runner";
 import type { ConnectionActionResult } from "../connection-actions";
+import type { AddAgentCard } from "../copy/add-agent";
 import type { Recovery } from "../copy/recovery";
+import type { ImportFailureExplanation } from "../import-feedback";
 // The one value import in this file, and it is a string constant from a module
 // with no imports of its own — see `lib/fleet/principal.ts` for why it lives
 // there rather than beside the action layer that also needs it. Anything the
@@ -471,6 +473,47 @@ export const COMMANDS = {
     payload_keys: ["agent_id"],
     required_keys: ["agent_id"],
     mutates: false,
+    irreversible: false,
+  },
+  /*
+   * MAR-598. The fourth folder command, and the only one in this catalogue that
+   * names nothing at all.
+   *
+   * **The empty payload is the security argument, not a convenience.** Every
+   * other command here narrows what a compromised renderer may reach by naming
+   * an agent, a connection or a server it already knows about. This one narrows
+   * it to nothing: page script cannot name a folder, cannot learn which folder
+   * was chosen, and cannot cause any particular folder to be read. The widest
+   * thing it can do is make the operating system's own folder chooser appear —
+   * a window DASH does not draw, which page script cannot see, type into or
+   * dismiss — and then wait to be told whether a person picked something and
+   * agreed to a second dialog. That is the same discipline `workspace.download`
+   * and `notify.connect` keep, taken to its end.
+   *
+   * It belongs to the folder family rather than to `sample.*` for the reason
+   * `folder.adopt` does: the document it accepts is one a **person's own
+   * project** produced, not DASH's template. And it is not `workspace.*`,
+   * though that family owns the other picker, because nothing here is about a
+   * task or an agent that already exists — this is how the first one arrives.
+   *
+   * `mutates` is plainly true and `irreversible` is false: what it writes is an
+   * agent folder and a row, both of which `removeAgent` removes. It never
+   * touches the folder the person chose. DASH takes a copy; the original is not
+   * moved, changed or deleted, which the consent dialog says out loud before
+   * anything is written.
+   */
+  "folder.choose": {
+    /*
+     * The effect line says copy and stops there, deliberately. Adding an agent
+     * does not make the part of DASH that supervises agents re-read its list, so
+     * nothing here starts anything — and an effect sentence that claimed
+     * otherwise would be the audit record disagreeing with the command.
+     */
+    effect:
+      "Ask you to pick a folder, check whether it holds an agent, then — after asking again — copy that folder into DASH's own keeping.",
+    payload_keys: [],
+    required_keys: [],
+    mutates: true,
     irreversible: false,
   },
 
@@ -1034,11 +1077,19 @@ export function isGlanceCommandName(value: CommandName): value is GlanceCommandN
  * these compares, one accepts, and one opens a window on the user's own
  * computer. A reviewer asking "what happens when something outside DASH changes
  * an agent?" gets a complete answer from one map.
+ *
+ * MAR-598 makes it four, and the fourth is deliberately here rather than in a
+ * family of its own. The question the map answers widens by exactly one word —
+ * *what happens when a folder on this computer becomes an agent DASH holds* —
+ * and choosing, comparing and accepting are three moments of that one story. A
+ * ninth family would have split it across two maps and made "which commands can
+ * write an agent folder" a question with a compound answer.
  */
 export const FOLDER_ACTIONS = {
   "folder.check": "check",
   "folder.adopt": "adopt",
   "folder.reveal": "reveal",
+  "folder.choose": "choose",
 } as const;
 
 export type FolderCommandName = keyof typeof FOLDER_ACTIONS;
@@ -1448,6 +1499,15 @@ export interface CommandResult {
    */
   folder?: FolderChangeReport;
   /**
+   * `folder.choose` only (MAR-598): what DASH did with the folder you picked.
+   *
+   * Its own field rather than something squeezed into `detail`, for `folder`'s
+   * reason: the page renders a card and, on a refusal, the validator's own block
+   * underneath it, and flattening that into one string would put the job of
+   * splitting it apart back in the renderer.
+   */
+  added?: AddedAgentReport;
+  /**
    * `model.list` only (MAR-583): the model ids this agent's key can reach.
    *
    * Its own field rather than something folded into `data`, which takes one
@@ -1710,6 +1770,39 @@ export interface FolderActionResult {
   detail?: string;
   /** `folder.check` only. Composed by `lib/folder-changes.ts` and nowhere else. */
   report?: FolderChangeReport;
+  /** `folder.choose` only. Composed by `lib/copy/add-agent.ts` and nowhere else. */
+  added?: AddedAgentReport;
+}
+
+/**
+ * What DASH did with a folder somebody chose (MAR-598).
+ *
+ * A card and, when a folder was refused, the validator's own account underneath
+ * it — the same two-part shape `FolderChangeReport` carries, and for the same
+ * reason: `explainImportFailure` is DASH's explanation and the schema's errors
+ * are the evidence for it, and MAR-423 requires the first to be shown *with*
+ * rather than *instead of* the second.
+ *
+ * The card's `meaning` is the one place in this whole boundary where a path
+ * travels, and it travels **outward only**. The renderer cannot name a folder
+ * on the way in — `folder.choose` has no payload at all — and what comes back
+ * is where DASH put its own copy, which is the fact the issue is explicit about
+ * saying out loud. `removeAgent` already names the same directory in its own
+ * receipt.
+ */
+export interface AddedAgentReport {
+  /**
+   * Whether an agent was actually added.
+   *
+   * Carried on the report as well as on the result, rather than inferred from
+   * the absence of a `failure`. Two of the refusals have no validator block at
+   * all — a folder that is already DASH's own, and a question somebody answered
+   * no to — so "no errors" is not the same fact as "it worked", and a surface
+   * that derived one from the other would draw a decline as a success.
+   */
+  ok: boolean;
+  card: AddAgentCard;
+  failure: ImportFailureExplanation | null;
 }
 
 /**
@@ -1895,23 +1988,32 @@ export interface DispatchContext {
     target: { agent_id: string; connection_id: string; field_id: string; question: string },
   ): Promise<{ ok: boolean; detail?: string; recovery?: Recovery }>;
   /**
-   * Compare, accept, or open an agent's folder (MAR-584).
+   * Compare, accept, open — or choose — an agent's folder (MAR-584, MAR-598).
    *
    * Injected for the reason the six above are: the real implementation reads the
-   * folder with `node:fs`, writes through `importManifest`, and — for `reveal` —
-   * calls an Electron main API. None of that is reachable from a sandboxed
-   * preload, which is what lets this module name the three commands while being
-   * structurally unable to perform any of them.
+   * folder with `node:fs`, writes through `importManifest`, and — for `reveal`
+   * and `choose` — calls an Electron main API. None of that is reachable from a
+   * sandboxed preload, which is what lets this module name the four commands
+   * while being structurally unable to perform any of them.
    *
-   * **`report` is the only structured value that comes back, and it is already
-   * safe to render.** It is `lib/folder-changes.ts`'s pure result: worded cards,
-   * plain-language change lines and the validator's own errors. No path, no
-   * digest and no file content crosses — the renderer learns *that two files of
-   * the program changed*, never which bytes or where they live.
+   * **`report` and `added` are the only structured values that come back, and
+   * both are already safe to render.** `report` is `lib/folder-changes.ts`'s
+   * pure result: worded cards, plain-language change lines and the validator's
+   * own errors. No path, no digest and no file content crosses on that one — the
+   * renderer learns *that two files of the program changed*, never which bytes
+   * or where they live. `added` is `lib/copy/add-agent.ts`'s, and carries the one
+   * deliberate exception: where DASH put its own copy. See `AddedAgentReport`.
+   *
+   * `agent_id` is optional for exactly one action, and the optionality is the
+   * point rather than a loosening. `folder.choose` names no agent because there
+   * is no agent yet — that is the command's whole situation — and a seam that
+   * demanded one would have forced a caller to invent a value main would then
+   * have to recognise and ignore. The other three still require it, enforced one
+   * layer up by `reviewCommand` against `required_keys`.
    */
   folderAction(
     action: FolderAction,
-    target: { agent_id: string },
+    target: { agent_id?: string },
   ): Promise<FolderActionResult>;
   /**
    * Connect, forget, test or adjust the Discord channel (MAR-588).
@@ -2242,8 +2344,17 @@ export async function dispatchCommand(
      * system, and it still goes through `importManifest` and is still refused if
      * it does not validate.
      */
+    /*
+     * MAR-598 adds the one member of this family that names nothing, and it is
+     * read here rather than coerced. `String(undefined)` would have handed main
+     * the literal word "undefined" as an agent id — a value that is not a
+     * refusal, not an agent, and would have to be recognised somewhere further
+     * in. The payload rules have already decided which commands require the
+     * field; this reads what they left.
+     */
+    const agentId = review.payload["agent_id"];
     const result = await context.folderAction(FOLDER_ACTIONS[review.command], {
-      agent_id: String(review.payload["agent_id"]),
+      agent_id: typeof agentId === "string" ? agentId : undefined,
     });
     return {
       ok: result.ok,
@@ -2251,6 +2362,7 @@ export async function dispatchCommand(
       reason: result.refusal,
       detail: result.detail,
       folder: result.report,
+      added: result.added,
     };
   }
 

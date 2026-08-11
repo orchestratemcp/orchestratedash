@@ -193,6 +193,15 @@ describe("the audited command chokepoint", () => {
       "folder.check",
       "folder.adopt",
       "folder.reveal",
+      // MAR-598. The fourth member of the folder family, and the only command in
+      // this whole catalogue with an empty payload. That absence is the security
+      // argument rather than a convenience: page script cannot name a folder,
+      // cannot cause a particular folder to be read, and cannot learn which one
+      // was offered. The widest thing it reaches is "put the operating system's
+      // own folder chooser on screen" — a window DASH does not draw and the
+      // renderer can neither see nor dismiss — after which a second dialog asks
+      // the person before a byte is copied.
+      "folder.choose",
       // MAR-536. Servers are independent of agents. Create accepts only the
       // four ordinary connection facts; main mints both names and returns only
       // the public key, while probe and forget take the opaque host id.

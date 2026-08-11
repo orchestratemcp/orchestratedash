@@ -42,6 +42,7 @@ export const INVALID_AGENT_FOLDER_NAME_PHRASE =
 
 export type ImportFailureKind =
   | "not_json"
+  | "no_agent_in_folder"
   | "unsupported_version"
   | "missing_agent_dom"
   | "missing_required_field"
@@ -212,6 +213,31 @@ export function explainImportFailure(errors: string[]): ImportFailureExplanation
     // honest thing to offer when we cannot do better.
     suggestion: "",
     raw: errors,
+  };
+}
+
+/**
+ * The other case that never reaches a schema: there is no agent in that folder
+ * at all (MAR-598).
+ *
+ * Separated from `explainNotJson` for that function's own reason, one level up.
+ * A file that is not JSON means somebody picked the wrong *file*; this means
+ * they picked a folder that is not an agent's — an ordinary documents folder, a
+ * project's parent directory, the desktop. Their next move is to pick a
+ * different folder, and no amount of editing the one they chose would help.
+ *
+ * The suggestion names what an agent's folder actually contains without naming
+ * the file, which is `lib/copy/identifiers.ts`'s rule and also the more useful
+ * sentence: a person who has never seen an agent folder needs to know it is the
+ * folder something *made* for them, not which artifact is inside it.
+ */
+export function explainNoAgentInFolder(detail: string): ImportFailureExplanation {
+  return {
+    kind: "no_agent_in_folder",
+    headline: "There is no agent in that folder.",
+    suggestion:
+      "Choose the folder an agent was built into — the one its builder created, with the agent's own plan and program inside it. A folder holding several agents, or the folder above one, will not import.",
+    raw: [detail],
   };
 }
 
