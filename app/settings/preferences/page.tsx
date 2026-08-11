@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 
 import { DensityToggle } from "../../_components/density-toggle";
+import { FleetViewToggle } from "../../_components/fleet-view-toggle";
 import { HostNotice } from "../../_components/view-state";
 import { useHost } from "../../_data/use-view";
 
@@ -30,6 +31,14 @@ import { useHost } from "../../_data/use-view";
  * `lib/shell/chrome.ts`, `app/tokens.css`'s `color-scheme` rule), and this page
  * says that plainly rather than drawing a control nothing behind it would
  * answer to. Inventing one was out of scope for this pass.
+ *
+ * ## The third setting arrived the same way (MAR-612)
+ *
+ * `FleetViewToggle` is imported here unchanged too, and it lives primarily on
+ * the fleet page — where the thing it changes is. It is repeated here because
+ * this page's job is to be the inventory of how DASH looks, and an inventory
+ * missing an entry is worse than no inventory: it teaches a reader that what is
+ * on this page is all there is.
  */
 export default function PreferencesPage(): ReactNode {
   const host = useHost();
@@ -38,8 +47,8 @@ export default function PreferencesPage(): ReactNode {
     <>
       <h1>How DASH looks</h1>
       <p className="lede">
-        Two settings, and both are about spacing and colour. Neither changes
-        what an agent can do.
+        Three settings, and all of them are about spacing, shape and colour.
+        None of them changes what an agent can do.
       </p>
       <HostNotice host={host} />
 
@@ -51,6 +60,15 @@ export default function PreferencesPage(): ReactNode {
           way.
         </p>
         <DensityToggle />
+      </section>
+
+      <section aria-labelledby="preferences-fleet-view">
+        <h2 id="preferences-fleet-view">Fleet layout</h2>
+        <p className="muted wrap">
+          How your agents are arranged on the Agents page. Every card says the
+          same things in all three; only the shape changes.
+        </p>
+        <FleetViewToggle />
       </section>
 
       <section aria-labelledby="preferences-theme">
