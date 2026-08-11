@@ -366,6 +366,19 @@ await Promise.all([
     format: "esm",
   }),
 
+  // The text pass (MAR-614), on the same terms, and the first capture harness
+  // whose subject is not a state but a *quantity*. Every other one above
+  // measures width; prose that explains never overflows, it pushes the control
+  // you came for off the bottom of the screen. So this one counts the words a
+  // surface puts above its first action and photographs the same frame, run once
+  // before the pass and once after. See `electron/capture-text-pass.ts`.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-text-pass.ts")],
+    outfile: path.join(outDir, "capture-text-pass.mjs"),
+    format: "esm",
+  }),
+
   // The fleet's three layouts (MAR-612), on the same terms and for two reasons
   // at once: the store decides whether a spotlight has neighbours to turn, and a
   // stored preference decides what shape the page draws at all. A run against

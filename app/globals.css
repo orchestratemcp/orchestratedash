@@ -860,6 +860,167 @@ h1 {
   margin-bottom: var(--space-2);
 }
 
+/*
+ * A whole page section behind its own heading (MAR-614).
+ *
+ * `.card-more`'s summary is a small accent label, which is right for "Technical
+ * details" at the foot of a card and wrong for a page section: the heading has
+ * to go on looking like the headings either side of it, or the page acquires a
+ * hole where a reader's eye expects a landmark. So the `<h2>` inside the summary
+ * keeps its own type and colour, and the only thing it gains is the platform's
+ * own disclosure triangle.
+ */
+.section-disclosure > summary {
+  font-size: inherit;
+  color: inherit;
+}
+
+.section-disclosure > summary > h2 {
+  /* Inline so the triangle sits on the heading's line rather than above a
+     block that has claimed the full width of the page. */
+  display: inline;
+}
+
+.section-disclosure > summary:hover > h2 {
+  color: var(--accent);
+}
+
+/* ---------------------------------------------------------------------- *
+ * The hover note (MAR-614)
+ *
+ * `.card-more` above is the block-level version — a whole section you did not
+ * ask for, behind a disclosure of its own. This is the inline one: a single
+ * explanation attached to the word or control it is about. Which sentences are
+ * allowed in here is a product decision and it lives in `lib/copy/info-note.ts`,
+ * not in this file.
+ *
+ * ## Two behaviours, and the width is the reason
+ *
+ * Above 768px the note is a popover: it floats over the card, so opening one
+ * moves nothing. Below it, the note expands **in flow** and pushes the rest of
+ * the card down — which on a touchscreen is the correct behaviour and not a
+ * degradation. A floating panel under a finger is a panel under a finger, and
+ * the phone width is the one where a person cannot hover at all, so the note is
+ * opened deliberately by tapping and deserves to behave like something that was
+ * opened deliberately.
+ *
+ * ## `display`, not opacity
+ *
+ * A hidden-but-laid-out note would be exactly the trap
+ * `electron/capture-text-pass.ts` measures around — geometry that reports
+ * content as on screen when nobody can read it — and, worse, an absolutely
+ * positioned one still contributes to an ancestor's `scrollWidth`, so a note
+ * near a right-hand edge would show up as a page that overflows sideways in
+ * every frame, open or not. `display: none` contributes nothing to either.
+ *
+ * It costs the fade this would otherwise have. That is deliberate: MAR-614's
+ * motion half is a later pass, and a transition added here now would be the one
+ * piece of motion in DASH that nobody had decided on.
+ *
+ * `aria-describedby` reads its text out of the referenced element whether or
+ * not that element is displayed, so nothing is lost to a screen reader by any
+ * of this. The sentence moves in the layout and stays put in the accessibility
+ * tree.
+ * ---------------------------------------------------------------------- */
+
+.info-note {
+  position: relative;
+  display: inline-block;
+  /* Sits with the text rather than on it. `baseline` put the square a few
+     pixels low against the monospace body and the row looked mis-set. */
+  vertical-align: middle;
+  margin-left: var(--space-2);
+}
+
+/*
+ * A pixel-block, which is the system's own vocabulary for a small mark: square,
+ * 1px, no fill. It is 16px because that is four spacing units and because the
+ * concept's icons are 16 or 24 — and the hit area is grown below rather than
+ * the box, so touch gets its target without the line growing taller.
+ */
+.info-note-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: var(--text-xs);
+  line-height: 1;
+  cursor: default;
+}
+
+/*
+ * The touch target, without the visible box growing. 24px each way from a 16px
+ * square is a 40px target, which is what a finger needs and what a line of body
+ * text cannot afford to become.
+ */
+.info-note-mark::after {
+  content: "";
+  position: absolute;
+  inset: -12px;
+}
+
+.info-note-mark:hover,
+.info-note-mark:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.info-note-body {
+  display: none;
+}
+
+/*
+ * `:focus-within` rather than `:focus-visible` on the mark, and it is the whole
+ * reason this works without JavaScript on two of the three input methods. A tap
+ * gives focus without matching `:focus-visible`, so the narrow width — the one
+ * where hover does not exist at all — would have had no way to open a note.
+ */
+.info-note:hover > .info-note-body,
+.info-note:focus-within > .info-note-body {
+  display: block;
+  margin: var(--space-2) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--accent);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  /* Normal weight and left-aligned whatever it opened out of: these sit inside
+     card heads and status lines, some of which are centred or bold. */
+  font-weight: 400;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+@media (min-width: 768px) {
+  .info-note:hover > .info-note-body,
+  .info-note:focus-within > .info-note-body {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + var(--space-1));
+    left: 0;
+    width: max-content;
+    /* Clamped against the viewport as well as by a fixed ceiling, so the panel
+       cannot be the thing that makes a narrow desktop window scroll sideways.
+       `electron/capture-text-pass.ts` opens one and measures it. */
+    max-width: min(340px, calc(100vw - 2 * var(--space-6)));
+    margin: 0;
+    /* Level 2 in the concept's own elevation scale — a popover is the one thing
+       that gets the 2px accent border, because it is the only surface here that
+       floats over another. No shadow: this system has none. */
+    border-width: 2px;
+    background: var(--surface-3);
+  }
+}
+
 code {
   font-size: 0.88em;
 }

@@ -2,8 +2,10 @@
 
 import { useState, type ReactNode } from "react";
 
+import { InfoNote } from "./info-note";
 import { OAvatar } from "./o-avatar";
 import { ConnectionCards, type ConnectionAct } from "./connection-card";
+import { splitProof, type ProofKind } from "../../lib/copy/info-note";
 import {
   connectorChip,
   describeDependents,
@@ -82,6 +84,7 @@ export function ConnectorTile({
 
   const chip = connectorChip(tile.standing);
   const proof = describeProof(tile.proof, tile.service);
+  const split = splitProof(tile.proof as ProofKind, proof);
   const shared = describeSharedGrant(tile);
   const target = connectTarget(tile);
   const everyoneConnected = tile.standing === "connected";
@@ -134,22 +137,23 @@ export function ConnectorTile({
       </ul>
 
       {/*
-        What DASH can and cannot prove, from `describeProof`. The pair is
-        rendered whole: a surface showing `can` without `cannot` would be the
-        reassurance half of a sentence whose value is the other half.
+        What DASH can and cannot prove, from `describeProof`.
+
+        Prose, not a bordered note — a layout finding rather than a softening.
+        Both this and the shared-grant sentence below were drawn as boxes, and
+        two identical boxes stacked pushed the tile's own Sign in button off a
+        900px viewport on the one tile that most needed it.
+
+        MAR-614 took the second step: one line here instead of two, with the
+        other half behind the note. Which half stays is decided per arrangement
+        by `splitProof`, and its reasoning is the part worth reading before
+        changing anything here — on the two arrangements where DASH cannot
+        revoke a sign-in or say what was done with it, that sentence is what
+        stays on the surface, and the mechanism is what moves.
       */}
-      {/*
-        Prose, not a bordered note — and that is a layout finding rather than a
-        softening. Both this and the shared-grant sentence below were drawn as
-        boxes, and two identical boxes stacked pushed the tile's own Sign in
-        button off a 900px viewport on the one tile that most needed it. The
-        sentence is unchanged, verbatim, and still announced as a note; what it
-        stops doing is competing with the one consequence on this card that a
-        person has to read before pressing.
-      */}
-      <p className="wrap">{proof.can}</p>
       <p className="muted wrap" role="note">
-        {proof.cannot}
+        {split.surface.join(" ")}
+        {split.note.length === 0 ? null : <InfoNote>{split.note.join(" ")}</InfoNote>}
       </p>
 
       {outcome === null ? null : (
