@@ -143,7 +143,9 @@ describe("what DASH puts on the socket", () => {
     // fails on a *field* somebody added rather than on whitespace.
     expect(JSON.parse(request.body)).toEqual({
       content:
-        "AI agent news is waiting for your approval.\nOpen it in DASH: dash://open?agent=ai-agent-news",
+        "AI agent news is waiting for your approval.\n" +
+        "In DASH: Agents → AI agent news\n" +
+        "An installed copy of DASH on this computer opens that directly: dash://open?agent=ai-agent-news",
       allowed_mentions: { parse: [] },
     });
   });
@@ -164,7 +166,9 @@ describe("what DASH puts on the socket", () => {
     const request = received.at(-1) as Received;
     expect(JSON.parse(request.body)).toEqual({
       content:
-        "AI agent news published a new report.\nOpen it in DASH: dash://open?agent=ai-agent-news&run=run-2026-08-10-01",
+        "AI agent news published a new report.\n" +
+        "In DASH: Agents → AI agent news → latest output\n" +
+        "An installed copy of DASH on this computer opens that directly: dash://open?agent=ai-agent-news&run=run-2026-08-10-01",
       allowed_mentions: { parse: [] },
     });
   });

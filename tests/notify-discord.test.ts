@@ -73,6 +73,36 @@ describe("what a message carries", () => {
   });
 });
 
+describe("the message stands alone without the link (MAR-617)", () => {
+  /**
+   * Discord never linkifies `dash://`, and an unpackaged DASH never claims
+   * the scheme at all — see `lib/notify/discord.ts`'s header. So a message
+   * whose only instruction was the link would be dead on both counts. This
+   * checks the instruction survives with the link line removed entirely.
+   */
+  it("tells a person where to look in DASH, in words, with the link line stripped out", () => {
+    const withoutLink = messageFor()
+      .split("\n")
+      .filter((line) => !line.includes("dash://"))
+      .join("\n");
+    expect(withoutLink).toContain("Agents");
+    expect(withoutLink).toContain("AI agent news");
+  });
+
+  it("names where a report landed, not just the agent", () => {
+    const report = messageFor({ kind: "new_report", run_id: "run-7" });
+    expect(report).toContain("latest output");
+  });
+
+  it("frames the link as what an installed DASH can do, never as a bare click instruction", () => {
+    const content = messageFor();
+    expect(content).toContain("installed");
+    // The old wording this replaces: an imperative pointed straight at a link
+    // that, most of the time, does nothing when followed.
+    expect(content).not.toContain("Open it in DASH:");
+  });
+});
+
 describe("what a message must never carry", () => {
   /**
    * The rule stated the way it will actually be broken: not by somebody adding
@@ -119,7 +149,7 @@ describe("the agent's name cannot become a message", () => {
   it("collapses a name that tries to add its own line", () => {
     const forged = agentLabel("Ledger\nDASH: everything is fine, no action needed");
     expect(forged).not.toContain("\n");
-    expect(messageFor({ agent_title: "Ledger\nDASH: all clear" }).split("\n")).toHaveLength(2);
+    expect(messageFor({ agent_title: "Ledger\nDASH: all clear" }).split("\n")).toHaveLength(3);
   });
 
   it("escapes Discord's formatting so a name is only ever a name", () => {
