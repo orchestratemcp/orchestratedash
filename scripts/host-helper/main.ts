@@ -9,6 +9,7 @@
  * ssh host status
  * ssh host collect
  * ssh host connect    <- joins the runner's socket to stdio; not JSON
+ * ssh host channel    <- hands back the credential that pipe is spoken with
  * ```
  *
  * ## What this is a boundary against, said plainly
@@ -463,6 +464,99 @@ function connect(root: string, bundleId: string): void {
 }
 
 /* ---------------------------------------------------------------------- *
+ * channel — the credential the control plane is spoken with (MAR-602)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Hand back the running runner's own channel secret.
+ *
+ * `connect` opens the pipe and this says who to be on it. They are two verbs
+ * rather than one because `connect`'s stdin is the HTTP conversation and
+ * nothing may be written into it that is not HTTP — a helper that emitted a
+ * credential first would put a byte in front of DASH's response parser, and the
+ * property `connect` is built on is that neither side parses anything.
+ *
+ * **The refusals are the interesting part, and they are refusals rather than
+ * empty successes.** A bundle that is not installed, a runner that is not
+ * running, and a runner that left no session key are three different situations
+ * with three different next steps, and MAR-600's lesson is that collapsing them
+ * sends a person to the wrong end of their own problem. The third is the one
+ * MAR-520 named: a runner alive with no record of the secret it resolved is
+ * reachable and unauthenticable, and the honest sentence says so rather than
+ * letting DASH discover it as a 401 three steps later.
+ *
+ * Nothing is minted here. If the runner has no session key this program does not
+ * make one up — a secret this helper invented would authenticate to nothing,
+ * because the runner is already using a different one.
+ */
+function channel(root: string, bundleId: string): DeployAnswer {
+  const record = readRecord(root, bundleId);
+  if (record === null) {
+    return { ok: false, problem: "not_installed", detail: "No bundle is installed under that name." };
+  }
+  if (record.pid === null || !processAlive(record.pid)) {
+    return {
+      ok: false,
+      problem: "not_running",
+      detail: "That bundle's runner is not running, so there is nothing to sign in to.",
+    };
+  }
+
+  const dataDir = path.join(bundleDirectory(root, bundleId), "data");
+  const sessionKeyFile = path.join(dataDir, "runner.session.key");
+  if (!existsSync(sessionKeyFile)) {
+    return {
+      ok: false,
+      problem: "no_channel_credential",
+      detail:
+        "The runner is running and left no way to sign in to it. Stopping and starting it on the " +
+        "server is the only way to clear that.",
+    };
+  }
+
+  let token: string;
+  let fingerprint: string | null = null;
+  try {
+    token = readFileSync(sessionKeyFile, "utf8").trim();
+    // The endpoint file is secret-free by design, so a failure to read it costs
+    // the cross-check and not the answer. `fingerprint` is optional in the
+    // answer for exactly this case.
+    const endpointFile = path.join(dataDir, "runner.json");
+    if (existsSync(endpointFile)) {
+      const parsed = JSON.parse(readFileSync(endpointFile, "utf8")) as {
+        channel_secret_fingerprint?: unknown;
+      };
+      fingerprint =
+        typeof parsed.channel_secret_fingerprint === "string"
+          ? parsed.channel_secret_fingerprint
+          : null;
+    }
+  } catch {
+    return {
+      ok: false,
+      problem: "no_channel_credential",
+      detail: "The runner's own records could not be read, so the helper cannot sign in to it.",
+    };
+  }
+
+  /*
+   * The same shape check `readSessionKey` applies on this repository's other
+   * side, and for the same reason: a value that is not one of ours must not be
+   * presented as a bearer token to anything. It is never quoted into the
+   * refusal — the whole point of refusing is that DASH does not get this value.
+   */
+  if (!/^[A-Za-z0-9_-]{40,}$/.test(token)) {
+    return {
+      ok: false,
+      problem: "no_channel_credential",
+      detail: "What the runner recorded is not a credential this helper will hand on.",
+    };
+  }
+
+  return { ok: true, verb: "channel", bundle_id: bundleId, token, fingerprint };
+}
+
+/* ---------------------------------------------------------------------- *
  * Small mechanics
  * ---------------------------------------------------------------------- */
 
@@ -649,6 +743,9 @@ export async function runHelper(argv: string[]): Promise<number> {
       return 0;
     case "collect":
       answer(collect(root, request.bundle_id, request.lines ?? MAX_COLLECT_LINES));
+      return 0;
+    case "channel":
+      answer(channel(root, request.bundle_id));
       return 0;
     case "connect":
       // Unreachable: handled above, before stdin was read. Checked rather than

@@ -660,3 +660,148 @@ describe("no secret crosses the command channel", () => {
     expect(JSON.stringify(stored)).not.toContain(SECRET);
   });
 });
+
+/* ---------------------------------------------------------------------- *
+ * The snapshot a command is judged against (MAR-602, ADR 0014)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * A run on a host is judged against the **host's** snapshot, not this
+ * machine's.
+ *
+ * `agent_dom_state` is keyed by agent id alone, and a deployed agent has the
+ * same id in both places — so there is exactly one row and it belongs to the
+ * copy on this computer. Judging a remote command against it asks whether a task
+ * on a server exists on this PC, which it never does.
+ *
+ * ADR 0014 puts the real decision on the far side: `runner/execute.ts`
+ * adjudicates against the host's own store, and "the two stores never consult
+ * each other". So what is proven here is narrower and is the half DASH owns —
+ * that substituting the evidence substitutes it **completely**, through the same
+ * pipeline, with the same audit rows, and with no leakage in either direction.
+ */
+describe("a command judged against a snapshot DASH does not hold", () => {
+  /** The same agent, as a second machine would describe it: a different task. */
+  const REMOTE_TASK = "task-meeting-on-the-server";
+
+  function remoteState(): Record<string, unknown> {
+    const state = structuredClone(STATE) as Record<string, any>;
+    state["tasks"] = [{ ...state["tasks"][0], id: REMOTE_TASK }];
+    // The approval hangs off the task, so it moves with it. A snapshot whose
+    // approval still named the old task would be an incoherent document rather
+    // than another machine's view of the same agent, and the refusal it produced
+    // would be about the fixture instead of about the substitution.
+    state["approval_requests"] = (state["approval_requests"] as Array<Record<string, unknown>>).map(
+      (approval) => ({ ...approval, task_id: REMOTE_TASK }),
+    );
+    return state;
+  }
+
+  it("allows a target the substituted snapshot published", async () => {
+    const adapter = recordingAdapter();
+    const result = await runAgentCommand(
+      approveInput({ request_id: "req-remote-1", target: { agent_id: AGENT, task_id: REMOTE_TASK, approval_id: APPROVAL, action_id: ACTION } }),
+      {
+        principal: PRINCIPAL,
+        adapter,
+        now: () => WHILE_LIVE,
+        snapshot: remoteState() as never,
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    // The envelope really carried the other machine's target, so what was
+    // posted is what the host published rather than a local id renamed.
+    expect(adapter.sent[0]?.target.task_id).toBe(REMOTE_TASK);
+  });
+
+  it("refuses the target this machine's own row holds", async () => {
+    /*
+     * The substitution is total, and this is the assertion that says so. With
+     * the host's snapshot in hand, `TASK` — which is in the store, and which
+     * every other test in this file uses successfully — is a target that does
+     * not exist. A partial substitution that consulted both would pass the test
+     * above and fail this one.
+     */
+    const result = await runAgentCommand(approveInput({ request_id: "req-remote-2" }), {
+      principal: PRINCIPAL,
+      adapter: recordingAdapter(),
+      now: () => WHILE_LIVE,
+      snapshot: remoteState() as never,
+    });
+
+    expect(result).toMatchObject({ ok: false, reason: "unknown_target" });
+  });
+
+  it("treats an explicit absence of snapshot as no evidence, not as a fallback", async () => {
+    /*
+     * `undefined` means "read the store" and `null` means "the other machine
+     * had nothing to say". They are different answers and the second must not
+     * quietly become the first — a remote runner that answered with no snapshot
+     * would otherwise have its command judged against, and possibly allowed by,
+     * the copy on this computer.
+     */
+    const result = await runAgentCommand(approveInput({ request_id: "req-remote-3" }), {
+      principal: PRINCIPAL,
+      adapter: recordingAdapter(),
+      now: () => WHILE_LIVE,
+      snapshot: null,
+    });
+
+    expect(result.ok).toBe(false);
+    // And the store still holds the row it always did: reading through it
+    // changed nothing.
+    expect(readAgentDomState(AGENT)?.state.tasks?.[0]?.id).toBe(TASK);
+  });
+
+  it("still writes an audit row for a command judged against another machine", async () => {
+    /*
+     * The property the whole pipeline was reused for. A second, thinner remote
+     * path would have been the one reaching a machine DASH does not administer,
+     * with none of this.
+     */
+    await runAgentCommand(
+      approveInput({ request_id: "req-remote-4", target: { agent_id: AGENT, task_id: REMOTE_TASK, approval_id: APPROVAL, action_id: ACTION } }),
+      {
+        principal: PRINCIPAL,
+        adapter: recordingAdapter(),
+        now: () => WHILE_LIVE,
+        snapshot: remoteState() as never,
+      },
+    );
+
+    const audit = readCommandAudit({ agent: AGENT });
+    expect(audit.some((record) => record.request_id === "req-remote-4")).toBe(true);
+  });
+
+  it("cannot collide with a local press of the same agent", async () => {
+    /*
+     * `idempotencyKey` hashes the snapshot's `observed_at`, and the two machines
+     * publish their own. So a remote press and a local press are different
+     * commands even when everything a person did was identical — which is what
+     * stops one press returning the other's stored result.
+     */
+    const local = recordingAdapter();
+    const remote = recordingAdapter();
+    await runAgentCommand(approveInput({ request_id: "req-local-5" }), {
+      principal: PRINCIPAL,
+      adapter: local,
+      now: () => WHILE_LIVE,
+    });
+    await runAgentCommand(
+      approveInput({
+        request_id: "req-remote-5",
+        target: { agent_id: AGENT, task_id: REMOTE_TASK, approval_id: APPROVAL, action_id: ACTION },
+        observed_at: "2026-07-16T09:05:30Z",
+      }),
+      {
+        principal: PRINCIPAL,
+        adapter: remote,
+        now: () => WHILE_LIVE,
+        snapshot: { ...remoteState(), observed_at: "2026-07-16T09:05:30Z" } as never,
+      },
+    );
+
+    expect(local.sent[0]?.idempotency_key).not.toBe(remote.sent[0]?.idempotency_key);
+  });
+});

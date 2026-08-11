@@ -35,7 +35,7 @@
 import { isManifestV2, validateCommand } from "../contracts";
 import { db, transact } from "../db";
 import { readAgentManifest } from "../store";
-import type { AgentCommand, WorkspaceManifest } from "../workspace";
+import type { AgentCommand, AgentDomState, WorkspaceManifest } from "../workspace";
 import {
   correlationFor,
   enforceCommand,
@@ -141,6 +141,43 @@ export interface CommandRuntime {
    */
   principal: CommandActor;
   adapter: AgentDomAdapter;
+  /**
+   * The snapshot this command is judged against, when it is not the one DASH
+   * holds (MAR-602, ADR 0014).
+   *
+   * Absent for every command in the product until now, and absent is not the
+   * same as null: absent means *read the store*, and null would mean *there is
+   * no snapshot*, which is a rejection.
+   *
+   * ## Why it has to exist
+   *
+   * A run on a host names a target **the host's own snapshot published**, and
+   * `agent_dom_state` is keyed by agent id alone — a deployed agent has the same
+   * id in both places, so there is exactly one row and it belongs to the copy on
+   * this computer. Judging a remote command against that row asks whether a task
+   * on a server exists on this PC, which it does not, and the answer would be
+   * `unknown_target` on a command that is perfectly well formed.
+   *
+   * ## Why the whole pipeline still runs
+   *
+   * The alternative was a second path that minted an envelope and posted it
+   * without the audit, the nonce, the expiry and the idempotency claim. Two
+   * implementations of "issue a command" is how the two come to disagree, and
+   * the one that skipped the checks would be the one reaching a machine DASH
+   * does not administer. So the pipeline is unchanged and only its *evidence*
+   * is substituted: same order, same single exit, same rows in `command_audit`.
+   *
+   * ## What this does not do
+   *
+   * It does not make DASH the authority on a remote run. ADR 0014 is explicit
+   * that `runner/execute.ts` adjudicates against the host's own store and that
+   * "the two stores never consult each other" — so this check happens **again**,
+   * on the far side, against the document DASH only borrowed. DASH refusing
+   * early is a courtesy that saves a round trip and an audit row that says
+   * something honest; the host refusing is the decision. DASH asks; the host
+   * decides.
+   */
+  snapshot?: AgentDomState | null;
   /** Injected so expiry can be tested at the boundary. Defaults to the wall clock. */
   now?: () => Date;
   /** Injected so ids are deterministic under test. Defaults to a random UUID. */
@@ -183,8 +220,14 @@ export async function runAgentCommand(
   const commandId = runtime.newId?.() ?? randomId();
   const database = db();
 
-  const snapshot = readAgentDomState(input.target.agent_id);
-  const state = snapshot?.state ?? null;
+  // `undefined` means "no override", which is every caller but the remote run.
+  // Written as a property check rather than `??` so that an explicit `null` — a
+  // host that answered with no snapshot — is honoured as an absence of evidence
+  // instead of silently falling back to this machine's row.
+  const state =
+    runtime.snapshot !== undefined
+      ? runtime.snapshot
+      : readAgentDomState(input.target.agent_id)?.state ?? null;
   const manifest = workspaceManifest(input.target.agent_id);
 
   // Resolved from the targeted resource, not supplied by the caller, so that

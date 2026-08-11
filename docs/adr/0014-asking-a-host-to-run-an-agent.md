@@ -531,3 +531,170 @@ to prevent.
 - **The deployed agent on 186.240.156.166 stays enrolled.** Nothing in this ADR
   requires re-enrolling a host, re-pinning a key, or re-installing a bundle. The
   route is one the runner already serving that bundle already answers.
+
+## Amendment 1 (MAR-602): the wiring, and the two things it had to widen
+
+Status: Accepted. Date: 2026-08-11.
+
+This ADR's first follow-up said the wiring "is not written by this ADR's session
+and is named as a follow-up below". This is that session. Building it found that
+the route this ADR admitted **could not be reached**, for two reasons neither the
+ADR nor MAR-489 had located — and both are widenings, so both are held to the
+same three questions the run route was.
+
+### What was actually blocking, and it was not the route
+
+**`sshHostChannel` took a credential no caller could supply.** ADR 0007 says the
+control plane's credential is "that runner's own channel secret". Nothing has
+ever minted or exchanged one — `runner/README.md` item 6 has recorded that gap
+since May — and this ADR passed over it in one clause: *"the bearer on the
+request is the remote runner's own channel secret, which already crosses on
+`/telemetry/drain` and every other evidence route."* It does not already cross.
+`evidence_pulls` holding one row, `source=local`, is not only because nothing had
+ever run on a host; it is also because the remote drain had no bearer to drain
+with, and would have answered 401 if it had ever been given a reason to try.
+
+**`sshHostChannel` also passed no bundle id to `connect`.** A host holds many
+bundles, one runner each; `connect` joins *one* bundle's socket to stdio. The
+helper would have read `argv[1]` as `undefined`, failed `checkDeployRequest`, and
+written a refusal into a pipe DASH was about to speak HTTP down. Nothing observed
+it, because the function had no caller. That is this ADR's own observation about
+the run route — a thing admitted with no caller is a thing nobody has run —
+landing one file over, and it is the argument for wiring belonging to a decision
+rather than following it.
+
+### Widening 1 — a seventh deploy verb, `channel`
+
+ADR 0007 amendment 3 fixed the set at six and said "no more". It is seven now.
+
+| question | answer |
+| --- | --- |
+| Carries a credential? | **Yes**, host to DASH, and it is the only member of either plane that does |
+| Chooses what, or which? | Neither. It reads one file under a root the helper chose |
+| Can DASH describe it honestly? | It never reaches a surface; the promise is that it is never stored |
+
+The first answer is the one that had to be argued rather than counted, so it is
+argued. The value is **not a user's credential and not a brokered one**: it is a
+secret the host's own runner minted for itself, whose whole authority is over
+that runner, through a socket only a session `sshd` authenticated can reach. ADR
+0006's line is untouched — reaching that runner grants the evidence routes and
+the run route and nothing else, because the broker is excluded by the *type* of
+the channel the credential is spent on.
+
+**It is not a new capability on the host.** `stop` has read that exact file —
+`{bundle}/data/runner.session.key`, MAR-520's record of the secret the runner
+actually resolved — since MAR-487, and already authenticates to the runner's own
+`POST /shutdown` with it. What is new is returning the value instead of spending
+it, to a caller that signed in with the key whose `authorized_keys` line runs
+this program and nothing else.
+
+**The rejected alternative was cheaper and worse.** DASH could mint the secret
+and ship it in the install payload at `data/runner.key`, needing no new verb at
+all. It fails on two counts. `checkDeployRequest` admits exactly `0o644` and
+`0o755`, so the credential would land world-readable on a machine whose home
+directory ordinarily is — and widening the mode set for one file would be a hole
+in a closed set, opened to avoid opening a closed set. And it inverts custody:
+the credential stops being the runner's own and becomes one DASH supplied to a
+process on a machine it does not administer, which is the third arrangement this
+ADR already refused to invent a receipt for.
+
+**DASH does not store it.** No vault entry and no cache: it is fetched per press,
+spent, and dropped. `electron/host-run.ts` is where that promise is kept, and
+`HostActionResult` has no member it could travel in. Fetching fresh costs one
+`ssh` round trip and buys the property that matters — a runner that restarted has
+a new secret, and a DASH holding the old one would answer 401 with nothing on
+screen able to say why.
+
+### Widening 2 — `GET /agents/{id}` on the remote channel
+
+The run route cannot be composed without it. A run command names *a target the
+host's own snapshot published*; `runner/execute.ts` refuses an `unknown_target`,
+and this ADR is explicit that "the two stores never consult each other". So the
+task id in DASH's store is a fact about the copy on this computer and never one
+about the copy on a server.
+
+| question | answer |
+| --- | --- |
+| Carries a credential? | No. An agent id out, a schema-validated document back |
+| Chooses what, or which? | Neither. It is the only admitted route that changes nothing |
+| Can DASH describe it honestly? | Yes — and the honest answer is that it must not keep it |
+
+`/agents` — the list — has been on the evidence route set since MAR-484, so this
+is one level deeper on a family already crossing. It was absent for the same
+reason the run route was: the list is a fixed string and this has a variable
+segment, and until `AgentCommandRoute` this module had no shape for a route that
+was not a literal. **That is an absence of vocabulary rather than a decision
+anybody took**, which is precisely what this ADR says to name rather than
+inherit.
+
+The third question produced a refusal worth recording. `agent_dom_state` is keyed
+by agent id alone, and a deployed agent has the same id in both places — so
+storing a host's snapshot would overwrite this machine's row, with two runners'
+clocks fighting through `putAgentDomState`'s ordering guard. The host's snapshot
+is therefore **read through and never into** the store: held for the length of one
+command and dropped. The day a snapshot carries its machine of origin, that
+becomes a storage decision; today it is a refusal.
+
+One smaller consequence, recorded because it is a real hole rather than a shape:
+for a state route the path *ends* at the agent, so an `agent_id` of `..`
+normalises to `/agents` — a route that exists and answers the whole list.
+Nothing escalates, since the same channel may ask for `/agents` directly, but a
+caller that asked about one agent and silently received every agent is a caller
+whose next line is wrong. The guard that was defensive for the command route is
+load-bearing for this one.
+
+### One consequence for the command pipeline, and the path not taken
+
+A remote command is judged against the host's snapshot, so `CommandRuntime` gains
+an optional `snapshot` — absent means read the store, and an explicit `null`
+means the other machine had nothing to say, which is a rejection rather than a
+fallback.
+
+The alternative was a second, thinner path that minted an envelope and posted it
+without the audit row, the nonce, the expiry and the idempotency claim. Rejected
+for the reason this ADR rejected a `run` verb on the deploy plane: it would be a
+second way to start a run, weaker than the first, and **the weaker one would be
+the one reaching a machine DASH does not administer.** So the pipeline is
+unchanged and only its evidence is substituted. DASH refusing early is a courtesy
+that saves a round trip; the host refusing is the decision.
+
+### What the surface does now
+
+The copy this ADR wrote for the wired state is on screen, and the sentence it
+replaces — *"DASH cannot start that one yet"* — is gone, because it stopped being
+true. The control is a **second named action** per server, beside the first and
+never instead of it, so the rule holds: deploying an agent does not change what a
+control already on screen does.
+
+### What is proven now, and what `V8` still needs
+
+`tests/host-run-channel.test.ts` drives the **real host helper**, built from the
+entry point the standalone artifact ships, against a runner listening on a real
+socket: the credential handed back is the one the runner wrote, `connect` carries
+its bundle id, the state read returns a task this machine has never seen, and the
+posted envelope arrives whole on the host's own disk.
+`tests/agent-command.test.ts` proves the snapshot substitution is total in both
+directions. And the remote drain finally has something to drain, so an
+`evidence_pulls` row with `kind=another_machine` is written for the first time in
+this project's history — the row `V9` was blocked on.
+
+**The only variable left is which process is on the other end of the pipe.**
+`ssh`, the key, `sshd` and 186.240.156.166 stay unproven and, under ADR 0004,
+permanently unprovable by a blocking gate. `V8` is now **performable and not
+performed**: it needs one attended press, by Henrik, on the host that is still
+enrolled. Nothing here re-enrols a host, re-pins a key, or re-installs a bundle.
+
+### What this still does not do
+
+- **Files do not travel to a server.** The local Run now hands files to the
+  runner on this computer first, and there is no path that puts a person's file
+  on a host — so the copy over there runs against what was deployed with it. The
+  second control has no files step in front of it, and that is a limit rather
+  than an oversight.
+- **A run in the list still cannot say which machine it happened on.** `runs` has
+  no column for it, so the list-level sentence is still the honest form. What
+  changed is that its second wording is now reachable, because a server can
+  finally become a source.
+- **Trigger configuration is untouched**, and still blocked on restart-on-boot.
+- **Whether a person may stop a run on a host is still not decided**, and is
+  still admissible by the same test.

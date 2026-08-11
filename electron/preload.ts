@@ -328,6 +328,17 @@ const dashShell = {
   hostSetupScript: ({ host_id }: HostTarget) => send("host.setup", { host_id }),
   deployAgentToHost: ({ host_id, agent_id }: HostDeployTarget) =>
     send("host.deploy", { host_id, agent_id }),
+  /**
+   * Start the copy that is on a server (MAR-602, ADR 0014).
+   *
+   * Its own named method beside `deployAgentToHost`, taking the same two ids and
+   * no third — in particular no task id. A page has never seen the server's
+   * snapshot, so it cannot name a target on it; main reads that at the moment of
+   * the press and the host adjudicates it again. The renderer says *which agent,
+   * on which machine*, and everything about **what** is decided one process over.
+   */
+  runAgentOnHost: ({ host_id, agent_id }: HostDeployTarget) =>
+    send("host.run", { host_id, agent_id }),
   forgetHost: ({ host_id }: HostTarget) => send("host.forget", { host_id }),
 
   /**
@@ -399,6 +410,25 @@ const dashShell = {
   checkFolder: (args: { agent_id: string }) => send("folder.check", { ...args }),
   adoptFolder: (args: { agent_id: string }) => send("folder.adopt", { ...args }),
   revealFolder: (args: { agent_id: string }) => send("folder.reveal", { ...args }),
+
+  /**
+   * The fourth folder command, and the only one on this whole bridge that takes
+   * nothing at all (MAR-598).
+   *
+   * **The empty signature is the security story written as a type**, the same
+   * way three of the notification methods below are. Page script cannot name a
+   * folder, cannot cause any particular folder to be read, and cannot learn
+   * which one was offered — it asks main to put the operating system's own
+   * chooser on screen, a window this process cannot see, type into or dismiss,
+   * and then waits to be told whether a person picked something and agreed to a
+   * second dialog.
+   *
+   * What comes back is a card and, on a refusal, the contract checker's own
+   * errors. The card names where DASH put its copy, and that is the one path
+   * that crosses this bridge in either direction — outward, deliberately,
+   * because a copy nobody can find is a copy nobody can edit.
+   */
+  chooseAgentFolder: () => send("folder.choose", {}),
 
   /**
    * The four notification commands (MAR-588).

@@ -3,7 +3,12 @@
 import type { ReactNode } from "react";
 
 import { AGENT_CONTROL_COPY, AGENT_HEADER_COPY } from "../../lib/copy/agent-page";
+/* MAR-602. Safe as a value in this bundle: `lib/copy/where-it-ran.ts` imports
+   nothing that reaches a disk, and its one reference to `lib/store.ts` is a
+   type. The same arrangement the agent page itself relies on. */
+import { describeRunOnHost } from "../../lib/copy/where-it-ran";
 import type { AgentControlView } from "../../lib/views/agent-control";
+import type { AgentDeployTarget } from "../../lib/views/types";
 import type { AvailableControl } from "../../lib/workspace";
 import type { OName } from "../../lib/brand/o-cast";
 import { OAvatar } from "./o-avatar";
@@ -149,15 +154,24 @@ function StatusPill({ control }: { control: AgentControlView }): ReactNode {
 export function AgentControls({
   busy,
   hasFiles,
+  hosts,
   onCancelKey,
   onRun,
   onRunControl,
+  onRunOnHost,
   run,
 }: {
   /** The pending command key, or null. Disables the row while one is in flight. */
   busy: string | null;
   /** Whether files are staged, which changes only the label (MAR-507). */
   hasFiles: boolean;
+  /**
+   * Servers this agent has been sent to, already filtered to the ones with a
+   * name (MAR-602, ADR 0014).
+   *
+   * Empty for almost every agent, and an empty list draws nothing.
+   */
+  hosts: AgentDeployTarget[];
   /** Builds the pending key for a run control, so the caller owns key shape. */
   onCancelKey: (command: AvailableControl["command"], runId: string) => string;
   onRun: (taskId: string, observedAt: string) => void;
@@ -172,11 +186,71 @@ export function AgentControls({
     runId: string,
     observedAt: string,
   ) => void;
+  /** Ask one server to start this agent (MAR-602). */
+  onRunOnHost: (target: AgentDeployTarget) => void;
   run: AgentControlView["run"];
 }): ReactNode {
+  /*
+   * MAR-602's per-server buttons, beside whatever the local control is.
+   *
+   * ## Why these are outside the three branches
+   *
+   * They arrived on master while this rebuild was in flight, living inside
+   * `RunNow` — which meant they inherited all three of that component's early
+   * returns and vanished when there was no snapshot, no pending task, or no
+   * permission to act locally. Only the last of those has anything to do with
+   * running an agent somewhere else: `submitHostCommand("run", …)` carries a
+   * host id and an agent id and nothing from the local snapshot, so a missing
+   * `observed_at` or an absent pending task cannot make it wrong.
+   *
+   * So they render whenever the panel does, which is always. That is a real
+   * change to freshly merged work and it is the same correction this whole
+   * issue is: a control that disappears for a reason unrelated to itself.
+   *
+   * `read_only` is the one state that suppresses them, and correctly —
+   * `lib/workspace.ts`'s rule about dead controls. A browser tab cannot reach
+   * the command boundary at all.
+   */
+  const canReachHosts = !(run.kind === "idle" && run.reason === "read_only");
+  const hostButtons =
+    !canReachHosts || hosts.length === 0 ? null : (
+      <>
+        {/* MAR-602, ADR 0014. One named control per server, beside the first
+            and never instead of it.
+
+            Deploying an agent does not change what the button to its left
+            does — that is the rule the ADR chose over silent re-targeting, and
+            it is why this is a sibling rather than a mode. The machine is in
+            the name because "Run on Hostinger" is four words that say what they
+            do, while appending a machine to the primary label would put a
+            sentence inside a letter-spaced control.
+
+            No files step in front of it, and that is a limit rather than an
+            oversight: the dispatch path hands files to the runner **on this
+            computer**, and there is no path today that puts a person's file on
+            a server. A copy over there runs against what was deployed with it. */}
+        {hosts.map((target) => (
+          <button
+            className="button-secondary"
+            disabled={busy !== null}
+            key={target.host_id}
+            onClick={() => {
+              onRunOnHost(target);
+            }}
+            type="button"
+          >
+            {busy === `host-run:${target.host_id}`
+              ? AGENT_CONTROL_COPY.asking
+              : describeRunOnHost(target.label)}
+          </button>
+        ))}
+      </>
+    );
+
   if (run.kind === "idle") {
     return (
       <section className="section agent-controls agent-controls-idle">
+        {hostButtons === null ? null : <div className="button-row">{hostButtons}</div>}
         <p className="muted">{AGENT_CONTROL_COPY.idle[run.reason]}</p>
       </section>
     );
@@ -201,6 +275,7 @@ export function AgentControls({
                 : control.label}
             </button>
           ))}
+          {hostButtons}
         </div>
       </section>
     );
@@ -223,6 +298,7 @@ export function AgentControls({
               ? AGENT_CONTROL_COPY.run_now_with_files
               : AGENT_CONTROL_COPY.run_now}
         </button>
+        {hostButtons}
       </div>
       {/* The one sentence about cadence, said once and here rather than under
           every control. The trigger tile and the switcher in Settings are where

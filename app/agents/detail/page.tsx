@@ -37,6 +37,7 @@ import {
   markAgentLooked,
   refreshSampleAgent,
   submitAgentCommand,
+  submitHostCommand,
   submitWorkspaceCommand,
   type AgentCommandArgs,
 } from "../../_data/source";
@@ -55,7 +56,7 @@ import { describeWorkingPhase } from "../../../lib/copy/working";
    type. Same arrangement `lib/deploy/connection-travel.ts` has, and for the
    same reason — a sentence about two machines has to be worded where both
    panels naming them can reach it. */
-import { describeRunTarget } from "../../../lib/copy/where-it-ran";
+import { describeRunOnHost, describeRunTarget } from "../../../lib/copy/where-it-ran";
 /* A type, so it erases — `lib/sample-refresh.ts` reaches `agent-kit/scaffold.ts`
    and must never arrive in this bundle as a value. See tests/client-bundle. */
 import type { ManifestGapView } from "../../../lib/sample-refresh";
@@ -64,6 +65,7 @@ import type { InputRoleView } from "../../../lib/views/inputs";
 import type { ArtifactCardView } from "../../../lib/views/artifacts";
 import type { InboxItem } from "../../../lib/workspace";
 import type {
+  AgentDeployTarget,
   AgentModelSettingsView,
   WorkspaceRunView,
   WorkspaceSnapshotView,
@@ -337,6 +339,48 @@ function AgentWorkspace(): ReactNode {
     return true;
   }
 
+  /**
+   * Ask one server to start the copy of this agent that is on it (MAR-602,
+   * ADR 0014).
+   *
+   * Deliberately **not** routed through `issue`. That function is the Agent DOM
+   * command path and it refreshes this page's view afterwards, because a local
+   * command changes what the local snapshot says. This one changes something on
+   * a machine whose snapshot DASH does not store — and re-reading the page after
+   * it would show the local copy, unchanged, directly under a message saying a
+   * server was asked to run. That reads as the press having done nothing, which
+   * is the exact confusion ADR 0014's disclosure exists to prevent.
+   *
+   * So what a person gets is the sentence main composed, which already says the
+   * evidence arrives whenever DASH can next reach that server. `feedback` is the
+   * one line this page uses for every command's answer, and this is one.
+   */
+  async function runOnHost(target: AgentDeployTarget): Promise<void> {
+    setPending(`host-run:${target.host_id}`);
+    setFeedback(null);
+    try {
+      const result = await submitHostCommand("run", {
+        host_id: target.host_id,
+        agent_id: agent,
+      });
+      setFeedback({
+        ok: result.ok,
+        message:
+          result.detail ??
+          (result.ok
+            ? `${target.label} was asked to start this agent.`
+            : `${target.label} would not start this agent.`),
+      });
+    } catch {
+      setFeedback({
+        ok: false,
+        message: "DASH could not reach the command boundary. Nothing was started.",
+      });
+    } finally {
+      setPending(null);
+    }
+  }
+
   if (state.status === "loading") {
     return <ViewLoading what="this agent workspace" />;
   }
@@ -445,7 +489,14 @@ function AgentWorkspace(): ReactNode {
       <AgentControls
         busy={pending}
         hasFiles={selectedInputs.some((input) => input.state === "copied")}
+        /* MAR-602. Filtered on the same field the sentence is built from, so a
+           server with no name a person would recognise cannot get a button
+           reading "Run on ". */
+        hosts={view.deploy_targets.filter((target) => target.label.length > 0)}
         onCancelKey={(command, runId) => `${command}:${runId}`}
+        onRunOnHost={(target) => {
+          void runOnHost(target);
+        }}
         onRun={(taskId_, observedAt) => {
           void (async () => {
             /*
@@ -891,6 +942,7 @@ function timeOnly(at: Date | null): string {
   return at === null ? "just now" : at.toLocaleTimeString();
 }
 
+/**
 /**
  * What the agent said it would do, kept where the user can find it again.
  *

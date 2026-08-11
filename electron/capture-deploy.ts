@@ -526,9 +526,34 @@ async function layout(target: BrowserWindow): Promise<unknown> {
     target.webContents.executeJavaScript(
       `(() => {
          const root = document.documentElement;
-         const widest = [...document.querySelectorAll("*")]
-           .map((node) => node.scrollWidth - node.clientWidth)
-           .reduce((most, gap) => (gap > most ? gap : most), 0);
+         /*
+          * Which element is widest, not only by how much.
+          *
+          * The number alone has cost several sessions the same investigation.
+          * It is per-element scrollWidth minus clientWidth, so anything that
+          * clips itself reports its full content width as an "overflow" —
+          * span.visually-hidden has produced a standing 150/175px red herring
+          * for months, and MAR-609 moved it to 444 simply by giving the status
+          * pill a longer screen-reader sentence. Nothing overflowed; a hidden
+          * span got wordier.
+          *
+          * So the source travels with the number. A reviewer reading
+          * "span.visually-hidden" next to 444 stops there; one reading 444 on
+          * its own goes looking for a layout defect that is not there.
+          * page_overflows below is still the question that matters — it asks
+          * the document, and it is what a person would actually see.
+          */
+         let widest = 0;
+         let widestSource = "none";
+         for (const node of document.querySelectorAll("*")) {
+           const gap = node.scrollWidth - node.clientWidth;
+           if (gap > widest) {
+             widest = gap;
+             const cls = typeof node.className === "string" ? node.className.trim() : "";
+             widestSource =
+               node.tagName.toLowerCase() + (cls === "" ? "" : "." + cls.split(/\\s+/).join("."));
+           }
+         }
          const text = document.body.innerText;
          return {
            viewport: window.innerWidth,
@@ -562,6 +587,7 @@ async function layout(target: BrowserWindow): Promise<unknown> {
                (node) => node.textContent.includes("Put") && node.disabled,
              ),
            widest_overflow: widest,
+           widest_overflow_source: widestSource,
          };
        })()`,
     ),

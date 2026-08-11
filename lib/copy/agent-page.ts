@@ -61,6 +61,15 @@ export const AGENT_CONTROL_COPY = {
   run_now_with_files: "Send files and run now",
   running: "Starting…",
   /**
+   * The pressed state of a per-server run button (MAR-602).
+   *
+   * "Asking…" rather than "Starting…", and the difference is ADR 0014's: DASH
+   * asks a machine it does not own to start something, and what comes back is
+   * that the request was accepted. Saying "Starting" would claim an outcome
+   * DASH did not observe.
+   */
+  asking: "Asking…",
+  /**
    * What the panel says when there is nothing to press, per reason.
    *
    * Every one of these is a state the old page rendered as *empty space*:
