@@ -5,6 +5,7 @@ import "./globals.css";
 import { AppChrome } from "./_components/app-chrome";
 import { DensityScript } from "./_components/density-toggle";
 import { FleetStrip, FleetStripScript } from "./_components/fleet-strip";
+import { FleetViewScript } from "./_components/fleet-view-toggle";
 import { WindowVisibility } from "./_components/window-visibility";
 import { RENDERER_TITLE } from "../lib/shell/preflight";
 
@@ -64,6 +65,14 @@ export default function RootLayout({
           render was built on a machine that never met them.
         */}
         <FleetStripScript />
+        {/*
+          MAR-612, and the third script here for the second time for the same
+          reason. Somebody who chose Spotlight would otherwise watch a grid
+          assemble and re-lay itself on every navigation — the fleet's cards are
+          the largest things DASH draws, so this is the most visible instance of
+          the flash the other two scripts exist to prevent.
+        */}
+        <FleetViewScript />
       </head>
       {/*
         Three bands and a left track: the chrome across the top, the sidebar

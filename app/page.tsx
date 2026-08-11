@@ -2,23 +2,28 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { AgentComplianceChips } from "./_components/verdict";
-import { AgentOrigin } from "./_components/agent-origin";
-import { GlanceChips, OpenAgentButton } from "./_components/glance-chips";
-import { TechnicalDetails } from "./_components/record-card";
+import { FleetList } from "./_components/fleet-list";
+import { FleetViewToggle } from "./_components/fleet-view-toggle";
 import { OAvatar } from "./_components/o-avatar";
 import { HostNotice, ViewFailed, ViewLoading } from "./_components/view-state";
 import { checkRunnerStatus, retireRunnerStore } from "./_data/source";
 import { useSightings } from "./_data/sightings";
 import { useCanAct, useHost, useView } from "./_data/use-view";
-import { describeAgentHosting } from "../lib/host-sighting";
-import { sightingFor, type SightingLog } from "../lib/host-sightings";
-import type { AgentHostedOnView } from "../lib/views/types";
-import { agentWorkspaceHref } from "./_data/routes";
 import { oFor } from "../lib/brand/o-cast";
 import { describeRunnerStoreDamage, type RunnerStoreDamageKind } from "../lib/copy/recovery";
 import { onWindowFocus } from "../lib/shell/focus-refresh";
 import type { CommandResult } from "../lib/shell/ipc";
+
+/**
+ * Two things this page no longer implements, kept importable from here.
+ *
+ * Both moved to `app/_components/fleet-card.tsx` with the card they belong to
+ * (MAR-612), and both are imported *from this path* by
+ * `tests/host-sighting-render.test.tsx` and `tests/record-card.test.tsx`. The
+ * test is the contract; where the function happens to live is not, and a moved
+ * file should not be able to fail an unrelated suite.
+ */
+export { AgentHosting, describeRunCount } from "./_components/fleet-card";
 
 /**
  * The folder name `lib/sample-agent.ts` gives the sample agent, and therefore
@@ -79,6 +84,17 @@ export default function AgentsPage(): ReactNode {
         <Link className="button-link" href="/settings/add-agent">
           Add agent
         </Link>
+        {/*
+          MAR-612. The layout control sits on the thing it lays out.
+
+          It is also on Settings → Preferences, which is the page that inventories
+          how DASH looks and would be lying by omission without it — but this is
+          the copy that matters. A setting whose whole effect is on one page, kept
+          only on a settings screen two clicks away, is a setting nobody finds:
+          the reader who wants a different shape is looking at the wrong shape
+          right now, and this is where they are.
+        */}
+        <FleetViewToggle />
       </div>
       <HostNotice host={host} />
       {/*
@@ -135,221 +151,24 @@ export default function AgentsPage(): ReactNode {
           ) : (
         /*
           MAR-547's concept composition, taken (Henrik, 2026-08-09: "I want the
-          fleet cards to fit like 3 in a row. And the avatar to be bigger").
+          fleet cards to fit like 3 in a row. And the avatar to be bigger") — and
+          since MAR-612 the *shape* of it is the reader's decision rather than
+          this page's.
 
-          The list stays an `<ol>` and stays `.row-list` — what changes is the
-          track it lays cards on, which is a `fleet-grid` modifier rather than a
-          change to `.row-list` itself. The Runs and Connections pages use that
-          class too, and their records are wide rows of prose rather than
-          portraits; giving all three a three-column grid because one of them
-          wanted it is how a shared class stops being shared.
+          `FleetList` owns the track, the card and the spotlight's chief; what
+          stays here is whether there is anything to lay out at all. The list is
+          still an `<ol>` and still `.row-list`: the Runs and Connections pages lay
+          records on that class too, and theirs are wide rows of prose, so every
+          fleet-specific rule remains a `fleet-grid` modifier rather than a change
+          to the shared class.
         */
-        <ol className="row-list fleet-grid">
-          {state.data.agents.map((agent) => (
-            <li key={agent.name}>
-              <article className="row-card fleet-card">
-                {/*
-                  The concept's header band (MAR-528, `DESIGN.md` "Cards &
-                  Panels"): a distinct top section with a bold monospace label
-                  and one status slot on the right. The label is the agent's
-                  name; the status is DASH's own verdict on its recent runs,
-                  which is the nearest true thing to the concept's ACTIVE chip —
-                  and unlike that chip it is a record rather than a reading.
-
-                  The "Last N runs" eyebrow that used to sit above these chips is
-                  gone, and nothing is lost with it: every chip carries its own
-                  denominator ("5/5 clean", "2/5 gate violation"), which is the
-                  fact the eyebrow was there to supply. In a card a third of the
-                  page wide, a label explaining a number that is already on
-                  screen is the "text that is not needed" MAR-547 names.
-                */}
-                <div className="card-head">
-                  <h3>
-                    <Link className="plain" href={agentWorkspaceHref(agent.name)}>
-                      <code>{agent.name}</code>
-                    </Link>
-                  </h3>
-                  <AgentComplianceChips compliance={agent.compliance} />
-                </div>
-                {/*
-                  MAR-501's rule survives the move and is worth restating, since
-                  the character is no longer beside the name: it must not be
-                  aligned with the verdict. Here it is centred in a band of its
-                  own, above the goal and below the name — recognition, in the
-                  position the concept gives a portrait, and nowhere near the
-                  compliance chips.
-
-                  MAR-587, and Henrik's second pass at the same sentence: "it
-                  would also be cool if we could animate the Os and make them
-                  big… to make the fleet look more like a game and character
-                  selection." So the tile is the card's hero at `size={200}` —
-                  4× the 50px source, a whole multiple, because
-                  `image-rendering: pixelated` upscales by nearest neighbour and
-                  a "slightly bigger" sprite lands source pixels unevenly.
-
-                  `action` draws the character's vendored idle loop where one
-                  exists — three of eleven today. It is a literal rather than an
-                  expression, and `scripts/brand-rules.mjs` fails anything else:
-                  whether this surface animates is a decision about the surface,
-                  never a fact about the agent. Everything the fleet actually
-                  *knows* is in the chips below, in words.
-                */}
-                <div className="fleet-portrait">
-                  <OAvatar name={agent.avatar} size={200} action />
-                </div>
-                <p className="muted wrap">{agent.goal}</p>
-                {/*
-                  MAR-491. One line of meta, and it is the two facts a person
-                  can do something with: has this agent ever worked, and where
-                  did it come from. The other four — plan source, build target,
-                  planned steps, clearance — are DASH's own vocabulary and are
-                  behind the disclosure below.
-
-                  The cut is the issue's second option ("keep a subset primary,
-                  with the rest behind a disclosure"), applied at every width
-                  rather than under a breakpoint. `lib/copy/record-card.ts` has
-                  the argument; the short version is that a width-conditional
-                  card is two interfaces, and room is not a reason to show
-                  something.
-                */}
-                {/*
-                  MAR-586. The four questions, above the meta line and below the
-                  goal: what an agent is *for* is why you keep it, and whether
-                  something is waiting on you is why you look at it today. Both
-                  come before DASH's own record of how many times it has run.
-
-                  Every chip is a stored fact and links to where that fact is
-                  answered — see `lib/copy/glance.ts` for MAR-547's ruling, which
-                  is what keeps this a row of facts rather than a row of meters.
-                */}
-                <GlanceChips agent={agent.name} chips={agent.glance} />
-                {/*
-                  MAR-606. Where this agent runs, when that is anywhere but this
-                  computer.
-
-                  Below the glance chips rather than among them, and that is not
-                  a layout preference. `lib/copy/glance.ts` reserves those four
-                  for *things that need you*, and its tone scale has no success
-                  colour at all — a card is a record of an agent at rest and has
-                  nothing live to report. This does: a sighting is DASH having
-                  just looked at a process on a machine and been told yes, which
-                  is the exception that comment anticipated. Keeping it out of
-                  `GlanceChip` is what stops emerald leaking into a scale built
-                  on not having one.
-
-                  Draws nothing for an agent DASH has never sent anywhere, which
-                  is almost all of them.
-                */}
-                <AgentHosting agent={agent.name} hostedOn={agent.hosted_on} log={log} />
-                <p className="card-meta">
-                  <span className="value">{describeRunCount(agent.run_count)}</span>
-                  <span aria-hidden="true"> · </span>
-                  <AgentOrigin origin={agent.origin} />
-                </p>
-                {/*
-                  MAR-586's second half, and MAR-547's "can't be clicked" from
-                  the reader's side: a control they can see, rather than a
-                  heading that turns out to have been a link.
-                */}
-                <div className="glance-actions">
-                  <OpenAgentButton agent={agent.name} />
-                </div>
-                <TechnicalDetails>
-                  <dl className="facts">
-                    <div>
-                      <dt>Plan source</dt>
-                      <dd>{agent.plan_source}</dd>
-                    </div>
-                    <div>
-                      <dt>Build target</dt>
-                      <dd>{agent.build_target}</dd>
-                    </div>
-                    <div>
-                      <dt>Planned steps</dt>
-                      <dd>{agent.planned_steps}</dd>
-                    </div>
-                    <div>
-                      <dt>Clearance</dt>
-                      <dd>{agent.automation_clearance}</dd>
-                    </div>
-                  </dl>
-                </TechnicalDetails>
-              </article>
-            </li>
-          ))}
-        </ol>
+        <FleetList agents={state.data.agents} log={log} />
           )}
         </>
       )}
     </>
   );
 }
-
-/**
- * Where one agent runs, when that is anywhere but this computer (MAR-606).
- *
- * Two sources, joined here because neither is complete on its own and only a
- * renderer holds both:
- *
- * - `hostedOn` is DASH's own deploy record, on the view, durable, and true on a
- *   cold start. It is what makes the indicator appear at all.
- * - `log` is what a server said when somebody last pressed Check, held for this
- *   window only (ADR 0015). It is what gives the indicator a colour.
- *
- * With no sighting the card says DASH sent this here and has not asked since,
- * which is honest and is the state a freshly opened window is always in. It is
- * never blank while a deploy record exists, because "we have not looked" and
- * "there is nothing to say" are different facts and only one of them is true.
- *
- * Exported so a render test can drive both halves without a store or a check.
- */
-export function AgentHosting({
-  agent,
-  hostedOn,
-  log,
-}: {
-  agent: string;
-  hostedOn: readonly AgentHostedOnView[];
-  log: SightingLog;
-}): ReactNode {
-  const first = hostedOn[0];
-  if (first === undefined) {
-    return null;
-  }
-  /*
-   * The newest sighting across this agent's servers, or null when none has been
-   * taken. Falls back to the newest *deploy*, which is `hostedOn[0]` — so an
-   * unchecked agent still names a server rather than nothing.
-   */
-  const seen = sightingFor({ agent, sent_to: hostedOn, log });
-  const server = seen?.label ?? first.label;
-  const hosting = describeAgentHosting({
-    agent,
-    server,
-    seen: seen?.seen ?? null,
-    sent_on: hostedOn.find((one) => one.label === server)?.sent_on ?? first.sent_on,
-    at: seen?.at ?? null,
-  });
-  if (hosting === null) {
-    return null;
-  }
-  return (
-    <p className="fleet-hosting">
-      <span className={`chip chip-${hosting.tone}`}>{hosting.chip}</span>
-      {/* The sentence carries the moment, which is what licenses the chip's
-          colour at all — see ADR 0015. It is rendered rather than hidden in a
-          title, for the reason `GlanceChip.meaning` is: a fact somebody has to
-          discover by pointing at something is a fact most people never read. */}
-      <span className="muted wrap">{hosting.sentence}</span>
-      {hostedOn.length > 1 ? (
-        <span className="muted wrap">
-          DASH has sent it to {String(hostedOn.length)} servers. The Servers page lists them all.
-        </span>
-      ) : null}
-    </p>
-  );
-}
-
 /**
  * MAR-595 finding 13. Bumped every time the window regains OS focus, and
  * passed to `useView` as its `refreshKey` above, so this page rereads the
@@ -362,22 +181,6 @@ function useRefreshOnWindowFocus(): number {
   const [key, setKey] = useState(0);
   useEffect(() => onWindowFocus(window, () => { setKey((value) => value + 1); }), []);
   return key;
-}
-
-/**
- * How many times this agent has worked, in a sentence rather than a number
- * (MAR-491).
- *
- * `0` under a `Runs` label is a fact a person has to assemble; "Not run yet" is
- * the same fact already assembled, and it is the one that belongs on a card
- * whose other line is what the agent is for. The plural is spelled out because
- * "1 runs" is the smallest possible way for a surface to look unfinished.
- */
-export function describeRunCount(runs: number): string {
-  if (runs <= 0) {
-    return "Not run yet";
-  }
-  return runs === 1 ? "Run once" : `Run ${String(runs)} times`;
 }
 
 /**
