@@ -35,6 +35,7 @@ import {
   markAgentLooked,
   refreshSampleAgent,
   submitAgentCommand,
+  submitHostCommand,
   submitWorkspaceCommand,
   type AgentCommandArgs,
 } from "../../_data/source";
@@ -50,7 +51,7 @@ import { describeWorkingPhase } from "../../../lib/copy/working";
    type. Same arrangement `lib/deploy/connection-travel.ts` has, and for the
    same reason — a sentence about two machines has to be worded where both
    panels naming them can reach it. */
-import { describeRunTarget } from "../../../lib/copy/where-it-ran";
+import { describeRunOnHost, describeRunTarget } from "../../../lib/copy/where-it-ran";
 /* A type, so it erases — `lib/sample-refresh.ts` reaches `agent-kit/scaffold.ts`
    and must never arrive in this bundle as a value. See tests/client-bundle. */
 import type { ManifestGapView } from "../../../lib/sample-refresh";
@@ -321,6 +322,48 @@ function AgentWorkspace(): ReactNode {
     return true;
   }
 
+  /**
+   * Ask one server to start the copy of this agent that is on it (MAR-602,
+   * ADR 0014).
+   *
+   * Deliberately **not** routed through `issue`. That function is the Agent DOM
+   * command path and it refreshes this page's view afterwards, because a local
+   * command changes what the local snapshot says. This one changes something on
+   * a machine whose snapshot DASH does not store — and re-reading the page after
+   * it would show the local copy, unchanged, directly under a message saying a
+   * server was asked to run. That reads as the press having done nothing, which
+   * is the exact confusion ADR 0014's disclosure exists to prevent.
+   *
+   * So what a person gets is the sentence main composed, which already says the
+   * evidence arrives whenever DASH can next reach that server. `feedback` is the
+   * one line this page uses for every command's answer, and this is one.
+   */
+  async function runOnHost(target: AgentDeployTarget): Promise<void> {
+    setPending(`host-run:${target.host_id}`);
+    setFeedback(null);
+    try {
+      const result = await submitHostCommand("run", {
+        host_id: target.host_id,
+        agent_id: agent,
+      });
+      setFeedback({
+        ok: result.ok,
+        message:
+          result.detail ??
+          (result.ok
+            ? `${target.label} was asked to start this agent.`
+            : `${target.label} would not start this agent.`),
+      });
+    } catch {
+      setFeedback({
+        ok: false,
+        message: "DASH could not reach the command boundary. Nothing was started.",
+      });
+    } finally {
+      setPending(null);
+    }
+  }
+
   if (state.status === "loading") {
     return <ViewLoading what="this agent workspace" />;
   }
@@ -465,6 +508,7 @@ function AgentWorkspace(): ReactNode {
         hasFiles={selectedInputs.some((input) => input.state === "copied")}
         issue={issue}
         onDispatch={dispatchTask}
+        onRunOnHost={runOnHost}
         pending={pending}
         snapshot={view.snapshot}
       />
@@ -828,6 +872,7 @@ function RunNow({
   hasFiles,
   issue,
   onDispatch,
+  onRunOnHost,
   pending,
   snapshot,
 }: {
@@ -838,9 +883,11 @@ function RunNow({
    *
    * Empty for almost every agent, and an empty list changes nothing on screen.
    * When it is not empty this control stops being unambiguous — the agent
-   * exists in two places and one button silently meant one of them — so the
-   * button names its machine and the note below says what DASH cannot do with
-   * the other.
+   * exists in two places and one button silently meant one of them — so a
+   * **second named control** appears per server and the note below names both.
+   *
+   * The wiring landed with the route, so the note no longer says DASH cannot
+   * start the other copy. See `lib/copy/where-it-ran.ts`.
    */
   deployTargets: AgentDeployTarget[];
   /** Whether the person has files waiting that this run should receive (MAR-507). */
@@ -852,6 +899,14 @@ function RunNow({
   ) => Promise<void>;
   /** Binds the open task to a run. False means the agent must not be started. */
   onDispatch: () => Promise<boolean>;
+  /**
+   * Ask one server to start the copy that is on it (MAR-602).
+   *
+   * Passed in rather than called here for the reason `issue` is: this component
+   * draws controls and owns no bridge, and the page is where a command's answer
+   * becomes the one feedback line a person reads.
+   */
+  onRunOnHost: (target: AgentDeployTarget) => Promise<void>;
   pending: string | null;
   snapshot: WorkspaceSnapshotView | null;
 }): ReactNode {
@@ -885,10 +940,14 @@ function RunNow({
   // re-narrow what this function body already established.
   const taskId = waiting.id;
   const observedAt = snapshot.observed_at;
-  // MAR-602. Both empty when this agent lives in one place, which leaves the
-  // control exactly as it was — ADR 0014's rule is that a machine is named when
-  // there is a choice to be wrong about, not on every button in the product.
+  // MAR-602. All three empty when this agent lives in one place, which leaves
+  // the control exactly as it was — ADR 0014's rule is that a machine is named
+  // when there is a choice to be wrong about, not on every button in the
+  // product.
   const where = describeRunTarget(deployTargets);
+  // Filtered on the same field the sentence is built from, so a server with no
+  // name a person would recognise cannot get a button reading "Run on ".
+  const onHost = deployTargets.filter((target) => target.label.length > 0);
 
   return (
     <section className="section run-now">
@@ -920,6 +979,33 @@ function RunNow({
       >
         {pending === `run:${taskId}` ? "Starting…" : hasFiles ? "Send files and run now" : "Run now"}
       </button>
+      {/* MAR-602, ADR 0014. One named control per server, beside the first and
+          never instead of it.
+
+          Deploying an agent does not change what the button to its left does —
+          that is the rule the ADR chose over silent re-targeting, and it is why
+          this is a sibling rather than a mode. The machine is in the name here
+          because "Run on Hostinger" is four words that say what they do, while
+          appending a machine to the primary label would put a sentence inside a
+          letter-spaced control.
+
+          No files step in front of it, and that is a limit rather than an
+          oversight: `onDispatch` hands files to the runner **on this computer**,
+          and there is no path today that puts a person's file on a server. A
+          copy over there runs against what was deployed with it. */}
+      {onHost.map((target) => (
+        <button
+          className="button-secondary"
+          disabled={pending !== null}
+          key={target.host_id}
+          onClick={() => {
+            void onRunOnHost(target);
+          }}
+          type="button"
+        >
+          {pending === `host-run:${target.host_id}` ? "Asking…" : describeRunOnHost(target.label)}
+        </button>
+      ))}
       {/* One flex item rather than two, because `.run-now` is a row: a second
           bare paragraph would sit *beside* the first at desktop widths and read
           as two unrelated captions. Stacked here, the machine sentence sits

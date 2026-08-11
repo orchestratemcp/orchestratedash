@@ -328,6 +328,17 @@ const dashShell = {
   hostSetupScript: ({ host_id }: HostTarget) => send("host.setup", { host_id }),
   deployAgentToHost: ({ host_id, agent_id }: HostDeployTarget) =>
     send("host.deploy", { host_id, agent_id }),
+  /**
+   * Start the copy that is on a server (MAR-602, ADR 0014).
+   *
+   * Its own named method beside `deployAgentToHost`, taking the same two ids and
+   * no third — in particular no task id. A page has never seen the server's
+   * snapshot, so it cannot name a target on it; main reads that at the moment of
+   * the press and the host adjudicates it again. The renderer says *which agent,
+   * on which machine*, and everything about **what** is decided one process over.
+   */
+  runAgentOnHost: ({ host_id, agent_id }: HostDeployTarget) =>
+    send("host.run", { host_id, agent_id }),
   forgetHost: ({ host_id }: HostTarget) => send("host.forget", { host_id }),
 
   /**

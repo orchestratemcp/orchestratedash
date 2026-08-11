@@ -216,6 +216,13 @@ describe("the audited command chokepoint", () => {
       // this build ships, and composes a string.
       "host.setup",
       "host.deploy",
+      // MAR-602, ADR 0014. A **second named action** rather than a mode of
+      // `agent.retry`, which is what makes ADR 0014's rule enforceable: deploying
+      // an agent never changes what a control already on screen does. It carries
+      // the same two ids `host.deploy` does and, in particular, no task id — a
+      // page has never seen the server's snapshot, so main reads which task at
+      // the moment of the press and the host adjudicates it again.
+      "host.run",
       "host.forget",
       // MAR-434. A fifth family, addressing the runner's task workspace over
       // routes the runner already served and proof 9 already exercised. Note
@@ -662,6 +669,23 @@ describe("dispatch", () => {
               bundle_id: "fixture-agent",
               runner_build: "fixture",
               detail: "The agent is running on My server.",
+            });
+          // MAR-602, ADR 0014. Unsecret by construction like the six around it,
+          // and that is the property worth having a fixture for: the `channel`
+          // verb is the one thing on either plane that handles a credential, and
+          // the closed result type is what stops it reaching a renderer. There
+          // is no `token` here because there is no member it could go in.
+          case "run":
+            return Promise.resolve({
+              ok: true as const,
+              action,
+              host_id: "host-fake-1",
+              label: "My server",
+              agent_id: "fixture-agent",
+              detail:
+                "My server was asked to start this agent. DASH will show what it did the next " +
+                "time it can reach that server, and only what the server still has then.",
+              reached: true,
             });
           case "forget":
             return Promise.resolve({

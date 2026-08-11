@@ -184,11 +184,33 @@ function contradictoryManifest(): Record<string, unknown> {
  * ---------------------------------------------------------------------- */
 
 describe("the closed verb set", () => {
-  it("is exactly ADR 0007's six, and nothing composes a command line", () => {
-    // Pinned by value. ADR 0007 names these six and this array is the whole
-    // vocabulary DASH has for a machine it does not administer; a seventh
-    // arriving without a line here is a verb nobody decided to add.
-    expect([...DEPLOY_VERBS]).toEqual(["install", "start", "stop", "status", "collect", "connect"]);
+  it("is exactly ADR 0007's six plus MAR-602's one, and nothing composes a command line", () => {
+    /*
+     * Pinned by value, and this pin has now fired twice — which is the whole
+     * reason it is written this way. ADR 0007 named six and MAR-487 wrote them;
+     * MAR-602 added `channel`, and it could not be added without changing this
+     * line and saying why.
+     *
+     * The seventh is the only member of either plane that carries a credential,
+     * and `lib/deploy/verbs.ts` holds its argument against ADR 0014's three
+     * admission questions. In one sentence: the runner on the host mints its own
+     * channel secret, `stop` has read that exact file since MAR-520, and this
+     * returns a value the helper could already spend — to a caller that signed
+     * in with the key whose `authorized_keys` line runs this program and nothing
+     * else. Without it `sshHostChannel` took a token no caller could supply, so
+     * the evidence plane was written, tested and unreachable.
+     *
+     * An eighth arriving without a line here is a verb nobody decided to add.
+     */
+    expect([...DEPLOY_VERBS]).toEqual([
+      "install",
+      "start",
+      "stop",
+      "status",
+      "collect",
+      "connect",
+      "channel",
+    ]);
   });
 
   it("refuses anything that is not one of them", () => {

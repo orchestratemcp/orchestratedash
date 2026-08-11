@@ -296,6 +296,16 @@ interface DashShellClient {
   trustHost?(args: HostTrustCommandTarget): Promise<CommandResult>;
   hostSetupScript?(args: HostCommandTarget): Promise<CommandResult>;
   deployAgentToHost?(args: HostDeployCommandTarget): Promise<CommandResult>;
+  /**
+   * Start the copy that is on a server (MAR-602, ADR 0014).
+   *
+   * The newest method on the bridge, so its optionality is the live case rather
+   * than the historical one: a DASH installed before this work has every method
+   * around it and not this. Taking the same target as `deployAgentToHost` and no
+   * task id — a page has never seen the server's snapshot and cannot name a
+   * target on it.
+   */
+  runAgentOnHost?(args: HostDeployCommandTarget): Promise<CommandResult>;
   forgetHost?(args: HostCommandTarget): Promise<CommandResult>;
   /**
    * The task-workspace commands (MAR-507).
@@ -1115,7 +1125,7 @@ export async function submitHostCommand(
   target: HostCommandTarget,
 ): Promise<CommandResult>;
 export async function submitHostCommand(
-  action: "deploy",
+  action: "deploy" | "run",
   target: HostDeployCommandTarget,
 ): Promise<CommandResult>;
 export async function submitHostCommand(
@@ -1127,7 +1137,7 @@ export async function submitHostCommand(
   target: HostCommandTarget,
 ): Promise<CommandResult>;
 export async function submitHostCommand(
-  action: "create" | "probe" | "trust" | "setup" | "deploy" | "forget",
+  action: "create" | "probe" | "trust" | "setup" | "deploy" | "run" | "forget",
   target:
     | HostCreateCommandArgs
     | HostCommandTarget
@@ -1195,6 +1205,16 @@ export async function submitHostCommand(
         };
       }
       return bridge.deployAgentToHost(target as HostDeployCommandTarget);
+    case "run":
+      if (bridge.runAgentOnHost === undefined) {
+        return {
+          ok: false,
+          request_id: "",
+          reason: "read_only_host",
+          detail: "This version of the DASH app cannot start an agent on a server yet.",
+        };
+      }
+      return bridge.runAgentOnHost(target as HostDeployCommandTarget);
     case "forget":
       if (bridge.forgetHost === undefined) {
         return {
