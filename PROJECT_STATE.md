@@ -5756,3 +5756,134 @@ anybody's actual fleet size or card content.
 **CI IS THE INSTALLED WITNESS AND IT IS GREEN.** PR #122, run `31391651472` at
 `e7de977` — both buckets pass: `verify` (1m17s) and the Windows `shell-smoke`
 job (1m42s). Not merged yet; lifecycle promotes when it is.
+
+---
+
+## MAR-609 — the agent page as a control surface (2026-08-11)
+
+Henrik's verdict after the 2026-08-10 attended run: *"the agent page is still
+very cluttred. Lots of random text"*, *"way to much text for an agent with no
+output ;p"*, and the one that names the defect — *"you get no overview."*
+
+The page was eighteen stacked sections. Five of his six asks are things you
+**do**; almost all of it was things you read.
+
+### What it is now
+
+Header (portrait, display name, id as a value, goal, status pill, Settings,
+Refresh) → control panel → three tiles → **latest outputs** → chat → inputs →
+waiting work → deploy → the author's panel → one disclosure holding the record.
+
+The disclosure is MAR-570's Connections move reused: the receipt is one click
+away rather than gone. Everything the old page rendered is still rendered.
+
+### Two of the six were already built
+
+- **Chat** shipped in MAR-545 and was sixth of eleven sections, under the
+  outputs, the inputs panel and Run now.
+- **Remove** shipped in MAR-595 as two unlabelled buttons, last on the page,
+  below the audit history.
+
+Henrik asked for both anyway. Neither needed new behaviour — they needed to be
+where somebody looks. That is worth recording as a class of defect: a shipped
+feature nobody can find reads to the user exactly like a missing one.
+
+### The empty case was the real bug
+
+`RunNow` returned `null` for three different reasons — no snapshot, no pending
+task, a read-only window — and all three rendered as the same nothing. **A
+freshly added agent had no run control and no sentence saying why**, which is
+the state every new user meets. `buildAgentControl` returns a *reason* instead,
+and its union has no arm that draws nothing.
+
+### MAR-589 is decided
+
+Henrik ruled **display name first-class**; the id is a value in `<code>`, never
+a label. The reading half ships here: `agentDisplayName()` is the single
+definition and four inline copies of `display_name ?? humanize(name)` now call
+it.
+
+The writing half is **deliberately not built**. The `agents` table has no name
+column of DASH's own, so a rename needs a migration, an ipc command and a
+preload method — and `dash-mar598` is live in `preload.ts`, `ipc.ts` and
+`app/_data/source.ts`. Henrik chose to defer rather than take the conflict.
+
+So the settings drawer ships all three of the things he asked to swap — name,
+avatar, notification channel — as **read-only rows that name where the value
+comes from**, each blocked for its own stated reason: no column; MAR-615 owns
+per-agent avatars; and notifications are one Discord webhook for the whole
+product, not one per agent. A drawer that silently omitted them would read as a
+drawer that forgot.
+
+### The trigger switcher builds no scheduler
+
+ADR 0014 weighed trigger configuration and declined it: *"blocked on
+restart-on-boot […] and it needs a scheduler that exists nowhere in this
+repository."* The switcher shows all three choices with "on command" selected
+and the other two marked not built, each naming what it waits on. Disabled
+radios here are the page stating a limit of the product, which is information —
+not the dead controls `lib/workspace.ts` forbids.
+
+### MAR-606's agent-page half was not built, and the condition is recorded false
+
+The brief allowed it *if existing status data carries liveness*. It does not.
+`AgentDeployTarget` carries no running field **by ADR 0010's design**,
+`SavedServerView` carries none either, and the host's answer to `status` is
+never persisted — it exists only while somebody is pressing **Check this
+server**. An indicator here would have been invented rather than read.
+
+### What the screenshots found
+
+Six defects, none of which had anything to measure. `page_overflows` was
+`false` in every frame throughout.
+
+1. **The status rendered twice** — a pill in the header and a tile below it,
+   the same two words, on the page whose complaint is redundant text.
+2. **`.ask` is a grid**, so its bare `<p>` margins did not collapse: every line
+   of the chat sat 16px + 16px + 16px from the next.
+3. **`ModelChoice` and `FolderUpdate` were `h2`s** inside the drawer's own
+   `h2` — a child outranking its container, visually and for a screen reader.
+4. **Three tiles stacked one-per-row at 375px**, costing more height than the
+   tiles saved.
+5. **Settings and Refresh wrapped into a two-row column** on a phone.
+6. **Both artifact renderers drew cross-run cards with no way to tell two
+   digests of the same role apart.** `panel.tsx` has read the agent's whole
+   history through `artifactRecordsForAgent` since MAR-548, so it had this
+   first; `outputs.tsx` was about to inherit it the moment MAR-609 widened its
+   scope from one run to all of them. Both fixed — the trap paid out exactly as
+   recorded.
+
+All six were fixed and re-shot.
+
+### Evidence
+
+`qa-screenshots-mar609/`, 100 frames: three viewports × both themes × both
+densities, from `electron/capture-deploy.ts`'s `one-server` scene with four new
+surfaces (`agent-overview`, `agent-empty-outputs`, `agent-settings`,
+`agent-record`). **Every one photographs an agent that has produced nothing** —
+the state MAR-609 asks to be sized for first.
+
+Two harness notes worth keeping: the run needs `DASH_SHELL_URL=dash-app://ui/`
+or it loads the dev server and fails `ERR_CONNECTION_REFUSED`, and it needs its
+own `--user-data-dir` — the shared `%APPDATA%/Electron` scratch store already
+held a seeded host from an aborted attempt, and other worktrees' harnesses
+write to the same place.
+
+`state:check`, `typecheck`, `brand:check` and the suite (153 files, 2968 tests)
+are green locally.
+
+### What is not proven
+
+**`pnpm verify:shell` was not run on this machine.** Eight Electron processes
+from other worktrees were alive and AGENTS.md forbids force-killing them. CI's
+Windows `shell-smoke` is this branch's installed witness.
+
+**Nothing here was seen against a real agent with real output.** The scene
+seeds two freshly imported agents, which is the empty case by design; the
+cross-run outputs list is exercised by unit tests and by the store's own
+`artifactRecordsForAgent`, and no frame shows it holding two digests.
+
+**MAR-614 is only partly served.** This page's own spacing is tightened; the
+global `.section` rhythm is deliberately untouched, because that issue is the
+pass across every surface and retuning eleven pages from inside a single-page
+issue would change screens nobody photographed here.
