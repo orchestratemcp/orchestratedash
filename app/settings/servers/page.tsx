@@ -28,6 +28,7 @@ import type { DeployStanding } from "../../../lib/deploy/deploying";
 import { describeDuplicateHost, findDuplicateHost } from "../../../lib/hosts";
 import { describeDuplicateRecords, summariseServers } from "../../../lib/server-card";
 import { describeDeployArrangement } from "../../../lib/deploy/receipt";
+import { InfoNote } from "../../_components/info-note";
 import { ServerCard } from "../../_components/server-card";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import { sightings } from "../../_data/sightings";
@@ -249,8 +250,17 @@ export function AddressStep({
         </label>
       </div>
 
+      {/*
+        Where the key goes, behind the label it belongs to (MAR-614). This is a
+        step-3 fact sitting on step 1, under a form whose own job is five
+        fields: a person filling in an address does not yet need to know which
+        page of their hosting account will take the key, and the step that does
+        need it says so again at the moment it matters. The sentence is
+        unchanged and still varies with the provider they picked.
+      */}
       <p className="muted wrap">
-        The key goes in: {describeProviderChoice(draft.provider).where_the_key_goes}
+        The key goes in
+        <InfoNote>{describeProviderChoice(draft.provider).where_the_key_goes}</InfoNote>
       </p>
 
       {/*

@@ -158,13 +158,38 @@ export function NotificationSettings({
         ) : null}
       </section>
 
+      {/*
+        Behind its own heading, which is now the control (MAR-614).
+
+        Three sentences about when a background process is and is not running is
+        the clearest case of documentation on this page: true, worth reading
+        once, and re-read by nobody. What it is *not* is a consent disclosure —
+        `NOTIFY_CONTENTS` below is that one, and it stays open, because its own
+        note in `lib/notify/settings.ts` says it is what decides whether a person
+        picks a private channel or a shared one, and that decision is made on
+        this screen.
+
+        A `<details>` rather than an `InfoNote`, because this is a section of
+        three list items rather than a sentence attached to a word — the same
+        split `record-card.tsx` and `info-note.tsx` draw between them.
+
+        The `<h2>` is *inside* the summary rather than replaced by it, and
+        `<summary>` takes heading content by spec precisely so this works. The
+        first draft swapped it for a plain label, which read identically and
+        quietly cost anybody navigating by heading a stop on the page. What is
+        folded away here is three sentences, not the page's structure.
+      */}
       <section aria-labelledby="notify-liveness">
-        <h2 id="notify-liveness">When messages arrive, and when they do not</h2>
-        <ul className="plain-list">
-          {NOTIFY_LIVENESS.map((line) => (
-            <li key={line}>{line}</li>
-          ))}
-        </ul>
+        <details className="card-more section-disclosure">
+          <summary>
+            <h2 id="notify-liveness">When messages arrive, and when they do not</h2>
+          </summary>
+          <ul className="plain-list">
+            {NOTIFY_LIVENESS.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </details>
       </section>
 
       <section aria-labelledby="notify-contents">

@@ -12,6 +12,20 @@
  * - the shared-grant disclosure is above the button, never below it;
  * - the receipt is present and one click deep, not deleted;
  * - a tile with nothing to press draws no button rather than a dead one.
+ *
+ * ## What "no button" had to become (MAR-614)
+ *
+ * The third rule was written as `not.toContain("<button")`, which was exact
+ * while the only pressable thing on a tile was Connect. The text pass added a
+ * hover note, whose marker is a button that opens an explanation and changes
+ * nothing — and the assertion went red for a card that still had no dead
+ * control on it.
+ *
+ * `actionControls` is the same rule, saying what it means: the tile draws no
+ * control that would *do* anything. It is stricter than the old string in the
+ * way that matters, because it enumerates what it found — a new action class
+ * added to this codebase shows up in the failure message by name instead of
+ * hiding inside a boolean.
  */
 
 import { describe, expect, it } from "vitest";
@@ -24,6 +38,20 @@ import type {
   BrokerRowView,
   ConnectionRowWithCredential,
 } from "../lib/views/types";
+
+/**
+ * Every control on this markup that would submit, send or change something.
+ *
+ * DASH gives an action control one of three classes and gives a disclosure
+ * none of them, so the class is the honest discriminator — matching on button
+ * text would need this test to know every verb the tile can render, in every
+ * state, which is the drift the assertion exists to catch.
+ */
+function actionControls(html: string): string[] {
+  return [...html.matchAll(/class="(button-primary|button-secondary|button-danger)"/g)].map(
+    (match) => match[1] as string,
+  );
+}
 
 function broker(over: Partial<BrokerRowView> = {}): BrokerRowView {
   return {
@@ -132,7 +160,19 @@ describe("the disclosure that one sign-in serves two agents", () => {
      */
     const html = draw(SHARED());
     const disclosure = html.indexOf("One sign-in connects Gmail");
-    const button = html.indexOf("<button");
+    /*
+     * MAR-614. The *action* button, named by its class rather than found as the
+     * first `<button` in the markup.
+     *
+     * The tile now carries a second button before this one — the hover note's
+     * marker, which is a disclosure and changes nothing — and the loose search
+     * found that one instead, failed, and in failing claimed the consent
+     * disclosure had moved below the sign-in control. It had not. A positional
+     * assertion is only as good as its idea of what it measures against, and
+     * "the first button element on the card" stopped being the sign-in the
+     * moment anything else on the card became pressable.
+     */
+    const button = html.indexOf('class="button-primary"');
     expect(disclosure).toBeGreaterThan(-1);
     expect(button).toBeGreaterThan(-1);
     expect(disclosure).toBeLessThan(button);
@@ -168,7 +208,7 @@ describe("the button", () => {
     const html = draw([
       agent("News Scout", [row({ dash_can_hold: false, field_id: null, broker: null })]),
     ]);
-    expect(html).not.toContain("<button");
+    expect(actionControls(html)).toEqual([]);
     expect(html).toContain("DASH does not hold this");
   });
 
@@ -184,7 +224,7 @@ describe("the button", () => {
 describe("a window that cannot act", () => {
   it("says which window it is rather than drawing a dead button", () => {
     const html = draw(SHARED(), false);
-    expect(html).not.toContain("<button");
+    expect(actionControls(html)).toEqual([]);
     expect(html).toContain("Open the installed DASH app");
   });
 });

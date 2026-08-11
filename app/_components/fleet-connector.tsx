@@ -127,25 +127,35 @@ export function FleetConnectorCard({
       </details>
 
       {/*
-        The permission that is wider than what DASH does with it. Before the
-        button, and it survives being connected — this is the sentence that would
-        otherwise vanish at the exact moment it started to matter.
-      */}
-      {connector.wider_permissions.map((sentence) => (
-        <p key={sentence} className="notice notice-warn wrap" role="note">
-          {sentence}
-        </p>
-      ))}
+        The two consequences of pressing the button, in one box (MAR-614).
 
-      {/*
-        Who else this reaches. Null on a DASH with no agents, which is every card
-        on a freshly cleared machine — a warning about nobody is one people learn
-        to skip.
+        Both were here already and neither has changed a word: the permission
+        that is wider than what DASH does with it — before the button, surviving
+        being connected, because it is the sentence that would otherwise vanish
+        at the moment it started to matter — and who else this reaches.
+
+        What changed is that they were two separately bordered warning panels
+        stacked on top of each other, which is the exact defect MAR-570 found and
+        fixed one component over on `ConnectorTile`: two identical boxes read as
+        two alarms, take twice the vertical space of the thing they qualify, and
+        push the card's own button toward the fold. One box, two paragraphs, both
+        still announced as notes.
+
+        Nothing is conditional on the other being present. A card with only one
+        of them draws one box with one paragraph, and a card with neither draws
+        nothing at all — a warning about nobody is one people learn to skip.
       */}
-      {connector.reach_sentence === null ? null : (
-        <p className="notice notice-warn wrap" role="note">
-          {connector.reach_sentence}
-        </p>
+      {connector.wider_permissions.length === 0 && connector.reach_sentence === null ? null : (
+        <div className="notice notice-warn wrap">
+          {connector.wider_permissions.map((sentence) => (
+            <p key={sentence} role="note">
+              {sentence}
+            </p>
+          ))}
+          {connector.reach_sentence === null ? null : (
+            <p role="note">{connector.reach_sentence}</p>
+          )}
+        </div>
       )}
 
       {connector.agents.length === 0 ? null : (

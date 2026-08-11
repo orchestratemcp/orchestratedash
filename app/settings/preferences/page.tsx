@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 
 import { DensityToggle } from "../../_components/density-toggle";
+import { InfoNote } from "../../_components/info-note";
 import { HostNotice } from "../../_components/view-state";
 import { useHost } from "../../_data/use-view";
 
@@ -45,10 +46,20 @@ export default function PreferencesPage(): ReactNode {
 
       <section aria-labelledby="preferences-density">
         <h2 id="preferences-density">Density</h2>
+        {/*
+          The claim stays, the explanation moves (MAR-614). "Nothing is hidden
+          either way" is the load-bearing half — MAR-491 made it a rule that
+          `data-density="compact"` may not hide anything, and this sentence is
+          the promise a person is owed *before* they press a control that
+          rearranges their screen. What compact does, and which one is the
+          default, is what the toggle beside it demonstrates in one press.
+        */}
         <p className="muted wrap">
-          Comfortable is the default. Compact fits more rows and cards on
-          screen — the same facts, closer together. Nothing is hidden either
-          way.
+          Nothing is hidden either way.
+          <InfoNote>
+            Comfortable is the default. Compact fits more rows and cards on
+            screen — the same facts, closer together.
+          </InfoNote>
         </p>
         <DensityToggle />
       </section>
