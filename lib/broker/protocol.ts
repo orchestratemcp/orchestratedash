@@ -72,10 +72,30 @@ export type BrokerRefusal =
    * truth is "I am not allowed to spend on my own" would send its user to a page
    * where there is nothing to do.
    *
-   * See `BrokerOrigin` in `lib/broker/execute.ts` for the standing this enforces
-   * and for the one thing that has to be built before it can be relaxed.
+   * Since MAR-619 this means something narrower and more useful than it did:
+   * not *"an agent may never spend"* but *"no run a person asked for is open"*.
+   * `lib/broker/spend-allowance.ts` holds the window, and the agent's move is
+   * the same as it ever was — stop, and let the person start a run. An agent
+   * that reaches this outside a run has done nothing wrong and should say so
+   * plainly rather than reporting a fault.
+   *
+   * See `BrokerOrigin` in `lib/broker/execute.ts` for the standing this
+   * enforces and ADR 0016 for how it came to have a second half.
    */
   | "needs_a_person"
+  /**
+   * The operation needs a model and this agent's owner has named none
+   * (MAR-619, ADR 0011).
+   *
+   * Its own code rather than `not_granted` for `needs_a_person`'s reason: the
+   * connection is made, the key works, the consent is whole, and none of that
+   * is what is missing. A person left the agent on *match each step*, which is
+   * a level rather than a model and not something DASH can ask a provider
+   * under — the same gap `describeUnavailable` words for the chat. The next
+   * move is one choice on the agent's own page, and an agent reporting "not
+   * connected" here would send its user somewhere there is nothing to do.
+   */
+  | "no_model_chosen"
   /** The typed input failed the operation's own narrowing. */
   | "invalid_input"
   /** This request id has been seen before from this agent. */

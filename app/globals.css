@@ -3390,6 +3390,66 @@ button:disabled {
   color: inherit;
 }
 
+/* The curated digest (MAR-619).
+
+   A grouping is a reading of the same items, so it is set as the same kind of
+   thing rather than as a panel of its own: no card, no border around the
+   section, and the groups indented from a left rule so the eye reads them as
+   one structure. A boxed "AI summary" would have been a second surface on a
+   card that MAR-576 already worked to keep uncluttered. */
+
+.digest-curation {
+  margin-bottom: 1.5rem;
+}
+
+.digest-curation > h3 {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.digest-curation-overview {
+  margin: 0 0 1rem;
+}
+
+.digest-group {
+  border-left: 2px solid var(--line);
+  padding-left: 0.85rem;
+}
+
+.digest-group + .digest-group {
+  margin-top: 1.25rem;
+}
+
+/* A model's words, so it is a paragraph and not a heading — see `Curation` in
+   app/_components/digest.tsx on why untrusted text stays out of the outline. */
+.digest-group-label {
+  margin: 0 0 0.2rem;
+}
+
+.digest-group > .digest-items {
+  margin-top: 0.6rem;
+}
+
+/* A grouped digest is several lists on one page and each `ol` starts again at
+   1, so the marker stops being "the third thing it found" and becomes three
+   different headlines all numbered 1. The element stays an `ol` — the order is
+   still newest-first — and only the marker goes. Applied by the renderer only
+   when a grouping exists, so an ungrouped digest is unchanged. */
+.digest-items-plain {
+  list-style: none;
+  padding-left: 0;
+}
+
+/* Only drawn when a grouping left something over. Set to match the group
+   labels rather than the section heading above them: what follows is a
+   remainder, not a third peer of the digest and its summary. */
+.digest-remainder-heading {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
 .digest-sources {
   margin-top: 1.25rem;
 }

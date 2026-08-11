@@ -30,6 +30,8 @@ import { brokeredField, requestedOperations, unrequestedOperations } from "../br
 import { hasFrozenPath, operationById, type BrokerOperation } from "../broker/operations";
 import { describeClientOwner, describeCustody, describeDashClosedWindow } from "../broker/providers";
 import { listReceipts, readBrokerAudit, readBrokerLapses, type BrokerLapse } from "../broker/store";
+import { CURATE_OPERATION_SUFFIX } from "../broker/operations";
+import { describeRunSpend } from "../copy/curation";
 import { describeBrokerRefusal } from "../copy/recovery";
 import { agentDisplayName } from "../copy/agent-name";
 import { heldCredentials } from "../connection-actions";
@@ -109,6 +111,7 @@ import type {
   AgentDeployTarget,
   AgentHostedOnView,
   AgentDeployView,
+  AgentModelSettingsView,
   AgentOriginView,
   AgentsView,
   BrokerCapabilityView,
@@ -1183,6 +1186,17 @@ export function workspaceView(
     },
   );
 
+  /*
+   * MAR-583's settings, taken once (MAR-619).
+   *
+   * Two fields read it now — the picker and the Run press's spend disclosure —
+   * and it reads the vault reference table and the choice row, so calling it
+   * twice would be two reads of the same rows on every five-second poll and
+   * two chances for one page to disagree with itself about whether this agent
+   * has a model.
+   */
+  const modelSettings = buildAgentModelSettings(agent, manifest as ModelSourceManifest);
+
   // Outside the snapshot, deliberately. The snapshot is what the *agent*
   // published about itself and is null until it has published anything; a digest
   // from a run last week is DASH's own record and survives the agent being
@@ -1224,7 +1238,15 @@ export function workspaceView(
     // there is anything to choose at all. Built here rather than in the page
     // because it reads the vault's reference table and the choice rows, and
     // because every sentence on it belongs to `lib/ai/model-choice.ts`.
-    models: buildAgentModelSettings(agent, manifest as ModelSourceManifest),
+    models: modelSettings,
+    // MAR-619, ADR 0016. What the Run press will spend, said where the press
+    // is. Derived from the settings directly above rather than from a second
+    // read of the same rows, so the sentence and the picker cannot end up
+    // disagreeing about whether this agent has a model to spend under.
+    run_spend: describeRunSpend({
+      agent: agentDisplayName(workspaceManifest.agent),
+      service: spendingService(manifest, modelSettings),
+    }),
     // MAR-545. Built here rather than fetched by the chat itself, so the whole
     // surface arrives with the rest of the page on the same five-second poll —
     // an answer that landed while somebody was reading appears without anything
@@ -1424,6 +1446,54 @@ function dashFactsForAgent(agent: string, store: StoreShape): PanelDashFacts {
     last_run_at: last?.started_at ?? null,
     last_run_status: last?.status ?? null,
   };
+}
+
+/**
+ * The provider a run of this agent would actually spend at, or null (MAR-619,
+ * ADR 0016).
+ *
+ * Three things have to be true at once, and each of them being false is a
+ * different, already-worded outcome rather than a gap this function papers
+ * over:
+ *
+ * 1. **The agent asks.** Its manifest declares a capability whose id is a
+ *    curation operation — the same suffix `agent-kit/template/agent.mjs` finds
+ *    its own by, so what this predicts and what the agent attempts are the same
+ *    fact read from the same place.
+ * 2. **A key is held.** `can_choose` is false without one, and a run in that
+ *    state is refused before anything is sent — `describeNotCurated`'s
+ *    `not_connected` says so on the digest afterwards.
+ * 3. **A model is named.** `chosen_model_id` is null on *match each step*, and
+ *    the broker refuses an agent-origin spend with `no_model_chosen` rather
+ *    than picking one (ADR 0011 decision 1).
+ *
+ * So null means "this press cannot cost you anything", which is a claim worth
+ * being exactly right about — it is the difference between a silent Run button
+ * and one carrying a sentence about money.
+ */
+function spendingService(
+  manifest: unknown,
+  settings: AgentModelSettingsView,
+): string | null {
+  if (!settings.can_choose || settings.chosen_model_id === null) {
+    return null;
+  }
+  const connections = (manifest as { agent_dom?: { connections?: unknown } }).agent_dom
+    ?.connections;
+  if (!Array.isArray(connections)) {
+    return null;
+  }
+  const asks = connections.some((connection) => {
+    const capabilities = (connection as { capabilities?: unknown }).capabilities;
+    return (
+      Array.isArray(capabilities) &&
+      capabilities.some((capability) => {
+        const id = (capability as { id?: unknown }).id;
+        return typeof id === "string" && id.endsWith(CURATE_OPERATION_SUFFIX);
+      })
+    );
+  });
+  return asks ? settings.provider_label : null;
 }
 
 /**

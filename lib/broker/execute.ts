@@ -76,6 +76,12 @@ import {
 } from "./grant";
 import { hasFrozenPath, isSpendOperation, operationById, planCall } from "./operations";
 import { fulfil, refuse, type BrokerRefusal, type BrokerRequest, type BrokerResponse } from "./protocol";
+import {
+  openRunSpend,
+  spendAllowed,
+  spendOne,
+  type RunSpendAllowance,
+} from "./spend-allowance";
 
 /* ---------------------------------------------------------------------- *
  * What the broker needs from the outside world
@@ -164,6 +170,27 @@ export interface BrokerDeps {
    * `electron/broker-host.ts` supplies it, so the shipped one always has it.
    */
   hasHandledRequest?(agentId: string, requestId: string): boolean;
+  /**
+   * Which model this agent's owner chose, or null (MAR-619, ADR 0011).
+   *
+   * Consulted **only for an agent-origin spend**, and it is what keeps ADR
+   * 0011's first decision — *"a level is what an agent's author declares; a
+   * model is what its owner chooses"* — true on a path where the author's own
+   * program is doing the asking. The agent supplies a `model` in its input like
+   * any other field, and DASH overwrites it with this before the operation ever
+   * sees it. An agent that could name its own model would be an agent that
+   * could name an expensive one.
+   *
+   * Null means the owner has left the agent on *match each step*, which is not
+   * something DASH can ask a provider under — the same gap
+   * `describeUnavailable`'s `no_model_chosen` words for the chat — and the
+   * request is refused rather than run against a model DASH picked.
+   *
+   * Optional so the pure tests can leave it out; absent behaves as null, so a
+   * broker built without it simply cannot spend on an agent's behalf.
+   * `electron/broker-host.ts` supplies it.
+   */
+  readModelChoice?(agentId: string): string | null;
   /** Record one attempt. Called exactly once per request, on every path. */
   audit(row: BrokerAuditRow): void;
   /** Note that a grant was used, for the receipt's "last used". */
@@ -230,16 +257,25 @@ export const BROKER_SPEND_PER_WINDOW = 6;
  *
  * **What it gates is spending, and only spending.** Every read and every write
  * behaves identically whichever value is passed; `gmail.draft.create` is an
- * agent's job and always was. A completion is refused for an agent because
- * MAR-582 named the thing that has to exist first — "a cost story and a per-run
- * budget" — and this slice builds the first and not the second. An agent that
- * may spend without a per-run budget is an agent that can empty an account
- * between two of DASH's five-second polls.
+ * agent's job and always was.
  *
- * So this is a stated, temporary standing rather than a principle: when MAR-299
- * has a per-run budget, letting an agent spend is this gate plus that budget,
- * and the diff is small and visible. Until then the refusal is
- * `needs_a_person`, which says exactly that to the agent that hit it.
+ * ## The temporary standing, and how it ended (MAR-619, ADR 0016)
+ *
+ * This block used to say that a completion is refused for an agent because
+ * MAR-582 named the thing that has to exist first — "a cost story and a per-run
+ * budget" — and that slice built the first and not the second. It closed:
+ * *"when MAR-299 has a per-run budget, letting an agent spend is this gate plus
+ * that budget, and the diff is small and visible."*
+ *
+ * `lib/broker/spend-allowance.ts` is that budget and this is that diff. An
+ * agent-origin spend is now permitted **while an allowance a person opened is
+ * still open**, and refused with the same `needs_a_person` in every other case.
+ * The sentence the gate was always protecting is unchanged and is now enforced
+ * rather than approximated: a person is behind every penny DASH spends.
+ *
+ * `origin` keeps its full force for everything else and is still not weakened
+ * here — an `"agent"` line with no allowance behind it is refused exactly as it
+ * was, and there is no path by which a request can open its own.
  */
 export type BrokerOrigin =
   /** A line read off an agent's stdout by the runner. */
@@ -297,9 +333,33 @@ interface AgentBudget {
   writes: number[];
   /** Timestamps of recent calls that cost money (MAR-545). */
   spends: number[];
+  /**
+   * What the last press of Run now bought this agent, or absent (MAR-619).
+   *
+   * Beside the three windows rather than in a map of its own, because it is the
+   * same kind of fact about the same agent and `hostBroker`'s argument for one
+   * broker applies to it exactly: two places counting what one agent may spend
+   * is twice the ceiling, arrived at by accident.
+   */
+  runSpend?: RunSpendAllowance;
 }
 
 export interface Broker {
+  /**
+   * A person asked for a run: open this agent's spend allowance (MAR-619).
+   *
+   * The **only** way an allowance comes into being, and it is a method on the
+   * broker rather than a field on a request for `BrokerOrigin`'s reason — the
+   * fact it records is which code path DASH's own process took, and a request
+   * that could carry it is a request that could assert it. `electron/main.ts`
+   * calls this from the one place a person's Run press is turned into a command,
+   * and nothing else in DASH calls it at all.
+   *
+   * Idempotent in the direction that matters: a second press replaces the
+   * allowance rather than adding to it, so the ceiling stays one press's worth
+   * however many times somebody presses. See `openRunSpend`.
+   */
+  allowRunSpend(agentId: string, at: Date): void;
   /**
    * Answer one request about one agent's connection.
    *
@@ -330,6 +390,10 @@ export function createBroker(deps: BrokerDeps): Broker {
   }
 
   return {
+    allowRunSpend(agentId: string, at: Date): void {
+      budgetFor(agentId).runSpend = openRunSpend(at.getTime());
+    },
+
     async handle(
       agentId: string,
       request: BrokerRequest,
@@ -357,6 +421,18 @@ export function createBroker(deps: BrokerDeps): Broker {
       };
 
       const budget = budgetFor(agentId);
+
+      /**
+       * What the operation will actually be planned against.
+       *
+       * The agent's own input everywhere except an agent-origin spend, where
+       * DASH substitutes the owner's model below. Threaded as a separate value
+       * rather than written back into `request.input`, so that `inputKeys` —
+       * already taken, and documented as "the names of the fields the agent
+       * supplied" — stays a record of what the agent supplied rather than of
+       * what DASH added to it.
+       */
+      let plannedInput: Record<string, unknown> = request.input;
 
       /* 1. Replay. Before anything is read, so a repeat costs a set lookup. */
       if (budget.seenSet.has(request.request_id)) {
@@ -420,7 +496,36 @@ export function createBroker(deps: BrokerDeps): Broker {
          outlive the process — and then the spend budget. */
       if (isSpendOperation(operation)) {
         if (origin !== "person") {
-          return no("needs_a_person");
+          /*
+           * MAR-619, ADR 0016. An agent may spend inside an allowance a person
+           * opened by pressing Run now, and nowhere else.
+           *
+           * Consumed on the attempt rather than on a successful answer, for the
+           * reason `budget.calls` is: a refused call still reached a provider's
+           * door, and an allowance that only counted successes would let a
+           * failing loop probe the boundary for free.
+           */
+          if (!spendAllowed(budget.runSpend, startedAt)) {
+            return no("needs_a_person");
+          }
+          budget.runSpend = spendOne(budget.runSpend as RunSpendAllowance);
+
+          /*
+           * The model is the owner's, never the agent's (ADR 0011 decision 1).
+           *
+           * Overwritten rather than validated, and before `planCall` narrows
+           * anything, so there is no branch in which what an agent asked for
+           * survives into the body DASH sends. A missing choice is refused
+           * here rather than defaulted: DASH translating a declared *level*
+           * into a model name is the exact mapping ADR 0011 refuses to keep a
+           * second copy of, and picking one anyway would be DASH choosing what
+           * somebody's account gets billed for.
+           */
+          const chosen = deps.readModelChoice?.(agentId) ?? null;
+          if (chosen === null) {
+            return no("no_model_chosen");
+          }
+          plannedInput = { ...request.input, model: chosen };
         }
         if (deps.hasHandledRequest?.(agentId, request.request_id) === true) {
           return no("duplicate_request");
@@ -490,7 +595,7 @@ export function createBroker(deps: BrokerDeps): Broker {
       }
 
       /* 7. The typed input. */
-      const planned = planCall(operation, resolved.grant.profile.api_origin, request.input);
+      const planned = planCall(operation, resolved.grant.profile.api_origin, plannedInput);
       if (!planned.ok) {
         return no("invalid_input", accountHint);
       }

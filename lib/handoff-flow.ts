@@ -60,6 +60,7 @@ import {
   type AgentFolderFile,
 } from "./agent-folders";
 import { readSourceNames } from "./agent-sources";
+import { resolveConnectionRequirements } from "./connection-spec";
 import { STORED_SOURCES_PATH } from "./folder-changes";
 import type { HandoffOutcome, HandoffRecord } from "./handoff-ledger";
 import { checkManifestConstraints } from "./manifest-constraints";
@@ -850,14 +851,78 @@ export function connectionSentence(manifest: AnyAgentManifest): string {
   if (!isManifestV2(manifest)) {
     return "";
   }
-  const labels = (manifest.agent_dom.connections ?? [])
-    .map((connection) => connection.label)
-    .filter((label): label is string => typeof label === "string" && label.length > 0);
+  const connections = manifest.agent_dom.connections ?? [];
+  const optionalIds = optionalConnectionIds(manifest);
+  const labelOf = (connection: { id?: unknown; label?: unknown }): string | null =>
+    typeof connection.label === "string" && connection.label.length > 0 ? connection.label : null;
 
-  if (labels.length === 0) {
+  const needed: string[] = [];
+  const extra: string[] = [];
+  for (const connection of connections) {
+    const label = labelOf(connection);
+    if (label === null) {
+      continue;
+    }
+    (typeof connection.id === "string" && optionalIds.has(connection.id) ? extra : needed).push(
+      label,
+    );
+  }
+
+  if (needed.length === 0 && extra.length === 0) {
     return "It needs no accounts and no passwords.";
   }
-  return `Later, it will ask you to connect: ${joinPlainly(labels)}. Nothing is connected by adding it.`;
+  if (needed.length === 0) {
+    /*
+     * MAR-619. The sample agent's own case, and the reason this branch exists.
+     *
+     * Declaring the scout's model provider made the old sentence — *"Later, it
+     * will ask you to connect"* — the whole of what a first-time user read on
+     * the consent dialog, which is true and is the wrong emphasis: the sample
+     * still runs, still fetches, and still writes a digest with nothing
+     * connected at all. Leading with what it does *not* need keeps the
+     * reassurance MAR-457 put in that dialog, and the offer follows it.
+     *
+     * "If you want to" and not "you will need to", because `optional` on the
+     * requirement is the author saying this agent runs degraded — and a dialog
+     * that reported an optional connection as a coming demand would be DASH
+     * overstating somebody else's manifest.
+     */
+    return (
+      `It needs no accounts and no passwords to run. If you want to, you can later connect: ` +
+      `${joinPlainly(extra)} — it works without it, and nothing is connected by adding it.`
+    );
+  }
+  const first = `Later, it will ask you to connect: ${joinPlainly(needed)}. Nothing is connected by adding it.`;
+  return extra.length === 0
+    ? first
+    : `${first} It can also use ${joinPlainly(extra)}, and works without it.`;
+}
+
+/**
+ * Which of this manifest's connections its own author called optional
+ * (MAR-619).
+ *
+ * Read from `agent_dom.connection_requirements`, which is the only block that
+ * carries `optional` — the inventory in `agent_dom.connections` describes what
+ * a connection *is* and has never said whether the agent needs it.
+ *
+ * **Absent means required**, which is the conservative reading and the only
+ * safe one: every agent exported before MAR-569 declares no requirements at
+ * all, and treating that silence as "all optional" would turn a consent dialog
+ * for an agent that genuinely cannot work without Gmail into a shrug. A person
+ * told they need something they do not is inconvenienced; a person told they
+ * do not need something they do is misled about what they just added.
+ */
+function optionalConnectionIds(manifest: AnyAgentManifest): ReadonlySet<string> {
+  const resolved = resolveConnectionRequirements(manifest);
+  if (resolved.kind !== "v1") {
+    return new Set();
+  }
+  return new Set(
+    resolved.requirements
+      .filter((requirement) => requirement.optional === true)
+      .map((requirement) => requirement.connection_id),
+  );
 }
 
 /**

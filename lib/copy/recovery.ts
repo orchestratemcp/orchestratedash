@@ -846,6 +846,7 @@ export function describeBrokerRefusal(
     | "revoked"
     | "permission_missing"
     | "needs_a_person"
+    | "no_model_chosen"
     | "invalid_input"
     | "duplicate_request"
     | "rate_limited"
@@ -906,20 +907,42 @@ export function describeBrokerRefusal(
       };
 
     case "needs_a_person":
-      // MAR-545. The one refusal in this list that is not about permission, a
-      // provider or a fault, and it must not be worded as any of them: nothing
-      // is missing, nothing is broken, and there is nothing for the reader to
-      // reconnect or approve. So `actor` is `dash` — DASH made this rule and
-      // DASH is keeping it — and the next action is genuinely nothing, because
-      // asking a question is something the person does from the agent's own
-      // page when they want to.
+      // MAR-545, reworded by MAR-619. The one refusal in this list that is not
+      // about permission, a provider or a fault, and it must not be worded as
+      // any of them: nothing is missing, nothing is broken, and there is
+      // nothing for the reader to reconnect or approve.
+      //
+      // What changed is what it is *about*. It used to mean "an agent may never
+      // spend"; since ADR 0016 it means "no run you asked for is open", and the
+      // next action is a real one a person can take rather than the "nothing to
+      // do" that used to be honest here. `actor` stays `dash` — DASH made this
+      // rule and DASH is keeping it — because the reader has done nothing
+      // wrong by not having pressed a button.
       return {
-        headline: `${agent} tried to ask a model a question on its own, and DASH would not pay for it.`,
+        headline: `${agent} tried to use a model outside a run you asked for, and DASH would not pay for it.`,
         meaning:
-          "Questions to a model cost money from your own account. DASH only asks one when you ask it to, " +
-          "so this was refused before anything was sent and nothing was charged.",
-        next_action: `Nothing to do. You can ask ${agent} a question yourself on its page.`,
+          "Using a model costs money from your own account, so DASH only lets an agent do it while a run " +
+          "you started is going. This was refused before anything was sent and nothing was charged.",
+        next_action: `Run ${agent} from its page when you want it to do this.`,
         actor: "dash",
+      };
+
+    case "no_model_chosen":
+      // MAR-619. The other half of the same situation, and the half where the
+      // person genuinely has something to do — so `actor` is `user` and the
+      // action names the one control that fixes it. Worded from
+      // `describeUnavailable`'s `no_model_chosen`, which says the same thing to
+      // somebody standing in front of the chat, including the reassurance that
+      // matters most here: this work is the cheap kind, so the smallest model
+      // on offer is a real answer rather than a compromise.
+      return {
+        headline: `${agent} needs a model to do this, and none has been chosen.`,
+        meaning:
+          "Its steps each say how strong a model they need, and DASH does not pick one on your behalf — " +
+          "so this was refused before anything was sent and nothing was charged. Summarising what it " +
+          "found is the cheapest kind of work, so the smallest model your key reaches will do.",
+        next_action: `Pick a model on ${agent}'s page.`,
+        actor: "user",
       };
 
     case "invalid_input":

@@ -133,6 +133,73 @@
         }
       }
     },
+    "curation": {
+      "type": "object",
+      "description": "What a model made of this digest, or the honest account of why nothing did (MAR-619). Optional, and absent means a digest from an agent that never tried — every digest written before this existed, and every agent that declares no model provider. Note what this block does NOT do: it does not replace `items`, reorder them, or decide which of them are shown. `items` stays the flat, authoritative list, so lib/analyze.ts's grounding verdict is computed over exactly what it always was and a model cannot improve a run's score by grouping tidily. Groups reference items by position into that list, so a model that invents a headline cannot make it appear in a digest — the same discipline AskCitation keeps for the chat.",
+      "required": ["state"],
+      "allOf": [
+        {
+          "description": "A curated digest has to carry the grouping that makes it one. A block claiming `curated` with no groups would render as an ordinary digest wearing a label, which is exactly the claim this contract exists to make checkable.",
+          "if": { "properties": { "state": { "const": "curated" } }, "required": ["state"] },
+          "then": {
+            "required": ["groups"],
+            "$comment": "Present only to satisfy Ajv's strictRequired check, as elsewhere in this file. `true` adds no constraint.",
+            "properties": { "groups": true }
+          }
+        },
+        {
+          "description": "And an uncurated one has to say why, because 'this digest was not summarised' is a sentence DASH shows a person and it needs a reason in it. Required rather than optional so no producer can leave the surface to guess.",
+          "if": { "properties": { "state": { "const": "not_curated" } }, "required": ["state"] },
+          "then": { "required": ["reason"], "properties": { "reason": true } }
+        }
+      ],
+      "properties": {
+        "state": {
+          "enum": ["curated", "not_curated"],
+          "description": "Whether a model actually grouped this. Two values and no third: a partial curation is not a state, it is a `curated` block whose groups happen not to cover every item, and the renderer shows the remainder under DASH's own words."
+        },
+        "reason": {
+          "enum": [
+            "no_model_connection",
+            "not_connected",
+            "no_model_chosen",
+            "needs_a_person",
+            "refused",
+            "unreadable"
+          ],
+          "description": "Why nothing summarised this, in the kinds that lead somewhere different for the reader. Deliberately mirrors the broker's own refusal codes rather than collapsing them: `not_connected` is one press on the Connections page, `no_model_chosen` is one press on the agent's page, `needs_a_person` means the run was not one somebody asked for, and `no_model_connection` means this agent never claimed it could do this and nothing is wrong. `unreadable` is the one that is not a refusal at all — a provider answered, was paid, and said nothing DASH could read a grouping out of."
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "The model the provider says wrote this, which may not be the one asked for — a router is entitled to route. The agent's own report of what it was told, with telemetry v1's `model` standing rather than DASH's: DASH does not sit between an agent and its provider. Copy must attribute it."
+        },
+        "overview": {
+          "type": "string",
+          "maxLength": 600,
+          "description": "The model's lead paragraph. Model-authored text, rendered as text and never as markup, and it carries no link — the broker's projection refuses a line with an address in it rather than trusting the prompt that forbade one."
+        },
+        "groups": {
+          "type": "array",
+          "maxItems": 12,
+          "description": "How the model grouped the items. An item may appear in no group, and the renderer shows those under DASH's own heading rather than dropping them — the same rule that keeps an uncited item on screen.",
+          "items": {
+            "type": "object",
+            "required": ["label", "items"],
+            "properties": {
+              "label": { "type": "string", "minLength": 1, "maxLength": 80 },
+              "summary": { "type": "string", "maxLength": 400 },
+              "items": {
+                "type": "array",
+                "description": "Positions into this artifact's own `items` array, zero-based. Numbers and never text, which is the whole safety property: what crosses from the model is an index into a list the agent already had, and an index naming nothing is dropped by the agent before it is ever written here.",
+                "items": { "type": "integer", "minimum": 0 },
+                "maxItems": 200
+              }
+            }
+          }
+        }
+      }
+    },
     "items": {
       "type": "array",
       "description": "The digest itself. An item with no source_url is kept and rendered as uncited rather than dropped — hiding it is how a grounded verdict becomes theatre.",

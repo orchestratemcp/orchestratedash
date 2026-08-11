@@ -168,7 +168,7 @@ import {
 import { performFolderAction } from "./folder-update";
 import { buildNotifyConfiguration, performNotifyAction } from "./notify-settings";
 import { providerOperations } from "./oauth-session";
-import { startBroker } from "./broker-host";
+import { hostBroker, startBroker } from "./broker-host";
 import { ensureRunner, runnerFetch, stopRunner, type RunnerHandle } from "./runner-process";
 import { assertSampleTemplatesPresent, offerSampleAgent } from "./sample-agent";
 import {
@@ -688,8 +688,30 @@ export function registerCommandChannel(
   ipcMain.handle(SHELL_COMMAND_CHANNEL, async (_event, request: unknown) => {
     return dispatchCommand(request, {
       audit: (record) => console.warn(formatAuditLine(record)),
-      runAgentCommand: (input: AgentCommandInput) =>
-        runAgentCommand(input, {
+      runAgentCommand: (input: AgentCommandInput) => {
+        /*
+         * The press that pays for a model call (MAR-619, ADR 0016).
+         *
+         * `retry` is the verb behind Run now — see `buildAgentControl`, which
+         * binds the pending task to it — so this line is the moment a person
+         * asks for a run, and it is the **only** place in DASH that opens a
+         * spend allowance. Everything else about the command is unchanged.
+         *
+         * Before the command rather than after its result, because the agent
+         * begins working the instant the runner writes the line and would
+         * otherwise race an allowance opened on the way back. The cost of that
+         * ordering is a refused command that opened an allowance nothing
+         * spends, and it expires on its own; the opposite ordering is a run
+         * whose curation step is refused for a reason nobody can see.
+         *
+         * The other six verbs open nothing. `resume` in particular does not:
+         * it lets a run continue that a person already paid for, and treating
+         * it as a fresh press would be a second allowance for one press.
+         */
+        if (input.command === "retry") {
+          hostBroker().allowRunSpend(input.target.agent_id, new Date());
+        }
+        return runAgentCommand(input, {
           principal,
           // MAR-415: the adapter is chosen per agent, and is the real HTTP one
           // for any agent DASH holds a channel to. `noAdapter` remains the
@@ -697,7 +719,8 @@ export function registerCommandChannel(
           // remote one DASH has no credential for — and it still refuses
           // honestly rather than reporting an effect nothing performed.
           adapter: channels?.adapterFor(input.target.agent_id) ?? noAdapter,
-        }),
+        });
+      },
       runnerLifecycle: (action, agentId) => runnerLifecycle(runner, action, agentId),
       // MAR-440. Draws a menu and reaches nothing else — no store, no runner,
       // no provider. See `showApplicationMenu` for why the renderer cannot name

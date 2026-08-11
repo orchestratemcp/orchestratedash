@@ -1,6 +1,16 @@
 import type { ReactNode } from "react";
 
 import type { GroundingAnalysis } from "../../lib/analyze";
+/* MAR-619. Value imports, and safe on the same terms as `lib/copy/when.ts`
+   below: `lib/copy/curation.ts` imports nothing but types, so it reaches no
+   Node builtin and drags nothing into the renderer bundle. */
+import {
+  CURATED_HEADING,
+  CURATED_REMAINDER_HEADING,
+  describeCuratedBy,
+  describeNotCurated,
+} from "../../lib/copy/curation";
+import { humanizeAgentName } from "../../lib/copy/agent-name";
 import { describeDigestGaps, describeSourceFailure } from "../../lib/copy/recovery";
 /* A value import, and safe: `lib/copy/when.ts` has no imports at all, so it
    reaches no Node builtin and drags nothing into the renderer bundle — the rule
@@ -58,13 +68,49 @@ export function Digest({
 export function DigestBody({
   artifact,
   grounding,
+  agent,
+  service,
 }: {
   artifact: DigestArtifact;
   grounding: GroundingAnalysis | null;
+  /**
+   * What to call the agent in a sentence about it, or absent (MAR-619).
+   *
+   * Only the curation sentences name it, and they need the *display* name
+   * rather than the id — `buildAgentAsk`'s note records what a packaged
+   * screenshot caught when the two were confused, every sentence reading "Ask
+   * answered about anything it has saved".
+   *
+   * **Defaulted through `humanizeAgentName` and never to the raw id.** A
+   * default is what a call site gets when nobody thought about it, so it has to
+   * be the safe answer rather than the convenient one: `artifact.agent` is a
+   * slug, and `lib/copy/identifiers.ts` exists to keep slugs off a guided path.
+   * The humanized form is less specific than the author's own `display_name`
+   * and is never wrong.
+   */
+  agent?: string;
+  /** The model provider's friendly name, for the same sentences. */
+  service?: string;
 }): ReactNode {
   const uncited = new Set(grounding?.uncited ?? []);
   const unsupported = new Set((grounding?.unsupported ?? []).map((entry) => entry.headline));
   const gap = describeDigestGaps(artifact.sources_fetched ?? []);
+  const named = agent ?? humanizeAgentName(artifact.agent);
+
+  /*
+   * Which items the grouping placed, so the rest can be shown under DASH's own
+   * heading rather than lost.
+   *
+   * Computed here and not in the agent, because it is a rendering question: the
+   * artifact records what the model grouped, and what is left over is whatever
+   * this build of DASH did not draw above. An artifact written by a future
+   * agent that grouped everything simply produces an empty remainder.
+   */
+  const curation = artifact.curation;
+  const grouped =
+    curation?.state === "curated"
+      ? new Set(curation.groups.flatMap((group) => group.items))
+      : new Set<number>();
 
   return (
     <>
@@ -78,51 +124,234 @@ export function DigestBody({
         </div>
       )}
 
+      {/* MAR-619. What the digest adds up to, before the digest.
+
+          Above the items for `OutputContent`'s reason one level up — on an
+          agent whose entire purpose is a digest of the news, the first thing
+          under its title should be what it found, and a grouped reading of it
+          is more of that rather than less. The flat list survives underneath
+          in every case, so nothing is hidden behind the grouping. */}
+      <Curation
+        artifact={artifact}
+        agent={named}
+        service={service}
+        uncited={uncited}
+        unsupported={unsupported}
+      />
+
       {artifact.items.length === 0 ? (
         /* Not an error, and not worded as one. A run that read its sources and
            found nothing new did its job. */
         <p className="muted">Nothing new was found this time.</p>
       ) : (
-        <ol className="digest-items">
-          {artifact.items.map((item, index) => (
-            <li key={`${item.headline}:${String(index)}`}>
-              <h3>
-                {item.item_url === undefined ? (
-                  item.headline
-                ) : (
-                  <a href={item.item_url} rel="noreferrer noopener" target="_blank">
-                    {item.headline}
-                  </a>
-                )}
-              </h3>
-              {item.summary === undefined ? null : <p className="wrap">{item.summary}</p>}
-              <p className="muted">
-                {item.source_name ?? "Source not named"}
-                {publishedSuffix(item.published_at)}
-                {uncited.has(item.headline) ? (
-                  <>
-                    {" · "}
-                    <span className="chip chip-warn">no source given</span>
-                  </>
-                ) : unsupported.has(item.headline) ? (
-                  <>
-                    {" · "}
-                    <span
-                      className="chip chip-warn"
-                      title="This item names a source that this run did not report reading"
-                    >
-                      source not read in this run
-                    </span>
-                  </>
-                ) : null}
-              </p>
-            </li>
-          ))}
-        </ol>
+        <>
+          {/* The heading only appears when something above it took some of the
+              items. Without a grouping this is the whole digest and needs no
+              introduction, which is exactly what it was before MAR-619. */}
+          {grouped.size === 0 || grouped.size === artifact.items.length ? null : (
+            <h3 className="digest-remainder-heading">{CURATED_REMAINDER_HEADING}</h3>
+          )}
+          {/* Unnumbered once a grouping exists, and the packaged capture is why.
+
+              The flat digest has always been a numbered list, and it reads
+              correctly because there is one of them: item 3 is the third thing
+              the agent found. A grouped digest is several lists on one page,
+              each starting again at 1 — the first frame showed three different
+              headlines all numbered "1.", which reads as a rendering fault
+              rather than as a structure. The list stays an `ol` because the
+              order is still newest-first and that is a fact about the document;
+              what goes is the marker, which had stopped meaning anything.
+
+              Only when a grouping exists, so an ordinary digest is pixel-for-
+              pixel what it was before this issue. */}
+          <ol className={grouped.size === 0 ? "digest-items" : "digest-items digest-items-plain"}>
+            {artifact.items.map((item, index) =>
+              grouped.has(index) ? null : (
+                <li key={`${item.headline}:${String(index)}`}>
+                  <DigestItem
+                    item={item}
+                    uncited={uncited}
+                    unsupported={unsupported}
+                  />
+                </li>
+              ),
+            )}
+          </ol>
+        </>
       )}
 
       <SourceList artifact={artifact} />
     </>
+  );
+}
+
+/**
+ * One item, wherever it is drawn.
+ *
+ * Split out of `DigestBody` by MAR-619, when the same item started being drawn
+ * in two places on one page — inside a group and in the remainder underneath.
+ * One component rather than two loops, because the interesting part is the
+ * grounding chips and a second copy of that logic is a second place for an
+ * uncited item to quietly stop being marked.
+ *
+ * The heading level does not change between the two placements. A group's
+ * label is not a heading — see `Curation` — precisely so that these stay at the
+ * `h3` they have been since MAR-434 and the panel's own heading structure is
+ * unchanged.
+ */
+function DigestItem({
+  item,
+  uncited,
+  unsupported,
+}: {
+  item: DigestArtifact["items"][number];
+  uncited: ReadonlySet<string>;
+  unsupported: ReadonlySet<string>;
+}): ReactNode {
+  return (
+    <>
+      <h3>
+        {item.item_url === undefined ? (
+          item.headline
+        ) : (
+          <a href={item.item_url} rel="noreferrer noopener" target="_blank">
+            {item.headline}
+          </a>
+        )}
+      </h3>
+      {item.summary === undefined ? null : <p className="wrap">{item.summary}</p>}
+      <p className="muted">
+        {item.source_name ?? "Source not named"}
+        {publishedSuffix(item.published_at)}
+        {uncited.has(item.headline) ? (
+          <>
+            {" · "}
+            <span className="chip chip-warn">no source given</span>
+          </>
+        ) : unsupported.has(item.headline) ? (
+          <>
+            {" · "}
+            <span
+              className="chip chip-warn"
+              title="This item names a source that this run did not report reading"
+            >
+              source not read in this run
+            </span>
+          </>
+        ) : null}
+      </p>
+    </>
+  );
+}
+
+/**
+ * What a model made of this digest, or the honest account of why nothing did
+ * (MAR-619).
+ *
+ * ## Three renders, and the first one is the important absence
+ *
+ * `curation` absent draws **nothing at all**. That is every digest written
+ * before this existed and every agent that never declared a provider, and a
+ * component that put "not summarised" on those would be annotating thousands
+ * of perfectly good digests with a feature they were never part of.
+ * `lib/contracts.ts` keeps absent and `not_curated` apart for exactly this.
+ *
+ * ## Why a group's label is not a heading
+ *
+ * It is a `<p>` in a group container, not an `<h3>` or an `<h4>`. Two reasons,
+ * and the second is the one that decided it. A group's title is **written by a
+ * model**, so promoting it into the document outline would let untrusted text
+ * become the navigable structure of a DASH page — a person moving by heading
+ * would be moving through a model's words. And the items inside are already
+ * `h3`, from `DigestItem`, unchanged since MAR-434; making the label an `h3`
+ * too would flatten the two into one level, and making it an `h2` would jump
+ * above the section that contains it. `panel.tsx`'s own note on heading levels
+ * is what this is keeping intact.
+ */
+function Curation({
+  artifact,
+  agent,
+  service,
+  uncited,
+  unsupported,
+}: {
+  artifact: DigestArtifact;
+  agent: string;
+  service?: string;
+  uncited: ReadonlySet<string>;
+  unsupported: ReadonlySet<string>;
+}): ReactNode {
+  const { curation } = artifact;
+  if (curation === undefined) {
+    return null;
+  }
+
+  if (curation.state === "not_curated") {
+    const recovery = describeNotCurated(curation.reason, {
+      agent,
+      /*
+       * The provider's friendly name when the caller knows it, and a
+       * description when it does not. Never an id: a surface naming a service
+       * it could not resolve would otherwise print `openrouter` into a
+       * sentence, which is what `lib/copy/identifiers.ts` exists to prevent.
+       *
+       * "its" and not "your", matching `describeUnavailable`'s own stand-in.
+       * Every sentence in `describeNotCurated` is written to read with either
+       * form — see the possessive rule stated there, which this string is the
+       * reason for.
+       */
+      service: service ?? "its model provider",
+    });
+    return (
+      <div className="notice" role="status">
+        <p>
+          <strong>{recovery.headline}</strong>
+        </p>
+        <p>{recovery.meaning}</p>
+        <p className="next-action">{recovery.next_action}</p>
+      </div>
+    );
+  }
+
+  return (
+    <section className="digest-curation" aria-label={CURATED_HEADING}>
+      <h3>{CURATED_HEADING}</h3>
+      {curation.overview === undefined ? null : (
+        <p className="wrap digest-curation-overview">{curation.overview}</p>
+      )}
+
+      {curation.groups.map((group, index) => (
+        <div className="digest-group" key={`${group.label}:${String(index)}`}>
+          <p className="digest-group-label">
+            <strong>{group.label}</strong>
+          </p>
+          {group.summary === undefined ? null : <p className="wrap">{group.summary}</p>}
+          <ol className="digest-items digest-items-plain">
+            {group.items.map((position) => {
+              const item = artifact.items[position];
+              // An index naming nothing draws nothing. The agent already
+              // checked these against its own list, so reaching this means an
+              // artifact from a build that disagreed with this one — and a
+              // page a person is reading must not crash on the day they do.
+              return item === undefined ? null : (
+                <li key={`${group.label}:${String(position)}`}>
+                  <DigestItem item={item} uncited={uncited} unsupported={unsupported} />
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      ))}
+
+      {/* Who wrote this, on the surface, and no control beside it.
+
+          The mechanism belongs behind `InfoNote` by `lib/copy/info-note.ts`'s
+          rule and cannot go there: this component renders inside the
+          declarative panel, and ADR 0008 bars any control from that region.
+          `describeCuratedBy` carries the argument and the one clause of the
+          mechanism that survives it. */}
+      <p className="muted">{describeCuratedBy(curation.model ?? null)}</p>
+    </section>
   );
 }
 

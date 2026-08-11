@@ -610,10 +610,69 @@ interface RunArtifactBase {
   generated_at: string;
 }
 
+/**
+ * Why nothing summarised a digest, in the kinds that lead somewhere different.
+ *
+ * Mirrors the broker's own refusal codes rather than collapsing them, for
+ * `describeBrokerRefusal`'s reason: `not_connected` is one press on the
+ * Connections page and `no_model_chosen` is one press on the agent's own page,
+ * and a reader sent to the wrong one has been sent nowhere.
+ *
+ * `no_model_connection` is the ordinary case and is not a fault at all — an
+ * agent that never claimed it could summarise anything has not failed to. Every
+ * agent somebody scaffolds by hand is in it.
+ */
+export type CurationRefusal =
+  | "no_model_connection"
+  | "not_connected"
+  | "no_model_chosen"
+  | "needs_a_person"
+  | "refused"
+  | "unreadable";
+
+/** One group of a curated digest, as the agent wrote it down. */
+export interface CuratedDigestGroup {
+  label: string;
+  summary?: string;
+  /** Positions into the artifact's own `items`, zero-based. Never headlines. */
+  items: number[];
+}
+
+/**
+ * What a model made of a digest, or why nothing did (MAR-619).
+ *
+ * A union on `state` rather than one shape with optional members, for
+ * `RunArtifact`'s own reason: a renderer reading `groups ?? []` would draw an
+ * agent whose provider refused exactly like an agent that found nothing worth
+ * grouping, and those are opposite claims. The narrowing makes a caller branch.
+ *
+ * **It never replaces `items`.** The flat list stays authoritative and is what
+ * `analyzeGrounding` reads, so a model cannot change a run's grounding verdict
+ * by grouping tidily, and an item in no group is still an item on screen.
+ */
+export type DigestCuration =
+  | {
+      state: "curated";
+      groups: CuratedDigestGroup[];
+      /** The model's lead paragraph, when it wrote a usable one. */
+      overview?: string;
+      /** What the provider says answered. The agent's report, not DASH's record. */
+      model?: string;
+    }
+  | { state: "not_curated"; reason: CurationRefusal };
+
 export interface DigestArtifact extends RunArtifactBase {
   kind: "digest";
   sources_fetched?: ArtifactSource[];
   items: ArtifactItem[];
+  /**
+   * Absent for every digest written before MAR-619, and for every agent that
+   * declares no model provider at all. Absent is **not** `not_curated`: one
+   * means the agent never had this idea, the other means it tried and can say
+   * why, and a surface collapsing them would put a refusal on a digest nobody
+   * refused.
+   */
+  curation?: DigestCuration;
 }
 
 /**
