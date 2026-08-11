@@ -140,6 +140,93 @@ export function describeNoServerForAgent(agent: string): DeploySentence {
   };
 }
 
+/* ---------------------------------------------------------------------- *
+ * What the control should offer now (MAR-606 finding 31)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The deploy control, worded for what has already happened.
+ *
+ * ## The finding
+ *
+ * > *"ONce connected the button should instead say disconnect this agent from
+ * > the server or something."* — Henrik, MAR-489 attended run
+ *
+ * The surfaces went on offering to *send* an agent that was already there, so
+ * the one control on the page never acknowledged the thing the person had just
+ * done. Two symptoms followed from that: a second press looked like it would
+ * make a second copy — *"I could put the same agent two times on the server"* —
+ * and having just deployed, the only thing on offer was to deploy again.
+ *
+ * ## What is offered instead, and what is not
+ *
+ * Not "disconnect this agent from the server", which is the literal ask and is
+ * a control DASH cannot honestly draw: ADR 0014 is that DASH cannot start or
+ * stop a deployed agent, and MAR-602 is the issue that would change it. A button
+ * that claimed to stop something on somebody else's machine and could not would
+ * be worse than the stale one it replaced.
+ *
+ * What DASH can honestly say is what a second push actually does — it
+ * **replaces** — and what the person most likely wants after a push, which is to
+ * ask the server what it has now. Both are true today, and the second is a
+ * control the card already owns.
+ */
+export interface DeployOffer {
+  /** What the primary control says. */
+  label: string;
+  /**
+   * True when the primary should ask the server rather than send again.
+   *
+   * The moment after a successful push. A caller wires this to its own check
+   * action — the copy decides *what makes sense now*, and the page decides what
+   * that is called in its own wiring.
+   */
+  asks_rather_than_sends: boolean;
+  /**
+   * The sentence above the control, or null when the plain offer needs none.
+   *
+   * Non-null exactly when a press would do something other than what somebody
+   * would assume from a first reading — which is the only thing worth spending
+   * a line of prose above a button on.
+   */
+  note: string | null;
+}
+
+export function describeDeployOffer(input: {
+  agent: string;
+  server: string;
+  /** When DASH last sent this agent here, as a person would say it. */
+  sent_on: string | null;
+  /** True the moment a push from this card has succeeded. */
+  just_sent: boolean;
+}): DeployOffer {
+  if (input.just_sent) {
+    return {
+      label: `Check ${input.server}`,
+      asks_rather_than_sends: true,
+      // `describeDeploy`'s `sent` case already says DASH keeps no list and asks
+      // every time you check. This is that sentence turned into the control.
+      note: null,
+    };
+  }
+  if (input.sent_on === null) {
+    return { label: "Put it on this server", asks_rather_than_sends: false, note: null };
+  }
+  return {
+    label: "Replace the copy on this server",
+    asks_rather_than_sends: false,
+    /*
+     * The sentence that answers "have I now put it there twice?". DASH knows
+     * this from its own record — one row per agent and server — and the install
+     * replacing rather than accumulating is a property of the transport, not a
+     * guess about the machine. Both halves are things DASH is entitled to say.
+     */
+    note:
+      `DASH sent ${input.agent} to ${input.server} on ${input.sent_on}. Sending it again ` +
+      `replaces what is there rather than adding a second copy.`,
+  };
+}
+
 /**
  * When the server gave the answer being shown, or nothing.
  *
@@ -187,12 +274,21 @@ export function everyDeploySentence(refusal: string, agent = "News Scout", serve
     describeUndeployable(agent, refusal),
     describeNoServerForAgent(agent),
   ];
+  // MAR-606 finding 31. Every branch of the offer, reached by the inputs that
+  // produce it rather than by naming the branch.
+  const offers = [
+    describeDeployOffer({ agent, server, sent_on: null, just_sent: false }),
+    describeDeployOffer({ agent, server, sent_on: "10 August 2026", just_sent: false }),
+    describeDeployOffer({ agent, server, sent_on: "10 August 2026", just_sent: true }),
+  ];
+
   return [
     ...sentences.flatMap((copy) => [
       copy.headline,
       copy.detail,
       ...(copy.next_action === null ? [] : [copy.next_action]),
     ]),
+    ...offers.flatMap((offer) => [offer.label, ...(offer.note === null ? [] : [offer.note])]),
     describeAskedAt("2026-08-09T14:14:37Z") ?? "",
   ];
 }

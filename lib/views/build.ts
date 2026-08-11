@@ -106,6 +106,7 @@ import {
 } from "../workspace";
 import type {
   AgentDeployTarget,
+  AgentHostedOnView,
   AgentDeployView,
   AgentOriginView,
   AgentsView,
@@ -242,6 +243,12 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
       // Composed here rather than in the page for `damage`'s reason directly
       // below: both hosts must hand the renderer the same sentences.
       glance: glanceFor(agent.name),
+      // MAR-606. Where DASH has put this agent, from DASH's own record of doing
+      // it. One more read of a small table per row, beside the registration and
+      // folder reads this function already does per row — and, like them, it
+      // asks no server anything. See `AgentRow.hosted_on` for why this reverses
+      // `deploy_targets`'s deliberate absence from this view.
+      hosted_on: agentHostedOn(agent.name),
     })),
     // Composed here rather than in the page, so both hosts hand the renderer the
     // same sentence — the property this module exists to keep.
@@ -1294,6 +1301,36 @@ function agentDeployTargets(agent: string): AgentDeployTarget[] {
     });
   }
   return targets;
+}
+
+/**
+ * Which servers DASH has put this agent on (MAR-606).
+ *
+ * The narrow half of `agentDeployTargets` next door, for the fleet card: which
+ * servers and when, with no digest comparison. The comparison is real work —
+ * it reads a registration and hashes a stored file list — and doing it per card
+ * on the agents list would be paying for an answer that page has no room to
+ * show and no control to act on.
+ *
+ * A row whose host DASH no longer holds is dropped, exactly as its sibling does
+ * and for ADR 0010's reason: `host.forget` deletes these rows, so this should
+ * never fire, and the alternative to dropping is rendering a server with no
+ * name.
+ */
+function agentHostedOn(agent: string): AgentHostedOnView[] {
+  const hosted: AgentHostedOnView[] = [];
+  for (const record of readAgentDeploys(agent)) {
+    const host = readHost(record.host_id);
+    if (host === null) {
+      continue;
+    }
+    hosted.push({
+      host_id: record.host_id,
+      label: host.label,
+      sent_on: plainDay(record.sent_at),
+    });
+  }
+  return hosted;
 }
 
 /** Whether DASH holds a folder of its own for this agent, at all. */

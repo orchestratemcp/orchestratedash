@@ -30,6 +30,7 @@ import { describeDuplicateRecords, summariseServers } from "../../../lib/server-
 import { describeDeployArrangement } from "../../../lib/deploy/receipt";
 import { ServerCard } from "../../_components/server-card";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
+import { sightings } from "../../_data/sightings";
 import { submitHostCommand } from "../../_data/source";
 import { useCanAct, useHost, useView } from "../../_data/use-view";
 import type { SavedServerView } from "../../../lib/views/types";
@@ -801,9 +802,19 @@ export default function HostsPage(): ReactNode {
     setStandings((current) => ({ ...current, [hostId]: standing }));
   }
 
-  /** Stamped when a *server's answer* arrives, never when a check begins. */
-  function stampChecked(hostId: string): void {
-    setCheckedAt((current) => ({ ...current, [hostId]: new Date().toISOString() }));
+  /**
+   * Stamped when a *server's answer* arrives, never when a check begins.
+   *
+   * Returns the instant it recorded, so the sighting log and the card's own
+   * "DASH last asked" carry the same one. Reading the clock twice would put two
+   * moments a few milliseconds apart on one answer — which is harmless until the
+   * two land either side of a minute boundary and one surface says 21:14 while
+   * the other says 21:15 about the same reply.
+   */
+  function stampChecked(hostId: string): string {
+    const at = new Date().toISOString();
+    setCheckedAt((current) => ({ ...current, [hostId]: at }));
+    return at;
   }
 
   function setNotice(hostId: string, detail: string | null): void {
@@ -842,7 +853,27 @@ export default function HostsPage(): ReactNode {
       return;
     }
     setStanding(server.host_id, standing);
-    stampChecked(server.host_id);
+    const at = stampChecked(server.host_id);
+
+    /*
+     * MAR-606, ADR 0015. What the server named, kept for the rest of this
+     * window so the fleet card can draw it — the check happens here and the
+     * question is asked on a page that cannot run one.
+     *
+     * Recorded only where the server actually answered. A refusal establishes
+     * nothing about what is on the machine, and an entry meaning "DASH asked
+     * and does not know" would be indistinguishable on a card from one meaning
+     * "DASH asked and it was empty" — so a server that stops answering keeps
+     * its last sighting, and the timestamp on it is what says how much to trust
+     * it.
+     */
+    if (standing.step === "reachable") {
+      sightings.record(server.host_id, {
+        label: server.label,
+        agents: standing.agents_there,
+        at,
+      });
+    }
   }
 
   /**
@@ -940,6 +971,11 @@ export default function HostsPage(): ReactNode {
       setNotice(server.host_id, result.detail ?? "DASH could not forget this server safely.");
       return;
     }
+    // ADR 0010's deletion rule, applied to the session's sighting as well as to
+    // the stored rows main just removed: once the label is gone, a surviving
+    // sighting could only render as a claim about a machine DASH can no longer
+    // name.
+    sightings.forget(server.host_id);
     setRevision((current) => current + 1);
   }
 

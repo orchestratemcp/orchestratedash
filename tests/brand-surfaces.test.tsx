@@ -123,6 +123,7 @@ function row(name: string, avatar: OName): AgentRow {
     // characters, and a row with no answer to the four questions is not a row
     // any surface may be handed.
     glance: [GLANCE_ALL_CLEAR],
+    hosted_on: [],
   };
 }
 

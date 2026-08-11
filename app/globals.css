@@ -1925,6 +1925,65 @@ a.plain:hover {
 }
 
 /* ---------------------------------------------------------------------- *
+ * What is on this server (MAR-606, ADR 0015)
+ *
+ * The same rule-above-it treatment the deploy panel gets, and for the same
+ * reason: a continuation of the card rather than a second card. It is a list of
+ * two facts per row — a name and a standing — over a sentence that carries the
+ * moment the standing was observed.
+ *
+ * The row is a grid rather than a flex line because the sentence wraps and the
+ * name must not: at 720 a sentence beside a name produces a two-character column
+ * and a twelve-line paragraph, which is the reflow the three capture widths
+ * exist to catch. Stacked, it reflows into prose, which is what it is.
+ * ---------------------------------------------------------------------- */
+.host-contents {
+  margin-top: var(--density-gap);
+  padding-top: var(--density-gap);
+  border-top: 1px solid var(--line);
+}
+
+.host-contents-list {
+  list-style: none;
+  margin: var(--density-gap) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--density-gap);
+}
+
+.host-content {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+/* The name and its chip on one line, wrapping as a pair rather than the chip
+   dropping alone to a line of its own — they are one statement. */
+.host-content-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ---------------------------------------------------------------------- *
+ * Where an agent runs, on its fleet card (MAR-606)
+ *
+ * A stacked chip and sentence rather than a chip row, because the sentence has
+ * to be read: it carries the moment the sighting was taken, which is the whole
+ * licence for the chip's colour beside it. A card is a third of the page wide at
+ * 1280 and the full width at 720, so the block is a grid at both — a chip and a
+ * sentence on one line would produce a one-word column and a six-line paragraph
+ * at the narrow end.
+ * ---------------------------------------------------------------------- */
+.fleet-hosting {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  margin: var(--density-gap) 0 0;
+}
+
+/* ---------------------------------------------------------------------- *
  * Running an agent on a server, from the agent's own page (MAR-577)
  *
  * The second of the two directions a deploy can start from. No new card system

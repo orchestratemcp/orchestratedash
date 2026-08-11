@@ -9,7 +9,11 @@ import { TechnicalDetails } from "./_components/record-card";
 import { OAvatar } from "./_components/o-avatar";
 import { HostNotice, ViewFailed, ViewLoading } from "./_components/view-state";
 import { checkRunnerStatus, retireRunnerStore } from "./_data/source";
+import { useSightings } from "./_data/sightings";
 import { useCanAct, useHost, useView } from "./_data/use-view";
+import { describeAgentHosting } from "../lib/host-sighting";
+import { sightingFor, type SightingLog } from "../lib/host-sightings";
+import type { AgentHostedOnView } from "../lib/views/types";
 import { agentWorkspaceHref } from "./_data/routes";
 import { oFor } from "../lib/brand/o-cast";
 import { describeRunnerStoreDamage, type RunnerStoreDamageKind } from "../lib/copy/recovery";
@@ -39,6 +43,15 @@ export default function AgentsPage(): ReactNode {
   const host = useHost();
   const canAct = useCanAct();
   const storeDamage = useRunnerStoreDamage(canAct);
+  /*
+   * MAR-606. What the Servers page saw, this window (ADR 0015).
+   *
+   * Empty until somebody has pressed Check somewhere, which is the honest
+   * majority case and the one every card is worded for. This page never asks a
+   * server anything — see `useView`'s own header on why it does not poll, and
+   * ADR 0015 on why a sighting is not stored.
+   */
+  const log = useSightings();
 
   return (
     <>
@@ -210,6 +223,24 @@ export default function AgentsPage(): ReactNode {
                   is what keeps this a row of facts rather than a row of meters.
                 */}
                 <GlanceChips agent={agent.name} chips={agent.glance} />
+                {/*
+                  MAR-606. Where this agent runs, when that is anywhere but this
+                  computer.
+
+                  Below the glance chips rather than among them, and that is not
+                  a layout preference. `lib/copy/glance.ts` reserves those four
+                  for *things that need you*, and its tone scale has no success
+                  colour at all — a card is a record of an agent at rest and has
+                  nothing live to report. This does: a sighting is DASH having
+                  just looked at a process on a machine and been told yes, which
+                  is the exception that comment anticipated. Keeping it out of
+                  `GlanceChip` is what stops emerald leaking into a scale built
+                  on not having one.
+
+                  Draws nothing for an agent DASH has never sent anywhere, which
+                  is almost all of them.
+                */}
+                <AgentHosting agent={agent.name} hostedOn={agent.hosted_on} log={log} />
                 <p className="card-meta">
                   <span className="value">{describeRunCount(agent.run_count)}</span>
                   <span aria-hidden="true"> · </span>
@@ -251,6 +282,71 @@ export default function AgentsPage(): ReactNode {
         </>
       )}
     </>
+  );
+}
+
+/**
+ * Where one agent runs, when that is anywhere but this computer (MAR-606).
+ *
+ * Two sources, joined here because neither is complete on its own and only a
+ * renderer holds both:
+ *
+ * - `hostedOn` is DASH's own deploy record, on the view, durable, and true on a
+ *   cold start. It is what makes the indicator appear at all.
+ * - `log` is what a server said when somebody last pressed Check, held for this
+ *   window only (ADR 0015). It is what gives the indicator a colour.
+ *
+ * With no sighting the card says DASH sent this here and has not asked since,
+ * which is honest and is the state a freshly opened window is always in. It is
+ * never blank while a deploy record exists, because "we have not looked" and
+ * "there is nothing to say" are different facts and only one of them is true.
+ *
+ * Exported so a render test can drive both halves without a store or a check.
+ */
+export function AgentHosting({
+  agent,
+  hostedOn,
+  log,
+}: {
+  agent: string;
+  hostedOn: readonly AgentHostedOnView[];
+  log: SightingLog;
+}): ReactNode {
+  const first = hostedOn[0];
+  if (first === undefined) {
+    return null;
+  }
+  /*
+   * The newest sighting across this agent's servers, or null when none has been
+   * taken. Falls back to the newest *deploy*, which is `hostedOn[0]` — so an
+   * unchecked agent still names a server rather than nothing.
+   */
+  const seen = sightingFor({ agent, sent_to: hostedOn, log });
+  const server = seen?.label ?? first.label;
+  const hosting = describeAgentHosting({
+    agent,
+    server,
+    seen: seen?.seen ?? null,
+    sent_on: hostedOn.find((one) => one.label === server)?.sent_on ?? first.sent_on,
+    at: seen?.at ?? null,
+  });
+  if (hosting === null) {
+    return null;
+  }
+  return (
+    <p className="fleet-hosting">
+      <span className={`chip chip-${hosting.tone}`}>{hosting.chip}</span>
+      {/* The sentence carries the moment, which is what licenses the chip's
+          colour at all — see ADR 0015. It is rendered rather than hidden in a
+          title, for the reason `GlanceChip.meaning` is: a fact somebody has to
+          discover by pointing at something is a fact most people never read. */}
+      <span className="muted wrap">{hosting.sentence}</span>
+      {hostedOn.length > 1 ? (
+        <span className="muted wrap">
+          DASH has sent it to {String(hostedOn.length)} servers. The Servers page lists them all.
+        </span>
+      ) : null}
+    </p>
   );
 }
 

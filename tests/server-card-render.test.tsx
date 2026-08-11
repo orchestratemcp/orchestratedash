@@ -363,11 +363,13 @@ describe("the deploy panel", () => {
       deploy?: DeployStanding | null;
       report?: HostConnectState;
       checkedAt?: string | null;
+      /** DASH's own record of what it already put on this server (MAR-606). */
+      server?: SavedServerView;
     } = {},
   ): string =>
     renderToStaticMarkup(
       <DeployPanel
-        server={SERVER}
+        server={over.server ?? SERVER}
         agents={agents}
         busy={false}
         canAct
@@ -378,8 +380,70 @@ describe("the deploy panel", () => {
         onChoose={() => undefined}
         onCancel={() => undefined}
         onDeploy={() => undefined}
+        onCheck={() => undefined}
       />,
     );
+
+  /*
+   * MAR-606 finding 31, and Henrik's own sentence: *"ONce connected the button
+   * should instead say disconnect this agent from the server or something."*
+   *
+   * Not literally that — ADR 0014 is that DASH cannot start or stop a deployed
+   * agent, and a button claiming to would be worse than the stale one. What the
+   * surface can honestly change to is what a second press actually does, and
+   * what makes sense the moment a push lands.
+   */
+  describe("what the control offers, after a deploy", () => {
+    const SENT_HERE: SavedServerView = {
+      ...SERVER,
+      sent: [{ agent: SENDABLE.name, sent_at: "2026-08-10T21:00:00Z", sent_on: "10 August 2026" }],
+    };
+
+    it("offers to send, the first time", () => {
+      const html = panel([SENDABLE], { chosenAgent: SENDABLE.name });
+      expect(html).toContain("Put it on this server");
+      expect(html).not.toContain("Replace the copy");
+    });
+
+    it("offers to replace once DASH has a record of sending it here", () => {
+      /*
+       * The answer to *"I could put the same agent two times on the server."*
+       * The install replaces rather than accumulating, DASH knows that from its
+       * own record, and saying so above the control is what stops the second
+       * press looking like it makes a second copy.
+       */
+      const html = panel([SENDABLE], { chosenAgent: SENDABLE.name, server: SENT_HERE });
+      expect(html).toContain("Replace the copy on this server");
+      expect(html).toContain("rather than adding a second copy");
+      expect(html).toContain("10 August 2026");
+    });
+
+    it("stops re-offering to send the moment a push has landed", () => {
+      // The finding itself. The one thing that can answer the question a person
+      // has at that moment is the server, so that is what the primary does.
+      const html = panel([SENDABLE], {
+        chosenAgent: SENDABLE.name,
+        server: SENT_HERE,
+        deploy: { step: "sent", agent: SENDABLE.name, server: SERVER.label },
+      });
+      expect(html).toContain(`Check ${SERVER.label}`);
+      expect(html).not.toContain("Put it on this server");
+      // Reachable, but no longer the thing being pushed at you.
+      expect(html).toContain("Send it again");
+      expect(html).toContain("Close");
+      expect(html).not.toContain("Not now");
+    });
+
+    it("keeps offering to send while a different agent's push is settling", () => {
+      // The standing belongs to one agent. Somebody who deploys A and then picks
+      // B must be offered B's own state, not A's aftermath.
+      const html = panel([SENDABLE, MIGRATED], {
+        chosenAgent: MIGRATED.name,
+        deploy: { step: "sent", agent: SENDABLE.name, server: SERVER.label },
+      });
+      expect(html).not.toContain(`Check ${SERVER.label}`);
+    });
+  });
 
   it("carries ADR 0007's receipt before the deploy rather than with it", () => {
     /*
@@ -546,6 +610,7 @@ describe("an agent DASH cannot send", () => {
         onChoose={() => undefined}
         onCancel={() => undefined}
         onDeploy={() => undefined}
+        onCheck={() => undefined}
       />,
     );
 
@@ -598,6 +663,7 @@ describe("a deploy while it is happening, and after", () => {
         onChoose={() => undefined}
         onCancel={() => undefined}
         onDeploy={() => undefined}
+        onCheck={() => undefined}
       />,
     );
 

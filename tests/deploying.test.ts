@@ -159,10 +159,66 @@ describe("reading a probe's answer, once for two surfaces", () => {
       label: SERVER,
       runner_build: null,
       agents_running: 2,
+      // An answer that carried no list produces an empty one, never an invented
+      // entry. The surfaces word that as "the server did not name it".
+      agents_there: [],
     });
     expect(readProbeStanding(SERVER, { ok: true, data: {} })).toMatchObject({
       agents_running: 0,
+      agents_there: [],
     });
+  });
+
+  /*
+   * MAR-606, ADR 0015. The names travel now, and they arrive from a reply that
+   * originated on somebody else's machine — so every entry is checked rather
+   * than cast.
+   */
+  it("reads the server's own list of what it holds", () => {
+    expect(
+      readProbeStanding(SERVER, {
+        ok: true,
+        data: {
+          agents_running: 1,
+          agents_there: [
+            { agent_id: "News Scout", running: true },
+            { agent_id: "Weather Watch", running: false },
+          ],
+        },
+      }),
+    ).toMatchObject({
+      agents_there: [
+        { agent_id: "News Scout", running: true },
+        { agent_id: "Weather Watch", running: false },
+      ],
+    });
+  });
+
+  it("drops a malformed entry rather than inventing an agent", () => {
+    /*
+     * A shorter list degrades into "the server did not name it", which is a
+     * sentence a person can act on. An entry with no name, or a merely
+     * truthy-ish `running`, must never become an agent on a card — the whole
+     * surface rests on this list being the server's own word.
+     */
+    expect(
+      readProbeStanding(SERVER, {
+        ok: true,
+        data: {
+          agents_running: 1,
+          agents_there: [
+            { running: true },
+            { agent_id: "", running: true },
+            { agent_id: "News Scout", running: "yes" },
+            "News Scout",
+          ],
+        },
+      }),
+    ).toMatchObject({ agents_there: [{ agent_id: "News Scout", running: false }] });
+
+    expect(
+      readProbeStanding(SERVER, { ok: true, data: { agents_running: 1, agents_there: "two" } }),
+    ).toMatchObject({ agents_there: [] });
   });
 
   it("carries each of the nine problems through as itself", () => {

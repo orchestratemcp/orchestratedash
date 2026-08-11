@@ -207,6 +207,78 @@ export function describeAgentOnHost(input: {
 }
 
 /* ---------------------------------------------------------------------- *
+ * One agent, on a fleet card
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The hosting indicator on a fleet card (MAR-606).
+ *
+ * > *"AN agent that is hosted online should have like an icon or somthing on
+ * > its fleet card."* — Henrik, MAR-489 attended run
+ *
+ * ## The chip names the server, and that is deliberate
+ *
+ * `describeAgentOnHost` above produces chips like *"seen running"*, which is
+ * right on a server card where the server is the heading. On a fleet card the
+ * server is the new information, and a chip that said only "seen running" would
+ * be a card telling somebody their agent is running *somewhere*.
+ *
+ * It also means the chip is never colour alone. `seen running` is drawn in the
+ * success tone and `sent to` is not — but the two say different words as well as
+ * wearing different colours, so the card is readable by somebody who cannot
+ * tell them apart.
+ *
+ * ## Why there is an indicator before any check
+ *
+ * `sent to Hostinger` is the cold-start state and is the one most people will
+ * see: a window that has just opened has checked nothing. It is drawn in the
+ * muted tone and it is not a claim about the machine — it is ADR 0010's own
+ * permitted sentence, *"DASH last sent this agent to marketing-vps on 7
+ * August."* Without it the card would be blank until somebody visited another
+ * page, which is the same as not answering the question.
+ */
+export interface AgentHostingIndicator {
+  chip: string;
+  tone: "ok" | "warn" | "muted";
+  /** The whole sentence, carrying the moment. Rendered under the chip. */
+  sentence: string;
+}
+
+/**
+ * What a fleet card says about where this agent is, or null when DASH has never
+ * sent it anywhere — which is almost every agent, and draws nothing.
+ */
+export function describeAgentHosting(input: {
+  agent: string;
+  server: string;
+  seen: HostAgentSighting | null;
+  sent_on: string | null;
+  at: string | null;
+}): AgentHostingIndicator | null {
+  if (input.sent_on === null) {
+    /*
+     * No deploy record, so this card has nothing to say. A server naming an
+     * agent DASH never sent there is a real state and it is the *server*
+     * card's to report — see `describeWhatIsOnHost`. Saying it here would tell
+     * somebody their agent is on a machine DASH has no record of sending it
+     * to: alarming, unactionable from this page, and one bundle-id collision
+     * away from being wrong.
+     */
+    return null;
+  }
+  const row = describeAgentOnHost(input);
+  const chip =
+    row.standing === "seen_running"
+      ? `seen running on ${input.server}`
+      : row.standing === "seen_stopped"
+        ? `seen stopped on ${input.server}`
+        : row.standing === "sent_not_seen"
+          ? `not on ${input.server}`
+          : `sent to ${input.server}`;
+  return { chip, tone: row.tone, sentence: row.sentence };
+}
+
+/* ---------------------------------------------------------------------- *
  * One server, all of it
  * ---------------------------------------------------------------------- */
 
