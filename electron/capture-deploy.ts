@@ -388,12 +388,49 @@ function appWindowLoaded(): Promise<BrowserWindow> {
 const written: string[] = [];
 const measurements: object[] = [];
 
+/**
+ * Photograph one frame, retrying the compositor rather than the whole run.
+ *
+ * ## Why this is a loop
+ *
+ * `capturePage()` rejects with `UnknownVizError` on the first attempt after the
+ * window has been resized — MAR-583 measured it as every 768 and 375 frame
+ * retrying once and no 1280 frame retrying at all. `electron/capture-models.ts`
+ * has had this loop since; **this harness did not, and it cost four runs of
+ * MAR-609's** before the difference was noticed. Each died partway through with
+ * one rejected capture, having already written between four and eighty-odd
+ * good images, and the second run died at a different frame than the first —
+ * which is what sent the session looking for an environmental cause rather than
+ * the missing retry that was sitting in a sibling file.
+ *
+ * A longer `settle()` does not fix it: the wait is for a compositor frame, not
+ * for time.
+ *
+ * **It still throws at the end.** A harness that swallowed this would write a
+ * short set of images and report success, which is worse than a failed run —
+ * see `written` and the count this file logs when it finishes.
+ */
 async function shoot(target: BrowserWindow, name: string): Promise<void> {
-  const image = await within(`capturePage for ${name}`, 20_000, target.webContents.capturePage());
-  writeFileSync(path.join(OUT, `${name}.png`), image.toPNG());
-  const size = image.getSize();
-  written.push(name);
-  console.log(`[deploy] ${name}.png ${String(size.width)}x${String(size.height)}`);
+  let last: unknown = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      const image = await within(
+        `capturePage for ${name}`,
+        20_000,
+        target.webContents.capturePage(),
+      );
+      writeFileSync(path.join(OUT, `${name}.png`), image.toPNG());
+      const size = image.getSize();
+      written.push(name);
+      console.log(`[deploy] ${name}.png ${String(size.width)}x${String(size.height)}`);
+      return;
+    } catch (error: unknown) {
+      last = error;
+      console.log(`[deploy] ${name} did not compose on attempt ${String(attempt + 1)}; retrying`);
+      await settle(700);
+    }
+  }
+  throw new Error(`could not photograph ${name}: ${String(last)}`);
 }
 
 /**
