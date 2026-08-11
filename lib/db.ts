@@ -1037,6 +1037,55 @@ const MIGRATIONS: readonly Migration[] = [
 
   CREATE INDEX IF NOT EXISTS fleet_grants_by_agent ON fleet_grants (agent);
   `,
+
+  // ---------------------------------------------------------------------
+  // MAR-611 (ADR 0017): an agent can come back off a server.
+  //
+  // Deploy was one-way. `agent_deploys` recorded that DASH sent bytes on a date
+  // and there was no second date to record, because there was no second act.
+  //
+  // The column is on `agent_deploys` rather than in a table of its own, and the
+  // reason is ADR 0010's own: this table holds **DASH's memory of its own
+  // outbound acts**, and taking an agent back off a server is one of those. It
+  // is the same (agent, server) pair, and the pair is the primary key -- a
+  // separate table would be a second row about one relationship, joined on the
+  // key it would have been a column of.
+  //
+  // What must NOT be read out of it: anything present-tense. `brought_home_at`
+  // is "DASH removed this on that date", exactly as `sent_at` is "DASH sent this
+  // on that date". Neither is a claim about what is on the server now, and the
+  // ADR 0010 rule that forbids a `running` column here forbids a `present` one
+  // just as firmly.
+  //
+  // NULL is the ordinary state and means "DASH has not brought this back",
+  // which is deliberately NOT the same as "it is still there" -- somebody may
+  // have removed it by hand on a machine DASH does not administer.
+  //
+  // recordAgentDeploy clears it on a fresh push, because a row whose two dates
+  // both stood would say DASH sent something and then removed it, about a copy
+  // that is the newest thing DASH has sent.
+  //
+  // ## Why this one is a function and asks first
+  //
+  // The two `ALTER TABLE` steps above it are bare SQL, and they can be: they
+  // sit below migration 10, which nothing rewinds past. This one is the newest
+  // step, and `tests/store-sqlite.test.ts` re-creates a pre-MAR-553 store by
+  // setting `user_version` back to 10 and letting every later migration run
+  // again — a shape that has already forced two of those tests to drop a table
+  // by hand so the step that created it would not fail on the duplicate.
+  //
+  // A guard is the better answer than a third compensation, and not only for the
+  // tests. `ADD COLUMN` is the one migration form whose failure mode is a store
+  // that will not open: this repository has had its store damaged twice, and
+  // `retireDamagedStore` exists because the recovery from that is worse than any
+  // amount of care taken here. A step that asks what is already there costs one
+  // pragma and cannot be the reason somebody's history becomes unreachable.
+  (database) => {
+    const columns = database.prepare("PRAGMA table_info(agent_deploys)").all();
+    if (!columns.some((column) => String(column["name"]) === "brought_home_at")) {
+      database.exec("ALTER TABLE agent_deploys ADD COLUMN brought_home_at TEXT");
+    }
+  },
 ];
 
 /* ---------------------------------------------------------------------- *

@@ -100,9 +100,12 @@ describe("schema", () => {
     // MAR-593's two fleet tables (ADR 0013) — a connection that exists before
     // any agent does, and the per-agent decisions somebody made about it.
     // Asserted as a number rather than as MIGRATIONS.length so that appending a
-    // migration is a deliberate edit here too.
+    // migration is a deliberate edit here too. 20 is MAR-611's second date on
+    // `agent_deploys` (ADR 0017) -- the first step in this list written as a
+    // function purely so it can be re-applied, because the two tests below
+    // rewind `user_version` to 10 and every later step runs again.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(19);
+    expect(version.user_version).toBe(20);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -500,7 +503,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(19);
+    ).toBe(20);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

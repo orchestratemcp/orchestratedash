@@ -10,6 +10,7 @@
  * ssh host collect
  * ssh host connect    <- joins the runner's socket to stdio; not JSON
  * ssh host channel    <- hands back the credential that pipe is spoken with
+ * ssh host uninstall  <- takes one bundle off this machine
  * ```
  *
  * ## What this is a boundary against, said plainly
@@ -434,6 +435,106 @@ function collect(root: string, bundleId: string, lines: number): DeployAnswer {
 }
 
 /* ---------------------------------------------------------------------- *
+ * uninstall — the only verb that removes anything (MAR-611)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Take one bundle off this machine.
+ *
+ * ## The refusal is the feature
+ *
+ * `install` already removes a bundle's directory — `rmSync(directory, {
+ * recursive: true, force: true })`, so a re-install replaces rather than merges
+ * — so this is not a new capability on the host any more than `channel` was. It
+ * is the same `rmSync` reached deliberately rather than as a step on the way to
+ * writing something back.
+ *
+ * What is new is that nothing is written afterwards, and that changes what the
+ * call has to check. **A running runner is refused**, and it is refused here
+ * rather than only in DASH:
+ *
+ * - A directory removed out from under a live process leaves a runner writing
+ *   into a deleted tree, on a machine nobody is watching, holding somebody's
+ *   agent history. It is the quiet version of the force-kill AGENTS.md forbids —
+ *   `stop` already declines to escalate to a signal for that exact reason, and a
+ *   verb that deleted the process's world instead would be doing worse by
+ *   another route.
+ * - A rule that lived only in the sender is a rule the host does not have. That
+ *   is `checkDeployRequest`'s argument for running on both ends, and it applies
+ *   with more force to the one verb whose mistake cannot be undone.
+ *
+ * So the order — stop, then uninstall — is a property of this program, and the
+ * copy-before-remove order is a property of `lib/deploy/bring-home.ts`. Two
+ * halves of the same discipline, kept in the two places that can each see one.
+ *
+ * ## What goes, and what stays
+ *
+ * The bundle directory and the record beside it: the agent's files, the runner
+ * that served it, its log, and its `data/` — which holds the runner's own store
+ * and is where the host's account of what that agent did lives. That last one is
+ * why DASH copies first, and why this returns nothing about what it destroyed:
+ * a verb that summarised the evidence on its way past would be a second path to
+ * facts the control plane already owns, and the two would disagree the first
+ * time either changed.
+ *
+ * Nothing above the bundle is touched. The root stays, the other bundles stay,
+ * and the helper and the allowed-keys line stay — removing DASH from a server
+ * entirely is the printed step the setup script ends with, performed by a person
+ * on the machine they administer.
+ */
+function uninstall(root: string, bundleId: string): DeployAnswer {
+  const record = readRecord(root, bundleId);
+  const directory = bundleDirectory(root, bundleId);
+  if (record === null && !existsSync(directory)) {
+    // Idempotent by decision, not by accident — see `DEPLOY_VERBS`. A
+    // bring-home whose last step failed has to be safe to press again, and a
+    // second press must not report a problem the person cannot act on.
+    return {
+      ok: true,
+      verb: "uninstall",
+      bundle_id: bundleId,
+      removed: false,
+      detail: "There was nothing installed under that name.",
+    };
+  }
+
+  if (record !== null && record.pid !== null && processAlive(record.pid)) {
+    return {
+      ok: false,
+      problem: "still_running",
+      detail:
+        "That bundle's runner is still running, so the helper will not remove the files it is " +
+        "using. Ask it to stop first.",
+    };
+  }
+
+  // The record last, so a failure part-way leaves the bundle findable rather
+  // than leaving an orphaned directory with nothing naming it. `status` reads
+  // the records, so a directory with no record is invisible to every other verb.
+  try {
+    rmSync(directory, { recursive: true, force: true });
+    rmSync(recordPath(root, bundleId), { force: true });
+  } catch (error: unknown) {
+    return {
+      ok: false,
+      problem: "remove_failed",
+      // The class and not the path. This string reaches a log on DASH's side,
+      // and a filesystem error's message names directories on a machine DASH
+      // does not administer.
+      detail: `The files could not be removed: ${(error as { code?: string } | null)?.code ?? "unknown reason"}.`,
+    };
+  }
+
+  return {
+    ok: true,
+    verb: "uninstall",
+    bundle_id: bundleId,
+    removed: true,
+    detail: "The bundle and everything it held were removed.",
+  };
+}
+
+/* ---------------------------------------------------------------------- *
  * connect — the control plane
  * ---------------------------------------------------------------------- */
 
@@ -746,6 +847,9 @@ export async function runHelper(argv: string[]): Promise<number> {
       return 0;
     case "channel":
       answer(channel(root, request.bundle_id));
+      return 0;
+    case "uninstall":
+      answer(uninstall(root, request.bundle_id));
       return 0;
     case "connect":
       // Unreachable: handled above, before stdin was read. Checked rather than

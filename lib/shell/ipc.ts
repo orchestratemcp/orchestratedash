@@ -615,6 +615,36 @@ export const COMMANDS = {
     mutates: true,
     irreversible: false,
   },
+  /*
+   * MAR-611, ADR 0017. Deploy's symmetric other half.
+   *
+   * `irreversible` is **true**, and it is the first host command that is. Every
+   * other member of this family can be undone by doing it again or by doing its
+   * opposite: a deploy is replaced by a deploy, a key is remade, a trust is
+   * re-pinned. This one destroys a directory on a machine DASH does not
+   * administer — the agent's copy there, the runner that served it, and that
+   * runner's own store — and nothing DASH holds can put it back.
+   *
+   * What makes that acceptable rather than reckless is the order the act is
+   * performed in, which is `lib/deploy/bring-home.ts`'s and is enforced twice:
+   * DASH copies first and refuses to remove when the copy failed, and the host's
+   * own helper refuses to remove a bundle whose runner is running. So the
+   * irreversible half only ever runs after the reversible half succeeded.
+   *
+   * It takes the same two ids `host.deploy` and `host.run` do. In particular it
+   * takes no folder: where the files land is answered in the operating system's
+   * own dialog, in main, so the renderer neither supplies a path nor learns one —
+   * `workspace.download`'s discipline, on the command that saves many files
+   * instead of one.
+   */
+  "host.bringHome": {
+    effect:
+      "Copy what one agent still has on one saved server — what it did there, and any files it made — then remove that agent from the server. Nothing on this computer is deleted.",
+    payload_keys: ["host_id", "agent_id"],
+    required_keys: ["host_id", "agent_id"],
+    mutates: true,
+    irreversible: true,
+  },
   "host.forget": {
     effect:
       "Stop using one server and remove DASH's key for it. Anything already running there keeps running.",
@@ -1254,6 +1284,7 @@ export const HOST_ACTIONS = {
   "host.setup": "setup",
   "host.deploy": "deploy",
   "host.run": "run",
+  "host.bringHome": "bringHome",
   "host.forget": "forget",
 } as const;
 
@@ -1834,6 +1865,36 @@ export type HostActionResult =
       agent_id: string;
       detail: string;
       reached: boolean;
+    }
+  /**
+   * What came home, and what is no longer on the server (MAR-611, ADR 0017).
+   *
+   * The other direction of `deploy`, and the fields are chosen to make the two
+   * claims this act can honestly support and no third. `files_saved` is a count
+   * of files **DASH wrote on this computer** — its own act, in the folder a
+   * person pointed at — and `detail` is composed by `lib/copy/bring-home.ts`
+   * from the outcome, so no surface has to reconstruct what happened out of
+   * flags.
+   *
+   * **There is no folder path here**, which is `workspaceDownload`'s rule and it
+   * survives the widening: the renderer never learns where on this disk anything
+   * landed, and the sentence names the folder because the person chose it in a
+   * window DASH does not draw.
+   *
+   * **And there is no `removed` flag**, deliberately. Whether the bundle was
+   * still there at the last step is a fact about a machine somebody else
+   * administers, and a boolean on this boundary would be read as "the server is
+   * empty now" the first time anybody rendered it. The distinction survives in
+   * the sentence, where it carries the tense ADR 0010 requires.
+   */
+  | {
+      ok: true;
+      action: "bringHome";
+      host_id: string;
+      label: string;
+      agent_id: string;
+      files_saved: number;
+      detail: string;
     }
   | { ok: true; action: "forget"; host_id: string; label: string }
   | {

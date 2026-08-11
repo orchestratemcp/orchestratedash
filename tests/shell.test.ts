@@ -223,6 +223,13 @@ describe("the audited command chokepoint", () => {
       // page has never seen the server's snapshot, so main reads which task at
       // the moment of the press and the host adjudicates it again.
       "host.run",
+      // MAR-611, ADR 0017. Deploy's symmetric other half, and the only host
+      // command that declares `irreversible: true` — it destroys a directory on
+      // a machine DASH does not administer, and nothing DASH holds can put it
+      // back. Same two ids again and, like `workspace.download`, no folder in
+      // either direction: main raises the operating system's own dialog, so a
+      // page neither chooses where several files land nor learns where they did.
+      "host.bringHome",
       "host.forget",
       // MAR-434. A fifth family, addressing the runner's task workspace over
       // routes the runner already served and proof 9 already exercised. Note
@@ -687,6 +694,22 @@ describe("dispatch", () => {
                 "My server was asked to start this agent. DASH will show what it did the next " +
                 "time it can reach that server, and only what the server still has then.",
               reached: true,
+            });
+          // MAR-611, ADR 0017. The only host answer whose command declares
+          // itself irreversible, and it is unsecret by the same construction —
+          // a count of files DASH wrote and a sentence, with no folder on this
+          // machine in either.
+          case "bringHome":
+            return Promise.resolve({
+              ok: true as const,
+              action,
+              host_id: "host-fake-1",
+              label: "My server",
+              agent_id: "fixture-agent",
+              files_saved: 0,
+              detail:
+                "This agent is no longer on My server. Everything that server still had is on " +
+                "this computer now. It had no files there to bring back.",
             });
           case "forget":
             return Promise.resolve({

@@ -200,6 +200,7 @@ import {
   type SshDiagnostics,
 } from "./ssh-host";
 import { runAgentOnHost } from "./host-run";
+import { bringAgentHomeFromHost } from "./host-bring-home";
 import { authorizedKeysLine, buildBootstrapScript } from "../lib/host-bootstrap";
 import { classifyHostFailure, type HostReachProblem } from "../lib/host-connect";
 import type { Recovery } from "../lib/copy/recovery";
@@ -1799,6 +1800,40 @@ async function hostAction(
       };
     }
     return await runAgentOnHost(record, target.agent_id, dataDir, userInfo().username);
+  }
+
+  /*
+   * MAR-611, ADR 0017. Bring the copy that is on this server home.
+   *
+   * Beside `run` and below the same enrollment gate, for the same reason and one
+   * sharper: this is the only host command that destroys anything, and a path to
+   * it that skipped the pin would be a path to *removing* an agent from a machine
+   * DASH has never been told to trust.
+   *
+   * `readAgentManifest` is the one thing main answers rather than delegating,
+   * because "does DASH still hold this agent" is a question about this store and
+   * the refusal it produces is the boundary of the feature: a host can name a
+   * bundle DASH never sent (ADR 0015), and adopting a stranger's agent off a
+   * server is a different act than taking back one DASH put there.
+   */
+  if (action === "bringHome") {
+    if (!("agent_id" in target)) {
+      return { ok: false, detail: "DASH did not receive the agent it should bring home." };
+    }
+    const toolsForBringHome = probeSshTools();
+    if (!toolsForBringHome.present) {
+      return {
+        ok: false,
+        detail: toolsForBringHome.detail ?? "This computer cannot reach a server.",
+        problem: "no_ssh_on_this_computer",
+      };
+    }
+    return await bringAgentHomeFromHost(
+      record,
+      target.agent_id,
+      dataDir,
+      readAgentManifest(target.agent_id) !== null,
+    );
   }
 
   let produced: ReturnType<typeof produceAgentFolderBundle> | null = null;
