@@ -123,7 +123,7 @@ export function ConnectorTile({
           <li key={dependent.agent} className="connector-agent">
             {dependent.avatar === null ? null : <OAvatar name={dependent.avatar} size={50} />}
             <div>
-              <p className="connector-agent-name">{dependent.agent}</p>
+              <p className="connector-agent-name">{dependent.title}</p>
               {/* The author's own words about why this agent wants it. What DASH
                   is allowed to do is per agent even when the sign-in is not, and
                   this is where that shows. */}
@@ -246,7 +246,7 @@ export function ConnectorTile({
         {open
           ? tile.dependents.map((dependent) => (
               <section key={dependent.agent} className="connector-receipt-agent">
-                <h3>{dependent.agent}</h3>
+                <h3>{dependent.title}</h3>
                 <ConnectionCards rows={[dependent.row]} act={act(dependent.agent)} />
               </section>
             ))

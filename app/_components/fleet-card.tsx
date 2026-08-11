@@ -56,8 +56,11 @@ export function FleetCard({
       */}
       <div className="card-head">
         <h3>
+          {/* MAR-589. The author's own name for the agent is the label; the id
+              stays a value, in `TechnicalDetails` below, rather than standing
+              in for a name it was never given as one. */}
           <Link className="plain" href={agentWorkspaceHref(agent.name)}>
-            <code>{agent.name}</code>
+            {agent.title}
           </Link>
         </h3>
         <AgentComplianceChips compliance={agent.compliance} />
@@ -152,6 +155,12 @@ export function FleetCard({
         </div>
         <TechnicalDetails>
           <dl className="facts">
+            <div>
+              <dt>Agent id</dt>
+              <dd>
+                <code>{agent.name}</code>
+              </dd>
+            </div>
             <div>
               <dt>Plan source</dt>
               <dd>{agent.plan_source}</dd>

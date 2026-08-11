@@ -161,11 +161,15 @@ export interface AgentDeployTarget {
  */
 export interface AgentDeployChoice {
   name: string;
+  /** The one name a person reads for this agent (MAR-589). `name` stays the id. */
+  title: string;
   deploy: AgentDeployView;
 }
 
 export interface AgentRow {
   name: string;
+  /** The one name a person reads for this agent (MAR-589). `name` stays the id. */
+  title: string;
   goal: string;
   plan_source: string;
   build_target: string;
@@ -721,6 +725,8 @@ export interface BrokerLapseView {
 
 export interface AgentConnections {
   name: string;
+  /** The one name a person reads for this agent (MAR-589). `name` stays the id. */
+  title: string;
   /**
    * The agent's own character, read from the store (MAR-533, MAR-502's rule).
    *

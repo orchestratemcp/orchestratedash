@@ -434,7 +434,7 @@ export function DeployPanel({
   const refusal =
     chosen === null || chosen.deploy.deployable
       ? null
-      : describeUndeployable(chosen.name, chosen.deploy.refusal ?? "");
+      : describeUndeployable(chosen.title, chosen.deploy.refusal ?? "");
 
   /*
    * MAR-606 finding 31. What the control should offer, given what DASH already
@@ -445,7 +445,7 @@ export function DeployPanel({
    * the case that matters, because it is the state the card opens in.
    */
   const offer = describeDeployOffer({
-    agent: chosenAgent === "" ? "this agent" : chosenAgent,
+    agent: chosenAgent === "" ? "this agent" : (chosen?.title ?? chosenAgent),
     server: server.label,
     sent_on: server.sent.find((one) => one.agent === chosenAgent)?.sent_on ?? null,
     just_sent: deploy?.step === "sent" && deploy.agent === chosenAgent,
@@ -488,7 +488,7 @@ export function DeployPanel({
               <option value="">Choose an agent</option>
               {agents.map((agent) => (
                 <option key={agent.name} value={agent.name}>
-                  {agent.name}
+                  {agent.title}
                 </option>
               ))}
             </select>
@@ -517,7 +517,7 @@ export function DeployPanel({
           {chosen === null ? null : (
             <ConnectionTravelNotice
               travel={chosen.deploy.travel}
-              agent={chosen.name}
+              agent={chosen.title}
               server={server.label}
             />
           )}

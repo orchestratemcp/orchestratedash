@@ -218,6 +218,8 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
   return {
     agents: listAgents(store).map((agent) => ({
       name: agent.name,
+      // MAR-589. The label every surface reads; `name` above stays the id.
+      title: agentTitleFromManifest(store.agents[agent.name]?.manifest, agent.name),
       goal: agent.goal,
       plan_source: agent.plan_source,
       build_target: agent.build_target,
@@ -486,6 +488,30 @@ function displayNameOf(manifest: ConnectionSourceManifest, fallback: string): st
   const agent = (manifest as { agent?: { display_name?: unknown; name?: unknown } }).agent;
   const display = agent?.display_name ?? agent?.name;
   return typeof display === "string" && display.length > 0 ? display : fallback;
+}
+
+/**
+ * The MAR-589 title for a row that already holds its own manifest — the
+ * humanized fallback `displayNameOf` above deliberately skips, because the
+ * recovery sentences it feeds address the agent mid-paragraph and a raw slug
+ * reads better there than nothing. A card's heading has no such excuse: it is
+ * the one thing on the row a person reads as the agent's name, so it gets
+ * `agentDisplayName`'s full ruling, humanized fallback included.
+ *
+ * `manifest` is `unknown` because both callers hold it more loosely than
+ * `ConnectionSourceManifest` states — one from `StoreShape["agents"]`, whose
+ * `.manifest` is the union of both manifest versions, and neither version's
+ * type declares `agent.display_name` (MAR-595 finding 10 again: it is optional
+ * in the schema and absent from the narrowed type). Undefined manifest reads
+ * as no declared name, which is the honest answer for a row whose store entry
+ * could not be found.
+ */
+function agentTitleFromManifest(manifest: unknown, name: string): string {
+  const agent = (manifest as { agent?: { display_name?: unknown } } | undefined)?.agent;
+  return agentDisplayName({
+    name,
+    display_name: typeof agent?.display_name === "string" ? agent.display_name : undefined,
+  });
 }
 
 /**
@@ -901,6 +927,9 @@ export function connectionsView(store: StoreShape = readStore()): ConnectionsVie
 
       return {
         name,
+        // MAR-589. The same title `agentsView` builds, from the same manifest
+        // this function already holds.
+        title: agentTitleFromManifest(manifest, name),
         // MAR-533, and read rather than derived for MAR-502's reason exactly —
         // see the note on `AgentConnections.avatar`.
         avatar: readAgentAvatar(name),

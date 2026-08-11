@@ -31,6 +31,7 @@ import type { AgentRow } from "../lib/views/types";
 function agent(over: Partial<AgentRow> = {}): AgentRow {
   return {
     name: "news-scout",
+    title: "News scout",
     goal: "Read the news sources you choose and write a short summary.",
     plan_source: "OrchestrateKit",
     build_target: "local",
@@ -102,7 +103,10 @@ describe("the layout control", () => {
 
 describe("the list a cold render draws", () => {
   const markup = renderToStaticMarkup(
-    <FleetList agents={[agent(), agent({ name: "digest", avatar: "wizard" })]} log={NO_SIGHTINGS} />,
+    <FleetList
+      agents={[agent(), agent({ name: "digest", title: "Digest", avatar: "wizard" })]}
+      log={NO_SIGHTINGS}
+    />,
   );
 
   it("is the ordered list every other record surface uses", () => {
@@ -115,6 +119,13 @@ describe("the list a cold render draws", () => {
     expect(markup).toContain("news-scout");
     expect(markup).toContain("digest");
     expect([...markup.matchAll(/class="row-card fleet-card"/g)]).toHaveLength(2);
+  });
+
+  it("labels the card with the agent's title, not its id (MAR-589)", () => {
+    // The heading is the title a person would recognise; the id is a value
+    // and stays inside a <code> tag, never doubling as the card's name.
+    expect(markup).toContain(">News scout</");
+    expect(markup).toContain("<code>news-scout</code>");
   });
 
   it("takes no tab stop when it is not a scroll container", () => {

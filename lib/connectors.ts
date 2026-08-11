@@ -65,6 +65,8 @@ import type { AgentConnections, ConnectionRowWithCredential } from "./views/type
  */
 export interface ConnectorDependent {
   agent: string;
+  /** The one name a person reads for this agent (MAR-589). `agent` stays the id. */
+  title: string;
   /** The agent's stored character, or null. Never derived here — MAR-502's rule. */
   avatar: OName | null;
   /** Whether DASH holds a credential for **this agent's** copy of the connector. */
@@ -137,6 +139,7 @@ export function buildConnectorTiles(agents: readonly AgentConnections[]): Connec
     for (const row of agent.rows) {
       const dependent: ConnectorDependent = {
         agent: agent.name,
+        title: agent.title,
         avatar: agent.avatar,
         connected: row.masked_hint !== null,
         purpose: row.purpose,
@@ -279,7 +282,7 @@ export function connectorChip(standing: ConnectorStanding): ConnectorSentence {
  * thing that makes "connect once" believable.
  */
 export function describeDependents(tile: ConnectorTile): string {
-  const names = tile.dependents.map((one) => one.agent);
+  const names = tile.dependents.map((one) => one.title);
   if (names.length === 1) {
     return `Needed by ${names[0] as string}.`;
   }
@@ -324,7 +327,7 @@ export function describeSharedGrant(tile: ConnectorTile): string | null {
   if (sharing.length < 2) {
     return null;
   }
-  const names = sharing.map((one) => one.agent);
+  const names = sharing.map((one) => one.title);
   const last = names[names.length - 1] as string;
   const list =
     names.length === 2

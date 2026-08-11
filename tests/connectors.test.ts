@@ -73,8 +73,12 @@ function row(over: Partial<ConnectionRowWithCredential> = {}): ConnectionRowWith
   };
 }
 
-function agent(name: string, rows: ConnectionRowWithCredential[]): AgentConnections {
-  return { name, avatar: "ninja", rows, lapses: [] };
+function agent(
+  name: string,
+  rows: ConnectionRowWithCredential[],
+  title: string = name,
+): AgentConnections {
+  return { name, title, avatar: "ninja", rows, lapses: [] };
 }
 
 /* ---------------------------------------------------------------------- *

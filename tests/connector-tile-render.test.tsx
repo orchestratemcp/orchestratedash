@@ -92,8 +92,12 @@ function row(over: Partial<ConnectionRowWithCredential> = {}): ConnectionRowWith
   };
 }
 
-function agent(name: string, rows: ConnectionRowWithCredential[]): AgentConnections {
-  return { name, avatar: "ninja", rows, lapses: [] };
+function agent(
+  name: string,
+  rows: ConnectionRowWithCredential[],
+  title: string = name,
+): AgentConnections {
+  return { name, title, avatar: "ninja", rows, lapses: [] };
 }
 
 const NOTHING = () => () => Promise.resolve({ ok: true });
@@ -126,6 +130,12 @@ describe("the front of the tile", () => {
     expect(html).toContain("Needed by News Scout and Meeting Assistant.");
     expect(html).toContain("News Scout");
     expect(html).toContain("Meeting Assistant");
+  });
+
+  it("labels an agent with its title, not its id (MAR-589)", () => {
+    const html = draw([agent("meeting-assistant", [row()], "Meeting assistant")]);
+    expect(html).toContain("Meeting assistant");
+    expect(html).not.toContain("meeting-assistant");
   });
 
   it("gives each agent its own standing, not just the tile's", () => {
