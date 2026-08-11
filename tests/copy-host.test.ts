@@ -41,9 +41,18 @@ describe("describeImportUnavailable", () => {
   it("offers the path that does work here, rather than only naming the gap", () => {
     const notice = describeImportUnavailable("shell");
     expect(notice).not.toBeNull();
-    // A failure with no next action is not finished being designed. The next
-    // action here is the guided path directly above it on the page.
-    expect(notice?.meaning).toMatch(/two steps above/);
+    /*
+     * A failure with no next action is not finished being designed. The next
+     * action here is the page's own primary control.
+     *
+     * MAR-598 moved it. This used to assert "two steps above", which described
+     * two terminal commands at the top of the page — and after that page led
+     * with a button instead, the sentence pointed at the wrong part of the
+     * screen for the wrong thing. Asserted as *naming the folder*, which is what
+     * the control does, rather than as a position, which is what went stale.
+     */
+    expect(notice?.meaning).toMatch(/choosing the agent's folder/);
+    expect(notice?.meaning).not.toMatch(/steps above/);
   });
 
   it("is plain language", () => {

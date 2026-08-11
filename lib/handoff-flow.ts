@@ -821,13 +821,20 @@ export function describeChangedAgent(handoff: AgentHandoff, changes: string[]): 
  * the part the user is actually approving — and the interpreter is described
  * rather than spelled. The clause about installing nothing is there because for
  * this reader it is the single most reassuring fact available.
+ *
+ * Exported, with `connectionSentence` and `permissionLines` below, because
+ * MAR-598 added a third door onto this same import — a folder the person chose
+ * — and a consent dialog that described the same agent in slightly different
+ * words depending on how it arrived is exactly the drift `describeRegistrationChange`
+ * is shared to prevent one layer down. It takes a program rather than a handoff
+ * so the other door can pass the registration it is about to write.
  */
-function startSentence(handoff: AgentHandoff): string {
-  if (handoff.command !== BUNDLED_NODE_COMMAND) {
-    return `DASH will start it by running: ${[handoff.command, ...handoff.args].join(" ")}`;
+export function startSentence(program: { command: string; args: readonly string[] }): string {
+  if (program.command !== BUNDLED_NODE_COMMAND) {
+    return `DASH will start it by running: ${[program.command, ...program.args].join(" ")}`;
   }
   return (
-    `DASH will start it by running: ${handoff.args.join(" ")} — ` +
+    `DASH will start it by running: ${program.args.join(" ")} — ` +
     "using the copy of Node that comes with DASH, so you do not need to install anything."
   );
 }
@@ -839,7 +846,7 @@ function startSentence(handoff: AgentHandoff): string {
  * under `fields[].technical.provider_scopes` precisely so the plain label can be
  * shown on its own, and this is the call site that depends on it.
  */
-function connectionSentence(manifest: AnyAgentManifest): string {
+export function connectionSentence(manifest: AnyAgentManifest): string {
   if (!isManifestV2(manifest)) {
     return "";
   }
@@ -871,7 +878,7 @@ function connectionSentence(manifest: AnyAgentManifest): string {
  * silence is honest, and a manifest with no permissions block has not promised
  * anything DASH should paraphrase.
  */
-function permissionLines(manifest: AnyAgentManifest): string[] {
+export function permissionLines(manifest: AnyAgentManifest): string[] {
   if (!isManifestV2(manifest)) {
     return [];
   }

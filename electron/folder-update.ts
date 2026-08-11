@@ -30,6 +30,12 @@
  * name: no path crosses the boundary in either direction, which is
  * `workspace.download`'s discipline applied to the other command that turns a
  * click into a place on disk.
+ *
+ * `choose` (MAR-598) is the fourth and lives in `electron/folder-import.ts`
+ * rather than here. It is routed from this file because it is a folder command
+ * and shares this file's seam, but it is the only one that names no agent, opens
+ * two dialogs and waits for a person — so it is a module of its own for the same
+ * reason this one is a module and not four functions in main.
  */
 
 import { existsSync } from "node:fs";
@@ -50,6 +56,7 @@ import {
   type CurrentFolder,
   type CurrentManifest,
 } from "../lib/folder-changes";
+import { chooseAgentFolder } from "./folder-import";
 import { checkManifestConstraints } from "../lib/manifest-constraints";
 import { readRegistration, writeRegistration } from "../lib/registration";
 import { acceptFolderManifest, readAgentManifest } from "../lib/store";
@@ -66,14 +73,34 @@ const NO_SUCH_AGENT: FolderActionResult = {
  * Route one folder command.
  *
  * The switch is exhaustive over `FolderAction` rather than defaulting, so adding
- * a fourth verb to `FOLDER_ACTIONS` is a compile error here instead of a command
- * that is accepted at the boundary and silently does nothing.
+ * a fifth verb to `FOLDER_ACTIONS` is a compile error here instead of a command
+ * that is accepted at the boundary and silently does nothing. MAR-598's
+ * `choose` is the fourth, and it arrived through exactly that failure.
+ *
+ * ## Two signatures widened, and neither is a loosening
+ *
+ * `agentId` is optional because `choose` names no agent — there is no agent yet,
+ * which is that command's whole situation. The other three refuse an absent one
+ * with the refusal they already had for an unknown agent, so a request that
+ * somehow reached here without the field main was promised gets a sentence
+ * rather than a lookup on the word "undefined".
+ *
+ * The return type gained a promise for the same one command, because it opens
+ * two native dialogs and waits for a person. Main already wraps this call in
+ * `Promise.resolve`, which flattens one and passes the other three through
+ * untouched — so this needed no line in `electron/main.ts`.
  */
 export function performFolderAction(
   dataDir: string,
   action: FolderAction,
-  agentId: string,
-): FolderActionResult {
+  agentId: string | undefined,
+): FolderActionResult | Promise<FolderActionResult> {
+  if (action === "choose") {
+    return chooseAgentFolder(dataDir);
+  }
+  if (agentId === undefined) {
+    return NO_SUCH_AGENT;
+  }
   switch (action) {
     case "check":
       return checkFolder(dataDir, agentId);
