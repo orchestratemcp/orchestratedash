@@ -300,10 +300,13 @@ describe("connect", () => {
     await performConnectionAction("connect", TARGET, deps(vault(), KEY));
     const receipts = listReceipts(AGENT);
     expect(receipts).toHaveLength(1);
-    // Spend first and read second, which is `byAccess`'s ordering: the line
-    // worth reading must not sit under the line that is not (MAR-545).
+    // Spends first and the read second, which is `byAccess`'s ordering: the
+    // line worth reading must not sit under the line that is not (MAR-545).
+    // Two spends since MAR-619 — the person's own question and the agent's own
+    // summarising — and the read stays last.
     expect(receipts[0]?.operations).toEqual([
       "openrouter.chat.completion",
+      "openrouter.digest.curate",
       "openrouter.models.list",
     ]);
     // A key names nobody, so there is no account hint to invent from it.
@@ -413,11 +416,18 @@ describe("the view the Connections page consumes", () => {
     expect(card?.provider_label).toBe("OpenRouter");
     expect(card?.capabilities.map((one) => one.id)).toEqual([
       "openrouter.chat.completion",
+      "openrouter.digest.curate",
       "openrouter.models.list",
     ]);
-    // The one that costs money is the one that has to carry a consequence
-    // sentence, and the one that does not must not invent one (MAR-545).
-    expect(card?.capabilities.map((one) => one.consequence !== null)).toEqual([true, false]);
+    // The ones that cost money are the ones that have to carry a consequence
+    // sentence, and the one that does not must not invent one (MAR-545). Both
+    // spends carry theirs, and they are different sentences: a question is
+    // asked once, and a curation happens on every run (MAR-619).
+    expect(card?.capabilities.map((one) => one.consequence !== null)).toEqual([
+      true,
+      true,
+      false,
+    ]);
     expect(card?.connect.channel).toBe("connection.connect");
     expect(card?.check.channel).toBe("connection.test");
     expect(card?.disconnect.channel).toBe("connection.disconnect");

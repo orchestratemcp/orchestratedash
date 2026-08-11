@@ -128,12 +128,29 @@ export interface HarnessOptions {
    * tested rather than the in-memory half.
    */
   hasHandledRequest?: (agentId: string, requestId: string) => boolean;
+  /**
+   * The model this agent's owner named, for an agent-origin spend (MAR-619).
+   *
+   * Defaults to a valid model id rather than to null, so a test about the
+   * *allowance* does not have to know about ADR 0011's model substitution to
+   * get past it. A test about the substitution passes `null` and says so.
+   */
+  modelChoice?: string | null;
   /** A fixed clock, advanced by `advance`. */
   startedAt?: number;
 }
 
 export interface Harness {
   handle(agentId: string, request: unknown, origin?: BrokerOrigin): Promise<unknown>;
+  /**
+   * Stand in for a person pressing Run now (MAR-619, ADR 0016).
+   *
+   * Exposed so a test can open an allowance the way `electron/main.ts` does —
+   * through the broker's own method, on the broker's own clock — rather than by
+   * reaching into a budget. There is no other way to open one, which is the
+   * property the tests are checking.
+   */
+  allowRunSpend(agentId: string): void;
   readonly calls: RecordedCall[];
   readonly audit: BrokerAuditRow[];
   advance(ms: number): void;
@@ -202,6 +219,8 @@ export function harness(options: HarnessOptions = {}): Harness {
     },
     fetchImpl,
     hasHandledRequest: options.hasHandledRequest,
+    readModelChoice: () =>
+      options.modelChoice === undefined ? "a-model" : options.modelChoice,
     audit: (row) => {
       audit.push(row);
     },
@@ -211,6 +230,9 @@ export function harness(options: HarnessOptions = {}): Harness {
   return {
     calls,
     audit,
+    allowRunSpend: (agentId: string) => {
+      broker.allowRunSpend(agentId, new Date(clock));
+    },
     advance: (ms: number) => {
       clock += ms;
     },

@@ -799,16 +799,22 @@ export interface FleetConnectorView {
     /** What the consent actually issued, in DASH's own sentences. Empty for a key. */
     permissions: string[];
   } | null;
-  /** Every agent this connection reaches, and whether it has it yet. */
-  agents: Array<{ agent: string; connected: boolean }>;
+  /**
+   * Every agent this connection reaches, and whether it has it yet.
+   *
+   * `agent` is the id — a value, never a label (MAR-589's ruling). `title` is
+   * `agentDisplayName`'s answer and the one this card is allowed to print.
+   */
+  agents: Array<{ agent: string; title: string; connected: boolean }>;
   /**
    * Agents that name this service and are not reached, each with why.
    *
    * `reason` is a `FleetSkip`, carried as a code rather than a sentence so the
    * copy stays in `describeSkip` — a view that shipped prose would be prose no
-   * plain-language sweep ever looks at.
+   * plain-language sweep ever looks at. `title` follows MAR-589's ruling exactly
+   * as it does on `agents` above.
    */
-  skipped: Array<{ agent: string; reason: string }>;
+  skipped: Array<{ agent: string; title: string; reason: string }>;
   /**
    * Agents that qualify and do not have it yet — what `fleet.share` would give.
    *
@@ -1144,6 +1150,21 @@ export type WorkspaceView =
        * agent whose plan uses no model at all.
        */
       models: AgentModelSettingsView;
+      /**
+       * What pressing Run now will spend, or null (MAR-619, ADR 0016).
+       *
+       * Null for every agent that cannot spend on a run, which is nearly all of
+       * them: one that declares no model provider, one whose key is not
+       * connected, and one whose owner has named no model. All three produce a
+       * run that is refused before anything is sent, so a warning about money
+       * on them would be a warning about nothing — and `describeFleetReach`
+       * records what becomes of a warning that is usually about nothing.
+       *
+       * Non-null is the disclosure ADR 0016 obliges: the Run press is the one
+       * act in DASH that authorises an agent to spend, so it is the one place a
+       * person has to be told, before they press, that it will.
+       */
+      run_spend: string | null;
       /**
        * The conversation with this agent about what it has saved (MAR-545).
        *

@@ -526,6 +526,10 @@ function AgentWorkspace(): ReactNode {
           });
         }}
         run={control.run}
+        /* MAR-619, ADR 0016. Already worded by `lib/copy/curation.ts` and
+           resolved in `lib/views/build.ts`, which is the only layer that can
+           tell whether pressing this would actually cost anything. */
+        runSpend={view.run_spend}
       />
 
       {/* MAR-609, reusing MAR-570. Four answers, one row, no prose. */}

@@ -25,9 +25,16 @@ import { openHandoff, type HandoffPorts, type HandoffPrompt } from "../lib/hando
 import { writeAgentFolder } from "../lib/agent-folders";
 import { DIGEST_WRITE_COMPONENT, FEED_FETCH_COMPONENT } from "../lib/agent-sources";
 import { stepsNeedingAModel } from "../lib/ai/model-levels";
+import { operationById } from "../lib/broker/operations";
 import { validateManifest } from "../lib/contracts";
 import { BUNDLED_NODE_COMMAND, readRegistration, resolveSpawnCommand } from "../lib/registration";
-import { createSampleAgent, SAMPLE_AGENT_ID, planSampleAgent } from "../lib/sample-agent";
+import {
+  createSampleAgent,
+  CURATE_OPERATION_ID,
+  MODEL_CONNECTION_ID,
+  SAMPLE_AGENT_ID,
+  planSampleAgent,
+} from "../lib/sample-agent";
 import { childEnvironment } from "../runner/supervisor";
 import { expectPlainLanguage } from "./helpers/plain-language";
 
@@ -268,8 +275,21 @@ describe("adding the sample", () => {
     // otherwise — see ADR 0002 on contract claims dressed as firewalls.
     expect(prompt.detail).toMatch(/It says this is what it will do/);
     expect(prompt.detail).not.toMatch(/DASH (only )?(lets|allows|restricts|limits)/i);
-    // And it still says the thing a novice most needs to hear.
-    expect(prompt.detail).toContain("It needs no accounts and no passwords.");
+    /*
+     * And it still says the thing a novice most needs to hear — which MAR-619
+     * had to work to keep true rather than inherit.
+     *
+     * The sample declares a model provider now, so the branch that produced
+     * "It needs no accounts and no passwords." no longer fires for it, and the
+     * plain "later, it will ask you to connect" branch would have been the
+     * whole of what a first-time user read on this dialog. The requirement is
+     * declared `optional`, and this asserts the dialog says so: the agent runs
+     * with nothing connected, and the offer follows the reassurance rather than
+     * replacing it.
+     */
+    expect(prompt.detail).toContain("It needs no accounts and no passwords to run.");
+    expect(prompt.detail).toContain("it works without it");
+    expect(prompt.detail).toContain("Your model provider");
   });
 
   it("still refuses a second identical sample handoff as already added", async () => {
@@ -288,15 +308,84 @@ describe("adding the sample", () => {
 });
 
 describe("the manifest DASH generates for itself", () => {
-  it("declares no connections, so the sample needs no credential to run", () => {
+  /*
+   * MAR-619. The sample declares exactly one connection, it is the model
+   * provider, and it is optional.
+   *
+   * This test used to assert `connections` was empty, with the reasoning that
+   * the sample needs no credential to run. **That reasoning survives and this
+   * is what now protects it**: the connection is declared so the fleet fan-out
+   * can reach the scout with the OpenRouter key Henrik already connected —
+   * `fleetReach` matches on `connections[].provider` and on nothing else — and
+   * the requirement beside it is declared `optional` so every surface still
+   * says the agent runs without one. An assertion that the list is empty could
+   * only be kept by not shipping the feature; an assertion that the one entry
+   * is optional keeps the property the old one was really about.
+   */
+  it("declares one optional connection, so the sample still needs no credential to run", () => {
     const parent = tempDir("dash-samples-");
     const created = createSampleAgent(request(parent));
     if (!created.ok) throw new Error(created.problem);
 
     const manifest = JSON.parse(
       readFileSync(path.join(created.value.directory, "agent.manifest.json"), "utf8"),
-    ) as { agent_dom: { connections: unknown[] } };
-    expect(manifest.agent_dom.connections).toEqual([]);
+    ) as {
+      agent_dom: {
+        connections: Array<{ id: string; provider: string; ownership: string }>;
+        connection_requirements: {
+          requirements_version: number;
+          requirements: Array<{ connection_id: string; connector_kind: string; optional?: boolean }>;
+        };
+      };
+    };
+
+    expect(manifest.agent_dom.connections).toHaveLength(1);
+    const [connection] = manifest.agent_dom.connections;
+    expect(connection?.id).toBe(MODEL_CONNECTION_ID);
+    expect(connection?.provider).toBe("openrouter");
+    // DASH holds the key and spends it; the agent never receives one. The whole
+    // reason `resolveCredentialTarget` refuses a delivery variable here.
+    expect(connection?.ownership).toBe("dash_managed");
+
+    const { connection_requirements: requirements } = manifest.agent_dom;
+    expect(requirements.requirements_version).toBe(1);
+    expect(requirements.requirements).toHaveLength(1);
+    const [requirement] = requirements.requirements;
+    expect(requirement?.connection_id).toBe(MODEL_CONNECTION_ID);
+    expect(requirement?.connector_kind).toBe("api_key");
+    // The load-bearing one. Required would make DASH show a working agent as
+    // broken on every machine where nobody has connected a key.
+    expect(requirement?.optional).toBe(true);
+  });
+
+  it("names an operation the broker actually implements", () => {
+    /*
+     * The cross-file contract this could get wrong quietly. The capability id
+     * in the manifest is what `agent-kit/template/agent.mjs` finds by suffix
+     * and hands straight to the broker, so a manifest naming an operation
+     * nothing implements is an agent whose every run is refused with
+     * `unknown_operation` — and the digest would still be written, so nothing
+     * would look broken. `lib/agent-sources.ts` opens by describing this exact
+     * class of failure for component ids.
+     */
+    const parent = tempDir("dash-samples-");
+    const created = createSampleAgent(request(parent));
+    if (!created.ok) throw new Error(created.problem);
+
+    const manifest = JSON.parse(
+      readFileSync(path.join(created.value.directory, "agent.manifest.json"), "utf8"),
+    ) as {
+      agent_dom: { connections: Array<{ capabilities: Array<{ id: string; access: string }> }> };
+    };
+    const declared = manifest.agent_dom.connections[0]?.capabilities ?? [];
+    expect(declared.map((one) => one.id)).toContain(CURATE_OPERATION_ID);
+    for (const capability of declared) {
+      const operation = operationById(capability.id);
+      expect(operation).not.toBeNull();
+      // And it is declared as what it is. `write` would claim something turns
+      // up in an account, which is the one thing a completion does not do.
+      expect(operation?.access).toBe(capability.access);
+    }
   });
 
   /*

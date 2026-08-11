@@ -546,7 +546,11 @@
             "properties": {
               "id": { "type": "string", "minLength": 1 },
               "label": { "type": "string", "minLength": 1 },
-              "access": { "enum": ["read", "write"] },
+              "access": {
+                "enum": ["read", "write", "spend"],
+                "description": "`spend` since MAR-619, and it is a correction rather than a new idea: BrokerAccess has had three members since MAR-545 and lib/connections.ts's RequiredCapability has typed this field as all three ever since, so this schema was the last place still saying there were two — and an author declaring a capability that costs money had no honest word for it. It means what it means there: the person's own account is charged and nothing appears anywhere. Filing such a capability under `write` would make a card claim something turns up in an account, which is the one thing a completion does not do.",
+                "$comment": "Additive: no existing manifest declares it, and every reader already narrows on the wider union."
+              },
               "technical": { "type": "object" }
             }
           }

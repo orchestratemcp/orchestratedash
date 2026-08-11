@@ -32,6 +32,7 @@
 
 import { localRunnerChannel } from "../lib/agent-dom/runner-channel";
 import { parseAiKeyCredential } from "../lib/ai/credential";
+import { readAgentModelChoice } from "../lib/ai/model-store";
 import { aiAuthHeaders, aiProviderById } from "../lib/ai/providers";
 import { isKeyCredential, type BrokerCredential } from "../lib/broker/grant";
 import { createBroker, type Broker, type BrokerAuditRow, type CredentialRead } from "../lib/broker/execute";
@@ -237,6 +238,15 @@ export function hostBroker(): Broker {
     // `lib/broker/` touches no store, and this is the same seam
     // `readCredential` and `mintAuthorization` occupy.
     hasHandledRequest: hasBrokerRequest,
+    // Which model this agent's owner named, for an agent-origin spend
+    // (MAR-619). Supplied here for `hasHandledRequest`'s reason — the broker
+    // touches no store — and it reads the same row the model picker writes and
+    // the chat asks under, so an agent's own step and a person's question
+    // cannot end up on two different models.
+    readModelChoice: (agentId: string) => {
+      const choice = readAgentModelChoice(agentId);
+      return choice.kind === "one_model" ? choice.model_id : null;
+    },
     audit: (row: BrokerAuditRow) => {
       written.push({ id: recordBrokerCall(row), request_id: row.request_id });
     },

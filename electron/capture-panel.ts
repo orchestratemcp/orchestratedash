@@ -171,6 +171,71 @@ const RECORDS: RunArtifactRecord[] = [
   { artifact: digest, received_at: "2026-08-05T21:14:08.412Z", stored_bytes: 4210 },
 ];
 
+/**
+ * The same digest, grouped by a model (MAR-619).
+ *
+ * A scene rather than a harness, on `capture-deploy.ts`'s recorded terms: the
+ * curated form renders through `DigestBody`, which the panel's `report` section
+ * already draws, so photographing it is a fixture and two `STATES` entries
+ * rather than a second boot of the app.
+ *
+ * **The third item is deliberately in no group.** That is the case only a
+ * photograph settles: the remainder heading and the group rule have to read as
+ * one structure rather than as two digests stacked, and nothing in the
+ * repository measures "these two blocks look like the same page".
+ *
+ * The overview and the group sentences are invented for the scene, in
+ * `capture-ask.ts`'s sense — they are the *shape* of what a model returns, and
+ * no model wrote them.
+ */
+const curatedDigest = {
+  ...digest,
+  artifact_id: "digest-2026-08-05-curated",
+  curation: {
+    state: "curated",
+    overview:
+      "Two things happened today: tooling that watches agents rather than starting them, and a " +
+      "quieter argument about how agents should describe themselves.",
+    model: "openai/gpt-5-mini",
+    groups: [
+      {
+        label: "Watching agents, not launching them",
+        summary: "Supervision is arriving as a product rather than as a feature of a framework.",
+        items: [0],
+      },
+      {
+        label: "How agents describe themselves",
+        summary: "One report on teams moving from embedded code to declared panels.",
+        items: [1],
+      },
+    ],
+  },
+} as unknown as DigestArtifact;
+
+const CURATED_RECORDS: RunArtifactRecord[] = [
+  { artifact: curatedDigest, received_at: "2026-08-05T21:14:08.412Z", stored_bytes: 5120 },
+];
+
+/**
+ * And the same digest with the summary refused (MAR-619).
+ *
+ * `not_connected` of the six, because it is the one a person is most likely to
+ * meet: the scout ships declaring a model provider and nobody has connected a
+ * key yet. What the photograph is for is the **proportion** — a notice about a
+ * missing summary must not dominate a digest that is otherwise complete, which
+ * is the failure mode of every degraded state that was written and never looked
+ * at.
+ */
+const refusedDigest = {
+  ...digest,
+  artifact_id: "digest-2026-08-05-refused",
+  curation: { state: "not_curated", reason: "not_connected" },
+} as unknown as DigestArtifact;
+
+const REFUSED_RECORDS: RunArtifactRecord[] = [
+  { artifact: refusedDigest, received_at: "2026-08-05T21:14:08.412Z", stored_bytes: 4230 },
+];
+
 const FACTS: PanelDashFacts = {
   run_count: 12,
   last_run_at: "2026-08-05T21:14:02.000Z",
@@ -273,6 +338,34 @@ const STATES = [
         facts: FACTS,
       }),
     everyWidth: false,
+  },
+  /*
+   * MAR-619's two, at every width.
+   *
+   * `everyWidth` on both, and that is the point of shooting them at all: the
+   * group rule is a left border with padding inside a card that is already
+   * indented, and 375px is where an indent inside an indent stops being a
+   * structure and starts being a column of text three words wide. The
+   * `full` scene above is the control — same digest, no curation block, so a
+   * reviewer can see what the grouping added and what it displaced.
+   */
+  {
+    name: "curated",
+    view: () =>
+      buildPanelView(manifest({ panel_version: 1, title: "Newsroom", sections: EVERY_SECTION }), {
+        artifacts: CURATED_RECORDS,
+        facts: FACTS,
+      }),
+    everyWidth: true,
+  },
+  {
+    name: "not-curated",
+    view: () =>
+      buildPanelView(manifest({ panel_version: 1, title: "Newsroom", sections: EVERY_SECTION }), {
+        artifacts: REFUSED_RECORDS,
+        facts: FACTS,
+      }),
+    everyWidth: true,
   },
 ] as const;
 

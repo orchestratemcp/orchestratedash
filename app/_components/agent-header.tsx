@@ -160,6 +160,7 @@ export function AgentControls({
   onRunControl,
   onRunOnHost,
   run,
+  runSpend,
 }: {
   /** The pending command key, or null. Disables the row while one is in flight. */
   busy: string | null;
@@ -189,6 +190,15 @@ export function AgentControls({
   /** Ask one server to start this agent (MAR-602). */
   onRunOnHost: (target: AgentDeployTarget) => void;
   run: AgentControlView["run"];
+  /**
+   * What pressing Run now will spend, or null (MAR-619, ADR 0016).
+   *
+   * `WorkspaceView.run_spend`, already worded — this component composes no
+   * sentence of its own, which is the rule `lib/copy/` keeps and the reason a
+   * page can be swept for plain language at all. Null on nearly every agent;
+   * see the field's own note for the three ways a run cannot cost anything.
+   */
+  runSpend: string | null;
 }): ReactNode {
   /*
    * MAR-602's per-server buttons, beside whatever the local control is.
@@ -304,6 +314,16 @@ export function AgentControls({
           every control. The trigger tile and the switcher in Settings are where
           a person goes to change it. */}
       <p className="muted">{AGENT_CONTROL_COPY.manual_note}</p>
+      {/* MAR-619, ADR 0016. What this press will spend, under the button that
+          spends it.
+
+          Under and not behind a note, which is the one placement decision here
+          and `lib/copy/info-note.ts`'s question decides it flatly: a sentence
+          saying the next thing you press costs money is the definition of
+          decision-changing. It is also the only branch of this component that
+          gets one — a live run has already been paid for, and an idle panel has
+          no press to disclose. */}
+      {runSpend === null ? null : <p className="muted">{runSpend}</p>}
     </section>
   );
 }

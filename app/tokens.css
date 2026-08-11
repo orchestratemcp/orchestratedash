@@ -236,18 +236,46 @@
   --font-mono: var(--font-ui);
 
   /*
-   * The scale, from `DESIGN.md`'s typography block. Monospace runs wider than a
-   * proportional face at the same size, so the body step is the concept's 14px
-   * rather than MAR-440's 15px — the same measure in fewer pixels, not a smaller
-   * interface.
+   * The scale, from `DESIGN.md`'s typography block, **taken down one step**
+   * (MAR-614). Monospace runs wider than a proportional face at the same size,
+   * so the body step was already the concept's 14px rather than MAR-440's 15px
+   * — the same measure in fewer pixels, not a smaller interface.
+   *
+   * Henrik, 2026-08-11, of the whole product: *"I think we need to resize the
+   * whole app abit. Make everything abit smaller. The text is to big."* This is
+   * that, and it is here rather than on a page because a scale that is argued
+   * per surface is not a scale.
+   *
+   * ## The ramp flattens, and that is the density
+   *
+   * The steps do not all move by the same amount, and the reason is that air is
+   * not distributed evenly across a type ramp. The display end carries the most
+   * — a 32px headline over 14px body is a 2.3× jump that exists to be seen from
+   * across a room, which is a poster's problem and not a control surface's. So
+   * the top moves furthest (32 → 28, 24 → 20) and the bottom moves least
+   * (11 → 10, 12 → 11), which compresses the ratio between a heading and the
+   * text under it and is what actually reads as "tighter".
+   *
+   * Every value is a whole pixel, and that is not tidiness. `image-rendering:
+   * pixelated` and a bundled mono face both land badly on fractional sizes, and
+   * this system's whole claim is a pixel feeling — a 13.6px glyph is the one
+   * thing a "pixel" interface may not contain. It is also why this is seven
+   * hand-set values rather than one `--type-scale` multiplier over a base: a
+   * multiplier is a single knob that produces six fractional sizes.
+   *
+   * `--text-xs` at 10px is the one to watch, and it is bounded by what uses it
+   * rather than by nerve: `.chip`, `.sidebar-tag`, `.fleet-view-toggle > legend`,
+   * `.fleet-strip-more` and `.agent-panel-attribution-mark` — five selectors, all
+   * of them two or three words under `--tracking-caps`. No prose is set at this
+   * step, and none may be.
    */
-  --text-xs: 0.6875rem; /* 11px */
-  --text-sm: 0.75rem; /* 12px — also `label-caps` */
-  --text-base: 0.875rem; /* 14px — body-md */
-  --text-md: 1rem; /* 16px — body-lg */
-  --text-lg: 1.125rem;
-  --text-xl: 1.5rem; /* 24px — headline-md */
-  --text-2xl: 2rem; /* 32px — headline-lg */
+  --text-xs: 0.625rem; /* 10px */
+  --text-sm: 0.6875rem; /* 11px — also `label-caps` */
+  --text-base: 0.8125rem; /* 13px — body-md */
+  --text-md: 0.9375rem; /* 15px — body-lg */
+  --text-lg: 1rem; /* 16px */
+  --text-xl: 1.25rem; /* 20px — headline-md */
+  --text-2xl: 1.75rem; /* 28px — headline-lg */
 
   --leading-tight: 1.2; /* headline-lg / headline-md */
   --leading-normal: 1.5; /* body-lg / body-md */
@@ -262,16 +290,49 @@
    * Space — a 4px "pixel-block" unit, and nothing between the steps
    *
    * `DESIGN.md`: "Every spacing value must be a multiple of the 4px pixel-block
-   * unit." The scale is unchanged from MAR-440 because it already was that.
+   * unit." That rule is untouched and is what shaped this change rather than
+   * being bent by it — every value below is still a whole number of blocks, and
+   * the reason there is no 0.75× multiplier anywhere near this scale is that
+   * 0.75 × 8px is 6px, which is not a thing this system is allowed to draw.
+   *
+   * ## Which half of the ramp moved (MAR-614)
+   *
+   * Henrik: *"The spacing to wide."* The four small steps are unchanged and the
+   * four large ones each come down, and that split is measured rather than felt:
+   * of the 191 `--space-*` uses in `app/globals.css`, 176 are steps 1–4. Those
+   * are the gaps *inside* things — a chip row, a label above a field — and they
+   * are already at one, two, three and four blocks. There is nowhere for them to
+   * go that is not the atom itself, and an interface whose internal gaps are all
+   * 4px has stopped having a scale.
+   *
+   * The air Henrik is describing is in the other fifteen uses and in the density
+   * tokens below: page margins, the space between sections, the space between
+   * cards. Steps 5–8 each drop one place on the ramp, which takes the desktop
+   * margin from 32px to 24px and the largest step from 64px to 48px.
+   *
+   * `--space-6` is no longer "the concept's desktop margin", and saying so is
+   * the point of this note: the concept specifies 32px, DASH now draws 24px, and
+   * that is Henrik overruling `DESIGN.md` on his own product rather than a drift
+   * nobody noticed. MAR-528 adopted the visual language whole; it did not
+   * promise the margins were beyond appeal.
+   *
+   * ## What deliberately did not move
+   *
+   * `--leading-*` is untouched. Line height is the other obvious density lever
+   * and it is the wrong one to pull here: `--leading-normal` is 1.5, which is
+   * the number the whole accessibility literature is built around, and the 3%
+   * a person would get from 1.45 is not worth being the app that tightened it.
+   * The density in this pass comes from type size and from the space between
+   * blocks, both of which are reversible in one line.
    * ------------------------------------------------------------------ */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px; /* the concept's gutter, and its mobile margin */
-  --space-5: 24px;
-  --space-6: 32px; /* the concept's desktop margin */
-  --space-7: 48px;
-  --space-8: 64px;
+  --space-5: 20px;
+  --space-6: 24px; /* the desktop margin — the concept's 32px, overruled */
+  --space-7: 32px;
+  --space-8: 48px;
 
   /* ------------------------------------------------------------------ *
    * Shape — sharp, everywhere (MAR-528)
@@ -349,14 +410,31 @@
    * Comfortable is the default because calm is the default. Note what is *not*
    * here: no font size, no colour, no border, and above all no content. A
    * compact DASH shows the same facts in less space, never fewer facts.
+   *
+   * ## These three are where the scale pass actually lands (MAR-614)
+   *
+   * 85 of `app/globals.css`'s spacing declarations resolve through these tokens
+   * — 57 gaps, 15 stacks, 13 card paddings — against 15 uses of the four large
+   * `--space-*` steps directly. So "the spacing to wide" is mostly a statement
+   * about these three names, and both densities take a step down: card padding
+   * and the gap between cards lose a quarter, the stack between sections loses
+   * a sixth.
+   *
+   * The two densities end up nearer each other than they were, and that is the
+   * correct direction rather than a cost. Compact existed partly because
+   * comfortable was too airy for anyone with more than a few agents; a default
+   * that has moved toward it needs less rescuing. It is still a real choice —
+   * 12/12/20 against 8/8/16 — and compact moves *less* than comfortable does,
+   * because Henrik's complaint was about the default, which is what he was
+   * looking at.
    * ------------------------------------------------------------------ */
-  --density-card-p: var(--space-4);
-  --density-gap: var(--space-4);
+  --density-card-p: var(--space-3);
+  --density-gap: var(--space-3);
   --density-stack: var(--space-5);
 }
 
 [data-density="compact"] {
-  --density-card-p: var(--space-3);
+  --density-card-p: var(--space-2);
   --density-gap: var(--space-2);
   --density-stack: var(--space-4);
 }

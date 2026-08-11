@@ -1,7 +1,9 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { InfoNote } from "./info-note";
 import { agentWorkspaceHref } from "../_data/routes";
+import { splitGlance } from "../../lib/copy/info-note";
 import type { GlanceChip, GlanceQuestion } from "../../lib/copy/glance";
 
 /**
@@ -64,31 +66,49 @@ export function GlanceChips({
   agent: string;
   chips: readonly GlanceChip[];
 }): ReactNode {
+  const split = chips.map((chip) => ({ chip, ...splitGlance(chip.question, chip.meaning) }));
+  const said = split.filter((one) => one.surface !== null);
+
   return (
     <div className="glance">
       <div className="chips">
-        {chips.map((chip) => {
+        {split.map(({ chip, note }) => {
           const className = TONE_CLASS[chip.tone];
-          if (chip.question === "all_clear") {
-            return (
+          /*
+            The note rides beside its own chip rather than where the sentence
+            used to be (MAR-614). `app/_components/info-note.tsx` is the inline
+            affordance — "attached to the single word or control it is about" —
+            and a marker parked at the bottom of the card would be a question
+            mark about the card in general, which is the one thing it must not
+            be when there can be four chips.
+          */
+          const label =
+            chip.question === "all_clear" ? (
               <span className={className} key={chip.question}>
                 {chip.label}
               </span>
+            ) : (
+              <Link
+                className={`${className} chip-link`}
+                href={ANSWERED_AT[chip.question](agent)}
+                key={chip.question}
+              >
+                {chip.label}
+              </Link>
             );
+          if (note === null) {
+            return label;
           }
           return (
-            <Link
-              className={`${className} chip-link`}
-              href={ANSWERED_AT[chip.question](agent)}
-              key={chip.question}
-            >
-              {chip.label}
-            </Link>
+            <span className="glance-chip-noted" key={chip.question}>
+              {label}
+              <InfoNote>{note}</InfoNote>
+            </span>
           );
         })}
       </div>
       {/*
-        The sentences, under the chips rather than in a `title`.
+        The sentences that stay, under the chips rather than in a `title`.
 
         A chip is two or three words and cannot carry "this agent expects to run
         about once a day, and DASH last saw it run on 6 August 2026" — but that
@@ -97,13 +117,23 @@ export function GlanceChips({
         same argument about a hover: a fact somebody has to point at is a fact
         most people never read.
 
+        That argument is why `splitGlance` moves exactly one of the five and not
+        the rest: it holds for every sentence that names something waiting on the
+        reader, and collapses for the one that names an absence. See
+        `lib/copy/info-note.ts` for which and why.
+
         A list, because these are one line each and there may be four of them.
+        Drawn only when something is in it — an empty `<ul>` is still a box, and
+        on a healthy card it was the last thing between the chips and the meta
+        line.
       */}
-      <ul className="glance-said">
-        {chips.map((chip) => (
-          <li key={chip.question}>{chip.meaning}</li>
-        ))}
-      </ul>
+      {said.length === 0 ? null : (
+        <ul className="glance-said">
+          {said.map((one) => (
+            <li key={one.chip.question}>{one.surface}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
