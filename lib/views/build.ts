@@ -35,6 +35,7 @@ import { humanizeAgentName } from "../copy/agent-name";
 import { heldCredentials } from "../connection-actions";
 import { connectableFields, type CredentialKind } from "../connection-credentials";
 import { describeEvidenceRecord } from "../copy/evidence";
+import { describeRunOrigin } from "../copy/where-it-ran";
 import { describeStoreDamage } from "../copy/recovery";
 import { deriveConnectionRequirements, type ConnectionSourceManifest } from "../connections";
 import { fleetCatalogue } from "../fleet/catalogue";
@@ -287,6 +288,11 @@ export function runsView(
       ),
     })),
     evidence: describeEvidenceRecord(pulls),
+    // MAR-602, ADR 0014. From the same `pulls` and never from `agent_deploys`:
+    // a deploy row is evidence DASH sent bytes on a date, and reading a run's
+    // machine out of one would be exactly the present-tense inference ADR 0010
+    // exists to prevent.
+    origin: describeRunOrigin(pulls),
   };
 }
 

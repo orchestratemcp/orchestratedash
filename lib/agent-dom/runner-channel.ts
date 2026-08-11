@@ -95,6 +95,96 @@ export type EvidenceRoute = (typeof EVIDENCE_ROUTES)[number];
 export type BrokerRoute = (typeof BROKER_ROUTES)[number];
 
 /* ---------------------------------------------------------------------- *
+ * The one route that is not a fixed string
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Asking a runner to start a run, wherever that runner is (MAR-602, ADR 0014).
+ *
+ * ## Why this is admitted at all
+ *
+ * MAR-489's `V8` failed because DASH could put an agent on a server and then
+ * never cause it to do anything there. ADR 0014 settles the question the issue
+ * raised — *may a start-a-run route cross the boundary* — and the answer is yes,
+ * for a reason narrower than the one the issue offered. "It carries no
+ * credential" is true of this route and is **not** the test: it is also true of
+ * `/agents/{id}/lifecycle`, which takes the user's typed secrets as an argument
+ * and is in neither list. What has been holding the line is that
+ * `EVIDENCE_ROUTES` is an allowlist, and this is a reviewed widening of it.
+ *
+ * The route passes the two questions that actually decide it. It carries no
+ * credential in either direction: an envelope of identifiers, a nonce and an
+ * expiry out, and an adjudicated `{ok, detail, reason}` back. And it chooses
+ * *which* and never *what* — `runner/README.md`'s rule, which ADR 0007 says
+ * decides more of that ADR than anything in ADR 0006. It names an agent the
+ * host already installed and a target the host's own snapshot published;
+ * `runner/execute.ts` then adjudicates it against the host's own store and is
+ * free to refuse. DASH asks; the host decides.
+ *
+ * ## Why it is an object and not a string
+ *
+ * `/agents/{id}/commands` has a variable segment, and this module's entire
+ * mechanism is that a route is a **value the type system can enumerate** rather
+ * than a string it cannot see into. Admitting a template, a prefix or a plain
+ * `string` here would return the module to decoration in one line.
+ *
+ * So the variable part travels as a field and `pathOf` is the only thing that
+ * builds a path from it. That makes a second property true for free, and it is
+ * the one worth checking: **the variable part cannot spell a path.**
+ * `encodeURIComponent` puts it in exactly one segment, so an `agent_id` of
+ * `/broker/drain` addresses an agent whose name contains slashes and never the
+ * broker. It is `lib/deploy/verbs.ts`'s rule one machine over — an identifier is
+ * not a path — reached here from the opposite direction.
+ */
+export interface AgentCommandRoute {
+  /** Opaque to this module. Encoded into one segment and never joined as a path. */
+  readonly agent_id: string;
+  /**
+   * The only leaf this route family has.
+   *
+   * A literal rather than a free string, so `{ agent_id, leaf: "lifecycle" }` is
+   * a compile error rather than a widening nobody reviewed. Adding a member is a
+   * change to this union, in this file, held to ADR 0014's three questions.
+   */
+  readonly leaf: "commands";
+}
+
+/** Everything any channel in this module can be asked for. */
+export type RunnerRoute = EvidenceRoute | BrokerRoute | AgentCommandRoute;
+
+/**
+ * The path a route names, built in one place.
+ *
+ * Exported so a test can assert what a hostile `agent_id` turns into, rather
+ * than asserting it about a private function by reaching through the module.
+ */
+export function pathOf(route: RunnerRoute): string {
+  return typeof route === "string"
+    ? route
+    : `/agents/${encodeURIComponent(route.agent_id)}/${route.leaf}`;
+}
+
+/**
+ * Whether a run route addresses an agent at all.
+ *
+ * `encodeURIComponent` puts any `agent_id` in one segment, which is what stops
+ * it spelling a second route — but it leaves `.` and `..` **untouched**, because
+ * dots are unreserved. `/agents/../commands` is then normalised by every URL
+ * parser between here and the socket into `/commands`, and the segment this
+ * module thought it had written is gone.
+ *
+ * Nothing reachable lives there — the only leaf is `commands`, and a runner has
+ * no route by that name — so this is a guard against a shape rather than a
+ * disclosed hole. It is written down because the reasoning "the encoder handles
+ * it" is *almost* true, and an almost-true guard is the kind somebody later
+ * simplifies away.
+ */
+export function addressesAnAgent(route: AgentCommandRoute): boolean {
+  const segment = encodeURIComponent(route.agent_id);
+  return segment.length > 0 && segment !== "." && segment !== "..";
+}
+
+/* ---------------------------------------------------------------------- *
  * The channel
  * ---------------------------------------------------------------------- */
 
@@ -106,7 +196,7 @@ export type BrokerRoute = (typeof BROKER_ROUTES)[number];
  * into — a string is a string, and `${origin}/broker/drain` would have compiled
  * anywhere. A route parameter is what makes the capability checkable at all.
  */
-export interface RunnerChannel<Route extends string> {
+export interface RunnerChannel<Route extends RunnerRoute> {
   /** For diagnostics only. The bytes go wherever `call` sends them. */
   readonly origin: string;
   /** Bearer credential. Never logged, never placed in a URL. */
@@ -115,13 +205,21 @@ export interface RunnerChannel<Route extends string> {
 }
 
 /**
- * A runner on another machine. Evidence routes and nothing else.
+ * A runner on another machine. Evidence, a run request, and nothing else.
  *
  * There is no `BrokerRoute` in its parameter, so `channel.call("/broker/drain")`
  * is a compile error at the call site and passing one where a broker-capable
  * channel is required is a compile error at the boundary.
+ *
+ * `AgentCommandRoute` joined it in MAR-602 and the direction of the change
+ * matters: it was added to **both** channels, so `LocalRunnerChannel` stays
+ * assignable here. Adding it to the remote one alone would have quietly broken
+ * that — parameters are contravariant, so a local channel that could not accept
+ * a run request would stop satisfying this type — and `lib/agent-dom/evidence.ts`
+ * would have lost the one-implementation-serves-both property this module's
+ * header calls the useful direction.
  */
-export type RemoteRunnerChannel = RunnerChannel<EvidenceRoute>;
+export type RemoteRunnerChannel = RunnerChannel<EvidenceRoute | AgentCommandRoute>;
 
 /**
  * The runner this machine spawned, reached down its own socket or pipe.
@@ -134,7 +232,8 @@ export type RemoteRunnerChannel = RunnerChannel<EvidenceRoute>;
  */
 declare const BROKER_CAPABLE: unique symbol;
 
-export interface LocalRunnerChannel extends RunnerChannel<EvidenceRoute | BrokerRoute> {
+export interface LocalRunnerChannel
+  extends RunnerChannel<EvidenceRoute | AgentCommandRoute | BrokerRoute> {
   readonly [BROKER_CAPABLE]: true;
 }
 
@@ -159,7 +258,7 @@ export function localRunnerChannel(runner: LocalRunnerEndpoint): LocalRunnerChan
   return {
     origin: runner.origin,
     token: runner.token,
-    call: (route, init) => dial(`${runner.origin}${route}`, withBearer(init, runner.token)),
+    call: (route, init) => dial(`${runner.origin}${pathOf(route)}`, withBearer(init, runner.token)),
   } as LocalRunnerChannel;
 }
 
@@ -189,10 +288,28 @@ export function remoteRunnerChannel(options: {
     origin,
     token: options.token,
     call: (route, init) => {
-      if (!permitted.has(route)) {
-        return Promise.reject(new RemoteRouteRefused(route));
+      /*
+       * Two shapes, checked separately rather than by falling through to
+       * `pathOf` and matching the result.
+       *
+       * A check against the built path would be a check against a string, and
+       * this module's whole argument is that a string is the thing types cannot
+       * see into — a runtime guard written that way would be one clever
+       * `agent_id` away from being wrong, in a function whose reason to exist is
+       * to be right when the types have been cast away.
+       *
+       * MAR-602 widens this to exactly one new shape. A leaf other than
+       * `commands` cannot be spelled by a typed caller and is refused here for
+       * the one that was not.
+       */
+      const named =
+        typeof route === "string"
+          ? permitted.has(route)
+          : route.leaf === "commands" && addressesAnAgent(route);
+      if (!named) {
+        return Promise.reject(new RemoteRouteRefused(pathOf(route)));
       }
-      return options.dial(`${origin}${route}`, withBearer(init, options.token));
+      return options.dial(`${origin}${pathOf(route)}`, withBearer(init, options.token));
     },
   };
 }

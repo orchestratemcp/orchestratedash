@@ -35,6 +35,7 @@ import {
   BROKER_ROUTES,
   EVIDENCE_ROUTES,
   localRunnerChannel,
+  pathOf,
   RemoteRouteRefused,
   remoteRunnerChannel,
   type LocalRunnerChannel,
@@ -76,6 +77,87 @@ describe("the route sets", () => {
     expect(EVIDENCE_ROUTES).toContain("/telemetry/drain");
     expect(EVIDENCE_ROUTES).toContain("/artifacts/drain");
     expect(EVIDENCE_ROUTES).toContain("/workspace-artifacts");
+  });
+});
+
+/**
+ * The one route MAR-602 added, and the property that makes it safe to have
+ * added (ADR 0014).
+ *
+ * The widening is real and is meant to be visible: a remote channel can now
+ * cause something to happen on a host rather than only read what already did.
+ * What has to stay true is that the variable half of it — an `agent_id` — is a
+ * value in one path segment and not a path. If it could be a path, the whole
+ * allowlist would be advisory, because the interesting route to reach is two
+ * segments away from every route on it.
+ */
+describe("the run route's variable part", () => {
+  it("puts an agent id in exactly one segment", () => {
+    expect(pathOf({ agent_id: "ai-news-scout-2", leaf: "commands" })).toBe(
+      "/agents/ai-news-scout-2/commands",
+    );
+  });
+
+  it("cannot be talked into naming a brokered route", () => {
+    for (const route of BROKER_ROUTES) {
+      const built = pathOf({ agent_id: route, leaf: "commands" });
+      expect(built).not.toContain(route);
+      expect(built.startsWith("/agents/")).toBe(true);
+      expect(built.endsWith("/commands")).toBe(true);
+    }
+  });
+
+  it("cannot climb out of the agents path", () => {
+    for (const hostile of ["../../broker/drain", "a/../../b", "x?y=1", "x#y"]) {
+      const built = pathOf({ agent_id: hostile, leaf: "commands" });
+      // Three separators exactly: the two this module wrote and no more.
+      expect(built.split("/")).toHaveLength(4);
+    }
+  });
+
+  /**
+   * The one shape the encoder does not neutralise, refused by name.
+   *
+   * Dots are unreserved, so `encodeURIComponent("..")` is `..` and
+   * `/agents/../commands` normalises to `/commands` before it reaches a socket.
+   * Nothing is served there, so this closes a shape rather than a hole — and it
+   * is asserted so that a later reading of "the encoder handles it" cannot
+   * quietly remove the check.
+   */
+  it("refuses a run route whose agent names a directory instead of an agent", async () => {
+    for (const dots of [".", "..", ""]) {
+      await expect(
+        (
+          remote as unknown as {
+            call: (route: { agent_id: string; leaf: string }) => Promise<Response>;
+          }
+        ).call({ agent_id: dots, leaf: "commands" }),
+      ).rejects.toBeInstanceOf(RemoteRouteRefused);
+    }
+  });
+
+  it("carries a run request for a real agent, which is what ADR 0014 admitted", async () => {
+    // The dial rejects; this asserts the guard let it through, which is a
+    // different failure from the one above and has a different type.
+    await expect(
+      (
+        remote as unknown as {
+          call: (route: { agent_id: string; leaf: string }) => Promise<Response>;
+        }
+      ).call({ agent_id: "ai-news-scout-2", leaf: "commands" }),
+    ).rejects.not.toBeInstanceOf(RemoteRouteRefused);
+  });
+
+  it("refuses any other leaf, whatever the caller's types said", async () => {
+    for (const leaf of ["lifecycle", "artifacts", "tasks"]) {
+      await expect(
+        (
+          remote as unknown as {
+            call: (route: { agent_id: string; leaf: string }) => Promise<Response>;
+          }
+        ).call({ agent_id: "ai-news-scout-2", leaf }),
+      ).rejects.toBeInstanceOf(RemoteRouteRefused);
+    }
   });
 });
 
