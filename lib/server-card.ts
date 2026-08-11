@@ -504,7 +504,13 @@ function lastAsked(checks: readonly ServerCheck[]): string {
     return "";
   }
   const moment = plainMoment(newest);
-  return moment === null ? "" : `, at ${moment}`;
+  /*
+   * " on ", not " at ". `plainMoment` already ends in a clock time — "11 August
+   * 2026 at 11:37" — so an "at" here produced "when DASH checked, at 11 August
+   * 2026 at 11:37" in the first captured frame. `describeAskedAt` next door
+   * words the same join the same way, which is the point.
+   */
+  return moment === null ? "" : ` on ${moment}`;
 }
 
 /* ---------------------------------------------------------------------- *

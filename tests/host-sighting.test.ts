@@ -61,7 +61,7 @@ describe("what a sighting may claim", () => {
         sent_on: SENT_ON,
         at: AT,
       });
-      expect(row.sentence).toContain("when DASH asked at");
+      expect(row.sentence).toContain("when DASH asked on");
       expect(row.sentence).toMatch(/\d/);
     }
   });

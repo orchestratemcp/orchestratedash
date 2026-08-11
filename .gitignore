@@ -43,3 +43,10 @@ dash-launch.*.log
 # machine's, from one run, and never a repo fact. The evidence is the images
 # beside it, which are committed.
 scratch-*/
+
+# The scratch store a capture scene seeds and points itself at. It holds a real
+# minted SSH key per seeded server and a SQLite database, is rebuilt from
+# nothing on every run, and belongs to no one — see `electron/capture-deploy.ts`
+# on why these harnesses write to a directory of their own rather than to the
+# store DASH is using.
+.capture-store-*/

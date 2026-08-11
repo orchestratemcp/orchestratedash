@@ -156,7 +156,12 @@ export function describeAgentOnHost(input: {
 }): AgentHostStanding {
   const { agent, server, seen, sent_on: sentOn } = input;
   const moment = input.at === null ? null : plainMoment(input.at);
-  const asked = moment === null ? null : `when DASH asked at ${moment}`;
+  /*
+   * "asked on", not "asked at". `plainMoment` already ends in a clock time, so
+   * "at" produced "when DASH asked at 11 August 2026 at 11:37" in the first
+   * captured frame — one preposition too many, and only visible in a picture.
+   */
+  const asked = moment === null ? null : `when DASH asked on ${moment}`;
 
   const standing: AgentOnHost =
     seen === null

@@ -59,7 +59,7 @@ describe("the fleet card's hosting indicator", () => {
     const html = fleet(HOSTED, store.snapshot());
     expect(html).toContain(`seen running on ${SERVER}`);
     expect(html).toContain("chip-ok");
-    expect(html).toContain("when DASH asked at");
+    expect(html).toContain("when DASH asked on");
     expect(html).not.toContain("is running");
   });
 
@@ -95,7 +95,7 @@ describe("what is on this server, drawn", () => {
     );
     expect(html).toContain(AGENT);
     expect(html).toContain("seen running");
-    expect(html).toContain("when DASH asked at");
+    expect(html).toContain("when DASH asked on");
   });
 
   it("lists an agent DASH sent even before anything has asked the machine", () => {

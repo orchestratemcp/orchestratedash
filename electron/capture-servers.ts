@@ -223,8 +223,15 @@ async function pressCheck(target: BrowserWindow): Promise<string | null> {
   // waits for the answer rather than photographing the "Checking..." frame —
   // which is a real state, and not the one this run is for.
   await settle(14_000);
+  /*
+   * Scoped to the card's head since MAR-606. `.server-card .chip` used to be
+   * unambiguous; the card now also draws a chip per agent inside
+   * `.host-contents`, and while the standing still happens to come first in the
+   * document, a selector relying on that would start reporting an agent's
+   * standing as the server's the first time somebody reordered the card.
+   */
   return (await target.webContents.executeJavaScript(
-    `document.querySelector(".server-card .chip")?.textContent ?? null`,
+    `document.querySelector(".server-card .card-head .chip")?.textContent ?? null`,
   )) as string | null;
 }
 
@@ -253,6 +260,29 @@ async function layout(target: BrowserWindow): Promise<unknown> {
            server_cards: document.querySelectorAll(".server-card").length,
            wizard_cards: document.querySelectorAll(".wizard-card").length,
            hosting_notes: document.querySelectorAll(".hosting-note").length,
+           /*
+            * MAR-605. The summary above the list, read out rather than counted.
+            *
+            * It used to say "1 server is connected" above a card whose own body
+            * said DASH could not get in, and no counter here would have caught
+            * that — a count of one is a count of one either way. What catches it
+            * is the sentence itself in the log, beside the chip below it, so a
+            * reader of the run can see whether the two agree.
+            */
+           page_summary: document.querySelector(".page-summary")?.textContent?.trim() ?? null,
+           /*
+            * The standing chip's own document text, never innerText: chips are
+            * uppercased by the stylesheet as typography, so a harness grepping
+            * rendered text for "Answering" reads false while the word is in the
+            * middle of the picture.
+            *
+            * NOTE: no backticks in this block. It is all one template literal in
+            * the .ts file and a backtick in a comment closes it.
+            */
+           standing_chip:
+             document.querySelector(".server-card .card-head .chip")?.textContent?.trim() ?? null,
+           /* MAR-606, on this page. Absent until DASH has sent something here. */
+           host_contents: document.querySelectorAll(".host-content").length,
            widest_overflow: widest,
          };
        })()`,
