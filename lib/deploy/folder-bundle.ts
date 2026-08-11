@@ -39,6 +39,7 @@ import type { BundledModelChoice } from "../ai/model-choice";
 import type { ConnectionSourceManifest } from "../connections";
 import { validateManifest } from "../contracts";
 import { assessConnectionTravel, describeTravelRefusal } from "./connection-travel";
+import { listSecretReferences } from "../secret-refs";
 import type { AgentRegistration } from "../registration";
 import {
   BUNDLE_ENTRY_POINT,
@@ -175,35 +176,43 @@ export function produceAgentFolderBundle(
   }
 
   /*
-   * MAR-583, generalised by MAR-591. A connection DASH holds the credential for,
-   * on an agent this agent's own file says needs it.
+   * MAR-583, generalised by MAR-591, corrected by MAR-626. A connection DASH
+   * actually holds a credential for, on an agent this agent's own file says
+   * needs it.
    *
    * Second only to the manifest-only refusal, and before the runner is read for
    * the same reason that one is: there is no half-bundle to accidentally send,
    * and the sentence reaches the audited command result rather than a partial
    * push somebody has to undo.
    *
-   * **What it is checking, exactly.** Not whether DASH holds a credential right
-   * now — that is a fact about this computer's vault, and a deploy that succeeded
-   * or failed depending on whether somebody had connected yet would be a rule
-   * nobody could predict. It checks the *shape of the arrangement*: this agent
-   * asks DASH to hold this, and DASH does not send credentials to servers. That
-   * is true whether or not anything has been typed, so the refusal is stable.
+   * **What it is checking, exactly.** Whether DASH holds a credential right
+   * now — a `connection_secrets` lookup for this agent, and nothing else. The
+   * MAR-591 draft of this comment argued the opposite: that reading the vault
+   * would make a deploy's outcome depend on how far somebody had got with
+   * connecting, and refused on the manifest's shape alone regardless. MAR-626
+   * is what that produced — a fresh scaffold of MAR-619's News Scout, whose
+   * model-provider connection is declared `optional: true` and had never been
+   * connected, refused every single deploy. Nothing was ever going to be
+   * stranded; there was nothing in the vault to strand. The manifest describes
+   * what the agent *might* ask DASH to hold, not what DASH is holding, and only
+   * the second question is one a deploy can actually fail on.
    *
-   * An agent that manages its own credentials is not refused. It reaches its
-   * services by arrangements DASH has no part in, wherever it runs, and DASH has
-   * no standing to stop it.
+   * An agent that manages its own credentials is not refused, exactly as
+   * before. It reaches its services by arrangements DASH has no part in,
+   * wherever it runs, and DASH has no standing to stop it.
    *
    * **This is the gate, and it is not the disclosure.** Both deploy panels call
-   * the same `assessConnectionTravel` before the press and say what will not
-   * travel — including the cases that warn rather than refuse, which never reach
-   * this function. What arrives here is a page that was ignored, or a store that
-   * has drifted from this folder; either way the sentence is `describeTravelRefusal`'s
-   * and the model-key case still gets MAR-583's own words.
+   * the same `assessConnectionTravel`, with the same held-credential lookup,
+   * before the press and say what will not travel — including the cases that
+   * warn rather than refuse, which never reach this function. What arrives here
+   * is a page that was ignored, or a store that has drifted from this folder;
+   * either way the sentence is `describeTravelRefusal`'s and the model-key case
+   * still gets MAR-583's own words.
    */
   const travel = assessConnectionTravel(
     options.agent_id,
     manifest.value as ConnectionSourceManifest,
+    listSecretReferences(options.agent_id),
   );
   if (travel.verdict === "refuse") {
     return {
