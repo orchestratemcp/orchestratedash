@@ -108,7 +108,27 @@ beforeAll(async () => {
 afterAll(() => {
   closeDb();
   for (const dir of directories.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /*
+       * A temp directory that will not delete is not a failed test, and it was
+       * being reported as one.
+       *
+       * `localHelper`'s `close()` calls `child.kill()`, which returns as soon
+       * as the signal is sent; on Windows the helper still holds
+       * `DASH_HOST_ROOT` open for a moment afterwards, and Windows refuses to
+       * remove a directory any process has open. So `rmSync` threw EPERM out of
+       * `afterAll` and vitest failed the whole **file** — with every test in it
+       * passing, which is what made it read as load-related flakiness for
+       * weeks.
+       *
+       * Not fixed by waiting for the child: `close()` is a synchronous member
+       * of the `StdioChannel` contract and there is nothing here to await. The
+       * operating system reclaims the directory, and a cleanup that cannot
+       * complete has no business failing a proof about the deploy channel.
+       */
+    }
   }
 });
 

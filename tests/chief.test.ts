@@ -21,11 +21,54 @@ import { CHIEF_NAME, CHIEF_WAITING, describeChief } from "../lib/copy/chief";
 import { GLANCE_ALL_CLEAR, type GlanceChip } from "../lib/copy/glance";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const chiefSource = readFileSync(path.join(repoRoot, "lib", "copy", "chief.ts"), "utf8");
-const listSource = readFileSync(
-  path.join(repoRoot, "app", "_components", "fleet-list.tsx"),
-  "utf8",
-);
+
+/**
+ * A source file, with its line endings normalised to `\n`.
+ *
+ * The normalisation is the whole point and it is not cosmetic. This repository
+ * has no `.gitattributes` and Git's `core.autocrlf` is `true` on Windows, so
+ * every file in a Windows checkout is CRLF on disk and LF in CI. A pattern
+ * anchored on `\n` therefore matches in CI and fails on the machine this
+ * project is actually developed on — which is what happened to `chiefBand`
+ * below, silently, from the day it was written.
+ *
+ * Normalising at the read rather than fixing each pattern is deliberate: it
+ * makes every regex in this file line-ending agnostic at once, including the
+ * ones somebody adds later without thinking about it.
+ */
+function source(...segments: string[]): string {
+  return readFileSync(path.join(repoRoot, ...segments), "utf8").replace(/\r\n/g, "\n");
+}
+
+const chiefSource = source("lib", "copy", "chief.ts");
+const listSource = source("app", "_components", "fleet-list.tsx");
+
+/**
+ * The body of `ChiefBand`, or a failure that says so.
+ *
+ * Taken once, at module scope, and **throwing rather than returning null** —
+ * which is the half of this that was a real defect rather than a line-ending
+ * quirk. Both cases below used to run the regex themselves and fall back to
+ * `band?.[1] ?? ""`, so on Windows the second one asserted that the empty
+ * string does not contain "OAvatar". It passed for years without reading a
+ * single character of the component.
+ *
+ * An assertion built on an optional match is an assertion that reports success
+ * when it has nothing to check. If this component is ever renamed or moved,
+ * the honest outcome is a loud failure here, not four quiet passes.
+ */
+function chiefBand(): string {
+  const matched = /export function ChiefBand\(([\s\S]*?)\n}\n/.exec(listSource);
+  if (matched === null) {
+    throw new Error(
+      "ChiefBand could not be found in app/_components/fleet-list.tsx — " +
+        "every assertion about what the band draws would be vacuous, so this fails instead",
+    );
+  }
+  return matched[1] ?? "";
+}
+
+const BAND = chiefBand();
 
 function chip(over: Partial<GlanceChip> = {}): GlanceChip {
   return {
@@ -166,12 +209,9 @@ describe("the chief is not the Chief chat", () => {
      * defect this prevents is somebody adding the box before the thing behind it
      * exists, and that arrives as markup rather than as a state.
      */
-    const band = /export function ChiefBand\(([\s\S]*?)\n}\n/.exec(listSource);
-    expect(band).not.toBeNull();
-    const markup = band?.[1] ?? "";
-    expect(markup).not.toMatch(/<input\b/);
-    expect(markup).not.toMatch(/<textarea\b/);
-    expect(markup).not.toMatch(/<form\b/);
+    expect(BAND).not.toMatch(/<input\b/);
+    expect(BAND).not.toMatch(/<textarea\b/);
+    expect(BAND).not.toMatch(/<form\b/);
   });
 
   it("draws no character from the cast", () => {
@@ -183,8 +223,7 @@ describe("the chief is not the Chief chat", () => {
      * because "the cast are the agents' characters, and the thing booting here is
      * DASH."
      */
-    const band = /export function ChiefBand\(([\s\S]*?)\n}\n/.exec(listSource);
-    expect(band?.[1] ?? "").not.toContain("OAvatar");
+    expect(BAND).not.toContain("OAvatar");
   });
 
   it("names the speaker, which is the one avatar-ish thing in DASH that is named", () => {
