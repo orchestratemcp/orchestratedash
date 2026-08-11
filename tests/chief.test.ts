@@ -27,6 +27,21 @@ const listSource = readFileSync(
   "utf8",
 );
 
+/**
+ * `ChiefBand`'s body, extracted from the file's own source rather than from a
+ * render — the defect the two tests below guard against is somebody adding a
+ * dead input to the markup, which is a fact about the source and not about a
+ * particular render's state.
+ *
+ * `\r?\n` rather than `\n`: a Windows checkout of this repository has CRLF
+ * line endings (`core.autocrlf`), and the plain `\n}\n` this used to be
+ * written as never matches `...);\r\n}\r\n` — the `}` is followed by `\r`, not
+ * directly by `\n` — so the match was silently `null` on every such checkout.
+ */
+function chiefBandMatch(): RegExpExecArray | null {
+  return /export function ChiefBand\(([\s\S]*?)\r?\n}\r?\n/.exec(listSource);
+}
+
 function chip(over: Partial<GlanceChip> = {}): GlanceChip {
   return {
     question: "needs_you",
@@ -166,7 +181,7 @@ describe("the chief is not the Chief chat", () => {
      * defect this prevents is somebody adding the box before the thing behind it
      * exists, and that arrives as markup rather than as a state.
      */
-    const band = /export function ChiefBand\(([\s\S]*?)\n}\n/.exec(listSource);
+    const band = chiefBandMatch();
     expect(band).not.toBeNull();
     const markup = band?.[1] ?? "";
     expect(markup).not.toMatch(/<input\b/);
@@ -183,8 +198,7 @@ describe("the chief is not the Chief chat", () => {
      * because "the cast are the agents' characters, and the thing booting here is
      * DASH."
      */
-    const band = /export function ChiefBand\(([\s\S]*?)\n}\n/.exec(listSource);
-    expect(band?.[1] ?? "").not.toContain("OAvatar");
+    expect(chiefBandMatch()?.[1] ?? "").not.toContain("OAvatar");
   });
 
   it("names the speaker, which is the one avatar-ish thing in DASH that is named", () => {
