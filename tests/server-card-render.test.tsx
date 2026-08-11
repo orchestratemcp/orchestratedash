@@ -47,6 +47,7 @@ const NOTHING = {
   forget: () => undefined,
   trust: () => undefined,
   setup: () => Promise.resolve(null),
+  bringHome: () => undefined,
 };
 
 /**

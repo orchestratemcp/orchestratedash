@@ -306,6 +306,14 @@ interface DashShellClient {
    * target on it.
    */
   runAgentOnHost?(args: HostDeployCommandTarget): Promise<CommandResult>;
+  /**
+   * Take the copy that is on a server back (MAR-611, ADR 0017).
+   *
+   * The same target `deployAgentToHost` and `runAgentOnHost` take, and the same
+   * optionality for the same reason — the newest method on the bridge, so a DASH
+   * installed before this work has every method around it and not this one.
+   */
+  bringAgentHome?(args: HostDeployCommandTarget): Promise<CommandResult>;
   forgetHost?(args: HostCommandTarget): Promise<CommandResult>;
   /**
    * The task-workspace commands (MAR-507).
@@ -1125,7 +1133,7 @@ export async function submitHostCommand(
   target: HostCommandTarget,
 ): Promise<CommandResult>;
 export async function submitHostCommand(
-  action: "deploy" | "run",
+  action: "deploy" | "run" | "bringHome",
   target: HostDeployCommandTarget,
 ): Promise<CommandResult>;
 export async function submitHostCommand(
@@ -1137,7 +1145,7 @@ export async function submitHostCommand(
   target: HostCommandTarget,
 ): Promise<CommandResult>;
 export async function submitHostCommand(
-  action: "create" | "probe" | "trust" | "setup" | "deploy" | "run" | "forget",
+  action: "create" | "probe" | "trust" | "setup" | "deploy" | "run" | "bringHome" | "forget",
   target:
     | HostCreateCommandArgs
     | HostCommandTarget
@@ -1215,6 +1223,16 @@ export async function submitHostCommand(
         };
       }
       return bridge.runAgentOnHost(target as HostDeployCommandTarget);
+    case "bringHome":
+      if (bridge.bringAgentHome === undefined) {
+        return {
+          ok: false,
+          request_id: "",
+          reason: "read_only_host",
+          detail: "This version of the DASH app cannot bring an agent home yet.",
+        };
+      }
+      return bridge.bringAgentHome(target as HostDeployCommandTarget);
     case "forget":
       if (bridge.forgetHost === undefined) {
         return {

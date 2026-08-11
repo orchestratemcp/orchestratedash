@@ -28,6 +28,7 @@ import {
   summariseWhatIsOnHost,
   type AgentHostStanding,
 } from "../../lib/host-sighting";
+import { describeBringHome } from "../../lib/copy/bring-home";
 import type { AgentDeployChoice, SavedServerView } from "../../lib/views/types";
 import { ConnectionTravelNotice, DeployOutcome } from "./deploy";
 
@@ -72,6 +73,14 @@ export interface ServerCardActions {
   trust(fingerprint: string): void;
   /** Fetch the one-paste bootstrap for this server (MAR-573). Null on failure. */
   setup(): Promise<string | null>;
+  /**
+   * Take this agent's copy back off this server (MAR-611, ADR 0017).
+   *
+   * Confirmed on the card first — see `confirmBringHome` — so this is only ever
+   * called once a person has read `describeBringHome` and pressed the button
+   * naming the act.
+   */
+  bringHome(agentId: string): void;
 }
 
 export function ServerCard({
@@ -110,6 +119,12 @@ export function ServerCard({
   const [confirmForget, setConfirmForget] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [chosenAgent, setChosenAgent] = useState("");
+  /**
+   * The agent id a bring-home is being confirmed for, or null (MAR-611,
+   * ADR 0017). One at a time, the same shape `confirmForget` already uses for
+   * the card's other irreversible action.
+   */
+  const [confirmBringHome, setConfirmBringHome] = useState<string | null>(null);
 
   const copy = describeConnectState(standing);
   const chip = standingChip(standing);
@@ -203,7 +218,37 @@ export function ServerCard({
         list says it is, in words, rather than an absence.
       */}
       {contents.length === 0 ? null : (
-        <WhatIsOnThisServer rows={contents} />
+        <WhatIsOnThisServer
+          rows={contents}
+          /*
+           * MAR-611, ADR 0017. Bring-home only makes sense for an agent DASH
+           * still holds on this computer — `bringAgentHomeFromHost` refuses
+           * before starting anything otherwise — so the button is offered
+           * exactly where that is true rather than for every row the server
+           * happened to answer about.
+           */
+          knownLocally={new Set(agents.map((agent) => agent.name))}
+          busy={busy}
+          canAct={canAct}
+          onBringHome={(agentId) => {
+            setConfirmBringHome(agentId);
+          }}
+        />
+      )}
+
+      {confirmBringHome === null ? null : (
+        <BringHomeConfirmation
+          agent={confirmBringHome}
+          label={server.label}
+          busy={busy}
+          onKeep={() => {
+            setConfirmBringHome(null);
+          }}
+          onConfirm={() => {
+            actions.bringHome(confirmBringHome);
+            setConfirmBringHome(null);
+          }}
+        />
       )}
 
       {/*
@@ -356,8 +401,21 @@ export function ServerCard({
  */
 export function WhatIsOnThisServer({
   rows,
+  knownLocally,
+  busy,
+  canAct,
+  onBringHome,
 }: {
   rows: readonly AgentHostStanding[];
+  /**
+   * MAR-611, ADR 0017. Which of these agents DASH still holds on this
+   * computer — the one precondition `bringAgentHomeFromHost` checks before
+   * starting anything, so it is also the one gate for offering the button.
+   */
+  knownLocally: ReadonlySet<string>;
+  busy: boolean;
+  canAct: boolean;
+  onBringHome: (agentId: string) => void;
 }): ReactNode {
   return (
     <section className="host-contents">
@@ -371,9 +429,70 @@ export function WhatIsOnThisServer({
               <span className={`chip chip-${row.tone}`}>{row.chip}</span>
             </span>
             <span className="wrap muted">{row.sentence}</span>
+            {canAct && knownLocally.has(row.agent) ? (
+              <div className="button-row">
+                <button
+                  type="button"
+                  className="button-secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    onBringHome(row.agent);
+                  }}
+                >
+                  Bring it home
+                </button>
+              </div>
+            ) : null}
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+/**
+ * The disclosure before a bring-home, and the two answers to it (MAR-611,
+ * ADR 0017).
+ *
+ * `describeBringHome`'s three sentences, in the same two-step shape
+ * `ForgetConfirmation` below already uses for this card's other irreversible
+ * action: a person reads what will happen — including the half that is
+ * deliberately *not* done — before either button is live.
+ */
+function BringHomeConfirmation({
+  agent,
+  label,
+  busy,
+  onKeep,
+  onConfirm,
+}: {
+  agent: string;
+  label: string;
+  busy: boolean;
+  onKeep: () => void;
+  onConfirm: () => void;
+}): ReactNode {
+  const copy = describeBringHome(label);
+  return (
+    <section className="notice wrap" role="alert">
+      <p>
+        <strong>{copy.headline}</strong>
+      </p>
+      <p className="card-meta wrap">
+        <code>{agent}</code>
+      </p>
+      <p>{copy.meaning}</p>
+      <p className="disclosure wrap" role="note">
+        {copy.afterwards}
+      </p>
+      <div className="button-row">
+        <button type="button" className="button-secondary" disabled={busy} onClick={onKeep}>
+          Not now
+        </button>
+        <button type="button" className="button-primary" disabled={busy} onClick={onConfirm}>
+          {busy ? "Bringing it home…" : "Bring it home"}
+        </button>
+      </div>
     </section>
   );
 }
