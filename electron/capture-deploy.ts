@@ -388,12 +388,49 @@ function appWindowLoaded(): Promise<BrowserWindow> {
 const written: string[] = [];
 const measurements: object[] = [];
 
+/**
+ * Photograph one frame, retrying the compositor rather than the whole run.
+ *
+ * ## Why this is a loop
+ *
+ * `capturePage()` rejects with `UnknownVizError` on the first attempt after the
+ * window has been resized — MAR-583 measured it as every 768 and 375 frame
+ * retrying once and no 1280 frame retrying at all. `electron/capture-models.ts`
+ * has had this loop since; **this harness did not, and it cost four runs of
+ * MAR-609's** before the difference was noticed. Each died partway through with
+ * one rejected capture, having already written between four and eighty-odd
+ * good images, and the second run died at a different frame than the first —
+ * which is what sent the session looking for an environmental cause rather than
+ * the missing retry that was sitting in a sibling file.
+ *
+ * A longer `settle()` does not fix it: the wait is for a compositor frame, not
+ * for time.
+ *
+ * **It still throws at the end.** A harness that swallowed this would write a
+ * short set of images and report success, which is worse than a failed run —
+ * see `written` and the count this file logs when it finishes.
+ */
 async function shoot(target: BrowserWindow, name: string): Promise<void> {
-  const image = await within(`capturePage for ${name}`, 20_000, target.webContents.capturePage());
-  writeFileSync(path.join(OUT, `${name}.png`), image.toPNG());
-  const size = image.getSize();
-  written.push(name);
-  console.log(`[deploy] ${name}.png ${String(size.width)}x${String(size.height)}`);
+  let last: unknown = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      const image = await within(
+        `capturePage for ${name}`,
+        20_000,
+        target.webContents.capturePage(),
+      );
+      writeFileSync(path.join(OUT, `${name}.png`), image.toPNG());
+      const size = image.getSize();
+      written.push(name);
+      console.log(`[deploy] ${name}.png ${String(size.width)}x${String(size.height)}`);
+      return;
+    } catch (error: unknown) {
+      last = error;
+      console.log(`[deploy] ${name} did not compose on attempt ${String(attempt + 1)}; retrying`);
+      await settle(700);
+    }
+  }
+  throw new Error(`could not photograph ${name}: ${String(last)}`);
 }
 
 /**
@@ -526,9 +563,34 @@ async function layout(target: BrowserWindow): Promise<unknown> {
     target.webContents.executeJavaScript(
       `(() => {
          const root = document.documentElement;
-         const widest = [...document.querySelectorAll("*")]
-           .map((node) => node.scrollWidth - node.clientWidth)
-           .reduce((most, gap) => (gap > most ? gap : most), 0);
+         /*
+          * Which element is widest, not only by how much.
+          *
+          * The number alone has cost several sessions the same investigation.
+          * It is per-element scrollWidth minus clientWidth, so anything that
+          * clips itself reports its full content width as an "overflow" —
+          * span.visually-hidden has produced a standing 150/175px red herring
+          * for months, and MAR-609 moved it to 444 simply by giving the status
+          * pill a longer screen-reader sentence. Nothing overflowed; a hidden
+          * span got wordier.
+          *
+          * So the source travels with the number. A reviewer reading
+          * "span.visually-hidden" next to 444 stops there; one reading 444 on
+          * its own goes looking for a layout defect that is not there.
+          * page_overflows below is still the question that matters — it asks
+          * the document, and it is what a person would actually see.
+          */
+         let widest = 0;
+         let widestSource = "none";
+         for (const node of document.querySelectorAll("*")) {
+           const gap = node.scrollWidth - node.clientWidth;
+           if (gap > widest) {
+             widest = gap;
+             const cls = typeof node.className === "string" ? node.className.trim() : "";
+             widestSource =
+               node.tagName.toLowerCase() + (cls === "" ? "" : "." + cls.split(/\\s+/).join("."));
+           }
+         }
          const text = document.body.innerText;
          return {
            viewport: window.innerWidth,
@@ -562,6 +624,7 @@ async function layout(target: BrowserWindow): Promise<unknown> {
                (node) => node.textContent.includes("Put") && node.disabled,
              ),
            widest_overflow: widest,
+           widest_overflow_source: widestSource,
          };
        })()`,
     ),
@@ -587,6 +650,81 @@ function surfaces(): Surface[] {
       name: "agent-deploy",
       route: agentRoute(SENDABLE),
       focus: ".deploy-section",
+    },
+    /*
+     * MAR-609's four, and every one of them is of an agent that has produced
+     * nothing.
+     *
+     * That is not a limitation of this scene, it is the scene's value here. The
+     * issue's closing note is that *"an agent with no output currently renders
+     * a page full of prose"* and that whatever replaces it *"should be sized
+     * for the empty case first — that is the state every new user meets."*
+     * `SENDABLE` is imported with a manifest and a folder and has never run, so
+     * these frames are that exact state, photographed at both themes and both
+     * densities by the loop that owns them.
+     *
+     * Four rather than one because the page is now four distinct things and a
+     * single top-of-page frame would prove only the first: the header and its
+     * controls, the outputs area's empty state, the settings drawer somebody
+     * has to press to see, and the record everything else folded into.
+     */
+    {
+      name: "agent-overview",
+      route: agentRoute(SENDABLE),
+      // The header rather than the body: this frame is the answer to "you get
+      // no overview", so its subject is the block that now carries the name,
+      // the status, the controls and the four tiles.
+      focus: ".agent-header",
+    },
+    {
+      name: "agent-empty-outputs",
+      route: agentRoute(SENDABLE),
+      /*
+       * Focused on the heading rather than the section, for the reason
+       * MAR-591's `.travel-notice` frames record: at 375px a section-scoped
+       * scroll puts the subject below the fold and files a photograph of
+       * something else under its name. This empty state is two short lines and
+       * it is the most-read copy on this page.
+       */
+      focus: "#outputs-heading",
+    },
+    {
+      name: "agent-settings",
+      route: agentRoute(SENDABLE),
+      // Pressed, not URL-forced. The drawer is `useState` in the page and there
+      // is no route to it, so a harness that could not click the button could
+      // not photograph the feature — which makes the frame a check that the
+      // button works as well as a picture of what it opens.
+      prepare: async (target) => {
+        await clickByText(target, "Settings");
+      },
+      focus: ".agent-settings",
+    },
+    {
+      name: "agent-record",
+      route: agentRoute(SENDABLE),
+      /*
+       * The disclosure opened, because a closed `<details>` photographs as one
+       * grey line and would prove only that the summary exists. What is being
+       * checked is that everything MAR-609 folded away is still *there* — the
+       * permission receipt and the whole workspace record — which is the claim
+       * that this was a move rather than a deletion.
+       *
+       * `open` is set directly rather than clicked: `<summary>` is not a
+       * `<button>`, so `clickByText` cannot reach it, and setting the property
+       * is what the element's own click does.
+       */
+      prepare: async (target) => {
+        await target.webContents.executeJavaScript(
+          `(() => {
+             const box = document.querySelector("details.agent-record");
+             if (box !== null) box.open = true;
+             return box !== null;
+           })()`,
+        );
+        await settle(300);
+      },
+      focus: ".agent-record",
     },
   ];
   if (SCENE === "one-server") {

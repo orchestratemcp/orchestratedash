@@ -2288,21 +2288,15 @@ button.button-unavailable:disabled {
 
 /* Live agent workspace (DASH-09). */
 
-.workspace-title,
+/* `.workspace-title` was the third selector here and is gone with MAR-609: the
+   agent page's identity block is `.agent-header`, which needs its own control
+   column and could not share a rule with a plain two-item row. */
 .section-heading,
 .work-card {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-}
-
-.workspace-title {
-  margin-bottom: 1rem;
-}
-
-.workspace-title .lede {
-  margin-bottom: 0;
 }
 
 /* `label-caps` (MAR-528): 12px, 700, 0.1em, upper. The one typography token the
@@ -2318,18 +2312,12 @@ button.button-unavailable:disabled {
   text-transform: uppercase;
 }
 
-.workspace-overview {
-  display: grid;
-  grid-template-columns: minmax(15rem, 1fr) minmax(20rem, 1.4fr);
-  gap: var(--density-stack);
-  margin: var(--density-gap) 0 var(--density-stack);
-  padding: var(--density-card-p);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--panel);
-}
-
-.workspace-overview h2,
+/* `.workspace-overview` is gone with MAR-609. It was a two-column block holding
+   the status heading and six facts, two thirds of the way down the page and
+   drawn only when a snapshot existed — so the most basic question about an
+   agent was both buried and, for a new agent, absent entirely. The status is
+   `.status-pill` in the header, its two headline facts are `.agent-tiles`, and
+   the remainder is a plain `.facts` list inside the record disclosure. */
 .work-card h2,
 .work-card h3,
 .summary-card h3,
@@ -2623,15 +2611,10 @@ button:disabled {
 }
 
 @media (max-width: 760px) {
-  .workspace-title,
   .section-heading,
   .work-card {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .workspace-overview {
-    grid-template-columns: 1fr;
   }
 
   .facts {
@@ -2699,32 +2682,11 @@ button:disabled {
   color: var(--muted);
 }
 
-.run-now {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.run-now p {
-  margin: 0;
-}
-
-/* MAR-602. One flex item holding every line that qualifies the button.
-   `.run-now` is a row, so two bare paragraphs would sit side by side at desktop
-   widths and read as two unrelated captions. Stacked, the machine sentence sits
-   above the timer sentence and both stay beside the control they are about.
-   No `flex` shorthand, deliberately: the default `0 1 auto` is what the bare
-   paragraph already had, so an agent that lives in one place — almost all of
-   them — renders exactly as it did before this issue. `min-width: 0` so a long
-   server name wraps inside the column rather than pushing the row wider than
-   the card holding it. */
-.run-now-note {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: var(--space-1);
-}
+/* MAR-609 removed `.run-now` and `.run-now-note`. The control they styled is
+   `.agent-controls` now — a row in the header block rather than a section
+   halfway down the page — and MAR-602's stacked-note rule went with it: the
+   machine sentence and the cadence sentence are one `.muted` line under the
+   button, because there is now only one of them on screen at a time. */
 
 /* A run in flight is the one moment DASH refreshes on its own. The design brief
    rule is that nothing moves without saying it did, so the saying-so gets a
@@ -4018,4 +3980,328 @@ button:disabled {
 .ask-next {
   margin: 0;
   font-weight: 600;
+}
+
+/* ------------------------------------------------------------------------ *
+ * The agent page as a control surface (MAR-609)
+ *
+ * Henrik's verdict was "still very cluttred. Lots of random text ... you get no
+ * overview." The structural half of the answer is in the components; this is
+ * the part that makes a control surface read as one — an identity block and its
+ * controls on one line, four tiles that answer the four questions, and a
+ * settings drawer that is visibly a drawer rather than another section.
+ *
+ * MAR-614's tightening is applied *here*, to what this page owns, and
+ * deliberately not to `.section`'s global rhythm. That issue is the pass across
+ * every surface and it says so; changing the shared stack from inside a
+ * single-page issue would retune eleven pages nobody screenshotted in this
+ * change. Light mode is checked in the capture harness at both densities — a
+ * tightening that works in dark and breaks light is the regression MAR-614
+ * names explicitly.
+ * ------------------------------------------------------------------------ */
+
+.agent-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--density-gap);
+  margin-bottom: var(--density-gap);
+}
+
+.agent-identity-text {
+  min-width: 0;
+}
+
+/* Tighter than the old `.workspace-title .lede`, which had the goal sitting on
+   its own with a full line of air under it. The goal is one line of context,
+   not a paragraph. */
+.agent-header .lede {
+  margin: var(--space-1) 0 0;
+}
+
+/* The id, as a value beside the name (MAR-589).
+   The label is small and muted so the eye reads the name first and finds the id
+   only when looking for it — which is the ruling: a name is a label, an id is a
+   value you occasionally need to match against another surface. */
+.agent-id-chip {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+}
+
+.agent-id-label {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.agent-header-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex: none;
+}
+
+.agent-status-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* The status, as one chip. Zero corners, like everything else in Bit-Command. */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.status-dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--text-muted);
+  flex: none;
+}
+
+.status-live .status-dot {
+  background: var(--accent);
+}
+
+.status-attention .status-dot {
+  background: var(--err);
+}
+
+.status-attention {
+  border-color: var(--err);
+}
+
+/* The control panel. A row of buttons and at most one sentence. */
+.agent-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--density-gap);
+}
+
+.agent-controls p {
+  margin: 0;
+}
+
+/* The idle state carries a sentence and no button, so it needs no button
+   alignment — but it must still occupy the row, because a control panel that
+   vanishes is the defect this page was filed on. */
+.agent-controls-idle {
+  min-height: var(--space-7);
+}
+
+/* The four tiles — MAR-570's Connections move, applied here.
+   `auto-fit` rather than a fixed four, so a narrow window reflows to two and
+   then one instead of producing the 1425px horizontal scroller MAR-491 found
+   every DASH table becoming at 375px. */
+/* `7rem`, not `9rem`, and the difference is a phone.
+   At 9rem the 375px frame put three tiles in one column and spent 270px of an
+   812px screen restating three short facts — the tiles were meant to *save*
+   vertical space and were costing it. 7rem fits two across at 375 and still
+   holds "Matches each step" without wrapping. */
+.agent-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: var(--space-2);
+  margin: 0 0 var(--density-stack);
+}
+
+.agent-tile {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+
+.agent-tile dt {
+  margin: 0 0 var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.agent-tile dd {
+  margin: 0;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+/* The settings drawer. Inset and outlined so it reads as a container that was
+   opened, rather than as three more sections that appeared. */
+.agent-settings {
+  margin: 0 0 var(--density-stack);
+  padding: var(--density-card-p);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+
+.agent-settings-block {
+  margin-top: var(--density-gap);
+  padding-top: var(--density-gap);
+  border-top: 1px solid var(--line);
+}
+
+.agent-settings-block:first-of-type {
+  margin-top: var(--space-2);
+  padding-top: 0;
+  border-top: 0;
+}
+
+.agent-settings-block h3 {
+  margin: 0 0 var(--space-2);
+}
+
+/* The removal block. Named by its border rather than by a red heading: the
+   heading says what it is, and the colour is the second signal so a person who
+   is scrolling registers it before they read it. */
+.agent-settings-danger {
+  border-top-color: var(--err);
+}
+
+/* The settings drawer's avatar row. `.o-portrait-empty` is 100px for the
+   header's portrait; at 50px in the drawer it would leave a 100px hole. */
+.agent-settings .o-portrait-empty {
+  width: 50px;
+  height: 50px;
+}
+
+/* The trigger switcher (ADR 0014). The two options DASH cannot honour are
+   dimmed rather than hidden — see `TriggerSwitch` for why that is information
+   and not a dead control. */
+.trigger-options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.trigger-option label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 650;
+}
+
+.trigger-option p {
+  margin: var(--space-1) 0 0 var(--space-5);
+  font-size: var(--text-sm);
+}
+
+.trigger-option.is-unavailable label,
+.trigger-option.is-unavailable p {
+  opacity: 0.62;
+}
+
+/* The record, behind one disclosure. Everything that was seven headings and
+   seven empty-state sentences on every agent page. */
+.agent-record {
+  margin-top: var(--density-stack);
+  border-top: 1px solid var(--line);
+  padding-top: var(--density-gap);
+}
+
+.agent-record > summary {
+  cursor: pointer;
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.agent-record > summary:hover {
+  color: var(--accent);
+}
+
+.agent-record[open] > summary {
+  margin-bottom: var(--density-gap);
+}
+
+/* MAR-614, found in MAR-609's first capture.
+ *
+ * `.ask` is `display: grid` with a `--density-gap` between rows, and its
+ * children are bare `<p>`s carrying the browser's default 1em top *and* bottom
+ * margin. **Margins do not collapse inside a grid container**, so every line of
+ * the chat panel was separated by 16px of margin + 16px of gap + 16px of margin
+ * — three times the intended rhythm, and the airiest thing on the page in the
+ * screenshot that caught it.
+ *
+ * Zeroed here rather than in `ask.tsx`, because the container is what owns
+ * spacing between its rows: the gap is already declared one rule up and a grid
+ * whose children also space themselves has two authorities for one distance.
+ * Exactly the "everything has so much space" Henrik described, and a measurement
+ * would never have reported it — the page did not overflow, nothing was
+ * clipped, and every element was where the CSS said it would be. */
+.ask > p {
+  margin: 0;
+}
+
+/* When an output was made, on the front of the card — both renderers.
+   `app/_components/outputs.tsx` and `app/_components/panel.tsx` each draw an
+   artifact card and both lists span runs, so both needed this: without it two
+   digests of the same role are two identical headings. */
+.output-when {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+}
+
+.output-run-link {
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .agent-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .agent-header-controls {
+    align-items: stretch;
+  }
+
+  /*
+   * The pill on its own line, the buttons side by side under it.
+   *
+   * `space-between` on one line was the first attempt and the 375px capture is
+   * why it is not this one: the pill plus two uppercase buttons is wider than a
+   * phone, so `.button-row` wrapped *internally* and Settings and Refresh came
+   * out stacked in a column at the right edge — two rows of chrome above the
+   * agent's own name. Giving the row a full-width basis makes the wrap happen
+   * where it was intended, between the pill and the buttons, and the buttons
+   * then have the whole width to sit across.
+   */
+  .agent-status-line {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .agent-status-line .button-row {
+    flex: 1 0 100%;
+    justify-content: flex-start;
+  }
 }

@@ -140,7 +140,15 @@ export function ModelChoice({
 
   return (
     <section className="section model-choice" aria-labelledby="model-choice">
-      <h2 id="model-choice">{settings.headline}</h2>
+      {/* MAR-609. An `h3`, because this panel now renders inside the agent
+          page's Settings drawer, whose own heading is the `h2` and whose other
+          blocks — the trigger switcher, notifications, removal — are `h3`s
+          beside this one. As an `h2` it outranked its own container: the first
+          capture of the drawer shows this headline set larger than the section
+          headings above it, which is a broken hierarchy for a screen reader as
+          well as an odd-looking page. This component renders on the agent page
+          and nowhere else, so the level is not shared with another surface. */}
+      <h3 id="model-choice">{settings.headline}</h3>
       <p className="muted wrap">{settings.detail}</p>
 
       {settings.can_choose ? (

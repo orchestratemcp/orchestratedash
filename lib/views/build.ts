@@ -31,7 +31,7 @@ import { hasFrozenPath, operationById, type BrokerOperation } from "../broker/op
 import { describeClientOwner, describeCustody, describeDashClosedWindow } from "../broker/providers";
 import { listReceipts, readBrokerAudit, readBrokerLapses, type BrokerLapse } from "../broker/store";
 import { describeBrokerRefusal } from "../copy/recovery";
-import { humanizeAgentName } from "../copy/agent-name";
+import { agentDisplayName } from "../copy/agent-name";
 import { heldCredentials } from "../connection-actions";
 import { connectableFields, type CredentialKind } from "../connection-credentials";
 import { describeEvidenceRecord } from "../copy/evidence";
@@ -90,6 +90,7 @@ import {
   readNotificationSettings,
   resolveArtifactAvailability,
   readStore,
+  type ArtifactAvailability,
   type EvidencePullRecord,
   type StoreShape,
 } from "../store";
@@ -1118,17 +1119,42 @@ export function workspaceView(
    * resolver here is how the two surfaces would come to disagree about whether
    * a person's file is still there.
    */
-  const outputsRunId = digest?.run_id ?? null;
-  let outputs: ArtifactCardView[] = [];
-  if (outputsRunId !== null) {
-    // Resolved once for the run, not once per record: it reads the whole
-    // workspace index for that run and returns a lookup, so calling it inside
-    // the map would query the store once per output.
-    const availabilityForArtifact = resolveArtifactAvailability(agent, outputsRunId);
-    outputs = buildArtifactCards(artifactRecordsForRun(agent, outputsRunId), (record) =>
-      availabilityForArtifact(record.artifact.artifact_id),
-    );
-  }
+  /*
+   * MAR-609. Every output this agent has made, not every output of its newest
+   * run.
+   *
+   * Henrik asked for *"a list of the latest outputs (if an news agent then the
+   * latest digest/newsletter it made)"* and this page could not answer it. The
+   * scope above was one run — `artifactRecordsForRun` against the digest's own
+   * run — so a scout run on Monday and again on Tuesday showed only Tuesday, and
+   * Monday's digest existed on this machine with no route to it from the
+   * agent's own page. The person had to know the Runs list existed.
+   *
+   * `artifactRecordsForAgent` is not a new query and that is the point: the
+   * author's panel has read the agent's whole artifact history through it since
+   * MAR-548, so the two surfaces on this page were already scoped differently,
+   * and the narrower one was DASH's own.
+   *
+   * **The availability resolver is per run and is memoised rather than
+   * widened.** It reads the workspace index for one run and returns a lookup;
+   * calling it inside the map would query the store once per output, and
+   * building an agent-wide variant would be a second resolver free to disagree
+   * with the run detail page about whether somebody's file is still there —
+   * which is the exact duplication the note below this one warns off.
+   */
+  const availabilityByRun = new Map<string, (artifactId: string) => ArtifactAvailability>();
+  const outputs: ArtifactCardView[] = buildArtifactCards(
+    artifactRecordsForAgent(agent),
+    (record) => {
+      const runId = record.artifact.run_id;
+      let resolve = availabilityByRun.get(runId);
+      if (resolve === undefined) {
+        resolve = resolveArtifactAvailability(agent, runId);
+        availabilityByRun.set(runId, resolve);
+      }
+      return resolve(record.artifact.artifact_id);
+    },
+  );
 
   // Outside the snapshot, deliberately. The snapshot is what the *agent*
   // published about itself and is null until it has published anything; a digest
@@ -1142,7 +1168,7 @@ export function workspaceView(
     // carries; an MCP-planned one may not (finding 4). Humanized rather than
     // the raw `agent.name`, so a machine slug never stands in for a title.
     title:
-      workspaceManifest.agent.display_name ?? humanizeAgentName(workspaceManifest.agent.name),
+      agentDisplayName(workspaceManifest.agent),
     goal: workspaceManifest.agent.goal,
     /*
      * MAR-502. Read from the store rather than from the manifest above, and
@@ -1161,7 +1187,6 @@ export function workspaceView(
     latest_digest_grounding:
       digest === null || !isDigestArtifact(digest) ? null : analyzeGrounding(digest),
     outputs,
-    outputs_run_id: outputsRunId,
     permissions: declaredPermissions(manifest),
     // MAR-507. From the manifest, like `permissions` directly above and for the
     // same reason: this is what the agent's author declared, and a projection
@@ -1182,7 +1207,7 @@ export function workspaceView(
       manifest,
       store.events.filter((event) => event.agent === agent),
       // The author's own name for it, never the id. See `buildAgentAsk`.
-      workspaceManifest.agent.display_name ?? humanizeAgentName(workspaceManifest.agent.name),
+      agentDisplayName(workspaceManifest.agent),
     ),
     // MAR-548, ADR 0008 slice 3's wiring. The authoritative document, not the
     // row's copy — see `panelDocument` for which store answers and why.
@@ -1376,7 +1401,7 @@ export function workInboxView(now: Date = new Date()): WorkInboxView {
     }
     const workspaceManifest = manifest as WorkspaceManifest;
     const title =
-      workspaceManifest.agent.display_name ?? humanizeAgentName(workspaceManifest.agent.name);
+      agentDisplayName(workspaceManifest.agent);
 
     items.push(
       ...buildWorkInbox(workspaceManifest, stored.state, now).map((item) => ({

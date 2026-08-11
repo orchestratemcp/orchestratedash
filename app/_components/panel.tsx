@@ -351,6 +351,24 @@ function PanelArtifactCard({ card }: { card: ArtifactCardView }): ReactNode {
           font.
         */}
         <p className="value agent-panel-output-title">{artifact.title}</p>
+        {/*
+          MAR-609. The twin of the line `app/_components/outputs.tsx` grew in
+          the same change, and this renderer needed it *first*.
+
+          An `outputs` section is built from `artifactRecordsForAgent` — the
+          agent's whole history — so this box has been capable of drawing
+          Monday's digest above Tuesday's, with the same role label and the same
+          title on both, since MAR-548. Nothing on the card said which was which;
+          the moment was in the receipt at the foot, below the entire body of
+          each digest, where no one comparing two cards would ever line them up.
+
+          Not a link to the run, unlike the Outputs area's card. This is the
+          author's region and DASH's navigation chrome does not go inside it —
+          the same rule that keeps "Save a copy" and the developer disclosure
+          out. The fact is what was missing; the link is DASH's own affordance
+          and belongs on DASH's own surface.
+        */}
+        <p className="output-when muted">{receipt.stated_at}</p>
       </div>
 
       <p className="muted">{role.purpose}</p>

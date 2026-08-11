@@ -20,10 +20,12 @@ import {
    than the next person following it. */
 import { DeployToServer } from "../../_components/deploy";
 import { FolderUpdate } from "../../_components/folder-update";
+import { AgentControls, AgentHeader } from "../../_components/agent-header";
+import { AgentSettings } from "../../_components/agent-settings";
+import { AgentTiles, type AgentTile } from "../../_components/agent-tiles";
 import { AskAgent } from "../../_components/ask";
 import { ModelChoice } from "../../_components/model-choice";
 import { InputsPanel, type SelectedInput } from "../../_components/inputs";
-import { OAvatar } from "../../_components/o-avatar";
 import { OutputsPanel } from "../../_components/outputs";
 import { AgentPanel } from "../../_components/panel";
 import { RemoveAgent } from "../../_components/remove-agent";
@@ -41,8 +43,11 @@ import {
 } from "../../_data/source";
 import { useCanAct, useHost, useLiveView } from "../../_data/use-view";
 import type { GroundingAnalysis } from "../../../lib/analyze";
-import type { OName } from "../../../lib/brand/o-cast";
 import type { PermissionGrant } from "../../../lib/contracts";
+import {
+  AGENT_OUTPUTS_COPY,
+  AGENT_TILE_COPY,
+} from "../../../lib/copy/agent-page";
 import { INPUTS_PANEL_COPY } from "../../../lib/copy/inputs";
 import { SAMPLE_REFRESH_COPY } from "../../../lib/copy/panel";
 import { describeWorkingPhase } from "../../../lib/copy/working";
@@ -55,11 +60,13 @@ import { describeRunOnHost, describeRunTarget } from "../../../lib/copy/where-it
 /* A type, so it erases — `lib/sample-refresh.ts` reaches `agent-kit/scaffold.ts`
    and must never arrive in this bundle as a value. See tests/client-bundle. */
 import type { ManifestGapView } from "../../../lib/sample-refresh";
+import { buildAgentControl } from "../../../lib/views/agent-control";
 import type { InputRoleView } from "../../../lib/views/inputs";
 import type { ArtifactCardView } from "../../../lib/views/artifacts";
 import type { InboxItem } from "../../../lib/workspace";
 import type {
   AgentDeployTarget,
+  AgentModelSettingsView,
   WorkspaceRunView,
   WorkspaceSnapshotView,
 } from "../../../lib/views/types";
@@ -82,6 +89,16 @@ function AgentWorkspace(): ReactNode {
   const [feedback, setFeedback] = useState<CommandFeedback>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [live, setLive] = useState(false);
+  /*
+   * MAR-609. Closed by default, and deliberately not remembered.
+   *
+   * The settings a person changes here — which model, the folder, removing the
+   * agent — are changed once and then not looked at, so the state that serves
+   * the common visit is closed. A remembered drawer would mean the page a
+   * person opens to read the news has a removal button on it because they
+   * changed a model setting last week.
+   */
+  const [settingsOpen, setSettingsOpen] = useState(false);
   /*
    * MAR-507. The task and what has been put in it, held here rather than on the
    * view, because neither is a fact DASH's store holds: the runner owns the task
@@ -385,46 +402,63 @@ function AgentWorkspace(): ReactNode {
   }
 
   const view = state.data;
+  /*
+   * MAR-609. One decision about what can be pressed, taken once.
+   *
+   * The page used to make this three times over — `RunNow` decided whether to
+   * draw a button, `WorkspaceBody` decided whether to draw a status, and each
+   * `RunCard` decided whether to draw pause and cancel — with the result that a
+   * new agent got none of the three and no explanation for any of them.
+   */
+  const control = buildAgentControl(view.snapshot, canAct);
+  const overview = view.snapshot?.overview ?? null;
+  /*
+   * Three tiles, and there were four until the first screenshot.
+   *
+   * The fourth was Status, and the frame showed it saying "Not reported" about
+   * 300px below a status pill saying NOT REPORTED — the same fact twice, on the
+   * one screen whose whole complaint is redundant text. The pill wins because
+   * it is in the header, beside the controls the status governs, and it is
+   * there in every state including the ones with no snapshot.
+   *
+   * Found by looking. Nothing measures "these two elements say the same thing",
+   * which is the fourth DASH defect in a row that only a photograph caught.
+   */
+  const tiles = [
+    {
+      label: AGENT_TILE_COPY.trigger,
+      value: overview?.trigger_label ?? AGENT_TILE_COPY.trigger_default,
+    },
+    modelTile(view.models),
+    {
+      label: AGENT_TILE_COPY.where,
+      value: overview?.runtime_label ?? AGENT_TILE_COPY.where_unknown,
+    },
+  ];
+
   return (
     <>
-      <div className="workspace-title">
-        {/*
-          MAR-502. The portrait belongs to the identity header and nowhere else
-          on this page: runs, verdicts, gates and outputs are all below, and a
-          character standing beside any of them would be a character implying it
-          had something to do with the finding. Here it is next to the agent's
-          own name, which is the one thing on the page it is genuinely about.
-        */}
-        <div className="agent-identity agent-portrait">
-          <AgentPortrait avatar={view.avatar} />
-          <div>
-            <p className="eyebrow">Agent workspace</p>
-            <h1>{view.title}</h1>
-            <p className="lede">{view.goal}</p>
-          </div>
-        </div>
-        <div>
-          {/*
-            The design brief's rule — "nothing moves or refreshes without saying
-            it did" — applied to the one place DASH now refreshes on its own.
-            A live region so it is announced rather than only seen, polite so it
-            waits its turn, and it disappears with the run rather than becoming
-            furniture.
-          */}
-          <p aria-live="polite" className="live-note">
-            {running
-              ? `Following this run. Last updated ${timeOnly(state.last_read_at)}.`
-              : ""}
-          </p>
-          <button
-            className="button-secondary"
-            onClick={() => setRefreshKey((value) => value + 1)}
-            type="button"
-          >
-            Refresh state
-          </button>
-        </div>
-      </div>
+      {/*
+        MAR-502. The portrait belongs to the identity header and nowhere else
+        on this page: runs, verdicts, gates and outputs are all below, and a
+        character standing beside any of them would be a character implying it
+        had something to do with the finding. Here it is next to the agent's
+        own name, which is the one thing on the page it is genuinely about.
+
+        MAR-589. `view.title` is `agentDisplayName`'s answer and the id travels
+        beside it as a value — Henrik's ruling, applied at the one place on this
+        page that names the agent.
+      */}
+      <AgentHeader
+        avatar={view.avatar}
+        control={control}
+        goal={view.goal}
+        id={view.agent}
+        live={running ? timeOnly(state.last_read_at) : null}
+        onRefresh={() => setRefreshKey((value) => value + 1)}
+        onSettings={() => setSettingsOpen((open) => !open)}
+        title={view.title}
+      />
       <HostNotice host={host} />
       {feedback === null ? null : (
         <div
@@ -448,7 +482,105 @@ function AgentWorkspace(): ReactNode {
         setFeedback={setFeedback}
       />
 
-      {/* MAR-576. First on the page, under the agent's own name.
+      {/* MAR-609. The control panel Henrik asked for, directly under the
+          header, and drawn in every state including the three where there is
+          nothing to press. See `buildAgentControl` for why "no button" was the
+          worst thing the old page did. */}
+      <AgentControls
+        busy={pending}
+        hasFiles={selectedInputs.some((input) => input.state === "copied")}
+        /* MAR-602. Filtered on the same field the sentence is built from, so a
+           server with no name a person would recognise cannot get a button
+           reading "Run on ". */
+        hosts={view.deploy_targets.filter((target) => target.label.length > 0)}
+        onCancelKey={(command, runId) => `${command}:${runId}`}
+        onRunOnHost={(target) => {
+          void runOnHost(target);
+        }}
+        onRun={(taskId_, observedAt) => {
+          void (async () => {
+            /*
+             * MAR-507. The files go first, and a refusal here stops the run.
+             *
+             * The order is the whole point: an agent started before its task is
+             * bound would read an empty workspace, and an agent started after a
+             * dispatch that failed would produce an output derived from nothing
+             * the person gave it. Both look exactly like a successful run from
+             * outside, which is why neither may happen quietly.
+             */
+            if (!(await dispatchTask())) {
+              return;
+            }
+            await issue(`run:${taskId_}`, "retry", {
+              agent_id: view.agent,
+              observed_at: observedAt,
+              task_id: taskId_,
+            });
+          })();
+        }}
+        onRunControl={(command, runId, observedAt) => {
+          void issue(`${command}:${runId}`, command, {
+            agent_id: view.agent,
+            observed_at: observedAt,
+            run_id: runId,
+          });
+        }}
+        run={control.run}
+      />
+
+      {/* MAR-609, reusing MAR-570. Four answers, one row, no prose. */}
+      <AgentTiles tiles={tiles} />
+
+      {/* MAR-609. The settings button's drawer, in place rather than in a
+          modal: it holds `RemoveAgent`, and a destructive control inside an
+          overlay that can be dismissed by a stray click is the wrong container
+          for it. Closed by default, so it costs nothing on the page a person
+          opens to read the news. */}
+      {settingsOpen ? (
+        <AgentSettings
+          avatar={view.avatar}
+          id={view.agent}
+          onClose={() => setSettingsOpen(false)}
+          title={view.title}
+          trigger={view.snapshot?.overview.trigger_label ?? null}
+          danger={
+            /* MAR-595 finding 18 shipped these two buttons and Henrik still
+               asked for a remove button, which means the buttons were not where
+               he looked. They were last on a page of eighteen sections, under
+               the audit history, with no heading of their own — two bare
+               controls a reader met only by scrolling past everything. Behind
+               the settings button, under a heading that says what they do, is
+               where a person goes looking for "get rid of this". */
+            <RemoveAgent agentId={view.agent} displayName={view.title} canAct={canAct} />
+          }
+        >
+          {/* MAR-583. The model picker is a setting, and it was a full-width
+              section on the page competing with the agent's own output. Its
+              behaviour is unchanged — this drawer owns where it sits, not what
+              it does. Renders nothing for an agent whose plan uses no model. */}
+          <ModelChoice
+            agent={view.agent}
+            settings={view.models}
+            canAct={canAct}
+            onChanged={() => setRefreshKey((value) => value + 1)}
+            setFeedback={setFeedback}
+          />
+
+          {/* MAR-584. Same argument: a person opens this page to read what
+              their agent found, not to audit its folder. Renders nothing at all
+              for an agent DASH holds no folder of its own for. */}
+          <FolderUpdate
+            agent={view.agent}
+            canAct={canAct}
+            checkable={view.folder_checkable}
+            onAdopted={() => setRefreshKey((value) => value + 1)}
+            setFeedback={setFeedback}
+          />
+        </AgentSettings>
+      ) : null}
+
+      {/* MAR-576, and now MAR-609's second ask. First content on the page,
+          under the agent's own name and its controls.
 
           It was fifth — behind the files panel, the Run now button and the
           permission receipt — and inside it the digest came last, under a
@@ -469,61 +601,31 @@ function AgentWorkspace(): ReactNode {
           and outlive the process that made them, so a stopped or unreachable
           agent still shows what it last produced.
 
-          MAR-434: this used to be `RunOutput` on `latest_digest` alone — one
-          artifact, on a page whose agent may well have written two. The panel
-          draws every output of that run, each with its own receipt and its own
-          availability, which is the same correction MAR-434 made on the run
-          detail page. `latest_digest_grounding` still rides along because
-          grounding is a verdict about the newest digest specifically. */}
+          MAR-609 widened the scope from one run to every run — see the note on
+          `outputs` in `lib/views/types.ts`. `latest_digest_grounding` still
+          rides along because grounding is a verdict about the newest digest
+          specifically, which is why `OutputsPanel` hangs the chip on the first
+          card only. */}
       <OutputsArea
         agent={view.agent}
         canAct={canAct}
         cards={view.outputs}
         grounding={view.latest_digest_grounding}
-        runId={view.outputs_run_id}
         setFeedback={setFeedback}
       />
 
-      {/* MAR-507. Above Run now, because it is the step before it. Both are now
-          below the output: MAR-576's rule is that the agent's own work is the
-          page's primary content, and a control is not content. They stay in
-          this order relative to each other, and stay above everything that is
-          merely a record of what already happened. */}
-      <InputsPanel
-        busyRole={busyRole}
-        canAct={canAct}
-        onChoose={(roleId) => void chooseInput(roleId)}
-        roles={view.input_roles}
-        selected={selectedInputs}
-      />
+      {/* MAR-545, moved up by MAR-609. Directly under the agent's own output,
+          because the question a person has is about what they have just read —
+          "you mentioned tariffs last week, what else did you find?" — and a
+          conversation placed below three controls would be a conversation about
+          something the reader has scrolled past.
 
-      {/* MAR-602, ADR 0014. `deploy_targets` reaches this control for exactly
-          one thing: whether there is a second place worth naming. Nothing about
-          what is on those servers now reaches the sentence it produces — that
-          is ADR 0010's line and it is not crossed here. */}
-      <RunNow
-        agent={view.agent}
-        canAct={canAct}
-        deployTargets={view.deploy_targets}
-        hasFiles={selectedInputs.some((input) => input.state === "copied")}
-        issue={issue}
-        onDispatch={dispatchTask}
-        onRunOnHost={runOnHost}
-        pending={pending}
-        snapshot={view.snapshot}
-      />
-
-      {/* MAR-545. Directly under the agent's own output, because the question a
-          person has is about what they have just read — "you mentioned tariffs
-          last week, what else did you find?" — and a conversation placed below
-          three controls would be a conversation about something the reader has
-          scrolled past.
-
-          Above the model picker on purpose, even though the picker is what makes
-          the chat work on an agent nobody has configured. The `no_model_chosen`
-          state says so and points down the page, which is one instruction read
-          once; the reverse order would put a setting above the thing it is a
-          setting for, on every agent, forever.
+          Henrik asked for a chat window on a page that already had one. It was
+          sixth of eleven sections, under the outputs, the inputs panel, Run now
+          and a manifest notice; the model picker that makes it work on an
+          unconfigured agent was below it, and the receipt, the panel and the
+          whole workspace record below that. Nothing about it was broken — it
+          was unfindable, which for a feature is the same thing.
 
           Draws in every state, including the four where nothing can be asked.
           Each of those is a fact about this agent worth knowing, and one of them
@@ -536,32 +638,40 @@ function AgentWorkspace(): ReactNode {
         setFeedback={setFeedback}
       />
 
-      {/* MAR-583. Directly under Run now, because it is the setting that decides
-          what pressing that button will cost — and, being a control rather than
-          content, it belongs below the agent's own work for MAR-576's reason.
-
-          Above the deploy section deliberately: the choice travels in the bundle,
-          so a person who is about to put this agent on a server should have met
-          it before they pick one. Renders nothing at all for an agent whose plan
-          uses no model, which is most of them today. */}
-      <ModelChoice
-        agent={view.agent}
-        settings={view.models}
+      {/* MAR-507. Below the output and the chat: choosing a file is a step
+          before a run, and the run button is now in the header where it is
+          always reachable. Renders nothing for an agent that declares no input
+          roles, which is most of them. */}
+      <InputsPanel
+        busyRole={busyRole}
         canAct={canAct}
-        onChanged={() => setRefreshKey((value) => value + 1)}
-        setFeedback={setFeedback}
+        onChoose={(roleId) => void chooseInput(roleId)}
+        roles={view.input_roles}
+        selected={selectedInputs}
       />
 
-      {/* MAR-577. Directly under Run now, because it is the same question asked
-          of a different machine — "run this, there" beside "run this, here" —
-          and a person deciding between them should not have to find one of the
-          two on another page. Below the output for MAR-576's reason: the
-          agent's own work is the page's primary content and a control is not
-          content.
+      {/* MAR-586. Actionable and therefore not behind the disclosure: this is
+          the one part of the workspace record that is waiting for a person
+          rather than describing something already finished. Renders nothing
+          when the inbox is empty, which is the ordinary case — the old page
+          drew the heading and a "nothing is pending" sentence regardless, which
+          is one more paragraph on the empty agent MAR-609 asks to be sized
+          for. */}
+      <WaitingWork
+        agent={view.agent}
+        canAct={canAct}
+        issue={issue}
+        pending={pending}
+        reasons={reasons}
+        setReasons={setReasons}
+        snapshot={view.snapshot}
+      />
 
-          The issue's second direction. The Servers page asks which agent goes
-          on a machine; this asks which machine an agent goes on, and both reach
-          the same `host.deploy`. */}
+      {/* MAR-577. Left on the page rather than folded into settings: it is an
+          action on the agent, not a preference, and MAR-606 is about to make
+          this the surface that says whether the agent is live somewhere. The
+          Servers page asks which agent goes on a machine; this asks which
+          machine an agent goes on, and both reach the same `host.deploy`. */}
       <DeployToServer
         agent={view.agent}
         title={view.title}
@@ -570,69 +680,81 @@ function AgentWorkspace(): ReactNode {
         canAct={canAct}
       />
 
-      {/* MAR-584. Under the deploy section, because the order is the order of
-          the journey: an agent is run here, then put on a server, and then —
-          later, in another window — changed. It is also the honest position for
-          how often it is used: a person opens this page to read the news their
-          agent found, not to audit its folder, and a section about editing sat
-          above the output would be the ordering defect MAR-576 fixed being
-          reintroduced by a different feature.
-
-          Renders nothing at all for an agent DASH holds no folder of its own
-          for. */}
-      <FolderUpdate
-        agent={view.agent}
-        canAct={canAct}
-        checkable={view.folder_checkable}
-        onAdopted={() => setRefreshKey((value) => value + 1)}
-        setFeedback={setFeedback}
-      />
-
-      <PermissionReceipt permissions={view.permissions} />
-
       {/* MAR-548, ADR 0008 slice 3. Below DASH's own surfaces on purpose: the
-          permission receipt and the Outputs area are DASH's record and DASH's
-          controls, and the panel is somebody else's box. Putting the author's
-          region above them would let a `note` sit where a person has learned to
-          read DASH's own voice. It renders nothing at all for the agents that
-          declare no panel, which is most of them — see `AgentPanel`.
+          Outputs area is DASH's record and DASH's controls, and the panel is
+          somebody else's box. Putting the author's region above them would let a
+          `note` sit where a person has learned to read DASH's own voice.
 
-          MAR-576 moved DASH's own surfaces and deliberately left this where it
-          was: the fix for "the news is too far down" is to raise DASH's
-          rendering of the news, not to promote a region whose contents an author
-          controls. */}
+          Deliberately **not** inside MAR-609's disclosure, though it is the
+          longest thing on the page for the sample agent. A disclosure is DASH
+          deciding somebody else's report is secondary, and ADR 0008's whole
+          point is that DASH renders what the author declared without editorial-
+          ising. It renders nothing at all for the agents that declare no panel,
+          which is most of them and every empty one. */}
       <AgentPanel view={view.panel} />
 
-      {view.snapshot === null ? (
-        <div className="empty">
-          <p>
-            <strong>No live state has arrived yet.</strong>
-          </p>
-          <p>
-            The manifest is imported, but this agent has not published an Agent
-            DOM snapshot. DASH will not invent tasks, controls or connection
-            health for it.
-          </p>
-        </div>
-      ) : (
-        <WorkspaceBody
-          agent={view.agent}
-          canAct={canAct}
-          issue={issue}
-          pending={pending}
-          reasons={reasons}
-          setReasons={setReasons}
-          snapshot={view.snapshot}
-        />
-      )}
+      {/* MAR-609. Everything that is a *record* rather than content or a
+          control, behind one disclosure.
 
-      {/* MAR-595 finding 18. Last on the page, and deliberately below every
-          record and every control above it: this is the one section that ends
-          the workspace rather than acting inside it, and it is the only agent
-          control on this page that is not undone by pressing it again. */}
-      <RemoveAgent agentId={view.agent} displayName={view.title} canAct={canAct} />
+          These are six sections — the permission receipt, runs, tasks,
+          connections, memory, plan-versus-actual and the audit history — and
+          every one of them rendered unconditionally, each with its own heading
+          and its own sentence for the empty case. On an agent with no output
+          that is the entire page: seven headings and seven paragraphs
+          explaining that there is nothing under any of them. That is what
+          Henrik meant by "way to much text for an agent with no output ;p".
+
+          Kept, not deleted. This is MAR-570's move exactly — the receipt is one
+          click away rather than gone — and every fact that was on the page is
+          still on the page. */}
+      <details className="agent-record">
+        <summary>{AGENT_TILE_COPY.details_summary}</summary>
+        <PermissionReceipt permissions={view.permissions} />
+        {view.snapshot === null ? (
+          <div className="empty">
+            <p>
+              <strong>No live state has arrived yet.</strong>
+            </p>
+            <p>
+              The manifest is imported, but this agent has not published an Agent
+              DOM snapshot. DASH will not invent tasks, controls or connection
+              health for it.
+            </p>
+          </div>
+        ) : (
+          <WorkspaceRecord
+            agent={view.agent}
+            canAct={canAct}
+            issue={issue}
+            pending={pending}
+            snapshot={view.snapshot}
+          />
+        )}
+      </details>
     </>
   );
+}
+
+/**
+ * The model tile's value (MAR-609).
+ *
+ * A model id is a value and gets the monospace face; the three fallbacks are
+ * prose and do not. `AGENT_TILE_COPY.model_value` says why they are not the
+ * picker's own `headline`.
+ */
+function modelTile(settings: AgentModelSettingsView): AgentTile {
+  if (!settings.can_choose) {
+    return {
+      label: AGENT_TILE_COPY.model,
+      value:
+        settings.reason === "no_model_needed"
+          ? AGENT_TILE_COPY.model_value.none
+          : AGENT_TILE_COPY.model_value.unavailable,
+    };
+  }
+  return settings.chosen_model_id === null
+    ? { label: AGENT_TILE_COPY.model, value: AGENT_TILE_COPY.model_value.per_step }
+    : { label: AGENT_TILE_COPY.model, value: settings.chosen_model_id, mono: true };
 }
 
 /**
@@ -765,14 +887,12 @@ function OutputsArea({
   canAct,
   cards,
   grounding,
-  runId,
   setFeedback,
 }: {
   agent: string;
   canAct: boolean;
   cards: ArtifactCardView[];
   grounding: GroundingAnalysis | null;
-  runId: string | null;
   setFeedback: Dispatch<SetStateAction<CommandFeedback>>;
 }): ReactNode {
   async function save(card: ArtifactCardView): Promise<void> {
@@ -794,49 +914,23 @@ function OutputsArea({
   }
 
   return (
-    <>
-      <OutputsPanel
-        cards={cards}
-        grounding={grounding}
-        onDownload={canAct ? (card) => void save(card) : undefined}
-      />
-      {runId === null ? null : (
-        <p className="muted">
-          <Link href={runDetailHref(agent, runId)}>
-            Open the run these came from
-          </Link>
-        </p>
-      )}
-    </>
+    <OutputsPanel
+      cards={cards}
+      emptyState={{
+        headline: AGENT_OUTPUTS_COPY.empty_headline,
+        detail: AGENT_OUTPUTS_COPY.empty_detail,
+      }}
+      grounding={grounding}
+      heading={AGENT_OUTPUTS_COPY.heading}
+      onDownload={canAct ? (card) => void save(card) : undefined}
+      /* Per card, because this list spans runs now. The old page had one link
+         under the whole panel saying "open the run these came from", which was
+         true when every card came from one run and would have been a lie the
+         moment MAR-609 widened the scope. */
+      runHref={(card) => runDetailHref(agent, card.reference.run_id)}
+    />
   );
 }
-
-/**
- * This agent's character, at 2x (MAR-502).
- *
- * 100px because a portrait is what this surface is — the one place in DASH
- * where the character is closest to being the subject rather than a marker in a
- * list. Never 1.5x and never a percentage: `image-rendering: pixelated`
- * upscales by nearest neighbour, so a fractional ratio lands some source pixels
- * on two screen pixels and some on three, and the sprite stops reading as pixel
- * art and starts reading as a rendering fault.
- *
- * **The empty case reserves the box rather than collapsing it.** `avatar` is
- * null only when DASH cannot read this agent's own row — the workspace is built
- * from the manifest, which is a different column — and a header that reflowed
- * when a database read came back short would move the agent's name under the
- * user's cursor for a reason that has nothing to do with them. Nothing is drawn
- * in the reserved space and nothing is announced: an invented character would
- * be a costume this agent might not be wearing on the card it came from, and
- * the whole value of one is that it is the same every time.
- */
-export function AgentPortrait({ avatar }: { avatar: OName | null }): ReactNode {
-  if (avatar === null) {
-    return <span className="o-portrait-empty" aria-hidden="true" />;
-  }
-  return <OAvatar name={avatar} size={100} />;
-}
-
 /**
  * A clock time, or nothing.
  *
@@ -849,182 +943,6 @@ function timeOnly(at: Date | null): string {
 }
 
 /**
- * The primary action for an agent that only acts when asked (MAR-457).
- *
- * `retry` against the waiting task, not against a run. A freshly added agent has
- * no runs, and `contracts/agent-command.schema.json` requires the command to
- * name a run or a task — which is why the agent publishes a task it is not yet
- * working on. Without this the manual-first agent could be added and never
- * started.
- *
- * It goes through the same audited boundary every other control uses. A "Run
- * now" that called the runner directly would be a second command path, and the
- * second path is the one that skips the audit row.
- *
- * Absent rather than disabled when a run is already in flight: `lib/workspace.ts`
- * calls dead controls out as a thing not to render, and the run card below
- * already offers cancel while one is going.
- */
-function RunNow({
-  agent,
-  canAct,
-  deployTargets,
-  hasFiles,
-  issue,
-  onDispatch,
-  onRunOnHost,
-  pending,
-  snapshot,
-}: {
-  agent: string;
-  canAct: boolean;
-  /**
-   * Every server DASH has sent this agent to (MAR-602, ADR 0014).
-   *
-   * Empty for almost every agent, and an empty list changes nothing on screen.
-   * When it is not empty this control stops being unambiguous — the agent
-   * exists in two places and one button silently meant one of them — so a
-   * **second named control** appears per server and the note below names both.
-   *
-   * The wiring landed with the route, so the note no longer says DASH cannot
-   * start the other copy. See `lib/copy/where-it-ran.ts`.
-   */
-  deployTargets: AgentDeployTarget[];
-  /** Whether the person has files waiting that this run should receive (MAR-507). */
-  hasFiles: boolean;
-  issue: (
-    key: string,
-    command: Parameters<typeof submitAgentCommand>[0],
-    args: AgentCommandArgs,
-  ) => Promise<void>;
-  /** Binds the open task to a run. False means the agent must not be started. */
-  onDispatch: () => Promise<boolean>;
-  /**
-   * Ask one server to start the copy that is on it (MAR-602).
-   *
-   * Passed in rather than called here for the reason `issue` is: this component
-   * draws controls and owns no bridge, and the page is where a command's answer
-   * becomes the one feedback line a person reads.
-   */
-  onRunOnHost: (target: AgentDeployTarget) => Promise<void>;
-  pending: string | null;
-  snapshot: WorkspaceSnapshotView | null;
-}): ReactNode {
-  if (!canAct || snapshot === null) {
-    return null;
-  }
-  const waiting = snapshot.tasks.find((task) => task.status === "pending" && task.run_id === null);
-  if (waiting === undefined) {
-    return null;
-  }
-
-  /*
-   * The rendered snapshot's own value, like every other control on this page.
-   *
-   * MAR-457 shipped a re-read here — ask DASH for the current `observed_at`
-   * immediately before issuing — because the value churned on the five-second
-   * poll and this button was refused as `stale_snapshot` for anyone who read the
-   * screen first. MAR-464 fixed the binding instead: `observed_at` now advances
-   * when the decision context does, so the workaround has nothing left to work
-   * around and is removed.
-   *
-   * Removing it is not tidying. A re-read mints a *fresh* value per click, and
-   * `idempotencyKey` hashes that value — so the workaround gave this control a
-   * new idempotency key on every press, which is the one property the key
-   * exists to deny. It was defensible only because starting a manual-first
-   * agent is not irreversible and the agent refuses a concurrent run itself.
-   * With the binding fixed, two presses of this button collapse to one command,
-   * which is what it should always have done.
-   */
-  // Captured after the guards above, so the closure below does not have to
-  // re-narrow what this function body already established.
-  const taskId = waiting.id;
-  const observedAt = snapshot.observed_at;
-  // MAR-602. All three empty when this agent lives in one place, which leaves
-  // the control exactly as it was — ADR 0014's rule is that a machine is named
-  // when there is a choice to be wrong about, not on every button in the
-  // product.
-  const where = describeRunTarget(deployTargets);
-  // Filtered on the same field the sentence is built from, so a server with no
-  // name a person would recognise cannot get a button reading "Run on ".
-  const onHost = deployTargets.filter((target) => target.label.length > 0);
-
-  return (
-    <section className="section run-now">
-      <button
-        className="button-primary"
-        disabled={pending !== null}
-        onClick={() => {
-          void (async () => {
-            /*
-             * MAR-507. The files go first, and a refusal here stops the run.
-             *
-             * The order is the whole point: an agent started before its task is
-             * bound would read an empty workspace, and an agent started after a
-             * dispatch that failed would produce an output derived from nothing
-             * the person gave it. Both look exactly like a successful run from
-             * outside, which is why neither may happen quietly.
-             */
-            if (!(await onDispatch())) {
-              return;
-            }
-            await issue(`run:${taskId}`, "retry", {
-              agent_id: agent,
-              observed_at: observedAt,
-              task_id: taskId,
-            });
-          })();
-        }}
-        type="button"
-      >
-        {pending === `run:${taskId}` ? "Starting…" : hasFiles ? "Send files and run now" : "Run now"}
-      </button>
-      {/* MAR-602, ADR 0014. One named control per server, beside the first and
-          never instead of it.
-
-          Deploying an agent does not change what the button to its left does —
-          that is the rule the ADR chose over silent re-targeting, and it is why
-          this is a sibling rather than a mode. The machine is in the name here
-          because "Run on Hostinger" is four words that say what they do, while
-          appending a machine to the primary label would put a sentence inside a
-          letter-spaced control.
-
-          No files step in front of it, and that is a limit rather than an
-          oversight: `onDispatch` hands files to the runner **on this computer**,
-          and there is no path today that puts a person's file on a server. A
-          copy over there runs against what was deployed with it. */}
-      {onHost.map((target) => (
-        <button
-          className="button-secondary"
-          disabled={pending !== null}
-          key={target.host_id}
-          onClick={() => {
-            void onRunOnHost(target);
-          }}
-          type="button"
-        >
-          {pending === `host-run:${target.host_id}` ? "Asking…" : describeRunOnHost(target.label)}
-        </button>
-      ))}
-      {/* One flex item rather than two, because `.run-now` is a row: a second
-          bare paragraph would sit *beside* the first at desktop widths and read
-          as two unrelated captions. Stacked here, the machine sentence sits
-          directly above the timer sentence and both stay tied to the button.
-
-          The machine is named in the prose and deliberately not appended to the
-          button. The label is uppercase and letter-spaced, so "Send files and
-          run now on this computer" is a five-word control wearing a sentence —
-          and the sentence below already names the control by name, which is
-          what ADR 0014 asks for. When there is a second button to disambiguate
-          from, it will arrive with its own name. */}
-      <div className="run-now-note">
-        {where === null ? null : <p className="muted">{where}</p>}
-        <p className="muted">It runs only when you ask. Nothing happens on a timer.</p>
-      </div>
-    </section>
-  );
-}
-
 /**
  * What the agent said it would do, kept where the user can find it again.
  *
@@ -1061,7 +979,28 @@ function PermissionReceipt({ permissions }: { permissions: PermissionGrant[] }):
   );
 }
 
-function WorkspaceBody({
+/**
+ * The one part of the workspace record that is waiting for a person (MAR-609).
+ *
+ * ## Why this is not inside the disclosure with everything else
+ *
+ * Every other section of the old `WorkspaceBody` describes something already
+ * finished — runs, tasks, memory, the audit trail. This one is a queue of
+ * decisions the agent cannot proceed without, and burying a blocked agent's
+ * approvals behind "Show the full record" would be the MAR-586 fleet chip
+ * pointing at a `#waiting-work` anchor inside a closed `<details>`, which a
+ * browser will not scroll to.
+ *
+ * ## Why it renders nothing when the inbox is empty
+ *
+ * The old section drew its heading and *"No choices or enforceable approvals
+ * are pending"* on every agent, forever. On the empty agent MAR-609 asks to be
+ * sized for, that is one of seven headings each followed by a sentence saying
+ * there is nothing under it — the wall Henrik was describing. An empty queue is
+ * the ordinary state and it is now silent; the status pill already says whether
+ * anything needs attention, and `next_action` is carried in the record below.
+ */
+function WaitingWork({
   agent,
   canAct,
   issue,
@@ -1080,30 +1019,77 @@ function WorkspaceBody({
   pending: string | null;
   reasons: Record<string, string>;
   setReasons: Dispatch<SetStateAction<Record<string, string>>>;
+  snapshot: WorkspaceSnapshotView | null;
+}): ReactNode {
+  if (snapshot === null || snapshot.inbox.length === 0) {
+    return null;
+  }
+  return (
+    <section className="section" aria-labelledby="waiting-work">
+      <h2 id="waiting-work">Waiting for you</h2>
+      <div className="work-list">
+        {snapshot.inbox.map((item) => (
+          <InboxControl
+            agent={agent}
+            canAct={canAct}
+            issue={issue}
+            item={item}
+            key={item.id}
+            observedAt={snapshot.observed_at}
+            pending={pending}
+            reason={reasons[item.id] ?? ""}
+            setReason={(reason) => {
+              setReasons((current) => ({ ...current, [item.id]: reason }));
+            }}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Everything DASH holds about this agent that is a record rather than content
+ * (MAR-609).
+ *
+ * Unchanged in substance from the old `WorkspaceBody` minus its overview block
+ * and its inbox: the same sections, the same components, the same empty
+ * sentences. What changed is that the whole thing now lives behind one
+ * disclosure, so the facts are one click away instead of being the page.
+ *
+ * The overview block is gone rather than moved. Its two headline facts — the
+ * runtime and the trigger — are tiles now, and its status heading is the pill
+ * in the header; what is left of it are the four smaller facts, which are in
+ * the `<dl>` at the top of this section where a person reading the record
+ * expects them.
+ */
+function WorkspaceRecord({
+  agent,
+  canAct,
+  issue,
+  pending,
+  snapshot,
+}: {
+  agent: string;
+  canAct: boolean;
+  issue: (
+    key: string,
+    command: Parameters<typeof submitAgentCommand>[0],
+    args: AgentCommandArgs,
+  ) => Promise<void>;
+  pending: string | null;
   snapshot: WorkspaceSnapshotView;
 }): ReactNode {
   const { overview } = snapshot;
 
   return (
     <>
-      <section className="workspace-overview" aria-labelledby="workspace-overview">
-        <div>
-          <p className="eyebrow">Status</p>
-          <h2 id="workspace-overview">{overview.status.replaceAll("_", " ")}</h2>
-          <p>{overview.status_detail}</p>
-          {overview.next_action === null ? null : (
-            <p className="next-action">{overview.next_action}</p>
-          )}
-        </div>
+      <section className="section" aria-labelledby="workspace-facts">
+        <h2 id="workspace-facts">State</h2>
+        {overview.next_action === null ? null : (
+          <p className="next-action">{overview.next_action}</p>
+        )}
         <dl className="facts">
-          <div>
-            <dt>Runs on</dt>
-            <dd>{overview.runtime_label}</dd>
-          </div>
-          <div>
-            <dt>Starts when</dt>
-            <dd>{overview.trigger_label}</dd>
-          </div>
           <div>
             <dt>When DASH closes</dt>
             <dd>
@@ -1137,31 +1123,6 @@ function WorkspaceBody({
             <dd>{snapshot.observed_at}</dd>
           </div>
         </dl>
-      </section>
-
-      <section className="section" aria-labelledby="waiting-work">
-        <h2 id="waiting-work">Waiting for you</h2>
-        {snapshot.inbox.length === 0 ? (
-          <p className="muted">No choices or enforceable approvals are pending.</p>
-        ) : (
-          <div className="work-list">
-            {snapshot.inbox.map((item) => (
-              <InboxControl
-                agent={agent}
-                canAct={canAct}
-                issue={issue}
-                item={item}
-                key={item.id}
-                observedAt={snapshot.observed_at}
-                pending={pending}
-                reason={reasons[item.id] ?? ""}
-                setReason={(reason) =>
-                  setReasons((current) => ({ ...current, [item.id]: reason }))
-                }
-              />
-            ))}
-          </div>
-        )}
       </section>
 
       <section className="section" aria-labelledby="current-runs">
