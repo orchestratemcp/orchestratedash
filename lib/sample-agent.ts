@@ -52,6 +52,20 @@
  * into the template every Agent Kit project starts from: an agent somebody
  * scaffolds by hand has made no promise about answering questions and should
  * not be told it needs a model it never asked for.
+ *
+ * ## And the third, which is the same argument about money (MAR-619)
+ *
+ * MAR-603 gave the digest step a level and stopped, because a level was all
+ * the conversation feature read. MAR-619 asks the step itself to use a model —
+ * *"can we update the AI news scout to acctually read the news, summarize, and
+ * put together a curated summary of the latest news with links to its source?
+ * We need an model provider for this i guess?"* — and a level names nothing to
+ * reach one with.
+ *
+ * `declareModelProvider` adds the two blocks that do, on exactly the terms
+ * above and with one thing at stake that a level did not have: a run of this
+ * agent now spends the owner's money. That is why the declaration is DASH's own
+ * and not the template's, and why it is `optional` — see the function.
  */
 
 import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
@@ -59,6 +73,7 @@ import path from "node:path";
 
 import { planScaffold, type ScaffoldedFile, type TemplateSources } from "../agent-kit/scaffold";
 import { DIGEST_WRITE_COMPONENT } from "./agent-sources";
+import { curateOperationId } from "./broker/operations";
 import {
   HANDOFF_FILE_NAME,
   HANDOFF_TTL_MS,
@@ -85,6 +100,27 @@ export const SAMPLE_SUMMARY =
 
 /** The folder DASH offers to put it in, under the user's documents directory. */
 export const SAMPLE_PARENT_FOLDER = "DASH agents";
+
+/**
+ * The scout's model-provider connection, by the three ids that address it
+ * (MAR-619).
+ *
+ * Constants rather than literals for `lib/agent-sources.ts`'s reason: these
+ * strings are read by the fleet fan-out, by the credential prompt, by the
+ * Connections surface and by the agent's own program, and a literal typed into
+ * any of them would be a contract with no single place to reconcile it.
+ *
+ * OpenRouter and not one of the other two profiles, and the choice is worth
+ * stating: it is the only provider of the three that says what an answer cost
+ * in the answer itself (`prices_its_own_answer`), so it is the only one on
+ * which DASH can put a real figure beside a run without ever holding a price
+ * list. For the agent shipped to somebody's first ten minutes with DASH, that
+ * is the difference between "this cost you $0.0007" and "your bill is
+ * somewhere else".
+ */
+export const MODEL_CONNECTION_ID = "model_provider";
+export const MODEL_FIELD_ID = "api_key";
+export const CURATE_OPERATION_ID = curateOperationId("openrouter");
 
 export interface SamplePlan {
   /** The directory that will be created. Absolute. */
@@ -137,22 +173,145 @@ export type SampleResult = { ok: true; value: SamplePlan } | { ok: false; proble
  * Reads and rewrites only `agent.manifest.json`; every other scaffolded file
  * passes through untouched.
  */
-function declareConversationModelLevel(files: readonly ScaffoldedFile[]): ScaffoldedFile[] {
+function amendSampleManifest(files: readonly ScaffoldedFile[]): ScaffoldedFile[] {
   return files.map((file) => {
     if (file.path !== "agent.manifest.json") {
       return file;
     }
-    const manifest = JSON.parse(file.contents) as {
-      planned_route?: Array<Record<string, unknown>>;
-    };
-    for (const step of manifest.planned_route ?? []) {
-      if (step["component_id"] === DIGEST_WRITE_COMPONENT) {
-        step["model_tier"] = "small";
-        step["default_model_level"] = "cheap";
-      }
-    }
+    const manifest = JSON.parse(file.contents) as Record<string, unknown>;
+    declareConversationModelLevel(manifest);
+    declareModelProvider(manifest);
     return { path: file.path, contents: `${JSON.stringify(manifest, null, 2)}\n` };
   });
+}
+
+/** MAR-603's amendment. See the block above for the whole argument. */
+function declareConversationModelLevel(manifest: Record<string, unknown>): void {
+  const route = manifest["planned_route"];
+  for (const step of Array.isArray(route) ? (route as Array<Record<string, unknown>>) : []) {
+    if (step["component_id"] === DIGEST_WRITE_COMPONENT) {
+      step["model_tier"] = "small";
+      step["default_model_level"] = "cheap";
+    }
+  }
+}
+
+/**
+ * The connection that lets the scout summarise what it found (MAR-619).
+ *
+ * MAR-603 declared the digest step's *level* and stopped there, and its own
+ * block said why that was as far as it went: the level was what the
+ * conversation feature reads. MAR-619 is Henrik asking the obvious next
+ * question — *"can we update the AI news scout to actually read the news,
+ * summarize, and put together a curated summary… We need a model provider for
+ * this i guess?"* — and the answer is that a level says how strong a model the
+ * step needs and names nothing to reach one with.
+ *
+ * Two blocks, and they are two different documents that happen to be about one
+ * connection. `agent_dom.connections` is the **inventory** — who holds the
+ * credential, what fields it has, what it may be used for — and it is what
+ * `connectableFields` and the fleet fan-out read, so it is the block that makes
+ * the OpenRouter key Henrik already connected at fleet level reach this agent
+ * at all (`fleetReach` matches on `connections[].provider` and nothing else).
+ * `agent_dom.connection_requirements` is the **next action**, and it is what
+ * puts a line with a Connect button on the Connections surface for somebody who
+ * has not connected one yet. Declaring only the first would connect the agent
+ * silently and never offer it; declaring only the second would offer a button
+ * over an inventory that never mentioned the provider.
+ *
+ * ## Why this is here and not in the template
+ *
+ * `agent-kit/scaffold.ts` stays generic, on MAR-603's exact terms: an agent
+ * somebody scaffolds by hand has made no promise about summarising anything and
+ * must not be told it needs a provider it never asked for — and, sharper here
+ * than it was for a level, must not be handed a declaration that would let a
+ * run spend their money. DASH's own sample is the one shipped with the promise
+ * on the page that offers it, so DASH is the one who declares what keeping it
+ * costs.
+ *
+ * ## Why it is optional
+ *
+ * `optional: true`, and it is load-bearing rather than polite. The scout
+ * without a model still fetches, still writes a digest, and still shows every
+ * headline with its link — `agent-kit/template/agent.mjs` degrades to exactly
+ * what it did before this issue and records why on the artifact. An agent that
+ * declared this as required would be an agent DASH shows as broken on a machine
+ * where it works perfectly well, and `ConnectionRequirementV1.optional`'s own
+ * comment names this case: *"an agent that can run degraded is the one that
+ * says so."*
+ */
+function declareModelProvider(manifest: Record<string, unknown>): void {
+  const dom = manifest["agent_dom"];
+  if (typeof dom !== "object" || dom === null) {
+    return;
+  }
+  const agentDom = dom as Record<string, unknown>;
+
+  agentDom["connections"] = [
+    {
+      id: MODEL_CONNECTION_ID,
+      // The registry's own word for the provider, which is what selects the
+      // profile in `lib/ai/providers.ts` and what `fleetReach` matches on.
+      provider: "openrouter",
+      label: "Your model provider",
+      purpose:
+        "Turns the headlines this agent collected into a short summary grouped by subject, " +
+        "with every item still linked to where it came from.",
+      // DASH holds the key and performs the call itself. The agent never
+      // receives it — see `ask`'s own comment in the template on why there is
+      // no token in its environment.
+      ownership: "dash_managed",
+      capabilities: [
+        {
+          id: CURATE_OPERATION_ID,
+          label: "Turn what it found into a summary",
+          // `spend` and not `write`: the person's own account is charged and
+          // nothing appears anywhere. See the schema's own note on this enum.
+          access: "spend",
+        },
+      ],
+      fields: [
+        {
+          id: MODEL_FIELD_ID,
+          label: "API key",
+          purpose: "So DASH can reach OpenRouter on this agent's behalf.",
+          kind: "secret",
+          required: true,
+          help: "Your OpenRouter account has a keys page; a key made there is what DASH needs.",
+          // No `technical.environment_name`, deliberately.
+          // `resolveCredentialTarget` refuses a delivery variable for a model
+          // provider's key — DASH is a client for these three, so the key is
+          // spent inside DASH and never handed to the child process.
+        },
+      ],
+      validation_action: {
+        id: "test_model_key",
+        label: "Check the key",
+        behavior: "test",
+      },
+    },
+  ];
+
+  agentDom["connection_requirements"] = {
+    requirements_version: 1,
+    requirements: [
+      {
+        id: MODEL_CONNECTION_ID,
+        name: "Your model provider",
+        connector_kind: "api_key",
+        connection_id: MODEL_CONNECTION_ID,
+        // `operations` omitted, which `ConnectionRequirementV1` documents as
+        // "the whole connection's requested set". Naming one would be a second
+        // list to keep in step with the registry, and this connection's whole
+        // requested set is exactly what this agent and the chat on its page
+        // both use.
+        optional: true,
+        why:
+          "Without it the scout still collects the news and still links every item to its " +
+          "source; it just cannot summarise what it found.",
+      },
+    ],
+  };
 }
 
 /**
@@ -190,10 +349,12 @@ export function planSampleAgent(request: SampleRequest): SampleResult {
     return { ok: false, problem: planned.problem };
   }
 
-  // MAR-603: the one place this template's manifest is amended after the
-  // fact — see `declareConversationModelLevel`. Applied before the handoff is
-  // built so the consent document and the bytes written to disk agree.
-  const files = declareConversationModelLevel(planned.files);
+  // MAR-603 and MAR-619: the one place this template's manifest is amended
+  // after the fact — see `amendSampleManifest`. Applied before the handoff is
+  // built so the consent document and the bytes written to disk agree, which
+  // matters more now than it did for a level: the connection declared here is
+  // what the person is consenting to when they say yes.
+  const files = amendSampleManifest(planned.files);
 
   const built = buildHandoff(
     {

@@ -664,15 +664,24 @@ describe("the shipped operations", () => {
     // stops being true of the *operation set* — it stays true of an **agent**,
     // by a different mechanism that has its own test below and its own refusal
     // code: a completion is refused unless a person asked for it.
+    //
+    // MAR-619 adds the three curations, and what changes is the standing rather
+    // than the shape of the set: a curation is the first operation an *agent*
+    // can reach that spends, and it is reachable only inside the allowance a
+    // person's Run press opens (ADR 0016). The sentence above survives word for
+    // word — what a person can ask for is now a run as well as a question.
     expect(allOperations().map((operation) => operation.id).sort()).toEqual([
       "anthropic.chat.completion",
+      "anthropic.digest.curate",
       "anthropic.models.list",
       "gmail.draft.create",
       "gmail.message.read",
       "gmail.search",
       "openai.chat.completion",
+      "openai.digest.curate",
       "openai.models.list",
       "openrouter.chat.completion",
+      "openrouter.digest.curate",
       "openrouter.models.list",
     ]);
   });
@@ -682,21 +691,22 @@ describe("the shipped operations", () => {
     // reaches nothing that puts anything in anybody's account: the two kinds it
     // reaches are a read and a spend, and `WRITE_PATHS` — the array a reader is
     // invited to treat as the complete answer to "what can this do to my
-    // account?" — is still one Gmail path.
+    // account?" — is still one Gmail path. MAR-619's three curations are spends
+    // and change neither half of that.
     const keyed = allOperations().filter(
       (operation) => !operation.id.startsWith("gmail."),
     );
-    expect(keyed).toHaveLength(6);
+    expect(keyed).toHaveLength(9);
     expect(keyed.some((operation) => operation.access === "write")).toBe(false);
     expect(keyed.filter((operation) => operation.access === "read")).toHaveLength(3);
-    expect(keyed.filter((operation) => operation.access === "spend")).toHaveLength(3);
+    expect(keyed.filter((operation) => operation.access === "spend")).toHaveLength(6);
   });
 
   it("splits cleanly by profile, with no operation in two", () => {
     expect(operationsForProvider("google-gmail")).toHaveLength(3);
-    expect(operationsForProvider("openrouter")).toHaveLength(2);
-    expect(operationsForProvider("anthropic")).toHaveLength(2);
-    expect(operationsForProvider("openai")).toHaveLength(2);
+    expect(operationsForProvider("openrouter")).toHaveLength(3);
+    expect(operationsForProvider("anthropic")).toHaveLength(3);
+    expect(operationsForProvider("openai")).toHaveLength(3);
     expect(operationsForProvider("google-calendar")).toEqual([]);
   });
 
