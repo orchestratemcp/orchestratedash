@@ -29,7 +29,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { SAMPLE_AGENT_SEED } from "../app/page";
-import { AgentPortrait } from "../app/agents/detail/page";
+/* MAR-609 moved the portrait out of the page and into the header it is part
+   of. Same function, same markup — a portrait defined on the page but rendered
+   inside `AgentHeader` is how the two drift apart. */
+import { AgentPortrait } from "../app/_components/agent-header";
 import { FleetStripScript, fleetStripLinks } from "../app/_components/fleet-strip";
 import { agentWorkspaceHref } from "../app/_data/routes";
 import { SAMPLE_AGENT_ID } from "../lib/sample-agent";

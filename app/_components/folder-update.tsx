@@ -122,7 +122,11 @@ export function FolderUpdate({
 
   return (
     <section className="section folder-update" aria-labelledby="folder-update">
-      <h2 id="folder-update">Change this agent with your own editor</h2>
+      {/* MAR-609. An `h3` for the reason `ModelChoice`'s heading is one: this
+          panel renders inside the agent page's Settings drawer now, beside the
+          trigger and notification blocks, and an `h2` here outranked the
+          drawer's own heading. */}
+      <h3 id="folder-update">Change this agent with your own editor</h3>
 
       {canAct ? (
         <div className="folder-update-do">

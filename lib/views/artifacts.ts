@@ -44,13 +44,35 @@ import type { Recovery } from "../copy/recovery";
  */
 export interface ArtifactReceipt {
   /**
-   * Who made it. The producing *run* is deliberately absent: this panel only
-   * renders on that run's page, so the question is already answered by where
-   * the reader is, and a field that exists is a field a later renderer will
-   * print. The id stays in `ArtifactReference`, behind the disclosure.
+   * Who made it.
+   *
+   * The producing run's **id** stays out of here and remains in
+   * `ArtifactReference`, behind the developer disclosure, because it is a raw
+   * identifier. *When* it was made is a different question and is answered by
+   * `stated_at` below — see the note on that field, which had to change.
    */
   agent: string;
-  /** When the agent says it made this. */
+  /**
+   * When the agent says it made this.
+   *
+   * ## Why this is now on the card front and not only in the receipt
+   *
+   * This struct used to justify omitting the producing run like so: *"this
+   * panel only renders on that run's page, so the question is already answered
+   * by where the reader is."*
+   *
+   * That premise was false when it was written and is now false twice.
+   * `app/_components/panel.tsx` has drawn cards from
+   * `artifactRecordsForAgent` — the agent's whole artifact history, across
+   * every run — since MAR-548, so the author's panel could already show
+   * Monday's digest and Tuesday's digest as two cards with identical headings
+   * and no way to tell which was which. MAR-609 makes DASH's own Outputs area
+   * span runs too, which would have shipped the same defect a second time.
+   *
+   * So both renderers now put this moment in the card heading. It is the one
+   * fact that distinguishes two outputs of the same role, and a list where the
+   * cards cannot be told apart is not a list.
+   */
   stated_at: string;
   /** When DASH stored it. */
   received_at: string;

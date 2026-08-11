@@ -1075,15 +1075,26 @@ export type WorkspaceView =
       latest_digest: RunArtifact | null;
       latest_digest_grounding: GroundingAnalysis | null;
       /**
-       * Everything the run that produced `latest_digest` produced, with each
+       * The latest outputs this agent has made, across every run, with each
        * output's availability resolved by the same producer the run detail page
-       * uses (MAR-434).
+       * uses (MAR-434, MAR-609).
        *
-       * **Not "every output this agent has ever made".** The workspace answers
-       * "what happened last time?", and a list that grew without bound would
-       * turn the page a person opens to check on an agent into an archive. The
-       * run detail page is where a specific run's outputs live, and every card
-       * here links there.
+       * **This used to be one run's outputs, and the narrowing was the bug.**
+       * MAR-434's scope was "everything *that run* produced", which is right on
+       * the run detail page and wrong here: Henrik asked the agent page for *"a
+       * list of the latest outputs"* and got the newest run's, so a scout run
+       * twice showed one digest and gave no route to the other. The counter-
+       * argument this doc used to make — that an unbounded list turns the page
+       * into an archive — is answered by `artifactRecordsForAgent`'s own cap
+       * rather than by showing one run, and that function has been the author
+       * panel's scope since MAR-548. The two surfaces on this page disagreed
+       * about how much of an agent's work existed, and DASH's own was the one
+       * hiding it.
+       *
+       * Each card carries its producing run in `reference.run_id`, so the link
+       * to a run is per card. There is deliberately no view-level run id: with
+       * a list that spans runs, one id would name a run most of the cards did
+       * not come from.
        *
        * Empty rather than absent when there are none, so the panel can say
        * "nothing was produced" — which is a different thing to learn from a
@@ -1091,11 +1102,6 @@ export type WorkspaceView =
        * `app/_components/outputs.tsx` already argues for.
        */
       outputs: ArtifactCardView[];
-      /**
-       * The run those outputs belong to, for the link to its detail page. Null
-       * exactly when `outputs` is empty.
-       */
-      outputs_run_id: string | null;
       /** What the manifest declares it may do without an account. */
       permissions: PermissionGrant[];
       /**

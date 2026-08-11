@@ -770,7 +770,10 @@ describe("what a run produced", () => {
     // A quarantined output's next action is not "run it again" — re-running
     // produces another file taken the same way.
     expect(view.outputs[0]!.recovery).not.toBeNull();
-    expect(view.outputs_run_id).toBe("run-artifact-1");
+    // MAR-609. The producing run travels on the card rather than on the view.
+    // There is no view-level run id any more: the list spans runs, so one id
+    // would name a run most of the cards did not come from.
+    expect(view.outputs[0]!.reference.run_id).toBe("run-artifact-1");
   });
 
   it("gives a workspace with no outputs an empty list rather than a missing one", () => {
@@ -780,10 +783,9 @@ describe("what a run produced", () => {
     expect(view.found).toBe(true);
     if (!view.found) return;
 
-    // Empty, not absent: the panel says "this run produced nothing", which is a
+    // Empty, not absent: the panel says "nothing has been made", which is a
     // different thing to learn from a panel that is not drawn.
     expect(view.outputs).toEqual([]);
-    expect(view.outputs_run_id).toBeNull();
   });
 
   it("gives a run that produced nothing an empty list and no verdict", async () => {
