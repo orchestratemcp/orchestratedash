@@ -994,6 +994,34 @@ describe("dispatch", () => {
       });
     });
 
+    it("routes a run with both stored identities — the agent id must survive dispatch", async () => {
+      /*
+       * The regression Henrik found with one press (2026-08-11): the dispatch
+       * chain special-cased create/deploy/trust and dropped every other
+       * command to a host-id-only target, so `host.run` — added after the
+       * chain was written — lost its agent id between a payload that required
+       * it and a main that refused without it. The deploy test above never
+       * covered it because deploy had its own arm.
+       */
+      const ctx = context();
+      const result = await dispatchCommand(
+        {
+          command: "host.run",
+          request_id: "req-host-run",
+          payload: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        },
+        ctx,
+      );
+
+      expect(ctx.hosts).toEqual([
+        {
+          action: "run",
+          target: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        },
+      ]);
+      expect(result).toMatchObject({ ok: true });
+    });
+
     it("renders the manifest-only refusal verbatim", async () => {
       const ctx = context();
 
