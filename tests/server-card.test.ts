@@ -173,6 +173,7 @@ describe("what is running there", () => {
       label: "My server",
       runner_build: null,
       agents_running: 2,
+      agents_there: [{ agent_id: "News Scout", running: true }],
     });
     expect(sentence).toContain("The server reported");
     expect(sentence).toContain("keeps no list of its own");
@@ -185,6 +186,7 @@ describe("what is running there", () => {
         label: "My server",
         runner_build: null,
         agents_running: 1,
+        agents_there: [{ agent_id: "News Scout", running: true }],
       }),
     ).toContain("1 agent running");
   });
@@ -242,15 +244,68 @@ describe("the duplicates on a real machine", () => {
 });
 
 describe("the line above the list", () => {
+  const ONE = [{ same_server_count: 1 }];
+  const AT = "2026-08-10T21:14:37Z";
+
   it("counts rather than asserts", () => {
     expect(summariseServers([])).toContain("No server");
-    expect(summariseServers([{ same_server_count: 1 }])).toContain("1 server");
+    expect(summariseServers(ONE)).toContain("1 server");
   });
 
   it("says duplicates were kept, not cleaned up", () => {
-    const summary = summariseServers([{ same_server_count: 2 }, { same_server_count: 2 }]);
+    const summary = summariseServers(
+      [{ same_server_count: 2 }, { same_server_count: 2 }],
+      [
+        { answered: true, at: AT },
+        { answered: true, at: AT },
+      ],
+    );
     expect(summary).toContain("2 of them");
     expect(summary).toContain("rather than deleting");
+  });
+
+  /*
+   * MAR-605's second finding, and the assertion that would have caught it.
+   *
+   * The attended run photographed *"1 server is connected."* above a card whose
+   * own body said DASH could not get in. The old test asserted the summary
+   * contained "1 server" — which it did, and would have gone on doing while the
+   * word after it stayed wrong. The word is what this checks.
+   */
+  it("never calls a saved server connected before a check said so", () => {
+    expect(summariseServers(ONE)).not.toContain("connected");
+    expect(summariseServers(ONE, [{ answered: false, at: AT }])).not.toContain("connected");
+  });
+
+  it("says nothing has been asked, rather than staying quiet about it", () => {
+    // Silence here reads as reassurance, because the reader supplies the
+    // missing half themselves and supplies the comfortable one.
+    expect(summariseServers(ONE)).toContain("has not checked");
+    expect(summariseServers(ONE, [{ answered: false, at: null }])).toContain("has not checked");
+  });
+
+  it("counts only the servers that answered, and stamps the count", () => {
+    const mixed = summariseServers(
+      [{ same_server_count: 1 }, { same_server_count: 1 }],
+      [
+        { answered: true, at: AT },
+        { answered: false, at: AT },
+      ],
+    );
+    expect(mixed).toContain("1 of them answered");
+    // The moment is not decoration. A count with no clock on it is the failure
+    // this whole surface was built against.
+    expect(mixed).toMatch(/at .+\./);
+
+    expect(
+      summariseServers(ONE, [{ answered: false, at: AT }]),
+    ).toContain("None answered");
+  });
+
+  it("still says how many records DASH holds when none of them answered", () => {
+    // The saved count is a fact about DASH and stays true whatever the servers
+    // do. Dropping it on a bad check would lose the one number that is knowable.
+    expect(summariseServers(ONE, [{ answered: false, at: AT }])).toContain("1 server is saved");
   });
 });
 

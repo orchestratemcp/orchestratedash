@@ -142,6 +142,7 @@ describe("the four rows that are one machine", () => {
     expect(hostsView().servers[0]).toMatchObject({
       same_server_index: 1,
       same_server_count: 1,
+      sent: [],
     });
   });
 

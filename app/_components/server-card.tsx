@@ -19,6 +19,7 @@ import {
   describePin,
   describeSameServer,
   describeSignIn,
+  standingChip,
 } from "../../lib/server-card";
 import { describeSetupStep } from "../../lib/host-wizard";
 import type { AgentDeployChoice, SavedServerView } from "../../lib/views/types";
@@ -33,7 +34,12 @@ import { ConnectionTravelNotice, DeployOutcome } from "./deploy";
  * bottom:
  *
  * 1. **What is it and does it work** — the label, and the standing in its own
- *    words. The chip beside the label is the same fact at a glance.
+ *    words. The chip beside the label is the same fact at a glance, and since
+ *    MAR-605 that is literal rather than aspirational: `standingChip` moved into
+ *    `lib/server-card.ts` and builds its label out of the standing's own
+ *    `reach`, so this component no longer has the option of deciding how far
+ *    DASH got. It had that option once, and used it to draw CANNOT REACH above
+ *    a sentence reading "the server is answering".
  * 2. **How DASH reaches it, and since when** — the connection facts, which are
  *    what a person checks against their provider's own page.
  * 3. **What is on it** — reported by the server, never claimed by DASH.
@@ -47,43 +53,6 @@ import { ConnectionTravelNotice, DeployOutcome } from "./deploy";
  * next action rather than one shared shrug, and why "nothing is running there"
  * is drawn as an ordinary state and not as a fault.
  */
-
-/* ---------------------------------------------------------------------- *
- * The chip
- * ---------------------------------------------------------------------- */
-
-/**
- * The standing at a glance, in the four tones the system already has.
- *
- * `no_runner_there` is deliberately **not** an error tone. It is what a fresh
- * server looks like, the attended run's own copy calls it *"reachable, with
- * nothing running on it"*, and colouring it red would tell somebody their
- * working server is broken on the day they rented it.
- */
-export function standingChip(state: HostConnectState): { label: string; tone: string } {
-  switch (state.step) {
-    case "reachable":
-      return { label: "Connected", tone: "chip-ok" };
-    case "probing":
-      return { label: "Checking", tone: "chip-muted" };
-    case "not_checked":
-      return { label: "Not checked", tone: "chip-muted" };
-    case "unreachable":
-      return state.problem === "no_runner_there"
-        ? { label: "Nothing running", tone: "chip-warn" }
-        : { label: "Cannot reach", tone: "chip-err" };
-    case "awaiting_key_install":
-      return { label: "Waiting for its key", tone: "chip-warn" };
-    // MAR-572's enrollment moment, added at the MAR-574/572 merge. Warn rather
-    // than error for `awaiting_key_install`'s reason: nothing is wrong, the
-    // server answered and is waiting on a person — and it is the one standing
-    // whose next step only the person can take.
-    case "confirm_host_key":
-      return { label: "Waiting for you to confirm it", tone: "chip-warn" };
-    case "no_host":
-      return { label: "Not connected", tone: "chip-muted" };
-  }
-}
 
 /* ---------------------------------------------------------------------- *
  * The card

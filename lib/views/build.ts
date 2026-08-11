@@ -84,6 +84,7 @@ import {
   listRuns,
   readAgentAvatar,
   readAgentDeploys,
+  readHostDeploys,
   readAgentManifest,
   readEvidencePulls,
   readHost,
@@ -747,6 +748,25 @@ export function hostsView(store: StoreShape = readStore()): HostsView {
         // a card claims and the position it has cannot drift apart.
         same_server_index: sameServer.indexOf(record) + 1,
         same_server_count: sameServer.length,
+        /*
+         * MAR-606. What DASH put here, out of DASH's own record of doing it.
+         *
+         * `readHostDeploys` returns newest-first already, and `plainDay` is
+         * applied on this side for the reason every other date on a view is:
+         * the renderer is handed the sentence's ingredient rather than a
+         * timestamp to format, so both hosts say the date the same way.
+         *
+         * Note what is deliberately *not* joined in here. Nothing asks the
+         * server anything — a view function runs on every read of this page,
+         * and a probe per server on render is exactly the polling ADR 0015 and
+         * the deploy panel's own copy both refuse. What the server said arrives
+         * on the standing, when somebody presses Check.
+         */
+        sent: readHostDeploys(record.host_id).map((deploy) => ({
+          agent: deploy.agent,
+          sent_at: deploy.sent_at,
+          sent_on: plainDay(deploy.sent_at),
+        })),
       };
     }),
   };

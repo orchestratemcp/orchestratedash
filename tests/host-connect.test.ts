@@ -82,7 +82,13 @@ describe("the states a person can be in", () => {
   it("asks for nothing while it is working, and nothing once it has worked", () => {
     expect(describeConnectState({ step: "probing", label: LABEL }).next_action).toBeNull();
     expect(
-      describeConnectState({ step: "reachable", label: LABEL, runner_build: null, agents_running: 1 })
+      describeConnectState({
+        step: "reachable",
+        label: LABEL,
+        runner_build: null,
+        agents_running: 1,
+        agents_there: [{ agent_id: "News Scout", running: true }],
+      })
         .next_action,
     ).toBeNull();
   });
@@ -338,6 +344,7 @@ describe("the receipt", () => {
       label: LABEL,
       runner_build: "96cef12082fe67afa3a6",
       agents_running: 1,
+      agents_there: [{ agent_id: "News Scout", running: true }],
     }).detail;
     expect(detail).toContain(describeHostReach().while_open);
     expect(detail).toContain(describeHostReach().while_closed);
@@ -352,6 +359,7 @@ describe("the receipt", () => {
       label: LABEL,
       runner_build: build,
       agents_running: 1,
+      agents_there: [{ agent_id: "News Scout", running: true }],
     });
     expect(`${copy.headline} ${copy.detail}`).not.toContain(build);
   });

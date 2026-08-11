@@ -809,6 +809,37 @@ export interface SavedServerView {
   same_server_index: number;
   /** How many records name it, including this one. 1 when nothing is duplicated. */
   same_server_count: number;
+  /**
+   * Every agent DASH has sent to this server, newest first (MAR-606, ADR 0010).
+   *
+   * DASH's own record of its own act and nothing else — read `AgentDeployTarget`
+   * before adding a field, because this is the same table seen from the server's
+   * side and it is bounded the same way. There is no entry for whether anything
+   * is running: that is the server's to say, it arrives on the standing with the
+   * moment it was said, and `lib/host-sighting.ts` is where the two accounts are
+   * put beside each other without being blended into one.
+   *
+   * Empty for a server nobody has deployed to, which is most of them.
+   */
+  sent: SentToServerView[];
+}
+
+/**
+ * One agent DASH put on one server, as the server card reads it (MAR-606).
+ *
+ * Narrower than `AgentDeployTarget` on purpose. That type carries the digest
+ * comparison an agent's own page needs in order to say *"what DASH sent is not
+ * what this agent is now"*; a server card is not asking that question, so what
+ * travels here is the name and the date and nothing that could be mistaken for
+ * a claim about the machine.
+ */
+export interface SentToServerView {
+  /** The agent's name, which is also the id its bundle carries on the server. */
+  agent: string;
+  /** DASH's own clock at the moment the push finished. */
+  sent_at: string;
+  /** The same moment as a person would say it, or null for an unreadable date. */
+  sent_on: string | null;
 }
 
 /**

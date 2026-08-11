@@ -141,13 +141,100 @@ export type HostConnectState =
    * that produced it. See `lib/server-card.ts` for why that is stated on screen
    * rather than smoothed over.
    */
-  | { step: "reachable"; label: string; runner_build: string | null; agents_running: number }
+  | {
+      step: "reachable";
+      label: string;
+      runner_build: string | null;
+      agents_running: number;
+      /**
+       * Which agents the server named, running or not (MAR-606, ADR 0015).
+       *
+       * The same answer `agents_running` is the length of, no longer discarded.
+       * Empty is a real value and is not the same as absent: a server can
+       * answer DASH and name nothing, which is `no_runner_there` one branch
+       * up — so anything reaching this field has named at least one thing.
+       */
+      agents_there: readonly HostAgentSighting[];
+    }
   | { step: "unreachable"; label: string; problem: HostReachProblem };
+
+/**
+ * One agent a server named, as that server described it (MAR-606, ADR 0015).
+ *
+ * `agent_id` is the name the *server* used, which is the bundle id DASH gave it
+ * at deploy. It is content in the same sense a folder the user picked is
+ * content — it originated as their agent's name — and it is rendered as one.
+ *
+ * There is no pid and there is no installed-at. The first helps nobody this
+ * product is for; the second is the *host's* clock, and mixing two machines'
+ * clocks in one sentence is how a surface ends up quietly wrong about which one
+ * it is talking about.
+ */
+export interface HostAgentSighting {
+  agent_id: string;
+  /** Whether the server still found a live process for it, when asked. */
+  running: boolean;
+}
+
+/* ---------------------------------------------------------------------- *
+ * How far DASH got
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The rung of the ladder DASH climbed before it stopped (MAR-605).
+ *
+ * ## The contradiction this exists to make unsayable
+ *
+ * MAR-489's attended run photographed one card saying two opposite things at
+ * once. The chip read **CANNOT REACH**. The body, three lines below it, read
+ * *"The server is answering and would not let DASH in."* The body was right —
+ * the server was answering, and that is precisely what distinguished this wall
+ * from the previous one — and a person who read the chip went to check a
+ * network that was fine.
+ *
+ * The wording was not the defect. The defect was that **two places decided the
+ * same fact**: `describeUnreachable` decided it in prose, `standingChip` decided
+ * it again in a switch, and nothing made them agree. Rewriting the chip's
+ * strings would have left the second decision in place to drift again on the
+ * next problem somebody adds.
+ *
+ * So the fact is named once, here, and travels *on the copy* — the same object
+ * the body is read out of. A renderer cannot claim a reach the sentence beside
+ * it contradicts, because it is not the renderer's claim to make.
+ *
+ * ## Why four rungs and not a boolean
+ *
+ * "Reachable" collapses the three walls the 2026-08-08 and 2026-08-10 runs met
+ * in sequence, and the whole value of MAR-572/573/600 was pulling them apart:
+ * the wall **moved** each time, and a person who cannot see it move cannot tell
+ * progress from repetition.
+ *
+ * - `this_computer` — DASH never got out of the building. The fault is here and
+ *   so is the fix, and nothing whatever is known about the server.
+ * - `no_answer` — DASH reached out and nothing came back. Every question below
+ *   is unanswerable until this one is.
+ * - `answering` — something is there and DASH has not been let in. It may be
+ *   waiting on a person, refusing the key, or not be the same machine.
+ * - `signed_in` — the key worked and DASH is on the server. What is left is
+ *   about what is *on* it, which is a different conversation entirely.
+ * - `connected` — DASH reached the agent runner itself and it answered. The
+ *   rung above `signed_in` rather than a synonym for it: being on the box and
+ *   finding something there to talk to are the two facts MAR-573 spent an
+ *   attended run learning to tell apart.
+ */
+export type HostReach =
+  | "not_asked"
+  | "asking"
+  | "this_computer"
+  | "no_answer"
+  | "answering"
+  | "signed_in"
+  | "connected";
 
 /**
  * What a person reads for one state.
  *
- * Three fields rather than one paragraph, because a surface needs to weight
+ * Four fields rather than one paragraph, because a surface needs to weight
  * them differently and a single string forces every renderer to re-split it.
  * `next_action` is the imperative half and is the field the distinctness test
  * is written against.
@@ -160,6 +247,27 @@ export interface HostConnectCopy {
 }
 
 /**
+ * A standing, which is a `HostConnectCopy` that also says how far DASH got.
+ *
+ * Separate from the plain shape rather than a fourth field on it, because
+ * `describeDisconnect` is not a standing: it is a confirmation dialog about an
+ * action, and there is no rung of the ladder it sits on. Giving it one would
+ * have meant inventing a value to satisfy a type — which is how a field that
+ * means something everywhere else becomes decoration in one place, and then
+ * gets read as meaningful again by the next person.
+ */
+export interface HostStandingCopy extends HostConnectCopy {
+  /**
+   * How far DASH got, as the sentences above already say it (MAR-605).
+   *
+   * Authored beside the prose it summarises and never inferred from it. This is
+   * the field a chip is built from, so that "cannot reach" cannot appear beside
+   * "the server is answering" — see `HostReach`.
+   */
+  reach: HostReach;
+}
+
+/**
  * The sentence for each state, in the house voice.
  *
  * No field names, no environment variable names, no filenames — the test that
@@ -168,7 +276,7 @@ export interface HostConnectCopy {
  * interpolated into any sentence: it is a separate field on the state, because
  * a sixty-character blob inside a sentence is not a sentence.
  */
-export function describeConnectState(state: HostConnectState): HostConnectCopy {
+export function describeConnectState(state: HostConnectState): HostStandingCopy {
   switch (state.step) {
     case "no_host":
       return {
@@ -177,6 +285,7 @@ export function describeConnectState(state: HostConnectState): HostConnectCopy {
           "You can run agents on a server so they keep working when DASH is closed. " +
           "DASH reaches out to the server; the server never reaches back.",
         next_action: "Connect a server",
+        reach: "not_asked",
       };
 
     case "awaiting_key_install":
@@ -187,6 +296,7 @@ export function describeConnectState(state: HostConnectState): HostConnectCopy {
           "Copy the public half onto the server so it will let DASH in. Nothing else " +
           "about the key ever leaves here.",
         next_action: "Copy the key, then check the connection",
+        reach: "not_asked",
       };
 
     case "not_checked":
@@ -196,6 +306,7 @@ export function describeConnectState(state: HostConnectState): HostConnectCopy {
           "DASH knows how to reach this server and has not signed in to it since you opened " +
           "DASH. Nothing is wrong — it simply has not looked.",
         next_action: "Check this server",
+        reach: "not_asked",
       };
 
     case "confirm_host_key":
@@ -213,6 +324,12 @@ export function describeConnectState(state: HostConnectState): HostConnectCopy {
           "DASH cannot check this for you — anything answering at this address could say " +
           "the same thing, so this is the one part only you can confirm.",
         next_action: "Compare the code, then confirm this is your server",
+        // The server answered and DASH read its identity off that answer. It is
+        // the same rung `host_key_not_trusted` sits on below, which is the point:
+        // the enrollment moment and the refusal that follows it are one wall seen
+        // from two sides, and a chip that drew them differently would suggest
+        // confirming had moved something.
+        reach: "answering",
       };
 
     case "probing":
@@ -220,6 +337,7 @@ export function describeConnectState(state: HostConnectState): HostConnectCopy {
         headline: `Checking ${state.label}`,
         detail: "DASH is signing in to see whether it can reach the agent runner there.",
         next_action: null,
+        reach: "asking",
       };
 
     case "reachable":
@@ -238,6 +356,7 @@ export function describeConnectState(state: HostConnectState): HostConnectCopy {
         // unpleasant one and is required *before* the first deploy.
         detail: `${describeHostReach().while_open} ${describeHostReach().while_closed}`,
         next_action: null,
+        reach: "connected",
       };
 
     case "unreachable":
@@ -252,7 +371,7 @@ export function describeConnectState(state: HostConnectState): HostConnectCopy {
  * distinctness test has one place to point at, and so a new problem cannot be
  * added without answering "and where does it send them".
  */
-function describeUnreachable(label: string, problem: HostReachProblem): HostConnectCopy {
+function describeUnreachable(label: string, problem: HostReachProblem): HostStandingCopy {
   switch (problem) {
     case "no_ssh_on_this_computer":
       return {
@@ -262,6 +381,10 @@ function describeUnreachable(label: string, problem: HostReachProblem): HostConn
           "On Windows it is an optional feature called OpenSSH Client; on Mac and " +
           "Linux it is usually already installed.",
         next_action: "Install the OpenSSH client, then try again",
+        // Nothing was sent, so nothing whatever is known about the server. This
+        // is the one problem of the ten where "DASH could not reach it" would
+        // have been a fair chip, and even here it names the wrong machine.
+        reach: "this_computer",
       };
 
     case "ssh_tools_cannot_check_here":
@@ -276,6 +399,12 @@ function describeUnreachable(label: string, problem: HostReachProblem): HostConn
           "than the one the server runs. Nothing is wrong with the server, and nothing was " +
           "sent to it.",
         next_action: "Update the OpenSSH tools on this computer, then try again",
+        // "The server answered, and then the connection tools on this computer
+        // could not finish" — the detail above says the server answered, so the
+        // rung is `this_computer` for where the *fault* is and the chip says so
+        // without contradicting it. MAR-600 wrote that sentence; MAR-605 is why
+        // the chip beside it can no longer disagree.
+        reach: "this_computer",
       };
 
     case "no_answer_at_address":
@@ -302,6 +431,7 @@ function describeUnreachable(label: string, problem: HostReachProblem): HostConn
           "the first things worth checking, and a server that was only just started may " +
           "not be listening yet.",
         next_action: "Check the address and port, then try again",
+        reach: "no_answer",
       };
 
     case "host_key_not_trusted":
@@ -315,6 +445,7 @@ function describeUnreachable(label: string, problem: HostReachProblem): HostConn
           "The server answered, and DASH will not sign in to it until you have confirmed " +
           "that its identity code is the one your provider shows. Nothing was sent to it.",
         next_action: "Confirm this is your server",
+        reach: "answering",
       };
 
     case "key_not_on_server":
@@ -323,7 +454,10 @@ function describeUnreachable(label: string, problem: HostReachProblem): HostConn
         detail:
           "The server is answering and would not let DASH in. This is what it looks " +
           "like before the key has been added there, which is usually the reason.",
+        // The sentence MAR-605 was filed about. It says the server is answering;
+        // the chip beside it said CANNOT REACH. Now they are one value.
         next_action: "Copy the key onto the server, then check again",
+        reach: "answering",
       };
 
     case "sign_in_refused":
@@ -333,6 +467,7 @@ function describeUnreachable(label: string, problem: HostReachProblem): HostConn
           "The server answered and turned DASH away. The account name may be wrong, " +
           "or the key may have been removed there.",
         next_action: "Check the account name and the key on the server",
+        reach: "answering",
       };
 
     case "server_identity_changed":
@@ -347,6 +482,10 @@ function describeUnreachable(label: string, problem: HostReachProblem): HostConn
           "also what someone impersonating it would look like. DASH will not sign in " +
           "until you say which it is.",
         next_action: "Confirm the server was rebuilt, or check the address",
+        // Something answered — that is the whole alarm. A chip reading "no
+        // answer" here would be the reassuring version of the one state that
+        // must never be reassuring.
+        reach: "answering",
       };
 
     case "helper_not_installed":
@@ -361,6 +500,7 @@ function describeUnreachable(label: string, problem: HostReachProblem): HostConn
           "DASH signed in — the key is right and the server let it in. There is nothing " +
           "there yet for DASH to talk to, which is how every new server starts.",
         next_action: "Set this server up for DASH",
+        reach: "signed_in",
       };
 
     case "no_runner_there":
@@ -370,6 +510,7 @@ function describeUnreachable(label: string, problem: HostReachProblem): HostConn
           "DASH signed in and found no agent runner there yet. Nothing is wrong with " +
           "the connection.",
         next_action: "Put an agent on this server",
+        reach: "signed_in",
       };
 
     case "runner_refused_credential":
@@ -380,6 +521,7 @@ function describeUnreachable(label: string, problem: HostReachProblem): HostConn
           "would not accept it. That happens when the runner was set up by a different " +
           "copy of DASH.",
         next_action: "Connect this server again to give it a fresh introduction",
+        reach: "signed_in",
       };
   }
 }
@@ -437,8 +579,23 @@ export function everyConnectSentence(label = "My server"): string[] {
     },
     { step: "probing", label },
     // Both wordings of the count, so neither escapes the copy sweep.
-    { step: "reachable", label, runner_build: "96cef12082fe67afa3a6", agents_running: 1 },
-    { step: "reachable", label, runner_build: "96cef12082fe67afa3a6", agents_running: 2 },
+    {
+      step: "reachable",
+      label,
+      runner_build: "96cef12082fe67afa3a6",
+      agents_running: 1,
+      agents_there: [{ agent_id: "News Scout", running: true }],
+    },
+    {
+      step: "reachable",
+      label,
+      runner_build: "96cef12082fe67afa3a6",
+      agents_running: 2,
+      agents_there: [
+        { agent_id: "News Scout", running: true },
+        { agent_id: "Weather Watch", running: true },
+      ],
+    },
     ...HOST_REACH_PROBLEMS.map(
       (problem): HostConnectState => ({ step: "unreachable", label, problem }),
     ),
@@ -501,6 +658,7 @@ export function readProbeStanding(
       // Zero rather than a guess when the field is missing: the count is the
       // server's answer, and an absent answer is not a number DASH may invent.
       agents_running: typeof running === "number" ? running : 0,
+      agents_there: readSightings(result.data?.["agents_there"]),
     };
   }
   const problem = result.data?.["problem"];
@@ -527,6 +685,35 @@ export function readProbeStanding(
   return typeof problem === "string" && HOST_REACH_PROBLEMS.includes(problem as HostReachProblem)
     ? { step: "unreachable", label, problem: problem as HostReachProblem }
     : null;
+}
+
+/**
+ * The server's list of what it holds, read off an untyped channel payload
+ * (MAR-606).
+ *
+ * Defensive to the point of tedium on purpose. This crosses a process boundary
+ * from a reply that originated on **somebody else's machine**, so every entry is
+ * checked rather than cast: an entry missing its name is dropped, and `running`
+ * is only ever true when the server actually said so. A malformed answer
+ * degrades to a shorter list — which the surfaces above word as "the server did
+ * not name it" — rather than to a crash or to an invented agent.
+ */
+function readSightings(value: unknown): HostAgentSighting[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const sightings: HostAgentSighting[] = [];
+  for (const entry of value) {
+    if (entry === null || typeof entry !== "object") {
+      continue;
+    }
+    const id = (entry as Record<string, unknown>)["agent_id"];
+    if (typeof id !== "string" || id === "") {
+      continue;
+    }
+    sightings.push({ agent_id: id, running: (entry as Record<string, unknown>)["running"] === true });
+  }
+  return sightings;
 }
 
 /* ---------------------------------------------------------------------- *

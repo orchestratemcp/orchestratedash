@@ -49,6 +49,7 @@ const SERVER: SavedServerView = {
   fingerprint: null,
   same_server_index: 1,
   same_server_count: 1,
+  sent: [],
 };
 
 const SECOND: SavedServerView = { ...SERVER, host_id: "host-2", label: "The spare" };
@@ -310,6 +311,7 @@ describe("the outcome, which both entry points share", () => {
     label: SERVER.label,
     runner_build: "96cef120",
     agents_running: 1,
+    agents_there: [{ agent_id: "News Scout", running: true }],
   };
 
   it("announces a failure and stays polite about progress", () => {

@@ -16,11 +16,16 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { DeployPanel, ServerCard, standingChip } from "../app/_components/server-card";
+import { DeployPanel, ServerCard } from "../app/_components/server-card";
 import { MANIFEST_ONLY_DEPLOY_REFUSAL } from "../lib/agent-folders";
 import { NOTHING_STRANDED } from "../lib/deploy/connection-travel";
 import type { DeployStanding } from "../lib/deploy/deploying";
-import { HOST_REACH_PROBLEMS, type HostConnectState } from "../lib/host-connect";
+import {
+  describeConnectState,
+  HOST_REACH_PROBLEMS,
+  type HostConnectState,
+} from "../lib/host-connect";
+import { standingChip } from "../lib/server-card";
 import type { AgentDeployChoice, SavedServerView } from "../lib/views/types";
 
 const SERVER: SavedServerView = {
@@ -33,6 +38,7 @@ const SERVER: SavedServerView = {
   fingerprint: null,
   same_server_index: 1,
   same_server_count: 1,
+  sent: [],
 };
 
 const NOTHING = {
@@ -70,7 +76,19 @@ const MIGRATED: AgentDeployChoice = {
 const STANDINGS: HostConnectState[] = [
   { step: "not_checked", label: SERVER.label },
   { step: "probing", label: SERVER.label },
-  { step: "reachable", label: SERVER.label, runner_build: "96cef120", agents_running: 2 },
+  {
+
+    step: "reachable",
+
+    label: SERVER.label,
+
+    runner_build: "96cef120",
+
+    agents_running: 2,
+
+    agents_there: [{ agent_id: "News Scout", running: true }],
+
+  },
   {
     step: "confirm_host_key",
     label: SERVER.label,
@@ -162,6 +180,7 @@ describe("what is on the server", () => {
       label: SERVER.label,
       runner_build: "96cef120",
       agents_running: 2,
+      agents_there: [{ agent_id: "News Scout", running: true }],
     });
     expect(html).toContain("The server reported 2 agents running");
     expect(html).toContain("keeps no list of its own");
@@ -197,12 +216,107 @@ describe("the standing at a glance", () => {
     expect(chip.label).toBe("Not checked");
   });
 
-  it("draws the states DASH could not reach in the error tone", () => {
-    for (const problem of HOST_REACH_PROBLEMS.filter((one) => one !== "no_runner_there")) {
+  /*
+   * MAR-605, and this block replaces an assertion that encoded the defect.
+   *
+   * It used to read: every problem except `no_runner_there` draws `chip-err`.
+   * That assertion is what kept **CANNOT REACH** sitting above *"The server is
+   * answering and would not let DASH in"* through the 2026-08-10 attended run —
+   * it was green the whole time, because it checked the chip against itself
+   * rather than against the sentence beside it.
+   */
+  it("never claims a reach the sentence beside it contradicts", () => {
+    for (const state of everyStanding()) {
+      // The load-bearing line: one value, read twice, never decided twice.
+      expect(standingChip(state).reach).toBe(describeConnectState(state).reach);
+    }
+  });
+
+  it("says the server answered, on every standing where it did", () => {
+    // The seven problems whose body says something was there. A chip opening
+    // with "No answer" on any of them is the original defect returning.
+    for (const problem of [
+      "host_key_not_trusted",
+      "key_not_on_server",
+      "sign_in_refused",
+      "server_identity_changed",
+      "helper_not_installed",
+      "no_runner_there",
+      "runner_refused_credential",
+    ] as const) {
+      const chip = standingChip({ step: "unreachable", label: "x", problem });
+      expect(chip.label).toMatch(/^(Answering|Signed in), /);
+    }
+  });
+
+  it("spends the error tone only where something is wrong or unknown", () => {
+    /*
+     * Red is a budget. `key_not_on_server` and `helper_not_installed` are what
+     * a working server looks like before somebody has finished setting it up,
+     * and MAR-605's own words are the test: a person reading the chip should
+     * conclude they have one step left, not that their network is broken.
+     */
+    for (const problem of [
+      "key_not_on_server",
+      "helper_not_installed",
+      "no_runner_there",
+    ] as const) {
+      expect(standingChip({ step: "unreachable", label: "x", problem }).tone).toBe("chip-warn");
+    }
+    for (const problem of [
+      "no_answer_at_address",
+      "sign_in_refused",
+      "server_identity_changed",
+    ] as const) {
       expect(standingChip({ step: "unreachable", label: "x", problem }).tone).toBe("chip-err");
     }
   });
+
+  it("draws a server that answered the check as connected, and only then", () => {
+    expect(
+      standingChip({
+        step: "reachable",
+        label: "x",
+        runner_build: "96cef12082fe67afa3a6",
+        agents_running: 1,
+        agents_there: [{ agent_id: "News Scout", running: true }],
+      }),
+    ).toMatchObject({ label: "Connected", tone: "chip-ok", reach: "connected" });
+  });
 });
+
+/** Every standing a card can be in, so a chip assertion cannot miss one. */
+function everyStanding(): HostConnectState[] {
+  return [
+    { step: "no_host" },
+    { step: "not_checked", label: "x" },
+    { step: "probing", label: "x" },
+    { step: "awaiting_key_install", label: "x", public_key: "ssh-ed25519 AAAA… dash" },
+    {
+      step: "confirm_host_key",
+      label: "x",
+      fingerprint: "SHA256:FCU60rvm6UzWbFXeMm0CUSO8qid2WYv9v3aymVi51HA",
+      key_type: "ssh-ed25519",
+      offered_count: 3,
+    },
+    {
+
+      step: "reachable",
+
+      label: "x",
+
+      runner_build: "96cef12082fe67afa3a6",
+
+      agents_running: 1,
+
+      agents_there: [{ agent_id: "News Scout", running: true }],
+
+    },
+    ...HOST_REACH_PROBLEMS.map(
+      (problem): HostConnectState => ({ step: "unreachable", label: "x", problem }),
+    ),
+  ];
+}
 
 describe("the pinned identity, which is null on every real record", () => {
   it("says there is no record rather than omitting the section", () => {
@@ -230,6 +344,7 @@ describe("the four rows on a real machine", () => {
       ...SERVER,
       same_server_index: 2,
       same_server_count: 4,
+      sent: [],
     });
     expect(html).toContain("Record 2 of 4");
     expect(html).not.toContain("own key");
@@ -395,7 +510,19 @@ describe("the enrollment and setup affordances (MAR-579)", () => {
   it("does not offer setup on a reachable server or one still to be checked", () => {
     expect(card({ step: "not_checked", label: SERVER.label })).not.toContain("Show the setup text");
     expect(
-      card({ step: "reachable", label: SERVER.label, runner_build: "96cef120", agents_running: 0 }),
+      card({
+
+        step: "reachable",
+
+        label: SERVER.label,
+
+        runner_build: "96cef120",
+
+        agents_running: 0,
+
+        agents_there: [{ agent_id: "News Scout", running: true }],
+
+      }),
     ).not.toContain("Show the setup text");
   });
 });
@@ -479,6 +606,7 @@ describe("a deploy while it is happening, and after", () => {
     label: SERVER.label,
     runner_build: "96cef120",
     agents_running: 1,
+    agents_there: [{ agent_id: "News Scout", running: true }],
   };
 
   it("says what is happening rather than only greying the button out", () => {
@@ -558,7 +686,19 @@ describe("a deploy while it is happening, and after", () => {
 describe("how old the server's answer is", () => {
   it("is stamped on the card beside the count", () => {
     const html = card(
-      { step: "reachable", label: SERVER.label, runner_build: "96cef120", agents_running: 2 },
+      {
+
+        step: "reachable",
+
+        label: SERVER.label,
+
+        runner_build: "96cef120",
+
+        agents_running: 2,
+
+        agents_there: [{ agent_id: "News Scout", running: true }],
+
+      },
       SERVER,
       null,
       "2026-08-09T14:14:37Z",
