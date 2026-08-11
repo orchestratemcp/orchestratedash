@@ -29,6 +29,7 @@
 
 import type { GroundingAnalysis, RunAnalysis } from "../analyze";
 import type { EvidenceNotice } from "../copy/evidence";
+import type { RunOriginNotice } from "../copy/where-it-ran";
 import type { GlanceChip } from "../copy/glance";
 import type { AiKeyFlow } from "../ai/connection-view";
 import type { ArtifactCardView } from "./artifacts";
@@ -255,6 +256,19 @@ export interface RunsView {
    * discarded increments no counter.
    */
   evidence: EvidenceNotice | null;
+  /**
+   * Which machines the runs below happened on (MAR-602, ADR 0014).
+   *
+   * Beside `evidence` and deliberately not folded into it: the two answer
+   * different questions about the same list. `evidence` says how complete the
+   * list is; this says where its contents came from. A list can be complete and
+   * of unknown origin, or of known origin and missing half of itself, and one
+   * sentence covering both would be weaker than either.
+   *
+   * Null when DASH has never recorded collecting anything, which is not the
+   * same as "they all ran here" — see `lib/copy/where-it-ran.ts`.
+   */
+  origin: RunOriginNotice | null;
 }
 
 /**

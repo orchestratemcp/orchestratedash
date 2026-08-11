@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import type { EvidenceNotice } from "../../lib/copy/evidence";
+import type { RunOriginNotice } from "../../lib/copy/where-it-ran";
 import { TechnicalDetails } from "../_components/record-card";
 import { RunVerdictChips } from "../_components/verdict";
 import { HostNotice, ViewFailed, ViewLoading } from "../_components/view-state";
@@ -42,6 +43,37 @@ function EvidenceRecordNotice({ notice }: { notice: EvidenceNotice | null }): Re
             nobody reloaded, which is exactly the failure this notice is about. */}
         <code>{notice.last_looked_at}</code>.
       </p>
+    </aside>
+  );
+}
+
+/**
+ * Which machines the runs below happened on (MAR-602, ADR 0014).
+ *
+ * **Above the list, like its neighbour, and for a different reason.**
+ * `EvidenceRecordNotice` is up there because a per-row completeness badge would
+ * attach an uncertainty about *which runs exist* to runs that do. This one is
+ * up there because DASH's answer is currently only good at the scale of the
+ * list: a run's machine of origin is a property of that run, `runs` has no
+ * column for it, and ADR 0014 says the fact must come from the pull that
+ * produced the run rather than be inferred from a deploy record. The day a run
+ * carries its own origin, this moves onto the row and this component goes away.
+ *
+ * `unknown` drives emphasis and never colour, which is `EvidenceNotice`'s rule
+ * next door: DASH not knowing something is not a fault, and rendering it in the
+ * same red as an unapproved irreversible action would teach people to ignore
+ * that red.
+ */
+function RunOriginRecordNotice({ notice }: { notice: RunOriginNotice | null }): ReactNode {
+  if (notice === null) {
+    return null;
+  }
+  return (
+    <aside className="notice" data-origin-unknown={notice.unknown ? "true" : "false"}>
+      <p>
+        <strong>{notice.headline}</strong>
+      </p>
+      <p>{notice.meaning}</p>
     </aside>
   );
 }
@@ -117,7 +149,16 @@ export default function RunsPage(): ReactNode {
       ) : state.status === "failed" ? (
         <ViewFailed recovery={state.recovery} />
       ) : (
-        <EvidenceRecordNotice notice={state.data.evidence} />
+        <>
+          {/* MAR-602, ADR 0014. Above the completeness notice, because "where
+              did these happen" is the plainer question and the one a person can
+              answer without having read anything else about how DASH collects.
+              Both are statements about the list rather than about a row, and
+              they are two elements rather than one so neither can soften the
+              other. */}
+          <RunOriginRecordNotice notice={state.data.origin} />
+          <EvidenceRecordNotice notice={state.data.evidence} />
+        </>
       )}
 
       {state.status !== "ready" ? null : state.data.runs.length === 0 ? (

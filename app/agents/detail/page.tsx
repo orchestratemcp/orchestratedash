@@ -45,6 +45,12 @@ import type { PermissionGrant } from "../../../lib/contracts";
 import { INPUTS_PANEL_COPY } from "../../../lib/copy/inputs";
 import { SAMPLE_REFRESH_COPY } from "../../../lib/copy/panel";
 import { describeWorkingPhase } from "../../../lib/copy/working";
+/* MAR-602. Safe as a value in this bundle: `lib/copy/where-it-ran.ts` imports
+   nothing that reaches a disk, and its one reference to `lib/store.ts` is a
+   type. Same arrangement `lib/deploy/connection-travel.ts` has, and for the
+   same reason — a sentence about two machines has to be worded where both
+   panels naming them can reach it. */
+import { describeRunTarget } from "../../../lib/copy/where-it-ran";
 /* A type, so it erases — `lib/sample-refresh.ts` reaches `agent-kit/scaffold.ts`
    and must never arrive in this bundle as a value. See tests/client-bundle. */
 import type { ManifestGapView } from "../../../lib/sample-refresh";
@@ -52,6 +58,7 @@ import type { InputRoleView } from "../../../lib/views/inputs";
 import type { ArtifactCardView } from "../../../lib/views/artifacts";
 import type { InboxItem } from "../../../lib/workspace";
 import type {
+  AgentDeployTarget,
   WorkspaceRunView,
   WorkspaceSnapshotView,
 } from "../../../lib/views/types";
@@ -447,9 +454,14 @@ function AgentWorkspace(): ReactNode {
         selected={selectedInputs}
       />
 
+      {/* MAR-602, ADR 0014. `deploy_targets` reaches this control for exactly
+          one thing: whether there is a second place worth naming. Nothing about
+          what is on those servers now reaches the sentence it produces — that
+          is ADR 0010's line and it is not crossed here. */}
       <RunNow
         agent={view.agent}
         canAct={canAct}
+        deployTargets={view.deploy_targets}
         hasFiles={selectedInputs.some((input) => input.state === "copied")}
         issue={issue}
         onDispatch={dispatchTask}
@@ -812,6 +824,7 @@ function timeOnly(at: Date | null): string {
 function RunNow({
   agent,
   canAct,
+  deployTargets,
   hasFiles,
   issue,
   onDispatch,
@@ -820,6 +833,16 @@ function RunNow({
 }: {
   agent: string;
   canAct: boolean;
+  /**
+   * Every server DASH has sent this agent to (MAR-602, ADR 0014).
+   *
+   * Empty for almost every agent, and an empty list changes nothing on screen.
+   * When it is not empty this control stops being unambiguous — the agent
+   * exists in two places and one button silently meant one of them — so the
+   * button names its machine and the note below says what DASH cannot do with
+   * the other.
+   */
+  deployTargets: AgentDeployTarget[];
   /** Whether the person has files waiting that this run should receive (MAR-507). */
   hasFiles: boolean;
   issue: (
@@ -862,6 +885,10 @@ function RunNow({
   // re-narrow what this function body already established.
   const taskId = waiting.id;
   const observedAt = snapshot.observed_at;
+  // MAR-602. Both empty when this agent lives in one place, which leaves the
+  // control exactly as it was — ADR 0014's rule is that a machine is named when
+  // there is a choice to be wrong about, not on every button in the product.
+  const where = describeRunTarget(deployTargets);
 
   return (
     <section className="section run-now">
@@ -893,9 +920,21 @@ function RunNow({
       >
         {pending === `run:${taskId}` ? "Starting…" : hasFiles ? "Send files and run now" : "Run now"}
       </button>
-      <p className="muted">
-        It runs only when you ask. Nothing happens on a timer.
-      </p>
+      {/* One flex item rather than two, because `.run-now` is a row: a second
+          bare paragraph would sit *beside* the first at desktop widths and read
+          as two unrelated captions. Stacked here, the machine sentence sits
+          directly above the timer sentence and both stay tied to the button.
+
+          The machine is named in the prose and deliberately not appended to the
+          button. The label is uppercase and letter-spaced, so "Send files and
+          run now on this computer" is a five-word control wearing a sentence —
+          and the sentence below already names the control by name, which is
+          what ADR 0014 asks for. When there is a second button to disambiguate
+          from, it will arrive with its own name. */}
+      <div className="run-now-note">
+        {where === null ? null : <p className="muted">{where}</p>}
+        <p className="muted">It runs only when you ask. Nothing happens on a timer.</p>
+      </div>
     </section>
   );
 }

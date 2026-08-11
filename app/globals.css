@@ -2658,6 +2658,22 @@ button:disabled {
   margin: 0;
 }
 
+/* MAR-602. One flex item holding every line that qualifies the button.
+   `.run-now` is a row, so two bare paragraphs would sit side by side at desktop
+   widths and read as two unrelated captions. Stacked, the machine sentence sits
+   above the timer sentence and both stay beside the control they are about.
+   No `flex` shorthand, deliberately: the default `0 1 auto` is what the bare
+   paragraph already had, so an agent that lives in one place — almost all of
+   them — renders exactly as it did before this issue. `min-width: 0` so a long
+   server name wraps inside the column rather than pushing the row wider than
+   the card holding it. */
+.run-now-note {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
 /* A run in flight is the one moment DASH refreshes on its own. The design brief
    rule is that nothing moves without saying it did, so the saying-so gets a
    style rather than being left to a spinner nobody can read. */
