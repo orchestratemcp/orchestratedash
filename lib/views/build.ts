@@ -486,6 +486,21 @@ function displayNameOf(manifest: ConnectionSourceManifest, fallback: string): st
 }
 
 /**
+ * The MAR-589 title for one fleet candidate: `agentDisplayName`'s answer, over
+ * the same `manifest.agent` shape `displayNameOf` above already casts to.
+ *
+ * `agentId` is `manifest.agent.name` in every caller — `listConnectionCapableAgents`
+ * derives one from the other — so it is the correct fallback rather than a
+ * second guess, and it means this never needs the manifest to have parsed
+ * cleanly to produce a name a person can read.
+ */
+function fleetAgentTitle(agentId: string, manifest: ConnectionSourceManifest): string {
+  const agent = (manifest as { agent?: { display_name?: unknown } }).agent;
+  const display = typeof agent?.display_name === "string" ? agent.display_name : undefined;
+  return agentDisplayName({ name: agentId, display_name: display });
+}
+
+/**
  * The permission card for one connection row (MAR-458, ADR 0002 invariant 4).
  *
  * Null for anything DASH does not broker, which is the honest absence: a typed
@@ -936,6 +951,9 @@ export function fleetConnectorViews(
     agent_id: name,
     manifest,
   }));
+  const titleByAgent = new Map(
+    candidates.map((candidate) => [candidate.agent_id, fleetAgentTitle(candidate.agent_id, candidate.manifest)]),
+  );
 
   return fleetCatalogue().map((connector) => {
     const stored = readFleetConnection(connector.provider);
@@ -945,6 +963,7 @@ export function fleetConnectorViews(
 
     const agents = reach.materializes.map((one) => ({
       agent: one.agent_id,
+      title: titleByAgent.get(one.agent_id) ?? one.agent_id,
       // Whether this agent holds it *now*, from the same reference table
       // `credentialStatus` reads — never from the fleet row, which says what the
       // person gave DASH and not what reached each agent.
@@ -983,7 +1002,11 @@ export function fleetConnectorViews(
               permissions: flow === null ? [] : describePermissions(flow, stored.scopes),
             },
       agents,
-      skipped: reach.skipped.map((one) => ({ agent: one.agent_id, reason: one.reason })),
+      skipped: reach.skipped.map((one) => ({
+        agent: one.agent_id,
+        title: titleByAgent.get(one.agent_id) ?? one.agent_id,
+        reason: one.reason,
+      })),
       // Only meaningful once something is connected: with nothing held, every
       // qualifying agent is waiting for a connection rather than for a share,
       // and a card offering to hand out a credential DASH does not have would be

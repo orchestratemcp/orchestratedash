@@ -117,8 +117,8 @@ describe("a connector the person has connected", () => {
       permissions: ["Read your mail", "Save drafts"],
     },
     agents: [
-      { agent: "news-scout", connected: true },
-      { agent: "invoice-reviewer", connected: false },
+      { agent: "news-scout", title: "News scout", connected: true },
+      { agent: "invoice-reviewer", title: "Invoice reviewer", connected: false },
     ],
     reach_sentence:
       "Connecting Gmail connects it for news-scout and invoice-reviewer. DASH keeps a separate record for each.",
@@ -162,7 +162,7 @@ describe("agents that are waiting, and agents that are not coming", () => {
     const html = draw(
       connector({
         held: { masked_hint: "••••abcd", account_hint: null, since: null, permissions: [] },
-        agents: [{ agent: "news-scout", connected: false }],
+        agents: [{ agent: "news-scout", title: "News scout", connected: false }],
         waiting: ["news-scout"],
       }),
     );
@@ -178,14 +178,14 @@ describe("agents that are waiting, and agents that are not coming", () => {
     const html = draw(
       connector({
         skipped: [
-          { agent: "news-scout", reason: "withheld" },
-          { agent: "ledger-reporter", reason: "not_dash_held" },
+          { agent: "news-scout", title: "News scout", reason: "withheld" },
+          { agent: "ledger-reporter", title: "Ledger reporter", reason: "not_dash_held" },
         ],
       }),
     );
     expect(html).toContain("you turned this one off");
     expect(html).toContain("the agent holds its own");
-    expect(html).toContain("ledger-reporter");
+    expect(html).toContain("Ledger reporter");
   });
 });
 

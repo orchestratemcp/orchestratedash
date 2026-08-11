@@ -786,16 +786,22 @@ export interface FleetConnectorView {
     /** What the consent actually issued, in DASH's own sentences. Empty for a key. */
     permissions: string[];
   } | null;
-  /** Every agent this connection reaches, and whether it has it yet. */
-  agents: Array<{ agent: string; connected: boolean }>;
+  /**
+   * Every agent this connection reaches, and whether it has it yet.
+   *
+   * `agent` is the id — a value, never a label (MAR-589's ruling). `title` is
+   * `agentDisplayName`'s answer and the one this card is allowed to print.
+   */
+  agents: Array<{ agent: string; title: string; connected: boolean }>;
   /**
    * Agents that name this service and are not reached, each with why.
    *
    * `reason` is a `FleetSkip`, carried as a code rather than a sentence so the
    * copy stays in `describeSkip` — a view that shipped prose would be prose no
-   * plain-language sweep ever looks at.
+   * plain-language sweep ever looks at. `title` follows MAR-589's ruling exactly
+   * as it does on `agents` above.
    */
-  skipped: Array<{ agent: string; reason: string }>;
+  skipped: Array<{ agent: string; title: string; reason: string }>;
   /**
    * Agents that qualify and do not have it yet — what `fleet.share` would give.
    *
