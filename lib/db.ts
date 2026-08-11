@@ -1037,6 +1037,25 @@ const MIGRATIONS: readonly Migration[] = [
 
   CREATE INDEX IF NOT EXISTS fleet_grants_by_agent ON fleet_grants (agent);
   `,
+  // MAR-589. A name DASH itself owns, separate from the author's `display_name`.
+  //
+  // **Nullable, and never backfilled.** `avatar` above backfills every existing
+  // row because every agent needs a character; this column means something
+  // different — "somebody renamed this agent" — and no existing agent has. A
+  // null here reads through `agentDisplayName` to the manifest's own
+  // `display_name` and then to the humanized id, exactly as it did before this
+  // column existed, so a database migrated straight to this version shows
+  // nothing different until somebody actually renames something.
+  //
+  // **Omitted from `importManifest`'s `ON CONFLICT DO UPDATE`, for the reason
+  // `avatar` states on its own migration.** `display_name` is what a person
+  // reads and is free to change from what the manifest says; an author
+  // republishing their manifest must not silently rename an agent the user has
+  // already renamed. The insert still lists the column — new agents start
+  // unrenamed — and only the update clause leaves it alone.
+  `
+  ALTER TABLE agents ADD COLUMN display_name TEXT
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

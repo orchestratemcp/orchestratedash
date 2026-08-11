@@ -161,11 +161,22 @@ export interface AgentDeployTarget {
  */
 export interface AgentDeployChoice {
   name: string;
+  /** The one name a person reads for this agent (MAR-589). See `AgentRow.title`. */
+  title: string;
   deploy: AgentDeployView;
 }
 
 export interface AgentRow {
   name: string;
+  /**
+   * The one name a person reads for this agent (MAR-589).
+   *
+   * `agentDisplayName`'s answer — the stored rename when there is one, else the
+   * manifest's own `display_name`, else the humanized id. This is the label;
+   * `name` above is a value and belongs in `<code>`, never set as this row's
+   * heading.
+   */
+  title: string;
   goal: string;
   plan_source: string;
   build_target: string;
@@ -736,6 +747,8 @@ export interface AgentConnections {
    * same defect the paragraph above is about. The card draws nothing.
    */
   avatar: OName | null;
+  /** The one name a person reads for this agent (MAR-589). See `AgentRow.title`. */
+  title: string;
   rows: ConnectionRowWithCredential[];
   /**
    * What the permission cards above cannot account for (MAR-467). Newest first,
@@ -1049,6 +1062,13 @@ export type WorkspaceView =
       found: true;
       agent: string;
       title: string;
+      /**
+       * Whether `title` is a stored rename rather than the manifest's own
+       * `display_name` (MAR-589). The settings drawer's only use for this: it
+       * words the name row's source line differently depending on which one
+       * a person is looking at.
+       */
+      renamed: boolean;
       goal: string;
       /**
        * The agent's persisted character, for the portrait (MAR-502).

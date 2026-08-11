@@ -99,6 +99,7 @@ import {
   formatAuditLine,
   type HostAction,
   type HostActionResult,
+  type RenameAction,
   type RunnerLifecycleResult,
   type WorkspaceAction,
   type WorkspaceActionResult,
@@ -154,6 +155,7 @@ import {
   readNotificationSettings,
   recordAgentDeploy,
   recordAgentLook,
+  renameAgent,
   saveHost,
 } from "../lib/store";
 // MAR-576. The folder is authoritative (ADR 0008), so the re-import reads it
@@ -773,6 +775,11 @@ export function registerCommandChannel(
         recordAgentLook(target.agent_id);
         return Promise.resolve({ ok: true });
       },
+      // MAR-589. Set or clear the name DASH shows for one agent. Every gate is
+      // inside `performAgentRenameAction`, beside the write it guards, for
+      // `refreshSampleAgent`'s reason.
+      agentAction: (action, target) =>
+        Promise.resolve(performAgentRenameAction(action, target)),
       // MAR-584. The one route in DASH that accepts a document somebody else's
       // editor wrote. Every gate is inside `electron/folder-update.ts`, beside
       // the reads and the write it guards, for `refreshSampleAgent`'s reason.
@@ -1094,6 +1101,25 @@ function refreshSampleAgent(agentId: string): { ok: boolean; refusal?: string; d
       refusal: "refused_at_import",
       detail: "DASH could not accept its own updated setup for this agent, so nothing was changed.",
     };
+  }
+  return { ok: true };
+}
+
+/**
+ * Set — or clear — the name DASH shows for one agent (MAR-589).
+ *
+ * The only gate is `renameAgent`'s own: the agent has to exist, and a name
+ * that survives trimming has to be non-empty and not absurdly long. Both are
+ * checked beside the write in `lib/store.ts`, `refreshSampleAgent`'s reason
+ * for its own gate living beside its write rather than at this seam.
+ */
+function performAgentRenameAction(
+  _action: RenameAction,
+  target: { agent_id: string; display_name?: string },
+): { ok: boolean; refusal?: string } {
+  const result = renameAgent(target.agent_id, target.display_name);
+  if (!result.ok) {
+    return { ok: false, refusal: result.errors.join(" ") };
   }
   return { ok: true };
 }

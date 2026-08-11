@@ -55,11 +55,24 @@ export function FleetCard({
         that is already on screen is the "text that is not needed" MAR-547 names.
       */}
       <div className="card-head">
-        <h3>
-          <Link className="plain" href={agentWorkspaceHref(agent.name)}>
-            <code>{agent.name}</code>
-          </Link>
-        </h3>
+        <div className="card-head-identity">
+          <h3>
+            <Link className="plain" href={agentWorkspaceHref(agent.name)}>
+              {agent.title}
+            </Link>
+          </h3>
+          {/*
+            MAR-589. Henrik's ruling applied to the fleet card: the name is the
+            label and the id is a value, in the same monospace chip
+            `AgentHeader` already draws on the agent's own page. This card used
+            to set the id itself in `<code>` as the heading, which was the exact
+            defect MAR-577 and MAR-570's sessions flagged on two other surfaces.
+          */}
+          <p className="agent-id-chip">
+            <span className="agent-id-label">ID</span>{" "}
+            <code className="value">{agent.name}</code>
+          </p>
+        </div>
         <AgentComplianceChips compliance={agent.compliance} />
       </div>
       {/*

@@ -997,7 +997,11 @@ export default function HostsPage(): ReactNode {
    */
   const agentChoices =
     agents.status === "ready"
-      ? agents.data.agents.map((agent) => ({ name: agent.name, deploy: agent.deploy }))
+      ? agents.data.agents.map((agent) => ({
+          name: agent.name,
+          title: agent.title,
+          deploy: agent.deploy,
+        }))
       : [];
   const showConnect = connecting ?? servers.length === 0;
 

@@ -539,8 +539,12 @@ function AgentWorkspace(): ReactNode {
       {settingsOpen ? (
         <AgentSettings
           avatar={view.avatar}
+          canAct={canAct}
           id={view.agent}
           onClose={() => setSettingsOpen(false)}
+          onRenamed={() => setRefreshKey((value) => value + 1)}
+          renamed={view.renamed}
+          setFeedback={setFeedback}
           title={view.title}
           trigger={view.snapshot?.overview.trigger_label ?? null}
           danger={

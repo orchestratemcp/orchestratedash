@@ -301,6 +301,39 @@ export const COMMANDS = {
   },
 
   /*
+   * MAR-589. A name DASH itself owns for one agent, separate from the
+   * author's `display_name`.
+   *
+   * **A seventh family, and it is one for `glance.looked`'s own reason
+   * immediately above: it is about the reader's own record of an agent, not
+   * about anything the agent or the runner does.** Nothing here contacts an
+   * agent, a runner, a vault or a provider.
+   *
+   * **`identity.*`, not `agent.*`.** `sample.refresh`'s own note states the
+   * rule this follows: `agent.*` is reserved for the contract's seven verbs,
+   * and `tests/shell.test.ts` enforces it by checking every `agent.*` command
+   * against that exact set. A rename is not one of them.
+   *
+   * `display_name` is optional and its absence is the whole vocabulary for
+   * "put this back" — `reviewCommand`'s own rule denies an *empty* string as
+   * "present but absent" for every command in this file, so the one way to
+   * clear a rename is to omit the field entirely, which is what the renderer's
+   * `dropUnset` turns "the person cleared the box" into before this is ever
+   * called.
+   *
+   * `mutates` is true — a row changes. `irreversible` is false: the previous
+   * name, whether it was a rename or the manifest's own `display_name`, is one
+   * more press away.
+   */
+  "identity.rename": {
+    effect: "Set — or clear — the name DASH shows for this agent. Contacts nobody.",
+    payload_keys: ["agent_id", "display_name"],
+    required_keys: ["agent_id"],
+    mutates: true,
+    irreversible: false,
+  },
+
+  /*
    * MAR-583. Which model an agent uses.
    *
    * **An eighth family, and it is one because the question it answers is one.**
@@ -1098,6 +1131,23 @@ export function isGlanceCommandName(value: CommandName): value is GlanceCommandN
 }
 
 /**
+ * The one member of the rename family (MAR-589).
+ *
+ * One member is not a shape waiting to be filled — see `GLANCE_ACTIONS`'s own
+ * note for the same standing above.
+ */
+export const RENAME_ACTIONS = {
+  "identity.rename": "rename",
+} as const;
+
+export type RenameCommandName = keyof typeof RENAME_ACTIONS;
+export type RenameAction = (typeof RENAME_ACTIONS)[RenameCommandName];
+
+export function isRenameCommandName(value: CommandName): value is RenameCommandName {
+  return Object.hasOwn(RENAME_ACTIONS, value);
+}
+
+/**
  * An agent's folder, as edited from outside DASH (MAR-584).
  *
  * A seventh family with three members, and the reason it is a family rather
@@ -1302,6 +1352,7 @@ type UnroutedCommand = Exclude<
   | WorkspaceCommandName
   | SampleCommandName
   | GlanceCommandName
+  | RenameCommandName
   | FolderCommandName
   | ModelCommandName
   | NotifyCommandName
@@ -1604,6 +1655,10 @@ export function executeCommand(review: CommandReview): CommandResult {
     // every entry above: succeeding here would report a look recorded that was
     // not, and the fleet card would go on saying an output is new.
     isGlanceCommandName(review.command) ||
+    // MAR-589. Writes a row through `node:sqlite`, the same reason as the entry
+    // immediately above: succeeding here would report a rename that never
+    // touched the store.
+    isRenameCommandName(review.command) ||
     // MAR-584. Two of the three read the folder off disk and the third opens a
     // window on it, none of which a sandboxed preload may do. `folder.check`
     // matters most here despite changing nothing: succeeding without looking
@@ -2041,6 +2096,19 @@ export interface DispatchContext {
    * start reasoning about a value it has no business holding.
    */
   glanceAction(action: GlanceAction, target: { agent_id: string }): Promise<{ ok: boolean }>;
+  /**
+   * Set — or clear — the name DASH shows for one agent (MAR-589).
+   *
+   * Injected for `glanceAction`'s own reason immediately above: the real
+   * implementation reaches `node:sqlite`, and this module has to stay
+   * importable from a sandboxed preload. An absent `display_name` clears the
+   * rename; see `RENAME_ACTIONS`'s own note for why that is the field's only
+   * way to mean "put this back".
+   */
+  agentAction(
+    action: RenameAction,
+    target: { agent_id: string; display_name?: string },
+  ): Promise<{ ok: boolean; refusal?: string }>;
   /**
    * Choose a model, set one step's level, or ask what models there are (MAR-583).
    *
@@ -2513,6 +2581,24 @@ export async function dispatchCommand(
       agent_id: String(review.payload["agent_id"]),
     });
     return { ok: result.ok, request_id: review.audit.request_id };
+  }
+
+  if (isRenameCommandName(review.command)) {
+    /*
+     * MAR-589. `display_name` is absent from `review.payload` whenever the
+     * renderer's `dropUnset` dropped it — the field's whole vocabulary for
+     * "put this back to the manifest's own name" — so it is read optionally
+     * rather than defaulted to an empty string, which `reviewCommand` would
+     * already have refused as "present but absent" if it had arrived that way.
+     */
+    const result = await context.agentAction(RENAME_ACTIONS[review.command], {
+      agent_id: String(review.payload["agent_id"]),
+      display_name:
+        review.payload["display_name"] === undefined
+          ? undefined
+          : String(review.payload["display_name"]),
+    });
+    return { ok: result.ok, request_id: review.audit.request_id, reason: result.refusal };
   }
 
   if (isModelCommandName(review.command)) {

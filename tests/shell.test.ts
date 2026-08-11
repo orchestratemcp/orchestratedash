@@ -17,6 +17,7 @@ import type {
   AskAction,
   ModelAction,
   NotifyAction,
+  RenameAction,
   SampleAction,
   WorkspaceAction,
 } from "../lib/shell/ipc";
@@ -167,6 +168,13 @@ describe("the audited command chokepoint", () => {
       // main stamps its own clock, so page script cannot mark an agent as read
       // at a moment it chose and silence its card for good.
       "glance.looked",
+      // MAR-589. A name DASH itself owns for one agent, separate from the
+      // author's `display_name`. About the reader's own record, `glance.looked`'s
+      // own reason immediately above: it contacts no agent, no runner, no vault
+      // and no provider. `display_name` is optional, and its absence is the whole
+      // vocabulary for putting a rename back. `identity.*`, not `agent.*` — that
+      // prefix is reserved for the contract's seven verbs, checked below.
+      "identity.rename",
       // MAR-584. A seventh family, and the only route in DASH that accepts a
       // document somebody else's editor wrote. Three members and the split
       // between the first two is the point: comparing is a read and accepting
@@ -499,6 +507,11 @@ describe("dispatch", () => {
     // real one writes a row through `node:sqlite`, which this process has no
     // store for.
     const looks: Array<{ action: GlanceAction; target: { agent_id: string } }> = [];
+    // MAR-589. Recorded rather than performed, `glanceAction`'s own reason: the
+    // real one writes a row through `node:sqlite`, which this process has no
+    // store for.
+    const renames: Array<{ action: RenameAction; target: { agent_id: string; display_name?: string } }> =
+      [];
     // MAR-584. Recorded rather than performed, for the same reason as the rest:
     // the real one reads the agent folder off disk, writes through
     // `importManifest` and — for `reveal` — calls an Electron main API, none of
@@ -525,6 +538,7 @@ describe("dispatch", () => {
       connections,
       samples,
       looks,
+      renames,
       folders,
       models,
       asks,
@@ -563,6 +577,13 @@ describe("dispatch", () => {
       // another one.
       glanceAction: (action: GlanceAction, target: { agent_id: string }) => {
         looks.push({ action, target });
+        return Promise.resolve({ ok: true });
+      },
+      agentAction: (
+        action: RenameAction,
+        target: { agent_id: string; display_name?: string },
+      ) => {
+        renames.push({ action, target });
         return Promise.resolve({ ok: true });
       },
       // MAR-584. Recorded, not performed, for `sampleAction`'s reason: these
@@ -1424,6 +1445,101 @@ describe("dispatch", () => {
 
     it("refuses to execute one without the trusted side", () => {
       expect(() => executeCommand(reviewCommand(refresh))).toThrowError(
+        /must go through dispatchCommand/,
+      );
+    });
+  });
+
+  /**
+   * `identity.rename` (MAR-589): a name DASH itself owns for one agent.
+   *
+   * `display_name`'s absence is the whole vocabulary for "put this back" —
+   * `reviewCommand`'s "present but absent" rule already refuses an *empty*
+   * string, so the one way to clear a rename is to omit the field, and that is
+   * the case worth pinning here rather than trusting the renderer's own
+   * `dropUnset` to have done it.
+   */
+  describe("renaming an agent (MAR-589)", () => {
+    const rename = {
+      command: "identity.rename",
+      request_id: "req-rename-1",
+      payload: { agent_id: "ai-news-scout", display_name: "News Scout" },
+    };
+
+    it("routes to the identity side and not to the agent, the runner or the sample side", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(rename, ctx);
+
+      expect(result).toMatchObject({ ok: true });
+      expect(ctx.renames).toEqual([
+        {
+          action: "rename",
+          target: { agent_id: "ai-news-scout", display_name: "News Scout" },
+        },
+      ]);
+      expect(ctx.samples).toHaveLength(0);
+      expect(ctx.lifecycle).toHaveLength(0);
+    });
+
+    it("clears a rename when display_name is absent, not empty", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(
+        { command: "identity.rename", request_id: "req-rename-2", payload: { agent_id: "ai-news-scout" } },
+        ctx,
+      );
+
+      expect(result).toMatchObject({ ok: true });
+      expect(ctx.renames).toEqual([
+        { action: "rename", target: { agent_id: "ai-news-scout", display_name: undefined } },
+      ]);
+    });
+
+    it("refuses an empty display_name rather than reading it as a clear", () => {
+      const review = reviewCommand({
+        command: "identity.rename",
+        request_id: "req-rename-3",
+        payload: { agent_id: "ai-news-scout", display_name: "" },
+      });
+      expect(review.decision).toBe("denied");
+      expect((review as { reason: string }).reason).toBe("missing_payload_field");
+    });
+
+    it("refuses a rename that names no agent", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(
+        { command: "identity.rename", request_id: "req-rename-4", payload: {} },
+        ctx,
+      );
+
+      expect(result).toMatchObject({ ok: false, reason: "missing_payload_field" });
+      expect(ctx.renames).toHaveLength(0);
+    });
+
+    it("surfaces a refusal from the trusted side, such as an unknown agent", async () => {
+      const ctx = context();
+      const failing = {
+        ...ctx,
+        agentAction: () => Promise.resolve({ ok: false, refusal: "DASH has no record of that agent." }),
+      };
+      const result = await dispatchCommand(rename, failing);
+      expect(result).toMatchObject({ ok: false, reason: "DASH has no record of that agent." });
+    });
+
+    it("is audited, with keys only, and recorded as changing the store", async () => {
+      const ctx = context();
+      await dispatchCommand(rename, ctx);
+
+      expect(ctx.audited[0]).toMatchObject({
+        command: "identity.rename",
+        decision: "allowed",
+        payload_keys: ["agent_id", "display_name"],
+        mutates: true,
+      });
+      expect(COMMANDS["identity.rename"].irreversible).toBe(false);
+    });
+
+    it("refuses to execute one without the trusted side", () => {
+      expect(() => executeCommand(reviewCommand(rename))).toThrowError(
         /must go through dispatchCommand/,
       );
     });

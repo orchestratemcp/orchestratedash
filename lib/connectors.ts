@@ -65,6 +65,8 @@ import type { AgentConnections, ConnectionRowWithCredential } from "./views/type
  */
 export interface ConnectorDependent {
   agent: string;
+  /** The one name a person reads for this agent (MAR-589). See `AgentRow.title`. */
+  title: string;
   /** The agent's stored character, or null. Never derived here — MAR-502's rule. */
   avatar: OName | null;
   /** Whether DASH holds a credential for **this agent's** copy of the connector. */
@@ -137,6 +139,7 @@ export function buildConnectorTiles(agents: readonly AgentConnections[]): Connec
     for (const row of agent.rows) {
       const dependent: ConnectorDependent = {
         agent: agent.name,
+        title: agent.title,
         avatar: agent.avatar,
         connected: row.masked_hint !== null,
         purpose: row.purpose,

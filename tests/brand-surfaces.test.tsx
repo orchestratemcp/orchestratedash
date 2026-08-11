@@ -101,6 +101,7 @@ afterEach(() => {
 function row(name: string, avatar: OName): AgentRow {
   return {
     name,
+    title: name,
     goal: "does a thing",
     plan_source: "orchestratekit",
     build_target: "node",

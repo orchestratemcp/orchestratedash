@@ -236,8 +236,16 @@ export const AGENT_SETTINGS_COPY = {
   identity: {
     heading: "Name and character",
     name_label: "Name",
-    /** Under the name. Says whose name it is and why it cannot be edited. */
-    name_source: "Set by whoever wrote this agent. DASH cannot rename an agent yet.",
+    /** Under the name, in its read state (MAR-589). Says where it came from. */
+    name_source: "Set by whoever wrote this agent, until you rename it.",
+    /** Under the name while it is a stored rename rather than the author's own. */
+    name_source_renamed: "Renamed. The agent's own manifest still calls it something else.",
+    rename_edit: "Rename",
+    rename_save: "Save",
+    rename_cancel: "Cancel",
+    rename_reset: "Use the agent's own name",
+    rename_placeholder: "Name",
+    rename_read_only: "Open the installed DASH app to rename an agent.",
     id_label: "ID",
     id_source: "How DASH refers to this agent internally. It never changes.",
     avatar_label: "Character",

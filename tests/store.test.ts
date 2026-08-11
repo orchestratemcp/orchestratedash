@@ -21,6 +21,7 @@ const {
   pinHostFingerprint,
   readHost,
   readStore,
+  renameAgent,
   resetStore,
   saveHost,
 } = await import("../lib/store");
@@ -78,6 +79,52 @@ describe("manifest import", () => {
   it("keeps unknown fields rather than rejecting them", () => {
     const additive = { ...(manifest as object), future_field: "ignored" };
     expect(importManifest(additive).ok).toBe(true);
+  });
+});
+
+describe("agent rename (MAR-589)", () => {
+  const agentId = "email-lead-to-crm";
+
+  it("changes the title listAgents reports, and nothing else", () => {
+    importManifest(manifest);
+    const before = listAgents()[0];
+
+    expect(renameAgent(agentId, "Lead Router")).toEqual({ ok: true });
+
+    const after = listAgents()[0];
+    expect(after?.title).toBe("Lead Router");
+    // Nothing about the underlying manifest projection moved.
+    expect(after?.name).toBe(before?.name);
+    expect(after?.goal).toBe(before?.goal);
+  });
+
+  it("survives a re-import, unlike avatar it is not — the manifest's own display_name is what a rename must outrank", () => {
+    importManifest(manifest);
+    renameAgent(agentId, "Lead Router");
+    importManifest(manifest);
+    expect(listAgents()[0]?.title).toBe("Lead Router");
+  });
+
+  it("falls back to the manifest's own name once the rename is cleared", () => {
+    importManifest(manifest);
+    const original = listAgents()[0]?.title;
+    renameAgent(agentId, "Lead Router");
+    expect(renameAgent(agentId, undefined)).toEqual({ ok: true });
+    expect(listAgents()[0]?.title).toBe(original);
+  });
+
+  it("trims whitespace and refuses a name that is blank once trimmed", () => {
+    importManifest(manifest);
+    expect(renameAgent(agentId, "  Lead Router  ")).toEqual({ ok: true });
+    expect(listAgents()[0]?.title).toBe("Lead Router");
+    expect(renameAgent(agentId, "   ").ok).toBe(false);
+    // The blank attempt did not clear the rename that was already there.
+    expect(listAgents()[0]?.title).toBe("Lead Router");
+  });
+
+  it("refuses an agent DASH has no record of", () => {
+    const result = renameAgent("no-such-agent", "Anything");
+    expect(result).toMatchObject({ ok: false });
   });
 });
 
