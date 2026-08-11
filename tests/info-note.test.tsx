@@ -24,8 +24,9 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { InfoNote } from "../app/_components/info-note";
-import { INFO_NOTE_COPY, splitProof } from "../lib/copy/info-note";
+import { INFO_NOTE_COPY, splitGlance, splitProof } from "../lib/copy/info-note";
 import { describeProof } from "../lib/connection-card";
+import { GLANCE_ALL_CLEAR, describeGlance, type GlanceFacts } from "../lib/copy/glance";
 
 function draw(node: Parameters<typeof renderToStaticMarkup>[0]): string {
   return renderToStaticMarkup(node);
@@ -142,6 +143,92 @@ describe("which half of a connection's proof is allowed behind it", () => {
       const everything = [...splitProof(kind, proof).surface, ...splitProof(kind, proof).note];
       expect(everything, kind).toContain(proof.can);
       expect(everything, kind).toContain(proof.cannot);
+    }
+  });
+});
+
+describe("which of a fleet card's glance sentences is allowed behind it", () => {
+  /*
+   * The same review as above, for the surface Henrik actually photographed.
+   *
+   * Driven through `describeGlance` from facts rather than by naming the five
+   * kinds directly, so a fifth question added to `lib/copy/glance.ts` without a
+   * decision here is one these assertions meet rather than skip.
+   */
+
+  const NOTHING: GlanceFacts = {
+    new_outputs: 0,
+    total_outputs: 0,
+    never_looked: false,
+    approvals: 0,
+    choices: 0,
+    expired: 0,
+    unconnected: 0,
+    self_contradicting: 0,
+    overdue: null,
+  };
+
+  /** Every set of facts that reaches a distinct branch of `describeGlance`. */
+  const SCENES: GlanceFacts[] = [
+    NOTHING,
+    { ...NOTHING, approvals: 2 },
+    { ...NOTHING, choices: 1 },
+    { ...NOTHING, approvals: 1, expired: 1 },
+    { ...NOTHING, unconnected: 3 },
+    { ...NOTHING, unconnected: 1, self_contradicting: 1 },
+    { ...NOTHING, overdue: { last_run_at: "2026-08-06T09:00:00.000Z", every_seconds: 86_400 } },
+    { ...NOTHING, overdue: { last_run_at: null, every_seconds: 3_600 } },
+    { ...NOTHING, new_outputs: 4, total_outputs: 9 },
+    { ...NOTHING, new_outputs: 2, total_outputs: 2, never_looked: true },
+  ];
+
+  const everyChip = SCENES.flatMap((facts) => describeGlance(facts));
+
+  it("keeps every sentence that names something waiting on you", () => {
+    /*
+     * The direction that matters. Four of the five questions describe a demand
+     * on the reader — an approval, a missing connection, a missed run, something
+     * new to read — and each sentence carries what the chip cannot: a count, a
+     * deadline that passed, the interval the verdict was computed from, or the
+     * fact that nobody has opened this agent at all.
+     */
+    for (const chip of everyChip.filter((one) => one.question !== "all_clear")) {
+      const split = splitGlance(chip.question, chip.meaning);
+      expect(split.surface, chip.label).toBe(chip.meaning);
+      expect(split.note, chip.label).toBeNull();
+    }
+  });
+
+  it("moves the sentence a healthy agent shows, and only that one", () => {
+    /*
+     * `GLANCE_ALL_CLEAR` is the card at rest, so it is the card a fleet with
+     * nothing wrong draws once per agent — which is why it was the one on
+     * Henrik's screen and why it is the one that moves.
+     */
+    const moved = everyChip.filter(
+      (chip) => splitGlance(chip.question, chip.meaning).note !== null,
+    );
+    expect(moved.length).toBeGreaterThan(0);
+    for (const chip of moved) {
+      expect(chip.question).toBe("all_clear");
+      expect(splitGlance(chip.question, chip.meaning).note).toBe(GLANCE_ALL_CLEAR.meaning);
+    }
+  });
+
+  it("loses no sentence — every meaning is on the surface or in the note", () => {
+    /*
+     * The honesty check, as the sum rather than the placement. Whatever the
+     * split decides for a question added later, the sentence has to come out
+     * somewhere: a branch returning two nulls would delete copy while every
+     * `toContain` gate in the repository stayed green.
+     */
+    for (const chip of everyChip) {
+      const split = splitGlance(chip.question, chip.meaning);
+      expect([split.surface, split.note], chip.label).toContain(chip.meaning);
+      expect(
+        split.surface === null || split.note === null,
+        `${chip.label} is in two places at once`,
+      ).toBe(true);
     }
   });
 });

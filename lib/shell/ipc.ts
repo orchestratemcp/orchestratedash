@@ -2243,7 +2243,16 @@ export async function dispatchCommand(
             username: String(review.payload["username"]),
             port: Number(review.payload["port"]),
           })
-        : action === "deploy"
+        : /*
+           * `run` rides `deploy`'s arm because it carries `deploy`'s payload —
+           * the same two ids, required by the payload rules above. It was the
+           * fall-through's first casualty: `host.run` arrived here after the
+           * chain was written, fell to the host-id-only default, and main
+           * refused every press with "DASH did not receive the agent it should
+           * start" — the exact new-member-falls-through mechanism MAR-600
+           * collapsed in `electron/main.ts`, one file over.
+           */
+          action === "deploy" || action === "run"
           ? await context.hostAction(action, {
               host_id: String(review.payload["host_id"]),
               agent_id: String(review.payload["agent_id"]),
@@ -2352,6 +2361,28 @@ export async function dispatchCommand(
             agent_id: result.agent_id,
             bundle_id: result.bundle_id,
             runner_build: result.runner_build,
+          },
+        };
+      /*
+       * MAR-602's verb, given the arm it never had. A successful run used to
+       * fall out of this switch — the block ended without returning, control
+       * reached the `executeCommand` fallback, and its trusted-side guard threw
+       * a raw error over a press that had *succeeded* on the host. The second
+       * of two fall-throughs on the same press: the dispatch arm above dropped
+       * the agent id, and this switch dropped the answer. `detail` is main's
+       * own sentence — the evidence arrives when DASH next reaches the server —
+       * and `reached` is the one fact the page tones its feedback by.
+       */
+      case "run":
+        return {
+          ok: true,
+          request_id: review.audit.request_id,
+          detail: result.detail,
+          data: {
+            host_id: result.host_id,
+            label: result.label,
+            agent_id: result.agent_id,
+            reached: result.reached,
           },
         };
       case "forget":

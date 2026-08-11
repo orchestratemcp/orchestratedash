@@ -72,13 +72,39 @@ const VIEWPORTS = [
 
 const THEMES = ["light", "dark"] as const;
 
+/**
+ * Both, and only on the fleet (MAR-614 phase 2).
+ *
+ * Phase 1 forced comfortable and said why: it was measuring prose, and prose
+ * does not know what the density is. This phase moves the spacing scale itself,
+ * so the setting that spends that scale has to be in the evidence — and the
+ * fleet is where it is visible, because `--density-gap` is what sits between
+ * cards and there is only one surface with a lot of cards.
+ *
+ * The other pages stay at comfortable. Photographing all six twice would double
+ * the run to prove a composition `tests/tokens.test.ts` already pins
+ * structurally: the compact block may declare nothing but `--density-*`, and
+ * every value in it must be a step on the spacing scale.
+ */
+const DENSITIES = ["comfortable", "compact"] as const;
+
+/** The three layouts, from `lib/views/fleet-view.ts`. */
+const FLEET_VIEWS = ["grid", "rows", "spotlight"] as const;
+
+/** Written before the reload that reads them — see `applySettings`. */
+const DENSITY_KEY = "dash.density";
+const FLEET_VIEW_KEY = "dash.fleetView";
+
 /** The agent whose page is photographed. Seeded below. */
 const AGENT = "meeting-assistant";
 
 /**
- * The surfaces this lane owns. The fleet view is deliberately absent: a parallel
- * session owns those files, and a photograph of them taken here would be
- * evidence about somebody else's branch.
+ * The surfaces the scale pass touches away from the fleet.
+ *
+ * Phase 1 excluded the fleet because a parallel session owned those files.
+ * Phase 2 owns the fleet card's copy and the scale under every page, so the
+ * fleet is added below as its own matrix rather than as a seventh entry here —
+ * it is the one surface with a view *and* a density to vary.
  */
 const PAGES = [
   { name: "connections", path: "/settings" },
@@ -120,7 +146,35 @@ function seed(): void {
   managed.agent.display_name = "Invoice Reviewer";
   importManifest(managed);
 
-  console.log("[text-pass] seeded 2 agents from the shipped examples");
+  /*
+   * Three more, so the fleet is a fleet (MAR-614 phase 2).
+   *
+   * Two agents cannot photograph this issue. The grid's track is three across,
+   * and `spotlight` draws a centre card with a leaning neighbour on each side —
+   * with two agents there is no middle, and `app/globals.css` has a note saying
+   * exactly that ("a fleet of two has a card that can never be centred"). Five
+   * is the smallest number that fills a grid row and leaves the carousel
+   * something to lean.
+   *
+   * Still nothing invented: each is a shipped example under a different name, so
+   * the cards differ in what they declare rather than in fixture prose written
+   * to make the frames look better than the product.
+   */
+  const extras = [
+    ["dash-managed.manifest.v2.example.json", "expense-sorter", "Expense Sorter"],
+    ["dash-managed-secret.manifest.v2.example.json", "inbox-triage", "Inbox Triage"],
+    ["gmail-meeting-assistant.manifest.v2.example.json", "news-scout", "News Scout"],
+  ] as const;
+  for (const [file, name, display] of extras) {
+    const extra = JSON.parse(JSON.stringify(example(file))) as {
+      agent: { name: string; display_name?: string };
+    };
+    extra.agent.name = name;
+    extra.agent.display_name = display;
+    importManifest(extra);
+  }
+
+  console.log("[text-pass] seeded 5 agents from the shipped examples");
 }
 
 /* ---------------------------------------------------------------------- *
@@ -259,6 +313,48 @@ async function ensureComfortable(target: BrowserWindow): Promise<void> {
     console.log("[text-pass] ambient density was compact from a prior run — resetting");
     await pressDensityToggle(target);
   }
+}
+
+/**
+ * Put the window into one density and one fleet view, deliberately.
+ *
+ * Written to `localStorage` and then **reloaded**, rather than by setting the
+ * two attributes directly. Both settings are read by a pre-paint script that
+ * runs before React hydrates — that is what stops a stored preference flashing
+ * the default first — so `localStorage` is the real source and an attribute
+ * written by hand is a value the next navigation quietly discards. Setting the
+ * attribute too would photograph a state the app cannot actually be in.
+ *
+ * The caller navigates afterwards regardless, because a page reads its view once
+ * on mount; this returns what the document ended up saying so a frame that was
+ * filed under the wrong setting fails loudly instead of looking plausible.
+ */
+async function applySettings(
+  target: BrowserWindow,
+  density: string,
+  view: string,
+): Promise<{ density: string | null; view: string | null }> {
+  await target.webContents.executeJavaScript(
+    `(() => {
+       window.localStorage.setItem(${JSON.stringify(DENSITY_KEY)}, ${JSON.stringify(density)});
+       window.localStorage.setItem(${JSON.stringify(FLEET_VIEW_KEY)}, ${JSON.stringify(view)});
+     })()`,
+  );
+  await within("reload for settings", 20_000, target.webContents.loadURL(target.webContents.getURL()));
+  await settle(900);
+  const seen = (await target.webContents.executeJavaScript(
+    `({
+       density: document.documentElement.getAttribute("data-density") || "comfortable",
+       view: document.documentElement.getAttribute("data-fleet-view") || "grid",
+     })`,
+  )) as { density: string | null; view: string | null };
+  if (seen.density !== density || seen.view !== view) {
+    throw new Error(
+      `asked for ${density}/${view} and the document reports ` +
+        `${String(seen.density)}/${String(seen.view)}`,
+    );
+  }
+  return seen;
 }
 
 /**
@@ -465,6 +561,50 @@ async function run(): Promise<void> {
       }
     }
   }
+
+  /*
+   * The fleet, in every shape it has (MAR-614 phase 2).
+   *
+   * Three views times two densities is the matrix `lib/views/fleet-view.ts`
+   * names in its own header — *"the capture matrix below is view × density
+   * rather than a list of six named looks"* — because the two settings compose
+   * and a person can hold any pair of them.
+   *
+   * This is the surface Henrik photographed when he wrote *"The text is to big.
+   * The spacing to wide."*, so it is the one where the before and after have to
+   * be readable side by side rather than merely measured.
+   */
+  for (const view of FLEET_VIEWS) {
+    for (const density of DENSITIES) {
+      for (const theme of THEMES) {
+        nativeTheme.themeSource = theme;
+        await settle(300);
+        for (const viewport of VIEWPORTS) {
+          await go(window, "/");
+          await resizeTo(window, viewport.width, viewport.height);
+          await applySettings(window, density, view);
+          await go(window, "/");
+
+          const measured = measured0(await measure(window), theme === "light");
+          const name = `fleet-${view}-${density}-${viewport.name}-${theme}`;
+          measurements.push({
+            page: `fleet-${view}`,
+            theme,
+            density,
+            fleet_view: view,
+            ...measured,
+            viewport: viewport.name,
+          });
+          console.log(`[text-pass] ${name} ${JSON.stringify({ ...measured, says: undefined })}`);
+          await shoot(window, name);
+        }
+      }
+    }
+  }
+
+  /* Back to the default, so the note-open frames below are not filed under
+     whatever the last fleet frame happened to leave behind. */
+  await applySettings(window, "comfortable", "grid");
 
   /*
    * A note actually open, which is the one state the loop above cannot reach.

@@ -142,3 +142,70 @@ export function splitProof(
       return { surface: [proof.cannot], note: [proof.can] };
   }
 }
+
+/* ---------------------------------------------------------------------- *
+ * The fleet card's glance sentences
+ * ---------------------------------------------------------------------- */
+
+/** The five things a glance chip can be about. `lib/copy/glance.ts` writes them. */
+export type GlanceKind = "needs_you" | "not_connected" | "overdue" | "new_output" | "all_clear";
+
+/**
+ * Which glance sentences a fleet card shows, and which it puts behind the note
+ * (MAR-614).
+ *
+ * Henrik, 2026-08-11, with a screenshot of one card in the rows view:
+ *
+ * > *"This is a card in the fleet view. Why is it so much text? I dont get it"*
+ *
+ * The sentence he was looking at is `GLANCE_ALL_CLEAR`'s, and the reason it was
+ * the one on his screen is the reason it is the one that moves: **it is the
+ * sentence a healthy agent shows.** A fleet of five agents with nothing wrong
+ * draws it five times, so the card with the least to say is the card that says
+ * the most — which is the whole complaint, stated as a mechanism.
+ *
+ * ## The line, and why it is not "hide the long ones"
+ *
+ * This module's header asks one question of every sentence: *does this change
+ * what the person would decide, right now, on this screen?* Asked of these five,
+ * it splits them cleanly into a demand and an absence:
+ *
+ * - **`all_clear` is an absence.** Its sentence enumerates the four questions
+ *   DASH asked and answered "no" — no new output, nothing to approve, nothing to
+ *   connect, no missed run. That is DASH showing its working, and there is by
+ *   definition no decision for it to change: the chip's three words *are* the
+ *   fact, and nothing follows from them. It is the clearest case in DASH of a
+ *   sentence somebody reads once in their life and never needs again.
+ * - **The other four are demands.** Each names something waiting on the reader,
+ *   and each sentence carries the part the chip cannot:
+ *   - `needs_you` says how many things are waiting, and in its expired branch
+ *     says the deadline passed and the answer must start again — which is a
+ *     *different action* from the one the chip implies. Hiding that would be
+ *     hiding a correction.
+ *   - `not_connected` carries "which no sign-in will fix — add the agent again
+ *     from its own folder". That is the limit, and `splitProof` above already
+ *     settled that the limit stays and the mechanism moves. It is the most
+ *     decision-changing sentence on the card.
+ *   - `overdue` carries the declared interval and the last run DASH saw. The
+ *     chip is binary; those two turn it into a judgement, and an agent that
+ *     expects to run hourly and last ran in June is a different problem from one
+ *     a day late on a weekly schedule.
+ *   - `new_output` carries the count, and its `never_looked` branch says
+ *     something the chip does not: that nobody has opened this agent at all.
+ *
+ * So a card at rest gets quieter and a card with something waiting on it does
+ * not. That asymmetry is the outcome rather than a shortfall — the cards that
+ * keep their prose are the ones somebody actually has to read, and after this
+ * pass they are the only ones in the fleet carrying any, which makes them
+ * findable at a glance instead of identical to their neighbours.
+ *
+ * Nothing is deleted. The sentence moves into an `InfoNote`, which keeps it in
+ * the markup and in the accessibility tree — see this file's header and
+ * `app/_components/info-note.tsx`.
+ */
+export function splitGlance(
+  kind: GlanceKind,
+  meaning: string,
+): { surface: string | null; note: string | null } {
+  return kind === "all_clear" ? { surface: null, note: meaning } : { surface: meaning, note: null };
+}

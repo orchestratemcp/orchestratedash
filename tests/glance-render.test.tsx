@@ -116,13 +116,67 @@ describe("every chip is a way in (MAR-586, MAR-547's clickability)", () => {
    * MAR-547's other named defect is "info lacking". A chip is two or three
    * words; the sentence behind it is what makes it a fact rather than a meter,
    * so it has to be in the document rather than in a `title`.
+   *
+   * **MAR-614 narrowed this from "every chip" to "every chip that names
+   * something waiting on you", and the narrowing is the assertion.** `EVERYTHING`
+   * produces the four demands and no all-clear, so this case never met the one
+   * sentence that moved — it passed unchanged through that pass, which is
+   * precisely the blindness `tests/info-note.test.tsx` exists to cover. It is
+   * kept scoped rather than widened: these four must stay on the surface, and a
+   * later pass that put any of them behind a hover has to fail here.
    */
-  it("puts the sentence on the screen, not behind a hover", () => {
+  it("puts the demanding sentences on the screen, not behind a hover", () => {
     const html = markup(EVERYTHING);
     for (const chip of describeGlance(EVERYTHING)) {
+      expect(chip.question, "EVERYTHING should produce no all-clear").not.toBe("all_clear");
       expect(html).toContain(chip.meaning.replace(/'/g, "&#x27;"));
     }
     expect(html).not.toContain("title=");
+    // No note is drawn at all when nothing is allowed behind one.
+    expect(html).not.toContain("info-note");
+  });
+
+  /**
+   * The one sentence that moved (MAR-614), and the three things that have to be
+   * true of it at once.
+   *
+   * Henrik photographed this exact card and asked *"Why is it so much text?"*.
+   * The sentence is `GLANCE_ALL_CLEAR`'s, and `splitGlance` moves it because it
+   * enumerates four answered "no"s — DASH showing its working about an agent
+   * with nothing to decide. `lib/copy/info-note.ts` carries that argument.
+   *
+   * A screenshot cannot settle any of this: a picture of a card without the
+   * sentence and a picture of a card that *lost* the sentence are the same
+   * picture.
+   */
+  it("moves the all-clear sentence behind the note without deleting it", () => {
+    const html = markup(NOTHING);
+    const sentence = GLANCE_ALL_CLEAR.meaning.replace(/'/g, "&#x27;");
+
+    // Still in the markup, so `aria-describedby` still announces it and every
+    // pinned-copy gate elsewhere still sees it.
+    expect(html).toContain(sentence);
+    // Behind the note's own body, not loose on the card.
+    expect(html).toContain("info-note-body");
+    expect(html.indexOf("info-note-body")).toBeLessThan(html.indexOf(sentence));
+    // The chip keeps the fact, which is what licenses moving the sentence.
+    expect(html).toContain(GLANCE_ALL_CLEAR.label);
+    // The title carries the label, never the explanation — `info-note.tsx`'s
+    // rule about not racing a native tooltip in a font DASH does not choose.
+    expect(html).not.toContain(`title="${sentence}`);
+  });
+
+  /**
+   * The empty box nobody photographs.
+   *
+   * `.glance-said` is a grid with a top margin. Left in the tree with no items,
+   * a healthy card would still carry that margin between its chips and its meta
+   * line — the pass would have removed the words and kept the air, which on the
+   * surface this issue is about is half a fix that looks like a whole one.
+   */
+  it("draws no sentence list at all when every sentence moved", () => {
+    expect(markup(NOTHING)).not.toContain("glance-said");
+    expect(markup(EVERYTHING)).toContain("glance-said");
   });
 
   it("says nothing to a reader in vocabulary only DASH uses", () => {

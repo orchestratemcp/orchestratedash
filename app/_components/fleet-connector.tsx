@@ -162,7 +162,7 @@ export function FleetConnectorCard({
         <ul className="connector-agents">
           {connector.agents.map((one) => (
             <li key={one.agent} className="connector-agent">
-              <p className="connector-agent-name">{one.agent}</p>
+              <p className="connector-agent-name">{one.title}</p>
               <span className={one.connected ? "chip chip-ok" : "chip chip-muted"}>
                 {one.connected ? "has this" : "waiting"}
               </span>
@@ -181,7 +181,7 @@ export function FleetConnectorCard({
         const said = describeSkip(one.reason as FleetSkip, connector.service);
         return (
           <p key={one.agent} className="muted wrap">
-            <strong>{one.agent}</strong> — {said.label}. {said.meaning}
+            <strong>{one.title}</strong> — {said.label}. {said.meaning}
           </p>
         );
       })}
