@@ -23,6 +23,9 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { openHandoff, type HandoffPorts, type HandoffPrompt } from "../lib/handoff-flow";
 import { writeAgentFolder } from "../lib/agent-folders";
+import { DIGEST_WRITE_COMPONENT, FEED_FETCH_COMPONENT } from "../lib/agent-sources";
+import { stepsNeedingAModel } from "../lib/ai/model-levels";
+import { validateManifest } from "../lib/contracts";
 import { BUNDLED_NODE_COMMAND, readRegistration, resolveSpawnCommand } from "../lib/registration";
 import { createSampleAgent, SAMPLE_AGENT_ID, planSampleAgent } from "../lib/sample-agent";
 import { childEnvironment } from "../runner/supervisor";
@@ -294,5 +297,47 @@ describe("the manifest DASH generates for itself", () => {
       readFileSync(path.join(created.value.directory, "agent.manifest.json"), "utf8"),
     ) as { agent_dom: { connections: unknown[] } };
     expect(manifest.agent_dom.connections).toEqual([]);
+  });
+
+  /*
+   * MAR-603 / ADR 0011 / finding 29 (`docs/mar-489-attended-run-2026-08-10-evening.md`):
+   * a sample with no `default_model_level` anywhere is a sample DASH's own
+   * conversation feature refuses with "nothing to do here, whoever built it
+   * would have to give it one" — which for this agent is DASH itself.
+   */
+  it("declares a level for its digest step, so its own conversation feature has one to read", () => {
+    const parent = tempDir("dash-samples-");
+    const created = createSampleAgent(request(parent));
+    if (!created.ok) throw new Error(created.problem);
+
+    const manifest = JSON.parse(
+      readFileSync(path.join(created.value.directory, "agent.manifest.json"), "utf8"),
+    ) as {
+      planned_route: Array<{
+        step: number;
+        component_id: string;
+        model_tier: string;
+        default_model_level?: string;
+      }>;
+    };
+
+    // Still a valid v2 manifest — the level is additive, not a rewrite of the
+    // document's shape.
+    expect(validateManifest(manifest).ok).toBe(true);
+
+    const digestStep = manifest.planned_route.find(
+      (step) => step.component_id === DIGEST_WRITE_COMPONENT,
+    );
+    expect(digestStep).toMatchObject({ model_tier: "small", default_model_level: "cheap" });
+
+    // Fetching the feeds needs no judgment and still declares nothing — only
+    // the step this promise is about gained a level.
+    const fetchStep = manifest.planned_route.find(
+      (step) => step.component_id === FEED_FETCH_COMPONENT,
+    );
+    expect(fetchStep).toMatchObject({ model_tier: "none" });
+    expect(fetchStep?.default_model_level).toBeUndefined();
+
+    expect(stepsNeedingAModel(manifest.planned_route).map((step) => step.level)).toEqual(["cheap"]);
   });
 });

@@ -32,12 +32,33 @@
  * the Agent Kit is still registered against `node`, because they demonstrably
  * have it, and because a project that only runs inside DASH is not the thing the
  * Kit is for.
+ *
+ * ## The second place that difference exists (MAR-603)
+ *
+ * `agent-kit/scaffold.ts` writes every step's `model_tier` as `none` — correct
+ * for the plain template, which declares nothing DASH could act on until
+ * somebody edits it. DASH's own sample is not that agent: it is the one
+ * "Try a sample agent" hands a person with the promise, stated on the page
+ * that offered it, that DASH's conversation feature (MAR-545) can answer
+ * questions about what it found. That feature reads
+ * `planned_route[].default_model_level` (ADR 0011) and a plan that declares
+ * none is a plan DASH correctly refuses to ask under — *"Nothing to do here.
+ * Whoever built it would have to give it one"* (finding 29,
+ * `docs/mar-489-attended-run-2026-08-10-evening.md`). For DASH's own sample,
+ * DASH is the one who built it.
+ *
+ * So `declareConversationModelLevel` is the one place this manifest is
+ * amended after `planScaffold` returns rather than generalising the change
+ * into the template every Agent Kit project starts from: an agent somebody
+ * scaffolds by hand has made no promise about answering questions and should
+ * not be told it needs a model it never asked for.
  */
 
 import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { planScaffold, type ScaffoldedFile, type TemplateSources } from "../agent-kit/scaffold";
+import { DIGEST_WRITE_COMPONENT } from "./agent-sources";
 import {
   HANDOFF_FILE_NAME,
   HANDOFF_TTL_MS,
@@ -93,6 +114,48 @@ export interface SampleRequest {
 export type SampleResult = { ok: true; value: SamplePlan } | { ok: false; problem: string };
 
 /**
+ * Give the sample's digest step a level, so the sample can talk (MAR-603).
+ *
+ * `agent-kit/scaffold.ts` writes `agent.manifest.json` honestly for a
+ * template nobody has customised yet: two steps, neither needing a model,
+ * because a blank scaffold makes no claim about what it will grow into. This
+ * sample is not blank — it is shipped with the explicit promise that it can
+ * be asked what it found — so the step that composes what gets written
+ * (`DIGEST_WRITE_COMPONENT`) is the one step whose job that promise
+ * describes, and it is declared here rather than left to whoever runs the
+ * scaffolder to notice its manifest doesn't say what the page already claims.
+ *
+ * `cheap`, because turning saved headlines into an answer is exactly the
+ * "pulls facts out of text already in front of it" case `levelMeaning`
+ * describes — see `lib/copy/ask.ts`'s own reasoning for the same step.
+ * `model_tier: "small"` is set alongside it because the two fields describe
+ * the same fact for a manifest written after ADR-MAR-583's emitter, and
+ * `tests/model-levels.test.ts` pins `small` as `cheap`'s only honest partner
+ * — leaving `model_tier` at `none` beside a declared level would be two
+ * disagreeing claims in the same document.
+ *
+ * Reads and rewrites only `agent.manifest.json`; every other scaffolded file
+ * passes through untouched.
+ */
+function declareConversationModelLevel(files: readonly ScaffoldedFile[]): ScaffoldedFile[] {
+  return files.map((file) => {
+    if (file.path !== "agent.manifest.json") {
+      return file;
+    }
+    const manifest = JSON.parse(file.contents) as {
+      planned_route?: Array<Record<string, unknown>>;
+    };
+    for (const step of manifest.planned_route ?? []) {
+      if (step["component_id"] === DIGEST_WRITE_COMPONENT) {
+        step["model_tier"] = "small";
+        step["default_model_level"] = "cheap";
+      }
+    }
+    return { path: file.path, contents: `${JSON.stringify(manifest, null, 2)}\n` };
+  });
+}
+
+/**
  * Decide everything, write nothing.
  *
  * Separated from the writing for the same reason `agent-kit/scaffold.ts` is: the
@@ -127,6 +190,11 @@ export function planSampleAgent(request: SampleRequest): SampleResult {
     return { ok: false, problem: planned.problem };
   }
 
+  // MAR-603: the one place this template's manifest is amended after the
+  // fact — see `declareConversationModelLevel`. Applied before the handoff is
+  // built so the consent document and the bytes written to disk agree.
+  const files = declareConversationModelLevel(planned.files);
+
   const built = buildHandoff(
     {
       agent_id: folder,
@@ -136,7 +204,7 @@ export function planSampleAgent(request: SampleRequest): SampleResult {
       manifest_path: path.join(directory, "agent.manifest.json"),
       command: BUNDLED_NODE_COMMAND,
       args: ["agent.mjs"],
-      files: planned.files,
+      files,
       produced_by: `DASH sample agent ${request.kitVersion}`,
     },
     request.ids,
@@ -157,7 +225,7 @@ export function planSampleAgent(request: SampleRequest): SampleResult {
     value: {
       directory,
       files: [
-        ...planned.files,
+        ...files,
         { path: HANDOFF_FILE_NAME, contents: `${JSON.stringify(built.value, null, 2)}\n` },
       ],
       handoff: built.value,
