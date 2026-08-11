@@ -40,7 +40,11 @@ import {
   type HostRecord,
 } from "../lib/hosts";
 import * as sshHost from "../electron/ssh-host";
+import { HOST_REACH_PROBLEMS } from "../lib/host-connect";
 import { expectPlainLanguage } from "./helpers/plain-language";
+
+/** A real `ssh-ed25519` blob: the algorithm name, length-prefixed, then 32 bytes. */
+const ED25519_BLOB = "AAAAC3NzaC1lZDI1NTE5AAAAIEzfw+6qmw2XISBRAMGf2Gt1/sClsgY5tduInO/HiZtR";
 
 /**
  * Generous, and for a stated reason rather than as padding.
@@ -417,4 +421,280 @@ describe("minting a key with the machine's own ssh-keygen", () => {
     sshHost.createHostKey(dataDir, "host-02");
     expect(readFileSync(sshHost.knownHostsPath(dataDir), "utf8")).toBe("");
   }, SHELLING_OUT_MS);
+});
+
+/* ---------------------------------------------------------------------- *
+ * Which OpenSSH DASH drives (MAR-600)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The wall a stock Windows 11 hit on 2026-08-10, and the two halves of the fix.
+ *
+ * DASH invoked `ssh`, `ssh-keyscan` and `ssh-keygen` as bare names through the
+ * system search path. On a machine with nothing installed that is Microsoft's
+ * bundled OpenSSH 9.5p2, whose `ssh-keyscan` cannot complete a key exchange
+ * with the OpenSSH 9.6p1 on Ubuntu 24.04 that this project's own runbook tells
+ * a person to rent — while its `ssh` reaches the same host perfectly well. So
+ * the search is asserted here and the reading of a failed scan below, because
+ * neither is reproducible on the machine CI runs on.
+ */
+describe("finding the three binaries rather than trusting the path", () => {
+  const WINDOWS = "C:\\WINDOWS";
+  const GIT = "C:\\Program Files\\Git\\usr\\bin";
+  const env = {
+    SystemRoot: WINDOWS,
+    ProgramFiles: "C:\\Program Files",
+  } as unknown as NodeJS.ProcessEnv;
+
+  /** A machine where both OpenSSHes are installed, which is the interesting one. */
+  function bothInstalled(file: string): boolean {
+    return file.startsWith(`${WINDOWS}\\System32\\OpenSSH\\`) || file.startsWith(`${GIT}\\`);
+  }
+
+  function chosen(name: sshHost.SshToolName): string {
+    return sshHost.resolveSshTool(name, { env, platform: "win32", exists: bothInstalled }).command;
+  }
+
+  it("reads a server's identity with the newer OpenSSH when there is one", () => {
+    // The binary that failed, and the only one of the three whose command line
+    // carries no file path for a different build to mis-translate.
+    expect(chosen("ssh-keyscan")).toBe(`${GIT}\\ssh-keyscan.exe`);
+  });
+
+  it("still connects and mints keys with the one Windows ships", () => {
+    /*
+     * Deliberately not the same preference. These two are handed this machine's
+     * own file paths — the identity file, the known-hosts file — and the native
+     * build is the one that has been reading them correctly on every installed
+     * DASH so far. The run confirmed the stock `ssh` completes a full handshake
+     * with the host that defeated the stock `ssh-keyscan`, so there is nothing
+     * to buy by changing it and a working path to risk.
+     */
+    expect(chosen("ssh")).toBe(`${WINDOWS}\\System32\\OpenSSH\\ssh.exe`);
+    expect(chosen("ssh-keygen")).toBe(`${WINDOWS}\\System32\\OpenSSH\\ssh-keygen.exe`);
+  });
+
+  it("names where each one came from, which is what nothing could say before", () => {
+    const search = { env, platform: "win32" as const, exists: bothInstalled };
+    expect(sshHost.resolveSshTool("ssh-keyscan", search).source).toBe("Git for Windows");
+    expect(sshHost.resolveSshTool("ssh", search).source).toBe("Windows' own OpenSSH");
+  });
+
+  it("falls back to the bare name when it recognises nowhere", () => {
+    // A machine with an OpenSSH somewhere this list has never heard of must keep
+    // working exactly as it did before any of this.
+    for (const name of sshHost.SSH_TOOL_NAMES) {
+      const tool = sshHost.resolveSshTool(name, { env, platform: "win32", exists: () => false });
+      expect(tool.command).toBe(name);
+      expect(tool.source).toBe("the system search path");
+    }
+  });
+
+  it("lets somebody who knows which one works say so", () => {
+    // MAR-600's complaint was not only that the path was trusted; it was that a
+    // person who had already found the working binary had no way to name it.
+    const told = { ...env, DASH_OPENSSH_DIR: "D:\\openssh\\bin" } as unknown as NodeJS.ProcessEnv;
+    expect(
+      sshHost.resolveSshTool("ssh-keyscan", { env: told, platform: "win32", exists: () => true })
+        .command,
+    ).toBe("D:\\openssh\\bin\\ssh-keyscan.exe");
+  });
+
+  it("keeps every candidate, so a scan can try the next one", () => {
+    const candidates = sshHost.sshToolCandidates("ssh-keyscan", {
+      env,
+      platform: "win32",
+      exists: bothInstalled,
+    });
+    expect(candidates.map((one) => one.command)).toEqual([
+      `${GIT}\\ssh-keyscan.exe`,
+      `${WINDOWS}\\System32\\OpenSSH\\ssh-keyscan.exe`,
+      "ssh-keyscan",
+    ]);
+  });
+
+  it("names one directory once, however many variables point at it", () => {
+    // `ProgramFiles` and `ProgramW6432` are the same folder in a 64-bit process,
+    // and a list holding it twice would run the same broken binary twice.
+    const duplicated = {
+      ...env,
+      ProgramW6432: "C:\\Program Files",
+    } as unknown as NodeJS.ProcessEnv;
+    const commands = sshHost
+      .sshToolCandidates("ssh-keyscan", {
+        env: duplicated,
+        platform: "win32",
+        exists: bothInstalled,
+      })
+      .map((one) => one.command);
+    expect(new Set(commands).size).toBe(commands.length);
+  });
+
+  it("probes the tool that fails, not only the one that works", () => {
+    // `probeSshTools` used to run `ssh -V` and stop. That proved a tool was
+    // present, never that it worked, and it probed the wrong binary — so DASH's
+    // own preflight passed and the failure surfaced two steps later wearing a
+    // sentence about the user's server.
+    const probed = sshHost.probeSshTools();
+    expect(Object.keys(probed.chosen).sort()).toEqual([...sshHost.SSH_TOOL_NAMES].sort());
+    for (const name of sshHost.SSH_TOOL_NAMES) {
+      expect(probed.chosen[name].command.length).toBeGreaterThan(0);
+      expect(probed.chosen[name].source.length).toBeGreaterThan(0);
+    }
+  }, SHELLING_OUT_MS);
+});
+
+/* ---------------------------------------------------------------------- *
+ * What a scan that found nothing actually means (MAR-600)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The regression, written from the run's own capture.
+ *
+ * These are the two lines a stock Windows 11 produced against the rented Ubuntu
+ * box, and DASH read them as "nothing answered" — then told the user that the
+ * address or the port might be wrong, that the server might still be starting,
+ * or that its firewall might be blocking them. All three were false, TCP 22 was
+ * open and answering throughout, and the fault was on the reader's own PC.
+ *
+ * The first line is what makes the reclassification a deduction rather than a
+ * guess: a server that is not answering cannot send its own protocol banner.
+ */
+const STOCK_WINDOWS_KEYSCAN = {
+  stdout: "",
+  stderr:
+    "# 186.240.156.166:22 SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.18\n" +
+    "choose_kex: unsupported KEX method sntrup761x25519-sha512@openssh.com\n",
+};
+
+describe("reading what ssh-keyscan came back with", () => {
+  it("calls a banner with no key a problem on this computer, never a silent server", () => {
+    const read = sshHost.classifyKeyscanAttempt(STOCK_WINDOWS_KEYSCAN);
+    expect(read).toEqual({ ok: false, problem: "tool_cannot_scan" });
+  });
+
+  it("classifies it from the banner alone, whichever stream carried it", () => {
+    // Builds disagree about whether the `#` comment is stdout or stderr, and
+    // which one it is has never been the interesting question.
+    expect(
+      sshHost.classifyKeyscanAttempt({
+        stdout: "# 203.0.113.7:22 SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.18\n",
+        stderr: "",
+      }),
+    ).toEqual({ ok: false, problem: "tool_cannot_scan" });
+  });
+
+  it("classifies it from the negotiation failure alone, when no banner arrived", () => {
+    expect(
+      sshHost.classifyKeyscanAttempt({
+        stdout: "",
+        stderr:
+          "Unable to negotiate with 203.0.113.7 port 22: no matching key exchange method found\n",
+      }),
+    ).toEqual({ ok: false, problem: "tool_cannot_scan" });
+  });
+
+  it("still says nothing answered when nothing did", () => {
+    // The honest other half. A silent address must not start wearing the new
+    // sentence, or the fix would have swapped one wrong explanation for another.
+    expect(sshHost.classifyKeyscanAttempt({ stdout: "", stderr: "" })).toEqual({
+      ok: false,
+      problem: "no_answer",
+    });
+    expect(
+      sshHost.classifyKeyscanAttempt({
+        stdout: "",
+        stderr: "getaddrinfo no-such-host.example: Name or service not known\n",
+      }),
+    ).toEqual({ ok: false, problem: "no_answer" });
+  });
+
+  it("reads a real key out of a real scan", () => {
+    const read = sshHost.classifyKeyscanAttempt({
+      stdout: `vps.example.com ssh-ed25519 ${ED25519_BLOB}\n`,
+      stderr: "# vps.example.com:22 SSH-2.0-OpenSSH_9.6p1\n",
+    });
+    expect(read.ok).toBe(true);
+    expect(read.ok ? read.offer.chosen.type : null).toBe("ssh-ed25519");
+  });
+});
+
+describe("scanning with more than one ssh-keyscan on the machine", () => {
+  const banner = { ...STOCK_WINDOWS_KEYSCAN, absent: false };
+  const key = { stdout: `vps.example.com ssh-ed25519 ${ED25519_BLOB}\n`, stderr: "", absent: false };
+
+  it("moves on to the next one when the preferred one cannot finish", () => {
+    const tried: string[] = [];
+    const result = sshHost.scanHostKey(record(), (tool) => {
+      tried.push(tool.command);
+      return tried.length === 1 ? banner : key;
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.ok ? result.offer.chosen.type : null).toBe("ssh-ed25519");
+    // It really did fall through rather than getting lucky on the first one.
+    expect(tried.length).toBeGreaterThan(1);
+  });
+
+  it("says it is this computer's problem when none of them can finish", () => {
+    expect(sshHost.scanHostKey(record(), () => banner)).toEqual({
+      ok: false,
+      problem: "tool_cannot_scan",
+    });
+  });
+
+  it("never lets a quieter second binary undo what the first one proved", () => {
+    /*
+     * The downgrade MAR-600 is about, reachable one layer in. The first
+     * candidate saw the server's own protocol banner, so "nothing answered" is
+     * a thing DASH now knows to be false — and a second binary that fails
+     * without saying as much must not be able to send a person back to checking
+     * an address that was correct all along.
+     */
+    let attempts = 0;
+    const result = sshHost.scanHostKey(record(), () => {
+      attempts += 1;
+      return attempts === 1 ? banner : { stdout: "", stderr: "", absent: false };
+    });
+    expect(result).toEqual({ ok: false, problem: "tool_cannot_scan" });
+  });
+
+  it("stops at the first silence rather than making somebody wait twice", () => {
+    /*
+     * A mistyped address is the commonest way into this branch, and a second
+     * bounded attempt would double the wait for it. A different binary cannot
+     * make a silent address speak, so there is nothing to buy by asking one.
+     */
+    let attempts = 0;
+    const result = sshHost.scanHostKey(record(), () => {
+      attempts += 1;
+      return { stdout: "", stderr: "", absent: false };
+    });
+    expect(result).toEqual({ ok: false, problem: "no_answer" });
+    expect(attempts).toBe(1);
+  });
+
+  it("says the tool is missing only when every candidate really is", () => {
+    expect(sshHost.scanHostKey(record(), () => ({ stdout: "", stderr: "", absent: true }))).toEqual({
+      ok: false,
+      problem: "no_ssh",
+    });
+  });
+});
+
+describe("the sentence a failed scan becomes", () => {
+  it("sends a tool problem to this computer and never to the server's address", () => {
+    const refusal = sshHost.hostScanRefusal("tool_cannot_scan");
+    expect(refusal.problem).toBe("ssh_tools_cannot_check_here");
+  });
+
+  it("has an answer for every problem a scan can report", () => {
+    // One mapping beside the union, rather than the two ternary chains in `main`
+    // that a new member would have fallen quietly through.
+    for (const problem of ["no_ssh", "no_answer", "no_supported_key", "tool_cannot_scan"] as const) {
+      const refusal = sshHost.hostScanRefusal(problem);
+      expect(HOST_REACH_PROBLEMS).toContain(refusal.problem);
+      expect(refusal.detail.length).toBeGreaterThan(0);
+    }
+  });
 });

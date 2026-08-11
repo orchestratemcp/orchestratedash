@@ -37,6 +37,12 @@
  * | Set the ACL | `icacls f /inheritance:r /grant:r "*SID:F" "*S-1-5-18:F"` | `/inheritance:r` is what makes it *not* inherit whatever the profile tree grants. |
  * | Read it back | `icacls f /save out` | Emits **SDDL with raw SIDs**, UTF-16LE. |
  *
+ * Both are addressed as `%SystemRoot%\System32\…` rather than by bare name, and
+ * MAR-601 is why: those argument spellings are Microsoft's, so a `PATH` that
+ * reaches a different program of the same name first does not give DASH an
+ * older `whoami`, it gives DASH one that has never heard of `/user`. See
+ * `windowsSystemTool`.
+ *
  * SIDs throughout, never account names. This machine's Administrators group is
  * spelled `Administratör`; a check that parsed display names would pass in
  * en-US and fail in Swedish, which is the worst possible failure mode for a
@@ -86,12 +92,35 @@ export type ChannelSecretProblem =
   /** The stored value is not the shape this module writes. */
   | "malformed";
 
+/**
+ * A refusal a person can act on, with the machinery kept off the front of it
+ * (MAR-601).
+ *
+ * `message` is not a developer's string here. `electron/runner-process.ts` puts
+ * it straight into the `detail` a surface renders, and the shell's own IPC
+ * layer will show a thrown one verbatim — which is how the 2026-08-10 run got a
+ * Runtime Error overlay reading *"ChannelSecretError: The runner could not
+ * determine its own user SID: Command failed: whoami /user /fo csv /nh"* on the
+ * Confirm-fingerprint button. That names neither the cause nor a next step, and
+ * from the user's seat it made the fingerprint confirmation look broken.
+ *
+ * So the two audiences get two fields. `message` is one or two sentences for
+ * whoever is looking at the screen. `diagnostic` is the underlying text — a
+ * command's own complaint, an exit status — and it goes to this machine's log
+ * and nowhere else.
+ */
 export class ChannelSecretError extends Error {
   readonly problem: ChannelSecretProblem;
-  constructor(problem: ChannelSecretProblem, message: string) {
+  /** The technical detail behind it. Logged here; never part of `message`. */
+  readonly diagnostic: string | null;
+  constructor(problem: ChannelSecretProblem, message: string, diagnostic: string | null = null) {
     super(message);
     this.name = "ChannelSecretError";
     this.problem = problem;
+    this.diagnostic = diagnostic;
+    if (diagnostic !== null) {
+      console.error(`[acl] ${problem}: ${diagnostic}`);
+    }
   }
 }
 
@@ -163,6 +192,9 @@ export function hardenOwnerOnly(target: string, options: { directory?: boolean }
   if (uid !== undefined && stats.uid !== uid) {
     throw new ChannelSecretError(
       "foreign_owner",
+      "The file holding DASH's own key belongs to a different account on this computer, so " +
+        "DASH will not use it. That happens when DASH has been run under another account, or " +
+        "with elevated rights, at least once.",
       `${target} is owned by uid ${String(stats.uid)}, not by uid ${String(uid)}.`,
     );
   }
@@ -172,8 +204,10 @@ export function hardenOwnerOnly(target: string, options: { directory?: boolean }
   if ((stats.mode & 0o077) !== 0) {
     throw new ChannelSecretError(
       "acl_too_wide",
-      `${target} is mode ${(stats.mode & 0o777).toString(8)} after chmod ${directory ? "700" : "600"}. ` +
-        `The filesystem holding the data directory does not enforce POSIX permissions.`,
+      "DASH could not make the file holding its own key private to you, so it will not use " +
+        "it. The place DASH keeps its data is on a drive that cannot hold permissions — a " +
+        "network share or a USB stick is the usual reason.",
+      `${target} is mode ${(stats.mode & 0o777).toString(8)} after chmod ${directory ? "700" : "600"}.`,
     );
   }
 }
@@ -210,7 +244,7 @@ function hardenWindows(file: string, directory = false): void {
   }
   if (first.foreign.length === 0) {
     // Nothing nameable to remove — an unparseable descriptor, or a deny ACE.
-    throw new ChannelSecretError(first.problem, first.detail);
+    throw refusal(first.problem, first.detail);
   }
 
   // Removing an ACE is a security decision and gets a log line: if a readback
@@ -227,18 +261,47 @@ function hardenWindows(file: string, directory = false): void {
 
   const second = inspectAcl(readAcl(file), sid, file);
   if (!second.ok) {
-    throw new ChannelSecretError(second.problem, second.detail);
+    throw refusal(second.problem, second.detail);
   }
+}
+
+/**
+ * An inspection's finding, as something a person can read (MAR-601).
+ *
+ * `inspectAcl` speaks in SIDs and SDDL because that is what a security check
+ * has to compare, and its `detail` is the diagnosis a maintainer needs. It is
+ * not what belongs on a button press. This is the one place that translation
+ * happens, so the rule and its wording stay in separate functions and the
+ * findings keep going, whole, to the log.
+ */
+function refusal(problem: ChannelSecretProblem, detail: string): ChannelSecretError {
+  return new ChannelSecretError(
+    problem,
+    problem === "acl_too_wide"
+      ? "The file holding DASH's own key can be opened by another account on this computer, " +
+          "so DASH will not use it. Some other program set that up; DASH tried to undo it and " +
+          "could not."
+      : "DASH could not prove that the file holding its own key can be read only by you, so it " +
+          "will not use it. This usually means the folder DASH keeps its data in is on a drive " +
+          "that cannot hold permissions.",
+    detail,
+  );
 }
 
 /** One `icacls` invocation, with its failure named. @throws ChannelSecretError */
 function icacls(file: string, args: string[]): void {
   try {
-    execFileSync("icacls", [file, ...args], { stdio: "pipe", windowsHide: true });
+    execFileSync(windowsSystemTool("icacls.exe"), [file, ...args], {
+      stdio: "pipe",
+      windowsHide: true,
+    });
   } catch (error: unknown) {
     throw new ChannelSecretError(
       "acl_unprovable",
-      `The runner could not set the ACL on ${file}: ${describe(error)}`,
+      "DASH could not lock down the file holding its own key, so it will not use it. " +
+        "This usually means something else on this computer has that file open, or that " +
+        "the folder DASH keeps its data in is on a drive that cannot hold permissions.",
+      `${file}: ${describe(error)}`,
     );
   }
 }
@@ -248,14 +311,19 @@ function readAcl(file: string): string {
   const scratch = mkdtempSync(path.join(tmpdir(), "dash-acl-"));
   const dump = path.join(scratch, "acl.sddl");
   try {
-    execFileSync("icacls", [file, "/save", dump], { stdio: "pipe", windowsHide: true });
+    execFileSync(windowsSystemTool("icacls.exe"), [file, "/save", dump], {
+      stdio: "pipe",
+      windowsHide: true,
+    });
     // `/save` writes UTF-16LE: the filename on one line, the SDDL on the next.
     return readFileSync(dump, "utf16le");
   } catch (error: unknown) {
     throw new ChannelSecretError(
       "acl_unprovable",
-      `The runner could not read back the ACL on ${file}, so it cannot prove the channel ` +
-        `secret is owner-only: ${describe(error)}`,
+      "DASH locked down the file holding its own key and could not read the permissions back " +
+        "to check its work, so it will not use it. This usually means the folder DASH keeps " +
+        "its data in is on a drive that cannot hold permissions.",
+      `${file}: ${describe(error)}`,
     );
   } finally {
     rmSync(scratch, { recursive: true, force: true });
@@ -439,6 +507,40 @@ function compactSddl(sddl: string): string {
 }
 
 /**
+ * Where Windows' own command-line tools live, named rather than looked up
+ * (MAR-601).
+ *
+ * `whoami` and `icacls` are invoked here for their **Windows-specific argument
+ * syntax** — `/user /fo csv /nh`, `/inheritance:r`, `*SID:F` — so resolving them
+ * through `PATH` is not "finding the tool", it is accepting whichever program of
+ * that name a user's `PATH` happens to reach first. On 2026-08-10 that program
+ * was GNU coreutils' `whoami` from Git for Windows' `usr\bin`, put ahead on
+ * `PATH` as the natural remedy for MAR-600. It rejected the arguments, and DASH
+ * died on the Confirm-fingerprint press with a raw exception on screen.
+ *
+ * The remedy for one wall must not be the cause of the next one, so these two
+ * are addressed by path. The fallback to the bare name is for the case this
+ * function cannot cover — a Windows that does not say where it lives — and is
+ * strictly no worse than what every previous build did.
+ *
+ * `System32` rather than `Sysnative`: a 32-bit process on 64-bit Windows would
+ * be redirected to `SysWOW64`, which holds its own correct copies of both. DASH
+ * ships 64-bit and either answer is the real Microsoft binary, which is the
+ * whole of what this needs.
+ */
+export function windowsSystemTool(binary: string): string {
+  if (process.platform !== "win32") {
+    return binary;
+  }
+  const root = process.env["SystemRoot"] ?? process.env["windir"];
+  if (root === undefined || root.trim() === "") {
+    return binary;
+  }
+  const absolute = path.join(root, "System32", binary);
+  return existsSync(absolute) ? absolute : binary;
+}
+
+/**
  * This process's user SID.
  *
  * `whoami /user /fo csv /nh` prints `"DOMAIN\user","S-1-5-21-…"`. The SID field
@@ -448,7 +550,7 @@ function compactSddl(sddl: string): string {
 function currentUserSid(): string {
   let output: string;
   try {
-    output = execFileSync("whoami", ["/user", "/fo", "csv", "/nh"], {
+    output = execFileSync(windowsSystemTool("whoami.exe"), ["/user", "/fo", "csv", "/nh"], {
       encoding: "utf8",
       stdio: "pipe",
       windowsHide: true,
@@ -456,7 +558,15 @@ function currentUserSid(): string {
   } catch (error: unknown) {
     throw new ChannelSecretError(
       "acl_unprovable",
-      `The runner could not determine its own user SID: ${describe(error)}`,
+      // Two sentences, because this one reaches a screen. The first says what
+      // DASH was doing and why it matters; the second is something to try. What
+      // it must never be again is the failed command line, which told a person
+      // about an argument they had never typed.
+      "DASH could not confirm which Windows account it is running as, and it needs that to " +
+        "prove the file holding its own key can be read only by you. Restart DASH, and if it " +
+        "keeps happening, check whether security software on this computer is blocking " +
+        "Windows' built-in account tool.",
+      describe(error),
     );
   }
 
@@ -464,7 +574,10 @@ function currentUserSid(): string {
   if (sid === undefined) {
     throw new ChannelSecretError(
       "acl_unprovable",
-      "`whoami /user` returned no SID, so the channel secret's ACL cannot be written against one.",
+      "DASH asked Windows which account it is running as and got an answer it could not read, " +
+        "so it cannot prove the file holding its own key can be read only by you. Restart DASH, " +
+        "and if it keeps happening, this computer's account tool is not the one Windows ships.",
+      "whoami /user returned no SID",
     );
   }
   return sid;

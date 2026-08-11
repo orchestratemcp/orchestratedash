@@ -187,6 +187,7 @@ import {
   createHostKey,
   forgetHostKey,
   forgetHostKeyPin,
+  hostScanRefusal,
   knownHostsPath,
   openSshChannel,
   pinHostKey,
@@ -1725,21 +1726,9 @@ async function hostAction(
   if (record.host_fingerprint === null) {
     const scan = scanHostKey(record);
     if (!scan.ok) {
-      return {
-        ok: false,
-        detail:
-          scan.problem === "no_ssh"
-            ? "This computer is missing the tool DASH uses to check a server's identity."
-            : scan.problem === "no_answer"
-              ? "Nothing answered at this server's address."
-              : "This server offered no identity DASH knows how to check.",
-        problem:
-          scan.problem === "no_ssh"
-            ? "no_ssh_on_this_computer"
-            : scan.problem === "no_answer"
-              ? "no_answer_at_address"
-              : "sign_in_refused",
-      };
+      // MAR-600. One mapping, beside the union it reads, rather than a ternary
+      // chain here and a second one below that disagreed with it.
+      return { ok: false, ...hostScanRefusal(scan.problem) };
     }
     return {
       ok: false,
@@ -1982,7 +1971,7 @@ function trustHostKey(record: HostRecord, confirmed: string): HostActionResult {
     return {
       ok: false,
       detail: "DASH could not ask this server for its identity again.",
-      problem: scan.problem === "no_ssh" ? "no_ssh_on_this_computer" : "no_answer_at_address",
+      problem: hostScanRefusal(scan.problem).problem,
     };
   }
   if (scan.offer.chosen.fingerprint !== confirmed) {

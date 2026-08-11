@@ -14,12 +14,15 @@
  *
  * Because they lead somewhere different, which is the argument
  * `lib/copy/recovery.ts` already makes about credentials and MAR-434 makes
- * about a missing output. "Not reachable" collapses nine situations with nine
- * next actions into one shrug:
+ * about a missing output. "Not reachable" collapses every situation below, each
+ * with its own next action, into one shrug:
  *
  * - **This computer has no SSH.** Nothing about the server is known yet, and the
  *   fix is on this machine. ADR 0007 requires this to be said *before* the first
  *   deploy rather than discovered at it.
+ * - **This computer's SSH cannot finish the check.** The server answered and the
+ *   tools here could not read its identity, which is the same shape of fact as
+ *   the one above — a defect on this machine — and a different remedy.
  * - **Nothing answered at the address.** Before every question below, because
  *   none of them is knowable until something is listening.
  * - **The server's identity has not been confirmed.** DASH dials with strict
@@ -41,8 +44,8 @@
  *   not accept the channel secret, which is enrollment rather than reachability.
  *
  * Collapsing any pair of those sends somebody to the wrong place. A test asserts
- * the nine next actions are nine distinct strings, which is the assertion a
- * collapse would fail.
+ * that every problem's next action is a distinct string, which is the assertion
+ * a collapse would fail.
  *
  * The middle three arrived together on 2026-08-08 (MAR-572, MAR-573) and are
  * worth naming as a group, because until then they were **one sentence**: *"DASH
@@ -70,6 +73,17 @@ import { describeHostReach } from "./hosts";
 /** Why DASH cannot reach a host it has a record for. */
 export type HostReachProblem =
   | "no_ssh_on_this_computer"
+  /**
+   * This computer has the tools and they cannot finish the check (MAR-600).
+   *
+   * Distinct from `no_ssh_on_this_computer` because the fix is different — there
+   * is nothing missing to install, there is something old to replace — and
+   * distinct from `no_answer_at_address` because the server is *answering*. The
+   * 2026-08-10 run met this state and was shown the last of the three, which
+   * sent a person to check an address, a port and a firewall that were all
+   * correct.
+   */
+  | "ssh_tools_cannot_check_here"
   /** Nothing answered at the address and port at all (MAR-572). */
   | "no_answer_at_address"
   /** Answering, but its identity has never been confirmed by a person (MAR-572). */
@@ -232,11 +246,11 @@ export function describeConnectState(state: HostConnectState): HostConnectCopy {
 }
 
 /**
- * Six problems, six next actions.
+ * One next action per problem, and no two the same.
  *
- * Written as one function rather than six branches at the call site so the
- * distinctness test has one place to point at, and so a seventh problem cannot
- * be added without answering "and where does it send them".
+ * Written as one function rather than a branch per case at the call site so the
+ * distinctness test has one place to point at, and so a new problem cannot be
+ * added without answering "and where does it send them".
  */
 function describeUnreachable(label: string, problem: HostReachProblem): HostConnectCopy {
   switch (problem) {
@@ -250,18 +264,43 @@ function describeUnreachable(label: string, problem: HostReachProblem): HostConn
         next_action: "Install the OpenSSH client, then try again",
       };
 
+    case "ssh_tools_cannot_check_here":
+      // MAR-600. The state that had no sentence, and whose absence is what made
+      // the one below tell a Windows user four things about their server that
+      // DASH had never checked.
+      return {
+        headline: `This computer could not check ${label}'s identity`,
+        detail:
+          "The server answered, and then the connection tools on this computer could not " +
+          "finish reading who it is. That happens when the copy on this computer is older " +
+          "than the one the server runs. Nothing is wrong with the server, and nothing was " +
+          "sent to it.",
+        next_action: "Update the OpenSSH tools on this computer, then try again",
+      };
+
     case "no_answer_at_address":
-      // Before any of the three below, because none of them is knowable until
-      // something answers. Tonight's run never saw this state and a typed
-      // address is the commonest way somebody would: without it, "nothing is
-      // listening" wears whichever sentence follows it, and sends a person to
-      // check a key on a server that does not exist.
+      /*
+       * Before any of the three below, because none of them is knowable until
+       * something answers. A typed address is the commonest way somebody reaches
+       * this state: without it, "nothing is listening" wears whichever sentence
+       * follows it, and sends a person to check a key on a server that does not
+       * exist.
+       *
+       * MAR-600 rewrote the middle sentence. It used to name three causes — a
+       * wrong address or port, a server still starting, a firewall on the server
+       * — and DASH had checked none of them. On 2026-08-10 all three were false
+       * and the real fault was on the reader's own PC, so every guess pointed
+       * away from the fix. What DASH actually knows is one fact and it is now the
+       * only thing claimed: nothing came back. The rest is offered as what a
+       * person could look at, in their own words, rather than as findings.
+       */
       return {
         headline: `Nothing answered at ${label}'s address`,
         detail:
-          "DASH could not get as far as the server. The address or the port may be wrong, " +
-          "the server may still be starting up, or its own firewall may not be letting " +
-          "this computer in.",
+          "DASH reached out and got nothing back, so it never got as far as asking the " +
+          "server who it is. DASH cannot tell from here why — the address and the port are " +
+          "the first things worth checking, and a server that was only just started may " +
+          "not be listening yet.",
         next_action: "Check the address and port, then try again",
       };
 
@@ -419,6 +458,7 @@ export function everyConnectSentence(label = "My server"): string[] {
 /** The problems as a value, so a test can iterate them and a new one cannot hide. */
 export const HOST_REACH_PROBLEMS = [
   "no_ssh_on_this_computer",
+  "ssh_tools_cannot_check_here",
   "no_answer_at_address",
   "host_key_not_trusted",
   "key_not_on_server",
@@ -550,6 +590,20 @@ export function classifyHostFailure(evidence: HostFailureEvidence): HostReachPro
   }
   if (/host key verification failed|no matching host key|key type .* not in/i.test(text)) {
     return evidence.pinned ? "server_identity_changed" : "host_key_not_trusted";
+  }
+  /*
+   * MAR-600, on the connection plane rather than the scan one.
+   *
+   * The two ends share no key exchange, cipher or MAC, which is a fact about
+   * *both* — and the end a person can do something about is this one. Placed
+   * after the host-key tests on purpose: "no matching host key type" is
+   * OpenSSH's phrase for a server whose key type this build will not accept,
+   * which is a different conversation and already has a sentence above.
+   */
+  if (
+    /no matching key exchange method|no matching cipher|no matching mac|choose_kex/i.test(text)
+  ) {
+    return "ssh_tools_cannot_check_here";
   }
   if (
     /could not resolve hostname|name or service not known|nodename nor servname|no address associated/i.test(

@@ -16,12 +16,27 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { channelSecretPath, ensureChannelSecret, inspectAcl } from "../runner/channel-secret";
+import {
+  channelSecretPath,
+  ChannelSecretError,
+  ensureChannelSecret,
+  inspectAcl,
+  windowsSystemTool,
+} from "../runner/channel-secret";
 
 const workDir = mkdtempSync(path.join(tmpdir(), "dash-secret-"));
 const onWindows = process.platform === "win32";
@@ -251,4 +266,100 @@ describe("ensureChannelSecret", () => {
     execFileSync("icacls", [file, "/save", dump], { stdio: "pipe", windowsHide: true });
     expect(readFileSync(dump, "utf16le")).not.toMatch(/;WD\)/);
   });
+});
+
+/* ---------------------------------------------------------------------- *
+ * Whose `whoami` (MAR-601)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The crash the remedy for MAR-600 caused, and why it is this file's problem.
+ *
+ * `whoami /user /fo csv /nh` and `icacls /inheritance:r` are Microsoft's
+ * argument spellings, so resolving those two names through the system search
+ * path is not "finding the tool" — it is accepting whichever program of that
+ * name a user's path reaches first. On 2026-08-10 that was GNU coreutils'
+ * `whoami` from Git for Windows, put in front by a person following the only
+ * remedy MAR-600 leaves them, and DASH died on the Confirm-fingerprint press:
+ *
+ * ```
+ * Error invoking remote method 'dash:shell-command': ChannelSecretError:
+ * The runner could not determine its own user SID: Command failed: whoami /user /fo csv /nh
+ * whoami: extra operand '/user'
+ * ```
+ *
+ * Two defects in one overlay, and each gets a test: DASH ran the wrong binary,
+ * and when that failed it showed a person a command line they never typed.
+ */
+describe("the Windows tools this file depends on by name", () => {
+  const SYSTEM_ROOT = process.env["SystemRoot"] ?? "C:\\WINDOWS";
+
+  it.skipIf(!onWindows)("addresses Windows' own copy rather than one from the path", () => {
+    const resolved = windowsSystemTool("whoami.exe");
+    expect(resolved).toBe(path.join(SYSTEM_ROOT, "System32", "whoami.exe"));
+    expect(existsSync(resolved)).toBe(true);
+  });
+
+  it.skipIf(onWindows)("asks for nothing special anywhere else", () => {
+    expect(windowsSystemTool("whoami.exe")).toBe("whoami.exe");
+  });
+
+  it.skipIf(!onWindows)("still works with a hostile whoami first on the path", () => {
+    /*
+     * The reproduction, without needing Git for Windows installed: any program
+     * that rejects those arguments will do, and `where.exe` rejects them
+     * immediately and cannot be made to wait for input. Before MAR-601 this made
+     * `ensureChannelSecret` throw; now the shadowing copy is never consulted.
+     */
+    const shadow = mkdtempSync(path.join(workDir, "shadow-path-"));
+    copyFileSync(
+      path.join(SYSTEM_ROOT, "System32", "where.exe"),
+      path.join(shadow, "whoami.exe"),
+    );
+
+    const realPath = process.env["PATH"];
+    process.env["PATH"] = `${shadow};${realPath ?? ""}`;
+    try {
+      expect(ensureChannelSecret(freshDir())).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    } finally {
+      process.env["PATH"] = realPath;
+    }
+  }, 60_000);
+
+  it.skipIf(!onWindows)("says something a person can act on when it does fail", () => {
+    /*
+     * The second defect. `SystemRoot` is pointed at a tree whose `whoami.exe`
+     * rejects the arguments, which is the only way left to reach this branch —
+     * and what a person is shown must be a sentence about their computer rather
+     * than the failed command line. The technical text is not lost; it moves off
+     * the message and onto the error, and into this machine's log.
+     */
+    const fakeRoot = mkdtempSync(path.join(workDir, "fake-root-"));
+    mkdirSync(path.join(fakeRoot, "System32"), { recursive: true });
+    copyFileSync(
+      path.join(SYSTEM_ROOT, "System32", "where.exe"),
+      path.join(fakeRoot, "System32", "whoami.exe"),
+    );
+
+    const realRoot = process.env["SystemRoot"];
+    process.env["SystemRoot"] = fakeRoot;
+    let thrown: unknown;
+    try {
+      ensureChannelSecret(freshDir());
+    } catch (error: unknown) {
+      thrown = error;
+    } finally {
+      process.env["SystemRoot"] = realRoot;
+    }
+
+    expect(thrown).toBeInstanceOf(ChannelSecretError);
+    const error = thrown as ChannelSecretError;
+    expect(error.message).toContain("DASH could not confirm which Windows account");
+    // None of what the overlay used to read out. A person who has never typed
+    // `/fo csv /nh` can do nothing at all with it.
+    for (const machinery of ["Command failed", "/fo", "/nh", "whoami", "SID"]) {
+      expect(error.message).not.toContain(machinery);
+    }
+    expect(error.diagnostic).not.toBeNull();
+  }, 60_000);
 });

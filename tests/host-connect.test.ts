@@ -112,6 +112,54 @@ describe("the states a person can be in", () => {
     }
   });
 
+  /**
+   * MAR-600, and the reason it is a copy test rather than only a classifier one.
+   *
+   * The 2026-08-10 run's blocker was not that DASH failed — it is that DASH
+   * *explained*. A stock Windows 11's `ssh-keyscan` could not key-exchange with
+   * the Ubuntu box the runbook told the user to rent, and the card answered with
+   * three specific causes DASH had never checked, every one of them about the
+   * server: the address might be wrong, the port might be wrong, the firewall
+   * might be blocking. TCP 22 was open and answering throughout.
+   *
+   * So two things are asserted. That the state exists at all and points at this
+   * computer, and that the sentence it used to wear no longer names causes
+   * nobody looked at.
+   */
+  it("blames this computer when this computer is what could not finish", () => {
+    const copy = describeConnectState({
+      step: "unreachable",
+      label: LABEL,
+      problem: "ssh_tools_cannot_check_here",
+    });
+
+    expect(copy.detail).toContain("The server answered");
+    expect(copy.detail).toContain("Nothing is wrong with the server");
+    // The remedy is here, not there. A person sent to their provider's console
+    // for this is a person who will not find anything.
+    expect(copy.next_action).toContain("this computer");
+    expect(copy.headline).toContain("This computer");
+  });
+
+  it("stops telling a person three things about a server it never checked", () => {
+    const copy = describeConnectState({
+      step: "unreachable",
+      label: LABEL,
+      problem: "no_answer_at_address",
+    });
+
+    // The three that were asserted and never established. A firewall on the far
+    // end is the worst of them: DASH cannot see one, and it is the guess most
+    // likely to send somebody into a provider's control panel for an hour.
+    for (const guess of ["firewall", "may be wrong", "letting"]) {
+      expect(copy.detail.toLowerCase()).not.toContain(guess);
+    }
+    // What DASH does know, said as the one claim it can support, plus the limit
+    // of it — which is the sentence that was missing.
+    expect(copy.detail).toContain("got nothing back");
+    expect(copy.detail).toContain("cannot tell from here");
+  });
+
   it("says a reachable server with no runner is not a connection problem", () => {
     const copy = describeConnectState({
       step: "unreachable",
@@ -212,6 +260,37 @@ describe("reading what ssh said", () => {
     ]) {
       expect(classifyHostFailure({ stderr, pinned: false })).toBe("no_answer_at_address");
     }
+  });
+
+  it("tells a stale client from a silent server, on the connection plane too", () => {
+    /*
+     * MAR-600's other end. `ssh-keyscan` is where it was found, and `ssh` prints
+     * the same class of failure for the same reason — the two ends share no
+     * algorithm — with the same consequence if it is misread: the connection did
+     * reach the server, so calling it "nothing answered" would send somebody to
+     * check an address that is correct.
+     */
+    for (const stderr of [
+      "Unable to negotiate with 203.0.113.7 port 22: no matching key exchange method found\n",
+      "Unable to negotiate with 203.0.113.7 port 22: no matching cipher found\n",
+      "choose_kex: unsupported KEX method sntrup761x25519-sha512@openssh.com\n",
+    ]) {
+      expect(classifyHostFailure({ stderr, pinned: false })).toBe("ssh_tools_cannot_check_here");
+    }
+  });
+
+  it("still reads a rejected host key type as a question about the host key", () => {
+    // The neighbouring phrase, and it must not be swallowed by the one above:
+    // "no matching host key type" is about *which key* the server offered, which
+    // is a conversation this file already had a sentence for.
+    expect(
+      classifyHostFailure({
+        stderr:
+          "Unable to negotiate with 203.0.113.7 port 22: no matching host key type found. " +
+          "Their offer: ssh-rsa\n",
+        pinned: false,
+      }),
+    ).toBe("host_key_not_trusted");
   });
 
   it("says nothing rather than guessing", () => {

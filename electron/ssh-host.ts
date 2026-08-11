@@ -37,7 +37,7 @@
  * `sshArgv` is that rejection enforced rather than assumed.
  */
 
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -56,6 +56,7 @@ import {
   type HostKeyOffer,
   type ScannedHostKey,
 } from "../lib/host-key";
+import type { HostReachProblem } from "../lib/host-connect";
 import { checkHostRecord, sshArgv, type HostRecord, type HostVerb } from "../lib/hosts";
 import { hardenOwnerOnly } from "../runner/channel-secret";
 
@@ -133,7 +134,160 @@ export class HostKeyError extends Error {
 }
 
 /* ---------------------------------------------------------------------- *
- * The binary this depends on and does not version
+ * The binaries this depends on, resolved rather than wished for (MAR-600)
+ * ---------------------------------------------------------------------- */
+
+/** The three external programs DASH drives. There is no fourth. */
+export type SshToolName = "ssh" | "ssh-keyscan" | "ssh-keygen";
+
+export const SSH_TOOL_NAMES = ["ssh", "ssh-keyscan", "ssh-keygen"] as const satisfies readonly SshToolName[];
+
+/**
+ * One binary DASH decided to run, and where it came from.
+ *
+ * `source` is the half MAR-600 is really about. Until this existed DASH drove
+ * whichever OpenSSH `PATH` happened to name and could not say which one that
+ * was — so when Microsoft's bundled `ssh-keyscan` could not key-exchange with a
+ * stock Ubuntu 24.04, nothing in DASH knew enough to say so, and the failure
+ * came out as a sentence about the user's server.
+ */
+export interface ResolvedSshTool {
+  name: SshToolName;
+  /** What is executed. An absolute path when DASH found one, else the bare name. */
+  command: string;
+  /** Where it came from, in words fit for a receipt. Never a user's path. */
+  source: string;
+}
+
+/**
+ * How the search can be driven from a test, on a machine that has neither
+ * OpenSSH installed in either place.
+ *
+ * `exists` is injected for the same reason `DeploySpawn` is: the interesting
+ * cases here are *other people's* machines — a Windows box with only the system
+ * OpenSSH, one with Git for Windows as well, one with neither — and none of them
+ * is the machine CI runs on.
+ */
+export interface SshToolSearch {
+  env?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
+  exists?: (file: string) => boolean;
+}
+
+/**
+ * An operator's escape hatch, which the reported failure needs to have.
+ *
+ * MAR-600's complaint is not only that `PATH` was trusted; it is that there was
+ * **no configuration point at all**, so a person who knew exactly which OpenSSH
+ * worked had no way to say so. One directory holding all three binaries is the
+ * whole of it — deliberately not three variables, because three is an invitation
+ * to mix builds.
+ */
+const OPENSSH_DIR_OVERRIDE = "DASH_OPENSSH_DIR";
+
+/**
+ * Where DASH looks, per tool, in the order it prefers.
+ *
+ * The order is not the same for all three, and the asymmetry is the fix:
+ *
+ * - `ssh` and `ssh-keygen` prefer **Windows' own** OpenSSH. Both are given
+ *   Windows file paths on their command line — the identity file, the
+ *   `known_hosts` file — and the native build is the one that has been reading
+ *   them correctly on every installed DASH so far. Changing which binary opens
+ *   the actual connection is a risk with nothing to buy: the 2026-08-10 run
+ *   confirmed the stock `ssh` completes a full handshake with the same host.
+ * - `ssh-keyscan` prefers **Git for Windows'**. It is the one binary observed to
+ *   fail, it takes no file path on its command line so there is nothing for a
+ *   different build to mis-translate, and Git for Windows' 10.3p1 fetched the
+ *   key first try against the host that defeated 9.5p2.
+ *
+ * Neither preference is a guess DASH is stuck with: `scanHostKey` falls through
+ * to the next candidate when the preferred one proves incapable, so the order
+ * decides who goes first rather than who is allowed.
+ *
+ * The bare name is always last. A machine with an OpenSSH somewhere this list
+ * has never heard of must keep working exactly as it did before MAR-600.
+ */
+export function sshToolCandidates(
+  name: SshToolName,
+  search: SshToolSearch = {},
+): ResolvedSshTool[] {
+  const env = search.env ?? process.env;
+  const platform = search.platform ?? process.platform;
+  const exists = search.exists ?? existsSync;
+  const binary = platform === "win32" ? `${name}.exe` : name;
+
+  const directories: Array<{ dir: string; source: string }> = [];
+  const override = env[OPENSSH_DIR_OVERRIDE];
+  if (override !== undefined && override.trim() !== "") {
+    directories.push({ dir: override.trim(), source: "the folder this computer was told to use" });
+  }
+
+  if (platform === "win32") {
+    const windows = env["SystemRoot"] ?? env["windir"];
+    const system: Array<{ dir: string; source: string }> =
+      windows === undefined
+        ? []
+        : [{ dir: path.join(windows, "System32", "OpenSSH"), source: "Windows' own OpenSSH" }];
+
+    const git: Array<{ dir: string; source: string }> = [
+      env["ProgramFiles"],
+      env["ProgramFiles(x86)"],
+      env["ProgramW6432"],
+      env["LOCALAPPDATA"] === undefined ? undefined : path.join(env["LOCALAPPDATA"], "Programs"),
+    ]
+      .filter((root): root is string => root !== undefined && root.trim() !== "")
+      .map((root) => ({ dir: path.join(root, "Git", "usr", "bin"), source: "Git for Windows" }));
+
+    directories.push(...(name === "ssh-keyscan" ? [...git, ...system] : [...system, ...git]));
+  }
+
+  const found = directories
+    .map((entry) => ({ name, command: path.join(entry.dir, binary), source: entry.source }))
+    .filter((tool) => exists(tool.command));
+
+  // Deduplicated by path, because `ProgramFiles` and `ProgramW6432` are the same
+  // directory on a 64-bit process and a list that named it twice would scan
+  // twice with the same broken binary.
+  const seen = new Set<string>();
+  const unique = found.filter((tool) => {
+    const key = tool.command.toLowerCase();
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+
+  return [...unique, { name, command: name, source: "the system search path" }];
+}
+
+/** The one DASH will use. See `sshToolCandidates` for the order. */
+export function resolveSshTool(name: SshToolName, search: SshToolSearch = {}): ResolvedSshTool {
+  // `sshToolCandidates` always ends with the bare-name fallback, so this index
+  // is never out of range.
+  return sshToolCandidates(name, search)[0] as ResolvedSshTool;
+}
+
+/**
+ * Say once, into this machine's own log, which OpenSSH DASH picked.
+ *
+ * "Record which one was chosen and from where" is MAR-600's first ask, and a
+ * line per connection would be a flood rather than a record. Paths from this
+ * module's own candidate list, never a host, a user or a key location.
+ */
+const announced = new Set<string>();
+function announce(tool: ResolvedSshTool): ResolvedSshTool {
+  const line = `${tool.name} -> ${tool.command} (${tool.source})`;
+  if (!announced.has(line)) {
+    announced.add(line);
+    console.error(`[ssh] ${line}`);
+  }
+  return tool;
+}
+
+/* ---------------------------------------------------------------------- *
+ * Probing what those binaries can do, rather than that they exist
  * ---------------------------------------------------------------------- */
 
 export interface SshTools {
@@ -142,10 +296,13 @@ export interface SshTools {
   version: string | null;
   /** Plain language, when it is absent. */
   detail: string | null;
+  /** Which binary DASH will drive for each job, and where each came from. */
+  chosen: Record<SshToolName, ResolvedSshTool>;
 }
 
 /**
- * Look for `ssh` and say so plainly, rather than failing at the first deploy.
+ * Look for the three tools and say so plainly, rather than failing at the first
+ * deploy.
  *
  * ADR 0007 accepts the cost in writing — DASH depends on a binary it does not
  * version, whose behaviour varies across builds, and whose absence is a
@@ -153,15 +310,36 @@ export interface SshTools {
  * and says so, "the same shape as `prepareEndpoint` refusing with a named
  * `EndpointProblem` rather than a mysterious bind error".
  *
- * `ssh-keygen` is probed too and in the same breath, because it is what mints
- * the credential and its absence would surface one step later as a confusing
- * failure to connect a host that was never given a key.
+ * ## What MAR-600 changed, and what it could not
+ *
+ * This function used to run `ssh -V` and nothing else. That proved a tool was
+ * **present**, never that it **worked** — and it probed `ssh`, which was not
+ * even the binary that failed. On 2026-08-10 the preflight passed, `ssh-keyscan`
+ * then could not key-exchange with the host, and the failure surfaced two steps
+ * later wearing a sentence about the user's server.
+ *
+ * So `ssh-keyscan` is probed here too, and it is the honest half of the fix
+ * rather than the whole of it: whether a build can complete a key exchange with
+ * *one particular sshd* is not answerable from this machine alone. Nothing local
+ * — not `-V`, not `ssh -Q kex`, which reports on a sibling binary rather than on
+ * this one — distinguishes the 9.5p2 that failed from a build that would not.
+ * The capability question is therefore answered where it can be: at the scan,
+ * from what came back. See `classifyKeyscanAttempt`.
+ *
+ * What this probe *can* prove is that DASH has all three and knows which ones,
+ * which is why the answer now carries `chosen`.
  */
-export function probeSshTools(): SshTools {
+export function probeSshTools(search: SshToolSearch = {}): SshTools {
+  const chosen: Record<SshToolName, ResolvedSshTool> = {
+    ssh: announce(resolveSshTool("ssh", search)),
+    "ssh-keyscan": announce(resolveSshTool("ssh-keyscan", search)),
+    "ssh-keygen": announce(resolveSshTool("ssh-keygen", search)),
+  };
+
   let version: string | null = null;
   try {
     // `ssh -V` writes to stderr and exits 0 on every build worth supporting.
-    const output = execFileSync("ssh", ["-V"], {
+    const output = execFileSync(chosen.ssh.command, ["-V"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
@@ -180,12 +358,13 @@ export function probeSshTools(): SshTools {
           "This computer has no SSH command, which is how DASH reaches a server. " +
           "On Windows it is an optional feature called OpenSSH Client; on macOS and Linux it is " +
           "usually already installed.",
+        chosen,
       };
     }
   }
 
   try {
-    execFileSync("ssh-keygen", ["-A", "-?"], { stdio: "ignore", windowsHide: true });
+    execFileSync(chosen["ssh-keygen"].command, ["-A", "-?"], { stdio: "ignore", windowsHide: true });
   } catch (error: unknown) {
     // `ssh-keygen` with a bad flag exits non-zero, which is fine — what is being
     // asked is whether it can be *run at all*. ENOENT is the only answer that
@@ -197,11 +376,35 @@ export function probeSshTools(): SshTools {
         detail:
           "This computer has the SSH command but not the tool that creates a key for it. " +
           "Installing the full OpenSSH client package adds both.",
+        chosen,
       };
     }
   }
 
-  return { present: true, version, detail: null };
+  // The binary MAR-600 is about, probed at last. Run with no arguments it prints
+  // its usage and exits non-zero, which is an answer; stdin is closed so a build
+  // that would rather read a host list from it gets an immediate end of file
+  // instead of hanging a wizard.
+  try {
+    execFileSync(chosen["ssh-keyscan"].command, [], {
+      stdio: ["ignore", "ignore", "ignore"],
+      windowsHide: true,
+      timeout: 5_000,
+    });
+  } catch (error: unknown) {
+    if ((error as { code?: string } | null)?.code === "ENOENT") {
+      return {
+        present: false,
+        version,
+        detail:
+          "This computer has the SSH command but not the tool that reads a server's identity. " +
+          "Installing the full OpenSSH client package adds both.",
+        chosen,
+      };
+    }
+  }
+
+  return { present: true, version, detail: null, chosen };
 }
 
 /* ---------------------------------------------------------------------- *
@@ -239,7 +442,7 @@ export function createHostKey(dataDir: string, keyName: string): string {
 
   try {
     execFileSync(
-      "ssh-keygen",
+      announce(resolveSshTool("ssh-keygen")).command,
       ["-q", "-t", "ed25519", "-N", "", "-C", "orchestratedash", "-f", file],
       { stdio: "pipe", windowsHide: true },
     );
@@ -309,10 +512,27 @@ export type HostKeyScanProblem =
   /** Nothing answered at that address and port. */
   | "no_answer"
   /** Something answered and offered no key DASH will pin. */
-  | "no_supported_key";
+  | "no_supported_key"
+  /**
+   * The server answered and **this computer's** `ssh-keyscan` could not finish
+   * with it (MAR-600).
+   *
+   * Kept apart from `no_answer` at the cost of a union member, because the two
+   * send a person to opposite ends of the problem. On 2026-08-10 this exact
+   * failure — Microsoft's 9.5p2 against OpenSSH 9.6p1 on Ubuntu 24.04 — arrived
+   * as `no_answer` and told the user their address, their port, their boot or
+   * their firewall was at fault, none of which had been checked and all of which
+   * pointed at the server for a defect on the PC.
+   */
+  | "tool_cannot_scan";
 
 export type HostKeyScanResult =
-  | { ok: true; offer: HostKeyOffer }
+  | {
+      ok: true;
+      offer: HostKeyOffer;
+      /** Which OpenSSH actually produced this key. For the log, not for a sentence. */
+      via?: ResolvedSshTool;
+    }
   | { ok: false; problem: HostKeyScanProblem };
 
 /**
@@ -338,7 +558,7 @@ export type HostKeyScanResult =
  * vector, and every component of it is either fixed here or has been through
  * `checkHostRecord` — which refuses a leading `-` for exactly this reason.
  */
-export function scanHostKey(record: HostRecord): HostKeyScanResult {
+export function scanHostKey(record: HostRecord, run: RunKeyscan = runKeyscan): HostKeyScanResult {
   const checked = checkHostRecord(record);
   if (!checked.ok) {
     // A record that cannot be validated cannot be dialled. This is unreachable
@@ -352,43 +572,216 @@ export function scanHostKey(record: HostRecord): HostKeyScanResult {
     record.address.startsWith("[") && record.address.endsWith("]")
       ? record.address.slice(1, -1)
       : record.address;
+  const argv = [
+    // Bounded, because this runs while somebody is watching a wizard. The
+    // default is five seconds per key type and this asks for three.
+    "-T", "10",
+    "-p", String(record.port),
+    // Asked for in DASH's own order of preference. What arrives is whatever
+    // the host has; `chooseHostKey` decides which one is pinned.
+    "-t", "ed25519,ecdsa,rsa",
+    address,
+  ];
 
-  let output: string;
-  try {
-    output = execFileSync(
-      "ssh-keyscan",
-      [
-        // Bounded, because this runs while somebody is watching a wizard. The
-        // default is five seconds per key type and this asks for three.
-        "-T", "10",
-        "-p", String(record.port),
-        // Asked for in DASH's own order of preference. What arrives is whatever
-        // the host has; `chooseHostKey` decides which one is pinned.
-        "-t", "ed25519,ecdsa,rsa",
-        address,
-      ],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true, timeout: 20_000 },
-    );
-  } catch (error: unknown) {
-    if ((error as { code?: string } | null)?.code === "ENOENT") {
-      return { ok: false, problem: "no_ssh" };
+  /*
+   * Every `ssh-keyscan` on this machine, in preference order, until one can do
+   * the job (MAR-600).
+   *
+   * This loop is what "prefer a capable one" means in practice, and preferring
+   * by *outcome* is the only honest way to do it — nothing DASH can ask a build
+   * locally distinguishes one that will complete a key exchange with a given
+   * sshd from one that will not. The cost of being wrong first is one failed
+   * scan, and the observed failure is immediate: 9.5p2 printed the host's
+   * banner and gave up on the key exchange in well under a second.
+   *
+   * `no_supported_key` stops the loop. That is the *server* offering nothing
+   * DASH will pin, and asking a second binary the same question would get the
+   * same answer more slowly.
+   */
+  let worst: HostKeyScanProblem = "no_ssh";
+  const incapable: ResolvedSshTool[] = [];
+  for (const tool of sshToolCandidates("ssh-keyscan")) {
+    const attempt = run(tool, argv);
+    if (attempt.absent) {
+      continue;
     }
-    // `ssh-keyscan` exits non-zero when it found nothing, and its stdout is
-    // still the honest answer when it found something and then timed out on a
-    // later key type. Read what there is; the parser decides whether it is a key.
-    const stdout = (error as { stdout?: Buffer | string } | null)?.stdout;
-    output = typeof stdout === "string" ? stdout : (stdout?.toString("utf8") ?? "");
+    const read = classifyKeyscanAttempt(attempt);
+    if (read.ok) {
+      if (incapable.length > 0) {
+        console.error(
+          `[ssh] ssh-keyscan from ${incapable.map((one) => one.source).join(", ")} could not ` +
+            `complete a key exchange with this server; used ${tool.command} (${tool.source}) instead`,
+        );
+      } else {
+        announce(tool);
+      }
+      return { ok: true, offer: read.offer, via: tool };
+    }
+    if (read.problem === "tool_cannot_scan") {
+      incapable.push(tool);
+      worst = "tool_cannot_scan";
+      continue;
+    }
+    if (read.problem === "no_answer" && worst === "tool_cannot_scan") {
+      // An earlier candidate already saw this server's own protocol banner, so
+      // "nothing answered" is a thing DASH now knows to be false. A second
+      // binary being quieter about the same failure must not be allowed to
+      // downgrade what the first one proved — that downgrade is the whole of
+      // MAR-600.
+      continue;
+    }
+    /*
+     * `no_supported_key` and `no_answer` both end the loop, and the second is
+     * the deliberate one.
+     *
+     * Nothing came back at all, from the first binary asked, which on a healthy
+     * one means nothing is listening — and a second cannot make a silent address
+     * speak. Trying one anyway would double the wait on the commonest mistake
+     * there is, a mistyped address, to insure against a locally broken build
+     * that would also have failed `probeSshTools`. The wrong address is certain
+     * and the broken build is hypothetical, so the wizard is kept fast for the
+     * certain one.
+     */
+    return { ok: false, problem: read.problem };
   }
 
-  const parsed = parseScannedHostKeys(output);
-  if (!parsed.ok) {
-    // "Nothing answered" and "it answered with nothing usable" are different
-    // facts with different next actions — a wrong address against a server
-    // running an ancient key type — and `lib/host-connect.ts` has a sentence
-    // for each.
-    return { ok: false, problem: parsed.problem === "no_key_offered" ? "no_answer" : "no_supported_key" };
+  if (worst === "tool_cannot_scan") {
+    console.error(
+      `[ssh] no ssh-keyscan on this computer could read this server's identity; tried: ` +
+        incapable.map((one) => `${one.command} (${one.source})`).join(", "),
+    );
   }
-  return { ok: true, offer: parsed.offer };
+  return { ok: false, problem: worst };
+}
+
+/** What one `ssh-keyscan` run said. `absent` is the only "it was not there" answer. */
+export interface KeyscanAttempt {
+  stdout: string;
+  stderr: string;
+  absent: boolean;
+}
+
+/** How one scan is run, so the classification below can be tested without a host. */
+export type RunKeyscan = (tool: ResolvedSshTool, argv: readonly string[]) => KeyscanAttempt;
+
+/** The real one. Never throws: a failed scan is an answer, not an exception. */
+function runKeyscan(tool: ResolvedSshTool, argv: readonly string[]): KeyscanAttempt {
+  const result = spawnSync(tool.command, [...argv], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+    timeout: 20_000,
+  });
+  return {
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+    absent: (result.error as { code?: string } | undefined)?.code === "ENOENT",
+  };
+}
+
+/**
+ * A silent address, an unusable server, or a tool that cannot do the job
+ * (MAR-600).
+ *
+ * Pure, and separated from the process that produced the text for the reason
+ * `inspectAcl` is separated from `icacls`: the case that matters most is one no
+ * test machine can reproduce on demand — it needs a stock Windows 11 and a
+ * rented Ubuntu box — and it can be written down exactly and asserted against
+ * anywhere.
+ *
+ * ## The distinction, which is the whole point
+ *
+ * `ssh-keyscan` reaching a server and failing writes down the proof that it
+ * reached it. The 2026-08-10 run captured both lines:
+ *
+ * ```
+ * # 186.240.156.166:22 SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.18
+ * choose_kex: unsupported KEX method sntrup761x25519-sha512@openssh.com
+ * ```
+ *
+ * The first is the server's own protocol banner. A machine that does not answer
+ * cannot produce one, so its presence settles the question the old code got
+ * wrong: **something is listening at that address and port**, and a scan that
+ * then yields no key is this computer's failure, not the server's. The second
+ * line names the mechanism, and either alone is enough — a build wording its
+ * negotiation failure differently still gets classified by the banner, and a
+ * build that fails before printing one still gets classified by the wording.
+ *
+ * Nothing from either line reaches a person. This function's return type is a
+ * closed union, the same guard `classifyHostFailure` is built on.
+ */
+export function classifyKeyscanAttempt(attempt: {
+  stdout: string;
+  stderr: string;
+}): { ok: true; offer: HostKeyOffer } | { ok: false; problem: Exclude<HostKeyScanProblem, "no_ssh"> } {
+  // The banner comment is stdout on the builds this project has seen and stderr
+  // on others, and which one it is has never been the interesting question.
+  const said = `${attempt.stdout}\n${attempt.stderr}`;
+
+  const parsed = parseScannedHostKeys(attempt.stdout);
+  if (parsed.ok) {
+    return { ok: true, offer: parsed.offer };
+  }
+  if (parsed.problem === "no_supported_key") {
+    // Lines arrived and none of them was a key DASH will pin — a server running
+    // a key type this project refuses to teach anyone to accept. The tool did
+    // its job.
+    return { ok: false, problem: "no_supported_key" };
+  }
+
+  if (/SSH-\d+\.\d+-/.test(said) || KEX_FAILURE.test(said)) {
+    return { ok: false, problem: "tool_cannot_scan" };
+  }
+  return { ok: false, problem: "no_answer" };
+}
+
+/**
+ * How a client says it ran out of algorithms.
+ *
+ * `choose_kex` is `ssh-keyscan`'s own wording, from the run. The rest are what
+ * OpenSSH prints for the same class of failure across builds and on the
+ * connection plane, kept together because they mean one thing: the two ends
+ * share no algorithm, and the end DASH can do something about is this one.
+ */
+const KEX_FAILURE =
+  /choose_kex|unsupported kex|no matching key exchange method|no matching cipher|no matching mac|unable to negotiate/i;
+
+/**
+ * A scan's refusal, in the vocabulary the surface renders (MAR-600).
+ *
+ * Here rather than at the call site because `HostKeyScanProblem` is declared
+ * here, and a mapping written where it is *used* is a mapping that gets missed
+ * when a member is added. `main` had two of them, neither exhaustive, and a new
+ * member would have fallen quietly through to whatever the last branch said —
+ * which is precisely how a defect on this computer came to be reported as a
+ * fault on the user's server.
+ */
+export function hostScanRefusal(problem: HostKeyScanProblem): {
+  detail: string;
+  problem: HostReachProblem;
+} {
+  switch (problem) {
+    case "no_ssh":
+      return {
+        detail: "This computer is missing the tool DASH uses to check a server's identity.",
+        problem: "no_ssh_on_this_computer",
+      };
+    case "tool_cannot_scan":
+      return {
+        detail: "This computer's connection tools could not read this server's identity.",
+        problem: "ssh_tools_cannot_check_here",
+      };
+    case "no_answer":
+      return {
+        detail: "Nothing answered at this server's address.",
+        problem: "no_answer_at_address",
+      };
+    case "no_supported_key":
+      return {
+        detail: "This server offered no identity DASH knows how to check.",
+        problem: "sign_in_refused",
+      };
+  }
 }
 
 export type HostKeyPinResult =
@@ -527,7 +920,7 @@ export function openSshChannel(
   bundleId?: string,
   diagnostics?: SshDiagnostics,
 ): StdioChannel {
-  const child = spawn("ssh", sshArgv(record, verb, paths, bundleId), {
+  const child = spawn(announce(resolveSshTool("ssh")).command, sshArgv(record, verb, paths, bundleId), {
     // Piped rather than inherited so the same bytes can reach two places. They
     // are written straight back out below, so what lands in DASH's log is what
     // landed there before.
