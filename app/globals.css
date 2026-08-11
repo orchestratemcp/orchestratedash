@@ -1768,6 +1768,58 @@ a.plain:hover {
 }
 
 /* ---------------------------------------------------------------------- *
+ * Adding an agent by choosing its folder (MAR-598)
+ * ---------------------------------------------------------------------- */
+
+/* The page's primary action, stacked with its caption directly beneath it —
+   `.folder-update-do`'s shape and for its reason: the caption is a sentence, and
+   a button stretched to the sentence's width would draw "Choose a folder" at
+   the width of the paragraph under it.
+
+   `align-items: flex-start` rather than a width on the button, so the control
+   stays exactly as wide as its own label at every viewport and in both
+   densities. */
+.choose-folder {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--density-gap);
+}
+
+.choose-folder > .muted {
+  font-size: var(--text-sm);
+  margin: 0;
+  /* Capped at a readable line, like every other caption on this surface, so a
+     one-line note does not become a banner in a 1280px window. */
+  max-width: 52ch;
+}
+
+/* Every notice this section can show, at the section's own width.
+   `align-self: stretch` because the section is a flex column aligned to
+   `flex-start`, which would otherwise shrink a notice to its longest unbreakable
+   word — and the receipt contains a folder path, which has no spaces in it at
+   all. */
+.choose-folder > .notice {
+  align-self: stretch;
+}
+
+.added-agent {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.added-agent p {
+  margin: 0;
+}
+
+/* A destination is one long token with no spaces. Without this it decides the
+   notice's minimum width and pushes the page into a horizontal scrollbar at
+   375px — the axis `.folder-errors` already guards for the same reason. */
+.added-agent .wrap {
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------------- *
  * Changing an agent from outside DASH (MAR-584)
  * ---------------------------------------------------------------------- */
 

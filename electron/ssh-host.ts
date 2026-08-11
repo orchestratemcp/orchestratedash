@@ -1119,12 +1119,42 @@ export function sshDeploySpawn(
  * rather than once at connect time — a channel that outlived a change to its
  * key file would otherwise keep using it.
  *
+ * ## The bundle this channel reaches, which was missing (MAR-602)
+ *
+ * `connect` joins **one bundle's** runner socket to stdio, and a host holds many
+ * bundles — one runner each, under `{root}/bundles/{id}/data/runner.json`. This
+ * function was written by MAR-484 with no caller and passed no id, so the helper
+ * would have read `argv[1]` as `undefined`, failed `checkDeployRequest` and
+ * answered a refusal into a pipe DASH was about to speak HTTP down. It was never
+ * observed because nothing has ever called this function.
+ *
+ * ADR 0007 predicted the shape of that gap in its own words — *"the only
+ * variable between the CI proof and the attended one is which process is on the
+ * other end of the pipe"* — and this was a case where **no** process would have
+ * been on the other end. `tests/host-run-channel.test.ts` now drives this whole
+ * channel against the real helper and a runner listening on a real socket, so
+ * the argument holds by execution rather than by reading.
+ *
  * @throws HostKeyError, ChannelSecretError
  */
 export function sshHostChannel(options: {
   record: HostRecord;
   dataDir: string;
-  /** The remote runner's own channel secret. The second of ADR 0007's two credentials. */
+  /**
+   * Which installed bundle's runner to reach.
+   *
+   * An opaque id, checked by `checkDeployRequest` before it reaches argv — it is
+   * the one caller-supplied string on the deploy plane's command line, and
+   * `lib/deploy/verbs.ts` explains why its alphabet cannot spell a path.
+   */
+  bundle_id: string;
+  /**
+   * The remote runner's own channel secret. The second of ADR 0007's two
+   * credentials, and it is a **parameter** rather than something this module
+   * reads: `electron/host-run.ts` obtains it, spends it, and drops it. Nothing
+   * in this file stores, caches or logs it, which is the same discipline
+   * `ControlChannel` has kept since MAR-415.
+   */
   token: string;
 }): RemoteRunnerChannel {
   const identity = assertHostKeyProtected(options.dataDir, options.record.key_name);
@@ -1132,10 +1162,12 @@ export function sshHostChannel(options: {
   return remoteRunnerChannel({
     token: options.token,
     dial: stdioFetch(() =>
-      openSshChannel(options.record, "connect", {
-        identity_file: identity,
-        known_hosts_file: known,
-      }),
+      openSshChannel(
+        options.record,
+        "connect",
+        { identity_file: identity, known_hosts_file: known },
+        options.bundle_id,
+      ),
     ),
   });
 }

@@ -164,6 +164,20 @@ interface DashShellClient {
   adoptFolder?(args: { agent_id: string }): Promise<CommandResult>;
   revealFolder?(args: { agent_id: string }): Promise<CommandResult>;
   /**
+   * Adding an agent by choosing its folder (MAR-598).
+   *
+   * Optional for the reason every method here is, and the degradation is the
+   * plainest on this whole interface: a window with no bridge, or a shell older
+   * than this command, cannot open a folder chooser at all. So `chooseAgentFolder`
+   * below refuses with a sentence naming the window that can, rather than
+   * throwing on the page's primary control.
+   *
+   * It takes nothing. There is no argument a page could supply and no folder it
+   * could name — see the `folder.choose` entry in `lib/shell/ipc.ts`, where the
+   * absence of a payload is the security argument rather than a convenience.
+   */
+  chooseAgentFolder?(): Promise<CommandResult>;
+  /**
    * Remember that this agent's page has just been opened (MAR-586).
    *
    * Optional for the same reason as the three above, and here the absence is the
@@ -282,6 +296,16 @@ interface DashShellClient {
   trustHost?(args: HostTrustCommandTarget): Promise<CommandResult>;
   hostSetupScript?(args: HostCommandTarget): Promise<CommandResult>;
   deployAgentToHost?(args: HostDeployCommandTarget): Promise<CommandResult>;
+  /**
+   * Start the copy that is on a server (MAR-602, ADR 0014).
+   *
+   * The newest method on the bridge, so its optionality is the live case rather
+   * than the historical one: a DASH installed before this work has every method
+   * around it and not this. Taking the same target as `deployAgentToHost` and no
+   * task id — a page has never seen the server's snapshot and cannot name a
+   * target on it.
+   */
+  runAgentOnHost?(args: HostDeployCommandTarget): Promise<CommandResult>;
   forgetHost?(args: HostCommandTarget): Promise<CommandResult>;
   /**
    * The task-workspace commands (MAR-507).
@@ -644,6 +668,43 @@ export async function adoptAgentFolder(args: { agent_id: string }): Promise<Comm
 
 export async function revealAgentFolder(args: { agent_id: string }): Promise<CommandResult> {
   return folderCommand("revealFolder", args, "open this agent's folder");
+}
+
+/**
+ * Add an agent by choosing the folder it lives in (MAR-598).
+ *
+ * Not routed through `folderCommand` above, and the reason is its signature
+ * rather than its wording: that helper exists to pass one agent id to three
+ * methods, and this command has no agent and no arguments. Threading an unused
+ * parameter through it to save four lines would have made the one method on this
+ * bridge that deliberately takes nothing look like the three that take an id.
+ *
+ * The two refusals are the same two, worded for the page's primary control. The
+ * second one — a shell that has a bridge and not this method — matters more here
+ * than anywhere else it appears: that person is standing on the Add agent page
+ * with no other way in, so the sentence names the one that still works rather
+ * than telling them to open an app they already opened.
+ */
+export async function chooseAgentFolder(): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to add an agent from a folder.",
+    };
+  }
+  if (bridge.chooseAgentFolder === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail:
+        "This version of the DASH app cannot open a folder chooser. Use the steps below to build an agent and hand it to DASH.",
+    };
+  }
+  return bridge.chooseAgentFolder();
 }
 
 /**
@@ -1064,7 +1125,7 @@ export async function submitHostCommand(
   target: HostCommandTarget,
 ): Promise<CommandResult>;
 export async function submitHostCommand(
-  action: "deploy",
+  action: "deploy" | "run",
   target: HostDeployCommandTarget,
 ): Promise<CommandResult>;
 export async function submitHostCommand(
@@ -1076,7 +1137,7 @@ export async function submitHostCommand(
   target: HostCommandTarget,
 ): Promise<CommandResult>;
 export async function submitHostCommand(
-  action: "create" | "probe" | "trust" | "setup" | "deploy" | "forget",
+  action: "create" | "probe" | "trust" | "setup" | "deploy" | "run" | "forget",
   target:
     | HostCreateCommandArgs
     | HostCommandTarget
@@ -1144,6 +1205,16 @@ export async function submitHostCommand(
         };
       }
       return bridge.deployAgentToHost(target as HostDeployCommandTarget);
+    case "run":
+      if (bridge.runAgentOnHost === undefined) {
+        return {
+          ok: false,
+          request_id: "",
+          reason: "read_only_host",
+          detail: "This version of the DASH app cannot start an agent on a server yet.",
+        };
+      }
+      return bridge.runAgentOnHost(target as HostDeployCommandTarget);
     case "forget":
       if (bridge.forgetHost === undefined) {
         return {

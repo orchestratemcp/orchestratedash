@@ -95,6 +95,23 @@ export interface RunTargetPlace {
  * Without it the first sentence reads as a complete account of the options, and
  * a person would reasonably conclude that starting the deployed copy is
  * somewhere else on the page.
+ *
+ * ## What changed when the route was wired (MAR-602)
+ *
+ * ADR 0014 wrote both versions of this sentence in advance and said which is
+ * true when. The limit — *"DASH cannot start that one yet"* — was the honest
+ * wording for the day the ADR landed, and it stopped being true the moment
+ * `host.run` had a caller. What replaces it is not a smaller sentence: the
+ * second clause still does the load-bearing work, and it is now ADR 0007's pull
+ * cost rather than an admission of a missing feature.
+ *
+ * > Run on Hostinger starts the copy that is there. DASH will show what it did
+ * > the next time it can reach that server, and only what the server still has
+ * > then.
+ *
+ * Said **before** the press, for amendment 2's reason — a disclosure that
+ * arrives after has told them nothing — and it is why "nothing appeared" reads
+ * as the arrangement rather than as a fault.
  */
 export function describeRunTarget(targets: readonly RunTargetPlace[]): string | null {
   const labels = targets.map((target) => target.label).filter((label) => label.length > 0);
@@ -102,11 +119,34 @@ export function describeRunTarget(targets: readonly RunTargetPlace[]): string | 
     return null;
   }
   const where = joinLabels(labels);
-  return labels.length === 1
-    ? `Run now uses the copy on this computer. There is also a copy on ${where}, and ` +
-        `DASH cannot start that one yet.`
-    : `Run now uses the copy on this computer. There are also copies on ${where}, and ` +
-        `DASH cannot start those yet.`;
+  const starts =
+    labels.length === 1
+      ? `${describeRunOnHost(where)} starts the copy that is there.`
+      : `${labels.map((label) => describeRunOnHost(label)).join(", ")} each start the copy on that server.`;
+  return (
+    `Run now uses the copy on this computer. ${starts} DASH will show what ` +
+    `${labels.length === 1 ? "it" : "they"} did the next time it can reach ` +
+    `${labels.length === 1 ? "that server" : "those servers"}, and only what the ` +
+    `${labels.length === 1 ? "server" : "servers"} still ${labels.length === 1 ? "has" : "have"} then.`
+  );
+}
+
+/**
+ * What the second control is called.
+ *
+ * A named action rather than a mode of the first, which is ADR 0014's choice
+ * after rejecting "run both", "run the remote when one exists" and "ask each
+ * time". The machine is *in the name* here and deliberately not appended to the
+ * first button's label — a run button is uppercase and letter-spaced, so
+ * "Send files and run now on this computer" would be a control wearing a
+ * sentence, while "Run on Hostinger" is four words that say what they do.
+ *
+ * The label is the person's own word for their server and is content, in the
+ * category `lib/copy/identifiers.ts` puts a folder the user picked. A host id
+ * never appears here.
+ */
+export function describeRunOnHost(label: string): string {
+  return `Run on ${label}`;
 }
 
 /* ---------------------------------------------------------------------- *

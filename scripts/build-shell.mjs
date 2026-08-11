@@ -286,6 +286,19 @@ await Promise.all([
     format: "esm",
   }),
 
+  // Add agent (MAR-598), on `capture-settings-polish.ts`'s exact terms — no
+  // `smoke-identity.ts`, so it runs beside a live DASH without claiming its lock
+  // or its store. A harness of its own rather than a fourth page on that one,
+  // because that one's header records Add agent as deliberately excluded, and
+  // adding it there would relabel a merged issue's evidence. See
+  // `electron/capture-add-agent.ts`.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-add-agent.ts")],
+    outfile: path.join(outDir, "capture-add-agent.mjs"),
+    format: "esm",
+  }),
+
   // The fleet's glance chips (MAR-586), on the same terms and for the sharpest
   // version of the reason: a chip exists only when the fact behind it is true,
   // so a run against whatever a machine holds photographs one of sixteen

@@ -149,8 +149,62 @@ export interface AgentCommandRoute {
   readonly leaf: "commands";
 }
 
+/**
+ * Reading one agent's state snapshot, wherever that agent is (MAR-602,
+ * ADR 0014 amendment 1).
+ *
+ * ## Why the run route could not be used alone
+ *
+ * `AgentCommandRoute` above admits the press and nothing else, and the press
+ * cannot be composed without this. A run command names *a target the host's own
+ * snapshot published* — `runner/execute.ts` refuses an `unknown_target`, and the
+ * two stores deliberately never consult each other, so the task id in DASH's
+ * store is a fact about the copy on this computer and is not one about the copy
+ * on a server. `GET /agents/{id}` is where the host says what it is currently
+ * offering; without it the run route is admitted and unreachable, which is the
+ * state MAR-602 inherited and exists to end.
+ *
+ * `/agents` — the list — has been in `EVIDENCE_ROUTES` since MAR-484, so this is
+ * one level deeper on a route family already crossing. It was not there for the
+ * same reason the run route was not: the list is a fixed string and this has a
+ * variable segment, and until `AgentCommandRoute` there was no shape in this
+ * module for a route that was not a literal. That is an absence of vocabulary
+ * rather than a decision anybody took, which is precisely the failure mode
+ * ADR 0014 says to name rather than inherit.
+ *
+ * ## ADR 0014's three questions
+ *
+ * 1. **A credential in either direction?** None. Out goes an agent id; back
+ *    comes a document `agent-dom-state.schema.json` validates.
+ * 2. **Does it choose what runs, or only which?** Neither — it is a read, and
+ *    the only route admitted here that changes nothing at all.
+ * 3. **Can DASH describe the result honestly?** Yes, and the honest thing turns
+ *    out to be that it must not keep it. `agent_dom_state` is keyed by agent id
+ *    alone, and a deployed agent has the same id in both places, so storing a
+ *    host's snapshot would overwrite this machine's — two runners' clocks
+ *    fighting over one row through `putAgentDomState`'s ordering guard. So this
+ *    route is read *through* and never *into* the store: `electron/host-run.ts`
+ *    holds the answer for the length of one command and drops it. The day a
+ *    snapshot carries its machine of origin, that becomes a storage decision;
+ *    today it is a refusal, and the refusal is the honest one.
+ */
+export interface AgentStateRoute {
+  /** Opaque to this module, exactly as `AgentCommandRoute.agent_id` is. */
+  readonly agent_id: string;
+  /**
+   * Not a path segment.
+   *
+   * `commands` next door names the last segment of `/agents/{id}/commands`.
+   * This route's path *ends* at the agent, so this member is a discriminant and
+   * `pathOf` appends nothing for it. Spelled as a distinct literal rather than
+   * as an absent field, because two object shapes distinguished by which key is
+   * missing is the kind of union a later reader narrows wrongly.
+   */
+  readonly leaf: "state";
+}
+
 /** Everything any channel in this module can be asked for. */
-export type RunnerRoute = EvidenceRoute | BrokerRoute | AgentCommandRoute;
+export type RunnerRoute = EvidenceRoute | BrokerRoute | AgentCommandRoute | AgentStateRoute;
 
 /**
  * The path a route names, built in one place.
@@ -159,9 +213,14 @@ export type RunnerRoute = EvidenceRoute | BrokerRoute | AgentCommandRoute;
  * than asserting it about a private function by reaching through the module.
  */
 export function pathOf(route: RunnerRoute): string {
-  return typeof route === "string"
-    ? route
-    : `/agents/${encodeURIComponent(route.agent_id)}/${route.leaf}`;
+  if (typeof route === "string") {
+    return route;
+  }
+  const agent = `/agents/${encodeURIComponent(route.agent_id)}`;
+  // `state` is a discriminant and not a segment — see `AgentStateRoute`. The
+  // switch is exhaustive over the leaf union, so a third member is a compile
+  // error here rather than a path silently built from a name.
+  return route.leaf === "state" ? agent : `${agent}/${route.leaf}`;
 }
 
 /**
@@ -173,13 +232,20 @@ export function pathOf(route: RunnerRoute): string {
  * parser between here and the socket into `/commands`, and the segment this
  * module thought it had written is gone.
  *
- * Nothing reachable lives there — the only leaf is `commands`, and a runner has
- * no route by that name — so this is a guard against a shape rather than a
- * disclosed hole. It is written down because the reasoning "the encoder handles
- * it" is *almost* true, and an almost-true guard is the kind somebody later
- * simplifies away.
+ * For a command route nothing reachable lives there — `/commands` is not a route
+ * a runner serves — so that case was a guard against a shape rather than a
+ * disclosed hole. **`AgentStateRoute` makes it a real one** (MAR-602): its path
+ * ends at the agent, so an `agent_id` of `..` normalises to `/agents`, which is
+ * a route, is in `EVIDENCE_ROUTES`, and answers the whole list. Nothing about
+ * that is a privilege escalation — the same channel may ask for `/agents`
+ * directly — but a caller that asked for one agent and silently received every
+ * agent is a caller whose next line is wrong about what it is holding.
+ *
+ * So the guard is load-bearing now rather than defensive, and it is written down
+ * because the reasoning "the encoder handles it" is *almost* true, and an
+ * almost-true guard is the kind somebody later simplifies away.
  */
-export function addressesAnAgent(route: AgentCommandRoute): boolean {
+export function addressesAnAgent(route: AgentCommandRoute | AgentStateRoute): boolean {
   const segment = encodeURIComponent(route.agent_id);
   return segment.length > 0 && segment !== "." && segment !== "..";
 }
@@ -218,8 +284,15 @@ export interface RunnerChannel<Route extends RunnerRoute> {
  * a run request would stop satisfying this type — and `lib/agent-dom/evidence.ts`
  * would have lost the one-implementation-serves-both property this module's
  * header calls the useful direction.
+ *
+ * `AgentStateRoute` joined on the same terms in the same issue, and the rule it
+ * demonstrates is worth stating once for whoever adds the next one: **a route is
+ * added to both channels or to neither.** There is no such thing as a route the
+ * remote channel carries and the local one does not.
  */
-export type RemoteRunnerChannel = RunnerChannel<EvidenceRoute | AgentCommandRoute>;
+export type RemoteRunnerChannel = RunnerChannel<
+  EvidenceRoute | AgentCommandRoute | AgentStateRoute
+>;
 
 /**
  * The runner this machine spawned, reached down its own socket or pipe.
@@ -233,7 +306,7 @@ export type RemoteRunnerChannel = RunnerChannel<EvidenceRoute | AgentCommandRout
 declare const BROKER_CAPABLE: unique symbol;
 
 export interface LocalRunnerChannel
-  extends RunnerChannel<EvidenceRoute | AgentCommandRoute | BrokerRoute> {
+  extends RunnerChannel<EvidenceRoute | AgentCommandRoute | AgentStateRoute | BrokerRoute> {
   readonly [BROKER_CAPABLE]: true;
 }
 
@@ -298,14 +371,20 @@ export function remoteRunnerChannel(options: {
        * `agent_id` away from being wrong, in a function whose reason to exist is
        * to be right when the types have been cast away.
        *
-       * MAR-602 widens this to exactly one new shape. A leaf other than
-       * `commands` cannot be spelled by a typed caller and is refused here for
-       * the one that was not.
+       * MAR-602 widens this to exactly two new shapes — a run request and a
+       * read of the snapshot that run request has to name a target from. A leaf
+       * outside that pair cannot be spelled by a typed caller and is refused
+       * here for the one that was not.
+       *
+       * The leaf is checked against the pair by value rather than by asking
+       * whether it is "not undefined", so a cast carrying `{agent_id, leaf:
+       * "lifecycle"}` is refused by this function and not only by the compiler
+       * that a cast has already been used to get past.
        */
       const named =
         typeof route === "string"
           ? permitted.has(route)
-          : route.leaf === "commands" && addressesAnAgent(route);
+          : (route.leaf === "commands" || route.leaf === "state") && addressesAnAgent(route);
       if (!named) {
         return Promise.reject(new RemoteRouteRefused(pathOf(route)));
       }
