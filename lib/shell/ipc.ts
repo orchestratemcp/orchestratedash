@@ -2303,37 +2303,39 @@ export async function dispatchCommand(
 
   if (isHostCommandName(review.command)) {
     const action = HOST_ACTIONS[review.command];
-    const result =
-      action === "create"
-        ? await context.hostAction(action, {
+    const result = await (async (): Promise<HostActionResult> => {
+      switch (action) {
+        case "create":
+          return context.hostAction(action, {
             label: String(review.payload["label"]),
             address: String(review.payload["address"]),
             username: String(review.payload["username"]),
             port: Number(review.payload["port"]),
-          })
-        : /*
-           * `run` rides `deploy`'s arm because it carries `deploy`'s payload —
-           * the same two ids, required by the payload rules above. It was the
-           * fall-through's first casualty: `host.run` arrived here after the
-           * chain was written, fell to the host-id-only default, and main
-           * refused every press with "DASH did not receive the agent it should
-           * start" — the exact new-member-falls-through mechanism MAR-600
-           * collapsed in `electron/main.ts`, one file over.
-           */
-          action === "deploy" || action === "run"
-          ? await context.hostAction(action, {
-              host_id: String(review.payload["host_id"]),
-              agent_id: String(review.payload["agent_id"]),
-            })
-          : action === "trust"
-            ? await context.hostAction(action, {
-                host_id: String(review.payload["host_id"]),
-                // The fingerprint the person was shown, carried back so main can
-                // refuse if the server's answer has changed since. Required by
-                // the payload rules, so it is a non-empty string by here.
-                fingerprint: String(review.payload["fingerprint"]),
-              })
-            : await context.hostAction(action, { host_id: String(review.payload["host_id"]) });
+          });
+        case "deploy":
+        case "run":
+          return context.hostAction(action, {
+            host_id: String(review.payload["host_id"]),
+            agent_id: String(review.payload["agent_id"]),
+          });
+        case "trust":
+          return context.hostAction(action, {
+            host_id: String(review.payload["host_id"]),
+            // The fingerprint the person was shown, carried back so main can
+            // refuse if the server's answer has changed since. Required by
+            // the payload rules, so it is a non-empty string by here.
+            fingerprint: String(review.payload["fingerprint"]),
+          });
+        case "probe":
+        case "setup":
+        case "forget":
+          return context.hostAction(action, { host_id: String(review.payload["host_id"]) });
+        default: {
+          const unreachable: never = action;
+          throw new Error(`Unhandled host action: ${String(unreachable)}`);
+        }
+      }
+    })();
 
     if (!result.ok) {
       return {
@@ -2358,6 +2360,14 @@ export async function dispatchCommand(
               },
       };
     }
+
+    // `HOST_ACTIONS` is the catalogue; this successful-result union is its
+    // projection. Keep the two in lockstep before the switch below turns a
+    // new host action into another silent fall-through.
+    const everyHostActionHasAResult: Exclude<HostAction, typeof result.action> extends never
+      ? true
+      : never = true;
+    void everyHostActionHasAResult;
 
     switch (result.action) {
       case "create":
@@ -2459,6 +2469,10 @@ export async function dispatchCommand(
           request_id: review.audit.request_id,
           data: { host_id: result.host_id, label: result.label },
         };
+      default: {
+        const unreachable: never = result;
+        throw new Error(`Unhandled host result: ${String(unreachable)}`);
+      }
     }
   }
 

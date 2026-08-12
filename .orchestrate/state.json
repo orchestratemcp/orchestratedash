@@ -983,6 +983,11 @@
       "linear_status": "In Progress",
       "commit": "02d7e92",
       "note": "MERGED 2026-08-12 via PR #166 (02d7e92). MERGED, NOT PROVEN: no attended installed output-history journey was executed. Rendering only: the newest output remains a full card; older run_artifacts become closed dated disclosures (Today, Yesterday, then calendar dates) with their complete existing card available on demand. The shared history wrapper is used by both artifact-card renderers, app/_components/outputs.tsx and app/_components/panel.tsx. Run detail remains unchanged because multiple outputs from one run are siblings, not an agent history. No storage, custody, search, or ADR change. Implementation evidence: branch commit b2886678f3cb13a5a5dec4fd98f7ac627e66f3ba; PR #166 verify and shell-smoke checks passed."
+    },
+    {
+      "id": "MAR-627",
+      "lifecycle": "planned",
+      "commit": null
     }
   ]
 }
