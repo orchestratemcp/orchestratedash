@@ -98,14 +98,23 @@ describe("schema", () => {
     // authored as 15, renumbered at the merge because MAR-583 reached master
     // first and installed databases had already recorded it, and 18 is
     // MAR-593's two fleet tables (ADR 0013) — a connection that exists before
-    // any agent does, and the per-agent decisions somebody made about it.
+    // any agent does, and the per-agent decisions somebody made about it, and
+    // 19 is MAR-589's `display_name` column — a name DASH itself owns,
+    // separate from the author's own.
     // Asserted as a number rather than as MIGRATIONS.length so that appending a
-    // migration is a deliberate edit here too. 20 is MAR-611's second date on
+    // migration is a deliberate edit here too. 21 is MAR-611's second date on
     // `agent_deploys` (ADR 0017) -- the first step in this list written as a
     // function purely so it can be re-applied, because the two tests below
     // rewind `user_version` to 10 and every later step runs again.
+    //
+    // It is 21 rather than the 20 this branch was written against because
+    // MAR-589's `display_name` column reached master mid-flight. That step keeps
+    // the index it shipped with and this one moved to the end of the list, which
+    // is the only order that leaves an already-migrated installed store alone --
+    // renumbering a step somebody's database has already recorded is the one
+    // thing this pin exists to make somebody think about.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(20);
+    expect(version.user_version).toBe(21);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -180,6 +189,8 @@ describe("schema", () => {
     // CREATE: re-running it against a column that is still there fails on
     // the duplicate rather than on anything this test is about.
     first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
+    // And migration 19 (MAR-589), the same reason exactly.
+    first.db.db().exec("ALTER TABLE agents DROP COLUMN display_name");
     // And migration 9 (MAR-488), DASH's record of its own reading.
     first.db.db().exec("DROP TABLE evidence_pulls");
     // And migration 10 (MAR-536), saved servers.
@@ -221,6 +232,8 @@ describe("schema", () => {
     // CREATE: re-running it against a column that is still there fails on
     // the duplicate rather than on anything this test is about.
     first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
+    // And migration 19 (MAR-589), the same reason exactly.
+    first.db.db().exec("ALTER TABLE agents DROP COLUMN display_name");
     // And migration 9 (MAR-488), DASH's record of its own reading.
     first.db.db().exec("DROP TABLE evidence_pulls");
     first.db.db().exec("ALTER TABLE agent_dom_state DROP COLUMN runner_observed_at");
@@ -265,6 +278,8 @@ describe("schema", () => {
     // CREATE: re-running it against a column that is still there fails on
     // the duplicate rather than on anything this test is about.
     first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
+    // And migration 19 (MAR-589), the same reason exactly.
+    first.db.db().exec("ALTER TABLE agents DROP COLUMN display_name");
     // And migration 9 (MAR-488), DASH's record of its own reading.
     first.db.db().exec("DROP TABLE evidence_pulls");
     first.db.db().exec("DROP TABLE broker_audit");
@@ -304,6 +319,8 @@ describe("schema", () => {
     // CREATE: re-running it against a column that is still there fails on
     // the duplicate rather than on anything this test is about.
     first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
+    // And migration 19 (MAR-589), the same reason exactly.
+    first.db.db().exec("ALTER TABLE agents DROP COLUMN display_name");
     // And migration 9 (MAR-488), DASH's record of its own reading.
     first.db.db().exec("DROP TABLE evidence_pulls");
     first.db.db().exec("DROP TABLE broker_lapses");
@@ -349,6 +366,8 @@ describe("schema", () => {
     // CREATE: re-running it against a column that is still there fails on
     // the duplicate rather than on anything this test is about.
     first.db.db().exec("ALTER TABLE agents DROP COLUMN avatar");
+    // And migration 19 (MAR-589), the same reason exactly.
+    first.db.db().exec("ALTER TABLE agents DROP COLUMN display_name");
     // And migration 9 (MAR-488), DASH's record of its own reading.
     first.db.db().exec("DROP TABLE evidence_pulls");
     first.db.db().exec("DROP TABLE hosts");
@@ -503,7 +522,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(20);
+    ).toBe(21);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {
@@ -532,6 +551,8 @@ describe("schema", () => {
     // too — re-running it against the table it already made would fail on the
     // duplicate rather than on anything this test is about.
     first.db.db().exec("DROP TABLE ai_key_checks");
+    // And migration 19 (MAR-589), for the same reason.
+    first.db.db().exec("ALTER TABLE agents DROP COLUMN display_name");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;
@@ -569,6 +590,8 @@ describe("schema", () => {
     // too — re-running it against the table it already made would fail on the
     // duplicate rather than on anything this test is about.
     first.db.db().exec("DROP TABLE ai_key_checks");
+    // And migration 19 (MAR-589), for the same reason.
+    first.db.db().exec("ALTER TABLE agents DROP COLUMN display_name");
     first.db.closeDb();
 
     process.env.DASH_DATA_DIR = first.dataDir;

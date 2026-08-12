@@ -9,6 +9,7 @@ import {
   type RunEvent,
 } from "./contracts";
 import { isOName, oFor, type OName } from "./brand/o-cast";
+import { agentDisplayName } from "./copy/agent-name";
 import type { AgentModelChoice } from "./ai/model-choice";
 import { readAgentModelChoice, recordRunModel } from "./ai/model-store";
 import {
@@ -78,6 +79,16 @@ export interface StoredAgent {
    * so the answer is stable rather than merely present.
    */
   avatar: OName;
+  /**
+   * A name DASH itself owns, or null when nobody has renamed this agent
+   * (MAR-589).
+   *
+   * Read from the `display_name` column, which starts null and is written only
+   * by `renameAgent`. Never derived here — `agentDisplayName` is where the
+   * precedence this column exists for is decided: the column first, the
+   * manifest's own `display_name` second, the humanized id last.
+   */
+  display_name: string | null;
 }
 
 /**
@@ -201,8 +212,9 @@ export function readStore(): StoreShape {
   // handles the first; `readRowsTolerantly` handles the second.
   const agentRows = readRowsTolerantly(database, {
     table: "agents",
-    bulk: "SELECT rowid, name, manifest_json, imported_at, avatar FROM agents",
-    byRowid: "SELECT rowid, name, manifest_json, imported_at, avatar FROM agents WHERE rowid = ?",
+    bulk: "SELECT rowid, name, manifest_json, imported_at, avatar, display_name FROM agents",
+    byRowid:
+      "SELECT rowid, name, manifest_json, imported_at, avatar, display_name FROM agents WHERE rowid = ?",
   });
   for (const row of agentRows.rows) {
     const name = text(row, "name");
@@ -215,6 +227,7 @@ export function readStore(): StoreShape {
       manifest,
       imported_at: text(row, "imported_at"),
       avatar: storedAvatar(row["avatar"], name),
+      display_name: row["display_name"] === null ? null : text(row, "display_name"),
     };
   }
 
@@ -656,8 +669,8 @@ export function importManifest(input: unknown, options: ImportManifestOptions = 
     const existing = database.prepare("SELECT 1 FROM agents WHERE name = ?").get(name);
     database
       .prepare(
-        "INSERT INTO agents (name, manifest_version, manifest_json, imported_at, avatar) " +
-          "VALUES (?, ?, ?, ?, ?) ON CONFLICT (name) DO UPDATE SET " +
+        "INSERT INTO agents (name, manifest_version, manifest_json, imported_at, avatar, display_name) " +
+          "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (name) DO UPDATE SET " +
           "manifest_version = excluded.manifest_version, " +
           "manifest_json = excluded.manifest_json, " +
           "imported_at = excluded.imported_at",
@@ -678,6 +691,11 @@ export function importManifest(input: unknown, options: ImportManifestOptions = 
         // seeds with — so the character DASH assigns on day one is the one SITE
         // would have drawn for the same agent.
         oFor(name),
+        // MAR-589. Null on every insert, renamed or not: a fresh import has never
+        // been renamed, and the update clause above omits this column for the
+        // same reason it omits `avatar` — an author republishing their manifest
+        // must not silently rename an agent the user already renamed.
+        null,
       );
     clearAgentFolderIssue(database, name);
     return { ok: true as const, agent: name, replaced: existing !== undefined };
@@ -761,6 +779,57 @@ export function acceptFolderManifest(agent: string, manifestJson: string): Impor
     clearAgentFolderIssue(database, agent);
     return { ok: true as const, agent, replaced: true };
   });
+}
+
+export type RenameAgentResult = { ok: true } | { ok: false; errors: string[] };
+
+/** A person is allowed to type a lot; a database row is not allowed to hold a document. */
+const MAX_DISPLAY_NAME_LENGTH = 200;
+
+/**
+ * Set — or clear — the name DASH itself holds for one agent (MAR-589).
+ *
+ * ## Clearing is an absent argument, not an empty one
+ *
+ * `displayName === undefined` writes `NULL`, which is how a person puts an
+ * agent back to reading its author's own `display_name`. An *empty string*
+ * after trimming is refused rather than treated as a clear: `reviewCommand` in
+ * `lib/shell/ipc.ts` already denies an empty string as "present but absent" for
+ * every other command, and a rename command that read "" as "reset" would be
+ * the one field on the whole bridge whose meaning depended on which of two
+ * absent-looking values arrived — the renderer's `dropUnset` is what turns "the
+ * person cleared the field" into "the key was never sent" before this is ever
+ * called.
+ *
+ * ## What is not validated
+ *
+ * There is no charset check and no `minLength` beyond "not only whitespace".
+ * The manifest schema's own `display_name` asks for nothing more than
+ * `minLength: 1`, and a person renaming their own agent is entitled to at least
+ * what an author publishing one already gets.
+ */
+export function renameAgent(agent: string, displayName: string | undefined): RenameAgentResult {
+  const database = db();
+  const existing = database.prepare("SELECT 1 FROM agents WHERE name = ?").get(agent);
+  if (existing === undefined) {
+    return { ok: false, errors: ["DASH has no record of that agent."] };
+  }
+
+  if (displayName === undefined) {
+    database.prepare("UPDATE agents SET display_name = NULL WHERE name = ?").run(agent);
+    return { ok: true };
+  }
+
+  const trimmed = displayName.trim();
+  if (trimmed === "") {
+    return { ok: false, errors: ["A name cannot be blank."] };
+  }
+  if (trimmed.length > MAX_DISPLAY_NAME_LENGTH) {
+    return { ok: false, errors: [`A name cannot be longer than ${String(MAX_DISPLAY_NAME_LENGTH)} characters.`] };
+  }
+
+  database.prepare("UPDATE agents SET display_name = ? WHERE name = ?").run(trimmed, agent);
+  return { ok: true };
 }
 
 export interface IngestResult {
@@ -1864,6 +1933,16 @@ export interface AgentSummary {
    * stored one for exactly as long as nobody ever changed an agent's character.
    */
   avatar: OName;
+  /**
+   * The one name a person reads for this agent (MAR-589).
+   *
+   * `agentDisplayName`'s answer, with the stored column preferred over the
+   * manifest's own `display_name` — the precedence a rename exists to have.
+   * Computed here, once per agent per read, so every surface that lists agents
+   * draws the same title a rename actually changed, rather than each deriving
+   * its own from a manifest that a stored rename has already superseded.
+   */
+  title: string;
 }
 
 export function listAgents(store: StoreShape = readStore()): AgentSummary[] {
@@ -1875,7 +1954,7 @@ export function listAgents(store: StoreShape = readStore()): AgentSummary[] {
   }
 
   return Object.values(store.agents)
-    .map(({ manifest, imported_at, avatar }) => ({
+    .map(({ manifest, imported_at, avatar, display_name }) => ({
       name: manifest.agent.name,
       manifest_version: manifest.manifest_version,
       goal: manifest.agent.goal,
@@ -1886,6 +1965,10 @@ export function listAgents(store: StoreShape = readStore()): AgentSummary[] {
       imported_at,
       run_count: runsByAgent.get(manifest.agent.name)?.size ?? 0,
       avatar,
+      title: agentDisplayName({
+        name: manifest.agent.name,
+        display_name: display_name ?? manifest.agent.display_name,
+      }),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }

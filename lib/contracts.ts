@@ -295,6 +295,17 @@ export function validateCommand(input: unknown): ValidationResult<AgentCommandEn
 export interface AgentManifestBody {
   agent: {
     name: string;
+    /**
+     * The author's own name for the agent, when they gave one (MAR-589).
+     *
+     * Not in the v1 schema's `properties`, but not excluded either — that
+     * schema leaves `additionalProperties` open "at every level" by its own
+     * `description`, and DASH-authored v1 manifests carry this field in
+     * practice (MAR-595 finding 10). Typed here rather than cast at every
+     * reader, which is what `lib/workspace.ts`'s own `WorkspaceManifest.agent`
+     * and `lib/views/build.ts`'s `displayNameOf` did before this existed.
+     */
+    display_name?: string;
     goal: string;
     plan_source: "playbook" | "composed";
     playbook_id: string;

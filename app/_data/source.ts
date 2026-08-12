@@ -249,6 +249,13 @@ interface DashShellClient {
   removeAgent?(args: { agent_id: string }): Promise<CommandResult>;
   removeAgentKeepFiles?(args: { agent_id: string }): Promise<CommandResult>;
   /**
+   * Set — or clear — the name DASH shows for one agent (MAR-589).
+   *
+   * Optional for the same reason as everything above: a shell built before
+   * this feature has a `dashShell` without it.
+   */
+  renameAgent?(args: { agent_id: string; display_name?: string }): Promise<CommandResult>;
+  /**
    * The four notification commands (MAR-588).
    *
    * Optional for the same reason as everything above. Note what three of them
@@ -1035,6 +1042,38 @@ async function removeCommand(
       request_id: "",
       reason: "read_only_host",
       detail: `This version of the DASH app cannot ${cannot} yet.`,
+    };
+  }
+  return call(args);
+}
+
+/**
+ * Set — or clear — the name DASH shows for one agent (MAR-589).
+ *
+ * `removeCommand`'s shape, and its own function rather than a third case
+ * added there: the argument carries an optional `display_name` the two
+ * removal methods have no equivalent of.
+ */
+export async function renameAgent(args: {
+  agent_id: string;
+  display_name?: string;
+}): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to rename an agent.",
+    };
+  }
+  const call = bridge.renameAgent;
+  if (call === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "This version of the DASH app cannot rename an agent yet.",
     };
   }
   return call(args);

@@ -553,7 +553,7 @@ export function DeployPanel({
   const refusal =
     chosen === null || chosen.deploy.deployable
       ? null
-      : describeUndeployable(chosen.name, chosen.deploy.refusal ?? "");
+      : describeUndeployable(chosen.title, chosen.deploy.refusal ?? "");
 
   /*
    * MAR-606 finding 31. What the control should offer, given what DASH already
@@ -562,9 +562,12 @@ export function DeployPanel({
    * `sent_on` comes from DASH's own record on the view and not from the check,
    * so the offer is correct before anything has asked the machine — which is
    * the case that matters, because it is the state the card opens in.
+   *
+   * MAR-589. `chosen?.title`, never `chosenAgent` — the id is what the select's
+   * value carries and is not what this sentence may say.
    */
   const offer = describeDeployOffer({
-    agent: chosenAgent === "" ? "this agent" : chosenAgent,
+    agent: chosen?.title ?? "this agent",
     server: server.label,
     sent_on: server.sent.find((one) => one.agent === chosenAgent)?.sent_on ?? null,
     just_sent: deploy?.step === "sent" && deploy.agent === chosenAgent,
@@ -605,9 +608,12 @@ export function DeployPanel({
               }}
             >
               <option value="">Choose an agent</option>
+              {/* MAR-589. The value stays the id — it is what `onChoose` and
+                  `chosenAgent` key on — and the label is the name a person
+                  actually picked this agent by. */}
               {agents.map((agent) => (
                 <option key={agent.name} value={agent.name}>
-                  {agent.name}
+                  {agent.title}
                 </option>
               ))}
             </select>
@@ -636,7 +642,7 @@ export function DeployPanel({
           {chosen === null ? null : (
             <ConnectionTravelNotice
               travel={chosen.deploy.travel}
-              agent={chosen.name}
+              agent={chosen.title}
               server={server.label}
             />
           )}

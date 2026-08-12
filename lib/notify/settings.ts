@@ -105,7 +105,8 @@ export const NOTIFY_LIVENESS: readonly string[] = [
  */
 export const NOTIFY_CONTENTS: readonly string[] = [
   "The agent's name, and whether it is waiting for you or has published something.",
-  "A link that opens that agent in DASH on this computer. Discord shows it as text to copy, not as a button — DASH will not run a web address of its own to make it clickable.",
+  "Where to find it in DASH — Agents, then the agent's name — said in words, because the message does not rely on a link working.",
+  "A link that opens that agent in DASH on this computer, for an installed copy that has claimed it. Discord shows it as text to copy, not as a button, and an unpackaged DASH never claims it at all.",
   "Nothing else. Not what the agent read or wrote, not what it is asking permission for, and nothing anybody could use to answer for you.",
 ];
 

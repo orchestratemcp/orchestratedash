@@ -52,6 +52,21 @@
  * the `dash://` one — is a server, and a server is a recurring cost. The whole
  * of this feature exists inside the "no recurring cost" rule, so the honest
  * answer is the copyable line and a sentence in the settings copy saying so.
+ *
+ * ## Why the message does not depend on the link at all (MAR-617)
+ *
+ * Two things make the link alone a dead call to action: Discord will not turn
+ * it into a button (above), and an unpackaged DASH never claims the `dash://`
+ * scheme in the first place — only `electron/handoff-host.ts`'s packaged branch
+ * calls `app.setAsDefaultProtocolClient`. So a message that told somebody
+ * nothing but "click this" could be asking them to click something that does
+ * nothing, on the very machine running the agent.
+ *
+ * `buildDiscordMessage` therefore says where to look in DASH's own words —
+ * Agents, then the agent's name — before it ever mentions the link. The link
+ * stays, worded as what it honestly is: a shortcut a packaged, installed DASH
+ * on the reader's computer can open directly, not a promise that clicking it
+ * does something everywhere.
  */
 
 /** The one vault entry this feature uses. A name, never a value. */
@@ -330,20 +345,38 @@ const HEADLINE: Record<NotificationKind, string> = {
 };
 
 /**
+ * Where inside the agent's own page the thing lives, said in DASH's own
+ * navigation rather than left to the deep link to imply. Empty for an
+ * approval — the agent's page *is* where it is answered, so naming the page
+ * is the whole instruction (MAR-617).
+ */
+const NAVIGATE_TO: Record<NotificationKind, string> = {
+  needs_approval: "",
+  new_report: " → latest output",
+};
+
+/**
  * Compose the message for one event.
  *
- * The whole message is DASH's words plus `agentLabel(event.agent_title)` plus a
- * link built by `lib/open-link.ts`. Nothing else is interpolated, and there is
- * no branch that can add a field: a caller with a report title in hand has
- * nowhere to put it.
+ * Three lines, each doing one job (MAR-617): DASH's headline, then where to
+ * look — words that work whether or not the link below does anything —
+ * then the link itself, described as what it honestly is rather than as an
+ * instruction to click it. Nothing else is interpolated beyond
+ * `agentLabel(event.agent_title)` and `link`, and there is no branch that can
+ * add a field: a caller with a report title in hand has nowhere to put it.
  */
 export function buildDiscordMessage(
   event: NotifiableEvent,
   link: string,
 ): DiscordMessage {
   const label = agentLabel(event.agent_title);
+  const content = [
+    `${label} ${HEADLINE[event.kind]}`,
+    `In DASH: Agents → ${label}${NAVIGATE_TO[event.kind]}`,
+    `An installed copy of DASH on this computer opens that directly: ${link}`,
+  ].join("\n");
   return {
-    content: `${label} ${HEADLINE[event.kind]}\nOpen it in DASH: ${link}`,
+    content,
     allowed_mentions: { parse: [] },
   };
 }
