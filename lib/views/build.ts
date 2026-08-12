@@ -175,12 +175,16 @@ export function agentDeployStanding(
   agent: string,
   manifest: ConnectionSourceManifest | null = null,
 ): AgentDeployView {
-  // MAR-591. Assessed for every standing, including the ones that refuse for
-  // another reason: a person looking at a migrated agent is entitled to the same
-  // account of what would not travel, and computing it only on the deployable
-  // path would make the sentence appear when the folder was fixed rather than
-  // when it was true.
-  const travel = assessConnectionTravel(agent, manifest);
+  // MAR-591, corrected by MAR-626. Assessed for every standing, including the
+  // ones that refuse for another reason: a person looking at a migrated agent
+  // is entitled to the same account of what would not travel, and computing it
+  // only on the deployable path would make the sentence appear when the folder
+  // was fixed rather than when it was true.
+  //
+  // `heldCredentials` reads `connection_secrets`, never the vault — the same
+  // "is it there" read `credentialStatus` below already does for this agent —
+  // so this costs one more small-table lookup per row, not an OS unlock prompt.
+  const travel = assessConnectionTravel(agent, manifest, heldCredentials(agent));
 
   let standing: ReturnType<typeof inspectAgentFolderStanding>;
   try {
