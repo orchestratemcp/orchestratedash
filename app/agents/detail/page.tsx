@@ -930,6 +930,7 @@ function OutputsArea({
       }}
       grounding={grounding}
       heading={AGENT_OUTPUTS_COPY.heading}
+      history
       onDownload={canAct ? (card) => void save(card) : undefined}
       /* Per card, because this list spans runs now. The old page had one link
          under the whole panel saying "open the run these came from", which was
