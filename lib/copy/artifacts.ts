@@ -109,6 +109,48 @@ export const OUTPUTS_PANEL_COPY = {
   },
 } as const;
 
+const HISTORY_DAY = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "long",
+});
+
+const HISTORY_DAY_WITH_YEAR = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
+
+/**
+ * A short date for navigating an agent's older outputs (MAR-622).
+ *
+ * This is deliberately relative only for Today and Yesterday. The label is
+ * navigation, not evidence: the exact, absolute agent and DASH times remain in
+ * the receipt. Taking `today` as data keeps render tests deterministic while
+ * production uses this computer's local calendar, as every other DASH date
+ * does.
+ */
+export function describeArtifactHistoryDay(generatedAt: string, today = new Date()): string {
+  const made = new Date(generatedAt);
+  if (Number.isNaN(made.getTime()) || Number.isNaN(today.getTime())) {
+    return "Earlier output";
+  }
+
+  const calendarDay = (value: Date): number =>
+    Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()) / 86_400_000;
+  const daysAgo = calendarDay(today) - calendarDay(made);
+
+  if (daysAgo === 0) {
+    return "Today";
+  }
+  if (daysAgo === 1) {
+    return "Yesterday";
+  }
+  if (made.getFullYear() === today.getFullYear()) {
+    return HISTORY_DAY.format(made);
+  }
+  return HISTORY_DAY_WITH_YEAR.format(made);
+}
+
 /**
  * Whether the thing itself is still here.
  *
