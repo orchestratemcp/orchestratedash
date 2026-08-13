@@ -582,3 +582,78 @@ remote host ever gets a blocking gate.
 543a blocks everything; 543b and 543d can run in parallel after it; 543c
 needs 543a only (a panel renders for a row-indexed agent the moment the
 schema exists); 543e needs 543b.
+
+## Amendment 1: one visibly DASH-authored, read-only disclosure (MAR-620)
+
+Date: 2026-08-13
+
+Status: Accepted
+
+### The correction
+
+The original decision says both that nothing inside the attributed region can
+be mistaken for a DASH control and that the vocabulary contains no component
+which asks the user for anything. Those claims still bar agent-authored
+interactivity. They do not bar one disclosure whose complete authority stays
+with DASH and whose only effect is revealing DASH prose.
+
+**A read-only, DASH-authored disclosure may live inside the author's declared
+region, but only as part of DASH's own stated empty-state renderer.** It is not
+panel vocabulary. A manifest cannot request it, label it, fill it, move it,
+suppress it, open it, or remember its state. Its summary and body come only from
+`lib/copy/panel.ts`; its placement comes only from `StatedEmpty` in
+`app/_components/panel.tsx`. Opening it reveals text. It performs no command,
+submission, navigation, IPC, network request, stored mutation, or preference
+write.
+
+The visible distinction is a product requirement, not a code comment: the
+summary is the fixed sentence **“DASH explains this empty section.”** A reader
+does not have to infer authorship from colour, indentation, or the panel's DOM.
+The affordance names DASH before it opens, and the prose behind it contains no
+author-supplied string or produced value. The author's section label remains
+above it as the author's label; DASH's distinct empty-state headline remains
+open as DASH's finding about what is absent.
+
+This is a narrow amendment to “no controls,” not a general class of safe panel
+controls. The admitted element can change only its own expanded presentation.
+Anything that changes DASH, an agent, a remote system, navigation, or a saved
+preference remains outside the region. Anything whose label, content,
+appearance, placement, initial state, or event is controlled by the manifest is
+agent-authored interactivity and still requires the separately decided sandboxed
+escalation path.
+
+### Why the existing disclosures do not decide this
+
+Digest source disclosures already appear in the region through the shared
+artifact renderer. They are artifact-provided exceptions: their presence and
+contents belong to an output contract that also renders on run detail and the
+Outputs area. They are not panel vocabulary, and their prior existence is not
+precedent for DASH adding arbitrary controls to an author-framed panel. This
+amendment neither widens nor generalises that exception; it admits the empty
+state disclosure on its own, stricter terms.
+
+### Why the explanation stays per section
+
+The panel cannot replace these disclosures with one shared empty-state sentence.
+There are three materially different table facts: the bound artifact has not
+arrived, the artifact arrived but is not a list, or the list contains no
+readable rows. Report and outputs sections also distinguish a named role from
+all output roles. One shared sentence would make those states sound equivalent
+and undo the original decision that absence must be stated without being
+invented. Each section therefore keeps its own headline and its own explanation;
+only the explanation is closed by default.
+
+### Markup and proof boundary
+
+The disclosure is a block-level native `<details>` sibling after the headline
+paragraph, never a descendant of `<p>`. Its `<summary>` is the fixed attribution
+above, and its body is the matching `PanelEmptyState.meaning`. The existing
+no-submit/no-mutation control gate remains valid: `button`, `input`, `textarea`,
+`select`, and `form` stay absent. A future test may identify this disclosure by
+its fixed copy and placement, but a class name alone is not evidence a reader
+can tell who is speaking.
+
+This is a renderer and copy change. It does not widen the manifest schema,
+panel section union, artifact contract, IPC surface, or installed/runtime
+authority. Source render tests can prove the markup and fixed attribution;
+installed proof is not claimed until the packaged panel journey is exercised.

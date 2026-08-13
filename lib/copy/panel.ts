@@ -241,6 +241,17 @@ export interface PanelEmptyState {
 }
 
 /**
+ * The only disclosure label admitted inside the author's declared region.
+ *
+ * ADR 0008 amendment 1 makes the speaker visible in the affordance itself:
+ * "DASH" is not implied by colour, placement or a class name. The manifest
+ * cannot replace this string, and `StatedEmpty` accepts only DASH's fixed
+ * `PanelEmptyState`, so an author cannot borrow the disclosure for their own
+ * prompt or make their words look like DASH's explanation.
+ */
+export const PANEL_EMPTY_DISCLOSURE = "DASH explains this empty section";
+
+/**
  * What a `report` or an `outputs` section says when nothing has arrived.
  *
  * Said about the agent, never about the person reading it: an agent that has not
