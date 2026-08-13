@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 
 import { DensityToggle } from "../../_components/density-toggle";
+import { FleetStripToggle } from "../../_components/fleet-strip";
 import { FleetViewToggle } from "../../_components/fleet-view-toggle";
 import { UiScaleControl } from "../../_components/ui-scale-control";
 import { InfoNote } from "../../_components/info-note";
@@ -41,6 +42,16 @@ import { useHost } from "../../_data/use-view";
  * here because this page's job is to be the inventory of how DASH looks, and
  * an inventory missing an entry is worse than no inventory: it teaches a
  * reader that what is on this page is all there is.
+ *
+ * ## Two of these are now only here (MAR-634)
+ *
+ * Density and the bottom strip each used to have a second doorway in a corner
+ * of the window — a button under the sidebar and a stub in the bottom-right —
+ * and MAR-634 removed both as leftovers competing with the Agents page's right
+ * rail. Neither setting was removed with them. That makes this page the only
+ * way to reach two of the four, which raises the stakes on the paragraph
+ * above: an inventory that is also the only door has to be complete, so a
+ * later session adding a fifth view preference owes this page a row.
  */
 export default function PreferencesPage(): ReactNode {
   const host = useHost();
@@ -49,7 +60,7 @@ export default function PreferencesPage(): ReactNode {
     <>
       <h1>How DASH looks</h1>
       <p className="lede">
-        Three settings, and all of them are about spacing, shape and colour.
+        Four settings, and all of them are about spacing, shape and colour.
         None of them changes what an agent can do.
       </p>
       <HostNotice host={host} />
@@ -81,6 +92,26 @@ export default function PreferencesPage(): ReactNode {
           same things in all three; only the shape changes.
         </p>
         <FleetViewToggle />
+      </section>
+
+      <section aria-labelledby="preferences-fleet-strip">
+        <h2 id="preferences-fleet-strip">Agents along the bottom</h2>
+        {/*
+          MAR-634. The control arrived here because it was removed from the
+          bottom-right corner of every window, not because this page wanted a
+          fourth row: when the strip was off, that corner held a lone "Show
+          your agents" stub, which Henrik named as one of two leftovers
+          competing with the Agents page's own right rail.
+
+          It belongs on this page by the same argument as the two above it —
+          this is the inventory of how DASH looks, and the strip is the most
+          visible thing in the window that a person can turn off.
+        */}
+        <p className="muted wrap">
+          The row of characters along the bottom edge of the window. Turning it
+          off changes nothing about your agents.
+        </p>
+        <FleetStripToggle />
       </section>
 
       <section aria-labelledby="preferences-ui-scale">

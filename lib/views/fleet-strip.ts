@@ -77,12 +77,17 @@ export interface FleetStripCopy {
   /**
    * What the control shows on screen.
    *
-   * Shorter than `label` in one direction only, and the asymmetry is the
-   * point. A visible "Hide" beside a row of characters is unambiguous because
-   * the characters are right there; a visible "Show" beside an empty bar names
-   * nothing at all, so the off state spends the words. Both keep `label` as
-   * their accessible name, so nothing is shorter for a screen reader than it is
-   * for an eye.
+   * Both directions name their object since MAR-634, and the asymmetry that
+   * used to be here went with the control. While this was a button on the
+   * strip's own right-hand end, a visible "Hide" was unambiguous because the
+   * row of characters it referred to was six inches to the left of it; only
+   * the off state, a stub on an empty bar, had to spend the words. On Settings
+   * → Preferences there is no strip in view to point at, so "Hide" alone would
+   * be a button whose object is a paragraph away, which is the ambiguity this
+   * module's header refuses everywhere else.
+   *
+   * Still never longer than `label`, so nothing is shorter for a screen reader
+   * than it is for an eye.
    */
   visible: string;
   /** What it means, for the `title` and for anyone who wants the sentence. */
@@ -101,7 +106,7 @@ export function describeFleetStrip(current: FleetStripSetting): FleetStripCopy {
   return current === "shown"
     ? {
         label: "Hide your agents from the bottom edge",
-        visible: "Hide",
+        visible: "Hide your agents",
         description: "The row of characters goes away. Nothing about your agents changes.",
       }
     : {

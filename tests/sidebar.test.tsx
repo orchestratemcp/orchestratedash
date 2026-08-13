@@ -86,13 +86,29 @@ describe("every destination survives the move into the sidebar", () => {
     expect(markup.match(/aria-current="page"/g)).toHaveLength(1);
   });
 
-  it("keeps the density control, at the bottom of the sidebar", () => {
-    // The control the capture harness clicks (`button.density-toggle`) must
-    // stay findable; the sidebar is its new home, after the links.
-    const markup = markupAt("/");
-    const nav = markup.slice(markup.indexOf("<nav"));
-    expect(nav).toContain("density-toggle");
-    expect(nav.indexOf("density-toggle")).toBeGreaterThan(nav.lastIndexOf("sidebar-link"));
+  it("carries destinations and nothing else — the density control left in MAR-634", () => {
+    /*
+     * The inverse of the assertion that stood here from MAR-546 until MAR-634,
+     * and it is inverted rather than deleted so the history is legible: this
+     * column held `DensityToggle` at its foot for eight issues, and Henrik
+     * removed it as one of two corner leftovers competing with the Agents
+     * page's right rail — *"the fit more on screen thing we can remove"*.
+     *
+     * The setting is not gone, so the claim worth pinning is the pair: absent
+     * from the sidebar, present on Settings → Preferences. A test that only
+     * checked the first half would pass just as happily if the control had
+     * been deleted outright, which is the mistake MAR-634 explicitly warns
+     * against making with this sidebar.
+     */
+    const nav = markupAt("/").slice(markupAt("/").indexOf("<nav"));
+    expect(nav).not.toContain("density-toggle");
+    expect(nav).not.toContain("sidebar-spacer");
+
+    const preferences = readFileSync(
+      path.join(repoRoot, "app", "settings", "preferences", "page.tsx"),
+      "utf8",
+    );
+    expect(preferences).toContain("<DensityToggle />");
   });
 
   it("hides the identity block from the accessibility tree — the title bar already says DASH", () => {
