@@ -71,7 +71,7 @@
  *     pnpm build:shell
  *     $env:DASH_SHELL_URL='dash-app://ui/'
  *     $env:DASH_DATA_DIR='…\scratch-fleet-views'
- *     $env:DASH_CAPTURE_DIR='qa-screenshots-mar612'
+ *     $env:DASH_CAPTURE_DIR='qa-screenshots-mar630'
  *     pnpm exec electron dist/electron/capture-fleet-views.mjs
  *
  * Every line is load-bearing and each has cost a session before:
@@ -120,7 +120,14 @@ import { app, BrowserWindow, nativeTheme } from "electron";
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { importManifest, ingestArtifacts, ingestEvents, recordAgentLook } from "../lib/store.js";
+import {
+  importManifest,
+  ingestArtifacts,
+  ingestEvents,
+  recordAgentDeploy,
+  recordAgentLook,
+  saveHost,
+} from "../lib/store.js";
 import {
   DENSITY_ATTRIBUTE,
   DENSITY_STORAGE_KEY,
@@ -133,7 +140,7 @@ import {
   type FleetView,
 } from "../lib/views/fleet-view";
 
-const OUT = path.resolve(process.cwd(), process.env.DASH_CAPTURE_DIR ?? "qa-screenshots-mar612");
+const OUT = path.resolve(process.cwd(), process.env.DASH_CAPTURE_DIR ?? "qa-screenshots-mar630");
 
 /** The three widths every DASH design pass is argued at. */
 const VIEWPORTS = [
@@ -288,8 +295,34 @@ function seed(): void {
     recordAgentLook(name, new Date().toISOString());
   }
 
+  /*
+   * MAR-630. Cloud is a deploy row, not a live sighting (ADR 0015). One host
+   * and one send, written through the same doors `host.deploy` uses, so the
+   * Local/Cloud mark on Project Reporter is a store fact a reviewer can
+   * point at. TEST-NET-1, because this run never talks to a server.
+   */
+  saveHost({
+    host_id: "scene-vps",
+    label: "My server",
+    address: "192.0.2.1",
+    port: 22,
+    username: "dash",
+    key_name: "scene-vps",
+    host_fingerprint: null,
+    added_at: "2026-08-10T12:00:00.000Z",
+  });
+  recordAgentDeploy(
+    {
+      agent: OVERDUE,
+      host_id: "scene-vps",
+      manifest_sha256: "scene-manifest-digest",
+      files_sha256: "scene-files-digest",
+    },
+    "2026-08-10T21:00:00.000Z",
+  );
+
   console.log(
-    "[views] seeded 5 agents: new output, overdue, not connected, and two with nothing waiting",
+    "[views] seeded 5 agents: new output, overdue+cloud, not connected, and two with nothing waiting",
   );
 }
 
@@ -344,21 +377,44 @@ const measurements: object[] = [];
 
 async function shoot(target: BrowserWindow, name: string): Promise<void> {
   /*
-   * Retried once, because the first `capturePage()` after a window shrink fails
-   * deterministically rather than flakily — `electron/capture-models.ts` found
-   * it and `electron/capture-deploy.ts` adopted the same retry.
+   * Retried, for two reasons this repository has already paid for:
+   * `capturePage()` after a shrink fails deterministically on the first call
+   * (`electron/capture-models.ts`), and a later compositor miss writes a
+   * 9KB PNG of empty navy that a reviewer cannot tell from a real dark
+   * frame until they open it. A picture whose bytes cannot be a page is
+   * refused and taken again.
    */
-  let image;
-  try {
-    image = await within(`capturePage for ${name}`, 20_000, target.webContents.capturePage());
-  } catch {
-    await settle(600);
-    image = await within(`capturePage retry for ${name}`, 20_000, target.webContents.capturePage());
+  const minBytes = 40_000;
+  let image = null;
+  let png: Buffer | null = null;
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    try {
+      image = await within(`capturePage for ${name}`, 20_000, target.webContents.capturePage());
+    } catch {
+      await settle(700);
+      continue;
+    }
+    png = image.toPNG();
+    if (png.length >= minBytes) {
+      break;
+    }
+    console.warn(
+      `[views] ${name} attempt ${String(attempt)} was ${String(png.length)} bytes — compositor miss, retrying`,
+    );
+    await settle(900);
   }
-  writeFileSync(path.join(OUT, `${name}.png`), image.toPNG());
+  if (image === null || png === null) {
+    throw new Error(`capturePage for ${name} produced nothing`);
+  }
+  if (png.length < minBytes) {
+    throw new Error(
+      `${name} stayed a compositor miss (${String(png.length)} bytes) after four attempts`,
+    );
+  }
+  writeFileSync(path.join(OUT, `${name}.png`), png);
   const size = image.getSize();
   written.push(name);
-  console.log(`[views] ${name}.png ${String(size.width)}x${String(size.height)}`);
+  console.log(`[views] ${name}.png ${String(size.width)}x${String(size.height)} ${String(png.length)}b`);
 }
 
 /**
@@ -385,7 +441,7 @@ async function resizeTo(target: BrowserWindow, width: number, height: number): P
       target.webContents.executeJavaScript("window.innerWidth"),
     )) as number;
     if (Math.abs(seen - width) <= 2) {
-      await settle(400);
+      await settle(700);
       return seen;
     }
   }
@@ -485,6 +541,15 @@ async function layout(target: BrowserWindow): Promise<unknown> {
          const track = document.querySelector(".row-list.fleet-grid");
          const cards = [...document.querySelectorAll(".fleet-card")];
          const widths = cards.map((node) => Math.round(node.getBoundingClientRect().width));
+         const rail = document.querySelector(".fleet-rail");
+         const railStyle = rail === null ? null : getComputedStyle(rail);
+         const railBox = rail === null ? null : rail.getBoundingClientRect();
+         const stage = document.querySelector(".fleet-stage");
+         const stageStyle = stage === null ? null : getComputedStyle(stage);
+         const cardsPane = document.querySelector(".fleet-cards");
+         const chiefBand = document.querySelector(".chief-band");
+         const cardsBox = cardsPane === null ? null : cardsPane.getBoundingClientRect();
+         const chiefBox = chiefBand === null ? null : chiefBand.getBoundingClientRect();
          return {
            viewport: window.innerWidth,
            page_scroll_width: root.scrollWidth,
@@ -493,15 +558,34 @@ async function layout(target: BrowserWindow): Promise<unknown> {
               views live under, and a count is how a frame proves it. */
            cards: cards.length,
            card_widths: widths,
+           marks: cards.map((node) =>
+             [...node.querySelectorAll(".fleet-mark")].map((mark) => mark.textContent.trim()),
+           ),
            /* The chief stands under every view, and says one thing. */
            chief: document.querySelector(".chief-says")?.textContent?.trim() ?? null,
            chief_action: document.querySelector(".chief-band .button-link")?.textContent ?? null,
+           chief_inputs: document.querySelectorAll(".chief-band input, .chief-band textarea").length,
            centred: document.querySelectorAll("li.is-centred").length,
            turned: document.querySelectorAll("li.is-before, li.is-after").length,
            /* The track scrolls sideways only where that is the point. */
            track_scrolls: track === null ? null : track.scrollWidth > track.clientWidth,
-           /* MAR-612's control, on the page it changes. */
+           /* MAR-612's control, on the page it changes — now in the rail. */
            options: document.querySelectorAll(".fleet-view-option").length,
+           add_agent: rail?.querySelector(".button-link")?.textContent?.trim() ?? null,
+           rail: rail === null || railStyle === null || railBox === null ? null : {
+             display: railStyle.display,
+             hidden: railStyle.display === "none" || railStyle.visibility === "hidden",
+             direction: railStyle.flexDirection,
+             top: Math.round(railBox.top),
+             left: Math.round(railBox.left),
+             width: Math.round(railBox.width),
+             height: Math.round(railBox.height),
+           },
+           stage: stage === null || stageStyle === null ? null : {
+             template_rows: stageStyle.gridTemplateRows,
+             cards_height: cardsBox === null ? null : Math.round(cardsBox.height),
+             chief_height: chiefBox === null ? null : Math.round(chiefBox.height),
+           },
          };
        })()`,
     ),
@@ -521,6 +605,14 @@ async function run(): Promise<void> {
 
   const window = await appWindowLoaded();
   window.setResizable(true);
+  /*
+   * This harness shares Electron's default user-data with other unpackaged
+   * sessions, and MAR-614's scale lives there as zoomFactor. A leftover 1.2
+   * made innerWidth 1066 at a 1280 content size, so every viewport label
+   * would have been a lie. Pin 1 for the capture; do not write ui-scale.json,
+   * which is the person's preference, not this run's.
+   */
+  window.webContents.setZoomFactor(1);
   await settle(1200);
 
   let mismatches = 0;

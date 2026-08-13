@@ -1441,6 +1441,13 @@ function agentDeployTargets(agent: string): AgentDeployTarget[] {
 function agentHostedOn(agent: string): AgentHostedOnView[] {
   const hosted: AgentHostedOnView[] = [];
   for (const record of readAgentDeploys(agent)) {
+    // MAR-611, ADR 0017. Same skip `agentDeployTargets` already makes: a
+    // brought-home row is DASH's memory that it took the copy back, so the
+    // fleet mark must not still say Cloud. Local/Cloud reads this list
+    // (MAR-630), never a live sighting (ADR 0015).
+    if (record.brought_home_at !== null) {
+      continue;
+    }
     const host = readHost(record.host_id);
     if (host === null) {
       continue;
