@@ -136,6 +136,7 @@ describe("the audited command chokepoint", () => {
       // no store and no provider. The only command besides `shell.ping` that
       // can honestly declare `mutates: false`.
       "shell.menu",
+      "shell.scale",
       // MAR-415. Lifecycle, not Agent DOM commands: they act on a process, no
       // manifest declares them, and they never become an envelope. The
       // `runner.` prefix is what keeps that legible at every call site.
@@ -610,6 +611,7 @@ describe("dispatch", () => {
       showApplicationMenu: (at: { x: number; y: number } | undefined) => {
         menus.push(at);
       },
+      setUiScale: (factor: number | undefined) => factor ?? 1,
       // MAR-383. Recorded, not performed — and note the fake holds no secret,
       // which it could not do usefully anyway: no credential is an argument to
       // or a result of this call.

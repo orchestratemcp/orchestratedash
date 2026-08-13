@@ -155,6 +155,13 @@ export const COMMANDS = {
     mutates: false,
     irreversible: false,
   },
+  "shell.scale": {
+    effect: "Set this window's bounded UI scale.",
+    payload_keys: ["factor"],
+    required_keys: [],
+    mutates: false,
+    irreversible: false,
+  },
 
   "runner.start": {
     effect: "Start a registered agent's process on this machine. Not an Agent DOM command.",
@@ -1325,6 +1332,7 @@ export function isHostCommandName(value: CommandName): value is HostCommandName 
  */
 export const SHELL_UI_ACTIONS = {
   "shell.menu": "menu",
+  "shell.scale": "scale",
 } as const;
 
 export type ShellUiCommandName = keyof typeof SHELL_UI_ACTIONS;
@@ -2035,6 +2043,7 @@ export interface DispatchContext {
    * every consequence of the menu happens in main, where the handlers are.
    */
   showApplicationMenu(at: { x: number; y: number } | undefined): void;
+  setUiScale(factor: number | undefined): number;
   /**
    * The task-workspace actions: open a task, admit one user-selected file,
    * hand the task over (MAR-507), or save one of an agent's outputs where the
@@ -2477,6 +2486,14 @@ export async function dispatchCommand(
   }
 
   if (isShellUiCommandName(review.command)) {
+    if (review.command === "shell.scale") {
+      const factor = review.payload["factor"];
+      return {
+        ok: true,
+        request_id: review.audit.request_id,
+        data: { factor: context.setUiScale(typeof factor === "number" ? factor : undefined) },
+      };
+    }
     // Both coordinates or neither. A menu popped at a half-known point would
     // land somewhere nobody chose, and Electron's own default — the pointer's
     // position — is the better answer when we do not have both.
