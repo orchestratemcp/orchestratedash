@@ -18,12 +18,14 @@ status (MAR-547). The chief band is unchanged (MAR-419).
 `columns_fit` is 3 (cold render centres the first agent, so one neighbour
 only). Frames in `qa-screenshots-mar634/`, not in git.
 
-This is `planned`. PR #181 is open and human-gated. Product commit `d256324`.
-CI run 31749975793 on `e892e7b` passed both buckets (`verify` 1m22s, Windows
-`shell-smoke` 1m59s). `pnpm verify:shell` was not run locally; CI's Windows
-shell-smoke is the installed witness. Cut from origin/master at `90d95c6`,
-then origin/master merged in twice (PR #179 promotion, then PR #180 / MAR-633
-as `f9e18c8`) so GitHub could build a merge ref.
+MERGED 2026-08-13 via PR #181 as `6e9226e`, after CI run 31749975793 passed
+both buckets on `e892e7b` (`verify` 1m22s, Windows `shell-smoke` 1m59s).
+Henrik merged it. NOT proven: `pnpm verify:shell` was not run locally; CI's
+Windows shell-smoke is the installed witness. The planned packet commit
+(`da78979`) landed after that merge, so this follow-up is what puts the
+entry on master. Cut from origin/master at `90d95c6`, then origin/master
+merged in twice (PR #179 promotion, then PR #180 / MAR-633 as `f9e18c8`)
+so GitHub could build a merge ref.
 
 ---
 
