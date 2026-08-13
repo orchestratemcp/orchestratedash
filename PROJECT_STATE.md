@@ -1,5 +1,66 @@
 # DASH project state
 
+Updated: 2026-08-13 (MAR-633: an MCP server is a connection DASH brokers —
+decided before it is built)
+
+ADR 0020 answers MAR-633's five open questions. DASH is the MCP client, an MCP
+server is a connection, and an MCP tool is a broker operation DASH did not
+write — which is the sentence the whole decision turns on. Every operation in
+`lib/broker/operations.ts` is a literal a human typed, and that is where
+`WRITE_PATHS`' claim to be *the complete answer to what this application can do
+to my account* comes from. A tool's name, schema, description and result all
+arrive from a third party, so the frozen thing moves: for an MCP connection the
+pinned set is **the admitted tool set of one server, fixed when a person
+consented**, and `notifications/tools/list_changed` becomes a consent event
+rather than a re-fetch. A server may narrow without asking and may never widen
+without a person.
+
+Remote Streamable HTTP ships first. stdio is an install rather than a
+connection: not because it runs local code — DASH spawns agents already — but
+because an agent has a folder, a panel and a run history while a server spawned
+for a tool call has none, because `npx -y` is a run-time download nobody can
+describe at consent, and because the blast radius is DASH's own user account
+rather than a provider's. **A manifest may ask for a server and may never supply
+the command**, which is the rule that keeps a connection kind from being remote
+code execution through the import door.
+
+Consent is per server and per tool class, intersected in ADR 0002 amendment 1's
+three-party shape. Classes stay `read | write | spend` — a sent message is a
+write whose consequence says it cannot be recalled — plus one modifier MCP
+forces, `reaches_beyond_server`, for a tool that acts at an address the agent
+names. Classification comes from a human-written catalogue entry and never from
+`ToolAnnotations`, which the specification says clients should never make
+critical decisions on. An unclassified tool is not a read: it is attended-only,
+which is ADR 0019's move on a new substrate.
+
+Content returned by a server is data. ADR 0020 separates what DASH enforces
+structurally — content cannot become a broker request, widen an admission or
+open a spend allowance — from what it cannot enforce, which is the agent's own
+reasoning, and says so plainly rather than claiming to prevent injection. The
+half that can be closed is the **read-then-reach rule**: after a brokered MCP
+read, any write, spend or beyond-server call in the same run needs a person.
+Its four limits are stated, including the largest — it stops brokered egress
+after a brokered read and nothing else.
+
+Two findings came out of the decision. **`token_custodian` is singular and the
+fact is a pair**: MCP authorization requires RFC 8707 resource indicators, so
+the token DASH holds is audience-bound to the MCP server and is not a credential
+for whatever the server fronts, while the server's own upstream credential stays
+the server's and a disconnect does not withdraw it. And an input-schema digest
+is what catches the rename-preserving widening a name check misses.
+
+**Remote parity waits on MAR-629** rather than inventing a second answer; until
+it lands, no surface may say a deployed agent can use an MCP server.
+
+This is `planned`. `lib/mcp/` makes each rule executable as pure functions of
+untrusted input, tested the way `tests/broker-threat-model.test.ts` tests
+operations, and the curated catalogue ships **empty and pinned by value**
+because nobody has connected a server. MAR-633's own bar — one real server, one
+agent using it in a run, an audit naming the server and the tool, and a refusal
+a person can trigger — is **not met**, and no dependency and no client exist.
+
+---
+
 Updated: 2026-08-13 (MAR-628: browser control is decided before it is built)
 
 ADR 0019 recommends one browser shape: the Chromium DASH already ships,
