@@ -119,6 +119,23 @@ export interface AgentDeployView {
    * would render identically and only one of them is a claim.
    */
   travel: ConnectionTravel;
+  /** The same assessment after current key receipts are matched to each saved host. */
+  host_travel?: Array<{ host_id: string; travel: ConnectionTravel }>;
+  /** Durable custody facts. They survive forgetting a host and contain no key derivative. */
+  key_custody?: KeyCustodyReceiptView[];
+}
+
+export interface KeyCustodyReceiptView {
+  host_id: string;
+  host_label: string;
+  host_address: string;
+  host_fingerprint: string;
+  connection_id: string;
+  connection_label: string;
+  provider_label: string;
+  installed_at: string;
+  owner_only: true;
+  current_local_key: boolean;
 }
 
 /**
@@ -1046,6 +1063,11 @@ export interface WorkspaceSnapshotView {
   observed_at: string;
   received_at: string;
   overview: WorkspaceOverview;
+  /**
+   * Whether trusted control rules permit a fresh retry with no run or task
+   * target (MAR-621). The renderer must not infer this from an empty task list.
+   */
+  can_start_without_task: boolean;
   inbox: InboxItem[];
   runs: WorkspaceRunView[];
   tasks: WorkspaceTaskView[];

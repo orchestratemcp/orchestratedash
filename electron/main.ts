@@ -52,10 +52,13 @@ import {
 } from "../lib/agent-dom/runner";
 import { readStoreDamage } from "../lib/agent-dom/transport";
 import { probeModelProvider } from "../lib/ai/probe";
+import { parseAiKeyCredential } from "../lib/ai/credential";
+import { aiProviderById } from "../lib/ai/providers";
 import { heldCredentials, performConnectionAction } from "../lib/connection-actions";
 import {
   deliverableFields,
   deliverableSecretFields,
+  connectableFields,
   resolveCredentialTarget,
   type CredentialTarget,
 } from "../lib/connection-credentials";
@@ -89,6 +92,11 @@ import {
   type HostRecord,
 } from "../lib/hosts";
 import { describeBundleContents, produceAgentFolderBundle } from "../lib/deploy/folder-bundle";
+import {
+  currentProviderKeyPlacements,
+  localKeyVersion,
+  recordKeyCustodyReceipt,
+} from "../lib/deploy/key-custody";
 import { readRegistration } from "../lib/registration";
 import type { HandoffPorts } from "../lib/handoff-flow";
 import { findDeepLink } from "../lib/shell/deep-link";
@@ -1619,7 +1627,8 @@ async function hostAction(
     | { label: string; address: string; username: string; port: number }
     | { host_id: string }
     | { host_id: string; fingerprint: string }
-    | { host_id: string; agent_id: string },
+    | { host_id: string; agent_id: string }
+    | { host_id: string; agent_id: string; connection_id: string },
 ): Promise<HostActionResult> {
   if (action === "create") {
     if (!("label" in target)) {
@@ -1865,9 +1874,58 @@ async function hostAction(
   }
 
   let produced: ReturnType<typeof produceAgentFolderBundle> | null = null;
-  if (action === "deploy") {
+  let keyPlacement: {
+    target: CredentialTarget;
+    provider: NonNullable<ReturnType<typeof aiProviderById>>;
+    local_version: string;
+    agent_title: string;
+  } | null = null;
+  if (action === "deploy" || action === "deploy-key") {
     if (!("agent_id" in target)) {
       return { ok: false, detail: "DASH did not receive the agent it should deploy." };
+    }
+    let placed = currentProviderKeyPlacements(target.agent_id, record.host_id);
+    if (action === "deploy-key") {
+      if (!("connection_id" in target)) {
+        return { ok: false, detail: "DASH did not receive the declared key it should place." };
+      }
+      const manifest = readAgentManifest(target.agent_id) as ConnectionSourceManifest | null;
+      if (manifest === null) {
+        return { ok: false, detail: "DASH could not read this agent's declared key need." };
+      }
+      const candidates = connectableFields(target.agent_id, manifest).filter(
+        (candidate) =>
+          candidate.connection_id === target.connection_id && candidate.kind === "provider_key",
+      );
+      const credentialTarget = candidates.length === 1 ? candidates[0] : undefined;
+      const provider = aiProviderById(credentialTarget?.ai_provider_id);
+      if (credentialTarget === undefined || provider === null) {
+        return {
+          ok: false,
+          detail: "This agent does not declare exactly one provider key under that connection.",
+        };
+      }
+      const version = localKeyVersion(
+        target.agent_id,
+        credentialTarget.connection_id,
+        credentialTarget.field_id,
+      );
+      if (version === null) {
+        return { ok: false, detail: "Connect this provider key on this computer first." };
+      }
+      keyPlacement = {
+        target: credentialTarget,
+        provider,
+        local_version: version,
+        agent_title: manifest.agent.display_name?.trim() || manifest.agent.name,
+      };
+      // The ordinary bundle must land inert before the helper can validate the
+      // slot. This one scoped allowance authorises assembly, not start; start is
+      // still below the successful install-key receipt.
+      placed = [
+        ...placed,
+        { host_id: record.host_id, connection_id: credentialTarget.connection_id, field_id: credentialTarget.field_id },
+      ];
     }
     produced = produceAgentFolderBundle({
       data_dir: dataDir,
@@ -1885,6 +1943,7 @@ async function hostAction(
       // store behind it — and resolved through the same two functions the page
       // reads, so what goes on the server is what the person is looking at.
       models: bundledModelChoiceFor(target.agent_id),
+      placed_provider_keys: placed,
     });
   }
   if (produced !== null && !produced.ok) {
@@ -1913,12 +1972,131 @@ async function hostAction(
       if (!installed.ok) {
         return { ok: false, detail: installed.detail, problem: diagnosed(diagnostics, record) };
       }
+
+      if (keyPlacement !== null) {
+        const custody =
+          `from this moment the key lives on ${record.label} too — DASH cannot see or take back ` +
+          "what uses it there; revoking means rotating at the provider";
+        const options = {
+          type: "warning" as const,
+          title: `Put this key on ${record.label}`,
+          message: `Put your ${keyPlacement.provider.label} key on ${record.label}?`,
+          detail:
+            `Key: Your ${keyPlacement.provider.label} key\n` +
+            `Local connection: ${keyPlacement.target.service}\n\n` +
+            `Server: ${record.label}\nAddress: ${record.address}\n` +
+            `Confirmed fingerprint: ${record.host_fingerprint}\n\n` +
+            `Agent copy: ${keyPlacement.agent_title}\n` +
+            `Declared model need: ${keyPlacement.target.purpose}\n\n` +
+            `Custody: ${custody}\n\n` +
+            `Rotation: ${keyPlacement.provider.key_source}\n\n` +
+            "This placement proves custody only. It does not prove the deployed agent can use the key.",
+          buttons: [`Put this key on ${record.label}`, "Cancel"],
+          defaultId: 1,
+          cancelId: 1,
+          noLink: true,
+        };
+        const owner = BrowserWindow.getFocusedWindow();
+        const decision =
+          owner === null
+            ? await dialog.showMessageBox(options)
+            : await dialog.showMessageBox(owner, options);
+        if (decision.response !== 0) {
+          return {
+            ok: false,
+            detail: `The key stayed on this computer. The inert bundle remains on ${record.label}.`,
+          };
+        }
+
+        // A replacement while the dialog was open is a new key and therefore a
+        // new ceremony. Refuse before reading or sending it under stale facts.
+        if (
+          localKeyVersion(
+            produced.request.agent_id,
+            keyPlacement.target.connection_id,
+            keyPlacement.target.field_id,
+          ) !== keyPlacement.local_version
+        ) {
+          return {
+            ok: false,
+            detail: "The local key changed while the confirmation was open. Nothing was sent.",
+          };
+        }
+
+        let raw: string | null;
+        try {
+          raw = await secureStore().get(keyPlacement.target.secret_name);
+        } catch {
+          raw = null;
+        }
+        const credential = raw === null ? null : parseAiKeyCredential(raw);
+        if (credential === null || credential.provider !== keyPlacement.provider.id) {
+          return { ok: false, detail: "DASH could not read the provider key it holds. Nothing was sent." };
+        }
+
+        const installedKey = await runDeployVerb(spawn, {
+          verb: "install-key",
+          bundle_id: produced.request.bundle_id,
+          connection_id: keyPlacement.target.connection_id,
+          key_base64: Buffer.from(credential.key, "utf8").toString("base64"),
+        });
+        if (!installedKey.ok) {
+          return {
+            ok: false,
+            detail:
+              installedKey.problem === "unknown_verb"
+                ? "This server's DASH helper is too old to place a key. Nothing fell back to another path."
+                : installedKey.detail,
+            problem:
+              installedKey.problem === "unknown_verb"
+                ? "helper_too_old"
+                : diagnosed(diagnostics, record),
+          };
+        }
+        if (installedKey.verb !== "install-key" || !installedKey.owner_only) {
+          return {
+            ok: false,
+            detail: "The server did not prove an owner-only key placement, so DASH did not start the bundle.",
+          };
+        }
+        try {
+          recordKeyCustodyReceipt({
+            agent: produced.request.agent_id,
+            host_id: record.host_id,
+            host_label: record.label,
+            host_address: record.address,
+            host_fingerprint: record.host_fingerprint,
+            connection_id: keyPlacement.target.connection_id,
+            field_id: keyPlacement.target.field_id,
+            connection_label: keyPlacement.target.service,
+            provider_id: keyPlacement.provider.id,
+            provider_label: keyPlacement.provider.label,
+            local_key_version: keyPlacement.local_version,
+            installed_at: installedKey.installed_at,
+            owner_only: true,
+          });
+        } catch {
+          return {
+            ok: false,
+            detail:
+              `The key is on ${record.label}, but DASH could not save its custody receipt. ` +
+              `${custody}. The inert bundle was not started.`,
+          };
+        }
+      }
       const started = await runDeployVerb(spawn, {
         verb: "start",
         bundle_id: produced.request.bundle_id,
       });
       if (!started.ok) {
-        return { ok: false, detail: started.detail, problem: diagnosed(diagnostics, record) };
+        return {
+          ok: false,
+          detail:
+            keyPlacement === null
+              ? started.detail
+              : `The key is on ${record.label}, but the bundle did not start. Its custody receipt remains.`,
+          problem: diagnosed(diagnostics, record),
+        };
       }
       /*
        * MAR-584, ADR 0010. After the start succeeded and nowhere else.
@@ -1950,13 +2128,17 @@ async function hostAction(
       });
       return {
         ok: true,
-        action: "deploy",
+        action: keyPlacement === null ? "deploy" : "deploy-key",
         host_id: record.host_id,
         label: record.label,
         agent_id: produced.request.agent_id,
         bundle_id: produced.request.bundle_id,
         runner_build: produced.runner_build,
-        detail: `The agent is running on ${record.label}.`,
+        detail:
+          keyPlacement === null
+            ? `The agent is running on ${record.label}.`
+            : `The key is on ${record.label} with an owner-only receipt, and the agent bundle was started. ` +
+              "The receipt does not prove model capability.",
       };
     }
 

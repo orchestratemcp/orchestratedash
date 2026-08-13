@@ -74,8 +74,8 @@ const STATUS_TONE: Record<WorkspaceStatus, StatusTone> = {
 export type AgentRunControl =
   | {
       kind: "run_now";
-      /** The pending task this press binds to. */
-      task_id: string;
+      /** Pending Agent DOM task, or null for a trusted taskless fresh run. */
+      task_id: string | null;
       /** The snapshot's own value, never re-read. See `RunNow`'s note on MAR-464. */
       observed_at: string;
     }
@@ -153,25 +153,32 @@ export function buildAgentControl(
   }
 
   /*
-   * The same predicate `RunNow` used, and it has to stay the same one.
-   *
-   * A pending task with no run attached is what "there is something to start"
-   * means in the Agent DOM: the runner opens a task, and Run now binds it to a
-   * run. Widening this — offering Run now whenever the agent looks idle — would
-   * put a button on screen that `submitAgentCommand` refuses, which is worse
-   * than no button because the refusal arrives after the press.
+   * A real pending task remains the first choice. It may carry work the agent
+   * published, so targetless retry does not discard it merely because a fresh
+   * run can now exist without one.
    */
   const waiting = snapshot.tasks.find(
     (task) => task.status === "pending" && task.run_id === null,
   );
-  if (waiting === undefined) {
-    return { status, run: { kind: "idle", reason: "nothing_waiting" } };
+  if (waiting !== undefined) {
+    return {
+      status,
+      run: { kind: "run_now", task_id: waiting.id, observed_at: snapshot.observed_at },
+    };
   }
 
-  return {
-    status,
-    run: { kind: "run_now", task_id: waiting.id, observed_at: snapshot.observed_at },
-  };
+  /*
+   * MAR-621. Empty is not permission. `workspaceSnapshot` computed this from
+   * the manifest and `availableControls(manifest, state, null)`, so unsupported
+   * control, a live run, or an unsafe fresh retry still gets a stated reason
+   * instead of a button that is refused after the press.
+   */
+  return snapshot.can_start_without_task
+    ? {
+        status,
+        run: { kind: "run_now", task_id: null, observed_at: snapshot.observed_at },
+      }
+    : { status, run: { kind: "idle", reason: "nothing_waiting" } };
 }
 
 /**

@@ -633,7 +633,10 @@ export function availableControls(
    */
   if (runId === null) {
     const busy = (state.runs ?? []).some(
-      (candidate) => candidate.status === "running" || candidate.status === "queued",
+      (candidate) =>
+        candidate.status !== "completed" &&
+        candidate.status !== "failed" &&
+        candidate.status !== "cancelled",
     );
     if (busy || !retryIsSafe(manifest, state, null)) {
       return [];

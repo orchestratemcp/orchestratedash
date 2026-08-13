@@ -38,7 +38,11 @@ import {
 import type { BundledModelChoice } from "../ai/model-choice";
 import type { ConnectionSourceManifest } from "../connections";
 import { validateManifest } from "../contracts";
-import { assessConnectionTravel, describeTravelRefusal } from "./connection-travel";
+import {
+  assessConnectionTravel,
+  describeTravelRefusal,
+  type HostKeyPlacement,
+} from "./connection-travel";
 import { listSecretReferences } from "../secret-refs";
 import type { AgentRegistration } from "../registration";
 import {
@@ -110,6 +114,8 @@ export interface ProduceFolderBundleOptions {
    * records that there was nothing to decide.
    */
   models?: BundledModelChoice;
+  /** Current ADR 0018 receipts for the one host this bundle is being prepared for. */
+  placed_provider_keys?: readonly HostKeyPlacement[];
 }
 
 /**
@@ -213,6 +219,7 @@ export function produceAgentFolderBundle(
     options.agent_id,
     manifest.value as ConnectionSourceManifest,
     listSecretReferences(options.agent_id),
+    options.placed_provider_keys ?? [],
   );
   if (travel.verdict === "refuse") {
     return {

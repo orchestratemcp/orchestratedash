@@ -358,8 +358,8 @@ export function bundledModelChoice(
  */
 export const MODEL_KEY_STAYS_HOME_REFUSAL =
   "This agent's plan needs a language model, and the key for it is one DASH keeps in this " +
-  "computer's vault. DASH does not send keys to a server, so the copy it would put there " +
-  "would have no way to reach a model. Nothing was sent.";
+  "computer's vault. That key has no current custody receipt for this server. Nothing was " +
+  "sent; DASH can offer an attended placement, whose receipt proves custody only.";
 
 /* ---------------------------------------------------------------------- *
  * The run record

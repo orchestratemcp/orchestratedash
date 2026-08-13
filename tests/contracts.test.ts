@@ -229,6 +229,25 @@ describe("Agent DOM v2 schemas", () => {
     expect(commandValidator(loadJson("examples/approve-command.example.json")), JSON.stringify(commandValidator.errors)).toBe(true);
   });
 
+  it("lets retry start a fresh run without inventing a task target", () => {
+    const command = loadObject("examples/approve-command.example.json");
+    command.command = "retry";
+    command.target = { agent_id: "manual-agent" };
+
+    expect(commandValidator(command), JSON.stringify(commandValidator.errors)).toBe(true);
+  });
+
+  it.each(["pause", "resume", "cancel"])(
+    "still requires %s to name a run or task",
+    (verb) => {
+      const command = loadObject("examples/approve-command.example.json");
+      command.command = verb;
+      command.target = { agent_id: "manual-agent" };
+
+      expect(commandValidator(command)).toBe(false);
+    },
+  );
+
   it("keeps unknown v2 fields forward-compatible", () => {
     const manifest = loadObject("examples/agent-managed.manifest.v2.example.json");
     (manifest.agent_dom as Record<string, unknown>).future_resource = { safe_count: 1 };

@@ -65,6 +65,10 @@ import {
   storedDigestSummary,
 } from "../agent-folders";
 import { assessConnectionTravel } from "../deploy/connection-travel";
+import {
+  currentProviderKeyPlacements,
+  readLatestKeyCustodyReceipts,
+} from "../deploy/key-custody";
 import { plainDay } from "../copy/when";
 import { describeNotificationState } from "../notify/settings";
 import { describeManifestGap } from "../sample-refresh";
@@ -82,6 +86,7 @@ import {
   latestArtifactForAgent,
   listAgents,
   listAgentNames,
+  listHosts,
   listConnectionCapableAgents,
   listRuns,
   readAgentAvatar,
@@ -184,21 +189,43 @@ export function agentDeployStanding(
   // `heldCredentials` reads `connection_secrets`, never the vault — the same
   // "is it there" read `credentialStatus` below already does for this agent —
   // so this costs one more small-table lookup per row, not an OS unlock prompt.
-  const travel = assessConnectionTravel(agent, manifest, heldCredentials(agent));
+  const held = heldCredentials(agent);
+  const travel = assessConnectionTravel(agent, manifest, held);
+  const host_travel = listHosts().map((host) => ({
+    host_id: host.host_id,
+    travel: assessConnectionTravel(
+      agent,
+      manifest,
+      held,
+      currentProviderKeyPlacements(agent, host.host_id),
+    ),
+  }));
+  const key_custody = readLatestKeyCustodyReceipts(agent).map((receipt) => ({
+    host_id: receipt.host_id,
+    host_label: receipt.host_label,
+    host_address: receipt.host_address,
+    host_fingerprint: receipt.host_fingerprint,
+    connection_id: receipt.connection_id,
+    connection_label: receipt.connection_label,
+    provider_label: receipt.provider_label,
+    installed_at: receipt.installed_at,
+    owner_only: true as const,
+    current_local_key: receipt.current_local_key,
+  }));
 
   let standing: ReturnType<typeof inspectAgentFolderStanding>;
   try {
     standing = inspectAgentFolderStanding(dataDir, agent);
   } catch {
-    return { deployable: false, refusal: UNREADABLE_FOLDER_DEPLOY_REFUSAL, travel };
+    return { deployable: false, refusal: UNREADABLE_FOLDER_DEPLOY_REFUSAL, travel, host_travel, key_custody };
   }
   switch (standing.kind) {
     case "complete":
-      return { deployable: true, refusal: null, travel };
+      return { deployable: true, refusal: null, travel, host_travel, key_custody };
     case "manifest_only":
-      return { deployable: false, refusal: MANIFEST_ONLY_DEPLOY_REFUSAL, travel };
+      return { deployable: false, refusal: MANIFEST_ONLY_DEPLOY_REFUSAL, travel, host_travel, key_custody };
     case "unreadable":
-      return { deployable: false, refusal: UNREADABLE_FOLDER_DEPLOY_REFUSAL, travel };
+      return { deployable: false, refusal: UNREADABLE_FOLDER_DEPLOY_REFUSAL, travel, host_travel, key_custody };
   }
 }
 
@@ -1060,6 +1087,11 @@ function workspaceSnapshot(
     observed_at: stored.observed_at,
     received_at: stored.received_at,
     overview: buildOverview(manifest, state, now),
+    // MAR-621. A missing task is no longer itself a reason to hide Run now.
+    // Manifest capability, concurrency, and retry safety stay trusted-side.
+    can_start_without_task: availableControls(manifest, state, null).some(
+      ({ command }) => command === "retry",
+    ),
     inbox: buildWorkInbox(manifest, state, now),
     runs: (state.runs ?? []).map((run) => ({
       id: run.id,

@@ -22,6 +22,7 @@ function snapshot(over: Partial<WorkspaceSnapshotView> = {}): WorkspaceSnapshotV
   return {
     observed_at: OBSERVED,
     received_at: OBSERVED,
+    can_start_without_task: true,
     overview: {
       agent_id: "news-scout",
       title: "AI News Scout",
@@ -87,14 +88,21 @@ describe("an agent that has reported", () => {
     });
   });
 
-  /**
-   * The predicate has to stay exactly `RunNow`'s. Widening it — offering Run
-   * now whenever the agent looks idle — would put a button on screen that
-   * `submitAgentCommand` refuses, and the refusal arrives after the press.
-   */
-  it("says nothing is waiting rather than offering a run that would be refused", () => {
+  it("offers Run now without manufacturing a task when a fresh run is safe", () => {
+    const control = buildAgentControl(snapshot({ tasks: [] }), true);
+
+    expect(control.run).toEqual({
+      kind: "run_now",
+      task_id: null,
+      observed_at: OBSERVED,
+    });
+  });
+
+  /** Empty is not permission: the trusted view may still withhold fresh retry. */
+  it("keeps the stated idle answer when trusted rules withhold a fresh run", () => {
     const control = buildAgentControl(
       snapshot({
+        can_start_without_task: false,
         tasks: [{ id: "task-1", label: "Done", status: "complete", run_id: "run-1", detail: null, created_at: OBSERVED }],
       }),
       true,

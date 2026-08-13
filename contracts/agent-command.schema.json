@@ -93,7 +93,7 @@
       }
     },
     {
-      "if": { "properties": { "command": { "enum": ["retry", "pause", "resume", "cancel"] } }, "required": ["command"] },
+      "if": { "properties": { "command": { "enum": ["pause", "resume", "cancel"] } }, "required": ["command"] },
       "then": {
         "properties": {
           "target": {

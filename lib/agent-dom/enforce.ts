@@ -276,10 +276,16 @@ export function enforceCommand(inputs: EnforcementInputs): EnforcementDecision {
 /**
  * Which run this command acts on — or the fact that it acts on none.
  *
- * The contract lets a run-scoped command name either a `run_id` or a `task_id`,
- * so both are resolved here. A run named directly still has to exist in the
- * snapshot: accepting an id merely because it was well-formed is how "unknown
- * target" stops meaning anything.
+ * A run-scoped command names either a `run_id` or a `task_id`, and both are
+ * resolved here. The one deliberately different shape is `retry` with neither:
+ * MAR-621 makes that the request to start a fresh local run when the agent has
+ * published no task. It is still judged by `availableControls` against the
+ * current snapshot, so omitting a resource id does not omit capability,
+ * concurrency, stale-snapshot, or retry-safety checks.
+ *
+ * A run named directly still has to exist in the snapshot: accepting an id
+ * merely because it was well-formed is how "unknown target" stops meaning
+ * anything.
  *
  * ## Why three answers rather than two
  *
@@ -338,7 +344,17 @@ function resolveTarget(envelope: AgentCommandEnvelope, state: AgentDomState): Re
       : { kind: "unknown" };
   }
 
-  return { kind: "unknown" };
+  /*
+   * MAR-621. `retry` is also the Agent DOM's start-a-fresh-run verb. Requiring
+   * a resource id here made an idle manual agent manufacture a pending task
+   * solely so DASH had something to point at. A workspace task is custody for
+   * person-supplied files, not a ceremonial run token, and creating an empty
+   * one would leave a durable row and directory behind for no work.
+   *
+   * This arm is retry-only. An agent-only pause, resume, or cancel still has no
+   * target and is refused even if a malformed caller bypassed the schema.
+   */
+  return envelope.command === "retry" ? { kind: "no_run" } : { kind: "unknown" };
 }
 
 /**

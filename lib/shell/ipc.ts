@@ -627,6 +627,15 @@ export const COMMANDS = {
     mutates: true,
     irreversible: false,
   },
+  /** ADR 0018: one attended provider-key placement, never a generic uploader. */
+  "host.deployKey": {
+    effect:
+      "After an attended confirmation, place one held provider key on one saved server through its forced helper, record custody, then start the installed bundle.",
+    payload_keys: ["host_id", "agent_id", "connection_id"],
+    required_keys: ["host_id", "agent_id", "connection_id"],
+    mutates: true,
+    irreversible: false,
+  },
   /*
    * MAR-602, ADR 0014. Start the copy of an agent that is on a server.
    *
@@ -1310,6 +1319,7 @@ export const HOST_ACTIONS = {
   "host.trust": "trust",
   "host.setup": "setup",
   "host.deploy": "deploy",
+  "host.deployKey": "deploy-key",
   "host.run": "run",
   "host.forget": "forget",
 } as const;
@@ -1864,7 +1874,7 @@ export type HostActionResult =
     }
   | {
       ok: true;
-      action: "deploy";
+      action: "deploy" | "deploy-key";
       host_id: string;
       label: string;
       agent_id: string;
@@ -1902,7 +1912,7 @@ export type HostActionResult =
   | {
       ok: false;
       detail: string;
-      problem?: HostReachProblem;
+      problem?: HostReachProblem | "helper_too_old";
       /**
        * Set only with `problem: "host_key_not_trusted"` (MAR-572).
        *
@@ -2029,7 +2039,8 @@ export interface DispatchContext {
       | { label: string; address: string; username: string; port: number }
       | { host_id: string }
       | { host_id: string; fingerprint: string }
-      | { host_id: string; agent_id: string },
+      | { host_id: string; agent_id: string }
+      | { host_id: string; agent_id: string; connection_id: string },
   ): Promise<HostActionResult>;
   /**
    * Show the application menu at a point in the window (MAR-440).
@@ -2327,6 +2338,12 @@ export async function dispatchCommand(
             host_id: String(review.payload["host_id"]),
             agent_id: String(review.payload["agent_id"]),
           });
+        case "deploy-key":
+          return context.hostAction(action, {
+            host_id: String(review.payload["host_id"]),
+            agent_id: String(review.payload["agent_id"]),
+            connection_id: String(review.payload["connection_id"]),
+          });
         case "trust":
           return context.hostAction(action, {
             host_id: String(review.payload["host_id"]),
@@ -2438,6 +2455,7 @@ export async function dispatchCommand(
           },
         };
       case "deploy":
+      case "deploy-key":
         return {
           ok: true,
           request_id: review.audit.request_id,

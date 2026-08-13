@@ -63,10 +63,11 @@ approve · reject · choose · retry · pause · resume · cancel
 ```
 
 Both `agent-command.schema.json` and `agent.manifest.v2.schema.json` fix that
-list. `start`, `stop` and `trigger` are not in it, and none of the seven is an
-honest synonym: `resume` presumes a paused run, `pause` and `cancel` act on a
-run rather than a process, and `retry` re-runs an existing run where `trigger`
-would begin a new one.
+list. `start`, `stop` and `trigger` are not in it. `resume` presumes a paused
+run, while `pause` and `cancel` act on a run rather than a process. `retry` is
+the deliberately overloaded run verb: it may retry a named failed/cancelled
+run, start work represented by a pending task, or — since MAR-621 — ask an idle
+agent for a fresh run with the agent itself as the target.
 
 Starting and stopping a locally hosted agent is **runner lifecycle**, not an
 Agent DOM command — DASH supervising a process it hosts, rather than DASH asking
@@ -82,8 +83,9 @@ endpoint. They never become an envelope, are never validated against
 because none of those concepts applies to "send SIGTERM to a process". Their
 audit is the IPC boundary record.
 
-`trigger` still does not exist in any form. Nothing in the runner begins a new
-run, so there would be nothing behind the name.
+`trigger` still does not exist as a verb. A fresh agent-targeted `retry` asks
+the agent to create a run; it does not start or restart the supervised process,
+and the runner still independently checks the current snapshot and manifest.
 
 ## The two layers
 

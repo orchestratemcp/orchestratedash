@@ -122,6 +122,12 @@ export interface HeldCredential {
   field_id: string;
 }
 
+/** One provider-key field whose current local value has a receipt on this host. */
+export interface HostKeyPlacement {
+  connection_id: string;
+  field_id: string;
+}
+
 /* ---------------------------------------------------------------------- *
  * The assessment
  * ---------------------------------------------------------------------- */
@@ -150,6 +156,7 @@ export interface StrandedConnection {
   /** `CredentialKind`, reused exactly rather than restated. */
   custody: CredentialKind;
   need: ConnectionNeed;
+  availability: "unheld" | "held_not_on_host";
 }
 
 export type TravelVerdict = "clear" | "warn" | "refuse";
@@ -195,6 +202,7 @@ export function assessConnectionTravel(
   agentId: string,
   manifest: ConnectionSourceManifest | null,
   held: readonly HeldCredential[],
+  placed: readonly HostKeyPlacement[] = [],
 ): ConnectionTravel {
   if (manifest === null) {
     return NOTHING_STRANDED;
@@ -205,18 +213,28 @@ export function assessConnectionTravel(
   // already use for the same lookup — one convention for "is this held", not a
   // second one invented here.
   const heldFields = new Set(held.map((one) => `${one.connection_id} ${one.field_id}`));
+  const placedFields = new Set(placed.map((one) => `${one.connection_id} ${one.field_id}`));
 
   const needsAModel = planNeedsAModel(manifest.planned_route ?? []);
   const need = requirementNeed(manifest);
 
   const stranded: StrandedConnection[] = [];
   for (const target of connectableFields(agentId, manifest)) {
-    if (!heldFields.has(`${target.connection_id} ${target.field_id}`)) {
-      // Nothing in the vault for this field. DASH holds nothing here to send or
-      // withhold, so nothing of DASH's fails to travel — the same reasoning
-      // "Where the custody vocabulary comes from" above already applies to a
-      // field DASH refuses to hold at all, extended to one it simply does not
-      // hold yet.
+    const field = `${target.connection_id} ${target.field_id}`;
+    const isHeld = heldFields.has(field);
+    const declaredNeed = need(target.connection_id);
+    const effectiveNeed =
+      target.kind === "provider_key" && needsAModel && declaredNeed !== "agent_runs_without_it"
+        ? "run_needs_it"
+        : declaredNeed;
+
+    if (!isHeld) {
+      // Amendment 1: optional and unheld deploys; required and unheld refuses.
+      if (target.kind !== "provider_key" || effectiveNeed !== "run_needs_it") {
+        continue;
+      }
+    } else if (target.kind === "provider_key" && placedFields.has(field)) {
+      // The caller supplies only current receipts for the selected host.
       continue;
     }
     // One line per connection, not per field. A person reads "your Gmail", and a
@@ -228,15 +246,8 @@ export function assessConnectionTravel(
       connection_id: target.connection_id,
       service: target.service,
       custody: target.kind,
-      need:
-        target.kind === "provider_key" && needsAModel
-          ? // MAR-583's rule, expressed as what it always was: the plan is part
-            // of the agent's own document, and a step above `none` is that
-            // document saying a run needs a model. Reached only for a key DASH
-            // is actually holding — an agent that has never connected one never
-            // gets here, however strongly its plan wants a model.
-            "run_needs_it"
-          : need(target.connection_id),
+      need: effectiveNeed,
+      availability: isHeld ? "held_not_on_host" : "unheld",
     });
   }
 
@@ -244,7 +255,13 @@ export function assessConnectionTravel(
     return NOTHING_STRANDED;
   }
   return {
-    verdict: stranded.some((one) => one.need === "run_needs_it") ? "refuse" : "warn",
+    verdict: stranded.some(
+      (one) =>
+        one.need === "run_needs_it" ||
+        (one.custody === "provider_key" && one.availability === "held_not_on_host"),
+    )
+      ? "refuse"
+      : "warn",
     stranded,
   };
 }
@@ -340,19 +357,28 @@ export function describeConnectionTravel(
   // connections happen to appear, so two agents with the same arrangement read
   // the same way round.
   const present: CredentialKind[] = ["oauth", "provider_key", "secret"];
-  const reasons = present
-    .filter((custody) => travel.stranded.some((one) => one.custody === custody))
-    .map((custody) => custodyReason(custody, server));
+  const reasons = present.flatMap((custody) => {
+    const matching = travel.stranded.filter((one) => one.custody === custody);
+    const availability = [...new Set(matching.map((one) => one.availability))];
+    return availability.map((one) => custodyReason(custody, one, server));
+  });
   const lines = travel.stranded.map((one) => `${one.service} — ${needClause(one, server)}`);
 
   if (travel.verdict === "refuse") {
+    const pushable = travel.stranded.some(
+      (one) => one.custody === "provider_key" && one.availability === "held_not_on_host",
+    );
     return {
-      headline: `${agent} needs something DASH cannot send to ${server}.`,
+      headline: pushable
+        ? `A key DASH holds is not on ${server}.`
+        : `${agent} is missing something its own file requires.`,
       reasons,
       lines,
       next_action:
-        `You can still run ${agent} on this computer, where its sign-ins are. ` +
-        `To run it on ${server}, it needs an agent that holds its own sign-ins there.`,
+        pushable
+          ? `DASH can offer one attended key placement for ${server}. The receipt proves custody only; ` +
+            `it does not say ${agent} can use the key there.`
+          : `Connect the required key on this computer before choosing whether to place it on ${server}.`,
     };
   }
   return {
@@ -370,7 +396,11 @@ export function describeConnectionTravel(
  * needed one would need the count threaded through every caller for no gain to
  * the reader: "a key you typed" is true whether there is one or four.
  */
-function custodyReason(custody: CredentialKind, server: string): string {
+function custodyReason(
+  custody: CredentialKind,
+  availability: StrandedConnection["availability"],
+  server: string,
+): string {
   switch (custody) {
     case "oauth":
       return (
@@ -378,10 +408,9 @@ function custodyReason(custody: CredentialKind, server: string): string {
         `The copy on ${server} has no way to ask it.`
       );
     case "provider_key":
-      return (
-        `The key DASH holds for a language model is in this computer's vault, ` +
-        `and DASH does not send keys to a server.`
-      );
+      return availability === "unheld"
+        ? "No provider key is connected to this agent on this computer."
+        : `The provider key is in this computer's vault and has no current placement receipt for ${server}.`;
     case "secret":
       return (
         `A key you typed is in this computer's vault, and DASH does not send keys ` +
@@ -461,10 +490,16 @@ export function describeStrandedCopy(travel: ConnectionTravel, server: string): 
  * quietly retire a proof to make a new function tidier.
  */
 export function describeTravelRefusal(travel: ConnectionTravel): string {
-  const blocking = travel.stranded.filter((one) => one.need === "run_needs_it");
+  const blocking = travel.stranded.filter(
+    (one) =>
+      one.need === "run_needs_it" ||
+      (one.custody === "provider_key" && one.availability === "held_not_on_host"),
+  );
   const model = blocking.find((one) => one.custody === "provider_key");
   if (model !== undefined && blocking.length === 1) {
-    return MODEL_KEY_STAYS_HOME_REFUSAL;
+    return model.availability === "unheld"
+      ? "This agent's own file requires a provider key, and no key is connected here. Nothing was sent."
+      : MODEL_KEY_STAYS_HOME_REFUSAL;
   }
   const services = plainList(blocking.map((one) => one.service));
   return (
@@ -502,6 +537,7 @@ export function everyTravelSentence(agent = "News Scout", server = "My server"):
         service: "Your Gmail",
         custody,
         need,
+        availability: "held_not_on_host",
       };
       const travel: ConnectionTravel = {
         verdict: need === "run_needs_it" ? "refuse" : "warn",
@@ -528,8 +564,8 @@ export function everyTravelSentence(agent = "News Scout", server = "My server"):
   const two: ConnectionTravel = {
     verdict: "refuse",
     stranded: [
-      { connection_id: "one", service: "Your Gmail", custody: "oauth", need: "run_needs_it" },
-      { connection_id: "two", service: "Your calendar", custody: "oauth", need: "run_needs_it" },
+      { connection_id: "one", service: "Your Gmail", custody: "oauth", need: "run_needs_it", availability: "held_not_on_host" },
+      { connection_id: "two", service: "Your calendar", custody: "oauth", need: "run_needs_it", availability: "held_not_on_host" },
     ],
   };
   said.push(describeTravelRefusal(two));

@@ -115,6 +115,17 @@
  */
 export const DEPLOY_VERBS = [
   "install",
+  /**
+   * ADR 0018, admitted under ADR 0014's three questions.
+   *
+   * (1) It carries one credential from DASH to one enrolled host after an
+   * attended press, and returns none. (2) It chooses neither a command nor a
+   * path: the installed manifest declares the provider-key connection and the
+   * helper derives the owner-only location. (3) DASH can describe only the
+   * resulting custody, so the answer contains a slot, time and mode proof and
+   * never the key or a digest of it.
+   */
+  "install-key",
   "start",
   "stop",
   "status",
@@ -178,6 +189,16 @@ export interface InstallRequest {
   files: BundleFile[];
 }
 
+/** Place one declared provider key. The helper, not this request, chooses its location. */
+export interface InstallKeyRequest {
+  verb: "install-key";
+  bundle_id: string;
+  /** A manifest-declared connection name, never a path or environment variable. */
+  connection_id: string;
+  /** Exact credential bytes, base64 because the surrounding envelope is JSON. */
+  key_base64: string;
+}
+
 export interface StartRequest {
   verb: "start";
   bundle_id: string;
@@ -218,6 +239,7 @@ export interface ChannelRequest {
 
 export type DeployRequest =
   | InstallRequest
+  | InstallKeyRequest
   | StartRequest
   | StopRequest
   | StatusRequest
@@ -235,6 +257,7 @@ export type DeployRequestProblem =
   | "malformed_files"
   | "malformed_mode"
   | "too_large"
+  | "malformed_key"
   | "malformed_lines";
 
 export type DeployRequestCheck =
@@ -246,6 +269,8 @@ export type DeployRequestCheck =
  * than one needs and far less than a way to fill somebody's disk.
  */
 export const MAX_BUNDLE_BYTES = 64 * 1024 * 1024;
+/** An accepted local key is at most 8 KiB of text; UTF-8 can occupy four bytes per scalar. */
+export const MAX_PROVIDER_KEY_BYTES = 32 * 1024;
 /** One log read is an answer to a question, not a download. */
 export const MAX_COLLECT_LINES = 500;
 
@@ -293,6 +318,31 @@ export function checkDeployRequest(candidate: unknown): DeployRequestCheck {
         ok: false,
         problem: "malformed_lines",
         detail: `A log read is between 1 and ${String(MAX_COLLECT_LINES)} lines.`,
+      };
+    }
+  }
+
+  if (verb === "install-key") {
+    if (!isIdentifier(request["connection_id"])) {
+      return identifierProblem("connection_id");
+    }
+    const expected = new Set(["verb", "bundle_id", "connection_id", "key_base64"]);
+    if (Object.keys(request).some((field) => !expected.has(field))) {
+      return {
+        ok: false,
+        problem: "malformed_key",
+        detail:
+          "A key placement may name only an installed bundle and one declared connection. " +
+          "It cannot name a path, mode, variable, command or executable.",
+      };
+    }
+    const encoded = request["key_base64"];
+    const bytes = typeof encoded === "string" ? canonicalBase64Bytes(encoded) : null;
+    if (bytes === null || bytes < 1 || bytes > MAX_PROVIDER_KEY_BYTES) {
+      return {
+        ok: false,
+        problem: "malformed_key",
+        detail: `A provider key must carry between 1 and ${String(MAX_PROVIDER_KEY_BYTES)} bytes.`,
       };
     }
   }
@@ -358,6 +408,19 @@ function isIdentifier(candidate: unknown): candidate is string {
   return typeof candidate === "string" && IDENTIFIER.test(candidate);
 }
 
+/** Decoded length for canonical base64, without turning secret bytes into another value. */
+function canonicalBase64Bytes(candidate: string): number | null {
+  if (
+    candidate.length === 0 ||
+    candidate.length % 4 !== 0 ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(candidate)
+  ) {
+    return null;
+  }
+  const padding = candidate.endsWith("==") ? 2 : candidate.endsWith("=") ? 1 : 0;
+  return (candidate.length / 4) * 3 - padding;
+}
+
 function identifierProblem(field: string): DeployRequestCheck {
   return {
     ok: false,
@@ -386,6 +449,14 @@ export interface HostBundleStatus {
 
 export type DeployAnswer =
   | { ok: true; verb: "install"; bundle_id: string; files: number; bytes: number }
+  | {
+      ok: true;
+      verb: "install-key";
+      bundle_id: string;
+      connection_id: string;
+      installed_at: string;
+      owner_only: true;
+    }
   | { ok: true; verb: "start"; bundle_id: string; pid: number }
   | { ok: true; verb: "stop"; bundle_id: string; stopped: boolean; detail: string }
   | { ok: true; verb: "status"; bundles: HostBundleStatus[] }

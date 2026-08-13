@@ -333,6 +333,22 @@ describe("availableControls — no dead controls", () => {
     expect(availableControls(manifest, done, RUN_ID)).toEqual([]);
   });
 
+  it.each(["queued", "running", "waiting_for_choice", "waiting_for_approval", "paused"] as const)(
+    "does not offer a fresh run while another run is %s",
+    (status) => {
+      const safe: WorkspaceManifest = {
+        ...manifest,
+        safety_contract: { irreversible_components: [] },
+      };
+      const occupied: AgentDomState = {
+        ...state,
+        runs: [{ id: RUN_ID, status, progress: 0.5 }],
+      };
+
+      expect(availableControls(safe, occupied, null)).toEqual([]);
+    },
+  );
+
   it("returns nothing for a run it has never seen", () => {
     expect(availableControls(manifest, state, "no-such-run")).toEqual([]);
   });

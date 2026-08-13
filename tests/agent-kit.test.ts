@@ -149,10 +149,9 @@ function startedSupervisor(directory: string, agentId = "folder-digest"): Superv
 /**
  * Ask the agent to run, the way DASH's Run now does.
  *
- * `retry` against the waiting task rather than against a run: a freshly added
- * agent has no runs, and `contracts/agent-command.schema.json` requires the
- * command to name one or the other. That is the whole reason the agent
- * publishes a task it is not yet working on.
+ * This scaffold publishes real queued work, so the test targets that task. A
+ * taskless idle agent may target itself since MAR-621; keeping this target here
+ * proves the older, more specific shape remains compatible.
  */
 async function runNow(
   supervisor: Supervisor,

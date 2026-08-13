@@ -59,14 +59,24 @@
  */
 
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
+  chmodSync,
+  closeSync,
   existsSync,
+  fchmodSync,
+  fstatSync,
+  fsyncSync,
+  linkSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
+  unlinkSync,
+  writeSync,
   writeFileSync,
 } from "node:fs";
 import http from "node:http";
@@ -80,8 +90,12 @@ import {
   type DeployAnswer,
   type DeployRequest,
   type HostBundleStatus,
+  type InstallKeyRequest,
   type InstallRequest,
 } from "../../lib/deploy/verbs";
+import { connectableFields } from "../../lib/connection-credentials";
+import type { ConnectionSourceManifest } from "../../lib/connections";
+import { validateManifest } from "../../lib/contracts";
 import { containedIn, inspectComponent } from "../../runner/path-guard";
 
 /* ---------------------------------------------------------------------- *
@@ -247,6 +261,203 @@ function install(root: string, request: InstallRequest): DeployAnswer {
   });
 
   return { ok: true, verb: "install", bundle_id: request.bundle_id, files: request.files.length, bytes };
+}
+
+/* ---------------------------------------------------------------------- *
+ * install-key — one declared provider-key slot, owner-only (ADR 0018)
+ * ---------------------------------------------------------------------- */
+
+function installKey(root: string, request: InstallKeyRequest): DeployAnswer {
+  const uid = process.getuid?.();
+  if (uid === undefined) {
+    return {
+      ok: false,
+      problem: "owner_unproved",
+      detail: "This helper cannot prove the owner of a key file on this host.",
+    };
+  }
+
+  const record = readRecord(root, request.bundle_id);
+  if (record === null) {
+    return { ok: false, problem: "not_installed", detail: "No bundle is installed under that name." };
+  }
+
+  let manifest: ConnectionSourceManifest;
+  try {
+    const manifestFile = path.join(
+      bundleDirectory(root, request.bundle_id),
+      "agent",
+      "agent.manifest.json",
+    );
+    const checked = validateManifest(JSON.parse(readFileSync(manifestFile, "utf8")) as unknown);
+    if (!checked.ok || checked.value.agent.name !== record.agent_id) {
+      return {
+        ok: false,
+        problem: "undeclared_key",
+        detail: "The installed bundle does not carry the agent document recorded for it.",
+      };
+    }
+    manifest = checked.value as ConnectionSourceManifest;
+  } catch {
+    return {
+      ok: false,
+      problem: "undeclared_key",
+      detail: "The installed bundle's agent document could not be read.",
+    };
+  }
+
+  const declared = connectableFields(record.agent_id, manifest).filter(
+    (target) => target.connection_id === request.connection_id && target.kind === "provider_key",
+  );
+  if (declared.length !== 1) {
+    return {
+      ok: false,
+      problem: "undeclared_key",
+      detail: "That installed agent does not declare exactly one provider key under that connection.",
+    };
+  }
+
+  const secrets = path.join(root, "secrets");
+  const directory = path.join(secrets, request.bundle_id);
+  const destination = path.join(directory, `${request.connection_id}.key`);
+  if (!containedIn(root, secrets) || !containedIn(secrets, directory) || !containedIn(directory, destination)) {
+    return {
+      ok: false,
+      problem: "malformed_identifier",
+      detail: "The declared key slot did not resolve below the helper's secrets root.",
+    };
+  }
+
+  try {
+    ensureOwnerOnlyDirectory(root, uid);
+    ensureOwnerOnlyDirectory(secrets, uid);
+    ensureOwnerOnlyDirectory(directory, uid);
+  } catch {
+    return {
+      ok: false,
+      problem: "owner_unproved",
+      detail: "The helper could not prove owner-only parent directories for the key.",
+    };
+  }
+
+  const temporary = path.join(directory, `.${randomUUID()}.tmp`);
+  const backup = path.join(directory, `.${randomUUID()}.previous`);
+  let descriptor: number | null = null;
+  let renamed = false;
+  let backedUp = false;
+  let hadPrevious = false;
+  try {
+    if (existsSync(destination)) {
+      hadPrevious = true;
+      proveOwnerOnlyFile(destination, uid);
+      // Same-directory hard link: the previous inode remains recoverable while
+      // the new inode is atomically renamed over its public name.
+      linkSync(destination, backup);
+      backedUp = true;
+    }
+
+    descriptor = openSync(temporary, "wx", 0o600);
+    fchmodSync(descriptor, 0o600);
+    const key = Buffer.from(request.key_base64, "base64");
+    let written = 0;
+    while (written < key.byteLength) {
+      written += writeSync(descriptor, key, written, key.byteLength - written);
+    }
+    fsyncSync(descriptor);
+    proveOwnerOnlyStat(fstatSync(descriptor), uid);
+    closeSync(descriptor);
+    descriptor = null;
+
+    renameSync(temporary, destination);
+    renamed = true;
+    proveOwnerOnlyFile(destination, uid);
+
+    if (backedUp) {
+      unlinkSync(backup);
+      backedUp = false;
+    }
+    return {
+      ok: true,
+      verb: "install-key",
+      bundle_id: request.bundle_id,
+      connection_id: request.connection_id,
+      installed_at: new Date().toISOString(),
+      owner_only: true,
+    };
+  } catch {
+    // A replacement failure restores the old inode. A first placement failure
+    // removes the unproved destination. Neither branch returns key material or
+    // a derivative of it.
+    try {
+      if (renamed) {
+        if (backedUp) {
+          renameSync(backup, destination);
+          backedUp = false;
+        } else if (existsSync(destination)) {
+          unlinkSync(destination);
+        }
+      }
+    } catch {
+      return {
+        ok: false,
+        problem: "install_key_failed",
+        detail: "The helper could not prove the replacement and could not restore its prior receipt.",
+      };
+    }
+    return {
+      ok: false,
+      problem: "install_key_failed",
+      detail: hadPrevious
+        ? "The new key was not installed; the previous host copy remains in place."
+        : "The key was not installed.",
+    };
+  } finally {
+    if (descriptor !== null) {
+      try {
+        closeSync(descriptor);
+      } catch {
+        // The refusal above is already secret-free and complete.
+      }
+    }
+    for (const file of [temporary, backup]) {
+      try {
+        if (existsSync(file)) {
+          unlinkSync(file);
+        }
+      } catch {
+        // Never replace the operation's safe answer with a path-bearing error.
+      }
+    }
+  }
+}
+
+function ensureOwnerOnlyDirectory(directory: string, uid: number): void {
+  if (!existsSync(directory)) {
+    mkdirSync(directory, { mode: 0o700 });
+  }
+  const before = lstatSync(directory);
+  if (!before.isDirectory() || before.isSymbolicLink() || before.uid !== uid) {
+    throw new Error("unproved owner-only directory");
+  }
+  chmodSync(directory, 0o700);
+  const after = lstatSync(directory);
+  if (!after.isDirectory() || after.isSymbolicLink() || after.uid !== uid || (after.mode & 0o7777) !== 0o700) {
+    throw new Error("unproved owner-only directory");
+  }
+}
+
+function proveOwnerOnlyFile(file: string, uid: number): void {
+  const found = lstatSync(file);
+  if (!found.isFile() || found.isSymbolicLink()) {
+    throw new Error("unproved owner-only file");
+  }
+  proveOwnerOnlyStat(found, uid);
+}
+
+function proveOwnerOnlyStat(found: { uid: number; mode: number }, uid: number): void {
+  if (found.uid !== uid || (found.mode & 0o7777) !== 0o600) {
+    throw new Error("unproved owner-only file");
+  }
 }
 
 /* ---------------------------------------------------------------------- *
@@ -731,6 +942,9 @@ export async function runHelper(argv: string[]): Promise<number> {
   switch (request.verb) {
     case "install":
       answer(install(root, request));
+      return 0;
+    case "install-key":
+      answer(installKey(root, request));
       return 0;
     case "start":
       answer(start(root, request.bundle_id));

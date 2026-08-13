@@ -28,10 +28,11 @@
  * does. It publishes one task — "Waiting to be run" — which is what DASH's
  * Run now targets.
  *
- * That task is load-bearing, not decoration: `contracts/agent-command.schema.json`
- * requires a `retry` command to name a `run_id` or a `task_id`, and a
- * freshly-added agent has no runs. Without the task there is nothing for the
- * control to point at and the agent cannot be started at all.
+ * The task is a real description of queued work, not a prerequisite DASH
+ * manufactures. Since MAR-621 an idle `retry` may target the agent itself, so
+ * manual agents that publish no queue are startable too. This scaffold keeps
+ * its task because "Waiting to be run" is true and gives older DASH builds a
+ * concrete target; it is no longer ceremony required by the command contract.
  *
  * ## The one rule worth knowing
  *

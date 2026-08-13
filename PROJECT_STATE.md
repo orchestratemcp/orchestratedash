@@ -1,5 +1,28 @@
 # DASH project state
 
+Updated: 2026-08-13 (MAR-621: a manual agent can be asked to run without an
+invented workspace task)
+
+The local **Run now** press starts a fresh Agent DOM run when no task is queued.
+It does not create an empty workspace task: workspace tasks remain custody
+envelopes for user inputs, while the command target may be the agent itself.
+When a real Agent DOM task is pending it remains the more specific target, and
+workspace files still dispatch before either command. The control keeps the
+machine statement and the per-run spend disclosure beside the press.
+
+Implementation and source/build evidence exist in the current worktree, but the
+issue is **planned, not merged and not proven**. Focused coverage passed (276
+tests), the 13 full-suite timeout cases all passed serialized (202 tests),
+typecheck, brand check, renderer build and shell build were green before a
+concurrent MAR-625 lane widened deploy types in this shared worktree. The final
+MAR-621 focused rerun remains green; the current unrelated type errors are in
+that lane's connection/deploy fixtures and are left to its owner. The installed
+Electron smoke was deliberately not launched because another worktree's runner
+is live and the process-safety rule forbids disrupting it. A packaged/installed
+press that produces the curated digest is still the promotion evidence.
+
+---
+
 Updated: 2026-08-11 (MAR-602: the run route gets a caller — DASH can start the
 copy of an agent that is on a server, and what comes back is an evidence pull it
 actually performed)

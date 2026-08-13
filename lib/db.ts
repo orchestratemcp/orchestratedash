@@ -803,6 +803,35 @@ const MIGRATIONS: readonly Migration[] = [
 
   CREATE INDEX IF NOT EXISTS agent_deploys_by_agent ON agent_deploys (agent, sent_at);
   `,
+  // MAR-625, ADR 0018. One row per helper-confirmed provider-key placement.
+  //
+  // This is custody history, not host inventory. It therefore has no foreign
+  // key to `hosts` and is deliberately not deleted by host.forget: forgetting
+  // DASH's enrollment cannot make a durable copy on that machine disappear.
+  // `local_key_version` is connection_secrets.updated_at, a store version and
+  // never a digest or derivative of the credential. It is what makes consent
+  // per replacement as well as per host.
+  `
+  CREATE TABLE IF NOT EXISTS host_key_custody_receipts (
+    receipt_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent             TEXT NOT NULL,
+    host_id           TEXT NOT NULL,
+    host_label        TEXT NOT NULL,
+    host_address      TEXT NOT NULL,
+    host_fingerprint  TEXT NOT NULL,
+    connection_id     TEXT NOT NULL,
+    field_id          TEXT NOT NULL,
+    connection_label  TEXT NOT NULL,
+    provider_id       TEXT NOT NULL,
+    provider_label    TEXT NOT NULL,
+    local_key_version TEXT NOT NULL,
+    installed_at      TEXT NOT NULL,
+    owner_only        INTEGER NOT NULL CHECK (owner_only = 1)
+  );
+
+  CREATE INDEX IF NOT EXISTS host_key_custody_by_agent_host
+    ON host_key_custody_receipts (agent, host_id, connection_id, field_id, receipt_id);
+  `,
   // MAR-583. Which model an agent uses, and what that setting was when a run
   // started.
   //

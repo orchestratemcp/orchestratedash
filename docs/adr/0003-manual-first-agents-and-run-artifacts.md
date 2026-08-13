@@ -101,3 +101,47 @@ The detail page's `observed_at` row is relabelled **"State last changed"**: it n
 One honest cost: a change to the projection is a one-off advance of `observed_at` for every stored snapshot, so any control drawn across an upgrade is refused once. That is why `decision_identity` is stored rather than recomputed on read — recomputing would silently reinterpret old bytes under a new definition, and being refused once after an upgrade is the truthful outcome.
 
 Proved by smoke proofs **3g** and **3h** on the installed shell, paired deliberately: 3g that two poll intervals do not move what a control is bound to, 3h that a context which genuinely moved is still refused. `tests/decision-identity.test.ts` is the fast explanation of a failure, not the evidence — this defect passed 878 unit tests, and the harness is what found it.
+
+## Amendment 2 (MAR-621): an idle retry may target the agent
+
+Status: Accepted
+
+Date: 2026-08-13
+
+The original decision made a pending task the only honest target for a manual
+agent with no run. That solved the scaffold in front of us and accidentally
+made publishing a queue a prerequisite for being startable. The rebuilt agent
+page exposed the contradiction: a valid manual agent could report `ready`, no
+tasks, and no runs, while DASH said it ran only when asked and offered no way to
+ask.
+
+Two repairs were considered. DASH could open and dispatch an empty workspace
+task before every press, or `retry` could target the idle agent itself. The
+second is chosen.
+
+A workspace task is custody for person-supplied files: opening one creates a
+durable runner row and directory, dispatch closes it, and artifacts are
+attributed through it. Creating that structure when there are no files would
+make an empty custody record a ceremonial token for a different contract. It
+would also leave durable state behind merely because somebody pressed Run.
+
+An agent-targeted `retry` instead means exactly one thing: ask this already
+running, already-reported agent to create a fresh run. It is accepted only when
+all the existing trusted-side checks agree: the manifest declares `retry`, no
+non-terminal run exists, the snapshot is current, and a fresh retry is safe
+under the irreversible-component rule. `pause`, `resume`, and `cancel` still
+require a run or task target. A published pending task still wins and remains
+the more specific target.
+
+Files do not move into this command. When a person selected files, MAR-507's
+workspace dispatch still completes first and a refusal stops the retry. The
+press remains the `retry` boundary in Electron main, so ADR 0016's spend
+allowance still opens on that press and nowhere else. When another copy exists,
+ADR 0014's existing sentence remains attached to the local control: “Run now
+uses the copy on this computer.”
+
+This is an additive command-v1 change. Existing agents and hosts that publish a
+waiting task keep working unchanged; updated runners additionally accept the
+narrow agent-only `retry` shape. Source tests prove both enforcement paths. An
+installed local press producing the curated digest is still the proof required
+to promote MAR-621 and MAR-619 from merged to proven.

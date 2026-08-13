@@ -4,6 +4,34 @@ Status: Accepted
 
 Date: 2026-08-13
 
+## Amendment 1 (2026-08-13): deployment standing is per host
+
+The deploy gate reads the declared need, local custody and the receipt for the
+one selected host together. The admitted matrix is:
+
+| local key | declared need | current receipt for this host | deploy standing |
+| --- | --- | --- | --- |
+| absent | optional | none | deploys without a key |
+| absent | required | none | refuses |
+| held | either | none | refuses and offers the attended push |
+| held | either | present | deploys |
+
+“Present” means a receipt for this agent's declared provider-key field, the
+current local key version, and this enrolled host id. A receipt for another host
+is not consent for this host. Replacing the local key makes the earlier receipt
+historical and requires another ceremony before that replacement crosses.
+
+This supersedes MAR-583's blanket `run_needs_it` upgrade only when the selected
+host has a current receipt. It also corrects the inverse edge: an explicitly
+optional, unheld provider key is not stranded and does not block a degraded
+deployment, while an explicitly required, unheld key does block. No receipt
+claims that the deployed runtime can consume the placement. MAR-629 owns runtime
+exposure and proof; this ADR's receipt proves custody only.
+
+Bring-home projection and removal remain MAR-611's integration work. ADR 0018's
+custody rows must survive meanwhile; merging the bring-home implementation is
+the point at which its removal sequence consumes them.
+
 Issue: MAR-625. Related: MAR-611 (bring an agent home), MAR-624 (one model
 need), ADR 0006 (the broker's reach), ADR 0007 (the deploy transport), ADR 0009
 (first-pin enrollment and the forced command), ADR 0011 (model choice), ADR

@@ -262,9 +262,9 @@ describe("runner-hosted Agent Kit telemetry", () => {
         }),
       ).filter((key) => key.startsWith("DASH_")),
     ).toEqual([]);
-    // Nothing has run yet, and nothing will until it is asked to (MAR-457). The
-    // agent publishes a task for exactly this: a freshly registered agent has no
-    // runs, and the command contract requires a run or a task to target.
+    // Nothing has run yet, and nothing will until it is asked to (MAR-457). This
+    // scaffold publishes a real waiting task, so the test uses the more specific
+    // target even though MAR-621 also permits an idle taskless retry.
     await waitFor(
       () => supervisor.report("folder-digest") !== null,
       "the agent to publish its waiting task",

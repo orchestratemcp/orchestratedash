@@ -70,6 +70,7 @@ import type {
   WorkspaceRunView,
   WorkspaceSnapshotView,
 } from "../../../lib/views/types";
+import { startLocalRun } from "../../../lib/run-control";
 
 type CommandFeedback = { ok: boolean; message: string } | null;
 
@@ -508,13 +509,17 @@ function AgentWorkspace(): ReactNode {
              * the person gave it. Both look exactly like a successful run from
              * outside, which is why neither may happen quietly.
              */
-            if (!(await dispatchTask())) {
-              return;
-            }
-            await issue(`run:${taskId_}`, "retry", {
-              agent_id: view.agent,
-              observed_at: observedAt,
-              task_id: taskId_,
+            await startLocalRun(taskId_, dispatchTask, async (target) => {
+              /*
+               * MAR-621. No Agent DOM task means a fresh run, not an empty
+               * workspace task. `startLocalRun` has already kept MAR-507's
+               * workspace dispatch in front of this retry.
+               */
+              await issue(`run:${taskId_ ?? "new"}`, "retry", {
+                agent_id: view.agent,
+                observed_at: observedAt,
+                ...target,
+              });
             });
           })();
         }}

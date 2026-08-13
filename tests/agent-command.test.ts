@@ -128,6 +128,55 @@ describe("an accepted command", () => {
     expect(validateCommand(adapter.sent[0]).ok).toBe(true);
   });
 
+  it("starts an idle agent without manufacturing a task", async () => {
+    const safeManifest = structuredClone(MANIFEST) as Record<string, any>;
+    safeManifest["safety_contract"]["irreversible_components"] = [];
+    expect(importManifest(safeManifest).ok).toBe(true);
+    expect(
+      putAgentDomState(
+        stateWith({
+          status: "ready",
+          runs: [],
+          tasks: [],
+          choices: [],
+          actions: [],
+          approval_requests: [],
+          approval_decisions: [],
+          plan_vs_actual: {
+            run_id: "previous-run",
+            planned_components: [],
+            executed_components: [],
+            deviations: [],
+          },
+        }),
+      ).ok,
+    ).toBe(true);
+
+    const adapter = recordingAdapter();
+    const result = await runAgentCommand(
+      {
+        request_id: "req-taskless-run",
+        command: "retry",
+        target: { agent_id: AGENT },
+        observed_at: OBSERVED_AT,
+        payload_keys: ["agent_id", "observed_at"],
+        mutates: true,
+        irreversible: true,
+      },
+      { principal: PRINCIPAL, adapter, now: () => WHILE_LIVE },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(adapter.sent).toHaveLength(1);
+    expect(adapter.sent[0]?.target).toEqual({ agent_id: AGENT });
+    expect(validateCommand(adapter.sent[0]).ok).toBe(true);
+    expect(readCommandAudit({ agent: AGENT })[0]).toMatchObject({
+      decision: "allowed",
+      command: "retry",
+      run_id: null,
+    });
+  });
+
   it("binds the actor to the principal, not to anything in the request", async () => {
     const adapter = recordingAdapter();
     await runAgentCommand(approveInput(), {

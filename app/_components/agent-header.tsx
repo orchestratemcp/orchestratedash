@@ -6,7 +6,7 @@ import { AGENT_CONTROL_COPY, AGENT_HEADER_COPY } from "../../lib/copy/agent-page
 /* MAR-602. Safe as a value in this bundle: `lib/copy/where-it-ran.ts` imports
    nothing that reaches a disk, and its one reference to `lib/store.ts` is a
    type. The same arrangement the agent page itself relies on. */
-import { describeRunOnHost } from "../../lib/copy/where-it-ran";
+import { describeRunOnHost, describeRunTarget } from "../../lib/copy/where-it-ran";
 import type { AgentControlView } from "../../lib/views/agent-control";
 import type { AgentDeployTarget } from "../../lib/views/types";
 import type { AvailableControl } from "../../lib/workspace";
@@ -175,7 +175,8 @@ export function AgentControls({
   hosts: AgentDeployTarget[];
   /** Builds the pending key for a run control, so the caller owns key shape. */
   onCancelKey: (command: AvailableControl["command"], runId: string) => string;
-  onRun: (taskId: string, observedAt: string) => void;
+  /** Null starts a fresh run without manufacturing a workspace task. */
+  onRun: (taskId: string | null, observedAt: string) => void;
   /*
    * `AvailableControl["command"]` rather than `string`, so the page needs no
    * cast on the way to `submitAgentCommand`. A `string` here would have forced
@@ -222,6 +223,7 @@ export function AgentControls({
    * the command boundary at all.
    */
   const canReachHosts = !(run.kind === "idle" && run.reason === "read_only");
+  const localTarget = describeRunTarget(hosts);
   const hostButtons =
     !canReachHosts || hosts.length === 0 ? null : (
       <>
@@ -302,7 +304,7 @@ export function AgentControls({
           }}
           type="button"
         >
-          {busy === `run:${run.task_id}`
+          {busy === `run:${run.task_id ?? "new"}`
             ? AGENT_CONTROL_COPY.running
             : hasFiles
               ? AGENT_CONTROL_COPY.run_now_with_files
@@ -310,10 +312,9 @@ export function AgentControls({
         </button>
         {hostButtons}
       </div>
-      {/* The one sentence about cadence, said once and here rather than under
-          every control. The trigger tile and the switcher in Settings are where
-          a person goes to change it. */}
-      <p className="muted">{AGENT_CONTROL_COPY.manual_note}</p>
+      {/* ADR 0014. When a second copy exists, the existing control names the
+          machine it has always used; deploying never silently retargets it. */}
+      {localTarget === null ? null : <p className="muted">{localTarget}</p>}
       {/* MAR-619, ADR 0016. What this press will spend, under the button that
           spends it.
 
@@ -324,6 +325,10 @@ export function AgentControls({
           gets one — a live run has already been paid for, and an idle panel has
           no press to disclose. */}
       {runSpend === null ? null : <p className="muted">{runSpend}</p>}
+      {/* The one sentence about cadence, said once and here rather than under
+          every control. The trigger tile and the switcher in Settings are where
+          a person goes to change it. */}
+      <p className="muted">{AGENT_CONTROL_COPY.manual_note}</p>
     </section>
   );
 }
