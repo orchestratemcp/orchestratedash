@@ -607,7 +607,7 @@ submission, navigation, IPC, network request, stored mutation, or preference
 write.
 
 The visible distinction is a product requirement, not a code comment: the
-summary is the fixed sentence **“DASH explains this empty section.”** A reader
+summary is the fixed sentence **“DASH explains this empty section”**. A reader
 does not have to infer authorship from colour, indentation, or the panel's DOM.
 The affordance names DASH before it opens, and the prose behind it contains no
 author-supplied string or produced value. The author's section label remains
@@ -649,9 +649,33 @@ The disclosure is a block-level native `<details>` sibling after the headline
 paragraph, never a descendant of `<p>`. Its `<summary>` is the fixed attribution
 above, and its body is the matching `PanelEmptyState.meaning`. The existing
 no-submit/no-mutation control gate remains valid: `button`, `input`, `textarea`,
-`select`, and `form` stay absent. A future test may identify this disclosure by
-its fixed copy and placement, but a class name alone is not evidence a reader
-can tell who is speaking.
+`select`, and `form` stay absent — and it is now asserted on the *empty* fixture
+too, which is the only markup where this disclosure exists and is therefore the
+one the original gate never saw.
+
+**The gate is `tests/panel-empty-disclosure.test.tsx`, and it exists because
+this amendment's second answer is a sentence.** Every pinned-copy test in
+`tests/` asserts over rendered markup with `toContain`, and relocated copy is
+still in that markup — the property that makes the relocation honest is the
+property that makes those gates blind to it. Measured rather than assumed: with
+the attribution replaced by "Show more", with the headline and the explanation
+swapped, with all five explanations deleted outright, with the summary sourced
+from an author-reachable value, and with two empty states collapsed onto one
+sentence, `tests/panel-render.test.tsx` and `tests/panel-view.test.ts` stayed
+green at 81 passing tests on every one of the five, and the new file failed on
+every one. A class name is not evidence a reader can tell who is speaking, so
+the gate pins the sentence itself — in this document and in `lib/copy/panel.ts`
+together, because a copy edit that touched only one would leave this decision
+describing a product that no longer exists.
+
+One cost this amendment accepts, recorded because no gate can refuse it: a
+`report` and an unscoped `outputs` section share a headline, so the sentence now
+closed by default is the *only* thing telling a reader whether the author bound
+the section to one kind of output or to everything the agent makes. Closing it
+does not delete the distinction and it does make it something a reader has to
+ask for. The gate holds the two sentences distinct; whether that distinction
+deserves to be on the surface is a copy decision for the next pass at this
+region, not a boundary question this amendment can settle.
 
 This is a renderer and copy change. It does not widen the manifest schema,
 panel section union, artifact contract, IPC surface, or installed/runtime
