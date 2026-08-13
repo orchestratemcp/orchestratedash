@@ -5915,3 +5915,62 @@ cross-run outputs list is exercised by unit tests and by the store's own
 global `.section` rhythm is deliberately untouched, because that issue is the
 pass across every surface and retuning eleven pages from inside a single-page
 issue would change screens nobody photographed here.
+
+---
+
+## A key may cross to one enrolled host (MAR-625, ADR 0018, planned)
+
+**A decision, and nothing is implemented.** Henrik ruled that the question is
+*how*, not *whether*: DASH's enrolled bridge is the primary path by which a key
+the user owns reaches a server the user owns. Console paste or the user's own
+SSH remains only the fallback for a host DASH cannot reach. This branch adds
+`docs/adr/0018-a-key-crosses-only-on-a-persons-press.md`; source, routes,
+schemas, tests and both existing transport types are untouched.
+
+**The push is one attended act per key and per host.** Before a byte leaves,
+the ceremony names the human key, the saved server and fingerprint, and the
+agent copy whose declared model need it satisfies. It carries Henrik's required
+sentence: *"from this moment the key lives on Hostinger too — DASH cannot see
+or take back what uses it there; revoking means rotating at the provider"*.
+There is no blanket sync, background retry, remembered approval or side effect
+of connecting a key locally.
+
+**The key is not a bundle file.** ADR 0018 admits a separate future
+forced-command deploy verb, `install-key`, under ADR 0014's three questions. It
+targets one installed bundle and one provider-key need that bundle's agent
+already declares. The caller cannot supply a path, filename, mode, environment
+variable, command or executable. The helper chooses a location below a separate
+secrets root, creates `0700` parents and a `0600` file, and reads owner and mode
+back before it issues a secret-free receipt. `checkDeployRequest`'s ordinary
+bundle modes remain exactly `0644` and `0755`; re-deploy therefore cannot
+silently preserve, replace or erase a key shadow.
+
+ADR 0014's answers are explicit. The verb **does carry a credential**, DASH to
+host, and that is why it needs the ceremony rather than being counted as one
+more harmless verb. It chooses no executable or command, only which
+already-installed agent copy receives which need it declared. DASH can describe
+the result only as custody: which key shadow its enrolled helper accepted, on
+which host and when, while admitting it cannot meter, audit or revoke provider
+use there.
+
+**ADR 0006 survives where it matters:** the runner still never reaches DASH's
+broker — this is the user placing their key on their machine over a channel they
+built. The hosted agent calls the provider directly. `/broker/drain` and
+`/broker/responses` remain structurally absent from a remote channel, and local
+Disconnect does not disable the copy on Hostinger. Removing the helper-owned
+file is lifecycle hygiene; rotating at the provider is revocation.
+
+The custody fact must project everywhere its shadow falls. The agent page shows
+one model need with separate local-brokered and remote-host-held placements.
+MAR-624's provider cards and model tile may not turn one placement into the
+other or manufacture three services from one need. MAR-611 bring-home names the
+keys on the server, removes and verifies their helper-owned files when it can,
+and leaves an **unresolved on Hostinger** receipt when it cannot; it never
+pretends to copy the key home because DASH already holds the local source.
+
+Implementation proof is deliberately future work. Local gates can prove the
+closed request, absence of key bytes from argv/logs/answers/receipts, owner-only
+write and fail-before-start ordering. ADR 0004 keeps the Hostinger half
+attended: the real forced command, filesystem mode, provider call, broker-route
+absence, provider rotation and bring-home removal require a dated run against
+the enrolled host.
