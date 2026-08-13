@@ -378,6 +378,12 @@ await Promise.all([
     outfile: path.join(outDir, "capture-text-pass.mjs"),
     format: "esm",
   }),
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-ui-scale.ts")],
+    outfile: path.join(outDir, "capture-ui-scale.mjs"),
+    format: "esm",
+  }),
 
   // The fleet's three layouts (MAR-612), on the same terms and for two reasons
   // at once: the store decides whether a spotlight has neighbours to turn, and a
