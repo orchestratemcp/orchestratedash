@@ -73,7 +73,9 @@ import { fleetReach, type FleetCandidate, type FleetReach } from "./grants";
 import { FLEET_PRINCIPAL } from "./principal";
 import {
   forgetFleetConnection,
+  forgetOneFleetGrant,
   readFleetConnection,
+  readFleetGrants,
   recordFleetConnection,
   recordFleetGrant,
   withheldAgents,
@@ -222,6 +224,18 @@ export async function performFleetAction(
  * `resolveCredentialTarget` and would have been allowed to run the original
  * connect itself; every agent somebody revoked is skipped, because a withheld
  * row outlives the connection it was made against.
+ *
+ * ## MAR-624. Zero materialized records is not always "already has it"
+ *
+ * Before this, a `materialize` call that produced no writes was read as one
+ * sentence — "nothing changed, everyone already has it" — whichever of three
+ * different facts caused it: nobody qualifies at all (the honest reading), a
+ * vault write actually failed for an agent that was waiting, or DASH could not
+ * even read the credential it was about to fan out. The first is unexciting and
+ * true; the other two are a press that reported success while writing nothing,
+ * which is the defect the store diagnosis on this issue found — `fleet_grants`
+ * said `granted` while `connection_secrets` and `broker_grants` held nothing for
+ * either scout. This tells the three apart and only ever claims the first.
  */
 async function shareFleetConnection(
   connector: FleetConnector,
@@ -238,7 +252,21 @@ async function shareFleetConnection(
   }
 
   const spread = await materialize(connector, deps);
-  if (spread.connected.length === 0) {
+  if (spread.unreadable) {
+    // DASH holds the credential in name only, right now — the store could not
+    // be read, so nothing was attempted and nothing else may be said about it.
+    return {
+      ok: false,
+      state: "connected",
+      masked_hint: stored.masked_hint,
+      detail: `DASH holds ${connector.service} but could not read it from ${deps.store
+        .describeBacking()
+        .label.toLowerCase()} just now, so nothing was given out.`,
+    };
+  }
+
+  const attempted = spread.connected.length + spread.write_failed.length;
+  if (attempted === 0) {
     return {
       ok: true,
       state: "connected",
@@ -250,11 +278,32 @@ async function shareFleetConnection(
       detail: `Nothing changed — every agent that can use ${connector.service} already has it.`,
     };
   }
+
+  if (spread.connected.length === 0) {
+    // Every agent that qualified was attempted and every attempt failed. The
+    // opposite of "already has it": something was owed and DASH could not
+    // deliver it, and the honest answer is a refusal naming who was affected —
+    // not a success this press did not earn.
+    return {
+      ok: false,
+      state: "connected",
+      masked_hint: stored.masked_hint,
+      detail: `${connector.service} could not be given to ${listAgentNames(spread.write_failed)}. DASH's own connection is unaffected.`,
+    };
+  }
+
+  const detail = withReach(`${connector.service} was already connected.`, spread.connected);
   return {
-    ok: true,
+    // A partial fan-out is still a real one for the agents it reached — the
+    // person's consent did materialize for them — but it is not the whole of
+    // what this press claimed, so it is not reported as an unqualified success.
+    ok: spread.write_failed.length === 0,
     state: "connected",
     masked_hint: stored.masked_hint,
-    detail: withReach(`${connector.service} was already connected.`, spread.connected),
+    detail:
+      spread.write_failed.length === 0
+        ? detail
+        : `${detail} DASH could not give it to ${listAgentNames(spread.write_failed)}.`,
   };
 }
 
@@ -574,6 +623,39 @@ export function fleetReachNow(
 }
 
 /**
+ * What actually happened when DASH tried to fan a fleet credential out.
+ *
+ * MAR-624. Three outcomes used to collapse into one empty `connected` array,
+ * and a caller could not tell "nobody qualified" from "DASH tried and failed" —
+ * which is exactly how a press came to report success while the two tables that
+ * should have grown stayed empty. Every caller of `materialize` must read this
+ * before deciding what to say, rather than asking only whether `connected` is
+ * non-empty.
+ */
+interface MaterializeOutcome {
+  /** Agents DASH actually wrote a vault entry, a reference and (if resolved) a receipt for. */
+  connected: string[];
+  /**
+   * Agents `fleetReach` named as qualifying whose vault write itself failed.
+   *
+   * Distinct from a skip: `fleetReach.skipped` is an agent this connection does
+   * not reach at all (withheld, disqualified, or holds its own). An agent here
+   * *was* reached — resolved, in `reach.materializes` — and the write on this
+   * specific attempt did not land.
+   */
+  write_failed: string[];
+  /**
+   * True when DASH could not even read the credential it was about to fan out.
+   *
+   * Distinct from an empty `connected` with no failures: that is "nobody
+   * qualifies", a fact about the fleet's agents. This is a fact about the
+   * vault, and nothing below it was attempted — so nothing below it may be
+   * described as "already has it".
+   */
+  unreadable: boolean;
+}
+
+/**
  * Write the fleet credential to every agent that qualifies.
  *
  * Each write is the three steps the direct path takes — the vault entry, the
@@ -586,29 +668,34 @@ export function fleetReachNow(
  * **A failure here does not fail the connect.** The person's consent is stored
  * and the fleet row is written; a vault that refused one write is a smaller
  * problem than a page reporting the whole thing failed, and the agent it failed
- * for reads as not connected — which is true. The names that succeeded come back
- * so the caller can say what happened.
+ * for reads as not connected — which is true. Every name — succeeded or
+ * failed — comes back, so a caller can say exactly what happened rather than
+ * inferring it from a single list.
  */
 async function materialize(
   connector: FleetConnector,
   deps: FleetActionDeps,
-): Promise<{ connected: string[] }> {
+): Promise<MaterializeOutcome> {
   let raw: string;
   try {
     raw = await deps.store.get(fleetSecretName(connector.provider, connector.field_id));
   } catch {
-    return { connected: [] };
+    return { connected: [], write_failed: [], unreadable: true };
   }
 
   const reach = fleetReachNow(connector, deps);
   const parsed = connector.oauth === null ? null : parseOAuthCredential(raw);
   const at = (deps.now ?? ((): Date => new Date()))().toISOString();
   const connected: string[] = [];
+  const write_failed: string[] = [];
 
   for (const one of reach.materializes) {
     try {
       await deps.store.set(one.target.secret_name, raw);
     } catch {
+      if (!write_failed.includes(one.agent_id)) {
+        write_failed.push(one.agent_id);
+      }
       continue;
     }
     recordSecretReference({
@@ -646,7 +733,18 @@ async function materialize(
     }
   }
 
-  return { connected };
+  return { connected, write_failed, unreadable: false };
+}
+
+/** Names in a sentence, with the comma rules a list of two does not need. */
+function listAgentNames(names: readonly string[]): string {
+  const last = names[names.length - 1] as string;
+  if (names.length === 1) {
+    return last;
+  }
+  return names.length === 2
+    ? `${names[0] as string} and ${last}`
+    : `${names.slice(0, -1).join(", ")} and ${last}`;
 }
 
 /** The masked hint for a materialized row: the account for a sign-in, the value's tail for a key. */
@@ -711,6 +809,19 @@ export function noteAgentDecision(
  * agent does not qualify for it — and the caller then does what it always did.
  * Null rather than a refusal: "there is no fleet connection here" is not an
  * outcome a person should ever be shown, it is simply the ordinary path.
+ *
+ * ## MAR-624. The grant recorded before the write must not outlive it
+ *
+ * `fleet_grants` is written first, deliberately — see the comment on that line
+ * — so a revoked agent is no longer withheld by the time `materialize` reads the
+ * set. But that leaves exactly one moment where `granted` is on record and
+ * nothing else is true yet, and if `materialize` then does not produce a record
+ * for *this* agent, staying in that moment is the wiring defect the store
+ * diagnosis on this issue found: `fleet_grants` said `granted` for an agent that
+ * `connection_secrets` and `broker_grants` had never heard of. So the write is
+ * undone the instant it is known to be premature — restored to whatever it was
+ * before, never left half-true — and only the caller's ordinary path runs from
+ * there, exactly as it does when there was nothing to adopt to begin with.
  */
 export async function adoptFleetCredential(
   provider: string,
@@ -723,6 +834,7 @@ export async function adoptFleetCredential(
   }
 
   const at = (deps.now ?? ((): Date => new Date()))().toISOString();
+  const previousGrant = readFleetGrants(provider).find((row) => row.agent === agentId) ?? null;
   // Recorded before the write, so that an agent somebody had revoked is no
   // longer withheld by the time `materialize` reads the set — the press is the
   // decision, and this is what makes it one.
@@ -730,6 +842,14 @@ export async function adoptFleetCredential(
 
   const spread = await materialize(connector, deps);
   if (!spread.connected.includes(agentId)) {
+    // Nothing was actually written for this agent — restore exactly the row
+    // that was there before this call, rather than leave the `granted` write
+    // above on record for a decision that produced nothing.
+    if (previousGrant === null) {
+      forgetOneFleetGrant(provider, agentId);
+    } else {
+      recordFleetGrant(provider, agentId, previousGrant.standing, previousGrant.decided_at);
+    }
     return null;
   }
 
@@ -832,12 +952,5 @@ function withReach(detail: string, connected: readonly string[]): string {
   if (connected.length === 0) {
     return detail;
   }
-  const last = connected[connected.length - 1] as string;
-  const list =
-    connected.length === 1
-      ? last
-      : connected.length === 2
-        ? `${connected[0] as string} and ${last}`
-        : `${connected.slice(0, -1).join(", ")} and ${last}`;
-  return `${detail} It is now connected for ${list}.`;
+  return `${detail} It is now connected for ${listAgentNames(connected)}.`;
 }
