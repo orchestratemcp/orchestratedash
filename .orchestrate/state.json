@@ -992,6 +992,13 @@
       "note": "MERGED 2026-08-12 via PR #167 (e4a994f). MERGED, NOT PROVEN: this compile-time/runtime test guard had no separate attended installed journey. The host-command catalogue readers in lib/shell/ipc.ts are exhaustive by type: dispatch target construction and successful-result projection now turn a new HOST_ACTIONS member into a compile error instead of another runtime fall-through. Evidence: branch commit b10871056a2c355949e5254d77cda2091aaad5f4; reconciliation commit 3c8164e; PowerShell pnpm state:check, pnpm typecheck, pnpm brand:check, and pnpm test passed (166 files, 3219 passed, 11 skipped); PR #167 CI verify and shell-smoke passed."
     },
     {
+      "id": "MAR-625",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null,
+      "note": "PLANNED 2026-08-13, ADR-ONLY. Branch codex/mar-625-key-push-adr, worktree ../dash-mar625, from origin/master 2ac9db2. Henrik ruled that the question is how, not whether: the primary path is a per-key/per-host attended push over the already-enrolled restrict,command forced-command channel; console or the user's own SSH is fallback only when DASH cannot reach the host. ADR 0018 admits a separate install-key deploy verb under ADR 0014's three questions. It targets one installed bundle and one declared provider-key need, accepts no caller path/mode/command, and writes under a helper-chosen secrets root with 0700 parents and a 0600 file whose owner and mode are read back. checkDeployRequest's ordinary bundle modes remain exactly 0644/0755; this is not a bundle exception. Consent names the key, server and agent and carries Henrik's required custody sentence; there is no blanket sync, background retry or remembered approval. ADR 0006 survives at the important line: the runner still never reaches DASH's broker; this is the user placing their key on their machine over a channel they built. Custody projects onto the agent page, MAR-611 bring-home and MAR-624's one-model-need view. Local disconnect and host-file removal are not called revocation; rotation at the provider is. This session changes only ADR 0018 and the required planned state-packet entry: no code, route, schema, test or implementation change. Implementation and its attended Hostinger proof are later work."
+    },
+    {
       "id": "MAR-628",
       "lifecycle": "planned",
       "linear_status": "Backlog",
