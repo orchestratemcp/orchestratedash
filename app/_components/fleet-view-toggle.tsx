@@ -172,9 +172,12 @@ type Px = readonly [number, number, number, number];
  */
 const VIEW_GLYPHS: Readonly<Record<FleetView, readonly Px[]>> = {
   grid: [
-    [1, 2, 3, 8],
-    [5, 2, 3, 8],
-    [9, 2, 3, 8],
+    [1, 1, 3, 4],
+    [5, 1, 3, 4],
+    [9, 1, 3, 4],
+    [1, 7, 3, 4],
+    [5, 7, 3, 4],
+    [9, 7, 3, 4],
   ],
   rows: [
     [1, 2, 10, 2],

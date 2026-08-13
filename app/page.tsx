@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import Link from "next/link";
 import { FleetList } from "./_components/fleet-list";
-import { FleetViewToggle } from "./_components/fleet-view-toggle";
+import { FleetRail } from "./_components/fleet-rail";
 import { OAvatar } from "./_components/o-avatar";
 import { HostNotice, ViewFailed, ViewLoading } from "./_components/view-state";
 import { checkRunnerStatus, retireRunnerStore } from "./_data/source";
@@ -59,43 +58,12 @@ export default function AgentsPage(): ReactNode {
   const log = useSightings();
 
   return (
-    <>
+    <div className="fleet-shell">
+      <div className="fleet-main">
       <h1>Agents</h1>
       <p className="lede">
         Every agent this DASH knows about, and where each one came from.
       </p>
-      {/*
-        The entrance "Add agent" lost when it stopped being a sidebar row
-        (MAR-592).
-
-        It is here rather than only inside the empty state below, and the
-        difference is the whole reason this exists: the empty state is shown to
-        somebody with *no* agents, and the person who needs this most is the one
-        who has one and wants a second. Before this issue that person pressed a
-        sidebar row; the row is now a tab inside Settings, and "add a thing" is
-        not a question anybody thinks to ask a settings page.
-
-        A link, not a button, and it goes to the same page the tab does. There is
-        one add-agent surface and this is a second door onto it — the argument
-        `lib/shell/menu.ts` made about its own menu item, which is why that item
-        and this link and the tab are three entrances and one implementation.
-      */}
-      <div className="page-actions">
-        <Link className="button-link" href="/settings/add-agent">
-          Add agent
-        </Link>
-        {/*
-          MAR-612. The layout control sits on the thing it lays out.
-
-          It is also on Settings → Preferences, which is the page that inventories
-          how DASH looks and would be lying by omission without it — but this is
-          the copy that matters. A setting whose whole effect is on one page, kept
-          only on a settings screen two clicks away, is a setting nobody finds:
-          the reader who wants a different shape is looking at the wrong shape
-          right now, and this is where they are.
-        */}
-        <FleetViewToggle />
-      </div>
       <HostNotice host={host} />
       {/*
         Above everything, including the loading state below: a damaged runner
@@ -155,18 +123,20 @@ export default function AgentsPage(): ReactNode {
           since MAR-612 the *shape* of it is the reader's decision rather than
           this page's.
 
-          `FleetList` owns the track, the card and the spotlight's chief; what
-          stays here is whether there is anything to lay out at all. The list is
-          still an `<ol>` and still `.row-list`: the Runs and Connections pages lay
-          records on that class too, and theirs are wide rows of prose, so every
-          fleet-specific rule remains a `fleet-grid` modifier rather than a change
-          to the shared class.
+          `FleetList` owns the track, the portrait card and the chief in every
+          view; what stays here is whether there is anything to lay out at all.
+          The list is still an `<ol>` and still `.row-list`: the Runs and
+          Connections pages lay records on that class too, and theirs are wide
+          rows of prose, so every fleet-specific rule remains a `fleet-grid`
+          modifier rather than a change to the shared class.
         */
         <FleetList agents={state.data.agents} log={log} />
           )}
         </>
       )}
-    </>
+      </div>
+      <FleetRail />
+    </div>
   );
 }
 /**

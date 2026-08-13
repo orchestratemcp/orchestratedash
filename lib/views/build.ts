@@ -218,6 +218,11 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
   // then answers per card — see `glanceReader` for why those two in particular
   // must not be asked per agent.
   const glanceFor = glanceReader(store, { connectionRows: connectionRowsFor });
+  const live = new Set(
+    listRuns(store)
+      .filter((run) => run.status === "running")
+      .map((run) => run.agent),
+  );
 
   return {
     agents: listAgents(store).map((agent) => ({
@@ -255,6 +260,10 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
       // Composed here rather than in the page for `damage`'s reason directly
       // below: both hosts must hand the renderer the same sentences.
       glance: glanceFor(agent.name),
+      // A run in flight, from events (`RunStatus === "running"`). On the row so
+      // a fleet card can mark Working without opening the runs view. MAR-544
+      // already reads this fact for the strip; the card now reads it too.
+      running: live.has(agent.name),
       // MAR-606. Where DASH has put this agent, from DASH's own record of doing
       // it. One more read of a small table per row, beside the registration and
       // folder reads this function already does per row — and, like them, it

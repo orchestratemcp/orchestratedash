@@ -119,7 +119,7 @@ describe("nothing moves while nobody is looking", () => {
 
 describe("the fleet asks for the loop, and asks for nothing else", () => {
   it("draws the character-select tile at a whole multiple of the source", () => {
-    expect(fleetCard).toContain("<OAvatar name={agent.avatar} size={200} action />");
+    expect(fleetCard).toContain("<OAvatar name={agent.avatar} size={100} action />");
   });
 
   it("decides to animate in the source, never from the agent", () => {
@@ -133,26 +133,21 @@ describe("the fleet asks for the loop, and asks for nothing else", () => {
     }
   });
 
-  it("leaves MAR-586's chips exactly where they were", () => {
-    // The chips carry every fact on this card. A costume that grew by taking
-    // room or attention from them would be this issue undoing the last one.
-    expect(fleetCard).toContain("<GlanceChips agent={agent.name} chips={agent.glance} />");
-    const portrait = fleetCard.indexOf('<div className="fleet-portrait">');
-    const goal = fleetCard.indexOf('<p className="muted wrap">');
-    const chips = fleetCard.indexOf("<GlanceChips");
+  it("leaves MAR-586's chips off the costume", () => {
+    // The chips carried every fact on the card. They left with the prose so
+    // two rows of three portraits can fill the pane; the chief quotes the
+    // most pressing one rather than drawing the row again.
+    expect(fleetCard).not.toContain("<GlanceChips");
+    const portrait = fleetCard.indexOf('<span className="fleet-portrait">');
     expect(portrait).toBeGreaterThan(-1);
-    expect(portrait).toBeLessThan(goal);
-    expect(goal).toBeLessThan(chips);
     expect(rules).not.toMatch(/\.glance[^{}]*\{[^}]*--o-/);
   });
 
   it("keeps the portrait above the chips in every view MAR-612 added", () => {
     /*
-     * The order above is markup order, and it is now one markup for three
-     * layouts. What could still undo MAR-586 is a *view* moving the portrait
-     * across the chips in CSS, so this is the same claim read from the
-     * stylesheet: the rows view moves the character into a column beside the
-     * reading matter, and nothing anywhere reorders the chips.
+     * The card is one portrait. What could still undo MAR-586 is a *view*
+     * reordering glance against the costume, so this is the same claim read
+     * from the stylesheet: nothing anywhere assigns `order` to the chips.
      */
     expect(rules).not.toMatch(/\[data-fleet-view[^{}]*\.glance[^{}]*\{[^}]*order:/);
   });

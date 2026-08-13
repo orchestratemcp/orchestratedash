@@ -493,7 +493,7 @@ async function layout(target: BrowserWindow): Promise<unknown> {
               views live under, and a count is how a frame proves it. */
            cards: cards.length,
            card_widths: widths,
-           /* The chief stands only under the spotlight, and says one thing. */
+           /* The chief stands under every view, and says one thing. */
            chief: document.querySelector(".chief-says")?.textContent?.trim() ?? null,
            chief_action: document.querySelector(".chief-band .button-link")?.textContent ?? null,
            centred: document.querySelectorAll("li.is-centred").length,

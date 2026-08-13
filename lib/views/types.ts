@@ -223,6 +223,14 @@ export interface AgentRow {
    */
   glance: GlanceChip[];
   /**
+   * A run of this agent's is in flight right now.
+   *
+   * On the row so the fleet card can mark Working from the same document it
+   * already holds, rather than opening the runs view. Derived from events
+   * (`RunStatus === "running"`), never from a costume or a guess.
+   */
+  running: boolean;
+  /**
    * The servers DASH has sent this agent to, newest first (MAR-606).
    *
    * ## This reverses a decision, and the reasoning it reverses is quoted below

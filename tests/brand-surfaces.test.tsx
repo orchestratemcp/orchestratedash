@@ -128,6 +128,7 @@ function row(name: string, avatar: OName): AgentRow {
     // any surface may be handed.
     glance: [GLANCE_ALL_CLEAR],
     hosted_on: [],
+    running: false,
   };
 }
 
