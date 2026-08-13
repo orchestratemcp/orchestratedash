@@ -1,5 +1,32 @@
 # DASH project state
 
+Updated: 2026-08-13 (MAR-634: Agents page polish — filled stage, no corner
+leftovers, never-run cards marked)
+
+The four items Henrik approved after the first three-column frame. Item 1's
+first `grid-auto-rows` bound used a percentage; the browser resolved
+`33.3333% - 12px` cyclically to **63.5px** against a 471px pane, which packed
+six 64px rows with sprites hanging out of the cards. Desktop now floors at
+`min-content` with a length cap (`--fleet-card: 14rem`). Height stays free
+below 901px, which is the 375px repair. Density and strip toggles leave the
+window corners and live on Settings → Preferences. Never-run cards use
+`describeRunCount(0)` → `Not run yet` plus a dash glyph; no invented store
+status (MAR-547). The chief band is unchanged (MAR-419).
+
+`capture-fleet-views` printed `every 1280 frame met MAR-630's stated count` at
+3 agents and at 6. Grid at six is 3×2; rows show 3 visible; spotlight
+`columns_fit` is 3 (cold render centres the first agent, so one neighbour
+only). Frames in `qa-screenshots-mar634/`, not in git.
+
+This is `planned`. PR #181 is open and human-gated. Product commit `d256324`.
+CI run 31749975793 on `e892e7b` passed both buckets (`verify` 1m22s, Windows
+`shell-smoke` 1m59s). `pnpm verify:shell` was not run locally; CI's Windows
+shell-smoke is the installed witness. Cut from origin/master at `90d95c6`,
+then origin/master merged in twice (PR #179 promotion, then PR #180 / MAR-633
+as `f9e18c8`) so GitHub could build a merge ref.
+
+---
+
 Updated: 2026-08-13 (MAR-633: an MCP server is a connection DASH brokers —
 decided before it is built)
 
