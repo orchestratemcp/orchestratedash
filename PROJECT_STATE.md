@@ -1,5 +1,38 @@
 # DASH project state
 
+Updated: 2026-08-13 (MAR-628: browser control is decided before it is built)
+
+ADR 0019 recommends one browser shape: the Chromium DASH already ships,
+rendered locally as an Electron `WebContentsView` and controlled through a
+small DASH-owned CDP operation catalogue. Playwright and Puppeteer remain
+possible implementations behind that catalogue if the first real task proves
+their locator and waiting machinery is worth a dependency; neither is part of
+the first slice.
+
+The decision's product is the supervision surface, not a claim that DASH can
+understand arbitrary web consequences. The controlled browser gets exact
+per-run origins, an action and frame trail, revocation of future controller
+commands, and approval on the operation classes DASH actually offers. It does
+not become a network sandbox for the agent, and a destroyed browser cannot
+recall a request already sent. Credentials are explicitly deferred: the first
+slice is an ephemeral public-web session. A persistent browser profile is a
+credential with no OS-vault boundary; on a VPS it is agent-managed under ADR
+0006 and local Disconnect cannot withdraw provider access.
+
+The VPS path uses the same Electron major and command/event contract in an
+offscreen `BrowserWindow`, with Xvfb because Electron still requires a Linux
+display driver. That is zero new npm dependency, not zero host payload. Remote
+frames are timestamped host-reported evidence and may not be called a live view
+until their cadence is measured.
+
+This is `planned`: documentation only, no dependency and no implementation.
+The smallest implementation slice is one News Scout article, one ephemeral
+visible view, one declared HTTPS origin set, read/scroll plus one
+approval-required link click, a stop that destroys the view, and the same
+bounded contract proven under Xvfb.
+
+---
+
 Updated: 2026-08-11 (MAR-602: the run route gets a caller — DASH can start the
 copy of an agent that is on a server, and what comes back is an evidence pull it
 actually performed)
