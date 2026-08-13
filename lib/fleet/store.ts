@@ -259,6 +259,24 @@ export function forgetAgentFleetGrants(agent: string): void {
   db().prepare("DELETE FROM fleet_grants WHERE agent = ?").run(agent);
 }
 
+/**
+ * Undo one agent's decision on one connection, restoring "never decided" (MAR-624).
+ *
+ * `recordFleetGrant` has one caller that writes before it knows the outcome —
+ * `adoptFleetCredential` records `granted` so a revoked agent is no longer
+ * withheld by the time materialization reads the set, then materializes. When
+ * that materialization does not actually produce a record for this agent, the
+ * `granted` row it just wrote would be exactly the wiring defect MAR-624 found:
+ * a decision DASH claims to have acted on and did not, disagreeing with
+ * `connection_secrets` and `broker_grants` for as long as the row survives. This
+ * is the undo for that path — narrower than `forgetAgentFleetGrants`, which
+ * clears every connection, and than `forgetFleetConnection`'s per-provider
+ * sweep, because only the one row a caller just wrote should come back out.
+ */
+export function forgetOneFleetGrant(provider: string, agent: string): void {
+  db().prepare("DELETE FROM fleet_grants WHERE provider = ? AND agent = ?").run(provider, agent);
+}
+
 function toGrant(row: Record<string, unknown>): FleetGrantRow {
   const standing = String(row["standing"]);
   return {

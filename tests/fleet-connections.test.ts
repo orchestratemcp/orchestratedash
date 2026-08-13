@@ -30,10 +30,11 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { ConnectionSourceManifest } from "../lib/connections";
+import { SecureStoreError, type SecureStore } from "../lib/secure-store";
 import { Vault } from "../lib/vault";
 import { FakeSafeStorage } from "./fakes/fake-safe-storage";
 import { scriptedOAuth } from "./fakes/oauth-operations";
-import { refusingAi } from "./fakes/ai-operations";
+import { refusingAi, scriptedAi } from "./fakes/ai-operations";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -41,6 +42,7 @@ const dataDir = mkdtempSync(path.join(tmpdir(), "dash-fleet-"));
 process.env.DASH_DATA_DIR = dataDir;
 
 const { performConnectionAction } = await import("../lib/connection-actions");
+const { adoptFleetCredential } = await import("../lib/fleet/actions");
 const { connectionSecretName } = await import("../lib/connection-credentials");
 const { closeDb, db } = await import("../lib/db");
 const { fleetCatalogue, fleetConnectorFor, fleetSecretName } = await import(
@@ -53,6 +55,7 @@ const {
   readFleetConnection,
   recordFleetConnection,
   recordFleetGrant,
+  readFleetGrants,
   withheldAgents,
 } = await import("../lib/fleet/store");
 const { resolveGrant } = await import("../lib/broker/grant");
@@ -64,7 +67,10 @@ const { listSecretReferences } = await import("../lib/secret-refs");
 const { fleetConnectorViews } = await import("../lib/views/build");
 
 const GMAIL = "google-gmail";
+const OPENROUTER = "openrouter";
 const SCOUT = "news-scout";
+/** A second api-key agent, for the tests that need two to tell reached from not. */
+const OTHER_SCOUT = "news-scout-two";
 
 function example(name: string): ConnectionSourceManifest {
   return JSON.parse(
@@ -111,6 +117,78 @@ function scout(over: { ownership?: string; scopes?: string[] | null } = {}): Con
   return clone as unknown as ConnectionSourceManifest;
 }
 
+/**
+ * An agent that needs OpenRouter, in the shape MAR-624's store diagnosis found
+ * `ai-news-scout-4`'s real manifest in: one `dash_managed` connection, one
+ * `secret`-kind field, and no OAuth anywhere in it.
+ *
+ * A second shape rather than a variant of `scout()`, because the two connectors
+ * differ in kind — `resolveOne` in `lib/fleet/grants.ts` wants `provider_key`
+ * here and `oauth` there — and a fixture built by editing the Gmail one would
+ * leave the OAuth-only fields it does not use in place, obscuring which parts
+ * of the manifest the api-key path actually reads.
+ */
+function keyScout(name: string = SCOUT): ConnectionSourceManifest {
+  return {
+    manifest_version: 2,
+    agent: {
+      name,
+      display_name: name,
+      goal: "test",
+      plan_source: "composed",
+      playbook_id: "",
+      route_id: "",
+      build_target: "code",
+    },
+    planned_route: [],
+    safety_contract: { automation_clearance: "L1", enforced_approval_gates: [], irreversible_components: [] },
+    monitoring: {
+      events: [],
+      endpoint_env: "DASH_INGEST_URL",
+      token_env: "DASH_INGEST_TOKEN",
+      output_location: "runs/events.jsonl inside the agent's own folder",
+    },
+    agent_dom: {
+      dom_version: 1,
+      runtime: {
+        class: "local_process",
+        label: "DASH Agent Runner on this computer",
+        availability: "on_demand",
+        continues_when_dash_closed: true,
+      },
+      trigger: { type: "manual", label: "Only when you ask it to run" },
+      locations: {
+        runtime: { id: "runtime", label: "runtime", kind: "local", offline_behavior: "x" },
+        control: [],
+        interaction: [],
+      },
+      connections: [
+        {
+          id: "model_provider",
+          provider: OPENROUTER,
+          label: "Your model provider",
+          purpose: "Summarise what this agent found.",
+          ownership: "dash_managed",
+          capabilities: [{ id: "openrouter.digest.curate", label: "Summarise", access: "spend" }],
+          fields: [
+            {
+              id: "api_key",
+              label: "API key",
+              purpose: "So DASH can reach OpenRouter on this agent's behalf.",
+              kind: "secret",
+              required: true,
+              help: "help",
+            },
+          ],
+        },
+      ],
+      permissions: { read: [], write: [], approval_required_for: [] },
+      control: { supported: true, command_version: 1, location_id: "runtime", commands: [] },
+      memory: [],
+    },
+  } as unknown as ConnectionSourceManifest;
+}
+
 function vault(): Vault {
   return new Vault({
     directory: path.join(dataDir, "vault"),
@@ -120,7 +198,7 @@ function vault(): Vault {
 }
 
 function deps(
-  store: Vault,
+  store: SecureStore,
   manifests: Record<string, ConnectionSourceManifest> = {},
   oauth = scriptedOAuth(),
 ) {
@@ -131,6 +209,52 @@ function deps(
     oauth,
     ai: refusingAi(),
     listAgentIds: () => Object.keys(manifests),
+  };
+}
+
+/**
+ * `deps()`, for the api-key path: a prompt that answers with a real-looking
+ * key and a probe that accepts it, since the OAuth-only fakes above are built
+ * to fail the moment either is reached.
+ */
+function keyDeps(
+  store: SecureStore,
+  manifests: Record<string, ConnectionSourceManifest> = {},
+  key = "sk-or-test-key-0000",
+) {
+  return {
+    ...deps(store, manifests),
+    promptForSecret: () => Promise.resolve(key),
+    ai: scriptedAi(),
+  };
+}
+
+/**
+ * A store that behaves normally except that `set` refuses one named secret.
+ *
+ * The seam `materialize` in `lib/fleet/actions.ts` needs a real write failure
+ * to exercise — the ordinary fakes never fail — and this is the narrowest one:
+ * everything else about the real `Vault` stays in the loop, including its own
+ * name validation, so a test using this is still driving the real store for
+ * every secret this is not written to refuse.
+ *
+ * Delegates explicitly rather than spreading `store`: `Vault`'s methods live
+ * on its prototype, so `{ ...store }` would copy no method at all and every
+ * call through the result would throw "not a function" instead of exercising
+ * anything.
+ */
+function refusingOneWrite(store: SecureStore, refuseName: string): SecureStore {
+  return {
+    describeBacking: () => store.describeBacking(),
+    get: (name) => store.get(name),
+    delete: (name) => store.delete(name),
+    listNames: () => store.listNames(),
+    set: (name, secret) =>
+      name === refuseName
+        ? Promise.reject(
+            new SecureStoreError("backend_unavailable", "refused for the test", refuseName),
+          )
+        : store.set(name, secret),
   };
 }
 
@@ -150,6 +274,9 @@ beforeEach(async () => {
   const store = vault();
   await store.delete(fleetSecretName(GMAIL, "sign_in")).catch(() => undefined);
   await store.delete(connectionSecretName(SCOUT, "mail", "gmail-account")).catch(() => undefined);
+  await store.delete(fleetSecretName(OPENROUTER, "api_key")).catch(() => undefined);
+  await store.delete(connectionSecretName(SCOUT, "model_provider", "api_key")).catch(() => undefined);
+  await store.delete(connectionSecretName(OTHER_SCOUT, "model_provider", "api_key")).catch(() => undefined);
   db().exec("DELETE FROM fleet_connections");
   db().exec("DELETE FROM fleet_grants");
   db().exec("DELETE FROM connection_secrets");
@@ -561,5 +688,174 @@ describe("the fleet tables", () => {
 
     await performConnectionAction("disconnect", fleetTarget(GMAIL), deps(store));
     expect(withheldAgents(GMAIL).size).toBe(0);
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * MAR-624. An honest fan-out for the key path
+ * ---------------------------------------------------------------------- */
+
+/**
+ * `keyScout` puts the api-key path through everything above the Gmail
+ * fixtures already covered for the sign-in path: `share`'s three outcomes and
+ * `adoptFleetCredential`'s rollback, driven against a real vault, so what
+ * these assert is what a granted row and a written secret actually contain,
+ * not a mock's opinion of them.
+ *
+ * The store diagnosis on this issue found a `granted` row in `fleet_grants`
+ * with nothing behind it in `connection_secrets` or `broker_grants`. Every
+ * test below either shows the two staying in step, or shows DASH saying so
+ * when they cannot.
+ */
+describe("MAR-624: an honest fan-out for an api-key connector", () => {
+  const secretFor = (agentId: string) => connectionSecretName(agentId, "model_provider", "api_key");
+
+  it("share materializes a real secret, reference and receipt for the agent it reaches", async () => {
+    const store = vault();
+    await performConnectionAction("connect", fleetTarget(OPENROUTER), keyDeps(store, {}));
+
+    const world = { [SCOUT]: keyScout() };
+    const shared = await performConnectionAction(
+      "share",
+      fleetTarget(OPENROUTER),
+      keyDeps(store, world),
+    );
+
+    expect(shared.ok).toBe(true);
+    expect(shared.detail).toContain(SCOUT);
+    await expect(store.get(secretFor(SCOUT))).resolves.toContain("sk-or-test-key-0000");
+    expect(
+      listSecretReferences(SCOUT).some(
+        (reference) => reference.connection_id === "model_provider" && reference.field_id === "api_key",
+      ),
+    ).toBe(true);
+    expect(listReceipts(SCOUT).length).toBeGreaterThan(0);
+    // `share` materializes a credential. It does not itself decide who is
+    // withheld, so it leaves no opinion in `fleet_grants` at all — which is
+    // the opposite of what the diagnosis found: a `granted` row with nothing
+    // behind it.
+    expect(readFleetGrants(OPENROUTER)).toEqual([]);
+  });
+
+  it("refuses honestly, naming the agent, when the write fails for every agent it would reach", async () => {
+    const store = vault();
+    await performConnectionAction("connect", fleetTarget(OPENROUTER), keyDeps(store, {}));
+
+    const world = { [SCOUT]: keyScout() };
+    const broken = refusingOneWrite(store, secretFor(SCOUT));
+    const shared = await performConnectionAction(
+      "share",
+      fleetTarget(OPENROUTER),
+      keyDeps(broken, world),
+    );
+
+    expect(shared.ok).toBe(false);
+    expect(shared.detail).toContain(SCOUT);
+    // DASH's own connection is unaffected — the fleet row survives a
+    // materialization failure for the agents downstream of it.
+    expect(readFleetConnection(OPENROUTER)).not.toBeNull();
+    await expect(store.get(secretFor(SCOUT))).rejects.toThrow();
+    expect(listSecretReferences(SCOUT)).toEqual([]);
+    expect(listReceipts(SCOUT)).toEqual([]);
+  });
+
+  it("reports a partial fan-out as partial, naming who was reached and who was not", async () => {
+    const store = vault();
+    await performConnectionAction("connect", fleetTarget(OPENROUTER), keyDeps(store, {}));
+
+    const world = { [SCOUT]: keyScout(), [OTHER_SCOUT]: keyScout(OTHER_SCOUT) };
+    const broken = refusingOneWrite(store, secretFor(OTHER_SCOUT));
+    const shared = await performConnectionAction(
+      "share",
+      fleetTarget(OPENROUTER),
+      keyDeps(broken, world),
+    );
+
+    // A partial fan-out is not the unqualified success this press claimed.
+    expect(shared.ok).toBe(false);
+    expect(shared.detail).toContain(SCOUT);
+    expect(shared.detail).toContain(OTHER_SCOUT);
+    await expect(store.get(secretFor(SCOUT))).resolves.toContain("sk-or-test-key-0000");
+    await expect(store.get(secretFor(OTHER_SCOUT))).rejects.toThrow();
+    expect(listReceipts(SCOUT).length).toBeGreaterThan(0);
+    expect(listReceipts(OTHER_SCOUT)).toEqual([]);
+  });
+
+  it("adopts cleanly: a granted row arrives with a real secret behind it", async () => {
+    const store = vault();
+    await performConnectionAction("connect", fleetTarget(OPENROUTER), keyDeps(store, {}));
+
+    const world = { [SCOUT]: keyScout() };
+    const adopted = await adoptFleetCredential(OPENROUTER, SCOUT, keyDeps(store, world));
+
+    expect(adopted?.ok).toBe(true);
+    expect(readFleetGrants(OPENROUTER)).toEqual([
+      expect.objectContaining({ agent: SCOUT, standing: "granted" }),
+    ]);
+    await expect(store.get(secretFor(SCOUT))).resolves.toContain("sk-or-test-key-0000");
+  });
+
+  it("does not leave a granted row behind when materialization cannot write this agent's record", async () => {
+    /*
+     * The exact defect the store diagnosis found, reproduced directly against
+     * `adoptFleetCredential`: without the fix, `fleet_grants` would say
+     * `granted` here while `connection_secrets` stayed empty for this agent.
+     */
+    const store = vault();
+    await performConnectionAction("connect", fleetTarget(OPENROUTER), keyDeps(store, {}));
+
+    const world = { [SCOUT]: keyScout() };
+    const broken = refusingOneWrite(store, secretFor(SCOUT));
+    const adopted = await adoptFleetCredential(OPENROUTER, SCOUT, keyDeps(broken, world));
+
+    expect(adopted).toBeNull();
+    expect(readFleetGrants(OPENROUTER)).toEqual([]);
+    await expect(store.get(secretFor(SCOUT))).rejects.toThrow();
+  });
+
+  it("restores a standing it revoked, rather than leaving granted behind, when materialization fails", async () => {
+    const store = vault();
+    await performConnectionAction("connect", fleetTarget(OPENROUTER), keyDeps(store, {}));
+    recordFleetGrant(OPENROUTER, SCOUT, "withheld", "2026-08-10T00:00:00.000Z");
+
+    const world = { [SCOUT]: keyScout() };
+    const broken = refusingOneWrite(store, secretFor(SCOUT));
+    const adopted = await adoptFleetCredential(OPENROUTER, SCOUT, keyDeps(broken, world));
+
+    expect(adopted).toBeNull();
+    // The revocation survives the failed attempt to undo it — a person who
+    // turned this agent off must not find it back on because a write failed.
+    expect(readFleetGrants(OPENROUTER)).toEqual([
+      expect.objectContaining({
+        agent: SCOUT,
+        standing: "withheld",
+        decided_at: "2026-08-10T00:00:00.000Z",
+      }),
+    ]);
+  });
+
+  it("invariant: every granted row has a matching connection_secrets record", async () => {
+    /*
+     * The property the whole issue is about, checked directly rather than
+     * inferred from one scenario's shape: whatever mix of successes and
+     * failures produced `fleet_grants`, nothing in it may say `granted` for an
+     * agent the vault does not actually hold a secret for.
+     */
+    const store = vault();
+    await performConnectionAction("connect", fleetTarget(OPENROUTER), keyDeps(store, {}));
+
+    const world = { [SCOUT]: keyScout(), [OTHER_SCOUT]: keyScout(OTHER_SCOUT) };
+    await adoptFleetCredential(OPENROUTER, SCOUT, keyDeps(store, world));
+    await adoptFleetCredential(
+      OPENROUTER,
+      OTHER_SCOUT,
+      keyDeps(refusingOneWrite(store, secretFor(OTHER_SCOUT)), world),
+    );
+
+    const granted = readFleetGrants(OPENROUTER).filter((row) => row.standing === "granted");
+    expect(granted.map((row) => row.agent)).toEqual([SCOUT]);
+    for (const row of granted) {
+      await expect(store.get(secretFor(row.agent))).resolves.not.toHaveLength(0);
+    }
   });
 });
