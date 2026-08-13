@@ -341,6 +341,22 @@ const dashShell = {
    */
   runAgentOnHost: ({ host_id, agent_id }: HostDeployTarget) =>
     send("host.run", { host_id, agent_id }),
+  /**
+   * Take the copy that is on a server back (MAR-611, ADR 0017).
+   *
+   * The same two ids again, and — like `downloadOutput` one family over — **no
+   * folder in either direction.** Main raises the operating system's own folder
+   * dialog, so where an agent's files land is chosen in a window this renderer
+   * did not draw and does not learn the answer of. That matters more here than
+   * it does for a single download: this writes several files at once, and a
+   * renderer that could name the directory would be a page script choosing a
+   * destination for bytes it never sees.
+   *
+   * Its own named method rather than a flag on `deployAgentToHost`, because they
+   * are opposite acts and one of them is irreversible.
+   */
+  bringAgentHome: ({ host_id, agent_id }: HostDeployTarget) =>
+    send("host.bringHome", { host_id, agent_id }),
   forgetHost: ({ host_id }: HostTarget) => send("host.forget", { host_id }),
 
   /**

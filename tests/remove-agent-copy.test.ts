@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { describeAgentRemoval } from "../lib/copy/remove-agent";
+import { describeAgentRemoval, describeStrandedByRemoval } from "../lib/copy/remove-agent";
 import { expectPlainLanguage } from "./helpers/plain-language";
 
 describe("describeAgentRemoval", () => {
@@ -46,5 +46,46 @@ describe("describeAgentRemoval", () => {
       const copy = describeAgentRemoval("Folder digest", mode);
       expectPlainLanguage([copy.headline, copy.detail, copy.confirm_label]);
     }
+  });
+});
+
+/**
+ * MAR-611, ADR 0017. The gate Henrik asked for on the bring-home issue: a
+ * removal that would strand a copy on a server has to say so before either of
+ * `describeAgentRemoval`'s two sentences are offered.
+ */
+describe("describeStrandedByRemoval", () => {
+  it("names the one server", () => {
+    const copy = describeStrandedByRemoval("Folder digest", ["My server"]);
+    expect(copy.headline).toContain("Folder digest");
+    expect(copy.headline).toContain("My server");
+    expect(copy.detail).toMatch(/that server/);
+    expect(copy.detail).not.toMatch(/those servers/);
+  });
+
+  it("names two servers with 'and', and more than two as a list", () => {
+    const two = describeStrandedByRemoval("Folder digest", ["First", "Second"]);
+    expect(two.headline).toContain("First and Second");
+
+    const three = describeStrandedByRemoval("Folder digest", ["First", "Second", "Third"]);
+    expect(three.headline).toContain("First, Second, and Third");
+    expect(three.detail).toMatch(/those servers/);
+  });
+
+  it("never claims removal here touches the copy there", () => {
+    const copy = describeStrandedByRemoval("Folder digest", ["My server"]);
+    expect(copy.detail).toMatch(/does not touch the copy/);
+    expect(copy.detail).toMatch(/keeps running there/);
+  });
+
+  it("offers bringing it home before offering to proceed", () => {
+    const copy = describeStrandedByRemoval("Folder digest", ["My server"]);
+    expect(copy.bring_home_label).toMatch(/bring it home/i);
+    expect(copy.proceed_label).toMatch(/remove/i);
+  });
+
+  it("stays in plain language", () => {
+    const copy = describeStrandedByRemoval("Folder digest", ["First", "Second"]);
+    expectPlainLanguage([copy.headline, copy.detail, copy.bring_home_label, copy.proceed_label]);
   });
 });

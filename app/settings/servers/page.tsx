@@ -972,6 +972,33 @@ export default function HostsPage(): ReactNode {
     void check(server);
   }
 
+  /**
+   * Take an agent's copy back off this server (MAR-611, ADR 0017).
+   *
+   * `ServerCard` has already shown the disclosure and asked once — this only
+   * runs once a person has confirmed it. On success the page re-reads: a
+   * bring-home changes what `server.sent` and the reconciled "what is on this
+   * server" list say, and both are computed from the store rather than kept
+   * here, so a stale `revision` would leave the row on screen after DASH's own
+   * record says it is gone.
+   */
+  async function bringHome(server: SavedServerView, agentId: string): Promise<void> {
+    setBusyHost(server.host_id);
+    setNotice(server.host_id, null);
+    const result = await submitHostCommand("bringHome", {
+      host_id: server.host_id,
+      agent_id: agentId,
+    });
+    setBusyHost(null);
+    // `describeBringHomeOutcome`'s own sentence, success or refusal alike — it
+    // is worded on the trusted side and belongs in the card's notice either
+    // way, the same as every other host command on this page.
+    setNotice(server.host_id, result.detail ?? null);
+    if (result.ok) {
+      setRevision((current) => current + 1);
+    }
+  }
+
   async function forget(server: SavedServerView): Promise<void> {
     setBusyHost(server.host_id);
     setNotice(server.host_id, null);
@@ -1094,6 +1121,7 @@ export default function HostsPage(): ReactNode {
                     forget: () => void forget(server),
                     trust: (fingerprint) => void trust(server, fingerprint),
                     setup: () => setup(server),
+                    bringHome: (agentId) => void bringHome(server, agentId),
                   }}
                 />
               </li>

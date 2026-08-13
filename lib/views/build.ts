@@ -811,11 +811,16 @@ export function hostsView(store: StoreShape = readStore()): HostsView {
          * the deploy panel's own copy both refuse. What the server said arrives
          * on the standing, when somebody presses Check.
          */
-        sent: readHostDeploys(record.host_id).map((deploy) => ({
-          agent: deploy.agent,
-          sent_at: deploy.sent_at,
-          sent_on: plainDay(deploy.sent_at),
-        })),
+        // MAR-611, ADR 0017. Same filter as `agentDeployTargets`, on the same
+        // table read from the other direction: a row DASH has brought home is
+        // not a claim this server still holds a copy.
+        sent: readHostDeploys(record.host_id)
+          .filter((deploy) => deploy.brought_home_at === null)
+          .map((deploy) => ({
+            agent: deploy.agent,
+            sent_at: deploy.sent_at,
+            sent_on: plainDay(deploy.sent_at),
+          })),
       };
     }),
   };
@@ -1393,6 +1398,12 @@ function agentDeployTargets(agent: string): AgentDeployTarget[] {
 
   const targets: AgentDeployTarget[] = [];
   for (const record of records) {
+    // MAR-611, ADR 0017. A row with a `brought_home_at` is DASH's memory that
+    // it already took this agent back — the server side of that same fact is
+    // that the copy is not there any more, so this list must not claim it is.
+    if (record.brought_home_at !== null) {
+      continue;
+    }
     const host = readHost(record.host_id);
     if (host === null) {
       continue;

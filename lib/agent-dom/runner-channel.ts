@@ -203,8 +203,70 @@ export interface AgentStateRoute {
   readonly leaf: "state";
 }
 
+/**
+ * Reading the bytes of one output a runner is holding (MAR-611, ADR 0017).
+ *
+ * ## Why an index was not enough
+ *
+ * `/workspace-artifacts` — in `EVIDENCE_ROUTES` since MAR-484 — brings home a
+ * runner's *picture* of its file-backed outputs: name, size, digest, whether the
+ * file is still where it was. It has never brought a byte. On this machine that
+ * was invisible, because `workspaceDownload` reaches the local runner over its
+ * own socket whenever somebody presses Save. On a host it is the whole problem:
+ * the file exists only there, and ADR 0017 removes the bundle that holds it.
+ *
+ * So a bring-home that copied only the index would list, on the Outputs panel,
+ * files that no longer exist anywhere — with a Save button that would go looking
+ * on the wrong machine. That is not a smaller feature; it is a surface that
+ * lies, which is the thing this repository spends its length refusing.
+ *
+ * ## ADR 0014's three questions
+ *
+ * 1. **A credential in either direction?** None. An artifact id out; the file's
+ *    own bytes back, under a `content-type` the runner chose.
+ * 2. **Does it choose what runs, or only which?** Neither. It runs nothing and
+ *    changes nothing — the second read-only member of this union, and like
+ *    `AgentStateRoute` it can only name something the host's own index published
+ *    a moment earlier. `runner/workspace.ts` still resolves the opaque id to a
+ *    location and still refuses to hand back the path, so the caller names a
+ *    file it has never been told the whereabouts of.
+ * 3. **Can DASH describe the result honestly?** Yes, and here the honest thing
+ *    turned out to be *possible* rather than a refusal, which is the difference
+ *    from `AgentStateRoute`. A host's snapshot could not be stored because
+ *    `agent_dom_state` is keyed by agent id and both machines share one. Bytes
+ *    have no such row: they go to a folder the person chose, in a window DASH
+ *    does not draw, and DASH says which files it wrote and which it could not.
+ *
+ * ## The normalising hole, one route further along
+ *
+ * ADR 0014 amendment 1 recorded that `encodeURIComponent` leaves `.` and `..`
+ * untouched, so an `agent_id` of `..` turns `/agents/{id}` into `/agents` — a
+ * real route answering the whole list. This route's path does not *end* at the
+ * variable segment, so `..` normalises to `/artifacts/download`, which no runner
+ * serves. That makes the guard defensive here rather than load-bearing — and it
+ * is applied anyway, because "this one is safe by accident of where the segment
+ * sits" is a property the next leaf would silently not have.
+ */
+export interface ArtifactBytesRoute {
+  /** Opaque to this module, exactly as the two `agent_id`s above are. */
+  readonly artifact_id: string;
+  /**
+   * The only leaf, spelled as a literal for `AgentCommandRoute.leaf`'s reason.
+   *
+   * It is deliberately not a shared discriminant with the two routes above:
+   * `pathOf` switches on it, so a leaf added to either family is a compile error
+   * in that switch rather than a path quietly built from a name.
+   */
+  readonly leaf: "download";
+}
+
 /** Everything any channel in this module can be asked for. */
-export type RunnerRoute = EvidenceRoute | BrokerRoute | AgentCommandRoute | AgentStateRoute;
+export type RunnerRoute =
+  | EvidenceRoute
+  | BrokerRoute
+  | AgentCommandRoute
+  | AgentStateRoute
+  | ArtifactBytesRoute;
 
 /**
  * The path a route names, built in one place.
@@ -216,11 +278,17 @@ export function pathOf(route: RunnerRoute): string {
   if (typeof route === "string") {
     return route;
   }
-  const agent = `/agents/${encodeURIComponent(route.agent_id)}`;
-  // `state` is a discriminant and not a segment — see `AgentStateRoute`. The
-  // switch is exhaustive over the leaf union, so a third member is a compile
-  // error here rather than a path silently built from a name.
-  return route.leaf === "state" ? agent : `${agent}/${route.leaf}`;
+  // Exhaustive over the leaf union, so a fourth member is a compile error here
+  // rather than a path silently built from a name.
+  switch (route.leaf) {
+    // `state` is a discriminant and not a segment — see `AgentStateRoute`.
+    case "state":
+      return `/agents/${encodeURIComponent(route.agent_id)}`;
+    case "commands":
+      return `/agents/${encodeURIComponent(route.agent_id)}/commands`;
+    case "download":
+      return `/artifacts/${encodeURIComponent(route.artifact_id)}/download`;
+  }
 }
 
 /**
@@ -246,7 +314,31 @@ export function pathOf(route: RunnerRoute): string {
  * almost-true guard is the kind somebody later simplifies away.
  */
 export function addressesAnAgent(route: AgentCommandRoute | AgentStateRoute): boolean {
-  const segment = encodeURIComponent(route.agent_id);
+  return namesOneSegment(route.agent_id);
+}
+
+/**
+ * The same question for an artifact id (MAR-611).
+ *
+ * Its own exported function rather than a widened `addressesAnAgent`, because
+ * the two are asking about different fields and a single function taking a union
+ * would have to reach for whichever key happened to be present — which is the
+ * narrowing-by-absent-key shape `AgentStateRoute.leaf` exists to avoid.
+ */
+export function addressesAnArtifact(route: ArtifactBytesRoute): boolean {
+  return namesOneSegment(route.artifact_id);
+}
+
+/**
+ * Whether a value survives being put in a path segment as itself.
+ *
+ * `encodeURIComponent` confines any string to one segment, but leaves `.` and
+ * `..` alone because dots are unreserved — and those two are the segments every
+ * URL parser between here and the socket removes. See `addressesAnAgent` for
+ * what that costs on a route whose path ends at the variable part.
+ */
+function namesOneSegment(value: string): boolean {
+  const segment = encodeURIComponent(value);
   return segment.length > 0 && segment !== "." && segment !== "..";
 }
 
@@ -289,9 +381,13 @@ export interface RunnerChannel<Route extends RunnerRoute> {
  * demonstrates is worth stating once for whoever adds the next one: **a route is
  * added to both channels or to neither.** There is no such thing as a route the
  * remote channel carries and the local one does not.
+ *
+ * `ArtifactBytesRoute` joined in MAR-611 under that rule — added to both, so the
+ * local channel stays assignable here and `lib/agent-dom/artifact-bytes.ts` is
+ * one implementation serving a runner on either machine.
  */
 export type RemoteRunnerChannel = RunnerChannel<
-  EvidenceRoute | AgentCommandRoute | AgentStateRoute
+  EvidenceRoute | AgentCommandRoute | AgentStateRoute | ArtifactBytesRoute
 >;
 
 /**
@@ -306,7 +402,9 @@ export type RemoteRunnerChannel = RunnerChannel<
 declare const BROKER_CAPABLE: unique symbol;
 
 export interface LocalRunnerChannel
-  extends RunnerChannel<EvidenceRoute | AgentCommandRoute | AgentStateRoute | BrokerRoute> {
+  extends RunnerChannel<
+    EvidenceRoute | AgentCommandRoute | AgentStateRoute | ArtifactBytesRoute | BrokerRoute
+  > {
   readonly [BROKER_CAPABLE]: true;
 }
 
@@ -371,20 +469,26 @@ export function remoteRunnerChannel(options: {
        * `agent_id` away from being wrong, in a function whose reason to exist is
        * to be right when the types have been cast away.
        *
-       * MAR-602 widens this to exactly two new shapes — a run request and a
-       * read of the snapshot that run request has to name a target from. A leaf
-       * outside that pair cannot be spelled by a typed caller and is refused
-       * here for the one that was not.
+       * MAR-602 widened this to exactly two new shapes — a run request and a
+       * read of the snapshot that run request has to name a target from — and
+       * MAR-611 to a third, the bytes of one output the host's own index named.
+       * A leaf outside those three cannot be spelled by a typed caller and is
+       * refused here for the one that was not.
        *
-       * The leaf is checked against the pair by value rather than by asking
+       * The leaf is checked against the set by value rather than by asking
        * whether it is "not undefined", so a cast carrying `{agent_id, leaf:
        * "lifecycle"}` is refused by this function and not only by the compiler
-       * that a cast has already been used to get past.
+       * that a cast has already been used to get past. Each leaf is paired with
+       * *its own* segment guard rather than with whichever id the object happens
+       * to carry — a cast could supply both keys, and a guard that read the wrong
+       * one would be checking a field the path never uses.
        */
       const named =
         typeof route === "string"
           ? permitted.has(route)
-          : (route.leaf === "commands" || route.leaf === "state") && addressesAnAgent(route);
+          : route.leaf === "download"
+            ? addressesAnArtifact(route)
+            : (route.leaf === "commands" || route.leaf === "state") && addressesAnAgent(route);
       if (!named) {
         return Promise.reject(new RemoteRouteRefused(pathOf(route)));
       }

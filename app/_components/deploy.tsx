@@ -16,6 +16,7 @@ import {
   type ConnectionTravel,
 } from "../../lib/deploy/connection-travel";
 import { describeDeployReceipt } from "../../lib/deploy/receipt";
+import { describeBringHome } from "../../lib/copy/bring-home";
 import { describeSentServer, SENT_SERVERS_HEADING } from "../../lib/copy/folder";
 import { readProbeStanding, type HostConnectState } from "../../lib/host-connect";
 import { describeDeployed, describeSignIn } from "../../lib/server-card";
@@ -218,6 +219,7 @@ function SentServers({
   busy,
   canAct,
   onSendAgain,
+  onBringHome,
 }: {
   targets: readonly AgentDeployTarget[];
   /** MAR-591. What DASH held back from every one of these pushes. */
@@ -225,6 +227,8 @@ function SentServers({
   busy: boolean;
   canAct: boolean;
   onSendAgain: (hostId: string) => void;
+  /** MAR-611, ADR 0017. Take this copy off that server, having copied what it has. */
+  onBringHome: (hostId: string) => void;
 }): ReactNode {
   if (targets.length === 0) {
     return null;
@@ -265,20 +269,98 @@ function SentServers({
               "you may not".
             */}
             {canAct ? (
-              <button
-                type="button"
-                className={target.behind ? "button-primary" : "button-secondary"}
-                disabled={busy}
-                onClick={() => {
-                  onSendAgain(target.host_id);
-                }}
-              >
-                {busy ? "Sending…" : `Send this agent to ${target.label} again`}
-              </button>
+              <div className="button-row">
+                <button
+                  type="button"
+                  className={target.behind ? "button-primary" : "button-secondary"}
+                  disabled={busy}
+                  onClick={() => {
+                    onSendAgain(target.host_id);
+                  }}
+                >
+                  {busy ? "Sending…" : `Send this agent to ${target.label} again`}
+                </button>
+                {/*
+                  MAR-611, ADR 0017. The symmetric other half, on the row that
+                  already names the server: copy what the copy there still has,
+                  then take it off. `describeBringHome` is the disclosure a
+                  person reads before pressing it — this button is deliberately
+                  not primary, since the button beside it is the one that keeps
+                  the copy where it already is.
+                */}
+                <button
+                  type="button"
+                  className="button-secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    onBringHome(target.host_id);
+                  }}
+                >
+                  Bring this agent home
+                </button>
+              </div>
             ) : null}
           </div>
         );
       })}
+    </section>
+  );
+}
+
+/**
+ * Where a bring-home stands, on the one agent page that can start one
+ * (MAR-611, ADR 0017).
+ *
+ * Its own small state machine rather than a boolean, for `DeployStanding`'s own
+ * reason next door: `confirm` is the disclosure `describeBringHome` owes a
+ * person before anything irreversible happens, `working` is the sequence
+ * actually running on a server, and `done` is `describeBringHomeOutcome`'s own
+ * sentence, already worded by the trusted side and rendered rather than
+ * reworded here.
+ */
+type BringHomeState =
+  | { step: "confirm"; host_id: string; label: string }
+  | { step: "working"; host_id: string; label: string }
+  | { step: "done"; host_id: string; label: string; ok: boolean; detail: string }
+  | null;
+
+/**
+ * The disclosure before the press, and the two answers to it.
+ *
+ * `describeBringHome`'s three sentences, drawn the same shape
+ * `ForgetConfirmation` (`app/_components/server-card.tsx`) already uses for the
+ * other irreversible server action on this page — a person reads what will
+ * happen before either button is live.
+ */
+function BringHomeConfirmation({
+  label,
+  busy,
+  onKeep,
+  onConfirm,
+}: {
+  label: string;
+  busy: boolean;
+  onKeep: () => void;
+  onConfirm: () => void;
+}): ReactNode {
+  const copy = describeBringHome(label);
+  return (
+    <section className="notice wrap" role="alert">
+      <p>
+        <strong>{copy.headline}</strong>
+      </p>
+      <p>{copy.meaning}</p>
+      <p className="disclosure wrap" role="note">
+        {copy.afterwards}
+      </p>
+      <div className="button-row">
+        <button type="button" className="button-secondary" disabled={busy} onClick={onKeep}>
+          Not now
+        </button>
+        <button type="button" className="button-primary" disabled={busy} onClick={onConfirm}>
+          {busy ? "Bringing it home…" : "Bring it home"}
+        </button>
+      </div>
     </section>
   );
 }
@@ -297,6 +379,11 @@ export function DeployToServerPanel({
   onChoose,
   onDeploy,
   onSendAgain,
+  bringHome,
+  onBringHomeRequest,
+  onBringHomeCancel,
+  onBringHomeConfirm,
+  onBringHomeDismiss,
 }: {
   /** The agent's own display name, as the page's heading shows it. */
   title: string;
@@ -314,6 +401,12 @@ export function DeployToServerPanel({
   onChoose: (hostId: string) => void;
   onDeploy: () => void;
   onSendAgain: (hostId: string) => void;
+  /** MAR-611, ADR 0017. Where the bring-home for this agent stands, if any. */
+  bringHome: BringHomeState;
+  onBringHomeRequest: (hostId: string) => void;
+  onBringHomeCancel: () => void;
+  onBringHomeConfirm: () => void;
+  onBringHomeDismiss: () => void;
 }): ReactNode {
   /*
    * The refusal, before a server is ever offered.
@@ -411,7 +504,35 @@ export function DeployToServerPanel({
         busy={busy}
         canAct={canAct}
         onSendAgain={onSendAgain}
+        onBringHome={onBringHomeRequest}
       />
+
+      {/*
+        MAR-611, ADR 0017. The disclosure before the press, and the outcome
+        after it — both about whichever server's row was pressed, not
+        necessarily the one chosen in the picker above.
+      */}
+      {bringHome !== null && bringHome.step !== "done" ? (
+        <BringHomeConfirmation
+          label={bringHome.label}
+          busy={bringHome.step === "working"}
+          onKeep={onBringHomeCancel}
+          onConfirm={onBringHomeConfirm}
+        />
+      ) : null}
+      {bringHome !== null && bringHome.step === "done" ? (
+        <section
+          className={bringHome.ok ? "notice notice-ok wrap" : "notice notice-err wrap"}
+          role="status"
+        >
+          <p>{bringHome.detail}</p>
+          <div className="button-row">
+            <button type="button" className="button-secondary" onClick={onBringHomeDismiss}>
+              Close
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <p className="card-meta wrap">{describeSignIn(chosen)}.</p>
 
@@ -502,6 +623,7 @@ export function DeployToServer({
   deploy,
   targets,
   canAct,
+  onBroughtHome,
 }: {
   /** The agent's id, which is what the command names. */
   agent: string;
@@ -509,6 +631,13 @@ export function DeployToServer({
   deploy: AgentDeployView;
   targets: readonly AgentDeployTarget[];
   canAct: boolean;
+  /**
+   * MAR-611, ADR 0017. A bring-home changes which servers this agent is still
+   * sent to — `view.deploy_targets` excludes a row the moment its
+   * `brought_home_at` is set — so a successful one has to ask the page for a
+   * fresh view rather than let `targets` here go stale.
+   */
+  onBroughtHome: () => void;
 }): ReactNode {
   const hosts = useView((source) => source.hosts());
   const [chosenHost, setChosenHost] = useState("");
@@ -516,6 +645,7 @@ export function DeployToServer({
   const [report, setReport] = useState<HostConnectState | null>(null);
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [bringHome, setBringHome] = useState<BringHomeState>(null);
 
   const servers = hosts.status === "ready" ? hosts.data.servers : [];
   const chosen = servers.find((server) => server.host_id === chosenHost) ?? servers[0];
@@ -573,6 +703,42 @@ export function DeployToServer({
     setBusy(false);
     setReport(readProbeStanding(target.label, checked));
     setCheckedAt(new Date().toISOString());
+  }
+
+  /**
+   * The bring-home sequence, gated on the confirmation `BringHomeConfirmation`
+   * draws (MAR-611, ADR 0017).
+   *
+   * Two calls into state rather than one — `confirm` on the press that opens
+   * the disclosure, `working`/`done` on the press that actually starts the
+   * sequence — because a bring-home removes the agent from a server and the
+   * disclosure exists so nobody presses that by mistake.
+   */
+  function requestBringHome(hostId: string): void {
+    const target = targets.find((one) => one.host_id === hostId);
+    if (target === undefined) {
+      return;
+    }
+    setBringHome({ step: "confirm", host_id: hostId, label: target.label });
+  }
+
+  async function confirmBringHome(): Promise<void> {
+    if (bringHome === null) {
+      return;
+    }
+    const { host_id, label } = bringHome;
+    setBringHome({ step: "working", host_id, label });
+    const result = await submitHostCommand("bringHome", { host_id, agent_id: agent });
+    setBringHome({
+      step: "done",
+      host_id,
+      label,
+      ok: result.ok,
+      detail: result.detail ?? "DASH could not bring this agent home.",
+    });
+    if (result.ok) {
+      onBroughtHome();
+    }
   }
 
   /*
@@ -634,6 +800,15 @@ export function DeployToServer({
         // whichever server the select still showed.
         setChosenHost(hostId);
         void put(hostId);
+      }}
+      bringHome={bringHome}
+      onBringHomeRequest={requestBringHome}
+      onBringHomeCancel={() => {
+        setBringHome(null);
+      }}
+      onBringHomeConfirm={() => void confirmBringHome()}
+      onBringHomeDismiss={() => {
+        setBringHome(null);
       }}
     />
   );

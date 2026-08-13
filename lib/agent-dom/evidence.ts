@@ -83,6 +83,43 @@ const DRAIN_TIMEOUT_MS = 3_000;
  */
 export type EvidenceSourceKind = "this_machine" | "another_machine";
 
+/**
+ * One file-backed output, as the runner that holds it named it in this pass
+ * (MAR-611).
+ *
+ * ## Why the pull returns this at all
+ *
+ * `workspace_artifacts` has no column for the machine a row came from, for the
+ * same reason `runs` has none: until an agent could exist in two places the
+ * question could not be asked. A deployed agent has the same id on both, so
+ * "which of this agent's outputs are on the server" is a question DASH's own
+ * store cannot answer and must not guess at.
+ *
+ * The one moment it *is* answerable is this one. A pull against a host asks that
+ * host's runner for its index, and everything in the reply is by construction a
+ * file on that machine. So the ids are returned from the pull that learned them
+ * rather than derived afterwards — ADR 0014's rule about a run's machine of
+ * origin, applied to a file: *from the pull that produced it, never from a
+ * deploy record.*
+ *
+ * ## Deliberately not the validated record
+ *
+ * `syncWorkspaceArtifacts` is the contract boundary and stays the only one; this
+ * is read from the same reply with a much weaker question — *did the runner name
+ * an id, an owner, a name and a size* — because the claim being made is only
+ * that the host mentioned these. A row this list names but the ingest refused is
+ * still a file on that machine, and a bring-home that skipped it because DASH
+ * could not parse its metadata would destroy it silently.
+ */
+export interface IndexedArtifact {
+  artifact_id: string;
+  agent: string;
+  display_name: string;
+  byte_size: number;
+  /** The runner's own word for whether the file is still where it put it. */
+  availability: string;
+}
+
 /** One pass over one runner's evidence routes. */
 export interface EvidencePull {
   /**
@@ -109,6 +146,19 @@ export interface EvidencePull {
   workspace_truncated: boolean;
   events_ingested: number;
   artifacts_ingested: number;
+  /**
+   * Every file-backed output the runner named in this pass (MAR-611).
+   *
+   * Empty when the workspace route did not answer, which is **not** the same as
+   * "this runner holds no files" — a caller about to destroy something has to
+   * tell those apart, and `reached` is how. See `IndexedArtifact`.
+   *
+   * Not stored. `EvidencePullRecord` is the durable shape and has no member for
+   * this, because it is a fact about one look rather than a running total, and
+   * because writing it would create a second answer to what `workspace_artifacts`
+   * already holds.
+   */
+  workspace_index: readonly IndexedArtifact[];
 }
 
 export interface PullOptions {
@@ -240,7 +290,7 @@ async function drainArtifacts(
 async function syncWorkspace(
   channel: RemoteRunnerChannel,
   log: (line: string) => void,
-): Promise<{ truncated: boolean; reached: boolean }> {
+): Promise<{ truncated: boolean; reached: boolean; indexed: IndexedArtifact[] }> {
   try {
     const response = await channel.call("/workspace-artifacts", {
       method: "GET",
@@ -249,7 +299,7 @@ async function syncWorkspace(
     if (!response.ok) {
       // 501 is the ordinary answer from a runner built without a workspace, and
       // is not worth a log line on every poll.
-      return { truncated: false, reached: false };
+      return { truncated: false, reached: false, indexed: [] };
     }
 
     const body = (await response.json()) as { artifacts?: unknown; truncated?: unknown };
@@ -261,17 +311,55 @@ async function syncWorkspace(
       );
     }
     if (!Array.isArray(body.artifacts)) {
-      return { truncated, reached: true };
+      return { truncated, reached: true, indexed: [] };
     }
 
     report(syncWorkspaceArtifacts(body.artifacts), log, "runner workspace artifact");
-    return { truncated, reached: true };
+    return { truncated, reached: true, indexed: named(body.artifacts) };
   } catch {
     // Fire and forget, as the two drains above are. The runner's own index is
     // the record; this is a copy for rendering, and a failed refresh costs a
     // page being five seconds behind.
-    return { truncated: false, reached: false };
+    return { truncated: false, reached: false, indexed: [] };
   }
+}
+
+/**
+ * Which files the runner mentioned, on a weaker question than the ingest's
+ * (MAR-611).
+ *
+ * `syncWorkspaceArtifacts` above is the contract boundary and it stays the only
+ * one — nothing here is stored. This asks only whether the runner named a file:
+ * an id, an owner, a name and a size. A record the ingest refused is still a
+ * file sitting on that machine, and `lib/deploy/bring-home.ts` is about to
+ * decide whether to destroy the directory it is in.
+ *
+ * `byte_size` defaults to zero rather than causing a skip, because an index
+ * entry with an unreadable size is exactly the case where DASH should try the
+ * fetch and let the ceiling refuse on the bytes that actually arrive.
+ */
+function named(candidates: readonly unknown[]): IndexedArtifact[] {
+  const indexed: IndexedArtifact[] = [];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "object" || candidate === null) {
+      continue;
+    }
+    const record = candidate as Record<string, unknown>;
+    if (typeof record["artifact_id"] !== "string" || typeof record["agent"] !== "string") {
+      continue;
+    }
+    indexed.push({
+      artifact_id: record["artifact_id"],
+      agent: record["agent"],
+      display_name:
+        typeof record["display_name"] === "string" && record["display_name"].length > 0
+          ? record["display_name"]
+          : record["artifact_id"],
+      byte_size: typeof record["byte_size"] === "number" ? record["byte_size"] : 0,
+      availability: typeof record["availability"] === "string" ? record["availability"] : "available",
+    });
+  }
+  return indexed;
 }
 
 /**
@@ -308,6 +396,7 @@ export async function pullEvidence(
     workspace_truncated: workspace.truncated,
     events_ingested: telemetry.ingested,
     artifacts_ingested: artifacts.ingested,
+    workspace_index: workspace.indexed,
   };
 }
 
