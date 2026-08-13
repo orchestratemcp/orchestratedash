@@ -4,6 +4,7 @@ import { OUTPUTS_PANEL_COPY } from "../../lib/copy/artifacts";
 import {
   PANEL_CELL_ABSENT,
   PANEL_COPY,
+  PANEL_EMPTY_DISCLOSURE,
   PANEL_METRIC_EMPTY,
   type PanelCard,
   type PanelEmptyState,
@@ -461,14 +462,30 @@ function PanelArtifactBody({ card }: { card: ArtifactCardView }): ReactNode {
   }
 }
 
-/** A section with nothing behind it yet, said rather than left blank. */
+/**
+ * A section with nothing behind it yet, said rather than left blank.
+ *
+ * ADR 0008 amendment 1 admits this one read-only disclosure inside the
+ * author's region. The distinction is visible, not merely structural: its
+ * fixed summary names DASH as the speaker. Neither the summary nor the body
+ * accepts an author string, and opening it only reveals prose â€” it submits no
+ * command, changes no record, navigates nowhere and is not remembered.
+ *
+ * The headline stays outside and visible because the three empty-table cases
+ * are different facts. A shared panel-level sentence would make "not produced",
+ * "not rows" and "no readable rows" look like one absence, which is exactly
+ * what `PanelEmptyKind` was introduced to prevent.
+ */
 function StatedEmpty({ empty }: { empty: PanelEmptyState }): ReactNode {
   return (
     <div className="empty agent-panel-empty">
       <p>
         <strong>{empty.headline}</strong>
       </p>
-      <p>{empty.meaning}</p>
+      <details className="card-more agent-panel-empty-disclosure">
+        <summary>{PANEL_EMPTY_DISCLOSURE}</summary>
+        <p>{empty.meaning}</p>
+      </details>
     </div>
   );
 }
