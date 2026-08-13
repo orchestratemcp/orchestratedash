@@ -473,8 +473,24 @@ export async function performConnectionAction(
    * After the action and only when it succeeded, so a refused disconnect leaves
    * no decision behind it. Silent when the provider has no fleet connection,
    * which is every connection DASH held before ADR 0013.
+   *
+   * MAR-624. `result.ok` alone is not "connected": a cancelled prompt returns
+   * `ok: true, detail: "No change was made."` — a cancel is not an error — with
+   * `masked_hint` carrying whatever reference already existed, which is `null`
+   * for an agent that had none. Gating on `ok` alone recorded `granted` for
+   * that cancel exactly as it would for a real key, which is how a decision
+   * disagreeing with `connection_secrets` could survive even after
+   * `adoptFleetCredential` above declines to leave one behind for the same
+   * reason. `masked_hint !== null` is the fact this line actually needs: a
+   * credential — this call's or an earlier one — really is on record.
    */
-  if (result.ok && (action === "connect" || action === "disconnect")) {
+  const madeTheDecision =
+    action === "connect"
+      ? result.masked_hint !== null
+      : action === "disconnect"
+        ? result.ok
+        : false;
+  if (madeTheDecision) {
     noteAgentDecision(
       declaredProvider,
       target.agent_id,

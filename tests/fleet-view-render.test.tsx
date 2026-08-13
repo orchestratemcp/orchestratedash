@@ -23,6 +23,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { ChiefBand, FleetList, spotlightPosition } from "../app/_components/fleet-list";
+import { FleetRail } from "../app/_components/fleet-rail";
 import { FleetViewToggle } from "../app/_components/fleet-view-toggle";
 import { FLEET_VIEWS, describeFleetView } from "../lib/views/fleet-view";
 import { GLANCE_ALL_CLEAR } from "../lib/copy/glance";
@@ -31,6 +32,7 @@ import type { AgentRow } from "../lib/views/types";
 function agent(over: Partial<AgentRow> = {}): AgentRow {
   return {
     name: "news-scout",
+    title: "News Scout",
     goal: "Read the news sources you choose and write a short summary.",
     plan_source: "OrchestrateKit",
     build_target: "local",
@@ -43,6 +45,7 @@ function agent(over: Partial<AgentRow> = {}): AgentRow {
     deploy: { can_deploy: true, refusal: null },
     glance: [GLANCE_ALL_CLEAR],
     hosted_on: [],
+    running: false,
     ...over,
   } as AgentRow;
 }
@@ -100,9 +103,28 @@ describe("the layout control", () => {
   });
 });
 
+describe("the agents page rail", () => {
+  const markup = renderToStaticMarkup(<FleetRail />);
+
+  it("is a named aside, not a row above the cards", () => {
+    expect(markup).toContain('class="fleet-rail"');
+    expect(markup).toContain('aria-label="Agent actions"');
+  });
+
+  it("holds Add agent and the three-view control together", () => {
+    expect(markup).toContain('href="/settings/add-agent"');
+    expect(markup).toContain("Add agent");
+    expect(markup).toContain("fleet-view-toggle");
+    expect([...markup.matchAll(/type="radio"/g)]).toHaveLength(3);
+  });
+});
+
 describe("the list a cold render draws", () => {
   const markup = renderToStaticMarkup(
-    <FleetList agents={[agent(), agent({ name: "digest", avatar: "wizard" })]} log={NO_SIGHTINGS} />,
+    <FleetList
+      agents={[agent(), agent({ name: "digest", title: "Digest", avatar: "wizard" })]}
+      log={NO_SIGHTINGS}
+    />,
   );
 
   it("is the ordered list every other record surface uses", () => {
@@ -112,9 +134,13 @@ describe("the list a cold render draws", () => {
   });
 
   it("draws every agent, with nothing waiting on a hook", () => {
-    expect(markup).toContain("news-scout");
-    expect(markup).toContain("digest");
-    expect([...markup.matchAll(/class="row-card fleet-card"/g)]).toHaveLength(2);
+    expect(markup).toContain("News Scout");
+    expect(markup).toContain("Digest");
+    expect([...markup.matchAll(/class="row-card fleet-card/g)]).toHaveLength(2);
+  });
+
+  it("marks local or cloud on every card", () => {
+    expect([...markup.matchAll(/>Local</g)]).toHaveLength(2);
   });
 
   it("takes no tab stop when it is not a scroll container", () => {
@@ -127,14 +153,16 @@ describe("the list a cold render draws", () => {
     expect(markup).not.toContain('tabindex="0"');
   });
 
-  it("carries the whole card in every view, because there is only one card", () => {
+  it("puts the facts on the chief, because the card is a portrait", () => {
     /*
      * `lib/views/fleet-view.ts`'s rule from the markup's side: the views are three
      * tracks over one `FleetCard`, so a chip cannot exist in one view and not
-     * another. `tests/fleet-view.test.ts` holds the stylesheet to the same rule.
+     * another. The prose left the card; the chief is on the same list in every
+     * view and is where those facts now live.
      */
     expect(markup).toContain(GLANCE_ALL_CLEAR.meaning);
-    expect(markup).toContain("Read the news sources you choose");
+    expect(markup).toContain("chief-band");
+    expect(markup).not.toContain("Read the news sources you choose");
   });
 });
 
@@ -165,10 +193,12 @@ describe("the chief, under the cards", () => {
     /*
      * MAR-419's chat is not built. The action is MAR-545's per-agent Ask instead,
      * on the agent's own workspace — a real destination rather than a box that
-     * would take a question nothing can answer.
+     * would take a question nothing can answer. Opening the agent is here too,
+     * because the card is no longer a link.
      */
     const markup = renderToStaticMarkup(<ChiefBand agent={agent()} />);
     expect(markup).toContain("Ask news-scout");
+    expect(markup).toContain("Open this agent");
     expect(markup).toContain("/agents/detail?agent=news-scout#ask-agent");
   });
 

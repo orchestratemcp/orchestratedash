@@ -25,6 +25,7 @@ process.env.DASH_DATA_DIR = dataDir;
 const {
   forgetHostDeploys,
   readAgentDeploys,
+  recordAgentBroughtHome,
   recordAgentDeploy,
   resetStore,
 } = await import("../lib/store");
@@ -49,6 +50,13 @@ describe("the deploy record", () => {
      * `last_seen_at`, and the migration says there never will be: those are
      * properties of the remote machine, and a row asserting one would be the
      * inventory MAR-574 was right to refuse.
+     *
+     * `brought_home_at` (MAR-611) is the sixth and it passes that bar for the
+     * same reason `sent_at` does: it is a date DASH acted on, not a claim about
+     * what the server holds now. The two dates together say *DASH put this here
+     * and DASH took it back*, and neither of them says whether anything is there
+     * at this moment — somebody may have put something on that machine by hand a
+     * minute later, and DASH would not know.
      */
     const columns = db()
       .prepare("PRAGMA table_info(agent_deploys)")
@@ -57,6 +65,7 @@ describe("the deploy record", () => {
       .sort();
     expect(columns).toEqual([
       "agent",
+      "brought_home_at",
       "files_sha256",
       "host_id",
       "manifest_sha256",
@@ -81,6 +90,10 @@ describe("the deploy record", () => {
         sent_at: "2026-08-07T09:00:00.000Z",
         manifest_sha256: "manifest-a",
         files_sha256: "files-a",
+        // Null on a fresh push, and it is the ordinary state: DASH has not
+        // brought this back. Deliberately not the same fact as "it is still
+        // there" — see `AgentDeployRecord`.
+        brought_home_at: null,
       },
     ]);
   });
@@ -141,6 +154,76 @@ describe("the deploy record", () => {
     forgetHostDeploys("host-1");
     expect(readAgentDeploys("scout").map((row) => row.host_id)).toEqual(["host-2"]);
     expect(readAgentDeploys("other")).toEqual([]);
+  });
+
+  /* -------------------------------------------------------------------- *
+   * The second date (MAR-611, ADR 0017)
+   * -------------------------------------------------------------------- */
+
+  it("records the date DASH took an agent back, beside the date it sent it", () => {
+    recordAgentDeploy(
+      { agent: "scout", host_id: "host-1", manifest_sha256: "a", files_sha256: "a" },
+      "2026-08-07T09:00:00.000Z",
+    );
+    recordAgentBroughtHome("scout", "host-1", "2026-08-11T18:00:00.000Z");
+
+    // Both dates stand. ADR 0010's rule is that a row is DASH's memory of its
+    // own acts, and there are now two of them: DASH did send those bytes on the
+    // seventh, and it did take them back on the eleventh. Neither becomes untrue.
+    expect(readAgentDeploys("scout")[0]).toMatchObject({
+      sent_at: "2026-08-07T09:00:00.000Z",
+      brought_home_at: "2026-08-11T18:00:00.000Z",
+    });
+  });
+
+  it("clears the date it came home when the agent is sent again", () => {
+    /*
+     * The one place `brought_home_at` is ever cleared, and it has to be. A row
+     * carrying both dates after a fresh push would say DASH sent this and then
+     * removed it — about the newest copy DASH has sent — which is the row's own
+     * history contradicting itself.
+     */
+    recordAgentDeploy(
+      { agent: "scout", host_id: "host-1", manifest_sha256: "a", files_sha256: "a" },
+      "2026-08-07T09:00:00.000Z",
+    );
+    recordAgentBroughtHome("scout", "host-1", "2026-08-11T18:00:00.000Z");
+    recordAgentDeploy(
+      { agent: "scout", host_id: "host-1", manifest_sha256: "b", files_sha256: "b" },
+      "2026-08-12T09:00:00.000Z",
+    );
+
+    expect(readAgentDeploys("scout")[0]).toMatchObject({
+      sent_at: "2026-08-12T09:00:00.000Z",
+      brought_home_at: null,
+    });
+  });
+
+  it("writes no row for a bring-home of something DASH never sent", () => {
+    /*
+     * A host may hold a bundle DASH has no record of sending — ADR 0015 permits
+     * exactly that sentence on the Servers page. Inventing a `sent_at` to hang
+     * the second date off would be DASH fabricating the outbound act ADR 0010
+     * exists to record honestly, so the update simply matches nothing.
+     */
+    recordAgentBroughtHome("stranger", "host-1", "2026-08-11T18:00:00.000Z");
+    expect(readAgentDeploys("stranger")).toEqual([]);
+  });
+
+  it("does not confuse two servers holding the same agent", () => {
+    recordAgentDeploy(
+      { agent: "scout", host_id: "host-1", manifest_sha256: "a", files_sha256: "a" },
+      "2026-08-07T09:00:00.000Z",
+    );
+    recordAgentDeploy(
+      { agent: "scout", host_id: "host-2", manifest_sha256: "a", files_sha256: "a" },
+      "2026-08-07T09:00:00.000Z",
+    );
+    recordAgentBroughtHome("scout", "host-2", "2026-08-11T18:00:00.000Z");
+
+    const byHost = new Map(readAgentDeploys("scout").map((row) => [row.host_id, row.brought_home_at]));
+    expect(byHost.get("host-1")).toBeNull();
+    expect(byHost.get("host-2")).toBe("2026-08-11T18:00:00.000Z");
   });
 });
 

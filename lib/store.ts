@@ -1204,13 +1204,23 @@ export function latestArtifactForAgent(agent: string): RunArtifact | null {
  * how much DASH knows: `available` and `deleted` are facts it holds directly,
  * `moved` and `quarantined` are observations the runner made about a filesystem,
  * and `missing` is the residue — the state that means nothing else was true.
+ *
+ * `brought_home` is the sixth (MAR-611) and it is the only one **DASH writes
+ * rather than a runner**. Every other member arrives from `runner/workspace.ts`
+ * looking at its own disk; this one is DASH recording its own act — it copied
+ * the file off a server, to a folder a person chose, and then removed the
+ * machine's copy. `deleted` was the near miss and it is wrong in both halves of
+ * its own sentence: it tells the person somebody removed it on purpose and that
+ * no second copy exists, when DASH removed it and the second copy is the whole
+ * point.
  */
 export type ArtifactAvailability =
   | "available"
   | "deleted"
   | "moved"
   | "quarantined"
-  | "missing";
+  | "missing"
+  | "brought_home";
 
 export interface WorkspaceArtifactRecord {
   artifact_id: string;
@@ -1237,6 +1247,10 @@ const AVAILABILITY_STATES = new Set<string>([
   "moved",
   "quarantined",
   "missing",
+  // Accepted on the way in as well as written on the way out, so a row DASH
+  // marked survives being read back by the same narrowing every other row goes
+  // through. No runner emits it — see `ArtifactAvailability`.
+  "brought_home",
 ]);
 
 /**
@@ -1320,6 +1334,55 @@ export function syncWorkspaceArtifacts(
   }
 
   return { accepted: accepted.length, rejected };
+}
+
+/**
+ * Mark the outputs that were on a server as having come home (MAR-611,
+ * ADR 0017).
+ *
+ * ## Why this takes a list of ids rather than an agent
+ *
+ * `workspace_artifacts` has no column for the machine a row came from, and a
+ * deployed agent has the **same id in both places** — so "mark this agent's
+ * remote outputs" is not a query anybody can write, and one written anyway would
+ * mark the copy on this computer's files as gone. That is the same shape as
+ * ADR 0014 amendment 1's refusal to store a host's snapshot, and the way out is
+ * the same one: the ids come from the pull that learned them. Everything in a
+ * host's own workspace index is by construction a file on that host.
+ *
+ * So the caller passes exactly what the server named in the last look before it
+ * was emptied, and this function guesses at nothing.
+ *
+ * ## Why it does not touch `observed_at`
+ *
+ * That column is the runner's clock — "when the runner looked", never "when DASH
+ * wrote this down", and the header on `WorkspaceArtifactRecord` says so. The
+ * runner really did look then. What changed afterwards is DASH's own doing, and
+ * it is recorded in the two columns that are about the state of the bytes.
+ *
+ * Rows are updated and never inserted. An id DASH holds no row for is an output
+ * this store never took up, and inventing a row from a list of ids would be
+ * writing a record with no run, no size and no digest behind it.
+ */
+export function markArtifactsBroughtHome(
+  artifactIds: readonly string[],
+  detail: string,
+): number {
+  if (artifactIds.length === 0) {
+    return 0;
+  }
+  const database = db();
+  let marked = 0;
+  transact(database, () => {
+    const statement = database.prepare(
+      "UPDATE workspace_artifacts SET availability = 'brought_home', availability_detail = ? " +
+        "WHERE artifact_id = ?",
+    );
+    for (const artifactId of artifactIds) {
+      marked += Number(statement.run(detail, artifactId).changes ?? 0);
+    }
+  });
+  return marked;
 }
 
 /* ---------------------------------------------------------------------- *
@@ -1458,6 +1521,19 @@ export interface AgentDeployRecord {
   manifest_sha256: string;
   /** Of the program that went with it. Null for a manifest-only bundle. */
   files_sha256: string | null;
+  /**
+   * When DASH took this agent back off that server (MAR-611, ADR 0017).
+   *
+   * The second date, and it is the same kind of fact as the first: DASH removed
+   * the bundle, on that date, having copied what the server still had. It is not
+   * a claim that the server is empty now — somebody may put something there by
+   * hand a minute later, and DASH would not know.
+   *
+   * Null means DASH has not brought it back, which is deliberately **not** the
+   * same as "it is still there". A person who removed it themselves on the
+   * server leaves this null, and no surface may read the null as presence.
+   */
+  brought_home_at: string | null;
 }
 
 /**
@@ -1475,34 +1551,57 @@ export interface AgentDeployRecord {
  * and no earlier push changes that answer.
  */
 export function recordAgentDeploy(
-  record: Omit<AgentDeployRecord, "sent_at">,
+  record: Omit<AgentDeployRecord, "sent_at" | "brought_home_at">,
   at: string = new Date().toISOString(),
 ): void {
   db()
     .prepare(
-      "INSERT INTO agent_deploys (agent, host_id, sent_at, manifest_sha256, files_sha256) " +
-        "VALUES (?, ?, ?, ?, ?) ON CONFLICT (agent, host_id) DO UPDATE SET " +
+      "INSERT INTO agent_deploys (agent, host_id, sent_at, manifest_sha256, files_sha256, brought_home_at) " +
+        "VALUES (?, ?, ?, ?, ?, NULL) ON CONFLICT (agent, host_id) DO UPDATE SET " +
         "sent_at = excluded.sent_at, manifest_sha256 = excluded.manifest_sha256, " +
-        "files_sha256 = excluded.files_sha256",
+        "files_sha256 = excluded.files_sha256, " +
+        // Cleared, and this is the only place it is. A row carrying both dates
+        // would say DASH sent this and then removed it, about the newest copy
+        // DASH has sent — which is the row's own history contradicting itself.
+        "brought_home_at = NULL",
     )
     .run(record.agent, record.host_id, at, record.manifest_sha256, record.files_sha256);
+}
+
+/**
+ * Write down that DASH took this agent back off this server (MAR-611, ADR 0017).
+ *
+ * Called after the removal succeeded, never before it — `recordAgentDeploy`'s
+ * rule one act later, and for a sharper version of its reason: a bring-home is
+ * four steps behind one answer, and the only one of them this row is about is
+ * the last.
+ *
+ * **It updates and never inserts.** A bring-home for a (agent, server) pair DASH
+ * has no deploy row for is a pair DASH never sent to — the host was told about
+ * that agent by somebody else — and inventing a `sent_at` to hang this date off
+ * would be DASH fabricating the outbound act ADR 0010 exists to record honestly.
+ * The row simply does not change, and the act is still real; what is missing is
+ * DASH's memory of having started it.
+ */
+export function recordAgentBroughtHome(
+  agent: string,
+  hostId: string,
+  at: string = new Date().toISOString(),
+): void {
+  db()
+    .prepare("UPDATE agent_deploys SET brought_home_at = ? WHERE agent = ? AND host_id = ?")
+    .run(at, agent, hostId);
 }
 
 /** Every server DASH has sent this agent to, most recent first. */
 export function readAgentDeploys(agent: string): AgentDeployRecord[] {
   const rows = db()
     .prepare(
-      "SELECT agent, host_id, sent_at, manifest_sha256, files_sha256 FROM agent_deploys " +
-        "WHERE agent = ? ORDER BY sent_at DESC",
+      "SELECT agent, host_id, sent_at, manifest_sha256, files_sha256, brought_home_at " +
+        "FROM agent_deploys WHERE agent = ? ORDER BY sent_at DESC",
     )
     .all(agent);
-  return rows.map((row) => ({
-    agent: text(row, "agent"),
-    host_id: text(row, "host_id"),
-    sent_at: text(row, "sent_at"),
-    manifest_sha256: text(row, "manifest_sha256"),
-    files_sha256: row["files_sha256"] === null ? null : text(row, "files_sha256"),
-  }));
+  return rows.map(deployRecord);
 }
 
 /**
@@ -1521,17 +1620,32 @@ export function readAgentDeploys(agent: string): AgentDeployRecord[] {
 export function readHostDeploys(hostId: string): AgentDeployRecord[] {
   const rows = db()
     .prepare(
-      "SELECT agent, host_id, sent_at, manifest_sha256, files_sha256 FROM agent_deploys " +
-        "WHERE host_id = ? ORDER BY sent_at DESC",
+      "SELECT agent, host_id, sent_at, manifest_sha256, files_sha256, brought_home_at " +
+        "FROM agent_deploys WHERE host_id = ? ORDER BY sent_at DESC",
     )
     .all(hostId);
-  return rows.map((row) => ({
+  return rows.map(deployRecord);
+}
+
+/**
+ * One row, read the same way from both directions.
+ *
+ * Two copies of this mapping is how the two readers came to disagree about a
+ * column: `brought_home_at` was added in MAR-611 and would have had to be
+ * remembered twice, in two functions whose whole difference is a `WHERE` clause.
+ */
+function deployRecord(row: Record<string, unknown>): AgentDeployRecord {
+  return {
     agent: text(row, "agent"),
     host_id: text(row, "host_id"),
     sent_at: text(row, "sent_at"),
     manifest_sha256: text(row, "manifest_sha256"),
     files_sha256: row["files_sha256"] === null ? null : text(row, "files_sha256"),
-  }));
+    brought_home_at:
+      row["brought_home_at"] === null || row["brought_home_at"] === undefined
+        ? null
+        : text(row, "brought_home_at"),
+  };
 }
 
 /**

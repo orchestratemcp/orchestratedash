@@ -65,6 +65,8 @@
  * - `connect` — join the runner's socket to stdio. The control plane (MAR-484).
  * - `channel` — hand back the credential `connect`'s pipe has to be spoken with
  *   (MAR-602). See below; it is the seventh, and the set is closed again.
+ * - `uninstall` — take one bundle off the host. The eighth (MAR-611, ADR 0017),
+ *   and the only verb that removes anything. See below.
  *
  * ## The seventh, and why the set opened once (MAR-602, ADR 0014 amendment 1)
  *
@@ -112,6 +114,43 @@
  * (3) *Can DASH describe the result honestly?* It does not have to: nothing
  * about this verb reaches a surface. It is spent inside one action and never
  * stored — see `electron/host-run.ts`, which is where that promise is kept.
+ *
+ * ## The eighth, and the first verb that destroys something (MAR-611, ADR 0017)
+ *
+ * Deploy has been one-way since MAR-487: DASH can put an agent on a host and
+ * read evidence back, and can never take the agent off again. `host.forget`
+ * removes the key and the label and leaves the bundle where it is. So the only
+ * way to get an agent off a server was to sign in to that server by hand.
+ *
+ * **Held to ADR 0014's three questions, like the seventh.**
+ * (1) *Does it carry a credential?* No, in either direction. A bundle id out;
+ * `{removed, detail}` back.
+ * (2) *Does it choose what runs, or only which?* Neither — it runs nothing. It
+ * names one directory under a root the helper chose, by an id whose alphabet
+ * cannot spell a path, and the helper is what joins the two.
+ * (3) *Can DASH describe the result honestly?* Yes, and this is the question
+ * that shaped the verb. Removing a bundle destroys the runner's store inside it,
+ * which is where the host's account of what that agent did lives — so a verb
+ * that could be sent on its own would be a way to lose evidence DASH had never
+ * read. Two things follow, and they are in different places on purpose:
+ *
+ * - **The helper refuses while the runner is running** (`still_running`). Not a
+ *   courtesy: a directory removed out from under a live process leaves a runner
+ *   writing into a deleted tree on a machine nobody is watching. The ordering is
+ *   therefore enforced on the side that owns the filesystem, which is
+ *   `checkDeployRequest`'s own argument for living on both ends — a rule that
+ *   lived only in DASH is a rule the host does not have.
+ * - **DASH copies before it removes**, and refuses to remove when the copy
+ *   failed. That rule is `lib/deploy/bring-home.ts`'s and is not expressible
+ *   here, because this plane cannot see the control plane's evidence. Naming it
+ *   in both files is deliberate: this is the verb somebody would otherwise reach
+ *   for on its own.
+ *
+ * **It is idempotent, and that is a decision rather than a convenience.** A
+ * bundle that is not installed answers `ok` with `removed: false` rather than
+ * `not_installed` — unlike `stop`, where a missing bundle means the caller is
+ * confused. Here "it is not there" is the outcome being asked for, and a
+ * bring-home that failed at its last step must be safe to press again.
  */
 export const DEPLOY_VERBS = [
   "install",
@@ -121,6 +160,7 @@ export const DEPLOY_VERBS = [
   "collect",
   "connect",
   "channel",
+  "uninstall",
 ] as const;
 
 export type DeployVerb = (typeof DEPLOY_VERBS)[number];
@@ -215,6 +255,19 @@ export interface ChannelRequest {
   verb: "channel";
   bundle_id: string;
 }
+/**
+ * Take one bundle off the host (MAR-611).
+ *
+ * A bundle id and nothing else — in particular no `force`, no `even_if_running`
+ * and no `keep_data`. Each of those would be a caller telling the helper to
+ * relax a rule the helper exists to hold, and the closed-set discipline this
+ * file opens with is worth as much on a verb's *fields* as on its name: the
+ * helper decides, the request identifies.
+ */
+export interface UninstallRequest {
+  verb: "uninstall";
+  bundle_id: string;
+}
 
 export type DeployRequest =
   | InstallRequest
@@ -223,7 +276,8 @@ export type DeployRequest =
   | StatusRequest
   | CollectRequest
   | ConnectRequest
-  | ChannelRequest;
+  | ChannelRequest
+  | UninstallRequest;
 
 /* ---------------------------------------------------------------------- *
  * The check, run on both ends
@@ -421,5 +475,21 @@ export type DeployAnswer =
       bundle_id: string;
       token: string;
       fingerprint: string | null;
+    }
+  /**
+   * What was taken off the host (MAR-611).
+   *
+   * `removed` is false in exactly one successful case — the bundle was not
+   * there — and that case is an `ok` rather than a refusal for the reason
+   * `DEPLOY_VERBS` gives: absence is the outcome being asked for. A caller
+   * distinguishing "DASH removed it" from "it was already gone" has both facts;
+   * a caller that does not care may ignore the field.
+   */
+  | {
+      ok: true;
+      verb: "uninstall";
+      bundle_id: string;
+      removed: boolean;
+      detail: string;
     }
   | { ok: false; problem: string; detail: string };

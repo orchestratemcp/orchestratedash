@@ -102,9 +102,19 @@ describe("schema", () => {
     // 19 is MAR-589's `display_name` column — a name DASH itself owns,
     // separate from the author's own.
     // Asserted as a number rather than as MIGRATIONS.length so that appending a
-    // migration is a deliberate edit here too.
+    // migration is a deliberate edit here too. 21 is MAR-611's second date on
+    // `agent_deploys` (ADR 0017) -- the first step in this list written as a
+    // function purely so it can be re-applied, because the two tests below
+    // rewind `user_version` to 10 and every later step runs again.
+    //
+    // It is 21 rather than the 20 this branch was written against because
+    // MAR-589's `display_name` column reached master mid-flight. That step keeps
+    // the index it shipped with and this one moved to the end of the list, which
+    // is the only order that leaves an already-migrated installed store alone --
+    // renumbering a step somebody's database has already recorded is the one
+    // thing this pin exists to make somebody think about.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(20);
+    expect(version.user_version).toBe(21);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -512,7 +522,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(20);
+    ).toBe(21);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

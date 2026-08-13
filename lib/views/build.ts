@@ -218,6 +218,11 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
   // then answers per card — see `glanceReader` for why those two in particular
   // must not be asked per agent.
   const glanceFor = glanceReader(store, { connectionRows: connectionRowsFor });
+  const live = new Set(
+    listRuns(store)
+      .filter((run) => run.status === "running")
+      .map((run) => run.agent),
+  );
 
   return {
     agents: listAgents(store).map((agent) => ({
@@ -255,6 +260,10 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
       // Composed here rather than in the page for `damage`'s reason directly
       // below: both hosts must hand the renderer the same sentences.
       glance: glanceFor(agent.name),
+      // A run in flight, from events (`RunStatus === "running"`). On the row so
+      // a fleet card can mark Working without opening the runs view. MAR-544
+      // already reads this fact for the strip; the card now reads it too.
+      running: live.has(agent.name),
       // MAR-606. Where DASH has put this agent, from DASH's own record of doing
       // it. One more read of a small table per row, beside the registration and
       // folder reads this function already does per row — and, like them, it
@@ -802,11 +811,16 @@ export function hostsView(store: StoreShape = readStore()): HostsView {
          * the deploy panel's own copy both refuse. What the server said arrives
          * on the standing, when somebody presses Check.
          */
-        sent: readHostDeploys(record.host_id).map((deploy) => ({
-          agent: deploy.agent,
-          sent_at: deploy.sent_at,
-          sent_on: plainDay(deploy.sent_at),
-        })),
+        // MAR-611, ADR 0017. Same filter as `agentDeployTargets`, on the same
+        // table read from the other direction: a row DASH has brought home is
+        // not a claim this server still holds a copy.
+        sent: readHostDeploys(record.host_id)
+          .filter((deploy) => deploy.brought_home_at === null)
+          .map((deploy) => ({
+            agent: deploy.agent,
+            sent_at: deploy.sent_at,
+            sent_on: plainDay(deploy.sent_at),
+          })),
       };
     }),
   };
@@ -1384,6 +1398,12 @@ function agentDeployTargets(agent: string): AgentDeployTarget[] {
 
   const targets: AgentDeployTarget[] = [];
   for (const record of records) {
+    // MAR-611, ADR 0017. A row with a `brought_home_at` is DASH's memory that
+    // it already took this agent back — the server side of that same fact is
+    // that the copy is not there any more, so this list must not claim it is.
+    if (record.brought_home_at !== null) {
+      continue;
+    }
     const host = readHost(record.host_id);
     if (host === null) {
       continue;
@@ -1421,6 +1441,13 @@ function agentDeployTargets(agent: string): AgentDeployTarget[] {
 function agentHostedOn(agent: string): AgentHostedOnView[] {
   const hosted: AgentHostedOnView[] = [];
   for (const record of readAgentDeploys(agent)) {
+    // MAR-611, ADR 0017. Same skip `agentDeployTargets` already makes: a
+    // brought-home row is DASH's memory that it took the copy back, so the
+    // fleet mark must not still say Cloud. Local/Cloud reads this list
+    // (MAR-630), never a live sighting (ADR 0015).
+    if (record.brought_home_at !== null) {
+      continue;
+    }
     const host = readHost(record.host_id);
     if (host === null) {
       continue;

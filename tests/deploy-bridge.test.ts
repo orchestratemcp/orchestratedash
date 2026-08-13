@@ -184,12 +184,12 @@ function contradictoryManifest(): Record<string, unknown> {
  * ---------------------------------------------------------------------- */
 
 describe("the closed verb set", () => {
-  it("is exactly ADR 0007's six plus MAR-602's one, and nothing composes a command line", () => {
+  it("is exactly ADR 0007's six plus MAR-602's one plus MAR-611's one, and nothing composes a command line", () => {
     /*
-     * Pinned by value, and this pin has now fired twice — which is the whole
-     * reason it is written this way. ADR 0007 named six and MAR-487 wrote them;
-     * MAR-602 added `channel`, and it could not be added without changing this
-     * line and saying why.
+     * Pinned by value, and this pin has now fired three times — which is the
+     * whole reason it is written this way. ADR 0007 named six and MAR-487 wrote
+     * them; MAR-602 added `channel`; MAR-611 added `uninstall`. None of them
+     * could be added without changing this line and saying why.
      *
      * The seventh is the only member of either plane that carries a credential,
      * and `lib/deploy/verbs.ts` holds its argument against ADR 0014's three
@@ -200,7 +200,14 @@ describe("the closed verb set", () => {
      * else. Without it `sshHostChannel` took a token no caller could supply, so
      * the evidence plane was written, tested and unreachable.
      *
-     * An eighth arriving without a line here is a verb nobody decided to add.
+     * The eighth is the first verb that **destroys** anything, and its argument
+     * is the one worth restating where somebody counting the set will read it:
+     * `install` has removed a bundle's directory since MAR-487, so the capability
+     * is three months old and what is new is reaching it without writing anything
+     * back. What makes that safe is not in this list — it is the order in
+     * `lib/deploy/bring-home.ts` and the running-runner refusal in the helper.
+     *
+     * A ninth arriving without a line here is a verb nobody decided to add.
      */
     expect([...DEPLOY_VERBS]).toEqual([
       "install",
@@ -210,6 +217,7 @@ describe("the closed verb set", () => {
       "collect",
       "connect",
       "channel",
+      "uninstall",
     ]);
   });
 
@@ -565,6 +573,104 @@ describe("install, start, status, collect, stop — against the real host helper
       process.kill(pid, "SIGKILL");
     } catch {
       /* already gone, which is the point */
+    }
+  }, 30_000);
+
+  /* -------------------------------------------------------------------- *
+   * uninstall (MAR-611, ADR 0017)
+   * -------------------------------------------------------------------- */
+
+  it("removes a stopped bundle, everything under it, and the record beside it", async () => {
+    const hostRoot = freshDir("host");
+    const assembled = assembleBundle({
+      bundle_id: "news-scout",
+      agent_id: "scout",
+      runner_build: "deploy-bridge-test",
+      manifest: legalManifest() as never,
+      files: bundleFiles(),
+    });
+    if (!assembled.ok) {
+      throw new Error("bundle did not assemble");
+    }
+    await send(hostRoot, assembled.request);
+
+    // Something in `data/` standing in for the runner's own store, which is the
+    // thing this verb destroys and the reason DASH copies first.
+    const bundleDir = path.join(hostRoot, "bundles", "news-scout");
+    writeFileSync(path.join(bundleDir, "runner.log"), "[runner] listening\n", "utf8");
+
+    const removed = await send(hostRoot, { verb: "uninstall", bundle_id: "news-scout" });
+    expect(removed).toMatchObject({ ok: true, verb: "uninstall", removed: true });
+
+    // The directory and the record are both gone, and `status` — which reads the
+    // records — no longer names it.
+    expect(() => statSync(bundleDir)).toThrow();
+    expect(() => statSync(path.join(hostRoot, "bundles", "news-scout.json"))).toThrow();
+    expect(await send(hostRoot, { verb: "status" })).toEqual({ ok: true, verb: "status", bundles: [] });
+
+    // Nothing above the bundle went with it. Removing DASH from a server
+    // entirely is the printed step the setup script ends with, performed by a
+    // person on the machine they administer.
+    expect(statSync(path.join(hostRoot, "bundles")).isDirectory()).toBe(true);
+  }, 30_000);
+
+  it("answers a second removal without a problem the person cannot act on", async () => {
+    /*
+     * Idempotent by decision — `DEPLOY_VERBS` argues it. A bring-home whose last
+     * step failed has to be safe to press again, and `stop`'s `not_installed`
+     * would send somebody looking for a bundle whose absence is the outcome they
+     * asked for.
+     */
+    const hostRoot = freshDir("host");
+    expect(await send(hostRoot, { verb: "uninstall", bundle_id: "never-installed" })).toMatchObject({
+      ok: true,
+      verb: "uninstall",
+      removed: false,
+    });
+  }, 30_000);
+
+  it("will not remove the files a running runner is using", async () => {
+    /*
+     * The refusal that makes the eighth verb defensible, checked on the side
+     * that owns the filesystem.
+     *
+     * A directory removed out from under a live process leaves a runner writing
+     * into a deleted tree, on a machine nobody is watching, holding somebody's
+     * agent history. `stop` already declines to escalate to a signal for exactly
+     * that reason; a verb that deleted the process's world instead would be
+     * doing worse by another route.
+     *
+     * DASH refuses first too — `lib/deploy/bring-home.ts` stops at
+     * `would_not_stop` — and this is the half that holds when something other
+     * than DASH is on the other end of the pipe.
+     */
+    const hostRoot = freshDir("host");
+    const assembled = assembleBundle({
+      bundle_id: "news-scout",
+      agent_id: "scout",
+      runner_build: "deploy-bridge-test",
+      manifest: legalManifest() as never,
+      files: bundleFiles(),
+    });
+    if (!assembled.ok) {
+      throw new Error("bundle did not assemble");
+    }
+    await send(hostRoot, assembled.request);
+    const started = await send(hostRoot, { verb: "start", bundle_id: "news-scout" });
+    const pid = (started as { pid: number }).pid;
+
+    try {
+      const refused = await send(hostRoot, { verb: "uninstall", bundle_id: "news-scout" });
+      expect(refused).toMatchObject({ ok: false, problem: "still_running" });
+
+      // Reported rather than acted on: the process is alive and its files are
+      // still there.
+      expect(() => {
+        process.kill(pid, 0);
+      }).not.toThrow();
+      expect(statSync(path.join(hostRoot, "bundles", "news-scout")).isDirectory()).toBe(true);
+    } finally {
+      process.kill(pid, "SIGKILL");
     }
   }, 30_000);
 });

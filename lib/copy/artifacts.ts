@@ -165,7 +165,17 @@ export type ArtifactAvailability =
   | "missing"
   | "moved"
   | "quarantined"
-  | "deleted";
+  | "deleted"
+  /**
+   * DASH copied it off a server and then removed the server's copy (MAR-611).
+   *
+   * Not a failure, and the only member here that is not. It still returns a
+   * notice rather than null, for the reason `downloadable` is computed from
+   * `recovery === null`: the bytes are genuinely no longer anywhere DASH can
+   * reach, so an enabled Save button would be a control that cannot work. The
+   * notice's job is to say where the file actually went.
+   */
+  | "brought_home";
 
 export interface ArtifactRole {
   /** What it is, in the user's terms. A short noun phrase, sentence case. */
@@ -280,6 +290,18 @@ export function describeArtifactAvailability(
         // somebody's decision rather than a fault, and the copy does not
         // second-guess it.
         next_action: "Run the agent again if you want a new one.",
+        actor: "user",
+      };
+
+    case "brought_home":
+      return {
+        // Present tense about a folder on this computer is safe in a way present
+        // tense about a server never is — this is the one recovery whose subject
+        // is a place the person chose and DASH wrote to.
+        headline: `${title} was made on a server and came home.`,
+        meaning:
+          "DASH saved it to the folder you picked when you brought this agent home, then took the agent off that server. The record stays here; the file itself is yours now.",
+        next_action: "Look for it in the folder you chose.",
         actor: "user",
       };
   }

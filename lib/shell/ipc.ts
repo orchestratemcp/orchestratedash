@@ -655,6 +655,14 @@ export const COMMANDS = {
     mutates: true,
     irreversible: false,
   },
+  "host.bringHome": {
+    effect:
+      "Copy what one agent still has on one saved server, then remove that agent from the server. Nothing on this computer is deleted.",
+    payload_keys: ["host_id", "agent_id"],
+    required_keys: ["host_id", "agent_id"],
+    mutates: true,
+    irreversible: true,
+  },
   "host.forget": {
     effect:
       "Stop using one server and remove DASH's key for it. Anything already running there keeps running.",
@@ -1311,6 +1319,7 @@ export const HOST_ACTIONS = {
   "host.setup": "setup",
   "host.deploy": "deploy",
   "host.run": "run",
+  "host.bringHome": "bringHome",
   "host.forget": "forget",
 } as const;
 
@@ -1898,6 +1907,15 @@ export type HostActionResult =
       detail: string;
       reached: boolean;
     }
+  | {
+      ok: true;
+      action: "bringHome";
+      host_id: string;
+      label: string;
+      agent_id: string;
+      files_saved: number;
+      detail: string;
+    }
   | { ok: true; action: "forget"; host_id: string; label: string }
   | {
       ok: false;
@@ -2323,6 +2341,7 @@ export async function dispatchCommand(
           });
         case "deploy":
         case "run":
+        case "bringHome":
           return context.hostAction(action, {
             host_id: String(review.payload["host_id"]),
             agent_id: String(review.payload["agent_id"]),
@@ -2470,6 +2489,18 @@ export async function dispatchCommand(
             label: result.label,
             agent_id: result.agent_id,
             reached: result.reached,
+          },
+        };
+      case "bringHome":
+        return {
+          ok: true,
+          request_id: review.audit.request_id,
+          detail: result.detail,
+          data: {
+            host_id: result.host_id,
+            label: result.label,
+            agent_id: result.agent_id,
+            files_saved: result.files_saved,
           },
         };
       case "forget":
