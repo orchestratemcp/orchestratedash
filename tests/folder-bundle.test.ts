@@ -15,7 +15,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 
 import type { StdioChannel } from "../lib/agent-dom/ssh-fetch";
 import { ipcFetch, IPC_ORIGIN } from "../lib/agent-dom/ipc-fetch";
@@ -24,19 +24,40 @@ import {
   writeAgentFolder,
 } from "../lib/agent-folders";
 import { MODEL_KEY_STAYS_HOME_REFUSAL } from "../lib/ai/model-choice";
-import {
-  BUNDLE_AGENT_DIRECTORY,
-  BUNDLE_MODEL_DIRECTORY,
-  BUNDLE_REGISTRATION_DIRECTORY,
-  produceAgentFolderBundle,
-} from "../lib/deploy/folder-bundle";
+import { connectionSecretName } from "../lib/connection-credentials";
 import type { DeployAnswer, DeployRequest } from "../lib/deploy/verbs";
 import { BUNDLED_NODE_COMMAND, type AgentRegistration } from "../lib/registration";
 import { runDeployVerb, type DeploySpawn } from "../electron/ssh-host";
 import { buildStandaloneRunner } from "../scripts/build-runner-standalone.mjs";
 
+/*
+ * MAR-626. `produceAgentFolderBundle` now reads `connection_secrets` — a real
+ * lookup against `lib/db.ts`'s SQLite store — rather than the manifest alone,
+ * so this file needs the same `DASH_DATA_DIR`-before-import discipline
+ * `tests/ai-key-connection.test.ts` established: the env var has to be set
+ * before anything reaching `lib/db.ts` is first imported, which for a static
+ * import means before that import is even parsed into this module's graph.
+ * Hence the dynamic import below, for `../lib/deploy/folder-bundle` alone.
+ */
+const dbDataDir = mkdtempSync(path.join(tmpdir(), "dash-folder-bundle-db-"));
+process.env.DASH_DATA_DIR = dbDataDir;
+
+const {
+  BUNDLE_AGENT_DIRECTORY,
+  BUNDLE_MODEL_DIRECTORY,
+  BUNDLE_REGISTRATION_DIRECTORY,
+  produceAgentFolderBundle,
+} = await import("../lib/deploy/folder-bundle");
+const { recordSecretReference } = await import("../lib/secret-refs");
+const { closeDb } = await import("../lib/db");
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const directories: string[] = [];
+
+afterAll(() => {
+  closeDb();
+  rmSync(dbDataDir, { recursive: true, force: true });
+});
 
 function freshDir(label: string): string {
   const directory = mkdtempSync(path.join(tmpdir(), `dash-folder-bundle-${label}-`));
@@ -109,6 +130,23 @@ function registration(agentId: string): AgentRegistration {
     cwd: "code",
     env: { FOLDER_BUNDLE_VALUE: "kept-environment" },
   };
+}
+
+/**
+ * Record that DASH holds a credential for one field, the way a real connect
+ * flow would (MAR-626). `produceAgentFolderBundle` now refuses only what this
+ * writes a row for — see the module's own header on why the manifest alone no
+ * longer decides it.
+ */
+function grant(agentId: string, connectionId: string, fieldId: string): void {
+  recordSecretReference({
+    agent: agentId,
+    connection_id: connectionId,
+    field_id: fieldId,
+    secret_name: connectionSecretName(agentId, connectionId, fieldId),
+    masked_hint: null,
+    backend: "test",
+  });
 }
 
 function requestFile(request: Extract<DeployRequest, { verb: "install" }>, name: string): Buffer {
@@ -325,6 +363,9 @@ describe("the folder bundle producer", () => {
       registration: registration(agentId),
       files: [{ path: "agent.mjs", contents: "setInterval(() => {}, 1000);\n" }],
     });
+    // MAR-626: the refusal fires on what DASH actually holds, not on what the
+    // manifest merely names — so the test grants the key first.
+    grant(agentId, "models", "key");
 
     const produced = produceAgentFolderBundle({
       data_dir: dataDir,
@@ -341,6 +382,35 @@ describe("the folder bundle producer", () => {
       detail: MODEL_KEY_STAYS_HOME_REFUSAL,
     });
   });
+
+  it("does not refuse the same manifest when DASH never received the key", async () => {
+    /*
+     * MAR-626. The exact bug: this is `keyedManifest()` unchanged — the plan
+     * still needs a model and the connection is still declared — but nobody
+     * ever connected it. There is nothing in the vault to strand, so the
+     * deploy is not refused; whatever the agent does without a model is its
+     * own template's honest degradation, not this producer's business.
+     */
+    const dataDir = freshDir("dash-unheld-key");
+    const artifact = freshDir("dash-unheld-key-artifact");
+    const agentId = "unheld-keyed-agent";
+    await buildStandaloneRunner({ repoRoot, outDir: artifact });
+    writeAgentFolder({
+      dataDir,
+      agent: agentId,
+      manifestJson: JSON.stringify(keyedManifest()),
+      registration: registration(agentId),
+      files: [{ path: "agent.mjs", contents: "setInterval(() => {}, 1000);\n" }],
+    });
+
+    const produced = produceAgentFolderBundle({
+      data_dir: dataDir,
+      agent_id: agentId,
+      bundle_id: agentId,
+      runner_artifact_dir: artifact,
+    });
+    expect(produced.ok).toBe(true);
+  }, 60_000);
 
   it("does not refuse an agent that brings its own model key", async () => {
     // It reaches a provider by arrangements DASH has no part in, wherever it
@@ -426,6 +496,9 @@ describe("the folder bundle producer", () => {
       registration: registration(agentId),
       files: [{ path: "agent.mjs", contents: "setInterval(() => {}, 1000);\n" }],
     });
+    // MAR-626: a declared requirement refuses only once DASH actually holds
+    // the sign-in it names.
+    grant(agentId, "gmail", "gmail-account");
 
     const produced = produceAgentFolderBundle({
       data_dir: dataDir,
@@ -439,6 +512,46 @@ describe("the folder bundle producer", () => {
     expect(produced.detail).toContain("Gmail");
     expect(produced.detail).toContain("Nothing was sent.");
     expect(produced.detail).not.toBe(MODEL_KEY_STAYS_HOME_REFUSAL);
+  }, 60_000);
+
+  it("does not refuse the same required connection when nobody has connected it", async () => {
+    /*
+     * MAR-626's general case: the vault gate is not special to the model key.
+     * Same manifest, same declared requirement, no `grant` — nothing was ever
+     * held, so nothing is stranded.
+     */
+    const dataDir = freshDir("needed-connection-unheld");
+    const artifact = freshDir("needed-connection-unheld-artifact");
+    const agentId = "gmail-agent-unheld";
+    await buildStandaloneRunner({ repoRoot, outDir: artifact });
+    const manifest = JSON.parse(manifestJson()) as Record<string, unknown>;
+    const agentDom = manifest["agent_dom"] as Record<string, unknown>;
+    agentDom["connection_requirements"] = {
+      requirements_version: 1,
+      requirements: [
+        {
+          id: "gmail_access",
+          name: "Your Gmail",
+          connector_kind: "google_oauth_broker",
+          connection_id: "gmail",
+        },
+      ],
+    };
+    writeAgentFolder({
+      dataDir,
+      agent: agentId,
+      manifestJson: JSON.stringify(manifest),
+      registration: registration(agentId),
+      files: [{ path: "agent.mjs", contents: "setInterval(() => {}, 1000);\n" }],
+    });
+
+    const produced = produceAgentFolderBundle({
+      data_dir: dataDir,
+      agent_id: agentId,
+      bundle_id: agentId,
+      runner_artifact_dir: artifact,
+    });
+    expect(produced.ok).toBe(true);
   }, 60_000);
 
   it("still sends an agent whose file never says a run needs what stays here", async () => {

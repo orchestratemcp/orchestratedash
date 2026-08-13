@@ -35,6 +35,8 @@ import { assertContractsLocation } from "./resources";
 import { ignoreBrokenPipeErrors } from "../lib/shell/pipe-guard";
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from "electron";
+import { readUiScale, writeUiScale } from "./ui-scale";
+import { DEFAULT_UI_SCALE, UI_SCALES, parseUiScale, type UiScale } from "../lib/views/ui-scale";
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
@@ -459,7 +461,11 @@ function installApplicationMenu(): void {
       return { type: "separator" };
     }
     if (spec.role !== undefined) {
-      return { role: spec.role as Electron.MenuItemConstructorOptions["role"] };
+      return {
+        role: spec.role as Electron.MenuItemConstructorOptions["role"],
+        accelerator: spec.accelerator,
+        click: spec.action === undefined ? undefined : () => void runMenuAction(spec.action),
+      };
     }
     return {
       label: spec.label,
@@ -531,6 +537,15 @@ async function runMenuAction(action: MenuAction | undefined): Promise<void> {
       // and says so rather than half-working.
       await offerSampleAgent(handoffContext);
       return;
+    case "zoom_in":
+      changeUiScale(1);
+      return;
+    case "zoom_out":
+      changeUiScale(-1);
+      return;
+    case "reset_zoom":
+      applyUiScale(DEFAULT_UI_SCALE);
+      return;
     case undefined:
       return;
     default: {
@@ -538,6 +553,18 @@ async function runMenuAction(action: MenuAction | undefined): Promise<void> {
       throw new Error(`Unhandled menu action: ${String(unreachable)}`);
     }
   }
+}
+
+function applyUiScale(factor: unknown): UiScale {
+  const scale = writeUiScale(app.getPath("userData"), factor);
+  appWindow()?.webContents.setZoomFactor(scale);
+  return scale;
+}
+
+function changeUiScale(direction: 1 | -1): UiScale {
+  const current = readUiScale(app.getPath("userData"));
+  const index = UI_SCALES.indexOf(current);
+  return applyUiScale(UI_SCALES[Math.max(0, Math.min(UI_SCALES.length - 1, index + direction))]);
 }
 
 export function createWindow(): BrowserWindow {
@@ -587,6 +614,10 @@ export function createWindow(): BrowserWindow {
       preload: fileURLToPath(new URL("./preload.js", import.meta.url)),
     },
   });
+
+  // Before loadURL: the renderer is a static export and cannot restore this
+  // Electron setting before its first paint.
+  window.webContents.setZoomFactor(readUiScale(app.getPath("userData")));
 
   window.once("ready-to-show", () => window.show());
 
@@ -729,6 +760,12 @@ export function registerCommandChannel(
       // no provider. See `showApplicationMenu` for why the renderer cannot name
       // what it wants popped.
       showApplicationMenu,
+      setUiScale: (factor) => {
+        if (factor === undefined) {
+          return readUiScale(app.getPath("userData"));
+        }
+        return applyUiScale(factor);
+      },
       // MAR-383. The vault is reachable from exactly this one entry in exactly
       // this one context object, and the value the user types never comes back
       // through it — see `lib/connection-actions.ts` for what does.

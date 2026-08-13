@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   COMMANDS,
+  HOST_ACTIONS,
   SHELL_COMMAND_CHANNEL,
   dispatchCommand,
   executeCommand,
@@ -135,6 +136,7 @@ describe("the audited command chokepoint", () => {
       // no store and no provider. The only command besides `shell.ping` that
       // can honestly declare `mutates: false`.
       "shell.menu",
+      "shell.scale",
       // MAR-415. Lifecycle, not Agent DOM commands: they act on a process, no
       // manifest declares them, and they never become an envelope. The
       // `runner.` prefix is what keeps that legible at every call site.
@@ -231,12 +233,6 @@ describe("the audited command chokepoint", () => {
       // page has never seen the server's snapshot, so main reads which task at
       // the moment of the press and the host adjudicates it again.
       "host.run",
-      // MAR-611, ADR 0017. Deploy's symmetric other half, and the only host
-      // command that declares `irreversible: true` — it destroys a directory on
-      // a machine DASH does not administer, and nothing DASH holds can put it
-      // back. Same two ids again and, like `workspace.download`, no folder in
-      // either direction: main raises the operating system's own dialog, so a
-      // page neither chooses where several files land nor learns where they did.
       "host.bringHome",
       "host.forget",
       // MAR-434. A fifth family, addressing the runner's task workspace over
@@ -616,6 +612,7 @@ describe("dispatch", () => {
       showApplicationMenu: (at: { x: number; y: number } | undefined) => {
         menus.push(at);
       },
+      setUiScale: (factor: number | undefined) => factor ?? 1,
       // MAR-383. Recorded, not performed — and note the fake holds no secret,
       // which it could not do usefully anyway: no credential is an argument to
       // or a result of this call.
@@ -716,10 +713,6 @@ describe("dispatch", () => {
                 "time it can reach that server, and only what the server still has then.",
               reached: true,
             });
-          // MAR-611, ADR 0017. The only host answer whose command declares
-          // itself irreversible, and it is unsecret by the same construction —
-          // a count of files DASH wrote and a sentence, with no folder on this
-          // machine in either.
           case "bringHome":
             return Promise.resolve({
               ok: true as const,
@@ -1066,43 +1059,127 @@ describe("dispatch", () => {
       expect(result).toMatchObject({ ok: true });
     });
 
-    it("routes a bring-home with both identities, and renders what came back", async () => {
-      /*
-       * MAR-611, ADR 0017. The same two fall-throughs the test above exists for,
-       * asserted on the third member of that arm before anybody had to press it.
-       *
-       * Both halves are checked in one test because they fail in opposite ways
-       * and only together prove a round trip: a dropped agent id makes main
-       * refuse, and a missing result arm makes a press that **succeeded on the
-       * server** fall out of the switch into `executeCommand`'s trusted-side
-       * guard and throw. The second is much worse here than it was for `run` —
-       * the agent really is off the host by then, and the person's next move
-       * would be to press again.
-       */
-      const ctx = context();
-      const result = await dispatchCommand(
-        {
-          command: "host.bringHome",
-          request_id: "req-host-bring-home",
-          payload: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+    it.each([
+      {
+        command: "host.create",
+        payload: { label: "My server", address: "vps.example.com", username: "dash", port: 22 },
+        action: "create",
+        target: { label: "My server", address: "vps.example.com", username: "dash", port: 22 },
+        result: {
+          data: {
+            host_id: "host-fake-1",
+            label: "My server",
+            public_key: "ssh-ed25519 AAAA-public orchestratedash",
+            key_name: "host-fake-1",
+            authorized_keys_line:
+              'restrict,command="/opt/orchestratedash/dash-host" ssh-ed25519 AAAA-public orchestratedash',
+            resumed: false,
+          },
         },
+      },
+      {
+        command: "host.probe",
+        payload: { host_id: "host-fake-1" },
+        action: "probe",
+        target: { host_id: "host-fake-1" },
+        result: {
+          data: {
+            host_id: "host-fake-1",
+            label: "My server",
+            runner_build: "fixture",
+            agents_running: 2,
+            agents_there: [{ agent_id: "News Scout", running: true }],
+          },
+        },
+      },
+      {
+        command: "host.trust",
+        payload: { host_id: "host-fake-1", fingerprint: "SHA256:fixture" },
+        action: "trust",
+        target: { host_id: "host-fake-1", fingerprint: "SHA256:fixture" },
+        result: { data: { host_id: "host-fake-1", label: "My server", fingerprint: "SHA256:fixture" } },
+      },
+      {
+        command: "host.setup",
+        payload: { host_id: "host-fake-1" },
+        action: "setup",
+        target: { host_id: "host-fake-1" },
+        result: { data: { host_id: "host-fake-1", label: "My server", script: "#!/bin/sh\nexit 0\n" } },
+      },
+      {
+        command: "host.deploy",
+        payload: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        action: "deploy",
+        target: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        result: {
+          detail: "The agent is running on My server.",
+          data: {
+            host_id: "host-fake-1",
+            label: "My server",
+            agent_id: "fixture-agent",
+            bundle_id: "fixture-agent",
+            runner_build: "fixture",
+          },
+        },
+      },
+      {
+        command: "host.run",
+        payload: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        action: "run",
+        target: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        result: {
+          detail:
+            "My server was asked to start this agent. DASH will show what it did the next time it can reach that server, and only what the server still has then.",
+          data: {
+            host_id: "host-fake-1",
+            label: "My server",
+            agent_id: "fixture-agent",
+            reached: true,
+          },
+        },
+      },
+      {
+        command: "host.bringHome",
+        payload: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        action: "bringHome",
+        target: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        result: {
+          detail:
+            "This agent is no longer on My server. Everything that server still had is on this computer now. It had no files there to bring back.",
+          data: {
+            host_id: "host-fake-1",
+            label: "My server",
+            agent_id: "fixture-agent",
+            files_saved: 0,
+          },
+        },
+      },
+      {
+        command: "host.forget",
+        payload: { host_id: "host-fake-1" },
+        action: "forget",
+        target: { host_id: "host-fake-1" },
+        result: { data: { host_id: "host-fake-1", label: "My server" } },
+      },
+    ])("maps $command's target and successful result", async ({ command, payload, action, target, result }) => {
+      expect(Object.keys(HOST_ACTIONS)).toEqual([
+        "host.create",
+        "host.probe",
+        "host.trust",
+        "host.setup",
+        "host.deploy",
+        "host.run",
+        "host.bringHome",
+        "host.forget",
+      ]);
+      const ctx = context();
+      const response = await dispatchCommand(
+        { command, request_id: `req-${action}`, payload },
         ctx,
       );
 
-      expect(ctx.hosts).toEqual([
-        {
-          action: "bringHome",
-          target: { host_id: "host-fake-1", agent_id: "fixture-agent" },
-        },
-      ]);
-      expect(result).toMatchObject({
-        ok: true,
-        request_id: "req-host-bring-home",
-        data: { host_id: "host-fake-1", agent_id: "fixture-agent", files_saved: 0 },
-      });
-      // Main's own sentence, whole. A page renders this rather than composing
-      // one from flags.
-      expect((result as { detail?: string }).detail).toContain("no longer on My server");
+      expect(ctx.hosts).toEqual([{ action, target }]);
+      expect(response).toEqual({ ok: true, request_id: `req-${action}`, ...result });
     });
 
     it("renders the manifest-only refusal verbatim", async () => {

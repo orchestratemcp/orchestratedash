@@ -3668,6 +3668,32 @@ button:disabled {
   margin: 0;
 }
 
+/* MAR-622. The newest output keeps its full card; every older one becomes one
+   dated row until the reader asks for its body. */
+.output-history-entry {
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.output-history-entry > summary {
+  padding: var(--density-card-p);
+  cursor: pointer;
+}
+
+.output-history-day {
+  margin-right: var(--space-3);
+  font-weight: 700;
+}
+
+.output-history-title {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.output-history-content {
+  padding: 0 var(--density-card-p) var(--density-card-p);
+}
+
 .output-identity {
   min-width: 0;
 }

@@ -21,7 +21,7 @@
  */
 
 /** Everything the menu can ask `electron/main.ts` to do. */
-export type MenuAction = "sample_agent";
+export type MenuAction = "sample_agent" | "zoom_in" | "zoom_out" | "reset_zoom";
 
 export interface MenuItemSpec {
   /** Omitted for a separator. */
@@ -92,9 +92,9 @@ export function applicationMenu(platform: NodeJS.Platform, appName: string): Men
       items: [
         { role: "reload" },
         { separator: true },
-        { role: "resetZoom" },
-        { role: "zoomIn" },
-        { role: "zoomOut" },
+        { role: "resetZoom", action: "reset_zoom", accelerator: "CommandOrControl+0" },
+        { role: "zoomIn", action: "zoom_in", accelerator: "CommandOrControl+Plus" },
+        { role: "zoomOut", action: "zoom_out", accelerator: "CommandOrControl+-" },
         { separator: true },
         { role: "togglefullscreen" },
         // Kept, and deliberately last. It is how anyone reports a renderer bug,

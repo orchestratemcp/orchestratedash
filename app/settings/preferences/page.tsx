@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { DensityToggle } from "../../_components/density-toggle";
 import { FleetViewToggle } from "../../_components/fleet-view-toggle";
+import { UiScaleControl } from "../../_components/ui-scale-control";
 import { InfoNote } from "../../_components/info-note";
 import { HostNotice } from "../../_components/view-state";
 import { useHost } from "../../_data/use-view";
@@ -80,6 +81,12 @@ export default function PreferencesPage(): ReactNode {
           same things in all three; only the shape changes.
         </p>
         <FleetViewToggle />
+      </section>
+
+      <section aria-labelledby="preferences-ui-scale">
+        <h2 id="preferences-ui-scale">UI scale</h2>
+        <p className="muted wrap">Make the whole DASH window smaller or larger.</p>
+        <UiScaleControl />
       </section>
 
       <section aria-labelledby="preferences-theme">

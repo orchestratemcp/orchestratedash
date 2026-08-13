@@ -19,6 +19,7 @@ import type {
   PanelView,
 } from "../../lib/views/panel";
 import { DigestBody, DraftBody } from "./digest";
+import { OutputHistory } from "./output-history";
 
 /**
  * The panel an agent's author declared, drawn by DASH's own components
@@ -186,13 +187,11 @@ function OutputsSection({ section }: { section: PanelOutputsView }): ReactNode {
   }
   return (
     <>
-      <ol className="output-list">
-        {section.cards.map((card, index) => (
-          <li key={`${card.artifact.title}:${String(index)}`}>
-            <PanelArtifactCard card={card} />
-          </li>
-        ))}
-      </ol>
+      <OutputHistory
+        cards={section.cards}
+        collapsed
+        renderCard={(card) => <PanelArtifactCard card={card} />}
+      />
       {/* The author's own display choice, said rather than left to be noticed. */}
       {section.capped === null ? null : <p className="muted">{section.capped}</p>}
     </>

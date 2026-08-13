@@ -6,6 +6,7 @@ import { AGENT_OUTPUTS_COPY } from "../../lib/copy/agent-page";
 import { OUTPUTS_PANEL_COPY as COPY } from "../../lib/copy/artifacts";
 import { canPreview, type ArtifactCardView } from "../../lib/views/artifacts";
 import { DigestBody, DraftBody, DraftPlacementChip, GroundingChip } from "./digest";
+import { OutputHistory } from "./output-history";
 
 /**
  * Everything a run produced (MAR-434).
@@ -44,6 +45,7 @@ export function OutputsPanel({
   grounding,
   heading,
   emptyState,
+  history = false,
   onDownload,
   runHref,
 }: {
@@ -68,6 +70,8 @@ export function OutputsPanel({
    * sentence under a heading is what "no overview" looks like.
    */
   emptyState?: { headline: string; detail: string };
+  /** Collapse every card after the newest when this list spans runs. */
+  history?: boolean;
   /**
    * Save a copy of one output, or absent (MAR-434).
    *
@@ -113,29 +117,29 @@ export function OutputsPanel({
           </div>
         )
       ) : (
-        <ol className="output-list">
-          {cards.map((card, index) => (
-            <li key={`${card.reference.artifact_id}:${String(index)}`}>
-              <OutputCard
-                card={card}
-                onDownload={onDownload}
-                runHref={runHref}
-                /* Only the newest digest is graded, which is the rule
-                   `lib/views/build.ts` already applies when it computes the
-                   verdict. Hanging that chip on an older artifact would report
-                   a score against text this card is not showing.
+        <OutputHistory
+          cards={cards}
+          collapsed={history}
+          renderCard={(card, index) => (
+            <OutputCard
+              card={card}
+              onDownload={onDownload}
+              runHref={runHref}
+              /* Only the newest digest is graded, which is the rule
+                 `lib/views/build.ts` already applies when it computes the
+                 verdict. Hanging that chip on an older artifact would report
+                 a score against text this card is not showing.
 
-                   The kind is compared directly rather than through
-                   `isDigestArtifact`. That helper lives in `lib/contracts.ts`,
-                   which reads the JSON schemas off disk, and importing it as a
-                   *value* into a `"use client"` tree drags `node:fs` into the
-                   browser bundle and 500s the page. Types from that module
-                   erase and are safe; functions from it are not. */
-                grounding={index === 0 && card.artifact.kind === "digest" ? grounding : null}
-              />
-            </li>
-          ))}
-        </ol>
+                 The kind is compared directly rather than through
+                 `isDigestArtifact`. That helper lives in `lib/contracts.ts`,
+                 which reads the JSON schemas off disk, and importing it as a
+                 *value* into a `"use client"` tree drags `node:fs` into the
+                 browser bundle and 500s the page. Types from that module
+                 erase and are safe; functions from it are not. */
+              grounding={index === 0 && card.artifact.kind === "digest" ? grounding : null}
+            />
+          )}
+        />
       )}
     </section>
   );

@@ -143,6 +143,66 @@ describe("every output is drawn", () => {
   });
 });
 
+describe("an agent's output history", () => {
+  const today = new Date(2026, 4, 3, 12);
+  const historical = [
+    {
+      artifact: {
+        ...digest,
+        artifact_id: "digest-today",
+        title: "Today's news",
+        generated_at: new Date(2026, 4, 3, 12).toISOString(),
+      },
+      received_at: new Date(2026, 4, 3, 12, 1).toISOString(),
+      stored_bytes: 4210,
+    },
+    {
+      artifact: {
+        ...digest,
+        artifact_id: "digest-yesterday",
+        title: "Yesterday's news",
+        generated_at: new Date(2026, 4, 2, 12).toISOString(),
+      },
+      received_at: new Date(2026, 4, 2, 12, 1).toISOString(),
+      stored_bytes: 4210,
+    },
+    {
+      artifact: {
+        ...digest,
+        artifact_id: "digest-may-first",
+        title: "May Day news",
+        generated_at: new Date(2026, 4, 1, 12).toISOString(),
+      },
+      received_at: new Date(2026, 4, 1, 12, 1).toISOString(),
+      stored_bytes: 4210,
+    },
+  ] satisfies RunArtifactRecord[];
+
+  const html = decode(
+    renderToStaticMarkup(
+      <OutputsPanel
+        cards={buildArtifactCards(historical, undefined, today)}
+        grounding={null}
+        history
+      />,
+    ),
+  );
+
+  it("keeps the newest card open and turns every older card into one dated row", () => {
+    expect(html.indexOf("Today's news")).toBeLessThan(html.indexOf("output-history-entry"));
+    expect(html.match(/class="output-history-entry"/g)).toHaveLength(2);
+    expect(html).toContain(">Yesterday</span>");
+    expect(html).toContain(">1 May</span>");
+  });
+
+  it("ships every history entry closed with its full card still inside", () => {
+    expect(html).not.toMatch(/<details class="output-history-entry" open/);
+    expect(html).toContain("Yesterday's news");
+    expect(html).toContain("May Day news");
+    expect(html.match(/class="output-card/g)).toHaveLength(3);
+  });
+});
+
 /**
  * MAR-434's acceptance criterion, at the point a person meets it.
  *

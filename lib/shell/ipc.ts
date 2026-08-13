@@ -155,6 +155,13 @@ export const COMMANDS = {
     mutates: false,
     irreversible: false,
   },
+  "shell.scale": {
+    effect: "Set this window's bounded UI scale.",
+    payload_keys: ["factor"],
+    required_keys: [],
+    mutates: false,
+    irreversible: false,
+  },
 
   "runner.start": {
     effect: "Start a registered agent's process on this machine. Not an Agent DOM command.",
@@ -648,31 +655,9 @@ export const COMMANDS = {
     mutates: true,
     irreversible: false,
   },
-  /*
-   * MAR-611, ADR 0017. Deploy's symmetric other half.
-   *
-   * `irreversible` is **true**, and it is the first host command that is. Every
-   * other member of this family can be undone by doing it again or by doing its
-   * opposite: a deploy is replaced by a deploy, a key is remade, a trust is
-   * re-pinned. This one destroys a directory on a machine DASH does not
-   * administer — the agent's copy there, the runner that served it, and that
-   * runner's own store — and nothing DASH holds can put it back.
-   *
-   * What makes that acceptable rather than reckless is the order the act is
-   * performed in, which is `lib/deploy/bring-home.ts`'s and is enforced twice:
-   * DASH copies first and refuses to remove when the copy failed, and the host's
-   * own helper refuses to remove a bundle whose runner is running. So the
-   * irreversible half only ever runs after the reversible half succeeded.
-   *
-   * It takes the same two ids `host.deploy` and `host.run` do. In particular it
-   * takes no folder: where the files land is answered in the operating system's
-   * own dialog, in main, so the renderer neither supplies a path nor learns one —
-   * `workspace.download`'s discipline, on the command that saves many files
-   * instead of one.
-   */
   "host.bringHome": {
     effect:
-      "Copy what one agent still has on one saved server — what it did there, and any files it made — then remove that agent from the server. Nothing on this computer is deleted.",
+      "Copy what one agent still has on one saved server, then remove that agent from the server. Nothing on this computer is deleted.",
     payload_keys: ["host_id", "agent_id"],
     required_keys: ["host_id", "agent_id"],
     mutates: true,
@@ -1356,6 +1341,7 @@ export function isHostCommandName(value: CommandName): value is HostCommandName 
  */
 export const SHELL_UI_ACTIONS = {
   "shell.menu": "menu",
+  "shell.scale": "scale",
 } as const;
 
 export type ShellUiCommandName = keyof typeof SHELL_UI_ACTIONS;
@@ -1921,27 +1907,6 @@ export type HostActionResult =
       detail: string;
       reached: boolean;
     }
-  /**
-   * What came home, and what is no longer on the server (MAR-611, ADR 0017).
-   *
-   * The other direction of `deploy`, and the fields are chosen to make the two
-   * claims this act can honestly support and no third. `files_saved` is a count
-   * of files **DASH wrote on this computer** — its own act, in the folder a
-   * person pointed at — and `detail` is composed by `lib/copy/bring-home.ts`
-   * from the outcome, so no surface has to reconstruct what happened out of
-   * flags.
-   *
-   * **There is no folder path here**, which is `workspaceDownload`'s rule and it
-   * survives the widening: the renderer never learns where on this disk anything
-   * landed, and the sentence names the folder because the person chose it in a
-   * window DASH does not draw.
-   *
-   * **And there is no `removed` flag**, deliberately. Whether the bundle was
-   * still there at the last step is a fact about a machine somebody else
-   * administers, and a boolean on this boundary would be read as "the server is
-   * empty now" the first time anybody rendered it. The distinction survives in
-   * the sentence, where it carries the tense ADR 0010 requires.
-   */
   | {
       ok: true;
       action: "bringHome";
@@ -2096,6 +2061,7 @@ export interface DispatchContext {
    * every consequence of the menu happens in main, where the handlers are.
    */
   showApplicationMenu(at: { x: number; y: number } | undefined): void;
+  setUiScale(factor: number | undefined): number;
   /**
    * The task-workspace actions: open a task, admit one user-selected file,
    * hand the task over (MAR-507), or save one of an agent's outputs where the
@@ -2364,47 +2330,40 @@ export async function dispatchCommand(
 
   if (isHostCommandName(review.command)) {
     const action = HOST_ACTIONS[review.command];
-    const result =
-      action === "create"
-        ? await context.hostAction(action, {
+    const result = await (async (): Promise<HostActionResult> => {
+      switch (action) {
+        case "create":
+          return context.hostAction(action, {
             label: String(review.payload["label"]),
             address: String(review.payload["address"]),
             username: String(review.payload["username"]),
             port: Number(review.payload["port"]),
-          })
-        : /*
-           * `run` rides `deploy`'s arm because it carries `deploy`'s payload —
-           * the same two ids, required by the payload rules above. It was the
-           * fall-through's first casualty: `host.run` arrived here after the
-           * chain was written, fell to the host-id-only default, and main
-           * refused every press with "DASH did not receive the agent it should
-           * start" — the exact new-member-falls-through mechanism MAR-600
-           * collapsed in `electron/main.ts`, one file over.
-           *
-           * `bringHome` (MAR-611) is the third member of that arm and was
-           * written into it rather than discovered by a press, which is the only
-           * reason it is not a third bug in this list. **This chain and the
-           * switch below are two places a new host command has to be named**, and
-           * neither of them fails to compile when it is not — a `HostAction` this
-           * ternary does not mention silently becomes a host-id-only target, and
-           * one the switch does not mention falls out of the block entirely. That
-           * is the shape worth remembering here: the catalogue is exhaustive by
-           * type, and the two things that read it are exhaustive by hand.
-           */
-          action === "deploy" || action === "run" || action === "bringHome"
-          ? await context.hostAction(action, {
-              host_id: String(review.payload["host_id"]),
-              agent_id: String(review.payload["agent_id"]),
-            })
-          : action === "trust"
-            ? await context.hostAction(action, {
-                host_id: String(review.payload["host_id"]),
-                // The fingerprint the person was shown, carried back so main can
-                // refuse if the server's answer has changed since. Required by
-                // the payload rules, so it is a non-empty string by here.
-                fingerprint: String(review.payload["fingerprint"]),
-              })
-            : await context.hostAction(action, { host_id: String(review.payload["host_id"]) });
+          });
+        case "deploy":
+        case "run":
+        case "bringHome":
+          return context.hostAction(action, {
+            host_id: String(review.payload["host_id"]),
+            agent_id: String(review.payload["agent_id"]),
+          });
+        case "trust":
+          return context.hostAction(action, {
+            host_id: String(review.payload["host_id"]),
+            // The fingerprint the person was shown, carried back so main can
+            // refuse if the server's answer has changed since. Required by
+            // the payload rules, so it is a non-empty string by here.
+            fingerprint: String(review.payload["fingerprint"]),
+          });
+        case "probe":
+        case "setup":
+        case "forget":
+          return context.hostAction(action, { host_id: String(review.payload["host_id"]) });
+        default: {
+          const unreachable: never = action;
+          throw new Error(`Unhandled host action: ${String(unreachable)}`);
+        }
+      }
+    })();
 
     if (!result.ok) {
       return {
@@ -2429,6 +2388,14 @@ export async function dispatchCommand(
               },
       };
     }
+
+    // `HOST_ACTIONS` is the catalogue; this successful-result union is its
+    // projection. Keep the two in lockstep before the switch below turns a
+    // new host action into another silent fall-through.
+    const everyHostActionHasAResult: Exclude<HostAction, typeof result.action> extends never
+      ? true
+      : never = true;
+    void everyHostActionHasAResult;
 
     switch (result.action) {
       case "create":
@@ -2524,21 +2491,6 @@ export async function dispatchCommand(
             reached: result.reached,
           },
         };
-      /*
-       * MAR-611, ADR 0017. The arm `run` had to be given by a bug report, given
-       * to its sibling before one could be filed.
-       *
-       * `detail` is the whole account of the act — `lib/copy/bring-home.ts`
-       * composes it from the outcome, so a page renders one sentence rather than
-       * reconstructing what happened out of flags. `files_saved` is beside it
-       * because it is the one number a surface would want to emphasise and the
-       * sentence already contains: DASH wrote that many files, on this computer,
-       * in a folder the person chose.
-       *
-       * No folder path, matching `workspace.download` one family over. The
-       * destination was chosen in a window this renderer did not draw, and it
-       * does not learn the answer.
-       */
       case "bringHome":
         return {
           ok: true,
@@ -2557,10 +2509,22 @@ export async function dispatchCommand(
           request_id: review.audit.request_id,
           data: { host_id: result.host_id, label: result.label },
         };
+      default: {
+        const unreachable: never = result;
+        throw new Error(`Unhandled host result: ${String(unreachable)}`);
+      }
     }
   }
 
   if (isShellUiCommandName(review.command)) {
+    if (review.command === "shell.scale") {
+      const factor = review.payload["factor"];
+      return {
+        ok: true,
+        request_id: review.audit.request_id,
+        data: { factor: context.setUiScale(typeof factor === "number" ? factor : undefined) },
+      };
+    }
     // Both coordinates or neither. A menu popped at a half-known point would
     // land somewhere nobody chose, and Electron's own default — the pointer's
     // position — is the better answer when we do not have both.
