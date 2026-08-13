@@ -588,6 +588,7 @@ main {
   grid-column: 2;
   overflow-y: auto;
   min-width: 0;
+  min-height: 0;
   /* The concept's 32px desktop margin, 16px on a phone (`DESIGN.md`, "Layout &
      Spacing"). The vertical step stays on the density token, because that is the
      one thing the compact opt-in is allowed to move. */
@@ -623,6 +624,122 @@ main {
 @media (max-width: 480px) {
   main {
     padding: var(--space-4) var(--space-4);
+  }
+}
+
+/*
+ * The agents page is three columns of the window: left sidebar (body grid),
+ * this content band, and a right rail inside it. `main`'s own padding and
+ * max-width would inset the rail from the window edge and starve the stage
+ * of height, so they drop here. The graph-paper moves onto `.fleet-main`
+ * with it — `background-attachment: local` only scrolls with *this*
+ * scroller, and `main` no longer scrolls on this page.
+ */
+main:has(.fleet-shell) {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  max-width: none;
+  overflow: hidden;
+  background-image: none;
+}
+
+.fleet-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--sidebar-width);
+}
+
+.fleet-main {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: var(--density-stack) var(--space-6);
+  background-image:
+    repeating-linear-gradient(
+      to right,
+      var(--grid-line) 0 1px,
+      transparent 1px var(--grid-step)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      var(--grid-line) 0 1px,
+      transparent 1px var(--grid-step)
+    );
+  background-attachment: local;
+}
+
+@media (max-width: 480px) {
+  .fleet-main {
+    padding: var(--space-4) var(--space-4);
+  }
+}
+
+/*
+ * Same furniture as the left sidebar: a band of the window, not a card on
+ * the page. Add agent is the action; the layout radios sit under it as a
+ * stacked list, because a 240px column cannot honestly hold three labelled
+ * segments in a row.
+ */
+.fleet-rail {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  border-left: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.fleet-rail > .button-link {
+  display: flex;
+  justify-content: center;
+  text-align: center;
+}
+
+.fleet-rail .fleet-view-options {
+  flex-direction: column;
+}
+
+.fleet-rail .fleet-view-option + .fleet-view-option {
+  border-left: 0;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 900px) {
+  /*
+   * A 240px right column plus the left rail leaves a 375px window with
+   * almost nothing for the cards. The rail becomes a strip above the page
+   * instead — same controls, no overlay, every destination still one press
+   * (MAR-435 / MAR-546).
+   */
+  .fleet-shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .fleet-rail {
+    order: -1;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: var(--space-2);
+    border-left: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .fleet-rail .fleet-view-options {
+    flex-direction: row;
+  }
+
+  .fleet-rail .fleet-view-option + .fleet-view-option {
+    border-top: 0;
+    border-left: 1px solid var(--line);
   }
 }
 
@@ -1223,87 +1340,143 @@ code {
 }
 
 /* ---------------------------------------------------------------------- *
- * The fleet as a grid of portraits (MAR-547's concept, MAR-586's cards)
+ * The fleet as a grid of portraits (MAR-547's concept, then the 2/3 split)
  *
- * Henrik, 2026-08-09: *"I want the fleet cards to fit like 3 in a row. And the
- * avatar to be bigger."* The Stitch package's `fleet_monitor` screen is a row of
- * equal cards, each with a header band, a large portrait on a tinted tile, the
- * agent's name, and controls along the bottom.
- *
- * What is adopted is that composition. What is refused, by name, is everything
- * the concept fills the middle of the card with — CPU LOAD 87%, a sparkline of
- * nothing — which is MAR-547's own ruling and the reason the space under the
- * portrait holds the four recorded answers instead.
+ * Henrik, 2026-08-13: two rows of three cards is the grid's size pattern;
+ * rows fits three agents on one screen; spotlight sits in the same band.
+ * In every view the cards take two thirds of the remaining page and the
+ * chief takes the third underneath. The card itself is a portrait and a
+ * name — the prose, chips and Open this agent live on the chief.
  *
  * A modifier on `.row-list` rather than a change to it: the Runs and Connections
  * pages lay records on that class too, and theirs are wide rows of prose.
  * ---------------------------------------------------------------------- */
+
+/*
+ * The stage fills whatever `.fleet-main` has left after the heading.
+ * Two rows, 2fr / 1fr, so the cards are two thirds and the chief is one
+ * third of that remaining height — the same split in every view.
+ */
+.fleet-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--density-stack);
+  margin-top: var(--density-stack);
+}
+
+.fleet-cards {
+  min-height: 0;
+  overflow: auto;
+}
+
 .row-list.fleet-grid {
   /*
-   * `auto-fit` and a floor, not a column count. Three-in-a-row is what a 1280px
-   * window gets and is the thing being asked for; a hardcoded `repeat(3, 1fr)`
-   * would give a 375px phone three 100px columns, which is the width-conditional
-   * interface MAR-491 settled against — except worse, because it would be the
-   * same interface at a width it cannot be read at.
+   * `auto-fill` and a fixed track, not `1fr`. Two agents on a three-column
+   * pattern were stretching to eat the row; a length track stays one card
+   * wide however many are in the fleet. `auto-fill` (not `auto-fit`) keeps
+   * the empty columns so leftover width stays air rather than being poured
+   * into the two cards that exist.
    *
-   * 19rem is the floor a card stops being legible below: the goal is one to two
-   * lines of an author's own prose, and the glance sentences under it are full
-   * sentences rather than labels.
+   * MAR-590: `min(var(--fleet-card), 100%)` keeps the floor everywhere it
+   * fits and only gives way to the container below that, so a 375px window
+   * does not scroll sideways.
    *
-   * MAR-590: that floor is a length, and a track minimum that is a length does
-   * not consult the container — at 375px the sidebar rail and page padding
-   * leave about 280px for this grid, so a flat `19rem` (304px) forced a single
-   * track 24px wider than its container and the row scrolled sideways.
-   * `min(19rem, 100%)` keeps 19rem as the floor everywhere it fits and only
-   * gives way to the container's own width below that, which is the one width
-   * this was already a single column at — auto-fit already put 375px on one
-   * track, so nothing here changes what a wider window draws.
+   * `max-width` of three tracks is the size pattern: a wider window does not
+   * grow a fourth column.
    */
-  grid-template-columns: repeat(auto-fit, minmax(min(19rem, 100%), 1fr));
-  /* Cards keep their own height rather than stretching to the tallest in the
-     row — except that `.fleet-card` below opts back in, so a row of cards with
-     unequal prose still lines its buttons up. */
-  align-items: stretch;
+  --fleet-gap: calc(var(--density-gap) * 1.5);
+  --fleet-card: 16rem;
+  height: 100%;
+  max-width: calc(3 * var(--fleet-card) + 2 * var(--fleet-gap));
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(var(--fleet-card), 100%), var(--fleet-card))
+  );
+  grid-auto-rows: auto;
+  justify-content: start;
+  align-content: start;
+  align-items: start;
+  gap: var(--fleet-gap);
 }
 
 .row-list.fleet-grid > li {
   display: flex;
+  min-height: auto;
 }
 
 /*
- * A column, so the control can be pinned to the bottom.
- *
- * Without this a row of three cards puts its buttons at three different heights,
- * following whatever length each author's goal happened to be — and the button
- * is the one thing on this surface a person is looking for in the same place on
- * every card.
+ * A portrait tile. The card is a column so the name sits under the character
+ * and the 200px sprite can be cropped by `.fleet-portrait` when the cell is
+ * shorter than the sprite — cropped, never resampled.
  */
 .fleet-card {
   display: flex;
   flex-direction: column;
   width: 100%;
+  min-height: 0;
+  padding: var(--space-2);
+  gap: var(--space-2);
 }
 
-/*
- * Everything under the portrait, in one box (MAR-612).
- *
- * A flex column inside a flex column, which changes nothing about the grid — the
- * card looks exactly as it did — and is what lets the rows view put the character
- * beside the reading matter with a two-cell grid instead of a nine-row one. See
- * `app/_components/fleet-card.tsx` for the 200px hole that was the alternative.
- *
- * `flex: 1` is the load-bearing half: it is what gives `.glance-actions`' auto
- * margin below something to push against, so a row of three cards still lines its
- * buttons up along the bottom.
- */
-.fleet-body {
+.fleet-card.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.fleet-marks {
   display: flex;
-  flex: 1;
-  flex-direction: column;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
 }
 
-.fleet-card .glance-actions {
-  margin-top: auto;
+.fleet-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.fleet-mark-needs_input {
+  color: var(--warn);
+}
+
+.fleet-mark-working,
+.fleet-mark-ready_for_review {
+  color: var(--accent);
+}
+
+.fleet-mark-glyph {
+  flex: none;
+}
+
+.fleet-pick {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+
+.fleet-card > .open-agent {
+  width: 100%;
+  padding: var(--space-2);
+  font-size: var(--text-sm);
+  text-align: center;
 }
 
 /*
@@ -1311,24 +1484,25 @@ code {
  *
  * The concept draws the character on a filled square inside the card, and that
  * is the part of it worth taking: it separates recognition from the reading
- * matter under it, which is exactly the separation MAR-501 argues for in prose —
- * a costume must not sit in the same block as a verdict.
+ * matter — which now lives on the chief, not under the sprite.
  *
  * `--accent-bg` rather than the concept's purple: `app/tokens.css` is the
  * palette, and a colour introduced for one tile would be a second brand.
  */
 .fleet-portrait {
   display: flex;
+  flex: none;
+  width: 100px;
+  height: 100px;
+  align-items: center;
   justify-content: center;
-  padding: var(--space-4) 0;
-  margin-bottom: var(--space-3);
+  padding: 0;
+  margin: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--accent-bg);
   /*
-   * MAR-587 made the character 200px, which fits the narrowest card DASH draws
-   * — 375px of viewport leaves a card about 310px wide inside its padding — and
-   * this is what happens below that anyway. A sprite may be cropped; it may not
+   * 100px is 2× the 50px source. A sprite may be cropped; it may not
    * be resampled to fit (that is `image-rendering: pixelated`'s whole argument)
    * and it may not push the page sideways, which is a defect the capture
    * harness fails a frame for.
@@ -1337,127 +1511,70 @@ code {
 }
 
 /*
- * The name in the band wraps rather than truncating.
+ * The name wraps rather than truncating.
  *
- * An agent's name is the user's own word for it and can be long. A card a third
- * of the page wide is where an ellipsis becomes tempting, and an ellipsis on the
- * one string that identifies the record is how two agents come to look like the
- * same agent.
+ * An agent's name is the user's own word for it and can be long. An ellipsis on
+ * the one string that identifies the record is how two agents come to look like
+ * the same agent.
  */
-.fleet-card > .card-head > .card-head-identity > h3 {
+.fleet-name {
+  flex: none;
+  margin-top: var(--space-2);
   font-size: var(--text-sm);
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
 /* ---------------------------------------------------------------------- *
  * Three tracks, one card (MAR-612)
  *
- * Henrik, 2026-08-11: *"1. 3 cards in a row. make em bit smaller so we can have
- * some space around. 2. 1 card per row. 3. A carousel type view one card in the
- * middle and two slightly bent cards on the sides."*
- *
  * `lib/views/fleet-view.ts` states the rule these rules exist under: a view may
  * change **the track the cards are laid on and nothing a card says.** So there is
- * no `display: none` on a card's content anywhere below, no rule that drops a
- * chip in a mode, and every selector reaches the list or the card's own axis. The
- * card's contents are `app/_components/fleet-card.tsx` and are identical in all
- * three.
+ * no `display: none` on a card's content anywhere below, and every selector
+ * reaches the list or the card's own axis. The card's contents are
+ * `app/_components/fleet-card.tsx` and are identical in all three.
  *
- * The attribute is on `<html>`, written before first paint by `FleetViewScript`,
- * for `[data-density]`'s reason exactly: a static export's first render is a build
- * artefact made on a machine that never met this user, and the fleet's cards are
- * the biggest things DASH draws, so a relayout on hydration is the most visible
- * flash in the product. **Grid carries no attribute at all** — the default writes
- * nothing, so the rules above are the grid and these are the departures from it.
+ * The attribute is on `<html>`, written before first paint by `FleetViewScript`.
+ * **Grid carries no attribute at all** — the default writes nothing, so the
+ * rules above are the grid and these are the departures from it.
  * ---------------------------------------------------------------------- */
 
-/*
- * Grid, and the half of Henrik's first line that was not already true.
+/* ── Rows: one card to a row, three on screen ────────────────────────────
  *
- * "3 cards in a row" shipped in MAR-547 and survives untouched above. What is
- * new is *"make em bit smaller so we can have some space around"*, and it is two
- * changes rather than one:
+ * One column, and three auto-rows fill the cards pane so three agents fit
+ * in the same two-thirds the grid uses for two rows of three.
  *
- * - the track gains a **ceiling**, so a card stops growing to eat the row. The
- *   ceiling is the same 19rem as the floor, which makes every card exactly one
- *   card wide at every width above the floor and leaves the slack over as air.
- *   MAR-590's `min(19rem, 100%)` floor is untouched and still does its job: at
- *   375px the container is narrower than 19rem, the floor gives way to it, and
- *   the ceiling — being the larger of the two — is what CSS discards. That is
- *   the one width this was already a single full-bleed column at.
- * - the gutter grows by half. It is `calc()` over the density token rather than
- *   a step from the scale, so density keeps its authority over spacing
- *   (`lib/views/density.ts`) and compact still tightens this grid.
- *
- * `justify-content: center` is what turns leftover track into "space around"
- * rather than into a ragged right edge.
- */
-.row-list.fleet-grid {
-  grid-template-columns: repeat(auto-fit, minmax(min(19rem, 100%), 19rem));
-  justify-content: center;
-  gap: calc(var(--density-gap) * 1.5);
-}
-
-/* ── Rows: one card to a row ──────────────────────────────────────────────
- *
- * One column, and the card turns on its side.
- *
- * A single column alone would be the literal reading of *"1 card per row"* and
- * would also be the wrong one: a card the full width of the page with a 200px
- * character centred above two lines of prose is mostly empty, and a reader who
- * chose this view to see more agents at once would get fewer. So the row is
- * where the portrait moves *beside* the reading matter instead of above it.
- *
- * The sprite is **moved, never resized**. `OSize` offers 50, 100 and 200 and
- * `lib/brand/o-cast.ts` says why there is nothing between them: `image-rendering:
- * pixelated` upscales by nearest neighbour, so an in-between size lands some
- * source pixels on one screen pixel and some on two, and the character stops
- * being pixel art. A view does not get to make that decision for a surface.
+ * The card turns on its side: portrait beside the name, because a full-width
+ * card with a 200px character centred above a label is mostly empty. The
+ * sprite is **moved, never resized**.
  */
 [data-fleet-view="rows"] .row-list.fleet-grid {
+  max-width: none;
   grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: auto;
   justify-content: stretch;
 }
 
-[data-fleet-view="rows"] .fleet-card {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  column-gap: var(--space-5);
-  align-content: start;
+[data-fleet-view="rows"] .fleet-pick {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-4);
+  text-align: start;
 }
 
-/* The band still spans the card, negative margins and all. */
-[data-fleet-view="rows"] .fleet-card > .card-head {
-  grid-column: 1 / -1;
+[data-fleet-view="rows"] .fleet-portrait {
+  width: 100px;
+  height: 100px;
 }
 
-[data-fleet-view="rows"] .fleet-card > .fleet-portrait {
-  grid-column: 1;
-  grid-row: 2;
+[data-fleet-view="rows"] .fleet-name {
+  margin-top: 0;
+  font-size: var(--text-base);
+}
+
+[data-fleet-view="rows"] .fleet-card > .open-agent {
+  width: auto;
   align-self: start;
-  margin-bottom: 0;
-}
-
-/*
- * The body is one cell, which is the whole reason it is one box.
- *
- * The card has three children in every view — band, portrait, body — so this
- * grid has two rows however much an agent has to say. The first attempt had no
- * wrapper and let eight siblings auto-place down column two, which made the
- * portrait's row as tall as the sprite and left a 200px hole between the goal and
- * the chips. A screenshot found it; no measurement would have, because nothing
- * overflowed.
- */
-[data-fleet-view="rows"] .fleet-card > .fleet-body {
-  grid-column: 2;
-  grid-row: 2;
-}
-
-/* The control pins to the bottom of the *card* in the grid, so a row of three
-   lines their buttons up. In a single row there is nothing beside it to line up
-   with, so it sits under the prose it belongs to. */
-[data-fleet-view="rows"] .fleet-card .glance-actions {
-  margin-top: var(--space-3);
 }
 
 /*
@@ -1468,13 +1585,13 @@ code {
  * interfaces and the reason it is allowed here.
  */
 @media (max-width: 900px) {
-  [data-fleet-view="rows"] .fleet-card {
-    display: flex;
+  [data-fleet-view="rows"] .fleet-pick {
     flex-direction: column;
+    text-align: center;
   }
 
-  [data-fleet-view="rows"] .fleet-card > .fleet-portrait {
-    margin-bottom: var(--space-3);
+  [data-fleet-view="rows"] .fleet-name {
+    margin-top: var(--space-2);
   }
 }
 
@@ -1493,27 +1610,31 @@ code {
  */
 [data-fleet-view="spotlight"] .row-list.fleet-grid {
   position: relative;
+  height: 100%;
+  max-width: none;
   grid-auto-flow: column;
   grid-template-columns: none;
-  grid-auto-columns: min(21rem, 76vw);
+  grid-auto-columns: min(18rem, 42vw);
+  grid-auto-rows: minmax(0, 1fr);
   justify-content: start;
   overflow-x: auto;
-  overflow-y: visible;
+  overflow-y: hidden;
   scroll-snap-type: x mandatory;
   /*
    * Half the track either side, so the first and last agent can reach the middle.
    * Without it a fleet of two has a card that can never be centred, and the chief
    * would be talking about whichever one the scroller stopped nearest.
    */
-  padding-inline: max(var(--space-4), calc(50% - min(21rem, 76vw) / 2));
+  padding-inline: max(var(--space-4), calc(50% - min(18rem, 42vw) / 2));
   /* Room for the turned cards to lean into rather than be clipped by the
      scroller's own box. */
-  padding-block: var(--space-5);
+  padding-block: var(--space-4);
   perspective: 1200px;
   scrollbar-width: thin;
 }
 
 [data-fleet-view="spotlight"] .row-list.fleet-grid > li {
+  min-height: 0;
   scroll-snap-align: center;
   transform-style: preserve-3d;
   /*
@@ -1553,14 +1674,15 @@ code {
 }
 
 /*
- * The middle card's border. `DESIGN.md`'s Level 2 — *"a 2px solid border in the
+ * The selected card's border. `DESIGN.md`'s Level 2 — *"a 2px solid border in the
  * Primary Electric Blue to indicate active focus"* — drawn as 1px plus a 1px
  * ring rather than as a 2px border, so the card does not change size when it
- * reaches the middle and the row does not shuffle as it is scrolled.
+ * is selected and the row does not shuffle as it is scrolled.
  *
  * It is the one thing on screen that says which card the chief below is talking
- * about, which is why it is a border and not an opacity: the neighbours are
- * already dimmed, and "brightest" is not a claim a reader can check.
+ * about. `.fleet-card.is-selected` already draws it in every view; the
+ * spotlight rule is kept so a centred card that has not yet been marked
+ * selected still reads as the middle one during a scroll frame.
  */
 [data-fleet-view="spotlight"] .row-list.fleet-grid > li.is-centred > .fleet-card {
   border-color: var(--accent);
@@ -1569,9 +1691,16 @@ code {
 
 .fleet-spotlight-track {
   display: grid;
+  height: 100%;
+  min-height: 0;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-2);
+}
+
+.fleet-spotlight-track > .row-list.fleet-grid {
+  align-self: stretch;
+  height: 100%;
 }
 
 /*
@@ -1609,53 +1738,51 @@ code {
  *
  * `app/_components/fleet-list.tsx` carries the argument for what the chief is
  * allowed to say and why its portrait is a glyph rather than one of the O's.
- * What this rule does is **reserve the room**: Henrik asked to leave space for
- * the chief's chat at the bottom, MAR-419 is that chat and is not built, and a
- * band that grows by the height of an input on the day it lands is a page that
- * moves under everybody. So the band has a floor now and the input goes inside
- * it later.
+ * What this rule does is **give it a third of the stage**: Henrik asked for
+ * the cards in two thirds and the chief in one third, in every view. MAR-419
+ * is the chat that will fill this band and is not built; a band that is
+ * already one third of the page does not jump the day the input lands.
  *
- * ## It sticks to the bottom, and the first attempt did not
- *
- * A fleet card is tall — a portrait, a goal, four glance sentences and a control
- * — so at 1280×980 the cards fill the window and the chief was photographed
- * *below the fold*. A view whose distinguishing feature is off screen on arrival
- * is a view nobody would ever choose, and no measurement says so: the page did
- * not overflow, nothing was clipped, and the frame looked fine.
- *
- * `sticky` rather than `fixed`: it resolves against `main`, which is the
- * scrollport, so on a short fleet the band simply sits where it falls and only
- * pins once there is something to scroll. That is also the shape Henrik's
- * reference draws — its command panel is the bottom band of the window with the
- * cards moving above it.
- *
- * It does cover part of the list while scrolling, and MAR-435's "nothing is
- * drawn over anything it does not own" is worth answering rather than ignoring.
- * That rule is about the fleet strip refusing to cover approvals, forms and
- * receipts — surfaces on *other* routes, which an always-on-top row would have
- * obscured. This is one band of the fleet page over the fleet page's own list,
- * in a view the reader turned on, and the thing underneath is a card whose every
- * fact is repeated in the two views that do not have a chief.
+ * It is a grid area of `.fleet-stage`, not sticky. Sticky was the fix when
+ * the cards were document-tall and the chief fell below the fold. The stage
+ * now owns the height, so the chief is on screen because it is a row of the
+ * layout rather than because it pins over the list.
  */
 .chief-band {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
+  min-height: 0;
+  overflow: hidden;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: stretch;
   gap: var(--space-4);
-  min-height: 7rem;
-  margin-top: var(--density-stack);
+  margin: 0;
   padding: var(--space-4) var(--space-5);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   /*
    * Opaque, and that is load-bearing rather than a colour choice: `DESIGN.md`
    * forbids glassmorphism outright — *"All overlays should be opaque"* — and a
-   * translucent band would put a card's prose behind the chief's sentence.
+   * translucent band would put a card's portrait behind the chief's sentence.
    */
   background: var(--surface-1);
+}
+
+.chief-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  align-self: start;
+  justify-content: flex-end;
+}
+
+.chief-line {
+  min-height: 0;
+  overflow: auto;
+}
+
+.chief-line .fleet-hosting {
+  margin-top: var(--space-2);
 }
 
 /*
@@ -1667,6 +1794,7 @@ code {
 .chief-glyph {
   color: var(--accent);
   flex: none;
+  align-self: start;
 }
 
 .chief-says {
@@ -1698,29 +1826,19 @@ code {
     display: none;
   }
 
-  /*
-   * It stops sticking, and this is the second thing a screenshot found rather
-   * than a measurement.
-   *
-   * Pinned, the band is the glyph, a sentence wrapped over nine lines and a
-   * button — about 300px, which on an 812px-tall phone covered the card it was
-   * talking about almost entirely. The wide window's trade (a band over the
-   * bottom of one card) does not scale down; here the honest answer is that a
-   * narrow window scrolls, and the chief is the thing under the cards rather
-   * than the thing over them.
-   *
-   * `min-height` goes with it: the room reserved for MAR-419's input is room a
-   * phone does not have to spare, and the input will need its own narrow layout
-   * on the day it exists.
-   */
   .chief-band {
-    position: static;
-    min-height: 0;
     grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
   }
 
-  .chief-band > .button-link {
+  .chief-actions {
     grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .chief-actions > .button-link {
+    flex: 1;
+    text-align: center;
   }
 }
 
@@ -1733,9 +1851,9 @@ code {
  * ring is drawn with `:has()` on the label rather than on the input.
  *
  * The idiom is `.settings-tabs`': accent over a quiet ground, never a filled
- * block. That rule's reasoning applies here for a second reason — this control
- * sits in the same row as `Add agent`, which *is* a filled block, and two filled
- * blocks side by side put two equal claims on a row where only one is an action.
+ * block. On the agents page it lives in the right rail under `Add agent`; on
+ * Preferences it sits in the page. Two filled blocks would still be two equal
+ * claims, so the radios stay the quieter of the pair wherever they are.
  * ---------------------------------------------------------------------- */
 .fleet-view-toggle {
   min-inline-size: 0;
@@ -1810,22 +1928,6 @@ code {
   outline-offset: -2px;
 }
 
-/*
- * Right-aligned in the actions row, with the row's items lining up on their
- * bottom edge — this control is two lines tall because its group needs a name,
- * and `Add agent` is one.
- *
- * Scoped with `:has()` so `.page-actions` keeps behaving exactly as it does on
- * every other page that uses it.
- */
-.page-actions:has(.fleet-view-toggle) {
-  align-items: end;
-}
-
-.page-actions > .fleet-view-toggle {
-  margin-inline-start: auto;
-}
-
 @media (max-width: 560px) {
   /*
    * The glyph stays and the word goes, which is `DensityToggle`'s own choice at
@@ -1842,10 +1944,6 @@ code {
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
-  }
-
-  .page-actions > .fleet-view-toggle {
-    margin-inline-start: 0;
   }
 }
 

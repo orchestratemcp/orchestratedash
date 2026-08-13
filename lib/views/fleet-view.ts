@@ -31,15 +31,18 @@
  * **The track the cards are laid on. Nothing a card says.**
  *
  * That is density's rule transplanted, and for density's reason. Every view
- * draws the same `<article>` with the same chips, the same goal, the same
- * hosting line and the same control — `app/_components/fleet-card.tsx` is one
- * component and every view maps it. A view that hid a chip to fit would be the
- * "second interface" density's header refuses, and the person who chose it is
- * the person least likely to be told what they gave up.
+ * draws the same `<article>` with the same portrait and the same name —
+ * `app/_components/fleet-card.tsx` is one component and every view maps it.
+ * The glance chips, the hosting line and the way into the agent live on the
+ * chief, which is also the same component in every view. A view that hid a
+ * chip to fit would be the "second interface" density's header refuses, and
+ * the person who chose it is the person least likely to be told what they
+ * gave up.
  *
- * `spotlight` adds something rather than removing it: the chief, underneath, who
- * says a sentence about the agent in the middle. That is an addition to the
- * page, never a subtraction from a card.
+ * `spotlight` does not uniquely own the chief any more: every view has the
+ * chief underneath, talking about the selected agent. That is an addition to
+ * the page, never a subtraction from a card. The card is a portrait and a
+ * name; the facts a card used to carry live on the chief.
  *
  * ## Why the preference is not in the store
  *
@@ -122,12 +125,12 @@ export function describeFleetView(view: FleetView): FleetViewCopy {
     case "grid":
       return {
         label: "Grid",
-        description: "Three cards to a row, with room around them.",
+        description: "Six cards on the screen, three to a row, with the chief underneath.",
       };
     case "rows":
       return {
         label: "Rows",
-        description: "One card to a row, the full width of the page.",
+        description: "Three agents on the screen, one per row, with the chief underneath.",
       };
     case "spotlight":
       return {

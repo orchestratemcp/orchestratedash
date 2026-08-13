@@ -231,20 +231,18 @@ describe("the fleet is a grid of portraits (MAR-547's concept)", () => {
      * `repeat(3, 1fr)` would give a 375px window three 100px columns. MAR-491
      * settled that a width-conditional interface is two interfaces; this is the
      * worse version, where the same interface arrives at a width it cannot be
-     * read at. `auto-fit` with a floor is one interface that reflows.
+     * read at. `auto-fill` with a floor is one interface that reflows, and
+     * unlike `auto-fit` it does not stretch two cards across a three-card row.
      */
     const track = globals.match(/\.row-list\.fleet-grid\s*\{[^}]*\}/)?.[0] ?? "";
-    expect(track).toContain("auto-fit");
+    expect(track).toContain("auto-fill");
     expect(track).toContain("minmax(");
     expect(track).not.toMatch(/repeat\(\s*\d+\s*,/);
   });
 
-  it("pins the control to the bottom, so a row of cards agrees where it is", () => {
-    // Three cards with three different goal lengths would otherwise put their
-    // buttons at three heights, and the button is the one thing on this surface
-    // a person looks for in the same place on every card.
+  it("sizes the card as a portrait column that does not stretch to fill", () => {
     expect(globals).toMatch(/\.fleet-card\s*\{[^}]*flex-direction:\s*column/);
-    expect(globals).toMatch(/\.fleet-card \.glance-actions\s*\{[^}]*margin-top:\s*auto/);
+    expect(globals).toContain("grid-auto-rows: auto");
   });
 });
 
