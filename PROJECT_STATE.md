@@ -1,5 +1,17 @@
 # DASH project state
 
+Updated: 2026-08-14 (MAR-635: the agent page is a live command surface)
+
+The agent page now opens on a live output feed (telemetry v1 per-step
+records), generated assets (the same `run_artifacts` and MAR-622 dated
+history — no third renderer), telemetry meters only where a record backs
+them, and Quick commands that name their machine. There is no power
+toggle: "off" has no exact meaning, and for a deployed copy DASH cannot
+promise it (ADR 0010). Sized for the empty agent first. PR #184 open, not
+merged, not proven.
+
+---
+
 Updated: 2026-08-13 (MAR-628: browser control is decided before it is built)
 
 ADR 0019 recommends one browser shape: the Chromium DASH already ships,
