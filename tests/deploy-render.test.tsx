@@ -94,6 +94,11 @@ function panel(
       onChoose={() => undefined}
       onDeploy={() => undefined}
       onSendAgain={() => undefined}
+      bringHome={null}
+      onBringHomeRequest={() => undefined}
+      onBringHomeCancel={() => undefined}
+      onBringHomeConfirm={() => undefined}
+      onBringHomeDismiss={() => undefined}
     />,
   );
 }

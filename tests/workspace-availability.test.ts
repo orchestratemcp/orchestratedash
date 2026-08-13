@@ -22,6 +22,7 @@ const dataDir = mkdtempSync(path.join(tmpdir(), "dash-availability-"));
 process.env.DASH_DATA_DIR = dataDir;
 
 const {
+  markArtifactsBroughtHome,
   resetStore,
   resolveArtifactAvailability,
   syncWorkspaceArtifacts,
@@ -165,5 +166,71 @@ describe("resolveArtifactAvailability", () => {
     ]);
     expect(resolveArtifactAvailability(AGENT, "run-other")("art_other")).toBe("deleted");
     expect(resolveArtifactAvailability(AGENT, RUN)("art_other")).toBe("available");
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * The sixth state, which DASH writes rather than a runner (MAR-611, ADR 0017)
+ * ---------------------------------------------------------------------- */
+
+describe("outputs that came home from a server", () => {
+  it("marks exactly the ids it was given, and nothing else", () => {
+    /*
+     * The reason this takes a list of ids rather than an agent, said as a test.
+     *
+     * `workspace_artifacts` has no column for the machine a row came from, and a
+     * deployed agent has the **same id in both places** — so "mark this agent's
+     * remote outputs" is not a query anybody can write, and one written anyway
+     * would grey out the copy on this computer's own files. The ids come from
+     * the pull that learned them: everything in a host's own index is by
+     * construction a file on that host.
+     */
+    syncWorkspaceArtifacts([
+      record({ artifact_id: "art_on_the_server" }),
+      record({ artifact_id: "art_on_this_computer" }),
+    ]);
+
+    expect(
+      markArtifactsBroughtHome(["art_on_the_server"], "DASH saved this to D:\\Outputs."),
+    ).toBe(1);
+
+    const availability = resolveArtifactAvailability(AGENT, RUN);
+    expect(availability("art_on_the_server")).toBe("brought_home");
+    expect(availability("art_on_this_computer")).toBe("available");
+  });
+
+  it("says where the file went, rather than that somebody deleted it", () => {
+    /*
+     * `deleted` was the near miss, and its own copy is wrong in both halves for
+     * this case: it tells the person somebody removed the file on purpose and
+     * that no second copy exists. DASH removed it, and the second copy is the
+     * whole point of the act.
+     */
+    syncWorkspaceArtifacts([record({ artifact_id: "art_home" })]);
+    markArtifactsBroughtHome(["art_home"], "DASH saved this to D:\\Outputs.");
+
+    const stored = workspaceArtifactsForRun(AGENT, RUN).find(
+      (row) => row.artifact_id === "art_home",
+    );
+    expect(stored?.availability_detail).toContain("D:\\Outputs");
+    // The runner's clock is left alone: it really did look then, and what
+    // changed afterwards was DASH's own doing.
+    expect(stored?.observed_at).toBe("2026-08-06T09:00:05.000Z");
+  });
+
+  it("writes no row for an output this store never took up", () => {
+    // An id DASH holds no row for is an output that never arrived. Inventing one
+    // from a list of ids would be a record with no run, no size and no digest
+    // behind it.
+    expect(markArtifactsBroughtHome(["art_never_seen"], "…")).toBe(0);
+    expect(workspaceArtifactsForRun(AGENT, RUN)).toHaveLength(0);
+  });
+
+  it("survives a read back through the same narrowing every row goes through", () => {
+    // Accepted on the way in as well as written on the way out, so a marked row
+    // is not degraded to `missing` by the guard that catches states no runner
+    // has ever emitted.
+    syncWorkspaceArtifacts([record({ artifact_id: "art_home", availability: "brought_home" })]);
+    expect(resolveArtifactAvailability(AGENT, RUN)("art_home")).toBe("brought_home");
   });
 });

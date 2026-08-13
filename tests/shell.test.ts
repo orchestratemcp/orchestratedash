@@ -233,6 +233,7 @@ describe("the audited command chokepoint", () => {
       // page has never seen the server's snapshot, so main reads which task at
       // the moment of the press and the host adjudicates it again.
       "host.run",
+      "host.bringHome",
       "host.forget",
       // MAR-434. A fifth family, addressing the runner's task workspace over
       // routes the runner already served and proof 9 already exercised. Note
@@ -712,6 +713,18 @@ describe("dispatch", () => {
                 "time it can reach that server, and only what the server still has then.",
               reached: true,
             });
+          case "bringHome":
+            return Promise.resolve({
+              ok: true as const,
+              action,
+              host_id: "host-fake-1",
+              label: "My server",
+              agent_id: "fixture-agent",
+              files_saved: 0,
+              detail:
+                "This agent is no longer on My server. Everything that server still had is on " +
+                "this computer now. It had no files there to bring back.",
+            });
           case "forget":
             return Promise.resolve({
               ok: true as const,
@@ -1126,6 +1139,22 @@ describe("dispatch", () => {
         },
       },
       {
+        command: "host.bringHome",
+        payload: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        action: "bringHome",
+        target: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        result: {
+          detail:
+            "This agent is no longer on My server. Everything that server still had is on this computer now. It had no files there to bring back.",
+          data: {
+            host_id: "host-fake-1",
+            label: "My server",
+            agent_id: "fixture-agent",
+            files_saved: 0,
+          },
+        },
+      },
+      {
         command: "host.forget",
         payload: { host_id: "host-fake-1" },
         action: "forget",
@@ -1140,6 +1169,7 @@ describe("dispatch", () => {
         "host.setup",
         "host.deploy",
         "host.run",
+        "host.bringHome",
         "host.forget",
       ]);
       const ctx = context();

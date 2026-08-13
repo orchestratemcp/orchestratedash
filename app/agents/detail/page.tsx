@@ -559,7 +559,12 @@ function AgentWorkspace(): ReactNode {
                controls a reader met only by scrolling past everything. Behind
                the settings button, under a heading that says what they do, is
                where a person goes looking for "get rid of this". */
-            <RemoveAgent agentId={view.agent} displayName={view.title} canAct={canAct} />
+            <RemoveAgent
+              agentId={view.agent}
+              displayName={view.title}
+              canAct={canAct}
+              deployedServers={view.deploy_targets.map((target) => target.label)}
+            />
           }
         >
           {/* MAR-583. The model picker is a setting, and it was a full-width
@@ -686,6 +691,7 @@ function AgentWorkspace(): ReactNode {
         deploy={view.deploy}
         targets={view.deploy_targets}
         canAct={canAct}
+        onBroughtHome={() => setRefreshKey((value) => value + 1)}
       />
 
       {/* MAR-548, ADR 0008 slice 3. Below DASH's own surfaces on purpose: the

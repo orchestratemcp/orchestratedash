@@ -89,9 +89,12 @@ describe("what is on this server, drawn", () => {
       at,
     });
 
+  /** No row is offered the bring-home button unless a test says otherwise. */
+  const noBringHome = { knownLocally: new Set<string>(), busy: false, canAct: true, onBringHome: () => undefined };
+
   it("names every agent and gives each its own moment", () => {
     const html = renderToStaticMarkup(
-      <WhatIsOnThisServer rows={rows([{ agent_id: AGENT, running: true }], AT)} />,
+      <WhatIsOnThisServer rows={rows([{ agent_id: AGENT, running: true }], AT)} {...noBringHome} />,
     );
     expect(html).toContain(AGENT);
     expect(html).toContain("seen running");
@@ -104,15 +107,40 @@ describe("what is on this server, drawn", () => {
      * would leave the page silent about what DASH itself had done — which is the
      * one account it is entitled to give without asking anybody.
      */
-    const html = renderToStaticMarkup(<WhatIsOnThisServer rows={rows(null, null)} />);
+    const html = renderToStaticMarkup(
+      <WhatIsOnThisServer rows={rows(null, null)} {...noBringHome} />,
+    );
     expect(html).toContain(AGENT);
     expect(html).toContain("Check this server");
     expect(html).toContain("has not asked");
   });
 
   it("never claims a count of running agents it did not observe", () => {
-    const html = renderToStaticMarkup(<WhatIsOnThisServer rows={rows([], AT)} />);
+    const html = renderToStaticMarkup(<WhatIsOnThisServer rows={rows([], AT)} {...noBringHome} />);
     expect(html).toContain("named nothing as running");
     expect(html).toContain("when DASH last asked");
+  });
+
+  it("offers to bring home only an agent DASH still holds locally (MAR-611, ADR 0017)", () => {
+    const html = renderToStaticMarkup(
+      <WhatIsOnThisServer
+        rows={rows([{ agent_id: AGENT, running: true }], AT)}
+        knownLocally={new Set([AGENT])}
+        busy={false}
+        canAct
+        onBringHome={() => undefined}
+      />,
+    );
+    expect(html).toContain("Bring it home");
+  });
+
+  it("does not offer to bring home an agent DASH does not hold locally", () => {
+    const html = renderToStaticMarkup(
+      <WhatIsOnThisServer
+        rows={rows([{ agent_id: AGENT, running: true }], AT)}
+        {...noBringHome}
+      />,
+    );
+    expect(html).not.toContain("Bring it home");
   });
 });

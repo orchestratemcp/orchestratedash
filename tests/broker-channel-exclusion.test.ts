@@ -161,6 +161,75 @@ describe("the run route's variable part", () => {
   });
 });
 
+/**
+ * The bytes of one output, which is the third route family (MAR-611, ADR 0017).
+ *
+ * Admitted because an index without bytes is a surface that lies: bringing an
+ * agent home removes the bundle holding its files, and DASH had no way to fetch
+ * one off a host at all — `workspaceDownload` reaches `RunnerHandle`, which is
+ * the local runner and nothing else.
+ *
+ * Its variable part sits *before* a fixed segment, so `..` normalises to
+ * `/artifacts/download` rather than to a route anybody serves. That makes the
+ * guard defensive here rather than load-bearing, unlike the state route — and it
+ * is asserted anyway, because "safe by accident of where the segment sits" is a
+ * property the next leaf would silently not have.
+ */
+describe("the output-bytes route's variable part", () => {
+  it("puts an artifact id in exactly one segment", () => {
+    expect(pathOf({ artifact_id: "art-2026-08-11", leaf: "download" })).toBe(
+      "/artifacts/art-2026-08-11/download",
+    );
+  });
+
+  it("cannot be talked into naming a brokered route", () => {
+    for (const route of BROKER_ROUTES) {
+      const built = pathOf({ artifact_id: route, leaf: "download" });
+      expect(built).not.toContain(route);
+      expect(built.startsWith("/artifacts/")).toBe(true);
+      expect(built.endsWith("/download")).toBe(true);
+    }
+  });
+
+  it("refuses an artifact that names a directory instead of an output", async () => {
+    for (const dots of [".", "..", ""]) {
+      await expect(
+        (
+          remote as unknown as {
+            call: (route: { artifact_id: string; leaf: string }) => Promise<Response>;
+          }
+        ).call({ artifact_id: dots, leaf: "download" }),
+      ).rejects.toBeInstanceOf(RemoteRouteRefused);
+    }
+  });
+
+  it("carries a request for a real output, which is what ADR 0017 admitted", async () => {
+    await expect(
+      (
+        remote as unknown as {
+          call: (route: { artifact_id: string; leaf: string }) => Promise<Response>;
+        }
+      ).call({ artifact_id: "art-2026-08-11", leaf: "download" }),
+    ).rejects.not.toBeInstanceOf(RemoteRouteRefused);
+  });
+
+  it("checks the id the path actually uses, not whichever one a cast supplied", async () => {
+    /*
+     * A cast can carry both keys. The runtime guard pairs each leaf with *its
+     * own* segment check for that reason — a guard that read `agent_id` on a
+     * download route would be checking a field the path never uses, which is the
+     * shape of a check that passes while the thing it protects is wrong.
+     */
+    await expect(
+      (
+        remote as unknown as {
+          call: (route: Record<string, string>) => Promise<Response>;
+        }
+      ).call({ agent_id: "ai-news-scout-2", artifact_id: "..", leaf: "download" }),
+    ).rejects.toBeInstanceOf(RemoteRouteRefused);
+  });
+});
+
 describe("the exclusion, at compile time", () => {
   /**
    * Each directive sits on the line immediately above its code, with no comment
