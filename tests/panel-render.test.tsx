@@ -284,6 +284,68 @@ describe("all five components draw", () => {
   });
 });
 
+describe("the panel's output history", () => {
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const older = new Date(today);
+  older.setDate(older.getDate() - 3);
+
+  const history = [
+    {
+      artifact: {
+        ...digest,
+        artifact_id: "latest",
+        title: "Latest roundup",
+        generated_at: today.toISOString(),
+      },
+      received_at: today.toISOString(),
+      stored_bytes: 4210,
+    },
+    {
+      artifact: {
+        ...digest,
+        artifact_id: "yesterday",
+        title: "Previous roundup",
+        generated_at: yesterday.toISOString(),
+      },
+      received_at: yesterday.toISOString(),
+      stored_bytes: 4210,
+    },
+    {
+      artifact: {
+        ...digest,
+        artifact_id: "older",
+        title: "Older roundup",
+        generated_at: older.toISOString(),
+      },
+      received_at: older.toISOString(),
+      stored_bytes: 4210,
+    },
+  ] satisfies RunArtifactRecord[];
+  const html = render(
+    view(
+      [{ id: "history", type: "outputs", label: "Everything it made", artifact_role: "digest" }],
+      history,
+    ),
+  );
+
+  it("keeps the newest card open and collapses both older cards", () => {
+    expect(html.indexOf("Latest roundup")).toBeLessThan(html.indexOf("output-history-entry"));
+    expect(html.match(/class="output-history-entry"/g)).toHaveLength(2);
+    expect(html).toContain(">Yesterday</span>");
+    expect(html).not.toMatch(/<details class="output-history-entry" open/);
+  });
+
+  it("keeps the panel renderer's full cards inside those disclosures", () => {
+    expect(html).toContain("Previous roundup");
+    expect(html).toContain("Older roundup");
+    expect(html.match(/class="output-card/g)).toHaveLength(3);
+    expect(html).not.toContain(OUTPUTS_PANEL_COPY.download);
+  });
+});
+
 /* ---------------------------------------------------------------------- *
  * Empty states
  * ---------------------------------------------------------------------- */

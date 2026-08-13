@@ -189,6 +189,7 @@ interface DashShellClient {
    * page nobody asked a question on.
    */
   markAgentLooked?(args: { agent_id: string }): Promise<CommandResult>;
+  setUiScale?(factor?: number): Promise<CommandResult>;
   /**
    * The three model commands (MAR-583).
    *

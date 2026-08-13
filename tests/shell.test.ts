@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   COMMANDS,
+  HOST_ACTIONS,
   SHELL_COMMAND_CHANNEL,
   dispatchCommand,
   executeCommand,
@@ -135,6 +136,7 @@ describe("the audited command chokepoint", () => {
       // no store and no provider. The only command besides `shell.ping` that
       // can honestly declare `mutates: false`.
       "shell.menu",
+      "shell.scale",
       // MAR-415. Lifecycle, not Agent DOM commands: they act on a process, no
       // manifest declares them, and they never become an envelope. The
       // `runner.` prefix is what keeps that legible at every call site.
@@ -616,6 +618,7 @@ describe("dispatch", () => {
       showApplicationMenu: (at: { x: number; y: number } | undefined) => {
         menus.push(at);
       },
+      setUiScale: (factor: number | undefined) => factor ?? 1,
       // MAR-383. Recorded, not performed — and note the fake holds no secret,
       // which it could not do usefully anyway: no credential is an argument to
       // or a result of this call.
@@ -1103,6 +1106,128 @@ describe("dispatch", () => {
       // Main's own sentence, whole. A page renders this rather than composing
       // one from flags.
       expect((result as { detail?: string }).detail).toContain("no longer on My server");
+    });
+
+    it.each([
+      {
+        command: "host.create",
+        payload: { label: "My server", address: "vps.example.com", username: "dash", port: 22 },
+        action: "create",
+        target: { label: "My server", address: "vps.example.com", username: "dash", port: 22 },
+        result: {
+          data: {
+            host_id: "host-fake-1",
+            label: "My server",
+            public_key: "ssh-ed25519 AAAA-public orchestratedash",
+            key_name: "host-fake-1",
+            authorized_keys_line:
+              'restrict,command="/opt/orchestratedash/dash-host" ssh-ed25519 AAAA-public orchestratedash',
+            resumed: false,
+          },
+        },
+      },
+      {
+        command: "host.probe",
+        payload: { host_id: "host-fake-1" },
+        action: "probe",
+        target: { host_id: "host-fake-1" },
+        result: {
+          data: {
+            host_id: "host-fake-1",
+            label: "My server",
+            runner_build: "fixture",
+            agents_running: 2,
+            agents_there: [{ agent_id: "News Scout", running: true }],
+          },
+        },
+      },
+      {
+        command: "host.trust",
+        payload: { host_id: "host-fake-1", fingerprint: "SHA256:fixture" },
+        action: "trust",
+        target: { host_id: "host-fake-1", fingerprint: "SHA256:fixture" },
+        result: { data: { host_id: "host-fake-1", label: "My server", fingerprint: "SHA256:fixture" } },
+      },
+      {
+        command: "host.setup",
+        payload: { host_id: "host-fake-1" },
+        action: "setup",
+        target: { host_id: "host-fake-1" },
+        result: { data: { host_id: "host-fake-1", label: "My server", script: "#!/bin/sh\nexit 0\n" } },
+      },
+      {
+        command: "host.deploy",
+        payload: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        action: "deploy",
+        target: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        result: {
+          detail: "The agent is running on My server.",
+          data: {
+            host_id: "host-fake-1",
+            label: "My server",
+            agent_id: "fixture-agent",
+            bundle_id: "fixture-agent",
+            runner_build: "fixture",
+          },
+        },
+      },
+      {
+        command: "host.run",
+        payload: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        action: "run",
+        target: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        result: {
+          detail:
+            "My server was asked to start this agent. DASH will show what it did the next time it can reach that server, and only what the server still has then.",
+          data: {
+            host_id: "host-fake-1",
+            label: "My server",
+            agent_id: "fixture-agent",
+            reached: true,
+          },
+        },
+      },
+      {
+        command: "host.bringHome",
+        payload: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        action: "bringHome",
+        target: { host_id: "host-fake-1", agent_id: "fixture-agent" },
+        result: {
+          detail: "The agent is no longer on My server.",
+          data: {
+            host_id: "host-fake-1",
+            label: "My server",
+            agent_id: "fixture-agent",
+            files_saved: 0,
+          },
+        },
+      },
+      {
+        command: "host.forget",
+        payload: { host_id: "host-fake-1" },
+        action: "forget",
+        target: { host_id: "host-fake-1" },
+        result: { data: { host_id: "host-fake-1", label: "My server" } },
+      },
+    ])("maps $command's target and successful result", async ({ command, payload, action, target, result }) => {
+      expect(Object.keys(HOST_ACTIONS)).toEqual([
+        "host.create",
+        "host.probe",
+        "host.trust",
+        "host.setup",
+        "host.deploy",
+        "host.run",
+        "host.bringHome",
+        "host.forget",
+      ]);
+      const ctx = context();
+      const response = await dispatchCommand(
+        { command, request_id: `req-${action}`, payload },
+        ctx,
+      );
+
+      expect(ctx.hosts).toEqual([{ action, target }]);
+      expect(response).toEqual({ ok: true, request_id: `req-${action}`, ...result });
     });
 
     it("renders the manifest-only refusal verbatim", async () => {

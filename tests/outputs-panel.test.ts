@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import {
   OUTPUTS_PANEL_COPY,
   describeArtifactAvailability,
+  describeArtifactHistoryDay,
   describeArtifactRole,
   describeRecordSize,
   type ArtifactAvailability,
@@ -285,6 +286,26 @@ describe("the provenance receipt", () => {
     const [card] = buildArtifactCards([record()]);
     expect(card!.availability).toBe("available");
     expect(card!.recovery).toBeNull();
+  });
+});
+
+describe("the history day", () => {
+  const today = new Date(2026, 4, 3, 12);
+  const at = (year: number, month: number, day: number): string =>
+    new Date(year, month, day, 12).toISOString();
+
+  it("uses relative words only for the two dates Henrik named", () => {
+    expect(describeArtifactHistoryDay(at(2026, 4, 3), today)).toBe("Today");
+    expect(describeArtifactHistoryDay(at(2026, 4, 2), today)).toBe("Yesterday");
+    expect(describeArtifactHistoryDay(at(2026, 4, 1), today)).toBe("1 May");
+  });
+
+  it("keeps the year when an older output crossed one", () => {
+    expect(describeArtifactHistoryDay(at(2025, 11, 31), today)).toBe("31 December 2025");
+  });
+
+  it("never hands an unreadable machine value to the screen", () => {
+    expect(describeArtifactHistoryDay("not a time", today)).toBe("Earlier output");
   });
 });
 

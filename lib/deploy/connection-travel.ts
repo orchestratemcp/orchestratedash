@@ -1,5 +1,6 @@
 /**
- * Which of an agent's connections cannot go to a server with it (MAR-591).
+ * Which of an agent's connections cannot go to a server with it (MAR-591,
+ * corrected by MAR-626).
  *
  * ## The gap this closes
  *
@@ -16,14 +17,37 @@
  * general case rather than half-solving it in the wrong issue. This is the
  * general case.
  *
- * ## Why the vault is never consulted
+ * ## Why the vault is the gate, not the manifest (MAR-626)
  *
- * MAR-583's argument, kept whole. This assessment reads the **shape of the
- * arrangement** — the agent asks DASH to hold this, and DASH holds it here — and
- * never whether a credential happens to be in the vault right now. A deploy
- * whose outcome depended on how far somebody had got with connecting would be a
- * rule nobody could predict, and a person who had not connected Gmail yet would
- * be allowed to send an agent that a person who *had* connected it could not.
+ * MAR-591's first cut read only the **shape of the arrangement** — the agent
+ * asks DASH to hold this, and DASH holds it here — and deliberately never asked
+ * whether a credential happened to be in the vault right now. The argument was
+ * that a deploy whose outcome depended on how far somebody had got with
+ * connecting would be a rule nobody could predict.
+ *
+ * MAR-626 is the case that argument did not survive. MAR-619's News Scout
+ * declares its model-provider connection `optional: true` — it is built to run
+ * keyless, headlines with no curation — and every fresh scaffold of it refused
+ * to deploy anyway: `needsAModel` came from the plan alone, so a connection
+ * nobody had ever typed a key into still read as "DASH holds a credential here
+ * that will not travel." There was nothing in this computer's vault to strand.
+ * Reading the manifest is not "the shape of the arrangement" either — it is
+ * what the agent *might one day ask DASH to hold*, and refusing on a maybe was
+ * not the stable rule it was meant to be: it was a refusal that fired for every
+ * new agent, unconditionally, until somebody connected something.
+ *
+ * The gate now asks the narrower, truer question: does `connection_secrets`
+ * say DASH is actually holding a credential for this (agent, connection,
+ * field)? That is the one fact a deploy can strand. A connection nothing is
+ * held for strands nothing — DASH is not withholding a credential from the
+ * server, because DASH does not have one — so the agent deploys, and whatever
+ * the manifest says about running without it (MAR-619's degraded digest, or any
+ * other template's own honest fallback) is simply what happens over there. A
+ * fleet connector's own key existing is not this agent's answer either:
+ * `fleetReach` (`lib/fleet/grants.ts`) writes the *same* `connection_secrets`
+ * row a direct connect would when it materializes a credential onto an agent,
+ * which is why one lookup — never a second table, never a fleet-key existence
+ * check — settles both paths.
  *
  * ## Where the custody vocabulary comes from
  *
@@ -44,9 +68,12 @@
  *
  * ## Refuse or warn, and which document decides
  *
- * The rule is one sentence: **a stranded connection refuses the deploy when the
- * agent's own document says a run needs it, and warns when it does not say
- * that.** DASH never decides which of a person's connections matter.
+ * A connection reaches this decision at all only once it has cleared the vault
+ * gate above: DASH must be holding a credential for it, or there is nothing to
+ * strand and it is never on the list. Of what remains, the rule is one
+ * sentence: **a stranded connection refuses the deploy when the agent's own
+ * document says a run needs it, and warns when it does not say that.** DASH
+ * never decides which of a person's connections matter.
  *
  * Two things count as the document saying a run needs it, and both are
  * declarations rather than inferences:
@@ -70,9 +97,11 @@
  * see `requirementNeed` for the sentence DASH nearly put on screen about a
  * connection its author had merely not mentioned.
  *
- * Pure, and it imports nothing that reaches a disk. Both deploy entry points are
- * `"use client"` trees — see `lib/deploy/receipt.ts`'s header for the packaged
- * renderer that stopped hydrating when that rule was broken.
+ * Pure, and it imports nothing that reaches a disk — `held` arrives as data,
+ * the same way `withheld` arrives at `lib/fleet/grants.ts`'s door, so the vault
+ * lookup this module now depends on stays a caller's job. Both deploy entry
+ * points are `"use client"` trees — see `lib/deploy/receipt.ts`'s header for the
+ * packaged renderer that stopped hydrating when that rule was broken.
  */
 
 import { MODEL_KEY_STAYS_HOME_REFUSAL } from "../ai/model-choice";
@@ -80,6 +109,18 @@ import { planNeedsAModel } from "../ai/model-levels";
 import { resolveConnectionRequirements } from "../connection-spec";
 import { connectableFields, type CredentialKind } from "../connection-credentials";
 import type { ConnectionSourceManifest } from "../connections";
+
+/**
+ * The one fact `connection_secrets` can state about a field: DASH has a vault
+ * entry for it. Deliberately the narrowest shape that fact needs — `lib/secret-refs.ts`'s
+ * `SecretReference` and `lib/connection-actions.ts`'s `heldCredentials` both
+ * satisfy this structurally, so either caller hands its row straight through
+ * with nothing to reshape.
+ */
+export interface HeldCredential {
+  connection_id: string;
+  field_id: string;
+}
 
 /* ---------------------------------------------------------------------- *
  * The assessment
@@ -139,25 +180,45 @@ export const NOTHING_STRANDED: ConnectionTravel = Object.freeze({
 });
 
 /**
- * Assess one agent's manifest.
+ * Assess one agent's manifest against what DASH actually holds for it.
  *
  * `agentId` is required because `connectableFields` builds a vault name per
  * target, and asking it for the real one keeps this on the exact list the spawn
  * path uses rather than on a copy that could drift from it.
+ *
+ * `held` is every `connection_secrets` row for this agent — `heldCredentials`'s
+ * or `listSecretReferences`'s shape, unreshaped. A target this agent could
+ * connect but has not is not read here at all (MAR-626): it is not a
+ * declaration DASH failed to honour, it is nothing DASH has to withhold.
  */
 export function assessConnectionTravel(
   agentId: string,
   manifest: ConnectionSourceManifest | null,
+  held: readonly HeldCredential[],
 ): ConnectionTravel {
   if (manifest === null) {
     return NOTHING_STRANDED;
   }
+
+  // `${connection_id} ${field_id}`, the key `lib/views/build.ts`'s
+  // `credentialStatus` and `lib/ai/connection-view.ts`'s `aiKeyConnections`
+  // already use for the same lookup — one convention for "is this held", not a
+  // second one invented here.
+  const heldFields = new Set(held.map((one) => `${one.connection_id} ${one.field_id}`));
 
   const needsAModel = planNeedsAModel(manifest.planned_route ?? []);
   const need = requirementNeed(manifest);
 
   const stranded: StrandedConnection[] = [];
   for (const target of connectableFields(agentId, manifest)) {
+    if (!heldFields.has(`${target.connection_id} ${target.field_id}`)) {
+      // Nothing in the vault for this field. DASH holds nothing here to send or
+      // withhold, so nothing of DASH's fails to travel — the same reasoning
+      // "Where the custody vocabulary comes from" above already applies to a
+      // field DASH refuses to hold at all, extended to one it simply does not
+      // hold yet.
+      continue;
+    }
     // One line per connection, not per field. A person reads "your Gmail", and a
     // connection with two fields is still one thing they connected once.
     if (stranded.some((one) => one.connection_id === target.connection_id)) {
@@ -171,7 +232,9 @@ export function assessConnectionTravel(
         target.kind === "provider_key" && needsAModel
           ? // MAR-583's rule, expressed as what it always was: the plan is part
             // of the agent's own document, and a step above `none` is that
-            // document saying a run needs a model.
+            // document saying a run needs a model. Reached only for a key DASH
+            // is actually holding — an agent that has never connected one never
+            // gets here, however strongly its plan wants a model.
             "run_needs_it"
           : need(target.connection_id),
     });

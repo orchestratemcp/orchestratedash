@@ -26,6 +26,7 @@ import type { RunArtifact } from "../contracts";
 import type { RunArtifactRecord } from "../store";
 import {
   describeArtifactAvailability,
+  describeArtifactHistoryDay,
   describeArtifactRole,
   describeReceiptMoment,
   describeRecordSize,
@@ -98,6 +99,8 @@ export interface ArtifactReference {
 
 export interface ArtifactCardView {
   artifact: RunArtifact;
+  /** The short date label used when this card sits in an agent's history. */
+  history_day: string;
   role: ArtifactRole;
   availability: ArtifactAvailability;
   /** Null exactly when the output is available. */
@@ -117,6 +120,7 @@ export interface ArtifactCardView {
 export function buildArtifactCards(
   records: readonly RunArtifactRecord[],
   resolveAvailability: (record: RunArtifactRecord) => ArtifactAvailability = () => "available",
+  today = new Date(),
 ): ArtifactCardView[] {
   return records.map((record) => {
     const { artifact } = record;
@@ -124,6 +128,7 @@ export function buildArtifactCards(
 
     return {
       artifact,
+      history_day: describeArtifactHistoryDay(artifact.generated_at, today),
       role: describeArtifactRole(artifact.kind),
       availability,
       recovery: describeArtifactAvailability(availability, { title: artifact.title }),

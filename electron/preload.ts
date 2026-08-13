@@ -257,6 +257,8 @@ const dashShell = {
   openAppMenu(at?: { x: number; y: number }): Promise<CommandResult> {
     return sendNumbers("shell.menu", at === undefined ? {} : { x: at.x, y: at.y });
   },
+  setUiScale: (factor?: number) =>
+    sendNumbers("shell.scale", factor === undefined ? {} : { factor }),
 
   /**
    * The seven Agent DOM commands, one named method each.
