@@ -672,6 +672,10 @@ describe("what a run records about its model", () => {
         // The one reader of the field on a run event, which attributes the
         // total to the agent in the sentence beside it.
         "lib/views/ask.ts",
+        // The agent page's performance panel (MAR-635). Same field, same
+        // attribution rule: a cost meter is omitted when the run never
+        // posted one, and when it did the panel says the agent reported it.
+        "lib/views/agent-feed.ts",
         // Not a reader: a capture harness that *seeds* two run events carrying
         // one, so the sentence attributing the agent's own figure is actually in
         // the photographs. Named here rather than excluded by a path rule,

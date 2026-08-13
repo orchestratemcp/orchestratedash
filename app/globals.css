@@ -5060,13 +5060,21 @@ button:disabled {
   border-color: var(--err);
 }
 
-/* The control panel. A row of buttons and at most one sentence. */
+/* The control panel. Heading, then a row of buttons and at most one sentence. */
 .agent-controls {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--space-3);
   margin-bottom: var(--density-gap);
+}
+
+.agent-controls .section-heading {
+  margin-bottom: 0;
+}
+
+.agent-controls .button-row {
+  margin-top: 0;
 }
 
 .agent-controls p {
@@ -5275,4 +5283,160 @@ button:disabled {
     flex: 1 0 100%;
     justify-content: flex-start;
   }
+}
+
+/* MAR-635. The live command surface: feed on the left, numbers on the right
+   at a width that can hold both, stacked on a phone. `minmax(0, …)` so a long
+   step name wraps inside the column rather than pushing a 1425px scroller —
+   MAR-491's finding, applied here before a capture has to rediscover it. */
+.agent-command-grid {
+  display: grid;
+  gap: var(--density-gap);
+  margin-bottom: var(--density-stack);
+}
+
+@media (min-width: 960px) {
+  .agent-command-grid {
+    grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr);
+    align-items: start;
+  }
+}
+
+.live-feed {
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.live-feed .section-heading {
+  margin-bottom: var(--space-3);
+}
+
+.live-feed-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.live-feed-line {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  border-top: 1px solid var(--line);
+}
+
+.live-feed-line:first-child {
+  border-top: 0;
+}
+
+.live-feed-clock {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.live-feed-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.live-feed-verb {
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.live-feed-detail {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.live-feed-line.is-live .live-feed-verb {
+  color: var(--accent);
+}
+
+.live-feed-line.is-error .live-feed-verb {
+  color: var(--err);
+}
+
+.live-feed-line.is-wait .live-feed-verb {
+  color: var(--warn);
+}
+
+.live-feed-line.is-ok .live-feed-verb {
+  color: var(--ok);
+}
+
+.agent-telemetry {
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+
+.agent-telemetry .section-heading {
+  margin-bottom: var(--space-3);
+}
+
+.telemetry-meters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.telemetry-meter dt {
+  margin: 0 0 var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.telemetry-meter dd {
+  margin: 0;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.telemetry-spark {
+  margin-top: var(--space-4);
+}
+
+.agent-telemetry > .muted {
+  margin: var(--space-3) 0 0;
+}
+
+.telemetry-spark-label {
+  margin: 0 0 var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.telemetry-spark-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-1);
+  height: var(--space-7);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.telemetry-spark-bars li {
+  flex: 1 1 0;
+  min-width: var(--space-1);
+  background: var(--accent);
+  border-radius: var(--radius-sm);
 }

@@ -97,6 +97,7 @@ import {
   type EvidencePullRecord,
   type StoreShape,
 } from "../store";
+import { buildAgentFeed, buildAgentTelemetry } from "./agent-feed";
 import { buildArtifactCards, type ArtifactCardView } from "./artifacts";
 import { buildInputRoles } from "./inputs";
 import { buildPanelView, type PanelDashFacts, type PanelView } from "./panel";
@@ -1271,6 +1272,7 @@ export function workspaceView(
     name: workspaceManifest.agent.name,
     display_name: storedDisplayName ?? workspaceManifest.agent.display_name,
   });
+  const agentEvents = store.events.filter((event) => event.agent === agent);
 
   return {
     found: true,
@@ -1295,6 +1297,14 @@ export function workspaceView(
     latest_digest_grounding:
       digest === null || !isDigestArtifact(digest) ? null : analyzeGrounding(digest),
     outputs,
+    /*
+     * MAR-635. The same events `buildAgentAsk` already reads, pointed at a
+     * feed and a meter panel rather than at a cost sentence. Filtered here
+     * once so the two projections cannot pick different runs from two walks
+     * of the same array.
+     */
+    feed: buildAgentFeed(agentEvents),
+    telemetry: buildAgentTelemetry(agentEvents),
     permissions: declaredPermissions(manifest),
     // MAR-507. From the manifest, like `permissions` directly above and for the
     // same reason: this is what the agent's author declared, and a projection
@@ -1321,7 +1331,7 @@ export function workspaceView(
     ask: buildAgentAsk(
       agent,
       manifest,
-      store.events.filter((event) => event.agent === agent),
+      agentEvents,
       // The agent's one name — the stored rename if there is one, never the id.
       // See `buildAgentAsk`.
       title,

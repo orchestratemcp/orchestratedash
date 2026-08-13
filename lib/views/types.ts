@@ -32,6 +32,7 @@ import type { EvidenceNotice } from "../copy/evidence";
 import type { RunOriginNotice } from "../copy/where-it-ran";
 import type { GlanceChip } from "../copy/glance";
 import type { AiKeyFlow } from "../ai/connection-view";
+import type { AgentFeedView, AgentTelemetryView } from "./agent-feed";
 import type { ArtifactCardView } from "./artifacts";
 import type { InputRoleView } from "./inputs";
 import type { PanelView } from "./panel";
@@ -1136,6 +1137,22 @@ export type WorkspaceView =
        * `app/_components/outputs.tsx` already argues for.
        */
       outputs: ArtifactCardView[];
+      /**
+       * The live output feed for this agent's current or latest run (MAR-635).
+       *
+       * Projected from telemetry v1 events, which already carry per-step
+       * records. `{ kind: "empty" }` when this agent has never posted a run
+       * event — the state every new user meets, and the one the page is
+       * sized for first.
+       */
+      feed: AgentFeedView;
+      /**
+       * Numbers the selected run actually reported (MAR-635, MAR-547).
+       *
+       * `meters` is empty when nothing was recorded. The panel then draws
+       * nothing at all: a zero would claim a fact the store does not have.
+       */
+      telemetry: AgentTelemetryView;
       /** What the manifest declares it may do without an account. */
       permissions: PermissionGrant[];
       /**

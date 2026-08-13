@@ -83,6 +83,29 @@ export function plainMoment(iso: string): string | null {
 }
 
 /**
+ * "14:58:12" — a feed line's clock, with seconds.
+ *
+ * The live output feed is a stream of steps a few seconds apart, so a clock
+ * that dropped seconds would make two lines look simultaneous. `plainMoment`
+ * still drops them: a receipt compared against a provider's audit log does
+ * not need them, and this function exists so that difference stays a
+ * decision rather than a silent extra argument.
+ *
+ * Local, padded, 24-hour, and null rather than the input when unreadable —
+ * the same three rules as `plainMoment`, pointed at a shorter slot.
+ */
+export function plainClock(iso: string): string | null {
+  const at = parsed(iso);
+  if (at === null) {
+    return null;
+  }
+  const hours = String(at.getHours()).padStart(2, "0");
+  const minutes = String(at.getMinutes()).padStart(2, "0");
+  const seconds = String(at.getSeconds()).padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
+}
+
+/**
  * A window, said once rather than twice.
  *
  * A lapse that began and ended on the same day should not print that day twice —

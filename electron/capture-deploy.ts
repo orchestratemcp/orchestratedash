@@ -743,6 +743,22 @@ function surfaces(): Surface[] {
       focus: ".agent-header",
     },
     {
+      name: "agent-feed",
+      route: agentRoute(SENDABLE),
+      /*
+       * MAR-635. The empty feed is the new first content, and it is the
+       * state every new user meets. Focused on the heading so a 375px
+       * section-scoped scroll cannot file a photograph of something else
+       * under this name — MAR-591's travel-notice lesson.
+       */
+      focus: "#live-feed-heading",
+    },
+    {
+      name: "agent-commands",
+      route: agentRoute(SENDABLE),
+      focus: "#agent-commands-heading",
+    },
+    {
       name: "agent-empty-outputs",
       route: agentRoute(SENDABLE),
       /*
@@ -950,6 +966,15 @@ async function run(): Promise<void> {
 
   const window = await appWindowLoaded();
   window.setResizable(true);
+  /*
+   * Unpackaged capture shares Electron's default user-data with other
+   * sessions, and MAR-614's scale lives there as zoomFactor. A leftover 1.2
+   * made innerWidth 1066 at a 1280 content size, so every viewport label
+   * would have been a lie. Pin 1 for the capture; do not write ui-scale.json,
+   * which is the person's preference, not this run's. Same pin as
+   * `electron/capture-fleet-views.ts`.
+   */
+  window.webContents.setZoomFactor(1);
   await settle(1200);
 
   for (const theme of THEMES) {
