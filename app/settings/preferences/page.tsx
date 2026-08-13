@@ -36,11 +36,11 @@ import { useHost } from "../../_data/use-view";
  *
  * ## The third setting arrived the same way (MAR-612)
  *
- * `FleetViewToggle` is imported here unchanged too, and it lives primarily on
- * the fleet page — where the thing it changes is. It is repeated here because
- * this page's job is to be the inventory of how DASH looks, and an inventory
- * missing an entry is worse than no inventory: it teaches a reader that what is
- * on this page is all there is.
+ * `FleetViewToggle` is imported here unchanged too, and it lives primarily in
+ * the agents page's right rail — where the thing it changes is. It is repeated
+ * here because this page's job is to be the inventory of how DASH looks, and
+ * an inventory missing an entry is worse than no inventory: it teaches a
+ * reader that what is on this page is all there is.
  */
 export default function PreferencesPage(): ReactNode {
   const host = useHost();

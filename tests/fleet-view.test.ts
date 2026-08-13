@@ -227,10 +227,25 @@ describe("the stylesheet", () => {
     /*
      * The sideways-scroll fix MAR-590 shipped: a track minimum that is a plain
      * length does not consult the container, and at 375px a flat 19rem forced a
-     * track 24px wider than the space it had. MAR-612 gave the same track a
-     * ceiling; this is the assertion that the floor came through it intact.
+     * track 24px wider than the space it had. The floor is now the card's own
+     * `--fleet-card` width wrapped in `min(..., 100%)`, same job.
      */
-    expect(globals).toContain("minmax(min(19rem, 100%), 19rem)");
+    expect(globals).toContain("min(var(--fleet-card), 100%)");
+  });
+
+  it("puts Add agent and the layout control in a right rail, not above the cards", () => {
+    /*
+     * The agents page is the left sidebar, the cards, and a right column of
+     * actions — the same three-column window the rest of DASH already is, with
+     * the fleet's own controls in the unused right edge. A rule that hid the
+     * rail with `display: none` at the 900px collapse would remove both
+     * controls at the width they are hardest to reach any other way.
+     */
+    expect(globals).toMatch(/\.fleet-rail\s*\{/);
+    expect(globals).toContain("grid-template-columns: minmax(0, 1fr) var(--sidebar-width)");
+    const collapse = /\.fleet-rail\s*\{[^}]*order:\s*-1/.exec(globals);
+    expect(collapse, "the narrow rail must stay on screen as a strip").not.toBeNull();
+    expect(collapse?.[0]).not.toContain("display: none");
   });
 });
 

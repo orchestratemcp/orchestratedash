@@ -24,7 +24,14 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const dataDir = mkdtempSync(path.join(tmpdir(), "dash-views-"));
 process.env.DASH_DATA_DIR = dataDir;
 
-const { importManifest, ingestEvents, resetStore } = await import("../lib/store");
+const {
+  importManifest,
+  ingestEvents,
+  recordAgentBroughtHome,
+  recordAgentDeploy,
+  resetStore,
+  saveHost,
+} = await import("../lib/store");
 const { closeDb } = await import("../lib/db");
 const { putAgentDomState } = await import("../lib/agent-dom/store");
 const { writeRegistration } = await import("../lib/registration");
@@ -219,6 +226,42 @@ describe("what a view says about deploying an agent", () => {
     // Null rather than an empty string: a renderer branching on truthiness and
     // a renderer branching on the flag must reach the same conclusion.
     expect(deploy?.refusal).toBeNull();
+  });
+
+  it("names a server DASH has sent the agent to, and drops it after bring-home", () => {
+    /*
+     * MAR-630's Local/Cloud mark reads `hosted_on`. MAR-611's bring-home writes
+     * `brought_home_at` on the same row. A Cloud mark that survived the return
+     * would be a deploy date pretending the copy was still out — ADR 0015's
+     * liveness lie, reached from the other end.
+     */
+    importManifest(manifest);
+    saveHost({
+      host_id: "host-views-1",
+      label: "My server",
+      address: "vps.example.com",
+      port: 22,
+      username: "dash",
+      key_name: "host-views-1",
+      host_fingerprint: null,
+      added_at: "2026-08-10T12:00:00.000Z",
+    });
+    recordAgentDeploy(
+      {
+        agent: "email-lead-to-crm",
+        host_id: "host-views-1",
+        manifest_sha256: "scene-manifest",
+        files_sha256: "scene-files",
+      },
+      "2026-08-10T21:00:00.000Z",
+    );
+
+    expect(agentsView().agents[0]?.hosted_on).toEqual([
+      { host_id: "host-views-1", label: "My server", sent_on: expect.any(String) },
+    ]);
+
+    recordAgentBroughtHome("email-lead-to-crm", "host-views-1", "2026-08-11T18:00:00.000Z");
+    expect(agentsView().agents[0]?.hosted_on).toEqual([]);
   });
 
   it("gives the workspace the same answer as the list, for the same agent", () => {

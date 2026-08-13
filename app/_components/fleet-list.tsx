@@ -4,7 +4,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { FleetCard, describeRunCount } from "./fleet-card";
+import { AgentHosting, FleetCard, describeRunCount } from "./fleet-card";
+import { OpenAgentButton } from "./glance-chips";
 import { useFleetView } from "./fleet-view-toggle";
 import { agentWorkspaceHref } from "../_data/routes";
 import { CHIEF_NAME, CHIEF_WAITING, describeChief } from "../../lib/copy/chief";
@@ -13,46 +14,31 @@ import type { SightingLog } from "../../lib/host-sightings";
 import type { AgentRow } from "../../lib/views/types";
 
 /**
- * The fleet, laid out the way the reader asked for (MAR-612).
+ * The fleet, laid out the way the reader asked for (MAR-612, then the 2/3 split).
  *
- * Henrik, 2026-08-11, verbatim: *"1. 3 cards in a row. make em bit smaller so we
- * can have some space around. 2. 1 card per row. 3. A carousel type view one
- * card in the middle and two slightly bent cards on the sides. under the 3 cards
- * we have the chief."*
+ * Henrik, 2026-08-13: grid is two rows of three cards; rows fits three agents
+ * on one screen; spotlight (the carousel) sits in the same band. In every
+ * view the cards take two thirds of the remaining page and the chief takes
+ * the third underneath.
  *
  * ## One list, three tracks, and almost all of it is CSS
  *
  * The three views are **the same `<ol>` of the same `<article>`s**. What differs
  * is the track, and the track is `[data-fleet-view]` in `app/globals.css`
  * switching on an attribute a pre-paint script has already written
- * (`FleetViewScript`). So grid and rows cost this component nothing at all: no
- * branch, no second markup, no flash on a cold start, and no way for a chip to
- * exist in one view and not another — which is the rule `lib/views/fleet-view.ts`
- * is built around.
+ * (`FleetViewScript`).
  *
- * ## What the spotlight needs React for, and it is one fact
+ * ## What React is for: which agent the chief is talking about
  *
- * **Which card is in the middle.** CSS can lay a scroll-snapping row and can
- * centre whatever the reader scrolled to; it cannot tell the two neighbours to
- * lean *towards* the middle one, and it cannot tell the chief who to talk about.
- * So the spotlight — and only the spotlight — tracks an index, marks the three
- * cards around it, and hands the middle one to the chief.
+ * CSS can lay a scroll-snapping row and can size two rows of three; it cannot
+ * tell the chief who to talk about. Every view now tracks a selected index.
+ * In the grid and in rows, a press on a card sets it. In the spotlight, the
+ * middle card is the selection, measured from real rectangles, and a press
+ * scrolls that card to the middle.
  *
- * Everything that index drives is an addition. No card is hidden, removed from
- * the document or taken out of the tab order in any view: a person scrolling
- * this row with a keyboard reaches every agent, and a screen reader reads the
- * same list it reads in the grid. A carousel that unmounts its off-screen items
- * is the version of this pattern that quietly loses agents, and `is-before` /
- * `is-after` are class names precisely so that nothing else about the card
- * changes.
- *
- * ## The scroll position is the truth, not the index
- *
- * The arrows set the index *and* scroll; scrolling sets the index. Both paths
- * end at "which card is nearest the middle of the track", measured from real
- * rectangles rather than from card arithmetic, because the card's width is a
- * token that density and the viewport both move and any number kept in here
- * would be a fourth opinion about it.
+ * No card is hidden, removed from the document or taken out of the tab order
+ * in any view: a person scrolling this row with a keyboard reaches every
+ * agent, and a screen reader reads the same list it reads in the grid.
  */
 export function FleetList({
   agents,
@@ -66,15 +52,15 @@ export function FleetList({
   const spotlight = view === "spotlight";
   const track = useRef<HTMLOListElement | null>(null);
   const cards = useRef<(HTMLLIElement | null)[]>([]);
-  const [centre, setCentre] = useState(0);
+  const [selected, setSelected] = useState(0);
 
   /*
    * Clamped rather than trusted. The agents list is re-read on window focus and
    * on every navigation back to this page, so the fleet can shrink underneath a
-   * centre index that was valid a moment ago — an agent removed while this view
+   * selected index that was valid a moment ago — an agent removed while this view
    * was open is the ordinary way that happens.
    */
-  const centred = centre < agents.length ? centre : 0;
+  const current = selected < agents.length ? selected : 0;
 
   const measure = useCallback((): void => {
     const row = track.current;
@@ -96,7 +82,7 @@ export function FleetList({
         nearest = index;
       }
     });
-    setCentre(nearest);
+    setSelected(nearest);
   }, []);
 
   /*
@@ -137,22 +123,26 @@ export function FleetList({
     };
   }, [spotlight, measure, agents.length]);
 
-  const step = (direction: 1 | -1): void => {
-    const next = stepSpotlight(centred, agents.length, direction);
-    setCentre(next);
-    /*
-     * `prefers-reduced-motion` decides how it gets there, and it is asked here
-     * rather than in CSS because `scroll-behavior: smooth` on the track would
-     * also smooth the reader's own wheel. `app/tokens.css` zeroes the motion
-     * tokens under the same query; this is the one animation in the feature that
-     * is not a token, because it is a scroll rather than a transition.
-     */
+  const scrollTo = (index: number): void => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    cards.current[next]?.scrollIntoView({
+    cards.current[index]?.scrollIntoView({
       behavior: reduce ? "auto" : "smooth",
       inline: "center",
       block: "nearest",
     });
+  };
+
+  const select = (index: number): void => {
+    setSelected(index);
+    if (spotlight) {
+      scrollTo(index);
+    }
+  };
+
+  const step = (direction: 1 | -1): void => {
+    const next = stepSpotlight(current, agents.length, direction);
+    setSelected(next);
+    scrollTo(next);
   };
 
   const list = (
@@ -164,8 +154,8 @@ export function FleetList({
        * still move this row with the arrow keys — and a focusable region needs a
        * name, or a screen reader announces a group with nothing in the title.
        * Both are conditional because in the grid and rows views this element does
-       * not scroll and a tab stop on it would be furniture in the way of the
-       * cards.
+       * not scroll sideways and a tab stop on it would be furniture in the way of
+       * the cards.
        */
       tabIndex={spotlight ? 0 : undefined}
       aria-label={spotlight ? "Your agents, side by side" : undefined}
@@ -182,51 +172,67 @@ export function FleetList({
            * the same separation `fleet-motion.ts` keeps for the bottom strip,
            * where a behaviour is state and a costume never is.
            */
-          className={spotlight ? spotlightPosition(index, centred) : undefined}
+          className={
+            spotlight
+              ? [spotlightPosition(index, current), index === current ? "is-selected" : undefined]
+                  .filter(Boolean)
+                  .join(" ") || undefined
+              : index === current
+                ? "is-selected"
+                : undefined
+          }
         >
-          <FleetCard agent={agent} log={log} />
+          <FleetCard
+            agent={agent}
+            selected={index === current}
+            onSelect={() => {
+              select(index);
+            }}
+          />
         </li>
       ))}
     </ol>
   );
 
-  if (!spotlight) {
-    return list;
-  }
+  const cardsPane = spotlight ? (
+    <div className="fleet-spotlight-track">
+      {/*
+        Two arrows, and they wrap rather than disable at the ends
+        (`stepSpotlight`). They are real buttons beside a real scroll
+        container, so they are the pointer shortcut for something the keyboard
+        and the wheel can already do — never the only way to reach a card,
+        which is what would make an off-screen agent unreachable.
+      */}
+      <button
+        type="button"
+        className="fleet-spotlight-step"
+        onClick={() => {
+          step(-1);
+        }}
+        aria-label="Show the agent before this one"
+      >
+        <span aria-hidden="true">‹</span>
+      </button>
+      {list}
+      <button
+        type="button"
+        className="fleet-spotlight-step"
+        onClick={() => {
+          step(1);
+        }}
+        aria-label="Show the agent after this one"
+      >
+        <span aria-hidden="true">›</span>
+      </button>
+    </div>
+  ) : (
+    list
+  );
 
   return (
-    <div className="fleet-spotlight">
-      <div className="fleet-spotlight-track">
-        {/*
-          Two arrows, and they wrap rather than disable at the ends
-          (`stepSpotlight`). They are real buttons beside a real scroll
-          container, so they are the pointer shortcut for something the keyboard
-          and the wheel can already do — never the only way to reach a card,
-          which is what would make an off-screen agent unreachable.
-        */}
-        <button
-          type="button"
-          className="fleet-spotlight-step"
-          onClick={() => {
-            step(-1);
-          }}
-          aria-label="Show the agent before this one"
-        >
-          <span aria-hidden="true">‹</span>
-        </button>
-        {list}
-        <button
-          type="button"
-          className="fleet-spotlight-step"
-          onClick={() => {
-            step(1);
-          }}
-          aria-label="Show the agent after this one"
-        >
-          <span aria-hidden="true">›</span>
-        </button>
-      </div>
-      <ChiefBand agent={agents[centred] ?? null} />
+    <div className="fleet-stage">
+      <div className="fleet-cards">{cardsPane}</div>
+      <ChiefBand agent={agents[current] ?? null} log={log} />
     </div>
   );
 }
@@ -253,14 +259,15 @@ export function spotlightPosition(index: number, centred: number): string | unde
 }
 
 /**
- * The chief, under the cards (MAR-612, Henrik's third view).
+ * The chief, under the cards — in every view, in the lower third.
  *
  * ## What the chief does here, and what it does not
  *
  * `docs/design-brief.md` gives the chief one job: *"A non-technical user should
  * never have to read the fleet grid to answer 'is my thing working'. They should
- * be able to ask, and get a sentence."* This is the sentence, for the agent in
- * the middle, given without being asked.
+ * be able to ask, and get a sentence."* This is the sentence, for the selected
+ * agent, given without being asked. Opening the agent lives here too, because
+ * the card above is now a portrait.
  *
  * **The asking is MAR-419 and it is not built.** It is blocked on a fleet-wide
  * selection over MAR-545's completion layer, per `docs/mar-545-handoff.md`, and
@@ -270,10 +277,6 @@ export function spotlightPosition(index: number, centred: number): string | unde
  * reach: the per-agent Ask that MAR-545 already shipped, on the agent's own
  * workspace, named after the agent the chief is talking about.
  *
- * The room is left. When the chief can be asked, the input goes under this line
- * and the action beside it becomes the send — the band is sized for it now so
- * that day is a component change rather than a page moving under everybody.
- *
  * ## The chief is not one of the O's
  *
  * Drawn as inline rects on the sidebar's 12×12 grid, in `currentColor`, like
@@ -282,20 +285,18 @@ export function spotlightPosition(index: number, centred: number): string | unde
  * the thing booting here is DASH."* The chief is DASH speaking, so it is drawn
  * the way DASH draws itself.
  *
- * That is a placeholder in one direction only, and it is worth being plain about
- * it: the cast lives in orchestrateweb and DASH vendors it against a per-file
- * sha256 (`lib/brand/o-cast.ts`), so a chief *character* is a sprite that repo
- * has to ship and audit first — MAR-615's lane. Inventing one here would mean
- * regenerating an audit manifest against art nobody upstream drew, which is the
- * one thing that file forbids. A glyph DASH owns is honest today and is replaced
- * by an `OAvatar` the day the sprite exists.
- *
  * Exported so a render test can drive it without a scroll container, which is
  * the one thing this repository's tests have no way to produce: every render
  * test here is `renderToStaticMarkup`, so no effect runs and the spotlight is
  * unreachable through `FleetList` itself.
  */
-export function ChiefBand({ agent }: { agent: AgentRow | null }): ReactNode {
+export function ChiefBand({
+  agent,
+  log = {},
+}: {
+  agent: AgentRow | null;
+  log?: SightingLog;
+}): ReactNode {
   const line =
     agent === null
       ? null
@@ -308,31 +309,34 @@ export function ChiefBand({ agent }: { agent: AgentRow | null }): ReactNode {
   return (
     <aside className="chief-band">
       <ChiefGlyph />
-      {line === null ? (
+      {line === null || agent === null ? (
         <p className="chief-says muted">{CHIEF_WAITING}</p>
       ) : (
         <>
           <div className="chief-line">
             {/*
-              The agent's name in the same monospace the card's header band gives
-              it, so the thing the chief is talking about is recognisable as the
-              card two hundred pixels above rather than as a new noun.
+              The agent's name in the same monospace the card used to give it
+              in its header band, so the thing the chief is talking about is
+              recognisable as the portrait above rather than as a new noun.
             */}
             <p className="chief-says">
               <code>{line.agent}</code> — {line.says}
             </p>
             <p className="chief-runs muted">{line.runs}</p>
+            <AgentHosting agent={agent.name} hostedOn={agent.hosted_on} log={log} />
           </div>
-          {/*
-            A link to the workspace, with the Ask section's own anchor on it. The
-            fragment lands when the page has drawn and is a no-op when it has not
-            — either way the reader is on the one surface in DASH where this agent
-            can actually be asked something, which is the whole promise of the
-            label.
-          */}
-          <Link className="button-link" href={`${agentWorkspaceHref(line.agent)}#ask-agent`}>
-            {line.action}
-          </Link>
+          <div className="chief-actions">
+            <OpenAgentButton agent={line.agent} />
+            {/*
+              A link to the workspace, with the Ask section's own anchor on it.
+              The fragment lands when the page has drawn and is a no-op when it
+              has not — either way the reader is on the one surface in DASH
+              where this agent can actually be asked something.
+            */}
+            <Link className="button-link" href={`${agentWorkspaceHref(line.agent)}#ask-agent`}>
+              {line.action}
+            </Link>
+          </div>
         </>
       )}
     </aside>

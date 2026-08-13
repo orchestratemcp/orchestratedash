@@ -156,11 +156,9 @@ describe("which tab is current", () => {
 });
 
 describe("the entrances that outlived the sidebar rows", () => {
-  const fleet = path.join(repoRoot, "app", "page.tsx");
-
   it("keeps an Add agent link on the fleet, pointing at the tab", async () => {
     const { readFile } = await import("node:fs/promises");
-    const source = await readFile(fleet, "utf8");
+    const source = await readFile(path.join(repoRoot, "app", "_components", "fleet-rail.tsx"), "utf8");
     expect(source).toContain('href="/settings/add-agent"');
   });
 });
