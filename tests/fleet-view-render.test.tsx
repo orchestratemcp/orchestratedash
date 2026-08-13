@@ -22,9 +22,11 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { describeRunCount } from "../app/_components/fleet-card";
 import { ChiefBand, FleetList, spotlightPosition } from "../app/_components/fleet-list";
 import { FleetRail } from "../app/_components/fleet-rail";
 import { FleetViewToggle } from "../app/_components/fleet-view-toggle";
+import { FLEET_CARD_STATUSES, describeFleetCardStatus } from "../lib/copy/fleet-status";
 import { FLEET_VIEWS, describeFleetView } from "../lib/views/fleet-view";
 import { GLANCE_ALL_CLEAR } from "../lib/copy/glance";
 import type { AgentRow } from "../lib/views/types";
@@ -163,6 +165,56 @@ describe("the list a cold render draws", () => {
     expect(markup).toContain(GLANCE_ALL_CLEAR.meaning);
     expect(markup).toContain("chief-band");
     expect(markup).not.toContain("Read the news sources you choose");
+  });
+});
+
+describe("a card for an agent that has never run (MAR-634)", () => {
+  const markup = renderToStaticMarkup(
+    <FleetList agents={[agent({ run_count: 0 })]} log={NO_SIGHTINGS} />,
+  );
+
+  it("says the absence instead of leaving a gap that reads as a failed load", () => {
+    /*
+     * The defect: two of three cards showed a place chip and no status, which
+     * is *correct* — MAR-547 forbids faking `Completed` for an agent that has
+     * never run — and on screen looked like a status that had not arrived.
+     */
+    expect(markup).toContain("Not run yet");
+    expect(markup).toContain("fleet-mark-not_run");
+  });
+
+  it("invents no fifth status to say it (MAR-547)", () => {
+    /*
+     * The words come from `describeRunCount`, which reads `run_count` and is
+     * the same function the chief speaks under this card. The four-status
+     * ladder is untouched and still answers null here, which is what makes
+     * this branch reachable at all.
+     */
+    expect(describeRunCount(0)).toBe("Not run yet");
+    expect(
+      describeFleetCardStatus({ running: false, run_count: 0, glance: [GLANCE_ALL_CLEAR] }),
+    ).toBeNull();
+    for (const status of FLEET_CARD_STATUSES) {
+      expect(markup, `a never-run card must not claim ${status}`).not.toContain(
+        `fleet-mark-${status}`,
+      );
+    }
+  });
+
+  it("draws two marks, which is what every other card draws", () => {
+    /*
+     * The whole of "deliberate rather than incomplete". A never-run card is
+     * not a card missing its first mark; it is a card whose first mark says
+     * nothing has happened yet. Same count, same places, same arrangement.
+     */
+    expect([...markup.matchAll(/class="fleet-mark /g)]).toHaveLength(2);
+    expect(markup).toContain("fleet-mark-local");
+  });
+
+  it("words it once, so the card and the chief cannot disagree", () => {
+    // Twice on screen, from one function: the card's mark and the chief's
+    // run line. Two literals would be two things to improve separately.
+    expect([...markup.matchAll(/Not run yet/g)]).toHaveLength(2);
   });
 });
 

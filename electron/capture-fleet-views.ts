@@ -71,8 +71,39 @@
  *     pnpm build:shell
  *     $env:DASH_SHELL_URL='dash-app://ui/'
  *     $env:DASH_DATA_DIR='…\scratch-fleet-views'
- *     $env:DASH_CAPTURE_DIR='qa-screenshots-mar630'
- *     pnpm exec electron dist/electron/capture-fleet-views.mjs
+ *     $env:DASH_CAPTURE_DIR='qa-screenshots-mar634'
+ *     $env:DASH_CAPTURE_FLEET='6'
+ *     pnpm exec electron --user-data-dir='…\scratch-profile' dist/electron/capture-fleet-views.mjs
+ *
+ * `DASH_CAPTURE_FLEET` is `3` or `6` and needs a **fresh** `DASH_DATA_DIR` per
+ * size: the seed adds rows and never removes them, so a six-agent run over a
+ * three-agent store is a nine-agent photograph.
+ *
+ * `--user-data-dir` is not optional and the failure it prevents is silent-ish.
+ * Launched as a bare file this is called `Electron`, and every run launched
+ * that way shares one Chromium profile — including the one a previous run left
+ * behind, since this harness exits without closing its window on failure. The
+ * second process loses the single-instance lock and quits: the log shows the
+ * seed, then `Unable to move the cache: Åtkomst nekad`, then nothing, and the
+ * run "passes" in about eight seconds having written no images at all. A
+ * directory per run costs nothing and is unambiguous.
+ *
+ * Also clear the environment afterwards. `DASH_DATA_DIR` persists for the life
+ * of the PowerShell session, and `pnpm verify:shell` in that same session then
+ * smokes the scratch store rather than the installed-style one and fails on
+ * *"the store is the one `electron .` uses"* — a failure that reads like a
+ * defect in the shell and is a leftover variable.
+ *
+ * ## It is a gate for its own claim, and only its own (MAR-634)
+ *
+ * This exits non-zero when a 1280 frame misses MAR-630's stated count, or when
+ * either of the two corner controls MAR-634 removed is back at any width. That
+ * is a change of kind from the rest of the capture harnesses and it is
+ * deliberate: MAR-630 stated its acceptance as *numbers* — three across by two
+ * rows, two to three rows, one row of three — and a number is the one thing a
+ * reviewer cannot check by looking at a picture of the top of a pane. It is
+ * still not part of `pnpm verify`, per ADR 0004 and this file's own footer:
+ * what it can fail is this run, not a release.
  *
  * Every line is load-bearing and each has cost a session before:
  * `build:renderer` first because `build:shell` only *copies* `out/`;
@@ -169,17 +200,61 @@ if (VIEWS.length === 0) {
   );
 }
 
+/**
+ * How many agents this run seeds: three, or six.
+ *
+ * MAR-634 is about a stage that read as a void at three agents and a count
+ * that has to hold at six, and those are two different photographs of the same
+ * CSS. A harness that could only take one of them would be evidence for half
+ * the issue — which is how MAR-630 shipped a grid nobody had seen with fewer
+ * agents than it was designed around.
+ *
+ * Three is the fleet Henrik was looking at. Six is MAR-630's stated Grid
+ * count — three across by two rows — and therefore the number the bound has to
+ * fit inside two thirds of the window without scrolling.
+ *
+ * Validated rather than trusted, on `DASH_CAPTURE_VIEW`'s reasoning: a typo
+ * should be a refusal at the top of the run, not an output directory whose
+ * filenames claim a fleet size the store never held.
+ */
+const FLEET_SIZES = [3, 6] as const;
+type FleetSize = (typeof FLEET_SIZES)[number];
+
+const REQUESTED = process.env.DASH_CAPTURE_FLEET ?? "6";
+const MATCHED = FLEET_SIZES.find((size) => String(size) === REQUESTED);
+
+if (MATCHED === undefined) {
+  throw new Error(
+    `DASH_CAPTURE_FLEET=${REQUESTED} is not one of ${FLEET_SIZES.join(", ")}`,
+  );
+}
+
+/*
+ * Re-declared with the type rather than used through the `find` result. A
+ * module-level `const` narrowed by the throw above is still `| undefined` when
+ * it is read from inside a function body, and the alternative — a non-null
+ * assertion at each use — would be three places agreeing to ignore the same
+ * question.
+ */
+const FLEET: FleetSize = MATCHED;
+
 /* ---------------------------------------------------------------------- *
  * The fleet this run photographs
  *
- * Five agents, which is the smallest fleet that shows what each view is for: a
- * grid with a second row, a column of rows worth scrolling, and a spotlight with
- * a neighbour on both sides and more beyond them.
+ * Six agents, sliced to three when that is what was asked for, and the order
+ * is the interesting part: the first three are the three that say different
+ * things, so the small scene is not the big scene with its evidence trimmed
+ * off. Whichever size runs, the frames show a card that is ready for review, a
+ * card that has completed and lives on a server, and a card that has never run
+ * at all — which is the case MAR-634 item 3 is about and the one that has to
+ * be legible as deliberate rather than as a status that failed to load.
  *
- * Three of the five say something different at a glance, so the chief's line
- * under the spotlight is a different sentence depending on which card is in the
- * middle — which is the only way a still frame can show that it is reading the
- * card rather than reciting a fixture.
+ * At six there is a second row for the grid, a column of rows worth scrolling,
+ * and a spotlight with a neighbour on both sides and more beyond them.
+ *
+ * The chief's line under the spotlight is therefore a different sentence
+ * depending on which card is in the middle, which is the only way a still
+ * frame can show that it is reading the card rather than reciting a fixture.
  * ---------------------------------------------------------------------- */
 
 const NEW_OUTPUT = "news-scout";
@@ -187,6 +262,7 @@ const OVERDUE = "project-reporter";
 const NOT_CONNECTED = "ledger-reporter";
 const CALM = "quiet-worker";
 const ALSO_CALM = "inbox-sorter";
+const ALSO_NEVER_RUN = "weekly-digest";
 
 function example(name: string): Record<string, unknown> {
   return JSON.parse(readFileSync(path.resolve(process.cwd(), "examples", name), "utf8")) as Record<
@@ -282,24 +358,15 @@ function seed(): void {
   );
 
   /*
-   * Two calm agents, so the fleet has a second row in the grid and something
-   * beyond the spotlight's neighbours. The look is stamped explicitly rather
-   * than by opening the page, because the page has not been opened yet at seed
-   * time and these cards have to be calm in the very first photograph.
-   */
-  for (const [name, label] of [
-    [CALM, "Quiet Worker"],
-    [ALSO_CALM, "Inbox Sorter"],
-  ] as const) {
-    importManifest(renamed("agent.manifest.example.json", name, label));
-    recordAgentLook(name, new Date().toISOString());
-  }
-
-  /*
    * MAR-630. Cloud is a deploy row, not a live sighting (ADR 0015). One host
    * and one send, written through the same doors `host.deploy` uses, so the
    * Local/Cloud mark on Project Reporter is a store fact a reviewer can
    * point at. TEST-NET-1, because this run never talks to a server.
+   *
+   * Before the fleet-size gate below, not after it. The three-agent scene is
+   * the one Henrik photographed and it has to carry the same three marks the
+   * six-agent scene does — a small scene that quietly lost its Cloud card
+   * would be a frame proving less than its filename claims.
    */
   saveHost({
     host_id: "scene-vps",
@@ -321,8 +388,31 @@ function seed(): void {
     "2026-08-10T21:00:00.000Z",
   );
 
+  if (FLEET < 6) {
+    console.log(
+      "[views] seeded 3 agents: ready for review, completed + cloud, and one that has never run",
+    );
+    return;
+  }
+
+  /*
+   * The three that only exist in the six-agent scene: enough for a second row
+   * in the grid, a column of rows worth scrolling, and something beyond the
+   * spotlight's two neighbours. The look is stamped explicitly rather than by
+   * opening the page, because the page has not been opened yet at seed time
+   * and these cards have to be calm in the very first photograph.
+   */
+  for (const [name, label] of [
+    [CALM, "Quiet Worker"],
+    [ALSO_CALM, "Inbox Sorter"],
+    [ALSO_NEVER_RUN, "Weekly Digest"],
+  ] as const) {
+    importManifest(renamed("agent.manifest.example.json", name, label));
+    recordAgentLook(name, new Date().toISOString());
+  }
+
   console.log(
-    "[views] seeded 5 agents: new output, overdue+cloud, not connected, and two with nothing waiting",
+    "[views] seeded 6 agents: ready for review, completed + cloud, and four that have never run",
   );
 }
 
@@ -550,6 +640,39 @@ async function layout(target: BrowserWindow): Promise<unknown> {
          const chiefBand = document.querySelector(".chief-band");
          const cardsBox = cardsPane === null ? null : cardsPane.getBoundingClientRect();
          const chiefBox = chiefBand === null ? null : chiefBand.getBoundingClientRect();
+
+         /*
+          * MAR-634's acceptance bar, as a number rather than an impression.
+          *
+          * MAR-630 stated per-view counts — Grid three across by two rows,
+          * Rows two to three rows, Spotlight one row of three — and every one
+          * of them is a claim about what is on screen *without scrolling*. A
+          * screenshot cannot settle it: a card an inch below the fold and a
+          * card an inch above it produce the same picture of the top of the
+          * pane, which is exactly how the void this issue is about survived a
+          * 36-frame matrix.
+          *
+          * So a card counts when its whole box is inside the pane's box. One
+          * pixel of tolerance, because a fractional layout at some zoom will
+          * otherwise report a card that is visibly, entirely on screen as
+          * clipped.
+          */
+         const cells = [...document.querySelectorAll(".row-list.fleet-grid > li")];
+         const inside = cells.filter((cell) => {
+           if (cardsBox === null) return false;
+           const box = cell.getBoundingClientRect();
+           return box.top >= cardsBox.top - 1 && box.bottom <= cardsBox.bottom + 1
+             && box.left >= cardsBox.left - 1 && box.right <= cardsBox.right + 1;
+         });
+         /*
+          * Rows and columns from \`offsetTop\`/\`offsetLeft\` rather than from
+          * the rectangles above. The spotlight turns its neighbours with
+          * \`rotateY\` and \`scale\`, and a transform moves the rectangle
+          * without moving the card in the layout — so counting distinct tops
+          * from rectangles would report the spotlight's one row as three.
+          */
+         const rows = new Set(inside.map((cell) => cell.offsetTop));
+         const columns = new Set(inside.map((cell) => cell.offsetLeft));
          return {
            viewport: window.innerWidth,
            page_scroll_width: root.scrollWidth,
@@ -566,7 +689,28 @@ async function layout(target: BrowserWindow): Promise<unknown> {
            chief_action: document.querySelector(".chief-band .button-link")?.textContent ?? null,
            chief_inputs: document.querySelectorAll(".chief-band input, .chief-band textarea").length,
            centred: document.querySelectorAll("li.is-centred").length,
+           /*
+            * *Which* card the spotlight has in the middle, because the count
+            * of what is on screen beside it depends on it: the first agent
+            * has no left-hand neighbour, so a frame taken at the track's
+            * resting position shows a centred card and one neighbour and is
+            * not thereby wrong.
+            */
+           centred_index: cells.findIndex((cell) => cell.classList.contains("is-centred")),
            turned: document.querySelectorAll("li.is-before, li.is-after").length,
+           /*
+            * How many columns the spotlight's track has room for, which is the
+            * half of "one row of 3" that is a property of the layout rather
+            * than of where the row happens to be scrolled to.
+            */
+           columns_fit: track === null ? null : (() => {
+             const style = getComputedStyle(track);
+             const column = parseFloat(style.gridAutoColumns);
+             const gap = parseFloat(style.columnGap);
+             return Number.isFinite(column) && column > 0
+               ? Math.floor((track.clientWidth + gap) / (column + gap))
+               : null;
+           })(),
            /* The track scrolls sideways only where that is the point. */
            track_scrolls: track === null ? null : track.scrollWidth > track.clientWidth,
            /* MAR-612's control, on the page it changes — now in the rail. */
@@ -586,10 +730,162 @@ async function layout(target: BrowserWindow): Promise<unknown> {
              cards_height: cardsBox === null ? null : Math.round(cardsBox.height),
              chief_height: chiefBox === null ? null : Math.round(chiefBox.height),
            },
+           /* MAR-634 item 1. What the stated counts are actually met by. */
+           visible_cards: inside.length,
+           visible_rows: rows.size,
+           visible_columns: columns.size,
+           /*
+            * The track the cards were laid on, as the browser resolved it.
+            * A count that is wrong is a count laid on the wrong track, and
+            * the difference between "the rule did not match" and "the rule
+            * matched and the arithmetic was wrong" is invisible in a
+            * rectangle. \`client_width\` is the width the columns actually had
+            * to divide, which on the spotlight is the pane less its two step
+            * buttons rather than the pane.
+            */
+           list: track === null ? null : {
+             auto_rows: getComputedStyle(track).gridAutoRows,
+             auto_columns: getComputedStyle(track).gridAutoColumns,
+             template_rows: getComputedStyle(track).gridTemplateRows,
+             align_content: getComputedStyle(track).alignContent,
+             gap: getComputedStyle(track).rowGap,
+             client_width: track.clientWidth,
+             client_height: track.clientHeight,
+           },
+           card_heights: [...new Set(cells.map((cell) => Math.round(cell.getBoundingClientRect().height)))],
+           /*
+            * MAR-634 item 1's other half: the stage should not read as a void.
+            * How much of the cards pane the cards actually stand on, as a
+            * percentage — a number a later session can compare against rather
+            * than re-litigate from a screenshot.
+            */
+           stage_filled: cardsBox === null || inside.length === 0 ? null : Math.round(
+             100 * (Math.max(...inside.map((c) => c.getBoundingClientRect().bottom))
+                    - Math.min(...inside.map((c) => c.getBoundingClientRect().top)))
+             / cardsBox.height,
+           ),
+           /*
+            * MAR-634 item 2. Both corner leftovers, counted where they stood:
+            * the density button under the sidebar and the strip's own toggle.
+            * Zero is the whole of the claim, and it is asserted on every frame
+            * because a control that came back at one width would be a control
+            * that came back.
+            */
+           density_toggle: document.querySelectorAll(".app-sidebar .density-toggle").length,
+           strip_toggle: document.querySelectorAll(".fleet-strip-toggle").length,
+           /* MAR-634 item 4. The band stays as it is until MAR-419. */
+           chief_buttons: document.querySelectorAll(".chief-band button, .chief-band .button-link").length,
          };
        })()`,
     ),
   );
+}
+
+/** The three numbers MAR-630 stated and MAR-634 has to meet. */
+interface Counted {
+  visible_cards: number;
+  visible_rows: number;
+  visible_columns: number;
+  centred_index: number;
+  columns_fit: number | null;
+  density_toggle: number;
+  strip_toggle: number;
+}
+
+/**
+ * MAR-630's per-view counts, checked against what the pane actually holds.
+ *
+ * Returns the sentence a reviewer would have to write, or null when the frame
+ * meets its bar. Making this a refusal rather than a note is the same move
+ * `labels()` makes above: this harness already declines to produce an image it
+ * cannot prove the identity of, and a count is the other thing about these
+ * frames that a picture cannot settle on its own.
+ *
+ * **Only at 1280.** The counts are a desktop claim and MAR-634 says so — the
+ * card's height is bounded above the rail's 900px collapse and free below it,
+ * because the 375px repair and "six in two thirds" cannot both hold at one
+ * size. Asserting three across at 375 would be asserting the defect MAR-630
+ * fixed.
+ */
+function shortfall(view: FleetView, width: string, m: Counted): string | null {
+  /*
+   * Checked at every width, unlike the counts. A control that came back at one
+   * breakpoint is a control that came back, and this is the cheapest place to
+   * notice it — MAR-634 item 2 removed both, and neither has a rule that could
+   * honestly reintroduce one at a narrow width.
+   */
+  if (m.density_toggle > 0) {
+    return `the density button is back under the sidebar (${String(m.density_toggle)})`;
+  }
+  if (m.strip_toggle > 0) {
+    return `the strip's toggle is back in the corner (${String(m.strip_toggle)})`;
+  }
+  if (width !== "1280") {
+    return null;
+  }
+
+  /*
+   * A fleet of three is one row, and the claim is that all three are on screen
+   * — the void's other half, and the frame Henrik photographed to open this
+   * issue.
+   *
+   * The spotlight is excluded and falls through to its own case below, because
+   * there the claim is not true and should not be: that view centres a card
+   * and pads half a track either side so the first and the last agent can both
+   * reach the middle, so a track at rest shows the first agent and its one
+   * neighbour whether the fleet is three or sixty. Asserting three here would
+   * be asserting that the spotlight is a grid.
+   */
+  if (FLEET === 3 && view !== "spotlight") {
+    return m.visible_cards === 3
+      ? null
+      : `only ${String(m.visible_cards)} of 3 cards stand inside the pane`;
+  }
+
+  switch (view) {
+    case "grid":
+      /* "Grid — 3 across × 2 rows visible, six cards, without scrolling." */
+      if (m.visible_columns !== 3) {
+        return `${String(m.visible_columns)} columns of cards, not three across`;
+      }
+      if (m.visible_rows < 2) {
+        return `${String(m.visible_rows)} row(s) inside the pane, not two`;
+      }
+      return m.visible_cards >= 6 ? null : `${String(m.visible_cards)} cards inside the pane, not six`;
+    case "rows":
+      /* "Rows — 2–3 rows visible." */
+      return m.visible_rows >= 2 && m.visible_rows <= 3
+        ? null
+        : `${String(m.visible_rows)} rows inside the pane, not two or three`;
+    case "spotlight": {
+      /*
+       * "Spotlight — one row of 3 (a centred card with its two neighbours)",
+       * checked as the two separate claims it actually makes.
+       *
+       * The first is about the track: three columns have to fit across it.
+       * That is the one MAR-634 moved, and it failed before — three 18rem
+       * columns want 900px of a 667px pane, so the view could not have shown
+       * three however it was scrolled.
+       *
+       * The second is about the frame: the centred card and every neighbour it
+       * has. A track at rest has the first agent in the middle, and the first
+       * agent has nothing to its left — demanding three there would be
+       * demanding a card that does not exist, and the way to pass it would be
+       * to seed a fixture that hides the resting position.
+       */
+      if (m.visible_rows !== 1) {
+        return `${String(m.visible_rows)} rows in the spotlight, not one`;
+      }
+      if ((m.columns_fit ?? 0) < 3) {
+        return `the track has room for ${String(m.columns_fit)} cards, not three`;
+      }
+      const neighbours = (m.centred_index > 0 ? 1 : 0)
+        + (m.centred_index >= 0 && m.centred_index < FLEET - 1 ? 1 : 0);
+      return m.visible_cards >= 1 + neighbours
+        ? null
+        : `${String(m.visible_cards)} cards around the centred one, not ${String(1 + neighbours)}`;
+    }
+  }
 }
 
 async function go(target: BrowserWindow, route: string): Promise<void> {
@@ -616,6 +912,7 @@ async function run(): Promise<void> {
   await settle(1200);
 
   let mismatches = 0;
+  const missed: string[] = [];
 
   for (const view of VIEWS) {
     for (const density of DENSITIES) {
@@ -634,7 +931,14 @@ async function run(): Promise<void> {
            */
           await choose(window, view, density);
 
-          const name = `fleet-${view}-${viewport.name}-${theme}-${density}`;
+          /*
+           * The fleet size is in the filename, because it is the one thing
+           * about these frames that two runs into one directory would
+           * otherwise disagree about silently — a three-agent grid and a
+           * six-agent grid are the same view at the same width in the same
+           * theme, and MAR-634 is the issue about telling them apart.
+           */
+          const name = `fleet${String(FLEET)}-${view}-${viewport.name}-${theme}-${density}`;
           const seen = await labels(window);
           if (seen.view !== view || seen.density !== density) {
             /*
@@ -651,11 +955,32 @@ async function run(): Promise<void> {
           }
 
           const measured = await layout(window);
-          measurements.push({ view, density, theme, viewport: viewport.name, ...(measured as object) });
+          measurements.push({
+            fleet: FLEET,
+            view,
+            density,
+            theme,
+            viewport: viewport.name,
+            ...(measured as object),
+          });
           console.log(
             `[views] ${view}/${density} at ${viewport.name}/${theme} ` +
               `(window reports ${String(at)}px) ${JSON.stringify(measured)}`,
           );
+
+          /*
+           * Measured before the frame is taken, and recorded rather than
+           * thrown. A shortfall is still worth photographing — it is the
+           * picture of the defect — so this fails the *run* at the end and
+           * leaves the evidence behind, which is the opposite of the label
+           * mismatch above, where the image itself would be the lie.
+           */
+          const missing = shortfall(view, viewport.name, measured as Counted);
+          if (missing !== null) {
+            missed.push(`${name}: ${missing}`);
+            console.error(`[views] COUNT ${name}: ${missing}`);
+          }
+
           await shoot(window, name);
         }
       }
@@ -663,9 +988,9 @@ async function run(): Promise<void> {
   }
 
   writeFileSync(
-    path.join(OUT, "layout.json"),
+    path.join(OUT, `layout-fleet${String(FLEET)}.json`),
     `${JSON.stringify(
-      { views: VIEWS, captured_at: new Date().toISOString(), measurements },
+      { fleet: FLEET, views: VIEWS, captured_at: new Date().toISOString(), measurements },
       null,
       2,
     )}\n`,
@@ -676,12 +1001,13 @@ async function run(): Promise<void> {
     (entry) => (entry as { page_overflows: boolean }).page_overflows,
   );
   console.log(
-    `\n[views] wrote ${String(written.length)} images and layout.json to ${OUT}\n` +
+    `\n[views] wrote ${String(written.length)} images and layout-fleet${String(FLEET)}.json to ${OUT}\n` +
       `[views] ${overflowed.length === 0 ? "no frame overflowed the page sideways" : `${String(overflowed.length)} FRAMES OVERFLOWED`}\n` +
-      `[views] ${mismatches === 0 ? "every frame's labels matched the document it photographed" : `${String(mismatches)} FRAMES REFUSED — the labels did not match`}`,
+      `[views] ${mismatches === 0 ? "every frame's labels matched the document it photographed" : `${String(mismatches)} FRAMES REFUSED — the labels did not match`}\n` +
+      `[views] ${missed.length === 0 ? `every 1280 frame met MAR-630's stated count at ${String(FLEET)} agents` : `${String(missed.length)} FRAMES MISSED THE COUNT:\n  ${missed.join("\n  ")}`}`,
   );
 
-  app.exit(mismatches === 0 ? 0 : 1);
+  app.exit(mismatches === 0 && missed.length === 0 ? 0 : 1);
 }
 
 void run().catch((error: unknown) => {

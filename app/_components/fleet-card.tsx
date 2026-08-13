@@ -42,7 +42,27 @@ export function FleetCard({
   return (
     <article className={selected ? "row-card fleet-card is-selected" : "row-card fleet-card"}>
       <div className="fleet-marks">
-        {status === null ? null : (
+        {status === null ? (
+          /*
+           * MAR-634 item 3. A card with a place chip and no status read as a
+           * status that failed to load, which is the one thing it was not: a
+           * never-run agent is a correct, complete card, and MAR-547 forbids
+           * dressing it as `Completed`.
+           *
+           * So the absence gets said rather than left as a gap, and the words
+           * are `describeRunCount`'s — the same sentence the chief speaks
+           * under this card, taken already worded rather than written twice.
+           * `describeFleetCardStatus` returns null only when `run_count` is
+           * zero and nothing is waiting, so this branch is exactly the
+           * never-run case and the string is exactly "Not run yet". No fifth
+           * status was invented to say it; the run count is a recorded fact
+           * and this is that fact, drawn where the others are.
+           */
+          <span className="fleet-mark fleet-mark-not_run">
+            <FleetMarkGlyph name="not_run" />
+            {describeRunCount(agent.run_count)}
+          </span>
+        ) : (
           <span className={`fleet-mark fleet-mark-${status.id}`}>
             <FleetMarkGlyph name={status.id} />
             {status.label}
@@ -166,7 +186,7 @@ export function describeRunCount(runs: number): string {
 /** x, y, width, height on the 12×12 grid, matching `sidebar-icons.tsx`. */
 type Px = readonly [number, number, number, number];
 
-type MarkName = FleetCardStatus | "local" | "cloud";
+type MarkName = FleetCardStatus | "local" | "cloud" | "not_run";
 
 /**
  * Pixel marks for the four statuses and the two places.
@@ -200,6 +220,17 @@ const MARKS: Readonly<Record<MarkName, readonly Px[]>> = {
     [2, 2, 4, 2],
     [6, 8, 4, 2],
   ],
+  /*
+   * A single bar: the typographic dash that stands where a value would be.
+   *
+   * Deliberately not an outlined box, which is what "empty" wants to be here
+   * and is also what `local` already is — the two marks sit side by side on
+   * every never-run card, and a hollow square beside a monitor would be two
+   * rectangles a reader has to tell apart at 12px. A dash cannot be mistaken
+   * for any of the other five, and beside "Not run yet" it reads as the
+   * absence it is rather than as a subtraction.
+   */
+  not_run: [[2, 5, 8, 2]],
   /* A check. */
   completed: [
     [2, 6, 2, 2],

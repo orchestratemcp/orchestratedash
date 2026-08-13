@@ -350,6 +350,40 @@ describe("the strip's setting (MAR-503)", () => {
     expect(hidden.label.length).toBeGreaterThanOrEqual(hidden.visible.length);
   });
 
+  it("keeps the control on Preferences and out of the window's corner (MAR-634)", () => {
+    /*
+     * Until MAR-634 the band carried its own toggle, and when the strip was
+     * off a lone "Show your agents" stub stood in the bottom-right corner of
+     * every window as the only way back. Henrik named it as one of two
+     * leftovers competing with the Agents page's right rail.
+     *
+     * The stub's own justification was that *"DASH has no preferences screen
+     * to send them to"*. MAR-599 built one, so the pair worth pinning is:
+     * gone from the band, present on the page — and never neither, which
+     * would be a setting a person can turn on and never turn off again.
+     */
+    /*
+     * Line endings normalised at the read, which is `tests/chief.test.ts`'
+     * hard-won rule: this repository has no `.gitattributes` and
+     * `core.autocrlf` is true on Windows, so a pattern anchored on `\n}` alone
+     * matches in CI and never on the machine DASH is developed on.
+     */
+    const strip = readFileSync(
+      path.join(repoRoot, "app", "_components", "fleet-strip.tsx"),
+      "utf8",
+    ).replace(/\r\n/g, "\n");
+    const band = /function FleetStripBand\(\)[\s\S]*?\n}\n/.exec(strip)?.[0];
+    expect(band, "FleetStripBand could not be found — this assertion would be vacuous").toBeDefined();
+    expect(band).not.toContain("fleet-strip-toggle");
+    expect(band).not.toContain("is-hidden");
+
+    const preferences = readFileSync(
+      path.join(repoRoot, "app", "settings", "preferences", "page.tsx"),
+      "utf8",
+    );
+    expect(preferences).toContain("<FleetStripToggle />");
+  });
+
   it("pre-paints from the same key and attribute the toggle writes", () => {
     /*
      * The one part of this feature a screenshot cannot check. If the script read
