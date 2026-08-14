@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { SURFACES, isSeparateWindowRoute, surfaceFor } from "../_data/routes";
-import { DensityToggle } from "./density-toggle";
 import { SurfaceIcon } from "./sidebar-icons";
 import { TitleBar } from "./title-bar";
 
@@ -39,6 +38,25 @@ import { TitleBar } from "./title-bar";
  * bar this must clear: the rail spends 40px of a 375px window and the content
  * column keeps `minmax(0, 1fr)`, so nothing it fixed regains a reason to
  * overflow.
+ *
+ * ## The sidebar is destinations, and only destinations (MAR-634)
+ *
+ * `DensityToggle` stood at the bottom of this column from MAR-420 until
+ * MAR-634, on the argument that density is a view preference and belongs with
+ * the things that change what the page shows. What changed is that MAR-630
+ * built a right rail on the Agents page for exactly that job, and Henrik,
+ * looking at the result: *"the fit more on screen thing we can remove"*. A
+ * preference in the bottom-left corner of every window, competing with a rail
+ * two columns away, is one control in two places.
+ *
+ * The control itself is not gone. MAR-599 already put `DensityToggle` on
+ * Settings → Preferences — the same component, not a second implementation —
+ * so `dash.density` still has exactly one reader and writer and the setting is
+ * still reachable. What this removes is the second doorway, not the room.
+ *
+ * Nothing else left with it: the collapse to a rail is a media query rather
+ * than a control, so there was no expand/collapse affordance in this column to
+ * delete by mistake.
  */
 export function AppChrome(): ReactNode {
   const pathname = usePathname() ?? "/";
@@ -125,14 +143,6 @@ export function AppChrome(): ReactNode {
             </Link>
           );
         })}
-        {/*
-          At the bottom of the sidebar rather than in the title bar (MAR-420,
-          unchanged in spirit by MAR-546). The title bar is the *window*;
-          density is a view preference about the page, so it lives with the
-          other things that change what the page shows.
-        */}
-        <span className="sidebar-spacer" />
-        <DensityToggle />
       </nav>
     </>
   );

@@ -223,6 +223,75 @@ describe("the stylesheet", () => {
     }
   });
 
+  it("bounds the card at desktop and leaves it free at the narrow widths (MAR-634)", () => {
+    /*
+     * MAR-630 recorded the tension and MAR-634 resolved it: the 375px repair
+     * lets a card keep min-content height, and six cards cannot fit in two
+     * thirds of a 1280 window at that height. Both hold only if the bound is
+     * width-conditional, so the assertions are (a) there is a bound, (b) it is
+     * inside a `min-width` query, and (c) the base rule still says `auto`.
+     *
+     * The last one is the half that would rot silently. Somebody tidying the
+     * bound "up" out of its media query would repair nothing visible at 1280
+     * and would put 375px back to the mark-and-hat slivers MAR-630 shipped
+     * once already.
+     */
+    const desktop = /@media \(min-width: 901px\)\s*\{([\s\S]*?)\n\}/.exec(globals);
+    expect(desktop, "MAR-634's bound must live in a min-width query").not.toBeNull();
+    const block = desktop?.[1] ?? "";
+
+    /*
+     * Every bound in the block is floored at `min-content` and capped by a
+     * length, and both halves are pinned because both were learned the hard
+     * way.
+     *
+     * The floor is what makes a bound safe to state at all: a track that can
+     * never be shorter than the card cannot clip a wrapped name or push the
+     * Open button off the bottom edge, at any text size.
+     *
+     * The cap is a **length**, and the first version of this rule proved why
+     * it has to be. It asked for half the pane —
+     * `calc((100% - var(--fleet-gap)) / 2)` — and the capture harness reported
+     * what the browser actually resolved: `33.3333% - 12px` came back as 63.5px
+     * against a 471px pane, because a percentage row on a container whose own
+     * height is `100%` of a scroll container resolves against the row's content
+     * rather than the container. The grid read as correct by luck; the rows
+     * view drew six 64px rows with the sprites hanging out of them. So a
+     * percentage anywhere in these tracks is the defect, not the design.
+     */
+    const tracks = [...block.matchAll(/grid-auto-rows:\s*([^;]+);/g)].map((m) => m[1] ?? "");
+    expect(tracks.length, "the desktop block must bound the card").toBeGreaterThan(0);
+    for (const track of tracks) {
+      expect(
+        track.startsWith("minmax(min-content,"),
+        `grid-auto-rows: ${track} is not floored at the card's own height`,
+      ).toBe(true);
+      expect(
+        track.includes("%"),
+        `grid-auto-rows: ${track} resolves a percentage against the wrong box`,
+      ).toBe(false);
+    }
+
+    /*
+     * Rows states three agents on one screen, and three 145px bands is the only
+     * way that arithmetic closes — which it does by moving the action beside
+     * the band rather than under it. Without this the row is 182px, three of
+     * them overflow the pane, and the view misses its stated count.
+     */
+    expect(block, "the rows card must put its action in a second column").toMatch(
+      /\[data-fleet-view="rows"\] \.fleet-card \{[^}]*grid-template-columns/,
+    );
+
+    /*
+     * Spotlight's count is three across, and three 18rem columns want 900px of
+     * a 667px pane. The narrowing is the count.
+     */
+    expect(block).toMatch(/--fleet-spot:\s*13rem/);
+
+    // The narrow widths keep MAR-630's repair, untouched by any of the above.
+    expect(globals).toContain("grid-auto-rows: auto");
+  });
+
   it("keeps MAR-590's container-relative floor on the grid", () => {
     /*
      * The sideways-scroll fix MAR-590 shipped: a track minimum that is a plain

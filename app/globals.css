@@ -449,12 +449,6 @@ main:focus {
   display: block;
 }
 
-/* Pushes the density control to the bottom of the sidebar. */
-.sidebar-spacer {
-  flex: 1 1 auto;
-  min-height: var(--space-4);
-}
-
 /*
  * Below 900px the sidebar collapses to an icon rail (MAR-546).
  *
@@ -534,34 +528,15 @@ main:focus {
 }
 
 /*
- * In the rail the label goes and the glyph stays, at the sidebar's own
- * breakpoint — the control lives in the sidebar now (MAR-546), so its label
- * collapses when its container does, not at the 560px the horizontal nav
- * needed.
+ * The label no longer collapses, because the control no longer lives in a
+ * column that collapses (MAR-634).
  *
- * Deliberately the *label* rather than the control: density matters most on a
- * narrow window, so hiding the button there would remove it exactly where it
- * earns its keep. The accessible name survives — `title` carries the
- * description, and the label is hidden visually rather than removed.
+ * From MAR-546 until MAR-634 this button sat at the bottom of the sidebar, so
+ * its label was hidden visually in the 40px rail and the glyph carried it.
+ * Settings → Preferences is its only home now: there is room for the words at
+ * every width, and a settings row labelled with a glyph alone would be the
+ * unlabelled control this rule was written to avoid rather than to create.
  */
-@media (max-width: 900px) {
-  .density-toggle {
-    justify-content: center;
-  }
-
-  .density-label {
-    position: absolute;
-    /* See `.visually-hidden` — without this the span keeps its static position
-       inside the sidebar, escapes it, and widens the whole page. */
-    left: 0;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-}
 
 /*
  * The one scrolling region (MAR-503).
@@ -1387,7 +1362,22 @@ code {
    * grow a fourth column.
    */
   --fleet-gap: calc(var(--density-gap) * 1.5);
-  --fleet-card: 16rem;
+  /*
+   * 14rem, and the number is arithmetic rather than taste (MAR-634).
+   *
+   * MAR-630 asked for three across and set this to 16rem, and three 16rem
+   * cards have never once fitted: at 1280 the stage is the window less the
+   * 240px sidebar, less the 240px rail, less this pane's own 24px either side
+   * — 752px — and three 256px tracks with two 18px gaps want 804. So the grid
+   * drew two columns and called itself a three-column grid, which is half of
+   * why the stage read as a void: a fleet of three was landing as 2 + 1.
+   *
+   * 224px makes it 708, and leaves room for the cards pane's own scrollbar on
+   * the frames where a third row exists. Nothing narrower than 1280 changes:
+   * at 768 two columns fitted before and fit now, and at 375 the
+   * `min(…, 100%)` floor below has always given one full-width card.
+   */
+  --fleet-card: 14rem;
   height: 100%;
   max-width: calc(3 * var(--fleet-card) + 2 * var(--fleet-gap));
   grid-template-columns: repeat(
@@ -1541,8 +1531,9 @@ code {
 
 /* ── Rows: one card to a row, three on screen ────────────────────────────
  *
- * One column, and three auto-rows fill the cards pane so three agents fit
- * in the same two-thirds the grid uses for two rows of three.
+ * One column, and a card short enough that three fit in the same two-thirds
+ * the grid uses for two rows of three. The height that makes that true is
+ * MAR-634's bound at the bottom of this section; what is here is the shape.
  *
  * The card turns on its side: portrait beside the name, because a full-width
  * card with a 200px character centred above a label is mostly empty. The
@@ -1614,7 +1605,13 @@ code {
   max-width: none;
   grid-auto-flow: column;
   grid-template-columns: none;
-  grid-auto-columns: min(18rem, 42vw);
+  /*
+   * One name for the column, because the padding below has to be half of it
+   * and two copies of a width are two chances to centre a card on the wrong
+   * number. MAR-634 narrows it at desktop, where three have to fit.
+   */
+  --fleet-spot: min(18rem, 42vw);
+  grid-auto-columns: var(--fleet-spot);
   grid-auto-rows: minmax(0, 1fr);
   justify-content: start;
   overflow-x: auto;
@@ -1625,7 +1622,7 @@ code {
    * Without it a fleet of two has a card that can never be centred, and the chief
    * would be talking about whichever one the scroller stopped nearest.
    */
-  padding-inline: max(var(--space-4), calc(50% - min(18rem, 42vw) / 2));
+  padding-inline: max(var(--space-4), calc(50% - var(--fleet-spot) / 2));
   /* Room for the turned cards to lean into rather than be clipped by the
      scroller's own box. */
   padding-block: var(--space-4);
@@ -1732,6 +1729,144 @@ code {
 
 .fleet-spotlight-step:active {
   transform: translate(1px, 1px);
+}
+
+/* ── The bound, at desktop and nowhere else (MAR-634) ─────────────────────
+ *
+ * MAR-630 recorded two true things that cannot both hold at one size. The
+ * 375px repair lets a card keep min-content height, because a 2fr pane with
+ * `min-height: 0` had packed five portraits into mark-and-hat slivers. The
+ * stated per-view counts — Grid 3×2, Rows 2–3, Spotlight one row of three —
+ * need a card short enough that six of them fit in two thirds of the window.
+ * A card sized to its own content at 1280 cannot do the second.
+ *
+ * So the height is bounded here, above the rail's own 900px collapse, and
+ * every rule above stands untouched below it: `grid-auto-rows: auto`,
+ * `align-items: start`, cards at their content's height, and the pane
+ * scrolls. That is MAR-634's instruction exactly — bounded at desktop, free
+ * at the narrow breakpoints — and it is why 375 and 768 are unchanged by
+ * this block.
+ *
+ * The bound is `minmax(min-content, 14rem)`, and both halves are load-bearing.
+ *
+ * It is **a length, not a share of the pane**, and that was measured rather
+ * than preferred. The first version of this block asked for
+ * `clamp(13rem, calc((100% - var(--fleet-gap)) / 2), 20rem)` — half the pane,
+ * which reads as the obvious way to say "two rows fit". The harness reported
+ * the resolved track: `33.3333% - 12px` came back as **63.5px** against a
+ * 471px pane, because a percentage row on a container whose own height is
+ * `100%` of a scroll container resolves against the row's content instead of
+ * the container. The grid view *looked* right at 227px only because the
+ * cyclic answer happened to land a pixel from the honest one; the rows view,
+ * where it did not, drew six 64px rows with the sprites hanging out of them.
+ * A percentage here cannot be trusted, so there is none.
+ *
+ * `min-content` as the floor is what makes the bound safe: a track can never
+ * be shorter than the card, so nothing is ever clipped — not a wrapped name,
+ * not the Open button, and not at a text size DASH does not control. What the
+ * bound does is stop the card *growing* past 14rem, and grid's own Maximize
+ * Tracks step does the rest: with six cards the pane has no spare height and
+ * the rows sit at the card's own height; with three it has plenty, so the one
+ * row grows to the 14rem cap and `align-content` centres it in what is left.
+ * That is the three-agent void closed without a special case for three.
+ *
+ * 14rem is the same number as `--fleet-card`, which makes the grid's tile
+ * square-ish, and it is the arithmetic MAR-630's count needs: two rows and a
+ * gap is 466px inside a 471px pane at 1280, with the margin on the right side
+ * of the comparison for once.
+ */
+@media (min-width: 901px) {
+  /*
+   * `safe center` rather than `center`: a fleet with more rows than fit
+   * overflows this pane, and centred overflow is the kind that pushes its
+   * own first row off the top edge with no way to scroll back to it. `safe`
+   * falls back to `start` in exactly that case and nowhere else.
+   */
+  .row-list.fleet-grid {
+    grid-auto-rows: minmax(min-content, var(--fleet-card));
+    align-content: safe center;
+    align-items: stretch;
+  }
+
+  /*
+   * The pick fills the height the card was given, so the marks stay on the
+   * top edge and the action stays on the bottom one while the portrait
+   * floats in the middle. Without this a bounded card is a short card with a
+   * gap underneath it, which is the void again at card scale.
+   */
+  .fleet-pick {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  /* In rows the pick is a horizontal band, and centring it would push the
+     portrait and the name into the middle of a full-width card. */
+  [data-fleet-view="rows"] .fleet-pick {
+    justify-content: flex-start;
+  }
+
+  /*
+   * Rows: the action moves up beside the band instead of sitting under it.
+   *
+   * Henrik's size pattern for this view is *three agents on one screen*, and
+   * that is arithmetic before it is taste: three rows and two gaps inside a
+   * 471px pane leaves 145px a row. A band of portrait-beside-name is 140px
+   * with the button on the right and 182px with it underneath, so the button's
+   * position is the whole difference between the stated count and a pane that
+   * scrolls at three agents.
+   *
+   * Two columns and two rows, declared on the card itself, because the card's
+   * markup is one flat list of children — `app/_components/fleet-card.tsx` —
+   * and grid is how a flat list is arranged without a wrapper element that
+   * exists only in one view. Nothing is added, removed or reworded: the marks,
+   * the portrait, the name and the button are the same four things the grid
+   * draws, on a different track. That is `lib/views/fleet-view.ts`'s rule.
+   *
+   * Under 901px the rule below does not apply, the card is the grid's card,
+   * and a 375px row is untouched by any of this.
+   */
+  [data-fleet-view="rows"] .fleet-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  [data-fleet-view="rows"] .fleet-marks {
+    grid-column: 1 / -1;
+  }
+
+  [data-fleet-view="rows"] .fleet-card > .open-agent {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: center;
+  }
+
+  /*
+   * Spotlight lays its cards along one row, so its column is what has to
+   * carry MAR-630's count of three — the pane is 667px wide once the two step
+   * buttons are out of it, and three 18rem columns want 900. 13rem makes it
+   * 660, which is the same measurement the grid's `--fleet-card` comment
+   * makes one axis over.
+   *
+   * The height bound is re-asserted rather than inherited, and it is a
+   * different number from the grid's on purpose. This view puts one card in
+   * the middle of the stage and nothing above or below it, so the grid's 14rem
+   * — right for a tile with another tile under it — leaves a 224px card
+   * floating in a 471px pane, which is the void at single-card scale. 22rem
+   * stands the card up in three quarters of the pane and still stops short of
+   * the `1fr` this rule replaces, which drew a column twice as tall as it was
+   * wide.
+   *
+   * Re-asserted rather than excluded from the selector at the top of this
+   * block because the spotlight's own `minmax(0, 1fr)` is more specific and
+   * would otherwise win — a thing to state outright rather than leave to the
+   * order of the file.
+   */
+  [data-fleet-view="spotlight"] .row-list.fleet-grid {
+    --fleet-spot: 13rem;
+    grid-auto-rows: minmax(min-content, 22rem);
+    align-content: safe center;
+  }
 }
 
 /* ── The chief, under the cards ───────────────────────────────────────────
@@ -4124,12 +4259,6 @@ button:disabled {
   background: var(--surface-1);
 }
 
-.fleet-strip.is-hidden {
-  justify-content: flex-end;
-  padding-top: var(--space-1);
-  padding-bottom: var(--space-1);
-}
-
 .fleet-strip-row {
   position: relative;
   display: flex;
@@ -4270,20 +4399,36 @@ button:disabled {
   text-overflow: ellipsis;
 }
 
+/*
+ * The strip's on/off control, which is on Settings → Preferences and not in
+ * the corner of the window any more (MAR-634).
+ *
+ * Same furniture as `.density-toggle` above, because it is now the same kind
+ * of thing in the same place: a row on the page that inventories how DASH
+ * looks. It used to be a `--text-faint` scrap in the bottom-right corner
+ * sized to be ignorable, which is what a control has to look like when it is
+ * standing in a place no control belongs.
+ */
 .fleet-strip-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   flex: none;
-  padding: var(--space-1) var(--space-2);
-  border: none;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text-faint);
-  font-family: inherit;
-  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
 .fleet-strip-toggle:hover {
-  background: var(--surface-2);
+  border-color: var(--line);
+  background: var(--surface-1);
   color: var(--text);
 }
 
@@ -4292,11 +4437,13 @@ button:disabled {
  *
  * On `<html>` rather than in React state for the reason `[data-density]` is:
  * one attribute decides it, the first frame is already right, and no component
- * has to be told. `display: none` on the whole band rather than on the row, so
- * a hidden strip costs no space at all — except the collapsed control, which is
- * the only way back and is exempt by being the element that survives.
+ * has to be told. `display: none` on the whole band, with no exemption: until
+ * MAR-634 a collapsed stub survived here because it was the only way back and
+ * DASH had no preferences screen to send anybody to. MAR-599 built that
+ * screen, so the way back is a labelled row on it rather than a scrap in the
+ * window's corner, and the band can go entirely.
  */
-:root[data-fleet-strip="hidden"] .fleet-strip:not(.is-hidden) {
+:root[data-fleet-strip="hidden"] .fleet-strip {
   display: none;
 }
 
@@ -4304,9 +4451,9 @@ button:disabled {
  * Narrow windows keep the characters and drop the caption.
  *
  * The order things go in is the order they are worth: the cast is the strip,
- * the toggle is how somebody gets rid of it, and the caption is a convenience
- * that repeats what the controls already carry as their accessible names. A
- * strip that dropped sprites to keep a label would have kept the label.
+ * and the caption is a convenience that repeats what the characters already
+ * carry as their accessible names. A strip that dropped sprites to keep a
+ * label would have kept the label.
  */
 @media (max-width: 560px) {
   .fleet-strip {

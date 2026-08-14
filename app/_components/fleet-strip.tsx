@@ -144,7 +144,6 @@ async function readFleetActivity(source: DashDataSource): Promise<ViewResult<Fle
 
 function FleetStripBand(): ReactNode {
   const state = useView((source) => source.agents());
-  const [setting, setSetting] = useState<FleetStripSetting>(DEFAULT_FLEET_STRIP);
   const [hovered, setHovered] = useState<string | null>(null);
   const row = useRowCapacity();
 
@@ -163,32 +162,6 @@ function FleetStripBand(): ReactNode {
   const signals: FleetActivity =
     activity.status === "ready" ? activity.data : { runs: null, inbox: null };
 
-  /*
-   * Adopt whatever the pre-paint script already put on the document rather than
-   * re-reading storage, which is `DensityToggle`'s reasoning exactly: the
-   * document is the source of truth for the current setting precisely because
-   * the script got there first, and a second read is a second chance to
-   * disagree with the frame the user is looking at.
-   */
-  useEffect(() => {
-    setSetting(parseFleetStripSetting(document.documentElement.getAttribute(FLEET_STRIP_ATTRIBUTE)));
-  }, []);
-
-  const apply = (): void => {
-    const next = nextFleetStripSetting(setting);
-    document.documentElement.setAttribute(FLEET_STRIP_ATTRIBUTE, next);
-    setSetting(next);
-    try {
-      window.localStorage.setItem(FLEET_STRIP_STORAGE_KEY, next);
-    } catch {
-      /*
-       * Storage can be unavailable. The setting still applies to this window,
-       * which is what was just asked for; it simply will not be there next
-       * time. Failing the click over it would take away the half that worked.
-       */
-    }
-  };
-
   const agents: AgentRow[] = state.status === "ready" ? state.data.agents : [];
   if (agents.length === 0) {
     /*
@@ -199,30 +172,6 @@ function FleetStripBand(): ReactNode {
      * useful.
      */
     return null;
-  }
-
-  const copy = describeFleetStrip(setting);
-
-  if (setting === "hidden") {
-    /*
-     * Off, and reversible from where it was turned off. A setting a novice
-     * cannot find their way back to is a setting that removed something
-     * permanently, and DASH has no preferences screen to send them to — so what
-     * survives is the smallest thing that can bring it back.
-     */
-    return (
-      <aside className="fleet-strip is-hidden">
-        <button
-          type="button"
-          className="fleet-strip-toggle"
-          onClick={apply}
-          aria-label={copy.label}
-          title={copy.description}
-        >
-          {copy.visible}
-        </button>
-      </aside>
-    );
   }
 
   const { links, overflow } = fleetStripLinks(agents, row.width);
@@ -304,16 +253,72 @@ function FleetStripBand(): ReactNode {
       <p className="fleet-strip-caption" aria-hidden="true">
         {hovered ?? describeFleetActivity(agents.length, overflow, working, waiting)}
       </p>
-      <button
-        type="button"
-        className="fleet-strip-toggle"
-        onClick={apply}
-        aria-label={copy.label}
-        title={copy.description}
-      >
-        {copy.visible}
-      </button>
     </aside>
+  );
+}
+
+/**
+ * Show or hide the strip, from Settings → Preferences (MAR-634).
+ *
+ * ## Why the control is not in the band any more
+ *
+ * It used to be a button on the strip's right-hand end, and when the strip was
+ * off, a lone "Show your agents" stub in the bottom-right corner of every
+ * window — the only surviving way back. The argument for that was explicit and
+ * has expired: *"DASH has no preferences screen to send them to."* MAR-599
+ * built one, and Henrik, looking at the Agents page with MAR-630's rail on it,
+ * named that stub and the density button as the two things in the corners
+ * competing with the rail for the rail's job.
+ *
+ * So the setting survives and its doorway moves. This is the same read/write
+ * pair the band used, in one component rather than two branches of one, and
+ * `dash.fleetStrip` still has exactly one reader and one writer.
+ *
+ * The band no longer reads the setting at all: `:root[data-fleet-strip]` in
+ * `app/globals.css` hides it, which it always did, and the pre-paint script is
+ * what makes that true on the first frame.
+ */
+export function FleetStripToggle(): ReactNode {
+  const [setting, setSetting] = useState<FleetStripSetting>(DEFAULT_FLEET_STRIP);
+
+  /*
+   * Adopt whatever the pre-paint script already put on the document rather than
+   * re-reading storage, which is `DensityToggle`'s reasoning exactly: the
+   * document is the source of truth for the current setting precisely because
+   * the script got there first, and a second read is a second chance to
+   * disagree with the frame the user is looking at.
+   */
+  useEffect(() => {
+    setSetting(parseFleetStripSetting(document.documentElement.getAttribute(FLEET_STRIP_ATTRIBUTE)));
+  }, []);
+
+  const apply = (): void => {
+    const next = nextFleetStripSetting(setting);
+    document.documentElement.setAttribute(FLEET_STRIP_ATTRIBUTE, next);
+    setSetting(next);
+    try {
+      window.localStorage.setItem(FLEET_STRIP_STORAGE_KEY, next);
+    } catch {
+      /*
+       * Storage can be unavailable. The setting still applies to this window,
+       * which is what was just asked for; it simply will not be there next
+       * time. Failing the click over it would take away the half that worked.
+       */
+    }
+  };
+
+  const copy = describeFleetStrip(setting);
+
+  return (
+    <button
+      type="button"
+      className="fleet-strip-toggle"
+      onClick={apply}
+      aria-label={copy.label}
+      title={copy.description}
+    >
+      {copy.visible}
+    </button>
   );
 }
 
