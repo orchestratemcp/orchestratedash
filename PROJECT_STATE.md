@@ -1,5 +1,35 @@
 # DASH project state
 
+Updated: 2026-08-14 (MAR-629: the host is a small DASH runtime — decided
+before it is built)
+
+ADR 0021 records Henrik's 2026-08-13 ruling on MAR-629: option A, a
+runner-local broker, delivered as an install pack. Direct exposure and
+"neither yet" are closed.
+
+The host stops being a bare runner. Enrolment installs a v1 pack: the host
+broker, an empty host secret store, the audit and telemetry spool the
+evidence channel already drains (extended to brokered host calls), and a
+stated pack version DASH can read. Keys still arrive one at a time under
+ADR 0018. The store is encrypted-at-rest and readable by that machine's
+account; it is not an OS keychain, and the receipt says so.
+
+v1's host broker admits the model-provider operations DASH already brokers
+for a pasted key — models-list, completion, curate — under a host-side
+Run-press spend allowance that survives DASH closing. It refuses Gmail and
+MCP in v1. `/broker/drain` and `/broker/responses` stay off the remote
+channel. Closing DASH does not close the host broker.
+
+`186.240.156.166` predates the pack. A host that answers `unknown_verb` to
+the pack read is `host_pack_too_old`; the exit is re-running setup. This
+session did not reach that host.
+
+This is `planned`. Documentation only, no implementation. Until a later
+session proves the pack, ADR 0018's substrate remains "the key is on that
+server", never "your agent can now think there".
+
+---
+
 Updated: 2026-08-13 (MAR-633: an MCP server is a connection DASH brokers —
 decided before it is built)
 
