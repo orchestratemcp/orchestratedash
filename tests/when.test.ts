@@ -19,7 +19,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { plainDay, plainMoment, plainWindow } from "../lib/copy/when";
+import { plainClock, plainDay, plainMoment, plainWindow } from "../lib/copy/when";
 
 /** An instant, built from local parts so the expected day is known here. */
 function localIso(
@@ -28,8 +28,9 @@ function localIso(
   day: number,
   hour: number,
   minute: number,
+  second = 0,
 ): string {
-  return new Date(year, month - 1, day, hour, minute, 0, 0).toISOString();
+  return new Date(year, month - 1, day, hour, minute, second, 0).toISOString();
 }
 
 describe("a day", () => {
@@ -107,5 +108,20 @@ describe("a window", () => {
 
   it("is null when the start itself is unreadable", () => {
     expect(plainWindow("nonsense", localIso(2026, 8, 7, 13, 58))).toBeNull();
+  });
+});
+
+describe("a clock", () => {
+  it("is a padded 24-hour time with seconds", () => {
+    expect(plainClock(localIso(2026, 8, 7, 14, 58, 12))).toBe("14:58:12");
+  });
+
+  it("pads a single-digit hour so a column of feed lines lines up", () => {
+    expect(plainClock(localIso(2026, 8, 7, 9, 5, 3))).toBe("09:05:03");
+  });
+
+  it("is null for anything it cannot read, and never the input", () => {
+    expect(plainClock("2026-08-07T14:58:12Z") === "2026-08-07T14:58:12Z").toBe(false);
+    expect(plainClock("nonsense")).toBeNull();
   });
 });

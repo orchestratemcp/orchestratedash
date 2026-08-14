@@ -22,9 +22,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   AGENT_CONTROL_COPY,
+  AGENT_FEED_COPY,
   AGENT_HEADER_COPY,
   AGENT_OUTPUTS_COPY,
   AGENT_SETTINGS_COPY,
+  AGENT_TELEMETRY_COPY,
   AGENT_TILE_COPY,
   AGENT_TRIGGER_COPY,
 } from "../lib/copy/agent-page";
@@ -37,6 +39,8 @@ const MODULES = {
   AGENT_TRIGGER_COPY,
   AGENT_SETTINGS_COPY,
   AGENT_OUTPUTS_COPY,
+  AGENT_FEED_COPY,
+  AGENT_TELEMETRY_COPY,
 };
 
 /**
@@ -88,6 +92,10 @@ describe("the agent page's copy", () => {
     for (const reason of ["not_reported", "nothing_waiting", "read_only"] as const) {
       expect(AGENT_CONTROL_COPY.idle[reason], reason).toBeTruthy();
     }
+  });
+
+  it("names the command block as quick commands, not a power switch", () => {
+    expect(AGENT_CONTROL_COPY.heading).toBe("Quick commands");
   });
 
   /**

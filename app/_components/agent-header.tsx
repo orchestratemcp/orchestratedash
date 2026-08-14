@@ -259,7 +259,13 @@ export function AgentControls({
 
   if (run.kind === "idle") {
     return (
-      <section className="section agent-controls agent-controls-idle">
+      <section
+        aria-labelledby="agent-commands-heading"
+        className="section agent-controls agent-controls-idle"
+      >
+        <div className="section-heading">
+          <h2 id="agent-commands-heading">{AGENT_CONTROL_COPY.heading}</h2>
+        </div>
         {hostButtons === null ? null : <div className="button-row">{hostButtons}</div>}
         <p className="muted">{AGENT_CONTROL_COPY.idle[run.reason]}</p>
       </section>
@@ -268,7 +274,10 @@ export function AgentControls({
 
   if (run.kind === "live") {
     return (
-      <section className="section agent-controls">
+      <section aria-labelledby="agent-commands-heading" className="section agent-controls">
+        <div className="section-heading">
+          <h2 id="agent-commands-heading">{AGENT_CONTROL_COPY.heading}</h2>
+        </div>
         <div className="button-row">
           {run.controls.map((control) => (
             <button
@@ -292,7 +301,10 @@ export function AgentControls({
   }
 
   return (
-    <section className="section agent-controls">
+    <section aria-labelledby="agent-commands-heading" className="section agent-controls">
+      <div className="section-heading">
+        <h2 id="agent-commands-heading">{AGENT_CONTROL_COPY.heading}</h2>
+      </div>
       <div className="button-row">
         <button
           className="button-primary"

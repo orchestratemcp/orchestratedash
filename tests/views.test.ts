@@ -362,6 +362,8 @@ describe("workspaceView", () => {
       title: "Meeting Assistant",
       snapshot: null,
     });
+    expect(view.found && view.feed).toEqual({ kind: "empty" });
+    expect(view.found && view.telemetry).toEqual({ meters: [], sparkline: null });
   });
 
   it("humanizes the slug when the manifest has no display_name (MAR-595 finding 10)", () => {

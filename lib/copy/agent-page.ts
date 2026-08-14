@@ -56,7 +56,7 @@ export const AGENT_HEADER_COPY = {
  * agent is in and the one the old page said nothing at all about.
  */
 export const AGENT_CONTROL_COPY = {
-  heading: "Controls",
+  heading: "Quick commands",
   run_now: "Run now",
   run_now_with_files: "Send files and run now",
   running: "Starting…",
@@ -279,7 +279,7 @@ export const AGENT_SETTINGS_COPY = {
  * all — they had to know Runs existed and go and find it.
  */
 export const AGENT_OUTPUTS_COPY = {
-  heading: "Latest outputs",
+  heading: "Generated assets",
   /**
    * The empty state, and the most-read sentence on this page.
    *
@@ -301,6 +301,108 @@ export const AGENT_OUTPUTS_COPY = {
    */
   open_run: "Open the full run",
 } as const;
+
+/**
+ * The live output feed — timestamped lines from telemetry v1 (MAR-635).
+ *
+ * This is the mockup's biggest win and the closest to free: every run already
+ * posts `step_started` / `step_completed` (and the run/gate events around
+ * them), and the agent page already follows a run in flight. The feed is those
+ * records, worded, in order. It does not invent a log the store does not have.
+ *
+ * Empty copy is two short sentences, same rule as the assets panel: this is
+ * the state every new user meets.
+ */
+export const AGENT_FEED_COPY = {
+  heading: "Live output",
+  empty_headline: "Nothing has run yet",
+  empty_detail: "When this agent works, each step appears here.",
+  open_run: "Open this run",
+  /**
+   * Verbs for each telemetry v1 event type. Exhaustive on `RunEventType`, so
+   * a new member is a compile error here rather than a raw `step_started`
+   * leaking onto a page a person reads.
+   */
+  verb: {
+    run_started: "Started",
+    run_completed: "Finished",
+    run_failed: "Failed",
+    gate_requested: "Waiting for you",
+    gate_resolved: "You answered",
+    step_started: (step: string): string => `Started ${step}`,
+    step_completed: (step: string): string => `Finished ${step}`,
+  },
+} as const;
+
+/**
+ * Performance numbers, only where a record backs them (MAR-635, MAR-547).
+ *
+ * Latency is a difference of two recorded timestamps. Tokens and cost are
+ * sums of fields the run actually posted. A meter whose field never appeared
+ * is omitted, not drawn at zero — a zero would claim the run was free or
+ * silent, which is a different fact from "nobody said".
+ *
+ * There is no empty-state paragraph. An agent that has reported no numbers
+ * draws no panel, which is the empty-agent size MAR-609 still requires.
+ */
+export const AGENT_TELEMETRY_COPY = {
+  heading: "Performance",
+  duration: "Time",
+  duration_so_far: "Time so far",
+  tokens_in: "Read",
+  tokens_out: "Written",
+  cost: "Cost",
+  model: "Model",
+  sparkline_written: "Written per step",
+  sparkline_cost: "Cost per step",
+  /**
+   * Under the cost meter. The same attribution `describeReportedRunSpend`
+   * makes in a sentence: this is the agent's own figure, not a bill DASH
+   * observed.
+   */
+  cost_note: "The agent reported this. It is not something DASH watched.",
+} as const;
+
+/**
+ * How long a run took, from two recorded timestamps.
+ *
+ * Whole seconds only: telemetry v1 timestamps are date-times, not a
+ * stopwatch, and a millisecond figure would pretend at a precision the
+ * record does not have. Null rather than "0 seconds" when the two instants
+ * cannot be read or do not move forward.
+ */
+export function describeFeedDuration(fromIso: string, untilIso: string): string | null {
+  const from = Date.parse(fromIso);
+  const until = Date.parse(untilIso);
+  if (!Number.isFinite(from) || !Number.isFinite(until) || until < from) {
+    return null;
+  }
+  const seconds = Math.floor((until - from) / 1000);
+  if (seconds < 1) {
+    return "less than a second";
+  }
+  if (seconds < 60) {
+    return seconds === 1 ? "1 second" : `${String(seconds)} seconds`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  if (minutes < 60) {
+    if (rest === 0) {
+      return minutes === 1 ? "1 minute" : `${String(minutes)} minutes`;
+    }
+    const minuteWord = minutes === 1 ? "1 minute" : `${String(minutes)} minutes`;
+    const secondWord = rest === 1 ? "1 second" : `${String(rest)} seconds`;
+    return `${minuteWord} ${secondWord}`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const minuteRest = minutes % 60;
+  const hourWord = hours === 1 ? "1 hour" : `${String(hours)} hours`;
+  if (minuteRest === 0) {
+    return hourWord;
+  }
+  const minuteWord = minuteRest === 1 ? "1 minute" : `${String(minuteRest)} minutes`;
+  return `${hourWord} ${minuteWord}`;
+}
 
 /*
  * There is deliberately no chat copy in this module.

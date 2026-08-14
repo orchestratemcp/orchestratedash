@@ -22,8 +22,10 @@ import { DeployToServer } from "../../_components/deploy";
 import { FolderUpdate } from "../../_components/folder-update";
 import { AgentControls, AgentHeader } from "../../_components/agent-header";
 import { AgentSettings } from "../../_components/agent-settings";
+import { AgentTelemetry } from "../../_components/agent-telemetry";
 import { AgentTiles, type AgentTile } from "../../_components/agent-tiles";
 import { AskAgent } from "../../_components/ask";
+import { LiveFeed } from "../../_components/live-feed";
 import { ModelChoice } from "../../_components/model-choice";
 import { InputsPanel, type SelectedInput } from "../../_components/inputs";
 import { OutputsPanel } from "../../_components/outputs";
@@ -592,8 +594,33 @@ function AgentWorkspace(): ReactNode {
         </AgentSettings>
       ) : null}
 
-      {/* MAR-576, and now MAR-609's second ask. First content on the page,
-          under the agent's own name and its controls.
+      {/* MAR-635. The command surface: a live feed of what the agent is doing,
+          and beside it the numbers the run actually reported. Telemetry draws
+          nothing when there is no number, so an empty agent is the feed's two
+          sentences plus the assets empty state — not a panel of invented
+          meters.
+
+          There is no power toggle. Turning an agent "off" has no exact meaning
+          in DASH today: a local runner can be stopped, a deployed copy cannot
+          (ADR 0010), and a control that looked like both would be a lie on one
+          of the two machines. MAR-547's rule is that a control does something
+          or is not drawn. */}
+      <div className="agent-command-grid">
+        <LiveFeed
+          feed={view.feed}
+          runHref={
+            view.feed.kind === "empty"
+              ? undefined
+              : runDetailHref(view.agent, view.feed.run_id)
+          }
+        />
+        <AgentTelemetry telemetry={view.telemetry} />
+      </div>
+
+      {/* MAR-576, and now MAR-609's second ask, retitled by MAR-635 as
+          generated assets. Same cards, same MAR-622 dated history, same two
+          renderers — this panel and the author's `AgentPanel` below. The
+          newest digest stays a full card so the news remains readable.
 
           It was fifth — behind the files panel, the Run now button and the
           permission receipt — and inside it the digest came last, under a
