@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
 import {
@@ -7,14 +8,9 @@ import {
   describeDisconnect,
   type HostConnectState,
 } from "../../lib/host-connect";
+import { describeAskedAt, describeUndeployable } from "../../lib/deploy/deploying";
 import {
-  describeAskedAt,
-  describeDeployOffer,
-  describeUndeployable,
-  type DeployStanding,
-} from "../../lib/deploy/deploying";
-import { describeDeployArrangement } from "../../lib/deploy/receipt";
-import {
+  DEPLOY_LIVES_ON_THE_AGENT,
   describeAdded,
   describeDeployed,
   describePin,
@@ -22,6 +18,7 @@ import {
   describeSignIn,
   standingChip,
 } from "../../lib/server-card";
+import { agentStageHref } from "../_data/routes";
 import { describeSetupStep } from "../../lib/host-wizard";
 import {
   describeWhatIsOnHost,
@@ -30,7 +27,6 @@ import {
 } from "../../lib/host-sighting";
 import { describeBringHome } from "../../lib/copy/bring-home";
 import type { AgentDeployChoice, SavedServerView } from "../../lib/views/types";
-import { ConnectionTravelNotice, DeployOutcome } from "./deploy";
 
 /**
  * A saved server, as a card you manage (MAR-574).
@@ -67,7 +63,15 @@ import { ConnectionTravelNotice, DeployOutcome } from "./deploy";
 
 export interface ServerCardActions {
   check(): void;
-  deploy(agentId: string): void;
+  /*
+   * MAR-642. There is no `deploy` here any more, and the absence is the packet.
+   *
+   * Henrik decided on 2026-08-15 that putting an agent on a server begins on
+   * the agent, where its connections, its model and its folder already are.
+   * This card can no longer start one — `SendAnAgentHere` links into the
+   * agent's own Settings stage — so the action it would have needed does not
+   * exist rather than being left wired to a control nobody presses.
+   */
   forget(): void;
   /** Confirm the identity the card displayed (MAR-572). Carries it back verbatim. */
   trust(fingerprint: string): void;
@@ -90,7 +94,6 @@ export function ServerCard({
   agents,
   busy,
   notice,
-  deploy,
   actions,
   canAct,
 }: {
@@ -111,14 +114,11 @@ export function ServerCard({
   busy: boolean;
   /** Whatever the last command said when it failed. Null when nothing did. */
   notice: string | null;
-  /** How the last deploy from this card is going, or null when none has begun. */
-  deploy: DeployStanding | null;
   actions: ServerCardActions;
   canAct: boolean;
 }): ReactNode {
   const [confirmForget, setConfirmForget] = useState(false);
   const [deploying, setDeploying] = useState(false);
-  const [chosenAgent, setChosenAgent] = useState("");
   /**
    * The agent id a bring-home is being confirmed for, or null (MAR-611,
    * ADR 0017). One at a time, the same shape `confirmForget` already uses for
@@ -345,26 +345,14 @@ export function ServerCard({
         </button>
       </div>
 
-      {deploying ? (
-        <DeployPanel
-          server={server}
-          agents={agents}
-          busy={busy}
-          canAct={canAct}
-          chosenAgent={chosenAgent}
-          deploy={deploy}
-          report={standing}
-          checkedAt={checkedAt}
-          onChoose={setChosenAgent}
-          onCancel={() => {
-            setDeploying(false);
-          }}
-          onDeploy={() => {
-            actions.deploy(chosenAgent);
-          }}
-          onCheck={actions.check}
-        />
-      ) : null}
+      {/*
+        MAR-642. The same button, opening a list of doorways rather than a
+        deploy flow. `SendAnAgentHere` argues the demotion; what matters here is
+        that the control kept its word — "put an agent here" still leads to
+        putting an agent here, one press further on, on the page where that
+        agent's own settings already are.
+      */}
+      {deploying ? <SendAnAgentHere server={server} agents={agents} canAct={canAct} /> : null}
 
       {confirmForget ? (
         <ForgetConfirmation
@@ -498,258 +486,125 @@ function BringHomeConfirmation({
 }
 
 /**
- * Putting an agent on this server, with everything that has to be said first.
+ * Where putting an agent here happens now (MAR-642).
  *
- * Exported so its two disclosures can be rendered under test without a click:
- * the ADR 0007 receipt, and MAR-573's gap. Both are the kind of sentence that
- * disappears quietly when somebody tidies a component, and neither has any
- * business being reachable only through page state.
+ * ## What this replaces, and why replacing it was the point
+ *
+ * `DeployPanel` was a picker, a receipt, four disclosures, a progress report
+ * and two buttons — a whole deploy flow, on the card of the machine rather than
+ * on the page of the agent. The agent's own Settings stage grew the same flow
+ * in MAR-577, so DASH had two doors to one act, each with its own copy of the
+ * ADR 0007 receipt, the travel notice and the refusal. MAR-624's own finding,
+ * one surface along: *one need, surfaced by cards that did not acknowledge each
+ * other.*
+ *
+ * Henrik decided the single home on 2026-08-15: **deploy begins on the agent.**
+ * That is where the agent's connections, its model and its folder already are,
+ * and it is where a person answering "should this thing run in the cloud?" is
+ * already looking.
+ *
+ * ## Why this is a list of links rather than a sentence
+ *
+ * The affordance has to survive the move. "Unfindable is the same as missing" —
+ * a card that simply lost its button would leave somebody on the Servers page
+ * with a working server and no idea what to do with it, and the honest fix is
+ * not a paragraph explaining that the control went somewhere else. It is the
+ * control's *destination*, one press away, per agent.
+ *
+ * So every agent DASH could send is a link into its own Settings stage. What
+ * this surface no longer does is initiate anything: there is no receipt here,
+ * because nothing here deploys, and ADR 0007's while-closed sentence is said by
+ * `DeployToServerPanel` before the deploy that actually happens.
+ *
+ * ## The refusals stay
+ *
+ * An agent that cannot be sent at all is drawn with its reason rather than
+ * filtered out — `DeployPanel`'s own rule, and it matters more here than it did
+ * there: a link is an invitation, and inviting somebody to walk to another page
+ * to be told no is worse than telling them here.
  */
-export function DeployPanel({
+export function SendAnAgentHere({
   server,
   agents,
-  busy,
   canAct,
-  chosenAgent,
-  deploy,
-  report,
-  checkedAt,
-  onChoose,
-  onCancel,
-  onDeploy,
-  onCheck,
 }: {
   server: SavedServerView;
   agents: readonly AgentDeployChoice[];
-  busy: boolean;
   canAct: boolean;
-  chosenAgent: string;
-  /** How the last deploy from this card is going, or null when none has begun. */
-  deploy: DeployStanding | null;
-  /** The card's own standing, which is what the server said when last asked. */
-  report: HostConnectState;
-  checkedAt: string | null;
-  onChoose: (agentId: string) => void;
-  onCancel: () => void;
-  onDeploy: () => void;
-  /** Ask the server what it has now — the offer after a push (MAR-606). */
-  onCheck: () => void;
 }): ReactNode {
-  /*
-   * MAR-577. Whether the *chosen* agent could be sent at all.
-   *
-   * A migrated agent has its author's document and no program (ADR 0008 slice
-   * 4), so DASH has nothing to put on a server — and it knows that from its own
-   * folder, without a network. Before this, the only way to find out was to
-   * press the button: the refusal came back from main, *after* the host-key
-   * gate, so somebody with an unconfirmed server was told about the server and
-   * never told the agent could not have gone anywhere either way.
-   *
-   * The agent stays in the list rather than being filtered out. A person's own
-   * agent silently missing from a picker is a worse answer than the sentence
-   * saying why it cannot go.
-   */
-  const chosen = agents.find((agent) => agent.name === chosenAgent) ?? null;
-  const refusal =
-    chosen === null || chosen.deploy.deployable
-      ? null
-      : describeUndeployable(chosen.title, chosen.deploy.refusal ?? "");
-
-  /*
-   * MAR-606 finding 31. What the control should offer, given what DASH already
-   * did to this agent on this server.
-   *
-   * `sent_on` comes from DASH's own record on the view and not from the check,
-   * so the offer is correct before anything has asked the machine — which is
-   * the case that matters, because it is the state the card opens in.
-   *
-   * MAR-589. `chosen?.title`, never `chosenAgent` — the id is what the select's
-   * value carries and is not what this sentence may say.
-   */
-  const offer = describeDeployOffer({
-    agent: chosen?.title ?? "this agent",
-    server: server.label,
-    sent_on: server.sent.find((one) => one.agent === chosenAgent)?.sent_on ?? null,
-    just_sent: deploy?.step === "sent" && deploy.agent === chosenAgent,
-  });
+  const sentHere = new Set(server.sent.map((one) => one.agent));
 
   return (
-    <section className="deploy-panel">
-      {/*
-        ADR 0007 requires the while-closed sentence *before* the first deploy,
-        and this is now one of the two places a deploy can begin. It is the same
-        receipt the connect flow shows, from the same function — two copies of a
-        disclosure are two copies that can be softened independently.
-      */}
-      <DeployArrangement label={server.label} />
+    <section className="send-here">
+      <h3 className="label-caps">Put an agent here</h3>
+      <p className="card-meta wrap">{DEPLOY_LIVES_ON_THE_AGENT}</p>
 
-      {/*
-        MAR-573's circular-bootstrap gap used to be a dead-end sentence here.
-        MAR-579 replaced it with a way out: the setup snippet is offered on the
-        card itself, gated on the states that actually mean "not set up yet"
-        (`helper_not_installed`, `key_not_on_server`), rather than described in
-        the deploy panel where the server is already reachable.
-      */}
       {agents.length === 0 ? (
         <p className="wrap muted">
           There is no agent here to put on a server yet. Add one first and it will be offered
           here.
         </p>
       ) : (
-        <>
-          <label className="field-label" htmlFor={`deploy-agent-${server.host_id}`}>
-            Which agent
-            <select
-              id={`deploy-agent-${server.host_id}`}
-              className="field"
-              value={chosenAgent}
-              onChange={(event) => {
-                onChoose(event.target.value);
-              }}
-            >
-              <option value="">Choose an agent</option>
-              {/* MAR-589. The value stays the id — it is what `onChoose` and
-                  `chosenAgent` key on — and the label is the name a person
-                  actually picked this agent by. */}
-              {agents.map((agent) => (
-                <option key={agent.name} value={agent.name}>
-                  {agent.title}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {/* Said the moment the agent is chosen, and above the control, so
-              nobody presses a button that was never going to work. */}
-          {refusal === null ? null : (
-            <div className="notice notice-warn wrap" role="status">
-              <p>
-                <strong>{refusal.headline}</strong>
-              </p>
-              <p>{refusal.detail}</p>
-            </div>
-          )}
-
-          {/* MAR-591. Which of the chosen agent's connections stay on this
-              computer, from the same function and the same component the agent's
-              own page uses — the two entry points cannot word one consequence
-              two ways any more than they can word one deploy two ways.
-
-              Drawn beside the refusal above rather than instead of it: a
-              migrated agent with a stranded Gmail has two separate things wrong
-              with it, and showing one would leave the other to be discovered
-              after the first was fixed. */}
-          {chosen === null ? null : (
-            <ConnectionTravelNotice
-              travel={chosen.deploy.travel}
-              agent={chosen.title}
-              server={server.label}
-            />
-          )}
-
-          {/* What is happening, or what happened, and what the server says it
-              has now. The same component the agent's own page uses, so the two
-              entry points cannot word one deploy two ways. */}
-          {deploy === null ? null : (
-            <DeployOutcome standing={deploy} report={report} checkedAt={checkedAt} />
-          )}
-
-          {/* MAR-606 finding 31. What a second press would actually do, said
-              above the control rather than discovered by pressing it. Null on a
-              first deploy, where the plain offer needs no gloss. */}
-          {offer.note === null ? null : (
-            <p className="disclosure wrap" role="note">
-              {offer.note}
-            </p>
-          )}
-
-          <div className="button-row">
-            <button type="button" className="button-secondary" disabled={busy} onClick={onCancel}>
-              {/* Once the push has landed there is nothing to decline, and
-                  "Not now" beside a finished deploy reads as an offer still
-                  standing. */}
-              {offer.asks_rather_than_sends ? "Close" : "Not now"}
-            </button>
-            {/*
-              After a successful push the primary asks the server rather than
-              offering to send again — the finding's own complaint, and the one
-              action that can answer the question a person has at that moment.
-              Sending again stays reachable as the secondary, because replacing
-              a copy is a real thing to want and hiding it would be the opposite
-              overcorrection.
-            */}
-            {offer.asks_rather_than_sends ? (
-              <>
-                <button
-                  type="button"
-                  className="button-secondary"
-                  disabled={busy || !canAct}
-                  onClick={onDeploy}
-                >
-                  Send it again
-                </button>
-                <button
-                  type="button"
-                  className="button-primary"
-                  disabled={busy || !canAct}
-                  onClick={onCheck}
-                >
-                  {offer.label}
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                className={
-                  refusal !== null || chosen?.deploy.travel.verdict === "refuse"
-                    ? "button-primary button-unavailable"
-                    : "button-primary"
-                }
-                disabled={
-                  busy ||
-                  chosenAgent === "" ||
-                  refusal !== null ||
-                  chosen?.deploy.travel.verdict === "refuse" ||
-                  !canAct
-                }
-                onClick={onDeploy}
-              >
-                {busy ? "Putting it there..." : offer.label}
-              </button>
-            )}
-          </div>
-        </>
+        <ul className="send-here-list">
+          {agents.map((agent) => {
+            const refusal = agent.deploy.deployable
+              ? null
+              : describeUndeployable(agent.title, agent.deploy.refusal ?? "");
+            return (
+              <li key={agent.name} className="send-here-agent">
+                <span className="send-here-head">
+                  {/* MAR-589. The name a person picked this agent by, never the
+                      id — the id is what the link's query carries and is not
+                      what this row may say. */}
+                  <span className="send-here-name">{agent.title}</span>
+                  {sentHere.has(agent.name) ? (
+                    <span className="chip chip-ok">already here</span>
+                  ) : null}
+                </span>
+                {refusal === null ? (
+                  canAct ? (
+                    <Link
+                      className="button-secondary"
+                      href={agentStageHref(agent.name, "settings")}
+                    >
+                      Open its settings
+                    </Link>
+                  ) : (
+                    /*
+                     * Said rather than drawn as a dead link, `ConnectorTile`'s
+                     * reason: a link that navigated to a page whose own control
+                     * then refused would spend somebody's press on a wall they
+                     * could have been told about here.
+                     */
+                    <span className="muted">Open the installed DASH app to put an agent here.</span>
+                  )
+                ) : (
+                  <span className="wrap muted">
+                    <strong>{refusal.headline}</strong> {refusal.detail}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       )}
     </section>
   );
 }
 
-/**
- * The receipt `lib/deploy/bundle.ts` has built since MAR-487.
+/*
+ * MAR-642. The ADR 0007 receipt is not drawn here any more, and its absence is
+ * as deliberate as its presence was.
  *
- * Duplicated in shape with the connect flow's copy of it and not in content —
- * both call `describeDeployArrangement`, so the three limits and the revocation
- * sentence are one string each.
+ * The rule is *"the while-closed sentence is said before the first deploy"*.
+ * This card no longer performs one, so a receipt here would be a disclosure
+ * about an act this surface cannot take — and, worse, a third copy of it
+ * competing with the two that sit where deploys actually begin:
+ * `DeployToServerPanel` on the agent's own Settings stage, and `CheckStep` in
+ * the connect wizard at the moment a server first becomes reachable.
+ *
+ * `describeDeployArrangement` is untouched and still has two callers.
  */
-function DeployArrangement({ label }: { label: string }): ReactNode {
-  const receipt = describeDeployArrangement(label);
-  return (
-    <section className="deploy-receipt">
-      <h3 className="label-caps">Before you put an agent here</h3>
-      <p className="wrap">{receipt.what}</p>
-      <ul className="permission-list">
-        {receipt.limits.map((limit) => (
-          <li key={limit} className="wrap">
-            {limit}
-          </li>
-        ))}
-      </ul>
-      <p className="disclosure wrap" role="note">
-        {receipt.revocation}
-      </p>
-    </section>
-  );
-}
 
 /**
  * The one-paste bootstrap, reachable at last (MAR-573, MAR-579).

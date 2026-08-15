@@ -3165,6 +3165,99 @@ a.plain:hover {
 }
 
 /* ---------------------------------------------------------------------- *
+ * Putting an agent here starts on the agent (MAR-642)
+ *
+ * A list of doorways where a deploy flow used to be. Each row is a name and a
+ * way in — or a name and the reason it cannot go, which stays a sentence rather
+ * than becoming a disabled link, because a link is an invitation.
+ * ---------------------------------------------------------------------- */
+
+.send-here {
+  margin-top: var(--density-gap);
+  padding-top: var(--density-gap);
+  border-top: 1px solid var(--line);
+}
+
+.send-here-list {
+  list-style: none;
+  margin: var(--density-gap) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--density-gap);
+}
+
+.send-here-agent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.send-here-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.send-here-name {
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------- *
+ * Agents on servers (MAR-642)
+ *
+ * The one question the Agents page and the Servers page each half-answer. Three
+ * columns, and the third is DASH's own record of its own act — never a claim
+ * about the machine, which is `lib/server-card.ts`'s argument and ADR 0010's
+ * rule.
+ *
+ * `--density-*` only, so this obeys the density contract like everything else:
+ * the same three facts, closer together.
+ * ---------------------------------------------------------------------- */
+
+.deployed-copies {
+  margin: 0 0 var(--density-stack);
+}
+
+/*
+ * The scroll lives on a wrapper rather than on the table, because a table is
+ * not a scroll container — `overflow-x` on the element itself is ignored by the
+ * table layout algorithm, and the page would gain a horizontal scrollbar of its
+ * own at 375px instead.
+ */
+.table-scroll {
+  overflow-x: auto;
+}
+
+.deployed-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.deployed-table th,
+.deployed-table td {
+  padding: var(--density-card-p) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.deployed-table thead th {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.deployed-table tbody th {
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------- *
  * Where an agent runs, on its fleet card (MAR-606)
  *
  * A stacked chip and sentence rather than a chip row, because the sentence has
