@@ -37,6 +37,7 @@ import type { ArtifactCardView } from "./artifacts";
 import type { InputRoleView } from "./inputs";
 import type { PanelView } from "./panel";
 import type { ManifestGapView } from "../sample-refresh";
+import type { AgentHealthView } from "./agent-health";
 import type { Recovery } from "../copy/recovery";
 import type { ConnectionRequirementRow } from "../connections";
 import type { ConnectionTravel } from "../deploy/connection-travel";
@@ -1185,6 +1186,14 @@ export type WorkspaceView =
        * agent whose plan uses no model at all.
        */
       models: AgentModelSettingsView;
+      /**
+       * The Health stage's stored-record verdicts (MAR-645).
+       *
+       * Host sightings are deliberately not here: ADR 0015 keeps those in the
+       * renderer for one window, and the stage joins them to `deploy_targets`
+       * at draw time rather than persisting them in this document.
+       */
+      health: AgentHealthView;
       /**
        * What pressing Run now will spend, or null (MAR-619, ADR 0016).
        *

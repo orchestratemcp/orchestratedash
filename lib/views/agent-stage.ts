@@ -36,17 +36,14 @@
 /**
  * Every part of an agent that has a view of its own.
  *
- * Seven were named in the wireframe and six are here. **Health is deliberately
- * absent**: it is the one stage that is not a rearrangement of something the
- * page already draws — it aggregates five recorded facts into a pass/warn/fail
- * list that nothing in this repository computes yet — so it arrives with its
- * own slice rather than as a name in a list that leads nowhere. A stage id that
- * resolves to an empty room is the dead control `lib/workspace.ts` forbids,
- * wearing a URL.
+ * All seven named in the wireframe are here. Health arrived only with its own
+ * projection and view (MAR-645), because adding a stage id before the page can
+ * draw it would be the dead control `lib/workspace.ts` forbids, wearing a URL.
  */
 export const AGENT_STAGES = [
   "overview",
   "run",
+  "health",
   "output",
   "chat",
   "settings",
@@ -66,8 +63,8 @@ export function isAgentStage(value: string | null): value is AgentStage {
  *
  * ## An unknown stage is the overview, never an error
  *
- * A link from an older build, a typo in a hand-written URL, or the Health stage
- * before it exists all arrive here as a string this build does not know. The
+ * A link from an older build, a typo in a hand-written URL, or a future stage
+ * all arrive here as a string this build does not know. The
  * answer is the default view of the agent, because the alternative — an error
  * page for a parameter — would turn a link that has aged into a dead end, and
  * because a person who followed a link to an agent wanted the agent.

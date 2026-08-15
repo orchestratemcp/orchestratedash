@@ -165,6 +165,12 @@ export function AgentCockpitHeader({
           <StageAction
             agent={agent}
             current={stage}
+            label={AGENT_COCKPIT_COPY.health}
+            target="health"
+          />
+          <StageAction
+            agent={agent}
+            current={stage}
             label={AGENT_COCKPIT_COPY.settings}
             target="settings"
           />

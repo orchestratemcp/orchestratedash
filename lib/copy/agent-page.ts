@@ -417,15 +417,11 @@ export function describeFeedDuration(fromIso: string, untilIso: string): string 
  * every string is a label and none of them is a sentence — the rule at the top
  * of this module, applied where it costs the most to break.
  *
- * ## The four-cell action grid has three cells today
+ * ## The action grid is the wireframe's four-cell square
  *
- * The wireframe's grid is *Trigger run · Health check · Settings · Logs*, and
- * three of those four are here. Health is a stage that aggregates five recorded
- * facts nothing in this repository computes yet (see `AGENT_STAGES`), and a
- * fourth button leading to an empty room is the dead control
- * `lib/workspace.ts` refuses. The grid is authored as a two-column grid whose
- * odd last cell spans both, so it reads as finished at three and becomes the
- * wireframe's square the day the fourth arrives.
+ * The wireframe's grid is *Trigger run · Health check · Settings · Logs*.
+ * Health joined only when MAR-645 supplied a real stage behind the cell; the
+ * two-column grid now reads as the intended square.
  */
 export const AGENT_COCKPIT_COPY = {
   /** The accessible name of the frame's action grid. */
@@ -444,6 +440,7 @@ export const AGENT_COCKPIT_COPY = {
    */
   trigger_run: "Trigger run",
   open_run: "Run",
+  health: "Health check",
   settings: "Settings",
   logs: "Logs",
   /**
@@ -519,6 +516,7 @@ export const AGENT_COCKPIT_COPY = {
   stage: {
     overview: "Overview",
     run: "Run",
+    health: "Health",
     output: "Output",
     chat: "Chat",
     settings: "Settings",

@@ -1,0 +1,61 @@
+[
+  {
+    "agent": "health-healthy",
+    "width": 1280,
+    "page_overflows": false,
+    "stage": "Health",
+    "outcomes": [
+      "pass",
+      "pass",
+      "pass",
+      "pass"
+    ],
+    "records": [
+      "Record read: agent registration + agent.manifest.json",
+      "Record read: imported manifest connection requirements",
+      "Record read: imported manifest planned route",
+      "Record read: run_events + imported manifest planned route"
+    ],
+    "linked_records": 4
+  },
+  {
+    "agent": "health-broken",
+    "width": 1280,
+    "page_overflows": false,
+    "stage": "Health",
+    "outcomes": [
+      "pass",
+      "fail",
+      "pass",
+      "pass"
+    ],
+    "records": [
+      "Record read: agent registration + agent.manifest.json",
+      "Record read: agent_dom.connection_requirements + broker grant receipt",
+      "Record read: imported manifest planned route",
+      "Record read: run_events + imported manifest planned route"
+    ],
+    "linked_records": 4
+  },
+  {
+    "agent": "health-deployed",
+    "width": 1280,
+    "page_overflows": false,
+    "stage": "Health",
+    "outcomes": [
+      "pass",
+      "pass",
+      "pass",
+      "warn",
+      "pass"
+    ],
+    "records": [
+      "Record read: agent registration + agent.manifest.json",
+      "Record read: imported manifest connection requirements",
+      "Record read: imported manifest planned route",
+      "Record read: agent_deploys + this window's host sighting",
+      "Record read: run_events + imported manifest planned route"
+    ],
+    "linked_records": 5
+  }
+]

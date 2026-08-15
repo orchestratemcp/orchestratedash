@@ -21,6 +21,7 @@ import {
 import { DeployToServer } from "../../_components/deploy";
 import { FolderUpdate } from "../../_components/folder-update";
 import { AgentControls, AgentCockpitHeader } from "../../_components/agent-header";
+import { AgentHealth } from "../../_components/agent-health";
 import { AgentRail } from "../../_components/agent-rail";
 import { AgentSettings } from "../../_components/agent-settings";
 import { AgentStageView } from "../../_components/agent-stage";
@@ -713,6 +714,18 @@ function AgentWorkspace(): ReactNode {
           selected={selectedInputs}
         />
       </>
+    ),
+
+    /* MAR-645. A read-only verdict over records already in the workspace view
+       plus ADR 0015's sightings held for this window. Mounting this stage does
+       not issue a command, contact a provider or probe a host. */
+    health: (
+      <AgentHealth
+        agent={view.agent}
+        health={view.health}
+        targets={view.deploy_targets}
+        title={view.title}
+      />
     ),
 
     /*

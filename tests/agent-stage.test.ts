@@ -30,12 +30,12 @@ describe("which part of an agent is on screen", () => {
   });
 
   it("sends an unknown stage to the overview rather than to an error", () => {
-    // A link from an older build, a typo, and the Health stage before it is
-    // built all arrive as a string this build does not know.
-    for (const unknown of ["health", "", "Overview", "runs", "../logs"]) {
+    // A link from an older build, a typo, and a future stage all arrive as a
+    // string this build does not know.
+    for (const unknown of ["", "Overview", "runs", "../logs", "history"]) {
       expect(resolveAgentStage(unknown, { running: false })).toBe("overview");
     }
-    expect(isAgentStage("health")).toBe(false);
+    expect(isAgentStage("health")).toBe(true);
     expect(isAgentStage(null)).toBe(false);
   });
 
@@ -89,14 +89,8 @@ describe("which part of an agent is on screen", () => {
     expect(resolveAgentStage("logs", { running: true, fragment: "waiting-work" })).toBe("logs");
   });
 
-  it("does not name a stage it cannot draw", () => {
-    /*
-     * The wireframe names seven and this build has six. Health is absent on
-     * purpose — it aggregates facts nothing computes yet — and this test is
-     * what stops it being added to the vocabulary before it has a view: a stage
-     * id that resolves to an empty room is a dead control wearing a URL.
-     */
-    expect(AGENT_STAGES).not.toContain("health");
+  it("names the Health stage only now that the page can draw it", () => {
+    expect(AGENT_STAGES).toContain("health");
     expect(AGENT_STAGES[0]).toBe("overview");
   });
 });
