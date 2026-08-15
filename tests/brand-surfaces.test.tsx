@@ -130,6 +130,7 @@ function row(name: string, avatar: OName): AgentRow {
     glance: [GLANCE_ALL_CLEAR],
     hosted_on: [],
     running: false,
+    favourite: false,
   };
 }
 

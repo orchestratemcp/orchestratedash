@@ -198,18 +198,32 @@ function dropUnset(args: Record<string, string | undefined>): Record<string, str
 }
 
 /**
- * The one command whose payload carries a boolean (MAR-588).
+ * The first of two commands whose payload carries a boolean (MAR-588,
+ * MAR-640).
  *
- * Its own function for `sendHostCreate`'s reason: `send` stays string-only, so
- * every other caller is constrained by its type rather than by convention, and
- * the single place a page can put a `true` on the command channel is one a
- * reviewer finds by name. Both fields are copied explicitly rather than spread.
+ * Its own function for `sendHostCreate`'s reason: `send` stays string-only,
+ * so every caller but this one and `sendFavourite` below is constrained by
+ * its type rather than by convention, and each place a page can put a `true`
+ * on the command channel is one a reviewer finds by name. Both fields are
+ * copied explicitly rather than spread.
  */
 function sendNotificationKind(kind: string, enabled: boolean): Promise<CommandResult> {
   return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
     command: "notify.setKind",
     request_id: requestId(),
     payload: { kind, enabled },
+  }) as Promise<CommandResult>;
+}
+
+/**
+ * The second (MAR-640). `sendNotificationKind`'s reason exactly, for a
+ * payload of one id and one boolean rather than two strings and a boolean.
+ */
+function sendFavourite(agentId: string, favourite: boolean): Promise<CommandResult> {
+  return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
+    command: "identity.favourite",
+    request_id: requestId(),
+    payload: { agent_id: agentId, favourite },
   }) as Promise<CommandResult>;
 }
 
@@ -607,6 +621,17 @@ const dashShell = {
    */
   renameAgent: (args: { agent_id: string; display_name?: string }) =>
     send("identity.rename", dropUnset(args)),
+
+  /**
+   * Star — or unstar — one agent, for the fleet rail's own filter (MAR-640).
+   *
+   * `renameAgent`'s sibling, and `favourite` is always sent — there is no
+   * absent state to preserve the way `display_name`'s omission preserves the
+   * manifest's own name. `sendFavourite` rather than `send`: the payload
+   * carries a boolean, which `send` cannot.
+   */
+  setAgentFavourite: (args: { agent_id: string; favourite: boolean }) =>
+    sendFavourite(args.agent_id, args.favourite),
 
   approve: (args: AgentCommandArgs) => send("agent.approve", fields(args, APPROVAL_FIELDS)),
   reject: (args: AgentCommandArgs) => send("agent.reject", fields(args, APPROVAL_FIELDS)),

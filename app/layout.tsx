@@ -4,6 +4,7 @@ import "./tokens.css";
 import "./globals.css";
 import { AppChrome } from "./_components/app-chrome";
 import { DensityScript } from "./_components/density-toggle";
+import { FleetFilterScript } from "./_components/fleet-rail";
 import { FleetStrip, FleetStripScript } from "./_components/fleet-strip";
 import { FleetViewScript } from "./_components/fleet-view-toggle";
 import { ThemeScript, ThemeSync } from "./_components/theme-toggle";
@@ -75,12 +76,19 @@ export default function RootLayout({
         */}
         <FleetViewScript />
         {/*
-          MAR-642, and the fourth script here for the third time for the same
-          reason — with the largest consequence of the four. Density, the strip
-          and the view each move things about; this one is the *palette*, so
-          without it somebody who chose light watches a dark DASH paint and
-          invert on every navigation. It is last because it is the newest, and
-          the four are independent: nothing here reads what another wrote.
+          MAR-640, and the fourth script here for the same reason: the rail's
+          filter removes cards from the document rather than repositioning
+          them, so without this the fleet would flash unfiltered on every
+          navigation before `FleetList`'s own lazy state corrected it.
+        */}
+        <FleetFilterScript />
+        {/*
+          MAR-642, and the fifth script here for the same reason — with the
+          largest consequence of the five. Density, the strip, the view and the
+          filter each move things about; this one is the *palette*, so without
+          it somebody who chose light watches a dark DASH paint and invert on
+          every navigation. It is last because it is the newest, and the five
+          are independent: nothing here reads what another wrote.
         */}
         <ThemeScript />
       </head>

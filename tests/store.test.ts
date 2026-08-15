@@ -19,11 +19,13 @@ const {
   listAgents,
   listRuns,
   pinHostFingerprint,
+  readAgentFavourites,
   readHost,
   readStore,
   renameAgent,
   resetStore,
   saveHost,
+  setAgentFavourite,
 } = await import("../lib/store");
 const { closeDb } = await import("../lib/db");
 
@@ -125,6 +127,28 @@ describe("agent rename (MAR-589)", () => {
   it("refuses an agent DASH has no record of", () => {
     const result = renameAgent("no-such-agent", "Anything");
     expect(result).toMatchObject({ ok: false });
+  });
+});
+
+describe("agent favourites (MAR-640)", () => {
+  const agentId = "email-lead-to-crm";
+
+  it("is not starred until somebody stars it", () => {
+    importManifest(manifest);
+    expect(readAgentFavourites().has(agentId)).toBe(false);
+  });
+
+  it("stars and unstars, and a second write replaces the first rather than duplicating it", () => {
+    importManifest(manifest);
+    setAgentFavourite(agentId, true);
+    expect(readAgentFavourites()).toEqual(new Set([agentId]));
+
+    setAgentFavourite(agentId, false);
+    expect(readAgentFavourites().has(agentId)).toBe(false);
+
+    setAgentFavourite(agentId, true);
+    setAgentFavourite(agentId, true);
+    expect(readAgentFavourites()).toEqual(new Set([agentId]));
   });
 });
 
