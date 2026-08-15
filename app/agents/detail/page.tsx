@@ -757,11 +757,15 @@ function AgentWorkspace(): ReactNode {
               it. Where an agent lives is a setting, and the Local/Cloud chip in
               the header clicks through to here.
 
-              This is not the deploy single-home move. That decision — whether
-              the Servers page stops offering "Put an agent here" and links here
-              instead — is Henrik's and is open, so `app/settings/servers` is
-              untouched and nothing on this stage claims to be the only way to
-              deploy. */}
+              Henrik decided deploy single-home on 2026-08-15: push to cloud and
+              bring home live *only* here. The other half of that decision —
+              the Servers page's card losing its "Put an agent here" panel and
+              linking into this stage instead — is scoped to MAR-642, so
+              `app/settings/servers` is untouched by this packet. Nothing here
+              says out loud that this is the only way to deploy, because until
+              MAR-642 lands it is not: a sentence claiming exclusivity while a
+              second door is still open is the kind of copy MAR-624 was filed
+              on. The component itself is unchanged. */}
           <DeployToServer
             agent={view.agent}
             title={view.title}
