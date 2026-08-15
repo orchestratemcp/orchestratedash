@@ -1348,22 +1348,28 @@ code {
 
 .row-list.fleet-grid {
   /*
-   * `auto-fill` and a fixed track, not `1fr`. Two agents on a three-column
-   * pattern were stretching to eat the row; a length track stays one card
-   * wide however many are in the fleet. `auto-fill` (not `auto-fit`) keeps
-   * the empty columns so leftover width stays air rather than being poured
-   * into the two cards that exist.
+   * `auto-fill` and a length track, not `1fr`. Two agents on a stretching
+   * pattern were eating the row; a length track stays one card wide however
+   * many are in the fleet. `auto-fill` (not `auto-fit`) keeps the empty
+   * columns so leftover width stays air rather than being poured into the
+   * cards that exist.
    *
-   * MAR-590: `min(var(--fleet-card), 100%)` keeps the floor everywhere it
-   * fits and only gives way to the container below that, so a 375px window
-   * does not scroll sideways.
+   * MAR-590: `min(…, 100%)` keeps the floor everywhere it fits and only
+   * gives way to the container below that, so a 375px window does not
+   * scroll sideways.
    *
-   * `max-width` of three tracks is the size pattern: a wider window does not
-   * grow a fourth column.
+   * MAR-639 drops the three-track `max-width` cap MAR-634 explains below:
+   * the cap was a layout consequence nobody asked for, and Henrik's own ask
+   * is more cards per row, not fewer. `auto-fill` already stops growing a
+   * column once the container runs out of room for one more track, so
+   * removing the cap does not remove a floor — it removes the ceiling.
    */
   --fleet-gap: calc(var(--density-gap) * 1.5);
   /*
-   * 14rem, and the number is arithmetic rather than taste (MAR-634).
+   * 14rem, and the number is arithmetic rather than taste (MAR-634). It now
+   * bounds the grid's *row height* only — see the desktop block below — and
+   * is unrelated to the column track, which MAR-639 sizes on its own terms
+   * immediately below.
    *
    * MAR-630 asked for three across and set this to 16rem, and three 16rem
    * cards have never once fitted: at 1280 the stage is the window less the
@@ -1379,10 +1385,27 @@ code {
    */
   --fleet-card: 14rem;
   height: 100%;
-  max-width: calc(3 * var(--fleet-card) + 2 * var(--fleet-gap));
+  /*
+   * MAR-639: a 9rem floor and a 10.5rem ceiling — measured, not the first
+   * numbers this rule shipped with. The first draft asked for
+   * `minmax(min(12.5rem, 100%), 15rem)`, on the assumption that `auto-fill`
+   * counts tracks against the *floor*. It does not: `auto-fill`'s repetition
+   * count is computed against a track's **max** sizing function whenever
+   * that max is a definite length, the same way `--fleet-card`'s own 14rem
+   * (`--fleet-card`, above) is definite and countable — `min(…, 100%)` only
+   * ever narrows the *floor*, so the ceiling is what decided the count all
+   * along. `electron/capture-fleet-views.ts` reported the resolved track at
+   * 1280: two 240px columns in a 736px pane, the same "half of three" shape
+   * MAR-634's own header describes for its 16rem mistake.
+   *
+   * 10.5rem (168px) is four columns' worth of that same 736px pane with room
+   * to spare: `4 * 168 + 3 * 18 = 726`. A wider window earns a fifth the same
+   * way `auto-fill` always has, with no breakpoint written down for either
+   * number.
+   */
   grid-template-columns: repeat(
     auto-fill,
-    minmax(min(var(--fleet-card), 100%), var(--fleet-card))
+    minmax(min(9rem, 100%), 10.5rem)
   );
   grid-auto-rows: auto;
   justify-content: start;
@@ -1408,11 +1431,30 @@ code {
   min-height: 0;
   padding: var(--space-2);
   gap: var(--space-2);
+  /*
+   * MAR-639. The positioned ancestor `.fleet-card-link` stretches over —
+   * `position: relative` costs nothing else here, since nothing in this
+   * card was relying on the static default.
+   */
+  position: relative;
 }
 
 .fleet-card.is-selected {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
+}
+
+/*
+ * MAR-639. The hover affordance for the whole-card link: the card's own
+ * border, on the same `--line-strong` idiom `.sidebar-link:hover` and
+ * `.density-toggle:hover` already use for "reachable, not yet chosen" —
+ * `--accent` stays reserved for `.is-selected`, which is a different claim.
+ * `:focus-within` covers the keyboard path, since the stretched link and the
+ * pick button are what actually receive focus, not the card.
+ */
+.fleet-card:hover,
+.fleet-card:focus-within {
+  border-color: var(--line-strong);
 }
 
 .fleet-marks {
@@ -1460,13 +1502,30 @@ code {
   font: inherit;
   text-align: center;
   cursor: pointer;
+  /*
+   * MAR-639. Above `.fleet-card-link`'s stretch so a press on the portrait or
+   * the name still selects the card rather than falling through to the
+   * whole-card link underneath it. `position: relative` is what makes the
+   * `z-index` apply at all — an unpositioned element ignores it.
+   */
+  position: relative;
+  z-index: 1;
 }
 
-.fleet-card > .open-agent {
-  width: 100%;
-  padding: var(--space-2);
-  font-size: var(--text-sm);
-  text-align: center;
+/*
+ * MAR-639. The whole-card way in: a real anchor stretched over everything
+ * with no visible box of its own, so a press anywhere on the card that is
+ * not `.fleet-pick` opens the agent. `.fleet-pick`'s own `z-index: 1` above
+ * is what keeps this from swallowing the selection press.
+ */
+.fleet-card-link {
+  position: absolute;
+  inset: 0;
+}
+
+.fleet-card-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /*
@@ -1476,8 +1535,13 @@ code {
  * is the part of it worth taking: it separates recognition from the reading
  * matter — which now lives on the chief, not under the sprite.
  *
- * `--accent-bg` rather than the concept's purple: `app/tokens.css` is the
- * palette, and a colour introduced for one tile would be a second brand.
+ * MAR-639: tinted by the card's own status rather than one fixed colour. The
+ * base rule below is the neutral tone — `completed` and never-run both read
+ * as "nothing to ask about" and neither earns a modifier class — and
+ * `.fleet-portrait-warn` / `.fleet-portrait-accent` override it for the other
+ * two, on the same scale `lib/copy/glance.ts` states for its chips.
+ * `app/tokens.css` is the palette either way: no colour here is introduced
+ * for this one tile.
  */
 .fleet-portrait {
   display: flex;
@@ -1488,9 +1552,9 @@ code {
   justify-content: center;
   padding: 0;
   margin: 0;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: var(--radius-sm);
-  background: var(--accent-bg);
+  background: var(--surface-2);
   /*
    * 100px is 2× the 50px source. A sprite may be cropped; it may not
    * be resampled to fit (that is `image-rendering: pixelated`'s whole argument)
@@ -1498,6 +1562,36 @@ code {
    * harness fails a frame for.
    */
   overflow: hidden;
+}
+
+.fleet-portrait-warn {
+  border-color: var(--warn);
+  background: var(--warn-bg);
+}
+
+.fleet-portrait-accent {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+/*
+ * The status mark, the last-run line and the name, stacked under the
+ * portrait and reading as one cluster with it (MAR-639) — colour on the
+ * portrait, icon and word right beneath it. Centred here for the grid and
+ * spotlight tracks; `[data-fleet-view="rows"]` below moves it beside the
+ * portrait instead.
+ */
+.fleet-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  min-width: 0;
+}
+
+.fleet-last-run {
+  font-size: var(--text-xs);
 }
 
 /*
@@ -1509,7 +1603,6 @@ code {
  */
 .fleet-name {
   flex: none;
-  margin-top: var(--space-2);
   font-size: var(--text-sm);
   font-weight: 600;
   overflow-wrap: anywhere;
@@ -1558,14 +1651,20 @@ code {
   height: 100px;
 }
 
-[data-fleet-view="rows"] .fleet-name {
+/*
+ * MAR-639. The identity stack sits beside the portrait rather than under it
+ * in this view, so it is left-aligned rather than centred and carries no top
+ * margin of its own — `.fleet-pick`'s own `gap` between the portrait and this
+ * stack already gives it room.
+ */
+[data-fleet-view="rows"] .fleet-identity {
+  align-items: flex-start;
   margin-top: 0;
-  font-size: var(--text-base);
+  text-align: start;
 }
 
-[data-fleet-view="rows"] .fleet-card > .open-agent {
-  width: auto;
-  align-self: start;
+[data-fleet-view="rows"] .fleet-name {
+  font-size: var(--text-base);
 }
 
 /*
@@ -1627,7 +1726,18 @@ code {
      scroller's own box. */
   padding-block: var(--space-4);
   perspective: 1200px;
-  scrollbar-width: thin;
+  /*
+   * MAR-639: the raw scroll container's own bar is hidden. The two step
+   * buttons and the scroll-snap keyboard/wheel/touch paths are what carry
+   * this track's affordance now; a native scrollbar drawn under a set of
+   * turned, perspective cards read as a rendering artefact rather than a
+   * control.
+   */
+  scrollbar-width: none;
+}
+
+[data-fleet-view="spotlight"] .row-list.fleet-grid::-webkit-scrollbar {
+  display: none;
 }
 
 [data-fleet-view="spotlight"] .row-list.fleet-grid > li {
@@ -1656,17 +1766,24 @@ code {
  * DASH's tone scale is spent, and every chip on a turned card keeps its colour.
  */
 [data-fleet-view="spotlight"] .row-list.fleet-grid > li.is-before {
-  transform: rotateY(14deg) scale(0.94);
+  transform: rotateY(14deg) scale(0.9);
   opacity: 0.68;
 }
 
 [data-fleet-view="spotlight"] .row-list.fleet-grid > li.is-after {
-  transform: rotateY(-14deg) scale(0.94);
+  transform: rotateY(-14deg) scale(0.9);
   opacity: 0.68;
 }
 
+/*
+ * MAR-639: the centred card grows rather than merely losing its neighbours'
+ * turn and dimming. `scale(1.05)` beside the neighbours' `0.9` is what makes
+ * the card the reader is looking at visibly larger than the two either side
+ * of it, independent of the track's own width — which is the property the
+ * clamp() below gives up at a narrow window and this rule holds regardless.
+ */
 [data-fleet-view="spotlight"] .row-list.fleet-grid > li.is-centred {
-  transform: none;
+  transform: scale(1.05);
   opacity: 1;
 }
 
@@ -1806,40 +1923,15 @@ code {
   }
 
   /*
-   * Rows: the action moves up beside the band instead of sitting under it.
-   *
-   * Henrik's size pattern for this view is *three agents on one screen*, and
-   * that is arithmetic before it is taste: three rows and two gaps inside a
-   * 471px pane leaves 145px a row. A band of portrait-beside-name is 140px
-   * with the button on the right and 182px with it underneath, so the button's
-   * position is the whole difference between the stated count and a pane that
-   * scrolls at three agents.
-   *
-   * Two columns and two rows, declared on the card itself, because the card's
-   * markup is one flat list of children — `app/_components/fleet-card.tsx` —
-   * and grid is how a flat list is arranged without a wrapper element that
-   * exists only in one view. Nothing is added, removed or reworded: the marks,
-   * the portrait, the name and the button are the same four things the grid
-   * draws, on a different track. That is `lib/views/fleet-view.ts`'s rule.
-   *
-   * Under 901px the rule below does not apply, the card is the grid's card,
-   * and a 375px row is untouched by any of this.
+   * MAR-639 removes what stood here: a `display: grid` override on the card
+   * itself, declared so the row's Open button could sit beside the band
+   * instead of under it — the whole difference, by Henrik's own three-rows
+   * arithmetic, between the stated count and a pane that scrolled at three
+   * agents. The button is gone, replaced by the whole-card link, and with it
+   * the reason for the override: the card's base rule is already
+   * `flex-direction: column`, which stacks `.fleet-marks` above `.fleet-pick`
+   * exactly as the grid version did, on one fewer rule.
    */
-  [data-fleet-view="rows"] .fleet-card {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-  }
-
-  [data-fleet-view="rows"] .fleet-marks {
-    grid-column: 1 / -1;
-  }
-
-  [data-fleet-view="rows"] .fleet-card > .open-agent {
-    grid-column: 2;
-    grid-row: 2;
-    align-self: center;
-  }
 
   /*
    * Spotlight lays its cards along one row, so its column is what has to
@@ -1861,9 +1953,30 @@ code {
    * block because the spotlight's own `minmax(0, 1fr)` is more specific and
    * would otherwise win — a thing to state outright rather than leave to the
    * order of the file.
+   *
+   * MAR-639 replaces the fixed 13rem with `clamp(13rem, 16vw, 20rem)` — and
+   * the floor is the *old* fixed value on purpose, not a smaller number. A
+   * fixed track is a fixed *CSS-pixel* size regardless of the operating
+   * system's own UI scale; lowering that scale (Electron's `zoomFactor`,
+   * the same one `FleetList`'s capture pins to 1) reports a *wider* window
+   * in CSS pixels for the same physical screen — the comment on `run()`
+   * below already measured this once, at 1.2 giving 1066px against a
+   * 1280px physical size — so a fixed-px card renders at fewer physical
+   * pixels as the scale drops, and the stage around it visibly does not.
+   * `16vw` grows with that reported width, so the card grows back as the
+   * scale that shrank it drops.
+   *
+   * At 1280 and 100% scale — the only case `electron/capture-fleet-views.ts`
+   * can actually render, since it pins `zoomFactor` to 1 — `16vw` resolves
+   * to 204.8px, under the 208px floor, so the clamp floors to exactly the
+   * old fixed value and MAR-630's three-across claim is unchanged pixel for
+   * pixel. The growth only shows up at a scale this harness cannot set: at
+   * 80% (reporting 1600px wide) `16vw` resolves to 256px, and at 90%
+   * (1422px) to 227.5px. 20rem bounds the far end the same way the 22rem
+   * row-height cap below already does, so neither grows without limit.
    */
   [data-fleet-view="spotlight"] .row-list.fleet-grid {
-    --fleet-spot: 13rem;
+    --fleet-spot: clamp(13rem, 16vw, 20rem);
     grid-auto-rows: minmax(min-content, 22rem);
     align-content: safe center;
   }

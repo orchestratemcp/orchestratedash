@@ -41,6 +41,7 @@ function agent(over: Partial<AgentRow> = {}): AgentRow {
     planned_steps: 3,
     automation_clearance: "ask first",
     run_count: 3,
+    last_run_at: "2026-08-13T09:00:00.000Z",
     origin: { kind: "sample", detail: null },
     compliance: { runs: 3, clean: 3, verdict: "clean", label: "3/3 clean", tone: "muted" },
     avatar: "ninja",
@@ -100,8 +101,13 @@ describe("the layout control", () => {
     }
   });
 
-  it("names the group, because three one-word options name nothing alone", () => {
-    expect(markup).toContain("<legend>");
+  it("names the group off screen, because three one-word options name nothing alone", () => {
+    /*
+     * MAR-639's text axe. The legend still exists for a screen reader —
+     * `<fieldset>` needs an accessible name — but is no longer visible text
+     * above three already-labelled, already-pictured options.
+     */
+    expect(markup).toContain('<legend class="visually-hidden">');
   });
 });
 

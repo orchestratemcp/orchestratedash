@@ -17,8 +17,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { CHIEF_NAME, CHIEF_WAITING, describeChief } from "../lib/copy/chief";
+import { CHIEF_NAME, CHIEF_WAITING, describeChief, describeFleetSummary } from "../lib/copy/chief";
 import { GLANCE_ALL_CLEAR, type GlanceChip } from "../lib/copy/glance";
+import type { FleetCardStatus } from "../lib/copy/fleet-status";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -138,13 +139,57 @@ describe("the chief picks one thing to say", () => {
     expect(describeChief({ agent: "a", runs: "Run once", glance })?.says).toBe("First.");
   });
 
-  it("says the all-clear chip when that is the only true thing", () => {
+  it("says a short 'All clear.' for the all-clear chip, with the whole sentence behind it", () => {
+    /*
+     * MAR-639. The chip's own sentence enumerates four answered "no"s — DASH
+     * showing its working about an agent with nothing to decide — and that is
+     * exactly the sentence `lib/copy/info-note.ts` argues moves behind a note:
+     * an absence, read once and never needed again. `says` carries the fact;
+     * `note` carries the working.
+     */
     const line = describeChief({
       agent: "news-scout",
       runs: "Not run yet",
       glance: [GLANCE_ALL_CLEAR],
     });
-    expect(line?.says).toBe(GLANCE_ALL_CLEAR.meaning);
+    expect(line?.says).toBe("All clear.");
+    expect(line?.note).toBe(GLANCE_ALL_CLEAR.meaning);
+  });
+
+  it("carries no note for a chip that names something waiting on the reader", () => {
+    // The four demands stay whole on `says`, per `splitGlance`'s own rule —
+    // `note` is exclusively the all-clear chip's field.
+    const line = describeChief({
+      agent: "news-scout",
+      runs: "Run once",
+      glance: [chip()],
+    });
+    expect(line?.note).toBeNull();
+  });
+});
+
+describe("the fleet summary, for when nothing is selected (MAR-639)", () => {
+  const S = (status: FleetCardStatus | null): FleetCardStatus | null => status;
+
+  it("counts what needs you and what is working, Henrik's own example", () => {
+    expect(
+      describeFleetSummary([S("needs_input"), S("needs_input"), S("working"), S("completed")]),
+    ).toBe("2 need you, 1 working.");
+  });
+
+  it("keeps the verb singular for exactly one", () => {
+    expect(describeFleetSummary([S("needs_input")])).toBe("1 needs you.");
+  });
+
+  it("says nothing needs you rather than an empty sentence when the fleet is calm", () => {
+    expect(describeFleetSummary([S("completed"), S(null)])).toBe("Nothing needs you right now.");
+  });
+
+  it("falls back to the waiting line for a fleet with nothing in it", () => {
+    // Not a state `FleetList` produces — `app/page.tsx` draws its own empty
+    // state before this band ever mounts — kept as the honest answer to a
+    // state that should not exist rather than deleted.
+    expect(describeFleetSummary([])).toBe(CHIEF_WAITING);
   });
 });
 

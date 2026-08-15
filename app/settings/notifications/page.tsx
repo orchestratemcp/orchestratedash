@@ -58,13 +58,10 @@ export default function NotificationsPage(): ReactNode {
         this page already says "Notifications" — an `<h1>` repeating it is the
         word the reader just pressed, said back to them. "Discord alerts" says
         what is actually configured here: one channel, and what DASH sends to
-        it, which is the whole subject of the lede below.
+        it. MAR-639 axes the lede that used to spell that out below the
+        heading; the settings themselves say it in the doing.
       */}
       <h1>Discord alerts</h1>
-      <p className="lede">
-        DASH can post to a Discord channel when one of your agents is waiting for
-        you, or has published a report.
-      </p>
       <HostNotice host={host} />
 
       {state.status === "loading" ? (

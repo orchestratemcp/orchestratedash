@@ -108,6 +108,7 @@ function row(name: string, avatar: OName): AgentRow {
     planned_steps: 1,
     automation_clearance: "manual",
     run_count: 0,
+    last_run_at: null,
     origin: { kind: "watched_only" },
     compliance: {
       runs_considered: 0,

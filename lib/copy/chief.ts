@@ -39,6 +39,7 @@
  */
 
 import type { GlanceChip } from "./glance";
+import type { FleetCardStatus } from "./fleet-status";
 
 export interface ChiefFacts {
   /** The agent in the middle, by the user's own name for it. */
@@ -62,9 +63,22 @@ export interface ChiefLine {
   agent: string;
   /**
    * The sentence. The most pressing thing true of this agent, in the words the
-   * surface that owns that fact already chose.
+   * surface that owns that fact already chose — except the all-clear case,
+   * where `says` is the fixed "All clear." and the chip's own sentence moves
+   * to `note` (MAR-639). See `note` below.
    */
   says: string;
+  /**
+   * The all-clear chip's full sentence, behind an `InfoNote`, or `null` for
+   * every other chip (MAR-639).
+   *
+   * `lib/copy/info-note.ts`'s `splitGlance` already makes this exact call for
+   * the card's own chips — an absence, read once and never needed again, is
+   * the one sentence in this vocabulary that moves. The four demands keep
+   * their whole sentence on `says` untouched, for `splitGlance`'s own reason:
+   * each one carries the part the chip's two words cannot.
+   */
+  note: string | null;
   /** The second line: DASH's record of whether this agent has ever worked. */
   runs: string;
   /**
@@ -104,16 +118,25 @@ export function describeChief(facts: ChiefFacts): ChiefLine | null {
   if (spoken === null) {
     return null;
   }
+  /*
+   * MAR-639. The one chip whose sentence is an absence rather than a demand —
+   * `lib/copy/info-note.ts`'s own distinction, applied here the way
+   * `splitGlance` already applies it to the card. "All clear." is the fact;
+   * the four answered "no"s behind it are documentation, not a decision this
+   * sentence position needs to carry every time a healthy agent is centred.
+   */
+  const isAllClear = spoken.question === "all_clear";
   return {
     agent: facts.agent,
     /*
-     * `meaning`, not `label`. The label is two or three words sized for a chip
-     * beside four others; the chief has one line and a reader looking at it
-     * rather than scanning a row, so it says the whole sentence — which is the
-     * same reason `GlanceChip.meaning` is rendered under the chips rather than
-     * hidden in a tooltip.
+     * `meaning`, not `label`, for every chip but this one. The label is two or
+     * three words sized for a chip beside four others; the chief has one line
+     * and a reader looking at it rather than scanning a row, so it says the
+     * whole sentence — which is the same reason `GlanceChip.meaning` is
+     * rendered under the chips rather than hidden in a tooltip.
      */
-    says: spoken.meaning,
+    says: isAllClear ? "All clear." : spoken.meaning,
+    note: isAllClear ? spoken.meaning : null,
     runs: facts.runs,
     action: `Ask ${facts.agent}`,
   };
@@ -137,14 +160,42 @@ function pickChip(glance: readonly GlanceChip[]): GlanceChip | null {
 }
 
 /**
- * What the band says when there is no agent to stand under.
- *
- * The spotlight is reachable with an empty fleet only for as long as it takes
- * the agents read to come back, and `app/page.tsx` draws its own empty state
- * below — so this is deliberately not a second "nothing here yet" with its own
- * advice. It says where the chief is and stops.
+ * What the band says when the fleet is empty — the one state that is not
+ * supposed to reach this band at all, since `app/page.tsx` draws its own
+ * "nothing here yet" before `FleetList` ever mounts. Kept as the fallback of
+ * last resort for `describeFleetSummary` below rather than deleted, on
+ * `describeChief`'s own rule for an agent with no chips: the honest answer to
+ * a state that should not exist is silence about *why*, not a guess.
  */
 export const CHIEF_WAITING = "The chief is waiting for an agent to talk about.";
+
+/**
+ * What the band says when nothing is selected, summarising the fleet instead
+ * of naming one agent (MAR-639).
+ *
+ * Henrik's own example, verbatim: *"2 need you, 1 working."* Built from the
+ * same per-card status every portrait is now tinted by
+ * (`lib/copy/fleet-status.ts`), so the two vocabularies cannot disagree about
+ * what "needs you" or "working" means — a second count derived a different
+ * way would be a second definition of both words.
+ *
+ * `statuses` is one entry per agent in the fleet, `null` for a card with none
+ * of the four statuses (a never-run agent with nothing waiting). Empty falls
+ * through to `CHIEF_WAITING`, which is this function's only invented string —
+ * every other sentence it returns is built from a count.
+ */
+export function describeFleetSummary(statuses: readonly (FleetCardStatus | null)[]): string {
+  if (statuses.length === 0) {
+    return CHIEF_WAITING;
+  }
+  const needsYou = statuses.filter((status) => status === "needs_input").length;
+  const working = statuses.filter((status) => status === "working").length;
+  const parts = [
+    needsYou === 0 ? null : needsYou === 1 ? "1 needs you" : `${String(needsYou)} need you`,
+    working === 0 ? null : `${String(working)} working`,
+  ].filter((part): part is string => part !== null);
+  return parts.length === 0 ? "Nothing needs you right now." : `${parts.join(", ")}.`;
+}
 
 /**
  * The chief's accessible name.
