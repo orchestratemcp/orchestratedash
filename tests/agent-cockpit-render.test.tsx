@@ -106,19 +106,13 @@ describe("the band that never scrolls", () => {
     expect(html).toContain("Cloud");
   });
 
-  it("offers three actions and no fourth that leads nowhere", () => {
+  it("offers the four actions, with Health leading to its stage", () => {
     const html = header();
     expect(html).toContain(AGENT_COCKPIT_COPY.trigger_run);
+    expect(html).toContain(AGENT_COCKPIT_COPY.health);
     expect(html).toContain(AGENT_COCKPIT_COPY.settings);
     expect(html).toContain(AGENT_COCKPIT_COPY.logs);
-    /*
-     * The wireframe's fourth cell is Health, which is a stage that aggregates
-     * facts nothing computes yet. A button for it would be a control that leads
-     * to an empty room — and this is the assertion that has to be deleted
-     * deliberately when the stage is built, rather than a hole nobody notices.
-     */
-    expect(html).not.toContain("Health");
-    expect(html).not.toContain("stage=health");
+    expect(html).toContain("stage=health");
   });
 
   it("promises to start a run only when there is one to start", () => {
@@ -167,6 +161,7 @@ describe("the band that never scrolls", () => {
     expectPlainLanguage([
       AGENT_COCKPIT_COPY.trigger_run,
       AGENT_COCKPIT_COPY.open_run,
+      AGENT_COCKPIT_COPY.health,
       AGENT_COCKPIT_COPY.settings,
       AGENT_COCKPIT_COPY.logs,
       AGENT_COCKPIT_COPY.refresh,

@@ -101,6 +101,7 @@ import {
   type StoreShape,
 } from "../store";
 import { buildAgentFeed, buildAgentTelemetry } from "./agent-feed";
+import { buildAgentHealth } from "./agent-health-build";
 import { buildArtifactCards, type ArtifactCardView } from "./artifacts";
 import { buildInputRoles } from "./inputs";
 import { buildPanelView, type PanelDashFacts, type PanelView } from "./panel";
@@ -1323,6 +1324,15 @@ export function workspaceView(
    * has a model.
    */
   const modelSettings = buildAgentModelSettings(agent, manifest as ModelSourceManifest);
+  const manifestGap = describeManifestGap(document);
+  const health = buildAgentHealth({
+    agent,
+    manifest: manifest as ConnectionSourceManifest,
+    manifest_gap: manifestGap,
+    models: modelSettings,
+    rows: connectionRowsFor(agent, manifest as ConnectionSourceManifest),
+    store,
+  });
 
   // Outside the snapshot, deliberately. The snapshot is what the *agent*
   // published about itself and is null until it has published anything; a digest
@@ -1383,6 +1393,9 @@ export function workspaceView(
     // because it reads the vault's reference table and the choice rows, and
     // because every sentence on it belongs to `lib/ai/model-choice.ts`.
     models: modelSettings,
+    // MAR-645. A projection of records already read or stored, with no probe
+    // and no provider call. The page draws it only on the Health stage.
+    health,
     // MAR-619, ADR 0016. What the Run press will spend, said where the press
     // is. Derived from the settings directly above rather than from a second
     // read of the same rows, so the sentence and the picker cannot end up
@@ -1416,7 +1429,7 @@ export function workspaceView(
     // actually has, and telling them their setup is stale on the strength of a
     // row that disagrees with it would be DASH reporting its own index back at
     // them as their agent.
-    manifest_gap: describeManifestGap(document),
+    manifest_gap: manifestGap,
     // MAR-577. The same fact the agents list carries, on the page where the
     // agent is already chosen — so its deploy section can refuse before it
     // offers a server rather than after somebody picks one.

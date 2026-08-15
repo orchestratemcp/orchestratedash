@@ -6478,15 +6478,7 @@ main:has(.agent-cockpit) {
   gap: var(--space-1);
 }
 
-/*
- * Three cells in a two-column grid, and the odd one out spans.
- *
- * The wireframe's grid is a square of four and the fourth is Health, which is
- * not built (see `AGENT_STAGES`). A three-cell grid with a hole in the corner
- * reads as something half-drawn; a third cell that spans reads as a decision.
- * When Health lands it becomes the square with no rule to remove — `:last-
- * child:nth-child(odd)` stops matching at four.
- */
+/* A future odd final cell spans; the current four actions form the square. */
 .cockpit-action-grid > :last-child:nth-child(odd) {
   grid-column: 1 / -1;
 }
@@ -6539,6 +6531,68 @@ main:has(.agent-cockpit) {
   border-color: var(--accent);
   color: var(--accent);
   box-shadow: inset var(--active-bar) 0 0 0 var(--accent);
+}
+
+.agent-health {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.health-heading {
+  align-items: start;
+}
+
+.health-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.health-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.health-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.health-line.is-pass {
+  border-left: var(--active-bar) solid var(--ok);
+}
+
+.health-line.is-warn {
+  border-left: var(--active-bar) solid var(--warn);
+}
+
+.health-line.is-fail {
+  border-left: var(--active-bar) solid var(--err);
+}
+
+.health-line-body {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.health-line-body > * {
+  margin: 0;
+}
+
+.health-record {
+  color: var(--muted);
+  font-size: var(--text-sm);
 }
 
 .cockpit-overflow {
