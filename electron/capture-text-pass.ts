@@ -112,7 +112,25 @@ const PAGES = [
   { name: "add-agent", path: "/settings/add-agent" },
   { name: "notifications", path: "/settings/notifications" },
   { name: "preferences", path: "/settings/preferences" },
+  /*
+   * MAR-641. Six entries where there was one, because the agent page is six
+   * views now.
+   *
+   * This harness measures how much text a surface spends. After the cockpit
+   * landed, the single route sees a sixth of the agent page's copy — which
+   * would not have failed anything. It would have reported a text-removal pass
+   * that had gone brilliantly, and that is the worst way for a measurement to
+   * be wrong.
+   */
   { name: "agent", path: `/agents/detail?agent=${encodeURIComponent(AGENT)}` },
+  { name: "agent-run", path: `/agents/detail?agent=${encodeURIComponent(AGENT)}&stage=run` },
+  { name: "agent-output", path: `/agents/detail?agent=${encodeURIComponent(AGENT)}&stage=output` },
+  { name: "agent-chat", path: `/agents/detail?agent=${encodeURIComponent(AGENT)}&stage=chat` },
+  {
+    name: "agent-settings",
+    path: `/agents/detail?agent=${encodeURIComponent(AGENT)}&stage=settings`,
+  },
+  { name: "agent-logs", path: `/agents/detail?agent=${encodeURIComponent(AGENT)}&stage=logs` },
 ] as const;
 
 function example(name: string): Record<string, unknown> {

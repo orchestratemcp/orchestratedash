@@ -711,10 +711,23 @@ interface Surface {
 
 function surfaces(): Surface[] {
   const agentRoute = (agent: string): string => `/agents/detail?agent=${encodeURIComponent(agent)}`;
+  /*
+   * MAR-641. Every part of an agent is a route now, which is the whole reason
+   * the stage is in the address: a harness photographs a *route*, and a stage
+   * held in React state would be a stage reachable only by a harness that
+   * learned to click — and MAR-577's density note records what becomes of a
+   * harness that clicks, which is that it mislabels half its images.
+   *
+   * Two frames below stopped needing a `prepare` step because of it. The
+   * settings drawer was a button press and the record was a `<details>` set
+   * open through injected script; both are addresses now.
+   */
+  const agentStage = (agent: string, stage: string): string =>
+    `${agentRoute(agent)}&stage=${stage}`;
   const list: Surface[] = [
     {
       name: "agent-deploy",
-      route: agentRoute(SENDABLE),
+      route: agentStage(SENDABLE, "settings"),
       focus: ".deploy-section",
     },
     /*
@@ -735,32 +748,54 @@ function surfaces(): Surface[] {
      * has to press to see, and the record everything else folded into.
      */
     {
+      name: "agent-cockpit",
+      route: agentRoute(SENDABLE),
+      /*
+       * MAR-641. The frame itself, at the address a link to an agent uses —
+       * so this frame is also the proof that `resolveAgentStage` lands
+       * somewhere. The subject is the band that never scrolls: the portrait,
+       * the name, the status, where it lives and the action grid.
+       */
+      focus: ".cockpit-header",
+    },
+    {
       name: "agent-overview",
       route: agentRoute(SENDABLE),
-      // The header rather than the body: this frame is the answer to "you get
-      // no overview", so its subject is the block that now carries the name,
-      // the status, the controls and the four tiles.
-      focus: ".agent-header",
+      /*
+       * The landing stage of an agent that has never run, which under MAR-609's
+       * rule is a guided checklist rather than a column of empty sections. This
+       * is the state every new user meets and the reason the scene uses
+       * `SENDABLE`, an agent imported with a manifest and a folder that has
+       * never been started.
+       */
+      focus: "#agent-checklist-heading",
+    },
+    {
+      name: "agent-rail",
+      route: agentRoute(SENDABLE),
+      // The rail is the other half of the frame and it is the half that is
+      // empty here: no outputs, nothing waiting. Photographed on purpose —
+      // an empty index is a state a person meets before any other.
+      focus: ".cockpit-rail",
     },
     {
       name: "agent-feed",
-      route: agentRoute(SENDABLE),
+      route: agentStage(SENDABLE, "run"),
       /*
-       * MAR-635. The empty feed is the new first content, and it is the
-       * state every new user meets. Focused on the heading so a 375px
-       * section-scoped scroll cannot file a photograph of something else
-       * under this name — MAR-591's travel-notice lesson.
+       * MAR-635. The empty feed, now on the Run stage. Focused on the heading
+       * so a 375px section-scoped scroll cannot file a photograph of something
+       * else under this name — MAR-591's travel-notice lesson.
        */
       focus: "#live-feed-heading",
     },
     {
       name: "agent-commands",
-      route: agentRoute(SENDABLE),
+      route: agentStage(SENDABLE, "run"),
       focus: "#agent-commands-heading",
     },
     {
       name: "agent-empty-outputs",
-      route: agentRoute(SENDABLE),
+      route: agentStage(SENDABLE, "output"),
       /*
        * Focused on the heading rather than the section, for the reason
        * MAR-591's `.travel-notice` frames record: at 375px a section-scoped
@@ -771,42 +806,33 @@ function surfaces(): Surface[] {
       focus: "#outputs-heading",
     },
     {
+      name: "agent-chat",
+      route: agentStage(SENDABLE, "chat"),
+      // The thread and the bar under it are one feature in two bands of the
+      // window now, and this is the frame that shows whether they read as one.
+      focus: "#ask-agent",
+    },
+    {
       name: "agent-settings",
-      route: agentRoute(SENDABLE),
-      // Pressed, not URL-forced. The drawer is `useState` in the page and there
-      // is no route to it, so a harness that could not click the button could
-      // not photograph the feature — which makes the frame a check that the
-      // button works as well as a picture of what it opens.
-      prepare: async (target) => {
-        await clickByText(target, "Settings");
-      },
+      route: agentStage(SENDABLE, "settings"),
       focus: ".agent-settings",
     },
     {
       name: "agent-record",
-      route: agentRoute(SENDABLE),
+      route: agentStage(SENDABLE, "logs"),
       /*
-       * The disclosure opened, because a closed `<details>` photographs as one
-       * grey line and would prove only that the summary exists. What is being
-       * checked is that everything MAR-609 folded away is still *there* — the
-       * permission receipt and the whole workspace record — which is the claim
-       * that this was a move rather than a deletion.
+       * What MAR-609 folded behind a disclosure and MAR-641 un-buried. The
+       * claim being checked is still that it was a move rather than a deletion
+       * — the permission receipt and the whole workspace record are here — and
+       * it no longer needs a `<details>` opened through injected script to see
+       * it, because the record has an address.
        *
-       * `open` is set directly rather than clicked: `<summary>` is not a
-       * `<button>`, so `clickByText` cannot reach it, and setting the property
-       * is what the element's own click does.
+       * The stage rather than the receipt inside it: this scene's agent
+       * declares no permissions, so `#permission-receipt` renders nothing and a
+       * focus on it would scroll to something that is not there. What is being
+       * photographed is the whole record either way.
        */
-      prepare: async (target) => {
-        await target.webContents.executeJavaScript(
-          `(() => {
-             const box = document.querySelector("details.agent-record");
-             if (box !== null) box.open = true;
-             return box !== null;
-           })()`,
-        );
-        await settle(300);
-      },
-      focus: ".agent-record",
+      focus: ".cockpit-stage",
     },
   ];
   if (SCENE === "one-server") {
@@ -819,7 +845,7 @@ function surfaces(): Surface[] {
      */
     list.push({
       name: "agent-refused",
-      route: agentRoute(MIGRATED),
+      route: agentStage(MIGRATED, "settings"),
       focus: ".deploy-section",
     });
     list.push({
@@ -857,12 +883,12 @@ function surfaces(): Surface[] {
      */
     list.push({
       name: "agent-warned",
-      route: agentRoute(STRANDED),
+      route: agentStage(STRANDED, "settings"),
       focus: ".travel-notice",
     });
     list.push({
       name: "agent-blocked",
-      route: agentRoute(BLOCKED),
+      route: agentStage(BLOCKED, "settings"),
       focus: ".travel-notice",
     });
     list.push({

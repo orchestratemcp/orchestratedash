@@ -46,6 +46,7 @@ export function OutputsPanel({
   heading,
   emptyState,
   history = false,
+  openId,
   onDownload,
   runHref,
 }: {
@@ -72,6 +73,15 @@ export function OutputsPanel({
   emptyState?: { headline: string; detail: string };
   /** Collapse every card after the newest when this list spans runs. */
   history?: boolean;
+  /**
+   * Which output is drawn in full, or absent for the newest (MAR-641).
+   *
+   * Only meaningful with `history`, and passed straight through to the wrapper
+   * that owns the decision. The panel does not read it: which card is open is a
+   * property of the *list*, and a second opinion here is how the summary and
+   * the body come to disagree about which output somebody is looking at.
+   */
+  openId?: string | null;
   /**
    * Save a copy of one output, or absent (MAR-434).
    *
@@ -120,6 +130,7 @@ export function OutputsPanel({
         <OutputHistory
           cards={cards}
           collapsed={history}
+          openId={openId}
           renderCard={(card, index) => (
             <OutputCard
               card={card}

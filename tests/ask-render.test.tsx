@@ -18,7 +18,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { AskAgent } from "../app/_components/ask";
+import { AskComposer, AskThread } from "../app/_components/ask";
 import {
   ASK_CUSTODY,
   ASK_HEADING,
@@ -120,14 +120,32 @@ function blocked(reason: Parameters<typeof describeUnavailable>[0], withConnect:
   };
 }
 
+/**
+ * The thread with its composer inside it — one section, as every surface but
+ * the cockpit draws it.
+ *
+ * MAR-641 split `AskAgent` into these two so the cockpit could put the thread
+ * on a stage and pin the box to the bottom of the frame. The composition is
+ * what this file has always been about, and rendering it here rather than
+ * through a wrapper is what keeps the wrapper from existing solely to be
+ * tested. Every assertion below is unchanged, including the ordering one: the
+ * estimate is the last thing in the thread, so it is still above the box.
+ */
 function draw(ask: AgentAskView, canAct = true): string {
   return renderToStaticMarkup(
-    <AskAgent
+    <AskThread
       ask={ask}
       canAct={canAct}
       onAsked={() => undefined}
       setFeedback={() => undefined}
-    />,
+    >
+      <AskComposer
+        ask={ask}
+        canAct={canAct}
+        onAsked={() => undefined}
+        setFeedback={() => undefined}
+      />
+    </AskThread>,
   );
 }
 

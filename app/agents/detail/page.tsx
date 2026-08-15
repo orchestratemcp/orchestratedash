@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Suspense,
   useEffect,
@@ -20,11 +20,13 @@ import {
    than the next person following it. */
 import { DeployToServer } from "../../_components/deploy";
 import { FolderUpdate } from "../../_components/folder-update";
-import { AgentControls, AgentHeader } from "../../_components/agent-header";
+import { AgentControls, AgentCockpitHeader } from "../../_components/agent-header";
+import { AgentRail } from "../../_components/agent-rail";
 import { AgentSettings } from "../../_components/agent-settings";
+import { AgentStageView } from "../../_components/agent-stage";
 import { AgentTelemetry } from "../../_components/agent-telemetry";
 import { AgentTiles, type AgentTile } from "../../_components/agent-tiles";
-import { AskAgent } from "../../_components/ask";
+import { AgentChatBar, AskThread } from "../../_components/ask";
 import { LiveFeed } from "../../_components/live-feed";
 import { ModelChoice } from "../../_components/model-choice";
 import { InputsPanel, type SelectedInput } from "../../_components/inputs";
@@ -33,11 +35,12 @@ import { AgentPanel } from "../../_components/panel";
 import { RemoveAgent } from "../../_components/remove-agent";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import { WorkingLine } from "../../_components/working";
-import { AGENT_WORKSPACE_PARAMS, runDetailHref } from "../../_data/routes";
+import { AGENT_WORKSPACE_PARAMS, agentStageHref, runDetailHref } from "../../_data/routes";
 import {
   downloadOutput,
   markAgentLooked,
   refreshSampleAgent,
+  revealAgentFolder,
   submitAgentCommand,
   submitHostCommand,
   submitWorkspaceCommand,
@@ -47,6 +50,7 @@ import { useCanAct, useHost, useLiveView } from "../../_data/use-view";
 import type { GroundingAnalysis } from "../../../lib/analyze";
 import type { PermissionGrant } from "../../../lib/contracts";
 import {
+  AGENT_COCKPIT_COPY,
   AGENT_OUTPUTS_COPY,
   AGENT_TILE_COPY,
 } from "../../../lib/copy/agent-page";
@@ -62,7 +66,13 @@ import { describeRunOnHost, describeRunTarget } from "../../../lib/copy/where-it
 /* A type, so it erases — `lib/sample-refresh.ts` reaches `agent-kit/scaffold.ts`
    and must never arrive in this bundle as a value. See tests/client-bundle. */
 import type { ManifestGapView } from "../../../lib/sample-refresh";
+import {
+  buildAgentChecklist,
+  isEmptyAgent,
+  type AgentChecklistStep,
+} from "../../../lib/views/agent-checklist";
 import { buildAgentControl } from "../../../lib/views/agent-control";
+import { resolveAgentStage, type AgentStage } from "../../../lib/views/agent-stage";
 import type { InputRoleView } from "../../../lib/views/inputs";
 import type { ArtifactCardView } from "../../../lib/views/artifacts";
 import type { InboxItem } from "../../../lib/workspace";
@@ -85,22 +95,13 @@ export default function AgentWorkspacePage(): ReactNode {
 
 function AgentWorkspace(): ReactNode {
   const params = useSearchParams();
+  const router = useRouter();
   const agent = params.get(AGENT_WORKSPACE_PARAMS.agent) ?? "";
   const [refreshKey, setRefreshKey] = useState(0);
   const [pending, setPending] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<CommandFeedback>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [live, setLive] = useState(false);
-  /*
-   * MAR-609. Closed by default, and deliberately not remembered.
-   *
-   * The settings a person changes here — which model, the folder, removing the
-   * agent — are changed once and then not looked at, so the state that serves
-   * the common visit is closed. A remembered drawer would mean the page a
-   * person opens to read the news has a removal button on it because they
-   * changed a model setting last week.
-   */
-  const [settingsOpen, setSettingsOpen] = useState(false);
   /*
    * MAR-507. The task and what has been put in it, held here rather than on the
    * view, because neither is a fact DASH's store holds: the runner owns the task
@@ -174,11 +175,50 @@ function AgentWorkspace(): ReactNode {
    * that exists only when there is something in it.
    */
   const ready = state.status === "ready";
+  /*
+   * MAR-641 added `stage` to the dependencies, and it is the fragment's second
+   * hurdle rather than a tidy-up. The cockpit's rail links to
+   * `?stage=overview#work-…`, which for somebody already on the Overview stage
+   * is a *fragment-only* navigation: the view has long since arrived, `ready`
+   * has not changed, and without a dependency that moves, this effect would
+   * never run again. A stage change is the one thing that reliably differs
+   * between "the same page" and "the page I have just asked to be taken into".
+   */
+  const stageParam = params.get(AGENT_WORKSPACE_PARAMS.stage);
+  /*
+   * The fragment, in state, because the stage depends on it (MAR-641).
+   *
+   * It cannot be read during render: `window` does not exist while this page is
+   * prerendered, and a value read straight off the browser would also never
+   * re-render when it changed. The lazy initialiser is safe because nothing
+   * that reads this is on screen at hydration — the page draws `ViewLoading`
+   * until its view arrives over IPC, which is well after.
+   *
+   * Re-read on a route change (a fleet chip arriving from another page) and on
+   * `hashchange` (an anchor pressed on this one). See `resolveAgentStage` for
+   * why the fragment outranks a live run.
+   */
+  const [fragment, setFragment] = useState(() =>
+    typeof window === "undefined" ? "" : window.location.hash.slice(1),
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const read = (): void => {
+      setFragment(window.location.hash.slice(1));
+    };
+    read();
+    window.addEventListener("hashchange", read);
+    return () => {
+      window.removeEventListener("hashchange", read);
+    };
+  }, [agent, stageParam]);
+
   useEffect(() => {
     if (!ready || typeof window === "undefined") {
       return;
     }
-    const fragment = window.location.hash.slice(1);
     if (fragment === "") {
       return;
     }
@@ -190,7 +230,7 @@ function AgentWorkspace(): ReactNode {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [ready, agent]);
+  }, [ready, agent, stageParam, fragment]);
 
   async function issue(
     key: string,
@@ -383,6 +423,60 @@ function AgentWorkspace(): ReactNode {
     }
   }
 
+  /**
+   * Put a different part of this agent on the stage (MAR-641).
+   *
+   * `push` and not `replace`, so Back returns to the view somebody was on. That
+   * is the whole reason the stage is in the address rather than in state — see
+   * `lib/views/agent-stage.ts` — and a replace here would have quietly given it
+   * up while keeping the URL that advertises it.
+   *
+   * **This is the first `useRouter` in DASH, and it is the machinery every link
+   * here already uses.** `next/link` renders an anchor and calls this same
+   * router on click; the fleet cards reach this page, query string and all,
+   * through it, in the packaged shell over `dash-app://`. So the risk worth
+   * naming is not whether it navigates — it is that a *button* has no `href` to
+   * fall back on if the script that binds it never runs. Both call sites are
+   * covered: the action grid's Settings and Logs cells are real links, the chat
+   * bar's blocked state is a real link, and this is reached only from the two
+   * controls that must be buttons because they also *act*.
+   */
+  function goToStage(next: AgentStage, options: { output?: string } = {}): void {
+    router.push(agentStageHref(agent, next, options));
+  }
+
+  /**
+   * Open this agent's folder in the operating system's own file window
+   * (MAR-584's `folder.reveal`, reached from MAR-641's overflow menu).
+   *
+   * Offered only where DASH holds a folder of its own — see `hasFolder` on the
+   * header — so the ordinary answer here is that a window opens and nothing on
+   * this page changes. A refusal still gets a sentence, because the two shells
+   * too old to have the command cannot be told apart from a missing folder by
+   * anything on screen.
+   */
+  async function openFolder(): Promise<void> {
+    setPending("folder-reveal");
+    setFeedback(null);
+    try {
+      const result = await revealAgentFolder({ agent_id: agent });
+      if (result.ok) {
+        return;
+      }
+      setFeedback({
+        ok: false,
+        message: result.detail ?? "DASH could not open this agent's folder.",
+      });
+    } catch {
+      setFeedback({
+        ok: false,
+        message: "DASH could not reach the command boundary. Nothing was opened.",
+      });
+    } finally {
+      setPending(null);
+    }
+  }
+
   if (state.status === "loading") {
     return <ViewLoading what="this agent workspace" />;
   }
@@ -415,16 +509,27 @@ function AgentWorkspace(): ReactNode {
   const control = buildAgentControl(view.snapshot, canAct);
   const overview = view.snapshot?.overview ?? null;
   /*
-   * Three tiles, and there were four until the first screenshot.
+   * Two tiles, and there were four.
    *
-   * The fourth was Status, and the frame showed it saying "Not reported" about
-   * 300px below a status pill saying NOT REPORTED — the same fact twice, on the
-   * one screen whose whole complaint is redundant text. The pill wins because
-   * it is in the header, beside the controls the status governs, and it is
-   * there in every state including the ones with no snapshot.
+   * The third to go was Status, and the frame showed it saying "Not reported"
+   * about 300px below a status pill saying NOT REPORTED — the same fact twice,
+   * on the one screen whose whole complaint is redundant text. The pill won: it
+   * is in the header, beside the controls the status governs, and it is there
+   * in every state including the ones with no snapshot.
    *
-   * Found by looking. Nothing measures "these two elements say the same thing",
-   * which is the fourth DASH defect in a row that only a photograph caught.
+   * **The fourth was "Runs on", and the first cockpit frame caught it doing the
+   * same thing in the other direction** (MAR-641). The header now carries a
+   * Local/Cloud chip, and the two read as a contradiction rather than as one
+   * fact twice: *LIVES ON Local* above *RUNS ON Not reported*. They are
+   * genuinely different facts — where DASH sent the agent, and what runtime the
+   * agent reported — but nothing on the screen said so, and a novice reading
+   * two labels a word apart will not derive it. The chip is the one a person
+   * asks for on this page; `runtime_label` is a record, and it is in the Logs
+   * stage's State facts where the rest of the record is.
+   *
+   * Found by looking, both times. Nothing measures "these two elements
+   * contradict each other", which is the fifth DASH defect in a row that only a
+   * photograph caught.
    */
   const tiles = [
     {
@@ -432,63 +537,32 @@ function AgentWorkspace(): ReactNode {
       value: overview?.trigger_label ?? AGENT_TILE_COPY.trigger_default,
     },
     modelTile(view.models),
-    {
-      label: AGENT_TILE_COPY.where,
-      value: overview?.runtime_label ?? AGENT_TILE_COPY.where_unknown,
-    },
   ];
 
-  return (
-    <>
-      {/*
-        MAR-502. The portrait belongs to the identity header and nowhere else
-        on this page: runs, verdicts, gates and outputs are all below, and a
-        character standing beside any of them would be a character implying it
-        had something to do with the finding. Here it is next to the agent's
-        own name, which is the one thing on the page it is genuinely about.
+  /*
+   * MAR-641. Which part of this agent is on the stage.
+   *
+   * The address decides, and `resolveAgentStage` decides what an address that
+   * says nothing means — the run while one is going, the overview otherwise.
+   * Nothing in this component may write to it except `goToStage`, so there is
+   * one route into every view of an agent and it is one somebody can send to
+   * somebody else.
+   */
+  const stage = resolveAgentStage(stageParam, { running, fragment });
+  const openOutput = params.get(AGENT_WORKSPACE_PARAMS.output);
+  const inbox = view.snapshot?.inbox ?? [];
+  const checklistFacts = {
+    models: view.models,
+    run_count: view.snapshot?.runs.length ?? 0,
+    output_count: view.outputs.length,
+  };
+  /* MAR-609's rule, still binding: the never-run agent gets a guided checklist
+     rather than a column of empty sections. Every other agent gets what it has
+     actually done. */
+  const empty = isEmptyAgent(checklistFacts);
 
-        MAR-589. `view.title` is `agentDisplayName`'s answer and the id travels
-        beside it as a value — Henrik's ruling, applied at the one place on this
-        page that names the agent.
-      */}
-      <AgentHeader
-        avatar={view.avatar}
-        control={control}
-        goal={view.goal}
-        id={view.agent}
-        live={running ? timeOnly(state.last_read_at) : null}
-        onRefresh={() => setRefreshKey((value) => value + 1)}
-        onSettings={() => setSettingsOpen((open) => !open)}
-        title={view.title}
-      />
-      <HostNotice host={host} />
-      {feedback === null ? null : (
-        <div
-          className={feedback.ok ? "notice notice-ok" : "notice notice-err"}
-          role={feedback.ok ? "status" : "alert"}
-        >
-          {feedback.message}
-        </div>
-      )}
-
-      {/* MAR-576. Before the output, because it is the reason the output may be
-          the only thing here — and DASH's own voice about DASH's own template,
-          which is why it is a plain notice and not a region attributed to
-          anyone. Null for every agent DASH did not scaffold and for every
-          scaffolded agent already current, which is almost all of them. */}
-      <ManifestGapNotice
-        agent={view.agent}
-        canAct={canAct}
-        gap={view.manifest_gap}
-        onRefreshed={() => setRefreshKey((value) => value + 1)}
-        setFeedback={setFeedback}
-      />
-
-      {/* MAR-609. The control panel Henrik asked for, directly under the
-          header, and drawn in every state including the three where there is
-          nothing to press. See `buildAgentControl` for why "no button" was the
-          worst thing the old page did. */}
-      <AgentControls
+  const runControls = (
+    <AgentControls
         busy={pending}
         hasFiles={selectedInputs.some((input) => input.state === "copied")}
         /* MAR-602. Filtered on the same field the sentence is built from, so a
@@ -533,27 +607,164 @@ function AgentWorkspace(): ReactNode {
            tell whether pressing this would actually cost anything. */
         runSpend={view.run_spend}
       />
+  );
 
-      {/* MAR-609, reusing MAR-570. Four answers, one row, no prose. */}
-      <AgentTiles tiles={tiles} />
-
-      {/* MAR-609. The settings button's drawer, in place rather than in a
-          modal: it holds `RemoveAgent`, and a destructive control inside an
-          overlay that can be dismissed by a stray click is the wrong container
-          for it. Closed by default, so it costs nothing on the page a person
-          opens to read the news. */}
-      {settingsOpen ? (
-        <AgentSettings
-          avatar={view.avatar}
+  /*
+   * MAR-641. The six views of one agent, built once and drawn one at a time.
+   *
+   * A record rather than a switch, so `AgentStageView` can refuse a stage
+   * nobody has given a view to, and so this list reads as what it is: an
+   * inventory of every part of an agent, in the order the wireframe puts them.
+   * Nothing here is new work — each entry is a block this page already drew,
+   * moved out from under the others.
+   */
+  const stages: Record<AgentStage, ReactNode> = {
+    /*
+     * The landing view: what needs you, then what it made.
+     *
+     * That ordering is the wireframe's and it is also where `#waiting-work`
+     * has to live — MAR-586's fleet chip promises to take somebody to the
+     * thing that needs them, and it names no stage, so the thing that needs
+     * them must be on the one an address without a stage resolves to.
+     */
+    overview: (
+      <>
+        {/* MAR-576. First, because it is the reason the rest of this stage may
+            be empty — and DASH's own voice about DASH's own template, which is
+            why it is a plain notice and not a region attributed to anyone.
+            Null for every agent DASH did not scaffold and for every scaffolded
+            agent already current, which is almost all of them. */}
+        <ManifestGapNotice
+          agent={view.agent}
           canAct={canAct}
-          id={view.agent}
-          onClose={() => setSettingsOpen(false)}
-          onRenamed={() => setRefreshKey((value) => value + 1)}
-          renamed={view.renamed}
+          gap={view.manifest_gap}
+          onRefreshed={() => setRefreshKey((value) => value + 1)}
           setFeedback={setFeedback}
-          title={view.title}
-          trigger={view.snapshot?.overview.trigger_label ?? null}
-          danger={
+        />
+
+        <WaitingWork
+          agent={view.agent}
+          canAct={canAct}
+          issue={issue}
+          pending={pending}
+          reasons={reasons}
+          setReasons={setReasons}
+          snapshot={view.snapshot}
+        />
+
+        {empty ? (
+          <GuidedChecklist
+            agent={view.agent}
+            steps={buildAgentChecklist(checklistFacts)}
+          />
+        ) : (
+          /* The newest output only. The whole list is the Output stage and the
+             rail is the index of it; repeating twelve dated disclosures here
+             would make the landing view the archive it was before MAR-609. */
+          <OutputsArea
+            agent={view.agent}
+            canAct={canAct}
+            cards={view.outputs.slice(0, 1)}
+            grounding={view.latest_digest_grounding}
+            heading={AGENT_COCKPIT_COPY.outputs_heading}
+            more={view.outputs.length > 1 ? agentStageHref(view.agent, "output") : null}
+            setFeedback={setFeedback}
+          />
+        )}
+
+        {/* MAR-609, reusing MAR-570. Three answers, one row, no prose. Last,
+            because they are facts about the agent and everything above them is
+            something waiting for a person or something the agent made. */}
+        <AgentTiles tiles={tiles} />
+      </>
+    ),
+
+    /*
+     * The run: what you can press, what it is doing, and what it cost.
+     *
+     * MAR-635's two blocks, unchanged, with the control panel they belong
+     * beside. This is also the stage `resolveAgentStage` hands an address that
+     * names none while a run is going, which is what the wireframe means by
+     * the run taking the stage while live — and with the status pill in the
+     * frame above it, it is the Monitor requirement met.
+     */
+    run: (
+      <>
+        {runControls}
+
+        <div className="agent-command-grid">
+          <LiveFeed
+            feed={view.feed}
+            runHref={
+              view.feed.kind === "empty"
+                ? undefined
+                : runDetailHref(view.agent, view.feed.run_id)
+            }
+          />
+          <AgentTelemetry telemetry={view.telemetry} />
+        </div>
+
+        {/* MAR-507. Below the controls: choosing a file is a step before a run,
+            and this is the stage the run happens on. Renders nothing for an
+            agent that declares no input roles, which is most of them. */}
+        <InputsPanel
+          busyRole={busyRole}
+          canAct={canAct}
+          onChoose={(roleId) => void chooseInput(roleId)}
+          roles={view.input_roles}
+          selected={selectedInputs}
+        />
+      </>
+    ),
+
+    /*
+     * Everything this agent has made, and the region its author declared.
+     *
+     * The author's panel is on this stage and no other, which is ADR 0008
+     * slice 3 unchanged: DASH's own record of the outputs comes first, and
+     * somebody else's box is below it rather than in the position a person has
+     * learned to read as DASH's own voice. It renders nothing at all for the
+     * agents that declare no panel, which is most of them and every empty one.
+     */
+    output: (
+      <>
+        <OutputsArea
+          agent={view.agent}
+          canAct={canAct}
+          cards={view.outputs}
+          grounding={view.latest_digest_grounding}
+          history
+          openId={openOutput}
+          setFeedback={setFeedback}
+        />
+        <AgentPanel view={view.panel} />
+      </>
+    ),
+
+    /* MAR-545's conversation, without its composer — the composer is the bar
+       pinned to the bottom of the frame, so it is on screen from every stage.
+       The blocked arms render as the one fix-it card MAR-641 asks for. */
+    chat: (
+      <AskThread
+        ask={view.ask}
+        canAct={canAct}
+        onAsked={() => setRefreshKey((value) => value + 1)}
+        setFeedback={setFeedback}
+      />
+    ),
+
+    settings: (
+      <AgentSettings
+        avatar={view.avatar}
+        canAct={canAct}
+        id={view.agent}
+        onClose={() => goToStage("overview")}
+        onRenamed={() => setRefreshKey((value) => value + 1)}
+        renamed={view.renamed}
+        setFeedback={setFeedback}
+        title={view.title}
+        trigger={view.snapshot?.overview.trigger_label ?? null}
+        danger={
             /* MAR-595 finding 18 shipped these two buttons and Henrik still
                asked for a remove button, which means the buttons were not where
                he looked. They were last on a page of eighteen sections, under
@@ -571,7 +782,7 @@ function AgentWorkspace(): ReactNode {
         >
           {/* MAR-583. The model picker is a setting, and it was a full-width
               section on the page competing with the agent's own output. Its
-              behaviour is unchanged — this drawer owns where it sits, not what
+              behaviour is unchanged — this stage owns where it sits, not what
               it does. Renders nothing for an agent whose plan uses no model. */}
           <ModelChoice
             agent={view.agent}
@@ -579,6 +790,28 @@ function AgentWorkspace(): ReactNode {
             canAct={canAct}
             onChanged={() => setRefreshKey((value) => value + 1)}
             setFeedback={setFeedback}
+          />
+
+          {/* MAR-577, moved onto this stage by MAR-641 and **not** changed by
+              it. Where an agent lives is a setting, and the Local/Cloud chip in
+              the header clicks through to here.
+
+              Henrik decided deploy single-home on 2026-08-15: push to cloud and
+              bring home live *only* here. The other half of that decision —
+              the Servers page's card losing its "Put an agent here" panel and
+              linking into this stage instead — is scoped to MAR-642, so
+              `app/settings/servers` is untouched by this packet. Nothing here
+              says out loud that this is the only way to deploy, because until
+              MAR-642 lands it is not: a sentence claiming exclusivity while a
+              second door is still open is the kind of copy MAR-624 was filed
+              on. The component itself is unchanged. */}
+          <DeployToServer
+            agent={view.agent}
+            title={view.title}
+            deploy={view.deploy}
+            targets={view.deploy_targets}
+            canAct={canAct}
+            onBroughtHome={() => setRefreshKey((value) => value + 1)}
           />
 
           {/* MAR-584. Same argument: a person opens this page to read what
@@ -592,164 +825,20 @@ function AgentWorkspace(): ReactNode {
             setFeedback={setFeedback}
           />
         </AgentSettings>
-      ) : null}
+    ),
 
-      {/* MAR-635. The command surface: a live feed of what the agent is doing,
-          and beside it the numbers the run actually reported. Telemetry draws
-          nothing when there is no number, so an empty agent is the feed's two
-          sentences plus the assets empty state — not a panel of invented
-          meters.
-
-          There is no power toggle. Turning an agent "off" has no exact meaning
-          in DASH today: a local runner can be stopped, a deployed copy cannot
-          (ADR 0010), and a control that looked like both would be a lie on one
-          of the two machines. MAR-547's rule is that a control does something
-          or is not drawn. */}
-      <div className="agent-command-grid">
-        <LiveFeed
-          feed={view.feed}
-          runHref={
-            view.feed.kind === "empty"
-              ? undefined
-              : runDetailHref(view.agent, view.feed.run_id)
-          }
-        />
-        <AgentTelemetry telemetry={view.telemetry} />
-      </div>
-
-      {/* MAR-576, and now MAR-609's second ask, retitled by MAR-635 as
-          generated assets. Same cards, same MAR-622 dated history, same two
-          renderers — this panel and the author's `AgentPanel` below. The
-          newest digest stays a full card so the news remains readable.
-
-          It was fifth — behind the files panel, the Run now button and the
-          permission receipt — and inside it the digest came last, under a
-          four-row provenance receipt. On a 375px viewport the first headline
-          began 1166px down an 812px screen, so opening the AI News Scout showed
-          a permission disclaimer and a byte count and no news at all. Henrik's
-          words for that page were "I get no AI news from it. Only some text
-          about that it ran or something", and he was describing the ordering
-          rather than a missing record: every digest was there, below the fold.
-
-          What moved is only DASH's own surfaces relative to each other. The
-          author's panel stays below them (see `AgentPanel` further down), so the
-          attribution rule MAR-548 argued for is untouched — nothing an agent's
-          author controls has been promoted into the position a person reads as
-          DASH's own voice.
-
-          Outside the snapshot branch on purpose. Outputs are DASH's own record
-          and outlive the process that made them, so a stopped or unreachable
-          agent still shows what it last produced.
-
-          MAR-609 widened the scope from one run to every run — see the note on
-          `outputs` in `lib/views/types.ts`. `latest_digest_grounding` still
-          rides along because grounding is a verdict about the newest digest
-          specifically, which is why `OutputsPanel` hangs the chip on the first
-          card only. */}
-      <OutputsArea
-        agent={view.agent}
-        canAct={canAct}
-        cards={view.outputs}
-        grounding={view.latest_digest_grounding}
-        setFeedback={setFeedback}
-      />
-
-      {/* MAR-545, moved up by MAR-609. Directly under the agent's own output,
-          because the question a person has is about what they have just read —
-          "you mentioned tariffs last week, what else did you find?" — and a
-          conversation placed below three controls would be a conversation about
-          something the reader has scrolled past.
-
-          Henrik asked for a chat window on a page that already had one. It was
-          sixth of eleven sections, under the outputs, the inputs panel, Run now
-          and a manifest notice; the model picker that makes it work on an
-          unconfigured agent was below it, and the receipt, the panel and the
-          whole workspace record below that. Nothing about it was broken — it
-          was unfindable, which for a feature is the same thing.
-
-          Draws in every state, including the four where nothing can be asked.
-          Each of those is a fact about this agent worth knowing, and one of them
-          — the conversation an agent had before its key was withdrawn — is
-          content rather than a control. */}
-      <AskAgent
-        ask={view.ask}
-        canAct={canAct}
-        onAsked={() => setRefreshKey((value) => value + 1)}
-        setFeedback={setFeedback}
-      />
-
-      {/* MAR-507. Below the output and the chat: choosing a file is a step
-          before a run, and the run button is now in the header where it is
-          always reachable. Renders nothing for an agent that declares no input
-          roles, which is most of them. */}
-      <InputsPanel
-        busyRole={busyRole}
-        canAct={canAct}
-        onChoose={(roleId) => void chooseInput(roleId)}
-        roles={view.input_roles}
-        selected={selectedInputs}
-      />
-
-      {/* MAR-586. Actionable and therefore not behind the disclosure: this is
-          the one part of the workspace record that is waiting for a person
-          rather than describing something already finished. Renders nothing
-          when the inbox is empty, which is the ordinary case — the old page
-          drew the heading and a "nothing is pending" sentence regardless, which
-          is one more paragraph on the empty agent MAR-609 asks to be sized
-          for. */}
-      <WaitingWork
-        agent={view.agent}
-        canAct={canAct}
-        issue={issue}
-        pending={pending}
-        reasons={reasons}
-        setReasons={setReasons}
-        snapshot={view.snapshot}
-      />
-
-      {/* MAR-577. Left on the page rather than folded into settings: it is an
-          action on the agent, not a preference, and MAR-606 is about to make
-          this the surface that says whether the agent is live somewhere. The
-          Servers page asks which agent goes on a machine; this asks which
-          machine an agent goes on, and both reach the same `host.deploy`. */}
-      <DeployToServer
-        agent={view.agent}
-        title={view.title}
-        deploy={view.deploy}
-        targets={view.deploy_targets}
-        canAct={canAct}
-        onBroughtHome={() => setRefreshKey((value) => value + 1)}
-      />
-
-      {/* MAR-548, ADR 0008 slice 3. Below DASH's own surfaces on purpose: the
-          Outputs area is DASH's record and DASH's controls, and the panel is
-          somebody else's box. Putting the author's region above them would let a
-          `note` sit where a person has learned to read DASH's own voice.
-
-          Deliberately **not** inside MAR-609's disclosure, though it is the
-          longest thing on the page for the sample agent. A disclosure is DASH
-          deciding somebody else's report is secondary, and ADR 0008's whole
-          point is that DASH renders what the author declared without editorial-
-          ising. It renders nothing at all for the agents that declare no panel,
-          which is most of them and every empty one. */}
-      <AgentPanel view={view.panel} />
-
-      {/* MAR-609. Everything that is a *record* rather than content or a
-          control, behind one disclosure.
-
-          These are six sections — the permission receipt, runs, tasks,
-          connections, memory, plan-versus-actual and the audit history — and
-          every one of them rendered unconditionally, each with its own heading
-          and its own sentence for the empty case. On an agent with no output
-          that is the entire page: seven headings and seven paragraphs
-          explaining that there is nothing under any of them. That is what
-          Henrik meant by "way to much text for an agent with no output ;p".
-
-          Kept, not deleted. This is MAR-570's move exactly — the receipt is one
-          click away rather than gone — and every fact that was on the page is
-          still on the page. */}
-      <details className="agent-record">
-        <summary>{AGENT_TILE_COPY.details_summary}</summary>
+    /*
+     * The record, un-buried (MAR-641).
+     *
+     * MAR-609 folded seven sections behind one disclosure, because on an agent
+     * with no output they *were* the page — seven headings each followed by a
+     * sentence saying there was nothing under it. A stage is the same move made
+     * properly: the sections are one press away rather than one press *and* a
+     * scroll, and they are no longer competing with the agent's own output for
+     * the top of a page, because they are not on that page at all.
+     */
+    logs: (
+      <>
         <PermissionReceipt permissions={view.permissions} />
         {view.snapshot === null ? (
           <div className="empty">
@@ -771,8 +860,123 @@ function AgentWorkspace(): ReactNode {
             snapshot={view.snapshot}
           />
         )}
-      </details>
-    </>
+      </>
+    ),
+  };
+
+  /*
+   * MAR-641. The frame, which never scrolls, around the stage, which does.
+   *
+   * Three bands and one of them is the whole of the rest of this page. That is
+   * the wireframe's shape and it is also the argument for it: a person looking
+   * at an agent should be able to see who it is, what it is doing, what it made
+   * and what it needs from them without moving anything, and should reach every
+   * other part of it with one press rather than a scroll.
+   *
+   * `HostNotice` and the command feedback live in the frame rather than on a
+   * stage on purpose. Both are answers to something the person just did — or to
+   * which window they are in — and an answer that appeared on one stage and
+   * vanished when they moved would be an answer nobody could rely on having
+   * read.
+   */
+  return (
+    <div className="agent-cockpit">
+      <div className="cockpit-top">
+        {/*
+          MAR-502. The portrait belongs to the identity band and nowhere else on
+          this page: runs, verdicts, gates and outputs are all inside the stage,
+          and a character standing beside any of them would be a character
+          implying it had something to do with the finding.
+
+          MAR-589. `view.title` is `agentDisplayName`'s answer and the id
+          travels beside it as a value — Henrik's ruling, applied at the one
+          place on this page that names the agent.
+        */}
+        <AgentCockpitHeader
+          agent={view.agent}
+          avatar={view.avatar}
+          busy={pending}
+          canTrigger={control.run.kind === "run_now"}
+          control={control}
+          goal={view.goal}
+          hasFolder={view.folder_checkable && canAct}
+          live={running ? timeOnly(state.last_read_at) : null}
+          onOpenFolder={() => void openFolder()}
+          onRefresh={() => setRefreshKey((value) => value + 1)}
+          onTriggerRun={() => {
+            /*
+             * Both halves of "acts and switches the stage", in that order.
+             *
+             * The stage moves first and unconditionally: whatever this press
+             * does or refuses to do, the Run stage is where the answer is
+             * — the live feed if it started, `AGENT_CONTROL_COPY.idle`'s
+             * sentence if there was nothing to start. Starting a run while
+             * leaving the person on the Output stage is the silence MAR-609
+             * was filed about wearing a different shape.
+             */
+            goToStage("run");
+            if (control.run.kind !== "run_now") {
+              return;
+            }
+            const { task_id: taskId_, observed_at: observedAt } = control.run;
+            void (async () => {
+              /*
+               * MAR-507. The files go first, and a refusal here stops the run.
+               * The order is the whole point — see `dispatchTask`.
+               */
+              if (!(await dispatchTask())) {
+                return;
+              }
+              await issue(`run:${taskId_}`, "retry", {
+                agent_id: view.agent,
+                observed_at: observedAt,
+                task_id: taskId_,
+              });
+            })();
+          }}
+          places={view.deploy_targets}
+          stage={stage}
+          title={view.title}
+        />
+        <HostNotice host={host} />
+        {feedback === null ? null : (
+          <div
+            className={feedback.ok ? "notice notice-ok" : "notice notice-err"}
+            role={feedback.ok ? "status" : "alert"}
+          >
+            {feedback.message}
+          </div>
+        )}
+      </div>
+
+      <div className="cockpit-body">
+        <AgentStageView stage={stage} views={stages} />
+        <AgentRail
+          agent={view.agent}
+          inbox={inbox}
+          openId={openOutput}
+          outputs={view.outputs}
+        />
+      </div>
+
+      {/* MAR-545's composer, pinned. Focusing it moves the stage to the thread,
+          which is what keeps MAR-545's rule true in a frame: the estimate — the
+          sentence that could change what somebody types — ends up on screen
+          directly above the box before a word is typed. */}
+      <AgentChatBar
+        agent={view.agent}
+        ask={view.ask}
+        canAct={canAct}
+        onChatStage={stage === "chat"}
+        onAsked={() => setRefreshKey((value) => value + 1)}
+        onFocus={() => {
+          if (stage !== "chat") {
+            goToStage("chat");
+          }
+        }}
+        setFeedback={setFeedback}
+      />
+    </div>
   );
 }
 
@@ -928,12 +1132,24 @@ function OutputsArea({
   canAct,
   cards,
   grounding,
+  heading,
+  history = false,
+  more,
+  openId,
   setFeedback,
 }: {
   agent: string;
   canAct: boolean;
   cards: ArtifactCardView[];
   grounding: GroundingAnalysis | null;
+  /** What to call this list. The Overview stage shows one; Output shows all. */
+  heading?: string;
+  /** Collapse everything but the open card. Off on Overview, where there is one. */
+  history?: boolean;
+  /** Where the rest of them are, or null when this list is all of them. */
+  more?: string | null;
+  /** Which card the rail asked for, or null for the newest (MAR-641). */
+  openId?: string | null;
   setFeedback: Dispatch<SetStateAction<CommandFeedback>>;
 }): ReactNode {
   async function save(card: ArtifactCardView): Promise<void> {
@@ -955,22 +1171,90 @@ function OutputsArea({
   }
 
   return (
-    <OutputsPanel
-      cards={cards}
-      emptyState={{
-        headline: AGENT_OUTPUTS_COPY.empty_headline,
-        detail: AGENT_OUTPUTS_COPY.empty_detail,
-      }}
-      grounding={grounding}
-      heading={AGENT_OUTPUTS_COPY.heading}
-      history
-      onDownload={canAct ? (card) => void save(card) : undefined}
-      /* Per card, because this list spans runs now. The old page had one link
-         under the whole panel saying "open the run these came from", which was
-         true when every card came from one run and would have been a lie the
-         moment MAR-609 widened the scope. */
-      runHref={(card) => runDetailHref(agent, card.reference.run_id)}
-    />
+    <>
+      <OutputsPanel
+        cards={cards}
+        emptyState={{
+          headline: AGENT_OUTPUTS_COPY.empty_headline,
+          detail: AGENT_OUTPUTS_COPY.empty_detail,
+        }}
+        grounding={grounding}
+        heading={heading ?? AGENT_OUTPUTS_COPY.heading}
+        history={history}
+        openId={openId}
+        onDownload={canAct ? (card) => void save(card) : undefined}
+        /* Per card, because this list spans runs now. The old page had one link
+           under the whole panel saying "open the run these came from", which was
+           true when every card came from one run and would have been a lie the
+           moment MAR-609 widened the scope. */
+        runHref={(card) => runDetailHref(agent, card.reference.run_id)}
+      />
+      {/* MAR-641. The Overview stage shows the newest output and says so; this
+          is how a person gets from it to the rest without going through the
+          rail. Null on the Output stage, where the link would point at the page
+          the reader is already on. */}
+      {more === null || more === undefined ? null : (
+        <p className="outputs-more">
+          <Link href={more}>{AGENT_COCKPIT_COPY.outputs_all}</Link>
+        </p>
+      )}
+    </>
+  );
+}
+
+/**
+ * What is left before a new agent works (MAR-609's rule, MAR-641's stage).
+ *
+ * The Overview stage's answer for an agent that has never run, in place of the
+ * output panel it has nothing to fill. Every line is a fact
+ * `buildAgentChecklist` read off the same view the tiles read — this component
+ * decides nothing and looks nothing up, which is what keeps the checklist and
+ * the Model tile from becoming two surfaces with opinions about one key
+ * (MAR-624).
+ *
+ * The marks are text as well as shape. `lib/copy/glance.ts` and MAR-547 both
+ * land on the same rule — no state that is readable only from a colour — so
+ * each row carries a done/still-to-do word for a screen reader and for anyone
+ * who cannot tell the two glyphs apart.
+ */
+function GuidedChecklist({
+  agent,
+  steps,
+}: {
+  agent: string;
+  steps: AgentChecklistStep[];
+}): ReactNode {
+  return (
+    <section className="section agent-checklist" aria-labelledby="agent-checklist-heading">
+      <div className="section-heading">
+        <h2 id="agent-checklist-heading">{AGENT_COCKPIT_COPY.checklist.heading}</h2>
+      </div>
+      <ol className="checklist-steps">
+        {steps.map((step) => (
+          <li className={step.done ? "checklist-step is-done" : "checklist-step"} key={step.id}>
+            <span className="checklist-mark" aria-hidden="true">
+              {step.done ? "✓" : "•"}
+            </span>
+            <span className="checklist-body">
+              <span className="checklist-label">
+                {step.label}
+                <span className="visually-hidden">
+                  {step.done
+                    ? AGENT_COCKPIT_COPY.checklist.done
+                    : AGENT_COCKPIT_COPY.checklist.todo}
+                </span>
+              </span>
+              <span className="muted wrap">{step.detail}</span>
+              {step.action === null ? null : (
+                <Link className="button-link" href={agentStageHref(agent, step.action.stage)}>
+                  {step.action.label}
+                </Link>
+              )}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 /**
@@ -1132,6 +1416,14 @@ function WorkspaceRecord({
           <p className="next-action">{overview.next_action}</p>
         )}
         <dl className="facts">
+          {/* MAR-641. The tile's fact, in the record. It left the Overview
+              stage because the header's Local/Cloud chip reads as an answer to
+              the same question and the two disagreed on the first frame — see
+              the note on `tiles`. It is a recorded fact and it is kept. */}
+          <div>
+            <dt>{AGENT_TILE_COPY.where}</dt>
+            <dd>{overview.runtime_label}</dd>
+          </div>
           <div>
             <dt>When DASH closes</dt>
             <dd>
@@ -1297,11 +1589,20 @@ function InboxControl({
   };
 
   return (
-    <article className={item.expired ? "work-card is-expired" : "work-card"}>
+    /* MAR-641. An id per item, because the cockpit's rail names one decision
+       rather than the queue: `#waiting-work` is still the section's anchor and
+       still where MAR-586's fleet chip lands, and `#work-…` is how a rail entry
+       lands on the exact approval it was describing. */
+    <article
+      className={item.expired ? "work-card is-expired" : "work-card"}
+      id={`work-${item.id}`}
+    >
       <div>
         <p className="eyebrow">
-          {item.kind === "approval" ? "Guarded action" : "Choice"} ·{" "}
-          {item.expired ? "expired" : `by ${item.expires_at}`}
+          {item.kind === "approval"
+            ? AGENT_COCKPIT_COPY.work_kind.approval
+            : AGENT_COCKPIT_COPY.work_kind.choice}{" "}
+          · {item.expired ? "expired" : `by ${item.expires_at}`}
         </p>
         <h3>{item.task_label}</h3>
         <p>{item.label}</p>

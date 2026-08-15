@@ -24,11 +24,17 @@ import type { ReactNode } from "react";
  * ## Why the tiles are not links
  *
  * MAR-570's tiles carry an action because a connector tile is *about* an action
- * — you connect a service. These are about state. The receipt for all four is
- * the one disclosure below them (`AGENT_TILE_COPY.details_summary`), and the
- * two that are settings — the model, the trigger — are changed in the settings
- * drawer, which the header has a button for. A tile that navigated somewhere
- * would be a fifth route to a setting that already has two.
+ * — you connect a service. These are about state. The receipt for them is the
+ * Logs stage, which the header's action grid has a cell for (it was one
+ * disclosure below them until MAR-641), and the two that are settings — the
+ * model, the trigger — are changed on the Settings stage, which the grid also
+ * has a cell for. A tile that navigated somewhere would be a fifth route to a
+ * setting that already has two.
+ *
+ * **There are two tiles now, not four.** Status went when a capture showed it
+ * saying the same words as the header pill; "Runs on" went when a capture
+ * showed it disagreeing with the header's Local/Cloud chip. Both are in
+ * `app/agents/detail/page.tsx`'s note on `tiles`.
  */
 export interface AgentTile {
   label: string;

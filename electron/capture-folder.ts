@@ -466,7 +466,8 @@ async function layout(target: BrowserWindow): Promise<unknown> {
  * The surfaces this scene has
  * ---------------------------------------------------------------------- */
 
-const ROUTE = `/agents/detail?agent=${encodeURIComponent(AGENT)}`;
+/* MAR-641. The folder controls are on the cockpit's Settings stage. */
+const ROUTE = `/agents/detail?agent=${encodeURIComponent(AGENT)}&stage=settings`;
 
 interface Surface {
   name: string;
