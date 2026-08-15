@@ -682,6 +682,11 @@ describe("what a run records about its model", () => {
         // because "which files touch this" is the question, and a rule that
         // skipped `electron/capture-*` would skip a real writer too.
         "electron/capture-ask.ts",
+        // The same, for the cockpit's own scene (MAR-646). It seeds one run of
+        // telemetry so the Run stage has meters rather than its empty arm, and
+        // the cost meter is the one that carries `AGENT_TELEMETRY_COPY.cost_note`
+        // — so a frame of that stage is also a frame of the attribution.
+        "electron/capture-cockpit.ts",
       ].sort(),
     );
 

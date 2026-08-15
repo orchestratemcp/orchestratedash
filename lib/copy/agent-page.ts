@@ -97,82 +97,58 @@ export const AGENT_CONTROL_COPY = {
     /** The window cannot act — a browser tab rather than the installed shell. */
     read_only: "This window can show this agent but cannot control it.",
   },
-  /** Under the buttons. The one sentence about cadence, said once. */
-  manual_note: "It runs only when you ask. Nothing happens on a timer.",
+  /*
+   * There is no `manual_note` here and there was one until MAR-646.
+   *
+   * It read *"It runs only when you ask. Nothing happens on a timer."* under the
+   * Run now button, and it is the trigger — which is a setting, whose home is
+   * `AGENT_TRIGGER_COPY` on the Settings stage. That switcher says the same
+   * thing twice over already: `on_command.detail` is "This is the only way DASH
+   * starts an agent today", and `declared_conflict` is "Nothing in DASH runs it
+   * on a timer". One fact, three sentences, two stages — and the header's
+   * Settings cell is one press from anywhere.
+   */
 } as const;
 
 /**
- * The four tiles, reusing MAR-570's Connections move.
+ * What is left of the tile row, which is one label (MAR-570, MAR-609,
+ * MAR-641, and now MAR-646).
  *
- * That issue turned per-agent connection cards into service tiles with the
- * capability card as *the receipt one click away*, against the same complaint
- * in the same words — *"cluttered and a lot of text."* The shape transfers
- * exactly: the tile answers the question, the disclosure holds the paperwork.
+ * ## Four tiles, then two, then none
  *
- * Four and not more. Each is a question a person actually asks about an agent
- * they are looking at, and a fifth tile would be a row of chips nobody reads.
+ * MAR-570's move — the answer on a tile, the paperwork one click away — was
+ * right for Connections and this page kept trying to make it fit. Each tile
+ * went for the same reason and the reason is this issue's whole subject:
+ *
+ * - **Status** went when a capture showed a tile reading "Not reported" a few
+ *   hundred pixels under a pill reading NOT REPORTED.
+ * - **Runs on** went when the header gained a Local/Cloud chip and a capture
+ *   showed the two contradicting each other.
+ * - **Starts when** and **Model** go here. Both are *settings*, and the Settings
+ *   stage owns them with the controls that change them: the trigger switcher
+ *   names the trigger and says what DASH will do regardless, and `ModelChoice`
+ *   carries the model with its own account of what is in force. A tile is a
+ *   read-only copy of a fact a person cannot act on where they are reading it,
+ *   which is what MAR-646 means by an echo.
+ *
+ * Nothing was lost with the last two, and that was checked rather than assumed.
+ * The one case where a tile said something the Settings stage does not is an
+ * agent whose plan uses no model at all — and `ModelChoice` draws nothing there
+ * *on purpose*, because "a notice explaining an absence would be DASH
+ * describing its own internals at somebody who came to look at their agent".
+ * The tile was the one surface disagreeing with that decision.
+ *
+ * What survives is one label, and it is not a tile.
  */
 export const AGENT_TILE_COPY = {
-  /*
-   * There is no `status` label here and there was one until the first capture.
-   * The frame showed a Status tile reading "Not reported" a few hundred pixels
-   * under a status pill reading NOT REPORTED — one fact, twice, on the page
-   * whose complaint is redundant text. The pill kept it: it is in the header
-   * beside the controls the status governs, and it renders in every state
-   * including the ones with no snapshot at all.
-   */
-  trigger: "Starts when",
-  model: "Model",
   /**
-   * No longer a tile (MAR-641). It labels the runtime row in the Logs stage's
-   * State facts, where `WorkspaceOverview.runtime_label` always had a value to
-   * put under it — the tile's version had to invent `where_unknown` for the
-   * agents with no snapshot, which is most of the ones a person is looking at
-   * when they ask.
-   */
-  where: "Runs on",
-  /**
-   * The disclosure under the tiles, and read by nothing since MAR-641.
-   *
-   * MAR-609 folded seven sections behind it; the cockpit gave them an address
-   * instead, so there is no summary to label. Kept for one turn rather than
-   * deleted, because `AGENT_STAGES` has one more stage to gain and a record
-   * that has to fold again would want the same three words — and because a
-   * string in this module costs nothing while a second opinion about what to
-   * call the record costs a surface.
-   */
-  details_summary: "Show the full record",
-  /**
-   * The model tile's value in the three cases where it is not a model id.
-   *
-   * `AgentModelSettingsView` words its `headline` as a whole sentence —
-   * "Connect your OpenRouter key to choose a model" — which is right for the
-   * picker's own heading and far too long for a tile. These are the same three
-   * facts at tile length. They are here rather than derived from the headline
-   * because truncating somebody else's sentence is how a surface ends up
-   * asserting half a claim.
-   */
-  model_value: {
-    /** `no_model_needed`: the plan is all fixed steps. */
-    none: "None needed",
-    /** A model is required and DASH cannot pick or hold one. */
-    unavailable: "Not set",
-    /** A choice exists and no single model overrides the per-step levels. */
-    per_step: "Matches each step",
-  },
-  /** The trigger tile, when the agent's manifest declares nothing. */
-  trigger_default: "On command",
-  /**
-   * Kept, and read by nothing since MAR-641 moved the runtime into the record.
+   * The runtime row in the Logs stage's State facts (MAR-641).
    *
    * `WorkspaceOverview.runtime_label` is never absent — it words its own
-   * unknown as "Unknown runtime" — so the row in the Logs stage has no gap for
-   * this to fill. It stays because the copy tests assert this whole object
-   * against the guided-path rule, and deleting a string to keep a test honest
-   * is the wrong direction: the next surface that needs a tile-length "where"
-   * should find this rather than invent a second one.
+   * unknown as "Unknown runtime" — so this row needs no fallback value beside
+   * it, which is why the tile-length `where_unknown` left with the tiles.
    */
-  where_unknown: "Not reported",
+  where: "Runs on",
 } as const;
 
 /**
@@ -500,20 +476,27 @@ export const AGENT_COCKPIT_COPY = {
   outputs_empty: "Nothing made yet.",
   /** On the newest entry, for a reader who cannot see the accent edge. */
   outputs_newest: "Newest",
-  /** Under the Overview stage's one output, when there are more of them. */
-  outputs_all: "Open every output",
+  /*
+   * There is no `outputs_all` here and there was one until MAR-646.
+   *
+   * It read "Open every output" and sat under the Overview stage's copy of the
+   * newest output — a link out of a block that no longer exists, because the
+   * rail beside it was already the index of every output and pressing an entry
+   * already opens it.
+   */
   work_heading: "Action needed",
   /** Each row of the action-needed panel takes the reader to the decision. */
   work_open: "Open this decision",
   /**
-   * What kind of thing is waiting, in the rail and on the card it points at.
+   * What kind of thing is waiting, on the card that carries the decision.
    *
-   * Named here because two surfaces now say it about the same item, and the
-   * rail row and the card it opens disagreeing about what a person is being
-   * asked would be the three-cards defect of MAR-624 in miniature.
-   * `app/approval-popup/page.tsx` says "Guarded action" too and is deliberately
-   * left alone: it is a separate window with one question in it and no list to
-   * be consistent with.
+   * Said on one surface again since MAR-646. Both the rail row and the card it
+   * opens carried it, which made the pointer read as a small copy of its own
+   * destination; the card kept it, because there it sits beside the expiry and
+   * the effect preview that make the word mean something, and the rail is now a
+   * count and a title. `app/approval-popup/page.tsx` says "Guarded action" too
+   * and is deliberately left alone: it is a separate window with one question
+   * in it and no list to be consistent with.
    */
   work_kind: { approval: "Guarded action", choice: "Choice" },
   /**
@@ -541,6 +524,30 @@ export const AGENT_COCKPIT_COPY = {
     settings: "Settings",
     logs: "Logs",
   },
+  /**
+   * The Overview stage when it has nothing on it (MAR-646).
+   *
+   * ## Why a stage that can be empty is not a mistake
+   *
+   * Overview stopped being a summary of the agent when the last echo left it:
+   * the newest output is on the Output stage the rail points into, and the two
+   * settings tiles are on the Settings stage that can change them. What is left
+   * is the one thing that is nowhere else — a choice or an approval waiting on a
+   * person — plus the first-run checklist and the manifest notice, and all three
+   * of those are conditional.
+   *
+   * So a produced agent with a clear queue reaches this stage with nothing to
+   * draw. It is not the stage a link lands on — `resolveAgentStage` sends a
+   * produced agent to its output — but it is reachable, and the ordinary way to
+   * reach it is by answering the last thing in the queue and staying where you
+   * were. Two short lines, for `AgentRail`'s reason about the same absence: a
+   * region that vanished would leave a reader unable to tell *nothing needs you*
+   * from *this is broken*, and those are very different things to learn about an
+   * agent you are deciding to trust.
+   */
+  overview_empty_headline: "Nothing needs you",
+  overview_empty_detail:
+    "When this agent has a choice or an approval for you, it appears here.",
   /**
    * The guided checklist for an agent that has never run (MAR-609's rule, still
    * binding, and MAR-641's restatement of it).

@@ -44,6 +44,31 @@ describe("which part of an agent is on screen", () => {
     expect(resolveAgentStage(null, { running: true })).toBe("run");
   });
 
+  it("lands a produced agent on what it produced (MAR-646)", () => {
+    /*
+     * The other half of a deletion. Overview stopped drawing the newest output
+     * — the rail beside it was drawing the same heading and the same title —
+     * and a subtraction that left the news on no landing page at all would be
+     * MAR-576 again. So a link to an agent that has made something opens what
+     * it made.
+     *
+     * `electron/smoke.ts`'s 6p is the same claim on the installed shell: it
+     * loads the address with no stage and requires the digest inside
+     * `.cockpit-stage`.
+     */
+    expect(resolveAgentStage(null, { running: false, has_output: true })).toBe("output");
+    // A new agent still lands on the checklist, which is where it belongs.
+    expect(resolveAgentStage(null, { running: false, has_output: false })).toBe("overview");
+    // A live run still outranks it: the run is what is happening now.
+    expect(resolveAgentStage(null, { running: true, has_output: true })).toBe("run");
+    // And a fragment outranks both, so MAR-586's chip still lands on the queue.
+    expect(
+      resolveAgentStage(null, { running: false, has_output: true, fragment: "waiting-work" }),
+    ).toBe("overview");
+    // A stage somebody named beats every one of them.
+    expect(resolveAgentStage("chat", { running: false, has_output: true })).toBe("chat");
+  });
+
   it("lets a fragment outrank a live run, so the chip lands on the thing that needs you", () => {
     /*
      * MAR-586's fleet chip links to `#waiting-work` and names no stage. An
@@ -104,9 +129,10 @@ describe("the address of one part of one agent", () => {
     const href = agentWorkspaceHref("ai-agent-news");
     const query = new URLSearchParams(href.slice(href.indexOf("?") + 1));
     expect(query.get(AGENT_WORKSPACE_PARAMS.stage)).toBeNull();
-    expect(resolveAgentStage(query.get(AGENT_WORKSPACE_PARAMS.stage), { running: false })).toBe(
-      "overview",
-    );
+    const read = query.get(AGENT_WORKSPACE_PARAMS.stage);
+    expect(resolveAgentStage(read, { running: false })).toBe("overview");
+    // And on an agent that has made something, the same link opens it.
+    expect(resolveAgentStage(read, { running: false, has_output: true })).toBe("output");
   });
 
   it("escapes an agent id rather than pasting it into a query", () => {

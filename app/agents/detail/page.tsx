@@ -25,7 +25,9 @@ import { AgentRail } from "../../_components/agent-rail";
 import { AgentSettings } from "../../_components/agent-settings";
 import { AgentStageView } from "../../_components/agent-stage";
 import { AgentTelemetry } from "../../_components/agent-telemetry";
-import { AgentTiles, type AgentTile } from "../../_components/agent-tiles";
+/* `AgentTiles` is not imported and the file is gone (MAR-646). The row was two
+   tiles restating two settings; see the note on the header band below and
+   `AGENT_TILE_COPY`, which is what is left of its copy. */
 import { AgentChatBar, AskThread } from "../../_components/ask";
 import { LiveFeed } from "../../_components/live-feed";
 import { ModelChoice } from "../../_components/model-choice";
@@ -78,7 +80,6 @@ import type { ArtifactCardView } from "../../../lib/views/artifacts";
 import type { InboxItem } from "../../../lib/workspace";
 import type {
   AgentDeployTarget,
-  AgentModelSettingsView,
   WorkspaceRunView,
   WorkspaceSnapshotView,
 } from "../../../lib/views/types";
@@ -507,37 +508,20 @@ function AgentWorkspace(): ReactNode {
    * new agent got none of the three and no explanation for any of them.
    */
   const control = buildAgentControl(view.snapshot, canAct);
-  const overview = view.snapshot?.overview ?? null;
   /*
-   * Two tiles, and there were four.
+   * There is no tile row here and there were four of them (MAR-646).
    *
-   * The third to go was Status, and the frame showed it saying "Not reported"
-   * about 300px below a status pill saying NOT REPORTED — the same fact twice,
-   * on the one screen whose whole complaint is redundant text. The pill won: it
-   * is in the header, beside the controls the status governs, and it is there
-   * in every state including the ones with no snapshot.
-   *
-   * **The fourth was "Runs on", and the first cockpit frame caught it doing the
-   * same thing in the other direction** (MAR-641). The header now carries a
-   * Local/Cloud chip, and the two read as a contradiction rather than as one
-   * fact twice: *LIVES ON Local* above *RUNS ON Not reported*. They are
-   * genuinely different facts — where DASH sent the agent, and what runtime the
-   * agent reported — but nothing on the screen said so, and a novice reading
-   * two labels a word apart will not derive it. The chip is the one a person
-   * asks for on this page; `runtime_label` is a record, and it is in the Logs
-   * stage's State facts where the rest of the record is.
-   *
-   * Found by looking, both times. Nothing measures "these two elements
-   * contradict each other", which is the fifth DASH defect in a row that only a
-   * photograph caught.
+   * Status went when a capture showed a tile saying "Not reported" 300px under
+   * a pill saying NOT REPORTED. "Runs on" went when the header gained a
+   * Local/Cloud chip and the next capture showed the two contradicting each
+   * other. The last two — the trigger and the model — go for the reason the
+   * first two did, said generally: **a tile is a read-only copy of a fact you
+   * cannot act on where you are reading it.** Both are settings and the
+   * Settings stage owns them with the controls that change them, one press away
+   * from every stage. `AGENT_TILE_COPY`'s own header records what was checked
+   * before deleting them, which is that nothing is now unsaid.
    */
-  const tiles = [
-    {
-      label: AGENT_TILE_COPY.trigger,
-      value: overview?.trigger_label ?? AGENT_TILE_COPY.trigger_default,
-    },
-    modelTile(view.models),
-  ];
+  const overview = view.snapshot?.overview ?? null;
 
   /*
    * MAR-641. Which part of this agent is on the stage.
@@ -548,9 +532,16 @@ function AgentWorkspace(): ReactNode {
    * one route into every view of an agent and it is one somebody can send to
    * somebody else.
    */
-  const stage = resolveAgentStage(stageParam, { running, fragment });
-  const openOutput = params.get(AGENT_WORKSPACE_PARAMS.output);
   const inbox = view.snapshot?.inbox ?? [];
+  /* MAR-646. The same list the rail indexes decides where a link with no stage
+     in it lands, so the landing stage and the rail cannot disagree about
+     whether this agent has made anything. */
+  const stage = resolveAgentStage(stageParam, {
+    running,
+    fragment,
+    has_output: view.outputs.length > 0,
+  });
+  const openOutput = params.get(AGENT_WORKSPACE_PARAMS.output);
   const checklistFacts = {
     models: view.models,
     run_count: view.snapshot?.runs.length ?? 0,
@@ -620,12 +611,24 @@ function AgentWorkspace(): ReactNode {
    */
   const stages: Record<AgentStage, ReactNode> = {
     /*
-     * The landing view: what needs you, then what it made.
+     * What needs you, and what is left before this agent works.
      *
-     * That ordering is the wireframe's and it is also where `#waiting-work`
-     * has to live — MAR-586's fleet chip promises to take somebody to the
-     * thing that needs them, and it names no stage, so the thing that needs
-     * them must be on the one an address without a stage resolves to.
+     * ## What left this stage, and why it is still the fleet chip's landing
+     *
+     * MAR-641 made this the summary of an agent, and MAR-646 found that a
+     * summary of an agent is a page of echoes. It drew the newest output under
+     * the heading *Latest output* with the rail three hundred pixels away
+     * drawing the same heading and the same title, and under that a row of
+     * tiles restating two settings. Both are gone: the output is on the Output
+     * stage the rail points into, and the settings are on the stage that can
+     * change them.
+     *
+     * What is left is the part that is nowhere else — a decision waiting on a
+     * person — plus the notice about DASH's own template and the first-run
+     * checklist. `#waiting-work` still lives here, which it must: MAR-586's
+     * fleet chip promises to take somebody to the thing that needs them and it
+     * names no stage, so the thing that needs them has to be on the stage a
+     * fragment resolves to.
      */
     overview: (
       <>
@@ -657,25 +660,20 @@ function AgentWorkspace(): ReactNode {
             agent={view.agent}
             steps={buildAgentChecklist(checklistFacts)}
           />
-        ) : (
-          /* The newest output only. The whole list is the Output stage and the
-             rail is the index of it; repeating twelve dated disclosures here
-             would make the landing view the archive it was before MAR-609. */
-          <OutputsArea
-            agent={view.agent}
-            canAct={canAct}
-            cards={view.outputs.slice(0, 1)}
-            grounding={view.latest_digest_grounding}
-            heading={AGENT_COCKPIT_COPY.outputs_heading}
-            more={view.outputs.length > 1 ? agentStageHref(view.agent, "output") : null}
-            setFeedback={setFeedback}
-          />
-        )}
-
-        {/* MAR-609, reusing MAR-570. Three answers, one row, no prose. Last,
-            because they are facts about the agent and everything above them is
-            something waiting for a person or something the agent made. */}
-        <AgentTiles tiles={tiles} />
+        ) : inbox.length === 0 && view.manifest_gap === null ? (
+          /* The one state where this stage has nothing at all: an agent that
+             has run, with a clear queue and a current manifest. It is not what
+             a link to this agent lands on — `resolveAgentStage` sends a
+             produced agent to its output — but it is what answering the last
+             thing in the queue leaves you looking at, and a region that
+             vanished would read as a fault. See `overview_empty_headline`. */
+          <div className="empty">
+            <p>
+              <strong>{AGENT_COCKPIT_COPY.overview_empty_headline}</strong>
+            </p>
+            <p>{AGENT_COCKPIT_COPY.overview_empty_detail}</p>
+          </div>
+        ) : null}
       </>
     ),
 
@@ -718,7 +716,21 @@ function AgentWorkspace(): ReactNode {
     ),
 
     /*
-     * Everything this agent has made, and the region its author declared.
+     * One thing this agent made, and the region its author declared.
+     *
+     * ## One, not the archive (MAR-646)
+     *
+     * This stage drew the open card in full and every other output as a dated
+     * `<details>` — the day and the title of each — which is line for line what
+     * `AgentRail` draws beside it. The same list twice on one screen, in a
+     * frame whose rail exists to be the index. So the stage reads one output
+     * and the rail indexes them: pressing an entry sets `?output=…` and *that*
+     * one is what is here.
+     *
+     * Nothing became unreachable. The rail is a band of the frame rather than a
+     * panel of this stage, and under 900px it becomes a strip above the stage
+     * rather than an overlay — so the index is on screen at every width and
+     * from every stage.
      *
      * The author's panel is on this stage and no other, which is ADR 0008
      * slice 3 unchanged: DASH's own record of the outputs comes first, and
@@ -733,7 +745,6 @@ function AgentWorkspace(): ReactNode {
           canAct={canAct}
           cards={view.outputs}
           grounding={view.latest_digest_grounding}
-          history
           openId={openOutput}
           setFeedback={setFeedback}
         />
@@ -981,28 +992,6 @@ function AgentWorkspace(): ReactNode {
 }
 
 /**
- * The model tile's value (MAR-609).
- *
- * A model id is a value and gets the monospace face; the three fallbacks are
- * prose and do not. `AGENT_TILE_COPY.model_value` says why they are not the
- * picker's own `headline`.
- */
-function modelTile(settings: AgentModelSettingsView): AgentTile {
-  if (!settings.can_choose) {
-    return {
-      label: AGENT_TILE_COPY.model,
-      value:
-        settings.reason === "no_model_needed"
-          ? AGENT_TILE_COPY.model_value.none
-          : AGENT_TILE_COPY.model_value.unavailable,
-    };
-  }
-  return settings.chosen_model_id === null
-    ? { label: AGENT_TILE_COPY.model, value: AGENT_TILE_COPY.model_value.per_step }
-    : { label: AGENT_TILE_COPY.model, value: settings.chosen_model_id, mono: true };
-}
-
-/**
  * The one sentence an agent older than DASH's own template is owed (MAR-576).
  *
  * ## Why this exists at all
@@ -1132,9 +1121,6 @@ function OutputsArea({
   canAct,
   cards,
   grounding,
-  heading,
-  history = false,
-  more,
   openId,
   setFeedback,
 }: {
@@ -1142,12 +1128,6 @@ function OutputsArea({
   canAct: boolean;
   cards: ArtifactCardView[];
   grounding: GroundingAnalysis | null;
-  /** What to call this list. The Overview stage shows one; Output shows all. */
-  heading?: string;
-  /** Collapse everything but the open card. Off on Overview, where there is one. */
-  history?: boolean;
-  /** Where the rest of them are, or null when this list is all of them. */
-  more?: string | null;
   /** Which card the rail asked for, or null for the newest (MAR-641). */
   openId?: string | null;
   setFeedback: Dispatch<SetStateAction<CommandFeedback>>;
@@ -1171,46 +1151,37 @@ function OutputsArea({
   }
 
   return (
-    <>
-      <OutputsPanel
-        cards={cards}
-        emptyState={{
-          headline: AGENT_OUTPUTS_COPY.empty_headline,
-          detail: AGENT_OUTPUTS_COPY.empty_detail,
-        }}
-        grounding={grounding}
-        heading={heading ?? AGENT_OUTPUTS_COPY.heading}
-        history={history}
-        openId={openId}
-        onDownload={canAct ? (card) => void save(card) : undefined}
-        /* Per card, because this list spans runs now. The old page had one link
-           under the whole panel saying "open the run these came from", which was
-           true when every card came from one run and would have been a lie the
-           moment MAR-609 widened the scope. */
-        runHref={(card) => runDetailHref(agent, card.reference.run_id)}
-      />
-      {/* MAR-641. The Overview stage shows the newest output and says so; this
-          is how a person gets from it to the rest without going through the
-          rail. Null on the Output stage, where the link would point at the page
-          the reader is already on. */}
-      {more === null || more === undefined ? null : (
-        <p className="outputs-more">
-          <Link href={more}>{AGENT_COCKPIT_COPY.outputs_all}</Link>
-        </p>
-      )}
-    </>
+    <OutputsPanel
+      cards={cards}
+      emptyState={{
+        headline: AGENT_OUTPUTS_COPY.empty_headline,
+        detail: AGENT_OUTPUTS_COPY.empty_detail,
+      }}
+      grounding={grounding}
+      heading={AGENT_OUTPUTS_COPY.heading}
+      openId={openId}
+      onDownload={canAct ? (card) => void save(card) : undefined}
+      /* Per card, because this list spans runs now. The old page had one link
+         under the whole panel saying "open the run these came from", which was
+         true when every card came from one run and would have been a lie the
+         moment MAR-609 widened the scope. */
+      runHref={(card) => runDetailHref(agent, card.reference.run_id)}
+      /* MAR-646. One output at a time, because the rail beside this stage is
+         the index of them. */
+      single
+    />
   );
 }
 
 /**
  * What is left before a new agent works (MAR-609's rule, MAR-641's stage).
  *
- * The Overview stage's answer for an agent that has never run, in place of the
- * output panel it has nothing to fill. Every line is a fact
- * `buildAgentChecklist` read off the same view the tiles read — this component
- * decides nothing and looks nothing up, which is what keeps the checklist and
- * the Model tile from becoming two surfaces with opinions about one key
- * (MAR-624).
+ * The Overview stage's answer for an agent that has never run, and the reason
+ * `resolveAgentStage` still lands a new agent here: there is nothing it has
+ * made to land on. Every line is a fact `buildAgentChecklist` read off the same
+ * view the Settings stage reads — this component decides nothing and looks
+ * nothing up, which is what keeps the checklist and the model picker from
+ * becoming two surfaces with opinions about one key (MAR-624).
  *
  * The marks are text as well as shape. `lib/copy/glance.ts` and MAR-547 both
  * land on the same rule — no state that is readable only from a colour — so
@@ -1466,15 +1437,7 @@ function WorkspaceRecord({
         ) : (
           <div className="card-grid">
             {snapshot.runs.map((run) => (
-              <RunCard
-                agent={agent}
-                canAct={canAct}
-                issue={issue}
-                key={run.id}
-                observedAt={snapshot.observed_at}
-                pending={pending}
-                run={run}
-              />
+              <RunCard agent={agent} key={run.id} run={run} />
             ))}
           </div>
         )}
@@ -1694,23 +1657,29 @@ function InboxControl({
   );
 }
 
+/**
+ * One run, in the record (MAR-609, subtracted by MAR-646).
+ *
+ * ## The buttons left, and the run they controlled did not
+ *
+ * This card drew `run.controls` — pause, resume, cancel — for every run with
+ * any, which for the run in flight is the same pair of buttons `AgentControls`
+ * draws on the Run stage, wired to the same command with the same arguments.
+ * Two controls for one act, on two stages, is the shape MAR-609 built
+ * `buildAgentControl` to end: *one decision about what can be pressed, taken
+ * once*. That decision is the Run stage's, because Run owns *now* and this
+ * section is the record of what happened.
+ *
+ * Nothing about the run is unsaid by the loss. The status, the start and the
+ * progress are still here, the live run's controls are one press away on the
+ * stage whose whole subject they are, and the technical detail link is
+ * untouched.
+ */
 function RunCard({
   agent,
-  canAct,
-  issue,
-  observedAt,
-  pending,
   run,
 }: {
   agent: string;
-  canAct: boolean;
-  issue: (
-    key: string,
-    command: Parameters<typeof submitAgentCommand>[0],
-    args: AgentCommandArgs,
-  ) => Promise<void>;
-  observedAt: string;
-  pending: string | null;
   run: WorkspaceRunView;
 }): ReactNode {
   const phase = describeWorkingPhase(run.status);
@@ -1735,27 +1704,6 @@ function RunCard({
           {Math.round(run.progress * 100)}%
         </progress>
       )}
-      {canAct && run.controls.length > 0 ? (
-        <div className="button-row">
-          {run.controls.map((control) => (
-            <button
-              className={control.command === "cancel" ? "button-danger" : "button-secondary"}
-              disabled={pending !== null}
-              key={control.command}
-              onClick={() =>
-                void issue(`${control.command}:${run.id}`, control.command, {
-                  agent_id: agent,
-                  observed_at: observedAt,
-                  run_id: run.id,
-                })
-              }
-              type="button"
-            >
-              {control.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
       <p>
         <Link href={runDetailHref(agent, run.id)}>Open technical run detail</Link>
       </p>
