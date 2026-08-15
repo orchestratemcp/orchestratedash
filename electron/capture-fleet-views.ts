@@ -795,8 +795,9 @@ interface Counted {
 /**
  * MAR-630's per-view counts, checked against what the pane actually holds —
  * MAR-639 widens the grid's own bar from "three across" to "four or more",
- * on the same reasoning: a number is the one thing a reviewer cannot check
- * by looking at a picture of the top of a pane.
+ * and MAR-640 widens Rows' own bar from "2–3 rows" to "the whole seeded
+ * fleet", on the same reasoning both times: a number is the one thing a
+ * reviewer cannot check by looking at a picture of the top of a pane.
  *
  * Returns the sentence a reviewer would have to write, or null when the frame
  * meets its bar. Making this a refusal rather than a note is the same move
@@ -864,10 +865,19 @@ function shortfall(view: FleetView, width: string, m: Counted): string | null {
       }
       return m.visible_cards >= 6 ? null : `${String(m.visible_cards)} cards inside the pane, not six`;
     case "rows":
-      /* "Rows — 2–3 rows visible." */
-      return m.visible_rows >= 2 && m.visible_rows <= 3
+      /*
+       * "Rows — dense enough that the seeded fleet fits without scrolling"
+       * (MAR-640), superseding MAR-630's "2–3 rows visible": that number was
+       * measured against the wide 224px card MAR-630 shipped, and the whole
+       * point of the dense anatomy is that a ~72px/56px row fits far more of
+       * a fleet in the same two thirds of the pane. The issue's own bar is
+       * "≥8 without scrolling, fixtures permitting" — this harness seeds at
+       * most `FLEET` agents, so the bar it can actually check is that every
+       * one of them is visible, which the fixture does permit.
+       */
+      return m.visible_cards >= FLEET
         ? null
-        : `${String(m.visible_rows)} rows inside the pane, not two or three`;
+        : `${String(m.visible_cards)} of ${String(FLEET)} rows inside the pane, not all of them`;
     case "spotlight": {
       /*
        * "Spotlight — one row of 3 (a centred card with its two neighbours)",

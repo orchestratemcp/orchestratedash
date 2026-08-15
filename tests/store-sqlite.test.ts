@@ -113,8 +113,11 @@ describe("schema", () => {
     // is the only order that leaves an already-migrated installed store alone --
     // renumbering a step somebody's database has already recorded is the one
     // thing this pin exists to make somebody think about.
+    //
+    // 22 is MAR-640's `agent_prefs` table — the reader's own favourite flag,
+    // kept apart from `agents` for `agent_looks`' own reason.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(21);
+    expect(version.user_version).toBe(22);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -141,6 +144,8 @@ describe("schema", () => {
     expect(tables).toContain("hosts");
     expect(tables).toContain("ai_key_checks");
     expect(tables).toContain("agent_looks");
+    // MAR-640. The reader's own favourite flag, one row per agent.
+    expect(tables).toContain("agent_prefs");
     // MAR-584, ADR 0010. What DASH sent to a server, and never what is running
     // there — the ADR bounds the columns, and the migration's own note says why
     // there is no `running` column for a later feature to reach for.
@@ -522,7 +527,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(21);
+    ).toBe(22);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

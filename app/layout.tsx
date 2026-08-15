@@ -4,6 +4,7 @@ import "./tokens.css";
 import "./globals.css";
 import { AppChrome } from "./_components/app-chrome";
 import { DensityScript } from "./_components/density-toggle";
+import { FleetFilterScript } from "./_components/fleet-rail";
 import { FleetStrip, FleetStripScript } from "./_components/fleet-strip";
 import { FleetViewScript } from "./_components/fleet-view-toggle";
 import { WindowVisibility } from "./_components/window-visibility";
@@ -73,6 +74,13 @@ export default function RootLayout({
           the flash the other two scripts exist to prevent.
         */}
         <FleetViewScript />
+        {/*
+          MAR-640, and the fourth script here for the same reason: the rail's
+          filter removes cards from the document rather than repositioning
+          them, so without this the fleet would flash unfiltered on every
+          navigation before `FleetList`'s own lazy state corrected it.
+        */}
+        <FleetFilterScript />
       </head>
       {/*
         Three bands and a left track: the chrome across the top, the sidebar

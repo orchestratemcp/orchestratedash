@@ -158,7 +158,15 @@ describe("every page that reads a view uses the marked loading state", () => {
    * product decision, and satisfying this check with a placeholder would change
    * the product to suit the check.
    */
-  const SILENT_CHROME = ["app/_components/fleet-strip.tsx"];
+  /*
+   * MAR-640. The sidebar's work-inbox badge is the same shape as the fleet
+   * strip's own exemption above, on the same terms: `AppChrome` is not what
+   * the window opens on, so its own read must not add a second loading state
+   * on top of whichever page is already announcing one. Zero renders no
+   * badge at all (`AppChrome`'s own comment), which is the product decision
+   * here exactly as it is there.
+   */
+  const SILENT_CHROME = ["app/_components/fleet-strip.tsx", "app/_components/app-chrome.tsx"];
 
   const EXEMPT = [...OTHER_WINDOWS, ...SILENT_CHROME];
 

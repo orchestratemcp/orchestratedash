@@ -44,6 +44,27 @@
  * the page, never a subtraction from a card. The card is a portrait and a
  * name; the facts a card used to carry live on the chief.
  *
+ * ## Amendment (MAR-640): Rows may add, and still never hide
+ *
+ * "Nothing a card says" held while every view drew the same content on a
+ * different track. Rows' dense anatomy — a one-line goal, a status cluster
+ * moved into a fixed column — needs a fact none of the three views has ever
+ * drawn, and the rule is amended deliberately rather than dropped, on the
+ * same terms `FOLDER_ACTIONS`' own history in `lib/shell/ipc.ts` amends a
+ * rule rather than reopening it: **a view may still never hide a fact the
+ * other two show, and may now also draw one they do not.**
+ *
+ * The difference is checkable the same way the original rule was.
+ * `app/_components/fleet-card.tsx` renders `.fleet-goal` only when
+ * `view === "rows"` — a conditional render, never a stylesheet
+ * `display: none` — so `tests/fleet-view.test.ts`'s scan of every
+ * `[data-fleet-view]` rule for a hidden fact still catches exactly the
+ * failure it always did: a view answering "does not fit" by hiding
+ * something the reader had before. An *addition* present in one view's DOM
+ * and absent from the others' never matches that pattern, which is what
+ * keeps the two rules — never hide, may add — from being the same rule
+ * wearing a looser name.
+ *
  * ## Why the preference is not in the store
  *
  * Verbatim the argument `lib/views/density.ts` and `lib/views/fleet-strip.ts`
@@ -175,4 +196,26 @@ export function stepSpotlight(current: number, total: number, step: 1 | -1): num
     return 0;
   }
   return (current + step + total) % total;
+}
+
+/**
+ * Where Rows' selection lands after ↑/↓, clamped rather than wrapped
+ * (MAR-640).
+ *
+ * `stepSpotlight`'s sibling and deliberately not its twin: Rows is a list
+ * with a top and a bottom, not a ring the way the spotlight's carousel is,
+ * so the last row is where ↓ stops rather than a doorway back to the first
+ * — the ordinary behaviour of every list a keyboard already knows how to
+ * move through. Refuses an empty fleet and any index outside it by
+ * answering 0, `stepSpotlight`'s own reason: a caller that has just lost the
+ * agent it was centred on lands somewhere real.
+ */
+export function stepRowsSelection(current: number, total: number, direction: 1 | -1): number {
+  if (total <= 0) {
+    return 0;
+  }
+  if (!Number.isInteger(current) || current < 0 || current >= total) {
+    return 0;
+  }
+  return Math.min(Math.max(current + direction, 0), total - 1);
 }
