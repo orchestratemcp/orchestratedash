@@ -98,8 +98,8 @@ describe("the telemetry panel, rendered", () => {
   });
 });
 
-describe("generated assets still share the history wrapper", () => {
-  it("keeps OutputHistory in the agent-page renderer", () => {
+describe("generated assets are one output, not the rail's list again", () => {
+  it("draws the open card and no dated history (MAR-646)", () => {
     const digest: DigestArtifact = {
       artifact_version: 1,
       kind: "digest",
@@ -128,13 +128,18 @@ describe("generated assets still share the history wrapper", () => {
           cards={buildArtifactCards(records)}
           grounding={null}
           heading={AGENT_OUTPUTS_COPY.heading}
-          history
+          single
         />,
       ),
     );
     expect(html).toContain(AGENT_OUTPUTS_COPY.heading);
-    expect(html).toContain("output-history-entry");
     expect(html).toContain("Tuesday digest");
-    expect(html).toContain("Monday digest");
+    /*
+     * MAR-622's dated rows were the rail's index a second time. They survive in
+     * `OutputHistory`, which the author's panel still asks for — see
+     * `tests/outputs-render.test.tsx` — and reach this renderer no longer.
+     */
+    expect(html).not.toContain("output-history-entry");
+    expect(html).not.toContain("Monday digest");
   });
 });

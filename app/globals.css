@@ -3429,8 +3429,10 @@ button.button-unavailable:disabled {
    the status heading and six facts, two thirds of the way down the page and
    drawn only when a snapshot existed — so the most basic question about an
    agent was both buried and, for a new agent, absent entirely. The status is
-   `.status-pill` in the header, its two headline facts are `.agent-tiles`, and
-   the remainder is a plain `.facts` list inside the record disclosure. */
+   `.status-pill` in the header, where it lives is the header's place chip, and
+   the remainder is a plain `.facts` list on the Logs stage. Its two headline
+   facts were `.agent-tiles` for a while; MAR-646 removed those too, because a
+   tile restating a setting is a copy of the Settings stage. */
 .work-card h2,
 .work-card h3,
 .summary-card h3,
@@ -5326,44 +5328,12 @@ button:disabled {
   min-height: var(--space-7);
 }
 
-/* The four tiles — MAR-570's Connections move, applied here.
-   `auto-fit` rather than a fixed four, so a narrow window reflows to two and
-   then one instead of producing the 1425px horizontal scroller MAR-491 found
-   every DASH table becoming at 375px. */
-/* `7rem`, not `9rem`, and the difference is a phone.
-   At 9rem the 375px frame put three tiles in one column and spent 270px of an
-   812px screen restating three short facts — the tiles were meant to *save*
-   vertical space and were costing it. 7rem fits two across at 375 and still
-   holds "Matches each step" without wrapping. */
-.agent-tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
-  gap: var(--space-2);
-  margin: 0 0 var(--density-stack);
-}
-
-.agent-tile {
-  min-width: 0;
-  padding: var(--space-3);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--panel);
-}
-
-.agent-tile dt {
-  margin: 0 0 var(--space-1);
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  font-weight: 700;
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
-}
-
-.agent-tile dd {
-  margin: 0;
-  font-weight: 650;
-  overflow-wrap: anywhere;
-}
+/* `.agent-tiles` and `.agent-tile` left with MAR-646, and the component with
+   them. The row was MAR-570's Connections move applied to a surface it did not
+   fit: a connector tile is about an action you take on it, and these were
+   read-only copies of two settings whose controls are on the Settings stage.
+   The two that went before them went for narrower versions of the same reason —
+   see `AGENT_TILE_COPY`, which is one label now. */
 
 /* The settings drawer. Inset and outlined so it reads as a container that was
    opened, rather than as three more sections that appeared. */
@@ -6031,11 +6001,38 @@ main:has(.agent-cockpit) {
 }
 
 .cockpit-rail-panel h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   margin: 0 0 var(--space-2);
   font-size: var(--text-sm);
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   color: var(--text-muted);
+}
+
+/*
+ * How many things are waiting (MAR-646).
+ *
+ * The fact an index has and its destination does not — the stage under it *is*
+ * the queue, so it can only be counted from outside. In the accent, because a
+ * number in muted grey beside a muted grey heading is a number nobody sees, and
+ * this is the one thing in the rail that is about how much of somebody's
+ * attention is owed.
+ *
+ * No letter-spacing: the heading is uppercased and tracked out, and digits
+ * under `--tracking-caps` read as a gap between two numbers rather than as one.
+ */
+.rail-count {
+  min-width: 1.25rem;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: normal;
+  text-align: center;
 }
 
 .cockpit-rail-panel > .muted {
@@ -6100,13 +6097,9 @@ main:has(.agent-cockpit) {
   border-left-color: var(--line-strong);
 }
 
-.rail-work-kind {
-  font-size: var(--text-sm);
-  font-weight: 700;
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
+/* `.rail-work-kind` left with MAR-646. The row said "Guarded action" above the
+   title and the card it opens says the same word in its own eyebrow, beside the
+   expiry — a pointer wearing a small copy of its destination. */
 
 .rail-work-label {
   overflow-wrap: anywhere;
@@ -6193,9 +6186,9 @@ main:has(.agent-cockpit) {
   justify-self: start;
 }
 
-.outputs-more {
-  margin: var(--space-3) 0 0;
-}
+/* `.outputs-more` left with MAR-646, along with the "Open every output" link it
+   spaced. It sat under the Overview stage's copy of the newest output — a link
+   out of a block that is gone, beside a rail that was already the index. */
 
 /* The guided checklist for an agent that has never run. */
 .checklist-steps {

@@ -41,6 +41,21 @@ import { agentStageHref } from "../_data/routes";
  * So the rail names what is waiting and takes you to it. The controls are on
  * the Overview stage, under `#waiting-work`, which is also where MAR-586's
  * fleet chip has always pointed.
+ *
+ * ## A count and a title, and nothing the destination also says (MAR-646)
+ *
+ * The pointer-and-destination split is the right one, and it is only right
+ * while the two do not read as the same block twice. Each row carried the kind
+ * — *Guarded action*, *Choice* — above the title, and the card it opens carries
+ * the same word in its own eyebrow beside the expiry, so a person looking at
+ * this page saw the vocabulary of a decision in two places and the decision in
+ * one.
+ *
+ * The kind belongs to the card, where it sits with the expiry and the effect
+ * preview that make it mean something. What the rail gains instead is the fact
+ * only an index has: **how many**. A count is not something the stage can say —
+ * the stage is the queue itself — so it is the one addition in a packet whose
+ * job is subtraction.
  */
 export function AgentRail({
   agent,
@@ -113,7 +128,13 @@ export function AgentRail({
           there was nothing under it, on every agent, forever. */}
       {inbox.length === 0 ? null : (
         <section className="cockpit-rail-panel cockpit-rail-work" aria-labelledby="rail-work">
-          <h2 id="rail-work">{AGENT_COCKPIT_COPY.work_heading}</h2>
+          <h2 id="rail-work">
+            {AGENT_COCKPIT_COPY.work_heading}
+            {/* Inside the heading rather than beside it, so the number is part
+                of what a screen reader announces for the panel rather than a
+                digit floating next to it with no relationship stated. */}
+            <span className="rail-count">{inbox.length}</span>
+          </h2>
           <ol className="rail-work-list">
             {inbox.map((item) => (
               <li className={item.expired ? "rail-work-item is-expired" : "rail-work-item"} key={item.id}>
@@ -123,11 +144,6 @@ export function AgentRail({
                     view has arrived — the same machinery MAR-586 built so a
                     fleet chip could land on the thing that needs you. */}
                 <Link href={`${agentStageHref(agent, "overview")}#work-${item.id}`}>
-                  <span className="rail-work-kind">
-                    {item.kind === "approval"
-                      ? AGENT_COCKPIT_COPY.work_kind.approval
-                      : AGENT_COCKPIT_COPY.work_kind.choice}
-                  </span>
                   <span className="rail-work-label">{item.task_label}</span>
                   <span className="visually-hidden">. {AGENT_COCKPIT_COPY.work_open}</span>
                 </Link>

@@ -45,7 +45,7 @@ export function OutputsPanel({
   grounding,
   heading,
   emptyState,
-  history = false,
+  single = false,
   openId,
   onDownload,
   runHref,
@@ -71,15 +71,34 @@ export function OutputsPanel({
    * sentence under a heading is what "no overview" looks like.
    */
   emptyState?: { headline: string; detail: string };
-  /** Collapse every card after the newest when this list spans runs. */
-  history?: boolean;
   /**
-   * Which output is drawn in full, or absent for the newest (MAR-641).
+   * Draw one output rather than the list (MAR-646).
    *
-   * Only meaningful with `history`, and passed straight through to the wrapper
-   * that owns the decision. The panel does not read it: which card is open is a
-   * property of the *list*, and a second opinion here is how the summary and
-   * the body come to disagree about which output somebody is looking at.
+   * ## What this replaced, and why the replacement is a deletion
+   *
+   * This was `history`, and it collapsed every card except the open one into a
+   * dated `<details>`. On the cockpit's Output stage that produced the day and
+   * the title of every output the agent has ever made — which is, line for
+   * line, what `AgentRail` draws three hundred pixels to its right. The same
+   * list twice, side by side, on the surface whose complaint is that things are
+   * said twice.
+   *
+   * So the stage shows the output somebody asked for and the rail stays the
+   * index of them: MAR-646's rule in its own words — *the stage shows one
+   * output; the rail shows the index*. Nothing is unreachable by it, at any
+   * width: the rail is a band of the frame and becomes a strip above the stage
+   * under 900px rather than an overlay that can be dismissed.
+   *
+   * Absent on the run detail page, which draws one run's outputs with no rail
+   * beside it. There the list is the only index there is.
+   */
+  single?: boolean;
+  /**
+   * Which output is drawn, or absent for the newest (MAR-641, MAR-646).
+   *
+   * An id this list does not hold falls back to the newest rather than drawing
+   * nothing, because a link that has outlived its artifact should land on the
+   * page it named rather than on an empty one.
    */
   openId?: string | null;
   /**
@@ -105,6 +124,45 @@ export function OutputsPanel({
    */
   runHref?: (card: ArtifactCardView) => string;
 }): ReactNode {
+  /*
+   * Which card the stage is reading (MAR-646).
+   *
+   * Resolved here rather than inside a wrapper, because with the list gone
+   * there is no list for the decision to be a property of — there is one card,
+   * and this is the only thing that chooses it.
+   */
+  const named =
+    openId === undefined || openId === null
+      ? -1
+      : cards.findIndex((entry) => entry.reference.artifact_id === openId);
+  const open = named === -1 ? 0 : named;
+
+  function drawCard(index: number): ReactNode {
+    const entry = cards[index];
+    if (entry === undefined) {
+      return null;
+    }
+    return (
+      <OutputCard
+        card={entry}
+        onDownload={onDownload}
+        runHref={runHref}
+        /* Only the newest digest is graded, which is the rule
+           `lib/views/build.ts` already applies when it computes the verdict.
+           Hanging that chip on an older artifact would report a score against
+           text this card is not showing.
+
+           The kind is compared directly rather than through
+           `isDigestArtifact`. That helper lives in `lib/contracts.ts`, which
+           reads the JSON schemas off disk, and importing it as a *value* into
+           a `"use client"` tree drags `node:fs` into the browser bundle and
+           500s the page. Types from that module erase and are safe; functions
+           from it are not. */
+        grounding={index === 0 && entry.artifact.kind === "digest" ? grounding : null}
+      />
+    );
+  }
+
   return (
     <section className="section" aria-labelledby="outputs-heading">
       <div className="section-heading">
@@ -126,30 +184,19 @@ export function OutputsPanel({
             <p>{emptyState.detail}</p>
           </div>
         )
+      ) : single ? (
+        drawCard(open)
       ) : (
+        /* One run's outputs on the run detail page, where there is no rail and
+           the list is the only index there is. `collapsed` is false and has
+           been since MAR-646 took the dated history off the agent page, which
+           leaves `OutputHistory` doing the one job it does here — the ordered
+           markup that says these are one run's records rather than a page of
+           unrelated cards. The author's panel still uses both halves. */
         <OutputHistory
           cards={cards}
-          collapsed={history}
-          openId={openId}
-          renderCard={(card, index) => (
-            <OutputCard
-              card={card}
-              onDownload={onDownload}
-              runHref={runHref}
-              /* Only the newest digest is graded, which is the rule
-                 `lib/views/build.ts` already applies when it computes the
-                 verdict. Hanging that chip on an older artifact would report
-                 a score against text this card is not showing.
-
-                 The kind is compared directly rather than through
-                 `isDigestArtifact`. That helper lives in `lib/contracts.ts`,
-                 which reads the JSON schemas off disk, and importing it as a
-                 *value* into a `"use client"` tree drags `node:fs` into the
-                 browser bundle and 500s the page. Types from that module
-                 erase and are safe; functions from it are not. */
-              grounding={index === 0 && card.artifact.kind === "digest" ? grounding : null}
-            />
-          )}
+          collapsed={false}
+          renderCard={(_, index) => drawCard(index)}
         />
       )}
     </section>

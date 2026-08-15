@@ -286,6 +286,22 @@ describe("the rail", () => {
     expect(html).not.toContain("Approve exact action");
     expect(html).not.toContain("<button");
   });
+
+  it("is a count and a title, not a small copy of the card (MAR-646)", () => {
+    const html = rail({ inbox: [APPROVAL] });
+    // The fact only an index has: the stage under it *is* the queue.
+    expect(html).toContain('class="rail-count">1<');
+    /*
+     * And nothing the destination also says. The kind sits on the card beside
+     * the expiry and the effect preview that give it meaning; here it was the
+     * pointer wearing a small copy of what it points at.
+     */
+    expect(html).not.toContain(AGENT_COCKPIT_COPY.work_kind.approval);
+    expect(html).not.toContain(AGENT_COCKPIT_COPY.work_kind.choice);
+    // The card's own sentence about the action never reaches the rail either.
+    expect(html).not.toContain("Send an email to the list");
+    expect(html).not.toContain("Send one email to 40 addresses");
+  });
 });
 
 /* ---------------------------------------------------------------------- *
@@ -327,33 +343,39 @@ describe("opening one output in the stage", () => {
           cards={buildArtifactCards(RECORDS)}
           grounding={null}
           heading="Generated assets"
-          history
           openId={openId}
+          single
         />,
       ),
     );
   }
 
-  /** The title inside a *collapsed* dated entry — the ones not in full. */
-  function dated(html: string): string[] {
-    return [...html.matchAll(/output-history-title">([^<]+)</g)].map((match) => match[1] ?? "");
+  /** Every output title the stage draws, in any position. */
+  function titles(html: string): string[] {
+    return [...html.matchAll(/<h3 class="value">([^<]+)</g)].map((match) => match[1] ?? "");
   }
 
-  it("puts the named output in the open position and dates the rest", () => {
+  it("draws the named output and no trace of the others (MAR-646)", () => {
     const html = stage("digest-b");
-    // The rail's promise: press an entry and *that* output is the one in full.
-    expect(dated(html)).toEqual(["Tuesday digest"]);
+    expect(titles(html)).toEqual(["Monday digest"]);
     expect(html).toContain("no business being in a 300px rail");
+    /*
+     * The dated disclosures that used to sit under it were the rail's list a
+     * second time — the same day and the same title per row, three hundred
+     * pixels apart on one screen.
+     */
+    expect(html).not.toContain("output-history-entry");
+    expect(html).not.toContain("Tuesday digest");
   });
 
   it("falls back to the newest for a link that has outlived its output", () => {
     // A saved link naming an artifact the store no longer holds should land on
     // the page it named rather than on an empty one.
-    expect(dated(stage("digest-gone"))).toEqual(["Monday digest"]);
+    expect(titles(stage("digest-gone"))).toEqual(["Tuesday digest"]);
   });
 
-  it("keeps the newest open when the rail has named nothing", () => {
-    expect(dated(stage(null))).toEqual(["Monday digest"]);
+  it("draws the newest when the rail has named nothing", () => {
+    expect(titles(stage(null))).toEqual(["Tuesday digest"]);
   });
 });
 

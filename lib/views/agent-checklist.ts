@@ -14,21 +14,21 @@
  * ## Every line is a recorded fact, and none of them is a tutorial step
  *
  * MAR-547's rule is that a mark is a fact the store holds. So this reads the
- * same fields the tiles and the settings drawer read and adds no state of its
- * own: whether DASH holds the agent (it does, or this page would not be
- * drawing), whether a model can be resolved for it, and whether it has ever
- * run. There is deliberately **no "choose a file" step**, even for an agent
- * that declares input roles: a chosen file lives in the runner's task workspace
- * for the length of one visit and is not a fact DASH can ever tick.
+ * same fields the Settings stage reads and adds no state of its own: whether
+ * DASH holds the agent (it does, or this page would not be drawing), whether a
+ * model can be resolved for it, and whether it has ever run. There is
+ * deliberately **no "choose a file" step**, even for an agent that declares
+ * input roles: a chosen file lives in the runner's task workspace for the
+ * length of one visit and is not a fact DASH can ever tick.
  *
- * ## The model line reads the same field the tile reads (MAR-624)
+ * ## The model line reads the field the picker reads (MAR-624)
  *
  * That issue is one need surfaced by three cards that did not acknowledge each
  * other, and its lasting instruction is that the agent page's model answer must
  * come from one place. `AgentModelSettingsView` is that place: `can_choose`
  * decides the tick, and the sentence under it is the view's own `in_force` —
- * never a sentence composed here, which would be a fourth surface with its own
- * opinion about the same key.
+ * never a sentence composed here, which would be a third surface with its own
+ * opinion about the same key. MAR-646 removed the second one, which was a tile.
  *
  * Pure: no clock, no store, no disk. See `lib/views/agent-control.ts` for why
  * that matters on this page.
@@ -80,8 +80,11 @@ export function isEmptyAgent(facts: AgentChecklistFacts): boolean {
  * plan uses no model, rather than drawn as a satisfied tick. A tick beside
  * "it has a model" on an agent that needs none would teach a reader that DASH
  * has connected something for them, which is exactly the confusion MAR-624
- * names — and an omission here costs nothing, because the same view's
- * `no_model_needed` sentence is on the Model tile beside it.
+ * names — and the omission is the product's settled answer rather than this
+ * module's shortcut: `ModelChoice` draws nothing for the same agent, on the
+ * grounds that a notice explaining an absence is DASH describing its own
+ * internals at somebody who came to look at their agent. The Model tile was the
+ * one surface that disagreed, and MAR-646 removed it.
  */
 export function buildAgentChecklist(facts: AgentChecklistFacts): AgentChecklistStep[] {
   const copy = AGENT_COCKPIT_COPY.checklist;

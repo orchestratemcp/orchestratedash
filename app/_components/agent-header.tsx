@@ -478,10 +478,12 @@ export function AgentControls({
         </button>
         {hostButtons}
       </div>
-      {/* The one sentence about cadence, said once and here rather than under
-          every control. The trigger tile and the switcher in Settings are where
-          a person goes to change it. */}
-      <p className="muted">{AGENT_CONTROL_COPY.manual_note}</p>
+      {/* MAR-646 took a sentence from here: *"It runs only when you ask.
+          Nothing happens on a timer."* That is the trigger, and the trigger is
+          a setting — the switcher on the Settings stage says it twice already,
+          under a heading that says what it is and beside the control that would
+          change it if DASH had a scheduler. A third statement of it under a
+          button on a different stage is the echo this packet is about. */}
       {/* MAR-619, ADR 0016. What this press will spend, under the button that
           spends it.
 
