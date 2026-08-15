@@ -279,6 +279,15 @@ export interface AgentRow {
    * Empty for almost every agent, and an empty list draws nothing at all.
    */
   hosted_on: AgentHostedOnView[];
+  /**
+   * Whether the reader has starred this agent (MAR-640).
+   *
+   * The first fact on this row that is about the reader rather than about the
+   * agent — `agent_prefs` is a table of its own for exactly that reason, the
+   * same one `last_looked_at` is not a column here. False for every agent
+   * until somebody stars it, which is every agent today.
+   */
+  favourite: boolean;
 }
 
 /**

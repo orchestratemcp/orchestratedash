@@ -1105,6 +1105,29 @@ const MIGRATIONS: readonly Migration[] = [
       database.exec("ALTER TABLE agent_deploys ADD COLUMN brought_home_at TEXT");
     }
   },
+
+  // ---------------------------------------------------------------------
+  // MAR-640. Favourites: the first per-agent preference DASH keeps for the
+  // reader rather than about the agent.
+  //
+  // Its own table rather than a column on `agents`, for `agent_looks`' own
+  // reason: this is a fact about the person at the keyboard, and `agents` is
+  // the row an author's manifest fills in. A row here that outlives the agent
+  // it named would cost nothing, so there is no foreign key to `agents` —
+  // `agent_looks`' reasoning again, and `command_audit`'s before it.
+  //
+  // `favourite` is `INTEGER` rather than a second table of starred ids,
+  // because unlike `agent_looks` this fact has a false state that matters:
+  // a person can star an agent and then unstar it, and the row should say so
+  // rather than simply not exist — the same shape `workspace_truncated`
+  // already reads back as `=== 1`.
+  `
+  CREATE TABLE IF NOT EXISTS agent_prefs (
+    agent      TEXT PRIMARY KEY,
+    favourite  INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+  );
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

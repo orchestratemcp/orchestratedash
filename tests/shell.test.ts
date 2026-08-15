@@ -16,9 +16,9 @@ import type {
   GlanceAction,
   HostAction,
   AskAction,
+  IdentityAction,
   ModelAction,
   NotifyAction,
-  RenameAction,
   SampleAction,
   WorkspaceAction,
 } from "../lib/shell/ipc";
@@ -177,6 +177,11 @@ describe("the audited command chokepoint", () => {
       // vocabulary for putting a rename back. `identity.*`, not `agent.*` — that
       // prefix is reserved for the contract's seven verbs, checked below.
       "identity.rename",
+      // MAR-640. The same family's second member: whether the reader has
+      // starred the agent. Contacts nobody, and `favourite` is required
+      // rather than optional — there is no absent state to mean "put it
+      // back", unlike `display_name`.
+      "identity.favourite",
       // MAR-584. A seventh family, and the only route in DASH that accepts a
       // document somebody else's editor wrote. Three members and the split
       // between the first two is the point: comparing is a read and accepting
@@ -510,11 +515,13 @@ describe("dispatch", () => {
     // real one writes a row through `node:sqlite`, which this process has no
     // store for.
     const looks: Array<{ action: GlanceAction; target: { agent_id: string } }> = [];
-    // MAR-589. Recorded rather than performed, `glanceAction`'s own reason: the
-    // real one writes a row through `node:sqlite`, which this process has no
-    // store for.
-    const renames: Array<{ action: RenameAction; target: { agent_id: string; display_name?: string } }> =
-      [];
+    // MAR-589, MAR-640. Recorded rather than performed, `glanceAction`'s own
+    // reason: the real one writes a row through `node:sqlite`, which this
+    // process has no store for.
+    const renames: Array<{
+      action: IdentityAction;
+      target: { agent_id: string; display_name?: string; favourite?: boolean };
+    }> = [];
     // MAR-584. Recorded rather than performed, for the same reason as the rest:
     // the real one reads the agent folder off disk, writes through
     // `importManifest` and — for `reveal` — calls an Electron main API, none of
@@ -583,8 +590,8 @@ describe("dispatch", () => {
         return Promise.resolve({ ok: true });
       },
       agentAction: (
-        action: RenameAction,
-        target: { agent_id: string; display_name?: string },
+        action: IdentityAction,
+        target: { agent_id: string; display_name?: string; favourite?: boolean },
       ) => {
         renames.push({ action, target });
         return Promise.resolve({ ok: true });
@@ -1707,6 +1714,96 @@ describe("dispatch", () => {
 
     it("refuses to execute one without the trusted side", () => {
       expect(() => executeCommand(reviewCommand(rename))).toThrowError(
+        /must go through dispatchCommand/,
+      );
+    });
+  });
+
+  /**
+   * `identity.favourite` (MAR-640): whether the reader has starred one
+   * agent. `identity.rename`'s sibling, and `favourite` has no absent state —
+   * unlike `display_name` there is nothing for an omission to mean, so it is
+   * a required boolean rather than an optional string.
+   */
+  describe("starring an agent (MAR-640)", () => {
+    const star = {
+      command: "identity.favourite",
+      request_id: "req-favourite-1",
+      payload: { agent_id: "ai-news-scout", favourite: true },
+    };
+
+    it("routes to the identity side and not to the agent, the runner or the sample side", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(star, ctx);
+
+      expect(result).toMatchObject({ ok: true });
+      expect(ctx.renames).toEqual([
+        {
+          action: "favourite",
+          target: { agent_id: "ai-news-scout", display_name: undefined, favourite: true },
+        },
+      ]);
+      expect(ctx.samples).toHaveLength(0);
+      expect(ctx.lifecycle).toHaveLength(0);
+    });
+
+    it("unstars with favourite: false, which is not the same as absent", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(
+        {
+          command: "identity.favourite",
+          request_id: "req-favourite-2",
+          payload: { agent_id: "ai-news-scout", favourite: false },
+        },
+        ctx,
+      );
+
+      expect(result).toMatchObject({ ok: true });
+      expect(ctx.renames).toEqual([
+        { action: "favourite", target: { agent_id: "ai-news-scout", display_name: undefined, favourite: false } },
+      ]);
+    });
+
+    it("refuses a request with no favourite value at all", () => {
+      const review = reviewCommand({
+        command: "identity.favourite",
+        request_id: "req-favourite-3",
+        payload: { agent_id: "ai-news-scout" },
+      });
+      expect(review.decision).toBe("denied");
+      expect((review as { reason: string }).reason).toBe("missing_payload_field");
+    });
+
+    it("refuses a star that names no agent", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(
+        {
+          command: "identity.favourite",
+          request_id: "req-favourite-4",
+          payload: { favourite: true },
+        },
+        ctx,
+      );
+
+      expect(result).toMatchObject({ ok: false, reason: "missing_payload_field" });
+      expect(ctx.renames).toHaveLength(0);
+    });
+
+    it("is audited, with keys only, and recorded as changing the store", async () => {
+      const ctx = context();
+      await dispatchCommand(star, ctx);
+
+      expect(ctx.audited[0]).toMatchObject({
+        command: "identity.favourite",
+        decision: "allowed",
+        payload_keys: ["agent_id", "favourite"],
+        mutates: true,
+      });
+      expect(COMMANDS["identity.favourite"].irreversible).toBe(false);
+    });
+
+    it("refuses to execute one without the trusted side", () => {
+      expect(() => executeCommand(reviewCommand(star))).toThrowError(
         /must go through dispatchCommand/,
       );
     });

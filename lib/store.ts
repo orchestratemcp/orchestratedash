@@ -1502,6 +1502,36 @@ export function readAgentLooks(): Map<string, string> {
 }
 
 /* ---------------------------------------------------------------------- *
+ * Favourites (MAR-640)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Star — or unstar — one agent, for the rail's own filter.
+ *
+ * Upserts rather than deleting on `favourite: false`, `recordAgentLook`'s own
+ * shape: the row is a state, not a history, and "unstarred" is a fact this
+ * table is as entitled to hold as "starred" is.
+ */
+export function setAgentFavourite(
+  agent: string,
+  favourite: boolean,
+  at: string = new Date().toISOString(),
+): void {
+  db()
+    .prepare(
+      "INSERT INTO agent_prefs (agent, favourite, updated_at) VALUES (?, ?, ?) " +
+        "ON CONFLICT (agent) DO UPDATE SET favourite = excluded.favourite, updated_at = excluded.updated_at",
+    )
+    .run(agent, favourite ? 1 : 0, at);
+}
+
+/** Every agent currently starred. Absence from the set means "not starred". */
+export function readAgentFavourites(): Set<string> {
+  const rows = db().prepare("SELECT agent FROM agent_prefs WHERE favourite = 1").all();
+  return new Set(rows.map((row) => text(row, "agent")));
+}
+
+/* ---------------------------------------------------------------------- *
  * What DASH sent to a server (MAR-584, ADR 0010)
  * ---------------------------------------------------------------------- */
 

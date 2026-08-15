@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { SURFACES, isSeparateWindowRoute, surfaceFor } from "../_data/routes";
+import { useRefreshOnWindowFocus, useView } from "../_data/use-view";
 import { SurfaceIcon } from "./sidebar-icons";
 import { TitleBar } from "./title-bar";
 
@@ -60,6 +61,20 @@ import { TitleBar } from "./title-bar";
  */
 export function AppChrome(): ReactNode {
   const pathname = usePathname() ?? "/";
+  /*
+   * MAR-640. Read on every page, `HostNotice`'s own standing: the sidebar is
+   * present everywhere but `isSeparateWindowRoute` returns before this is
+   * drawn, so a live count of waiting work is one read this component owns
+   * rather than something threaded down from whichever page happens to be
+   * open. `useRefreshOnWindowFocus`'s own key re-reads it on the same "the
+   * user is back" signal `AgentsPage` uses — `useView`'s header states why
+   * that is a deliberate refresh point and not a poll — so the badge answers
+   * "arrived since I last looked" without ever ticking on a timer.
+   */
+  const workInboxFocusKey = useRefreshOnWindowFocus();
+  const workInbox = useView((source) => source.inbox(), workInboxFocusKey);
+  const workInboxCount =
+    workInbox.status === "ready" ? workInbox.data.items.length + workInbox.data.stalled.length : 0;
 
   /*
    * A dialog is not a page of the app (MAR-534).
@@ -119,6 +134,13 @@ export function AppChrome(): ReactNode {
         </div>
         {SURFACES.map((surface) => {
           const active = surface.href === current.href;
+          /*
+            MAR-640. Zero renders nothing rather than a badge reading "0" —
+            the same rule `describeRunCount` follows for a fact that is
+            usually absent: a count that is present every time somebody
+            glances at the sidebar is a count nobody reads any more.
+          */
+          const badge = surface.href === "/work" && workInboxCount > 0 ? workInboxCount : null;
           return (
             <Link
               key={surface.href}
@@ -140,6 +162,14 @@ export function AppChrome(): ReactNode {
             >
               <SurfaceIcon href={surface.href} />
               <span className="sidebar-label">{surface.label}</span>
+              {/*
+                MAR-640. Plain text, not `aria-hidden` — the same "a fact
+                somebody has to discover by pointing at something is a fact
+                most people never read" argument `GlanceChip.meaning` makes.
+                Reading the count is what makes "Work inbox" answer *how
+                much* rather than only *whether*.
+              */}
+              {badge === null ? null : <span className="sidebar-badge">{badge}</span>}
             </Link>
           );
         })}

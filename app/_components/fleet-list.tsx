@@ -1,17 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import type { KeyboardEvent, ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AgentHosting, FleetCard, describeRunCount } from "./fleet-card";
 import { OpenAgentButton } from "./glance-chips";
 import { InfoNote } from "./info-note";
+import { useFleetFilterSync } from "./fleet-rail";
 import { useFleetView } from "./fleet-view-toggle";
 import { agentWorkspaceHref } from "../_data/routes";
 import { CHIEF_NAME, describeChief, describeFleetSummary } from "../../lib/copy/chief";
 import { describeFleetCardStatus } from "../../lib/copy/fleet-status";
-import { stepSpotlight } from "../../lib/views/fleet-view";
+import { matchesFleetFilter } from "../../lib/views/fleet-filter";
+import { stepRowsSelection, stepSpotlight } from "../../lib/views/fleet-view";
 import type { SightingLog } from "../../lib/host-sightings";
 import type { AgentRow } from "../../lib/views/types";
 
@@ -41,28 +44,58 @@ import type { AgentRow } from "../../lib/views/types";
  * No card is hidden, removed from the document or taken out of the tab order
  * in any view: a person scrolling this row with a keyboard reaches every
  * agent, and a screen reader reads the same list it reads in the grid.
+ *
+ * ## The rail's filter narrows this same list (MAR-640)
+ *
+ * `agents` is the whole fleet — the rail reads it too, for its counts, which
+ * is why it is never filtered before it gets here. This component filters
+ * its own copy with `useFleetFilterSync`, the same attribute the rail's
+ * control writes, read synchronously so the very first paint is already
+ * narrowed — see that hook's own header for why filtering cannot lean on
+ * `FleetViewScript`'s CSS-only trick the way the three tracks do.
+ *
+ * ## Keyboard selection (MAR-640)
+ *
+ * Rows gets ↑/↓ to move the selection (the chief follows, `select`'s own
+ * job) and Enter to open the selected agent's workspace. Spotlight gets ←/→
+ * as the keyboard equivalent of the two step buttons already beside it —
+ * `stepSpotlight` is the same function either way. Grid gets neither: a
+ * two-dimensional grid has no single "next" a linear key can name, and
+ * nothing in the issue asked for one.
  */
 export function FleetList({
   agents,
   log,
+  onToggleFavourite,
 }: {
+  /** The whole fleet — the rail's own counts depend on this being unfiltered. */
   agents: readonly AgentRow[];
   /** What the Servers page saw, this window (MAR-606, ADR 0015). */
   log: SightingLog;
+  /** Star — or unstar — one agent (MAR-640). Optional: see `FleetCard`'s own note. */
+  onToggleFavourite?: (agent: string, next: boolean) => void;
 }): ReactNode {
+  const router = useRouter();
   const [view] = useFleetView();
+  const filter = useFleetFilterSync();
   const spotlight = view === "spotlight";
+  const rows = view === "rows";
   const track = useRef<HTMLOListElement | null>(null);
   const cards = useRef<(HTMLLIElement | null)[]>([]);
   const [selected, setSelected] = useState(0);
 
+  const visible = useMemo(
+    () => agents.filter((agent) => matchesFleetFilter(filter, agent)),
+    [agents, filter],
+  );
+
   /*
-   * Clamped rather than trusted. The agents list is re-read on window focus and
-   * on every navigation back to this page, so the fleet can shrink underneath a
-   * selected index that was valid a moment ago — an agent removed while this view
-   * was open is the ordinary way that happens.
+   * Clamped rather than trusted. The filtered list is rebuilt on every window
+   * focus, navigation and filter change, so a selected index valid a moment
+   * ago can point past the end — an agent removed, or filtered out, while
+   * this view was open is the ordinary way that happens.
    */
-  const current = selected < agents.length ? selected : 0;
+  const current = selected < visible.length ? selected : 0;
 
   const measure = useCallback((): void => {
     const row = track.current;
@@ -123,7 +156,7 @@ export function FleetList({
         window.cancelAnimationFrame(frame);
       }
     };
-  }, [spotlight, measure, agents.length]);
+  }, [spotlight, measure, visible.length]);
 
   const scrollTo = (index: number): void => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -142,9 +175,42 @@ export function FleetList({
   };
 
   const step = (direction: 1 | -1): void => {
-    const next = stepSpotlight(current, agents.length, direction);
+    const next = stepSpotlight(current, visible.length, direction);
     setSelected(next);
     scrollTo(next);
+  };
+
+  /*
+   * MAR-640. Rows moves the selection with the arrow keys and opens the
+   * selected agent on Enter; Spotlight steps with the arrow keys the same
+   * two buttons beside it already do. `select`'s own focus-follows-selection
+   * job is why `.fleet-pick` is focused explicitly after an arrow key in
+   * Rows — a browser's default Tab order has no notion of "the row above".
+   */
+  const onListKeyDown = (event: KeyboardEvent<HTMLOListElement>): void => {
+    if (rows) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const next = stepRowsSelection(current, visible.length, event.key === "ArrowDown" ? 1 : -1);
+        select(next);
+        cards.current[next]?.querySelector<HTMLButtonElement>(".fleet-pick")?.focus();
+      } else if (event.key === "Enter") {
+        const agent = visible[current];
+        if (agent !== undefined) {
+          router.push(agentWorkspaceHref(agent.name));
+        }
+      }
+      return;
+    }
+    if (spotlight) {
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        step(-1);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        step(1);
+      }
+    }
   };
 
   const list = (
@@ -161,8 +227,9 @@ export function FleetList({
        */
       tabIndex={spotlight ? 0 : undefined}
       aria-label={spotlight ? "Your agents, side by side" : undefined}
+      onKeyDown={rows || spotlight ? onListKeyDown : undefined}
     >
-      {agents.map((agent, index) => (
+      {visible.map((agent, index) => (
         <li
           key={agent.name}
           ref={(node) => {
@@ -190,6 +257,13 @@ export function FleetList({
             onSelect={() => {
               select(index);
             }}
+            onToggleFavourite={
+              onToggleFavourite === undefined
+                ? undefined
+                : (next) => {
+                    onToggleFavourite(agent.name, next);
+                  }
+            }
           />
         </li>
       ))}
@@ -233,8 +307,23 @@ export function FleetList({
 
   return (
     <div className="fleet-stage">
-      <div className="fleet-cards">{cardsPane}</div>
-      <ChiefBand agent={agents[current] ?? null} agents={agents} log={log} />
+      <div className="fleet-cards">
+        {/*
+          MAR-640. A filter that hides everybody says so rather than leaving a
+          bare pane — the same argument the page-level "no agents yet" empty
+          state already makes, for a narrower cause. `agents.length` (the
+          whole fleet) is what distinguishes this from that state: an empty
+          fleet never reaches `FleetList` at all (`app/page.tsx` draws its own
+          empty state first), so an empty `visible` here is always a filter's
+          doing.
+        */}
+        {visible.length === 0 ? (
+          <p className="empty">Nothing matches this filter. Choose another in the rail.</p>
+        ) : (
+          cardsPane
+        )}
+      </div>
+      <ChiefBand agent={visible[current] ?? null} agents={visible} log={log} />
     </div>
   );
 }
