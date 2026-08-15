@@ -32,6 +32,11 @@ const MODEL: AgentModelSettingsView = {
   detail: "One model choice is in force for this agent.",
   chosen_model_id: "openai/gpt-5",
   in_force: "OpenAI GPT-5",
+  // MAR-642 landed mid-flight: this fixture models an agent with its own
+  // choice, so the default is not in force and the picker's first option
+  // reads as the per-step match.
+  from_default: false,
+  unpinned_option: "Match each step to what it needs",
   steps: [],
   steps_in_force: false,
   steps_note: "One model overrides step levels.",
