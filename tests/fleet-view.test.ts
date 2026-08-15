@@ -192,8 +192,18 @@ describe("the stylesheet", () => {
      *
      * The card's own container is exempt: `[data-fleet-view="rows"] .fleet-card`
      * changes the card's *axis*, which is the track question again.
+     *
+     * MAR-639's `::-webkit-scrollbar` rule is exempt for the same reason: it
+     * hides the spotlight track's own scroll chrome, not a fact about any
+     * agent, and `scrollbar-width: none` right beside it in the stylesheet
+     * hides the identical thing through a property that has no `display` to
+     * catch here at all — a browser-prefix duplicate of a rule this test
+     * already allows, not a second kind of hiding.
      */
     for (const rule of viewRules) {
+      if (rule.selector.endsWith("::-webkit-scrollbar")) {
+        continue;
+      }
       if (!/display:\s*none/.test(rule.body)) {
         continue;
       }
@@ -273,20 +283,25 @@ describe("the stylesheet", () => {
     }
 
     /*
-     * Rows states three agents on one screen, and three 145px bands is the only
-     * way that arithmetic closes — which it does by moving the action beside
-     * the band rather than under it. Without this the row is 182px, three of
-     * them overflow the pane, and the view misses its stated count.
+     * MAR-639 removes the rows card's `display: grid` override. It existed to
+     * move the Open button beside the band rather than under it — three 145px
+     * bands is the only way Rows' three-agents-on-one-screen arithmetic
+     * closes, and the button's position was the whole difference. The button
+     * is gone, replaced by the whole-card link, so the card is back to the
+     * base rule's `flex-direction: column`, which stacks the same two
+     * children the same way on one fewer rule.
      */
-    expect(block, "the rows card must put its action in a second column").toMatch(
+    expect(block, "the rows card's now-dead grid override must not come back").not.toMatch(
       /\[data-fleet-view="rows"\] \.fleet-card \{[^}]*grid-template-columns/,
     );
 
     /*
-     * Spotlight's count is three across, and three 18rem columns want 900px of
-     * a 667px pane. The narrowing is the count.
+     * Spotlight's count is three across, and three columns want to grow with
+     * the viewport now (MAR-639) rather than sit at a fixed 13rem — see that
+     * rule's own comment for why a fixed pixel track shrinks at a lower OS
+     * UI scale while the pane around it does not.
      */
-    expect(block).toMatch(/--fleet-spot:\s*13rem/);
+    expect(block).toMatch(/--fleet-spot:\s*clamp\(14rem, 26vw, 22rem\)/);
 
     // The narrow widths keep MAR-630's repair, untouched by any of the above.
     expect(globals).toContain("grid-auto-rows: auto");
@@ -296,10 +311,12 @@ describe("the stylesheet", () => {
     /*
      * The sideways-scroll fix MAR-590 shipped: a track minimum that is a plain
      * length does not consult the container, and at 375px a flat 19rem forced a
-     * track 24px wider than the space it had. The floor is now the card's own
-     * `--fleet-card` width wrapped in `min(..., 100%)`, same job.
+     * track 24px wider than the space it had. MAR-639 replaces the fixed
+     * `--fleet-card` track with a 12.5rem–15rem range so `auto-fill` can grow
+     * a fourth (and fifth) column, but the floor still has to give way to the
+     * container below it, same job as `min(var(--fleet-card), 100%)` did.
      */
-    expect(globals).toContain("min(var(--fleet-card), 100%)");
+    expect(globals).toContain("min(12.5rem, 100%)");
   });
 
   it("puts Add agent and the layout control in a right rail, not above the cards", () => {

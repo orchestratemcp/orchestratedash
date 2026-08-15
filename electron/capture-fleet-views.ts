@@ -793,7 +793,10 @@ interface Counted {
 }
 
 /**
- * MAR-630's per-view counts, checked against what the pane actually holds.
+ * MAR-630's per-view counts, checked against what the pane actually holds —
+ * MAR-639 widens the grid's own bar from "three across" to "four or more",
+ * on the same reasoning: a number is the one thing a reviewer cannot check
+ * by looking at a picture of the top of a pane.
  *
  * Returns the sentence a reviewer would have to write, or null when the frame
  * meets its bar. Making this a refusal rather than a note is the same move
@@ -804,7 +807,7 @@ interface Counted {
  * **Only at 1280.** The counts are a desktop claim and MAR-634 says so — the
  * card's height is bounded above the rail's 900px collapse and free below it,
  * because the 375px repair and "six in two thirds" cannot both hold at one
- * size. Asserting three across at 375 would be asserting the defect MAR-630
+ * size. Asserting four across at 375 would be asserting the defect MAR-630
  * fixed.
  */
 function shortfall(view: FleetView, width: string, m: Counted): string | null {
@@ -844,9 +847,17 @@ function shortfall(view: FleetView, width: string, m: Counted): string | null {
 
   switch (view) {
     case "grid":
-      /* "Grid — 3 across × 2 rows visible, six cards, without scrolling." */
-      if (m.visible_columns !== 3) {
-        return `${String(m.visible_columns)} columns of cards, not three across`;
+      /*
+       * "Grid — 4+ across × 2 rows visible, six cards, without scrolling."
+       *
+       * MAR-639 drops the three-track `max-width` cap MAR-634's own count was
+       * measured against, on Henrik's own ask for more cards per row rather
+       * than the number three specifically. Four is the new floor, not a new
+       * ceiling — a wider window is free to earn a fifth column, and this
+       * frame is 1280 either way, so nothing here asserts an upper bound.
+       */
+      if (m.visible_columns < 4) {
+        return `${String(m.visible_columns)} columns of cards, not four or more`;
       }
       if (m.visible_rows < 2) {
         return `${String(m.visible_rows)} row(s) inside the pane, not two`;

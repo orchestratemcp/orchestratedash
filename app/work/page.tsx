@@ -15,10 +15,6 @@ export default function WorkInboxPage(): ReactNode {
   return (
     <>
       <h1>Work inbox</h1>
-      <p className="lede">
-        Choices and guarded actions waiting for you, ordered by the soonest
-        deadline.
-      </p>
       <HostNotice host={host} />
 
       {state.status === "loading" ? (

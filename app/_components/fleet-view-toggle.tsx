@@ -114,13 +114,16 @@ export function FleetViewToggle(): ReactNode {
   return (
     <fieldset className="fleet-view-toggle">
       {/*
-        Visible, not hidden. Three one-word options in a row are exactly the
-        shape that reads as decoration until something names them, and this is
-        the "one label per control" the standing instruction asks for — the
-        control is the group, so the group is what gets the label. Each option's
-        own sentence is on hover and nowhere on screen.
+        MAR-639's text axe: off the screen rather than gone, on the
+        `.visually-hidden` recipe `app/_components/app-chrome.tsx`'s own
+        collapsed rail already uses. A `<fieldset>` needs an accessible name
+        and a radio group needs one more than most, so the sentence stays for
+        a screen reader — but a sighted reader now gets that identity from the
+        glyph and the per-option `title` beside it, the "one label per
+        control" instruction read the other way: three named, pictured
+        options are not decoration needing a caption above them.
       */}
-      <legend>{FLEET_VIEW_LEGEND}</legend>
+      <legend className="visually-hidden">{FLEET_VIEW_LEGEND}</legend>
       <div className="fleet-view-options">
         {FLEET_VIEWS.map((option) => {
           const copy = describeFleetView(option);

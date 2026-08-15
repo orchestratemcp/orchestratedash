@@ -6,9 +6,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AgentHosting, FleetCard, describeRunCount } from "./fleet-card";
 import { OpenAgentButton } from "./glance-chips";
+import { InfoNote } from "./info-note";
 import { useFleetView } from "./fleet-view-toggle";
 import { agentWorkspaceHref } from "../_data/routes";
-import { CHIEF_NAME, CHIEF_WAITING, describeChief } from "../../lib/copy/chief";
+import { CHIEF_NAME, describeChief, describeFleetSummary } from "../../lib/copy/chief";
+import { describeFleetCardStatus } from "../../lib/copy/fleet-status";
 import { stepSpotlight } from "../../lib/views/fleet-view";
 import type { SightingLog } from "../../lib/host-sightings";
 import type { AgentRow } from "../../lib/views/types";
@@ -232,7 +234,7 @@ export function FleetList({
   return (
     <div className="fleet-stage">
       <div className="fleet-cards">{cardsPane}</div>
-      <ChiefBand agent={agents[current] ?? null} log={log} />
+      <ChiefBand agent={agents[current] ?? null} agents={agents} log={log} />
     </div>
   );
 }
@@ -289,12 +291,28 @@ export function spotlightPosition(index: number, centred: number): string | unde
  * the one thing this repository's tests have no way to produce: every render
  * test here is `renderToStaticMarkup`, so no effect runs and the spotlight is
  * unreachable through `FleetList` itself.
+ *
+ * ## When nothing is selected, the chief talks about the fleet (MAR-639)
+ *
+ * Henrik's own example: *"2 need you, 1 working."* Replaces the old fixed
+ * "waiting for an agent to talk about" — a sentence that named nothing an
+ * agent that reached this branch could actually be about. `describeFleetSummary`
+ * builds it from the same per-card status every portrait is tinted by, so the
+ * fleet and the chief cannot disagree about what "needs you" means.
  */
 export function ChiefBand({
   agent,
+  agents = [],
   log = {},
 }: {
   agent: AgentRow | null;
+  /**
+   * Every agent in the fleet, read only for the summary drawn above — never
+   * for anything about the selected agent, which stays `agent`'s alone.
+   * Optional and defaulting to empty so a caller (this file's own render
+   * tests included) that only ever had one agent to hand keeps working.
+   */
+  agents?: readonly AgentRow[];
   log?: SightingLog;
 }): ReactNode {
   const line =
@@ -310,7 +328,18 @@ export function ChiefBand({
     <aside className="chief-band">
       <ChiefGlyph />
       {line === null || agent === null ? (
-        <p className="chief-says muted">{CHIEF_WAITING}</p>
+        <p className="chief-says muted">
+          {describeFleetSummary(
+            agents.map(
+              (row) =>
+                describeFleetCardStatus({
+                  running: row.running,
+                  run_count: row.run_count,
+                  glance: row.glance,
+                })?.id ?? null,
+            ),
+          )}
+        </p>
       ) : (
         <>
           <div className="chief-line">
@@ -321,6 +350,12 @@ export function ChiefBand({
             */}
             <p className="chief-says">
               <code>{line.agent}</code> — {line.says}
+              {/*
+                MAR-639. The all-clear chip's whole sentence, behind the note
+                rather than loose in the line — `ChiefLine.note`'s own header
+                states which chip this is and why.
+              */}
+              {line.note === null ? null : <InfoNote>{line.note}</InfoNote>}
             </p>
             <p className="chief-runs muted">{line.runs}</p>
             <AgentHosting agent={agent.name} hostedOn={agent.hosted_on} log={log} />

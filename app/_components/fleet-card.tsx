@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { OpenAgentButton } from "./glance-chips";
+import { agentWorkspaceHref } from "../_data/routes";
 import { OAvatar } from "./o-avatar";
 import { describeAgentHosting } from "../../lib/host-sighting";
 import { sightingFor, type SightingLog } from "../../lib/host-sightings";
+import { plainDay } from "../../lib/copy/when";
 import {
   describeFleetCardStatus,
   describeFleetPlace,
@@ -14,14 +16,49 @@ import {
 import type { AgentHostedOnView, AgentRow } from "../../lib/views/types";
 
 /**
+ * Which tone a status tints the portrait (MAR-639), or `null` for the
+ * neutral tone the base `.fleet-portrait` rule already draws.
+ *
+ * `lib/copy/fleet-status.ts` already ranks the four statuses; this is the
+ * same three-tone scale `lib/copy/glance.ts` states for its chips —
+ * **warn is waiting on you, accent is in flight or ready to read, neither
+ * for the rest** — read across onto the portrait rather than invented a
+ * second time. `completed` and the never-run case (`null`) share the plain
+ * base look rather than a modifier class, since neither has anything left
+ * for the card to ask about.
+ */
+function statusTone(status: FleetCardStatus | null): "warn" | "accent" | null {
+  switch (status) {
+    case "needs_input":
+      return "warn";
+    case "working":
+    case "ready_for_review":
+      return "accent";
+    case "completed":
+    case null:
+      return null;
+  }
+}
+
+/**
  * One agent, as a snug portrait card.
  *
  * Three views draw this same card — `lib/views/fleet-view.ts` still holds that
- * a view may change the track and nothing a card says. The card now carries
- * the four marks Henrik asked for (status, local/cloud, open), drawn from
- * facts already on the row. The sprite is `size={100}` — 2× the 50px source,
- * a whole multiple — so two rows of three sit snug in the cards pane rather
- * than filling it with cropped 200px tiles.
+ * a view may change the track and nothing a card says. The sprite is
+ * `size={100}` — 2× the 50px source, a whole multiple — so two rows of three
+ * sit snug in the cards pane rather than filling it with cropped 200px tiles.
+ *
+ * ## The whole card is the way in now (MAR-639)
+ *
+ * `.fleet-card-link` is a real anchor stretched over the card with CSS
+ * (`inset: 0`), so a press anywhere on the card that is not another control
+ * opens the agent — the affordance `OpenAgentButton` used to be the only
+ * door to. It sits as a sibling *after* the pick button rather than wrapping
+ * it, on the same rule the button's own comment already stated: a link
+ * nested inside a button (or the reverse) is two actions sharing one tab
+ * stop. `.fleet-pick` keeps `z-index: 1` in the stylesheet so its own click
+ * — selecting the card, for the chief — wins over the stretched link
+ * underneath it.
  */
 export function FleetCard({
   agent,
@@ -38,36 +75,11 @@ export function FleetCard({
     glance: agent.glance,
   });
   const place = describeFleetPlace(agent.hosted_on);
+  const tone = statusTone(status?.id ?? null);
 
   return (
     <article className={selected ? "row-card fleet-card is-selected" : "row-card fleet-card"}>
       <div className="fleet-marks">
-        {status === null ? (
-          /*
-           * MAR-634 item 3. A card with a place chip and no status read as a
-           * status that failed to load, which is the one thing it was not: a
-           * never-run agent is a correct, complete card, and MAR-547 forbids
-           * dressing it as `Completed`.
-           *
-           * So the absence gets said rather than left as a gap, and the words
-           * are `describeRunCount`'s — the same sentence the chief speaks
-           * under this card, taken already worded rather than written twice.
-           * `describeFleetCardStatus` returns null only when `run_count` is
-           * zero and nothing is waiting, so this branch is exactly the
-           * never-run case and the string is exactly "Not run yet". No fifth
-           * status was invented to say it; the run count is a recorded fact
-           * and this is that fact, drawn where the others are.
-           */
-          <span className="fleet-mark fleet-mark-not_run">
-            <FleetMarkGlyph name="not_run" />
-            {describeRunCount(agent.run_count)}
-          </span>
-        ) : (
-          <span className={`fleet-mark fleet-mark-${status.id}`}>
-            <FleetMarkGlyph name={status.id} />
-            {status.label}
-          </span>
-        )}
         <span className={`fleet-mark fleet-mark-${place.id}`}>
           <FleetMarkGlyph name={place.id} />
           {place.label}
@@ -75,8 +87,9 @@ export function FleetCard({
       </div>
       {/*
         A real button, not a card that looks clickable. Selection is what tells
-        the chief who to talk about. The Open control sits beside this, not
-        inside it — a link nested in a button is two actions in one tab stop.
+        the chief who to talk about. Opening the agent is the stretched link
+        below, a sibling rather than a wrapper — see this component's own
+        header for why neither may nest inside the other.
       */}
       <button
         type="button"
@@ -84,12 +97,62 @@ export function FleetCard({
         aria-pressed={selected}
         onClick={onSelect}
       >
-        <span className="fleet-portrait">
+        {/*
+          MAR-639. The portrait carries the status as a colour now, not just a
+          word beside it: a 2px border and a tinted ground in the same tone
+          the chip scale already uses, so a reader who knows that scale reads
+          the card before reaching the label.
+        */}
+        <span className={tone === null ? "fleet-portrait" : `fleet-portrait fleet-portrait-${tone}`}>
           <OAvatar name={agent.avatar} size={100} action />
         </span>
-        <span className="fleet-name">{agent.title}</span>
+        <span className="fleet-identity">
+          {status === null ? (
+            /*
+             * MAR-634 item 3. A card with no status mark read as one that
+             * failed to load, which is the one thing it was not: a never-run
+             * agent is a correct, complete card, and MAR-547 forbids dressing
+             * it as `Completed`.
+             *
+             * So the absence gets said rather than left as a gap, and the
+             * words are `describeRunCount`'s — the same sentence the chief
+             * speaks under this card, taken already worded rather than
+             * written twice. `describeFleetCardStatus` returns null only
+             * when `run_count` is zero and nothing is waiting, so this branch
+             * is exactly the never-run case and the string is exactly "Not
+             * run yet". No fifth status was invented to say it.
+             */
+            <span className="fleet-mark fleet-mark-not_run">
+              <FleetMarkGlyph name="not_run" size={16} />
+              {describeRunCount(agent.run_count)}
+            </span>
+          ) : (
+            <>
+              <span className={`fleet-mark fleet-mark-${status.id}`}>
+                <FleetMarkGlyph name={status.id} size={16} />
+                {status.label}
+              </span>
+              {/*
+                MAR-639's last-run line. Only drawn once the agent has run at
+                least once — a never-run card's status mark above already says
+                "Not run yet", and repeating it here would be the exact
+                two-copies-that-can-disagree `describeRunCount`'s own header
+                argues against, on a card MAR-614 was written to make quieter
+                rather than louder.
+              */}
+              <span className="fleet-last-run muted">
+                {describeLastRun(agent.run_count, agent.last_run_at)}
+              </span>
+            </>
+          )}
+          <span className="fleet-name">{agent.title}</span>
+        </span>
       </button>
-      <OpenAgentButton agent={agent.name} />
+      <Link
+        className="fleet-card-link"
+        href={agentWorkspaceHref(agent.name)}
+        aria-label={`Open ${agent.title}`}
+      />
     </article>
   );
 }
@@ -183,6 +246,25 @@ export function describeRunCount(runs: number): string {
   return runs === 1 ? "Run once" : `Run ${String(runs)} times`;
 }
 
+/**
+ * "Run 3 times · 7 August 2026", or just the count when DASH has no date
+ * (MAR-639).
+ *
+ * `plainDay`, never a relative phrase. `lib/copy/when.ts` states the rule this
+ * follows rather than reopening it: a relative phrase needs a clock at render,
+ * so the packaged export's first paint and a render test's static markup
+ * would disagree with each other, and an absolute date is the one a person
+ * can actually check against a run's own record. Falls back to the count
+ * alone when there is no date to read — an unparsable timestamp, not a
+ * possible state for what `lib/views/build.ts` writes, but `plainDay`'s own
+ * contract is to return null rather than echo something nothing can read.
+ */
+export function describeLastRun(runCount: number, lastRunAt: string | null): string {
+  const base = describeRunCount(runCount);
+  const day = lastRunAt === null ? null : plainDay(lastRunAt);
+  return day === null ? base : `${base} · ${day}`;
+}
+
 /** x, y, width, height on the 12×12 grid, matching `sidebar-icons.tsx`. */
 type Px = readonly [number, number, number, number];
 
@@ -256,13 +338,19 @@ const MARKS: Readonly<Record<MarkName, readonly Px[]>> = {
   ],
 };
 
-function FleetMarkGlyph({ name }: { name: MarkName }): ReactNode {
+/**
+ * `size` defaults to 12 — the place chip's own size, unchanged. The status
+ * mark that now sits beside the portrait passes 16 (MAR-639): closer reading
+ * distance from the icon that stands for a whole card's status earns it the
+ * larger of the two sizes this sidebar-icon grid already draws at.
+ */
+function FleetMarkGlyph({ name, size = 12 }: { name: MarkName; size?: 12 | 16 }): ReactNode {
   return (
     <svg
       className="fleet-mark-glyph"
       viewBox="0 0 12 12"
-      width="12"
-      height="12"
+      width={size}
+      height={size}
       aria-hidden="true"
       shapeRendering="crispEdges"
     >

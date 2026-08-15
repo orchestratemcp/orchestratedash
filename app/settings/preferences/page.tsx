@@ -59,10 +59,6 @@ export default function PreferencesPage(): ReactNode {
   return (
     <>
       <h1>How DASH looks</h1>
-      <p className="lede">
-        Four settings, and all of them are about spacing, shape and colour.
-        None of them changes what an agent can do.
-      </p>
       <HostNotice host={host} />
 
       <section aria-labelledby="preferences-density">
