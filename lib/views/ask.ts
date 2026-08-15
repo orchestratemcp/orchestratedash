@@ -53,11 +53,13 @@ import { aiProviderById } from "../ai/providers";
 import {
   ASK_CUSTODY,
   ASK_HEADING,
+  ASK_MODEL_CHANGE,
   ASK_PLACEHOLDER,
   ASK_SOURCES_HEADING,
   ASK_SUBMIT,
   ASK_WORKING,
   describeAmount,
+  describeAskModel,
   describeAskFailure,
   describeAskPurpose,
   describeCharge,
@@ -142,7 +144,8 @@ export function buildAgentAsk(
    * choice — and `electron/ask-host.ts` reads the same one, through the same
    * function, so the page cannot offer a question main would then refuse.
    */
-  const choice = readEffectiveModelChoice(agent, card.provider_id).choice;
+  const effective = readEffectiveModelChoice(agent, card.provider_id);
+  const choice = effective.choice;
   if (choice.kind !== "one_model") {
     return blocked(
       describeUnavailable("no_model_chosen", { agent: title, service: card.service }),
@@ -174,6 +177,21 @@ export function buildAgentAsk(
     working: ASK_WORKING,
     sources_heading: ASK_SOURCES_HEADING,
     provider_label: card.provider_label,
+    /*
+     * MAR-648. The composer's settings row, from the choice this function has
+     * already resolved for the gate above.
+     *
+     * Read once and used twice rather than read twice: the model the indicator
+     * names and the model the gate accepted are the same fact, and a second
+     * `readEffectiveModelChoice` here would be a second chance to draw a row
+     * saying one thing while `electron/ask-host.ts` asks another.
+     */
+    model: {
+      model_id: choice.model_id,
+      from_default: effective.from_default,
+      note: describeAskModel(effective.from_default),
+      change_label: ASK_MODEL_CHANGE,
+    },
     estimate: describeEstimate({
       items: Math.min(MAX_ITEMS_PER_QUESTION, items.length),
       available: items.length,

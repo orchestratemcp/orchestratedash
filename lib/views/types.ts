@@ -180,6 +180,29 @@ export interface AgentRow {
    */
   title: string;
   goal: string;
+  /**
+   * What this agent's author declared it does, as component ids (MAR-648).
+   *
+   * `planned_route[].component_id` in declared order — `public_feed_fetch`,
+   * `digest_compose`. Values, never labels: nothing renders one as prose, and
+   * `lib/copy/chief-chat.ts` states the rule that keeps it that way.
+   *
+   * On the row because the chief's composer routes on it, and routing must read
+   * **what an author declared**, never what a run produced or what an agent is
+   * called. `lib/chief/route.ts`'s header is the argument; this field plus
+   * `goal` is the entire corpus it is allowed to see.
+   *
+   * `planned_steps` above is the same document counted, and the two travel
+   * together rather than one being derived from the other on a page: a length
+   * computed in a component would be a second answer to "how many steps" free to
+   * disagree with the summary's.
+   *
+   * Empty for an agent whose manifest is too old to declare a route, which is
+   * the same population `older_agent_names` names on the Connections view. An
+   * empty corpus routes to nobody rather than to everybody — `routeRequest`
+   * scores on matched words and an agent with none scores zero.
+   */
+  capabilities: string[];
   plan_source: string;
   build_target: string;
   planned_steps: number;
@@ -1458,6 +1481,40 @@ export interface AskFlow {
  * every reason a person cannot ask something carries its own sentence and its
  * own next action. MAR-545 asks for exactly this: "never a dead input".
  */
+/**
+ * The model indicator on the composer's settings row (MAR-648).
+ *
+ * ## The id is the label, and there is no friendlier one to give
+ *
+ * `model_id` is the provider's own name for the model — `claude-sonnet-5`,
+ * `gpt-5.2`. It is set as a value rather than written into a sentence, which is
+ * `lib/copy/identifiers.ts`'s rule and also the only honest option: DASH holds
+ * no table mapping a model id to a marketing name, and ADR 0012's refusal of a
+ * price table is the same argument in a different costume — a copy of somebody
+ * else's facts, in a repository nobody updates when they change.
+ *
+ * It is also the string a person already sees on every stored answer
+ * (`AskExchangeView.model`) and in the picker they chose it with, so the
+ * indicator matches what is above and below it.
+ *
+ * ## `from_default` is a fact about whose decision it was
+ *
+ * `EffectiveModelChoice.from_default`, carried rather than re-derived. "You
+ * chose this" and "this is what DASH uses unless you say otherwise" are
+ * different facts about the same id, and a person who cannot tell them apart
+ * cannot predict what changing the fleet default will do to this agent.
+ */
+export interface AskModelView {
+  /** The provider's own model id. Rendered as a value, never inside prose. */
+  model_id: string;
+  /** True when this agent is running on DASH's fleet default (MAR-642). */
+  from_default: boolean;
+  /** Which of the two facts above, in words. `lib/copy/ask.ts` owns them. */
+  note: string;
+  /** Where to change it — this agent's Settings stage. */
+  change_label: string;
+}
+
 export type AgentAskView =
   | {
       can_ask: true;
@@ -1470,6 +1527,24 @@ export type AgentAskView =
       sources_heading: string;
       /** DASH's friendly name for the provider being asked. Never an identifier. */
       provider_label: string;
+      /**
+       * The model this question will actually be asked under (MAR-648).
+       *
+       * The composer's settings row draws it, which is the whole of Henrik's
+       * *"It's a chatbox with some settings. Model, etc."* — and it is the one
+       * setting a person can already change, so it is the one the row carries.
+       *
+       * `readEffectiveModelChoice`'s answer, not `agent_model_choice`'s: MAR-642
+       * gave DASH a fleet default, and an indicator reading the per-agent row
+       * alone would show nothing at all for the agent that is *only* covered by
+       * the default — which is every freshly imported agent, and precisely the
+       * case the default was added for.
+       *
+       * Never null on this arm. `buildAgentAsk` refuses a question it cannot name
+       * a model for before it reaches here, so an "asking under —" state is
+       * unreachable rather than merely unlikely.
+       */
+      model: AskModelView;
       /** What sending a question will do, before anybody presses anything. */
       estimate: { headline: string; detail: string };
       ask: AskFlow;

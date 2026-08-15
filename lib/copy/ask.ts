@@ -513,6 +513,102 @@ export const ASK_WORKING = "Asking…";
 /** The heading over the list of saved things an answer was built from. */
 export const ASK_SOURCES_HEADING = "What this answer used";
 
+/* ---------------------------------------------------------------------- *
+ * The composer's settings row (MAR-648)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What the model indicator says beside the model's own id.
+ *
+ * Two sentences for the two things `EffectiveModelChoice.from_default` can mean,
+ * and they are different claims rather than two wordings of one. The first is
+ * about a decision somebody took on this agent; the second is about a decision
+ * they took once, elsewhere, that reaches this agent because nobody has taken the
+ * first. Somebody who changes the fleet default needs to know which of these
+ * they are looking at to predict what will happen here.
+ *
+ * Neither contains the model id. It arrives beside them as a value —
+ * `AskModelView`'s own note says why an id is never dropped into a sentence.
+ */
+export function describeAskModel(fromDefault: boolean): string {
+  return fromDefault
+    ? "This is the model DASH uses when an agent has not been given one of its own."
+    : "This is the model you chose for this agent.";
+}
+
+/** Where to change it. A destination, so it reads as one. */
+export const ASK_MODEL_CHANGE = "Change in Settings";
+
+/**
+ * The label on the settings row itself.
+ *
+ * "Asking under" and not "Model", because the row sits under a box somebody is
+ * about to type a question into and the useful reading is the whole phrase —
+ * *asking under `claude-sonnet-5`*. A bare "Model:" would be a form field on a
+ * thing that is not a form.
+ */
+export const ASK_MODEL_LABEL = "Asking under";
+
+/* ---------------------------------------------------------------------- *
+ * While a question is in flight (MAR-648)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The activity line, and every word of it is defensible.
+ *
+ * Henrik asked for feedback while the model thinks: *"It could be in text,
+ * currently reading xxx and/or a loader."* MAR-648 states the rule that governs
+ * what that line may say — **only steps DASH is actually performing** — and this
+ * function is where that rule is kept or broken.
+ *
+ * ## Why there is one step here and not four
+ *
+ * `performAskAction` reads the agent's saved reports, chooses which of them to
+ * send, asks the provider and writes the row. Four real steps. **The renderer
+ * cannot see any of them.** The preload bridge is `invoke`-only — ADR 0001's
+ * narrow-preload obligation, and there is no `ipcRenderer.on` anywhere in
+ * `electron/` — so a question is one awaited round trip with no progress on it.
+ *
+ * A component that animated through those four names would therefore be reciting
+ * a script, not reporting. It would be right about the order and wrong about the
+ * timing every single time, and "currently reading your saved reports" shown
+ * while the provider is already answering is exactly the fabrication MAR-648
+ * calls *a lie with a spinner on it*.
+ *
+ * So the line states the operation that is genuinely in flight, which is asking
+ * this model, and it stays true for the whole of it. The elapsed count beside it
+ * is the renderer's own clock and is therefore the one thing here it can measure
+ * first-hand.
+ *
+ * ## The real steps are still shown — afterwards
+ *
+ * `describeSelection` prints DASH's actual record of which reports were chosen
+ * and why, the moment the answer lands. That is the honest place for a step
+ * report: after it has happened, from a record, rather than as a prediction
+ * dressed as an observation.
+ *
+ * When a step channel exists, this is the function that gains an argument.
+ */
+export function describeAskActivity(elapsedSeconds: number): string {
+  return elapsedSeconds < 1
+    ? "Asking…"
+    : `Asking… ${String(Math.floor(elapsedSeconds))}s`;
+}
+
+/**
+ * The activity line's accessible name, which names the model.
+ *
+ * The model id is set as a value in the visible row and cannot travel inside
+ * this sentence for `AskModelView`'s reason — but a live region announces a
+ * string, and "Asking…" alone would tell somebody who cannot see the row
+ * strictly less than the row tells everybody else.
+ *
+ * So the id is the whole of `model` and the words around it are fixed. That is
+ * the same shape `describeRunOnHost` uses for a machine name, and it keeps the
+ * announced sentence and the drawn row saying one thing.
+ */
+export const ASK_ACTIVITY_LABEL = "Question in progress";
+
 /**
  * Where the conversation lives, said once on the surface.
  *

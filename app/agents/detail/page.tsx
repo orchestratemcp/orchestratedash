@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   Suspense,
   useEffect,
+  useRef,
   useState,
   type Dispatch,
   type ReactNode,
@@ -542,6 +543,16 @@ function AgentWorkspace(): ReactNode {
     fragment,
     has_output: view.outputs.length > 0,
   });
+  /*
+   * MAR-648. The stage the chat composer was focused from, for Escape.
+   *
+   * A ref and not state, deliberately: nothing renders differently because of
+   * it, and making it state would repaint the whole cockpit the moment somebody
+   * put a cursor in the box. Null until the composer is focused from another
+   * stage, which is also the honest answer for somebody who arrived on the chat
+   * stage directly — there is nothing underneath to put back.
+   */
+  const returnStage = useRef<AgentStage | null>(null);
   const openOutput = params.get(AGENT_WORKSPACE_PARAMS.output);
   const checklistFacts = {
     models: view.models,
@@ -989,12 +1000,35 @@ function AgentWorkspace(): ReactNode {
           directly above the box before a word is typed. */}
       <AgentChatBar
         agent={view.agent}
+        /* MAR-648. The same stored character the header's portrait draws, so
+           the O that animates while a question runs is recognisably this
+           agent rather than a second opinion about which costume it wears. */
+        agentAvatar={view.avatar}
         ask={view.ask}
         canAct={canAct}
         onChatStage={stage === "chat"}
         onAsked={() => setRefreshKey((value) => value + 1)}
+        /*
+         * MAR-648. Escape puts back the stage the composer was focused from.
+         *
+         * Not `router.back()`, which would be one line and is wrong for the
+         * case that matters: an address that named the chat stage directly —
+         * MAR-586's chips and `lib/open-link.ts` both produce those — has no
+         * earlier stage of this agent behind it, so Back would leave the agent
+         * altogether. Escape on a surface that expanded means "put back what
+         * was underneath", and where nothing was underneath it correctly does
+         * nothing.
+         */
+        onEscape={() => {
+          const back = returnStage.current;
+          if (back !== null && back !== "chat") {
+            returnStage.current = null;
+            goToStage(back);
+          }
+        }}
         onFocus={() => {
           if (stage !== "chat") {
+            returnStage.current = stage;
             goToStage("chat");
           }
         }}
