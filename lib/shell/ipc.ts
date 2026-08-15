@@ -162,6 +162,30 @@ export const COMMANDS = {
     mutates: false,
     irreversible: false,
   },
+  /*
+   * MAR-642. The native half of the theme the person chose.
+   *
+   * The palette itself is CSS — an attribute on `<html>` and the `light-dark()`
+   * tokens `app/tokens.css` has carried since MAR-528 — and needs no command.
+   * What does is the chrome Electron draws in Node before a stylesheet exists:
+   * the window's background, the Windows title bar overlay and the splash. This
+   * sets `nativeTheme.themeSource`, which is the one switch all three already
+   * follow through `resolveTheme`.
+   *
+   * `mutates: false`, in this family's shape and for its reason: it asks main to
+   * draw something on this machine's screen and reaches no agent, no store and
+   * no provider. Electron does not persist `themeSource`, so nothing here
+   * outlives the process — the renderer re-sends it on every launch.
+   */
+  "shell.theme": {
+    effect: "Colour this window's title bar and background light or dark, or follow the computer.",
+    payload_keys: ["theme"],
+    // Absent is `system`, in `model.choose`'s shape: the missing field is the
+    // instruction to put it back rather than a value main has to recognise.
+    required_keys: [],
+    mutates: false,
+    irreversible: false,
+  },
 
   "runner.start": {
     effect: "Start a registered agent's process on this machine. Not an Agent DOM command.",
@@ -1418,6 +1442,9 @@ export function isHostCommandName(value: CommandName): value is HostCommandName 
 export const SHELL_UI_ACTIONS = {
   "shell.menu": "menu",
   "shell.scale": "scale",
+  // MAR-642. The third, and the only one whose effect outlives the call: a
+  // window keeps the theme it was told until it is told another or closes.
+  "shell.theme": "theme",
 } as const;
 
 export type ShellUiCommandName = keyof typeof SHELL_UI_ACTIONS;
@@ -2139,6 +2166,18 @@ export interface DispatchContext {
   showApplicationMenu(at: { x: number; y: number } | undefined): void;
   setUiScale(factor: number | undefined): number;
   /**
+   * Colour the chrome Electron draws in Node (MAR-642).
+   *
+   * Injected like the four above, and for the same plain reason: `nativeTheme`
+   * is an Electron main API and this module has to stay importable from a
+   * sandboxed preload.
+   *
+   * It returns nothing, `showApplicationMenu`'s shape. What the renderer needs
+   * to know about the theme it already knows — it is the thing that chose it,
+   * and the palette it can see is CSS. This is the half it cannot see.
+   */
+  setNativeTheme(theme: "system" | "light" | "dark"): void;
+  /**
    * The task-workspace actions: open a task, admit one user-selected file,
    * hand the task over (MAR-507), or save one of an agent's outputs where the
    * user asks (MAR-434).
@@ -2606,6 +2645,18 @@ export async function dispatchCommand(
   }
 
   if (isShellUiCommandName(review.command)) {
+    if (review.command === "shell.theme") {
+      /*
+       * MAR-642. Narrowed to one of three literals here rather than passed
+       * through, so that whatever a renderer sends, what reaches
+       * `nativeTheme.themeSource` is a value this file wrote. Anything else —
+       * including nothing — is `system`, which is the default and the state
+       * every window starts in.
+       */
+      const asked = review.payload["theme"];
+      context.setNativeTheme(asked === "light" || asked === "dark" ? asked : "system");
+      return { ok: true, request_id: review.audit.request_id };
+    }
     if (review.command === "shell.scale") {
       const factor = review.payload["factor"];
       return {

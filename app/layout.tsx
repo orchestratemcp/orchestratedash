@@ -7,6 +7,7 @@ import { DensityScript } from "./_components/density-toggle";
 import { FleetFilterScript } from "./_components/fleet-rail";
 import { FleetStrip, FleetStripScript } from "./_components/fleet-strip";
 import { FleetViewScript } from "./_components/fleet-view-toggle";
+import { ThemeScript, ThemeSync } from "./_components/theme-toggle";
 import { WindowVisibility } from "./_components/window-visibility";
 import { RENDERER_TITLE } from "../lib/shell/preflight";
 
@@ -81,6 +82,15 @@ export default function RootLayout({
           navigation before `FleetList`'s own lazy state corrected it.
         */}
         <FleetFilterScript />
+        {/*
+          MAR-642, and the fifth script here for the same reason — with the
+          largest consequence of the five. Density, the strip, the view and the
+          filter each move things about; this one is the *palette*, so without
+          it somebody who chose light watches a dark DASH paint and invert on
+          every navigation. It is last because it is the newest, and the five
+          are independent: nothing here reads what another wrote.
+        */}
+        <ThemeScript />
       </head>
       {/*
         Three bands and a left track: the chrome across the top, the sidebar
@@ -112,6 +122,15 @@ export default function RootLayout({
           window, read once for everything inside it.
         */}
         <WindowVisibility />
+        {/*
+          MAR-642. Renders nothing; it tells main which theme this window is in,
+          once, so the title bar and the window's own background match the
+          palette the page is drawn in. It is here rather than beside the
+          control because the correction is needed on every route — somebody who
+          chose dark last week and opens DASH on the Agents page never visits
+          Preferences.
+        */}
+        <ThemeSync />
         <AppChrome />
         <main id="main" tabIndex={-1}>
           {children}
