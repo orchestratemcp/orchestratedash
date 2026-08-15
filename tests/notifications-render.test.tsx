@@ -69,11 +69,50 @@ describe("the disclosures come before the field", () => {
     expect(contents).toBeLessThan(button);
   });
 
-  it("keeps them above the controls once a channel is set up too", () => {
+  it("opens the consent disclosure while the decision is still live", () => {
+    /*
+     * MAR-642. Above the button is half of MAR-588's argument; the other half
+     * is that it can actually be read there. A `<details>` folded shut at the
+     * moment somebody is choosing between a private channel and a shared one
+     * would satisfy the ordering assertion above and lose the thing it was
+     * ordering.
+     */
+    const off = markup({ ...CONFIGURED, configured: false, masked_hint: null, configured_at: null });
+    const contents = off.slice(off.indexOf('id="notify-contents"'));
+    expect(off.slice(0, off.indexOf('id="notify-contents"'))).toContain("<details");
+    expect(contents.length).toBeGreaterThan(0);
+    // The one open disclosure on the page is this one.
+    expect(off.match(/<details[^>]*open[^>]*>/gu)).toHaveLength(1);
+  });
+
+  it("moves them below the controls once there is nothing left to decide", () => {
+    /*
+     * MAR-642, and the deliberate reversal of what this test used to assert.
+     *
+     * MAR-588's ordering argument is about the moment a credential is handed
+     * over. Once DASH holds an address, the same sections are a record of a
+     * decision already taken, and the person on this page came to send a test,
+     * switch a kind off, or replace the address. Forty lines of prose above
+     * those four controls is the shape MAR-642 exists to end.
+     *
+     * The sections themselves are unchanged and still on the page — this is a
+     * move, not a deletion, and the assertion is about which side of the
+     * controls they sit on.
+     */
     const html = markup(CONFIGURED);
-    expect(html.indexOf(NOTIFY_LIVENESS[1] as string)).toBeLessThan(
-      html.indexOf("Send a test message"),
-    );
+    const liveness = html.indexOf(NOTIFY_LIVENESS[1] as string);
+    const test = html.indexOf("Send a test message");
+    expect(liveness).toBeGreaterThan(-1);
+    expect(test).toBeGreaterThan(-1);
+    expect(liveness).toBeGreaterThan(test);
+  });
+
+  it("answers the test button beside the test button", () => {
+    // The inline sent/failed feedback MAR-642 asks for: one row, and the answer
+    // lands in it rather than in a block below the page's controls.
+    const html = markup(CONFIGURED);
+    const row = html.slice(html.indexOf('class="button-row"'));
+    expect(row.slice(0, row.indexOf("</div>"))).toContain("Send a test message");
   });
 });
 
