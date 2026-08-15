@@ -163,6 +163,7 @@ import {
   recordAgentLook,
   renameAgent,
   saveHost,
+  setAgentAvatar,
   setAgentFavourite,
 } from "../lib/store";
 // MAR-576. The folder is authoritative (ADR 0008), so the re-import reads it
@@ -1248,23 +1249,30 @@ function refreshSampleAgent(agentId: string): { ok: boolean; refusal?: string; d
 }
 
 /**
- * The reader's own record of one agent: its DASH-given name, and whether it
- * is starred (MAR-589, MAR-640).
+ * The reader's own record of one agent: its DASH-given name, whether it is
+ * starred, and which costume it wears (MAR-589, MAR-640, MAR-615).
  *
  * Renaming's only gate is `renameAgent`'s own: the agent has to exist, and a
  * name that survives trimming has to be non-empty and not absurdly long.
  * Starring has none — `setAgentFavourite` upserts either state and there is
- * nothing a caller could send that is not a legitimate value for it. Both
- * writes are checked beside themselves in `lib/store.ts`,
- * `refreshSampleAgent`'s reason for its own gate living beside its write
- * rather than at this seam.
+ * nothing a caller could send that is not a legitimate value for it. Every
+ * write is checked beside itself in `lib/store.ts`, `refreshSampleAgent`'s
+ * reason for its own gate living beside its write rather than at this seam —
+ * so `setAgentAvatar` is what actually refuses the chief, not this function.
  */
 function performIdentityAction(
   action: IdentityAction,
-  target: { agent_id: string; display_name?: string; favourite?: boolean },
+  target: { agent_id: string; display_name?: string; favourite?: boolean; avatar?: string },
 ): { ok: boolean; refusal?: string } {
   if (action === "favourite") {
     setAgentFavourite(target.agent_id, target.favourite ?? false);
+    return { ok: true };
+  }
+  if (action === "avatar") {
+    const result = setAgentAvatar(target.agent_id, target.avatar as Parameters<typeof setAgentAvatar>[1]);
+    if (!result.ok) {
+      return { ok: false, refusal: result.errors.join(" ") };
+    }
     return { ok: true };
   }
   const result = renameAgent(target.agent_id, target.display_name);

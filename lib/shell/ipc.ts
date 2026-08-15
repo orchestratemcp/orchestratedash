@@ -386,6 +386,27 @@ export const COMMANDS = {
   },
 
   /*
+   * MAR-615. Which of `O_FLEET`'s eleven costumes an agent wears.
+   *
+   * `identity.favourite`'s shape exactly, and `avatar` is required for the
+   * same reason `favourite` is: a picker is always choosing a specific
+   * character, never asking main to guess which one "change" means. The
+   * chief is refused, but at `lib/store.ts`'s own gate — `payload_types` here
+   * only checks that a string arrived, the same division `identity.rename`
+   * draws between "shaped like a name" and "a name DASH will accept."
+   *
+   * `mutates` is true — a row changes. `irreversible` is false: the previous
+   * costume is one more press away.
+   */
+  "identity.avatar": {
+    effect: "Set the character DASH draws for this agent. Contacts nobody.",
+    payload_keys: ["agent_id", "avatar"],
+    required_keys: ["agent_id", "avatar"],
+    mutates: true,
+    irreversible: false,
+  },
+
+  /*
    * MAR-583. Which model an agent uses.
    *
    * **An eighth family, and it is one because the question it answers is one.**
@@ -1237,18 +1258,20 @@ export function isGlanceCommandName(value: CommandName): value is GlanceCommandN
 }
 
 /**
- * The reader's own record of one agent (MAR-589, MAR-640).
+ * The reader's own record of one agent (MAR-589, MAR-640, MAR-615).
  *
- * One member until MAR-640 makes it two, on `FOLDER_ACTIONS`' own terms: the
- * question this map answers widens by exactly one word — what does DASH
- * itself remember about an agent, for the reader rather than about the agent
- * — and a name and a star are two facts of that one story. Both members
- * contact nobody, both are DASH's own record rather than the manifest's, and
- * both are one more press away from whatever they replaced.
+ * One member until MAR-640 made it two and MAR-615 made it three, each on
+ * `FOLDER_ACTIONS`' own terms: the question this map answers widens by
+ * exactly one word each time — what does DASH itself remember about an
+ * agent, for the reader rather than about the agent — and a name, a star and
+ * a costume are three facts of that one story. Every member contacts
+ * nobody, every one is DASH's own record rather than the manifest's, and
+ * every one is one more press away from whatever it replaced.
  */
 export const IDENTITY_ACTIONS = {
   "identity.rename": "rename",
   "identity.favourite": "favourite",
+  "identity.avatar": "avatar",
 } as const;
 
 export type IdentityCommandName = keyof typeof IDENTITY_ACTIONS;
@@ -2247,12 +2270,13 @@ export interface DispatchContext {
    * importable from a sandboxed preload. An absent `display_name` clears the
    * rename; see `IDENTITY_ACTIONS`'s own note for why that is the field's
    * only way to mean "put this back". `favourite` is read only when `action`
-   * is `"favourite"`; `reviewCommand`'s payload rules keep the two members'
-   * fields from crossing.
+   * is `"favourite"`, and `avatar` only when it is `"avatar"`;
+   * `reviewCommand`'s payload rules keep the three members' fields from
+   * crossing.
    */
   agentAction(
     action: IdentityAction,
-    target: { agent_id: string; display_name?: string; favourite?: boolean },
+    target: { agent_id: string; display_name?: string; favourite?: boolean; avatar?: string },
   ): Promise<{ ok: boolean; refusal?: string }>;
   /**
    * Choose a model, set one step's level, or ask what models there are (MAR-583).
@@ -2818,15 +2842,15 @@ export async function dispatchCommand(
 
   if (isIdentityCommandName(review.command)) {
     /*
-     * MAR-589, MAR-640. `display_name` is absent from `review.payload`
-     * whenever the renderer's `dropUnset` dropped it — the field's whole
-     * vocabulary for "put this back to the manifest's own name" — so it is
-     * read optionally rather than defaulted to an empty string, which
-     * `reviewCommand` would already have refused as "present but absent" if
-     * it had arrived that way. `favourite` is likewise read optionally: the
-     * payload rules only require it on `identity.favourite`, so a rename
-     * carries none and `performIdentityAction` reads only the field its own
-     * `action` names.
+     * MAR-589, MAR-640, MAR-615. `display_name` is absent from
+     * `review.payload` whenever the renderer's `dropUnset` dropped it — the
+     * field's whole vocabulary for "put this back to the manifest's own
+     * name" — so it is read optionally rather than defaulted to an empty
+     * string, which `reviewCommand` would already have refused as "present
+     * but absent" if it had arrived that way. `favourite` and `avatar` are
+     * likewise read optionally: the payload rules only require each on its
+     * own member, so a rename carries neither and `performIdentityAction`
+     * reads only the field its own `action` names.
      */
     const result = await context.agentAction(IDENTITY_ACTIONS[review.command], {
       agent_id: String(review.payload["agent_id"]),
@@ -2836,6 +2860,8 @@ export async function dispatchCommand(
           : String(review.payload["display_name"]),
       favourite:
         review.payload["favourite"] === undefined ? undefined : review.payload["favourite"] === true,
+      avatar:
+        review.payload["avatar"] === undefined ? undefined : String(review.payload["avatar"]),
     });
     return { ok: result.ok, request_id: review.audit.request_id, reason: result.refusal };
   }

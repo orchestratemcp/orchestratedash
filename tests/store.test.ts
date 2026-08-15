@@ -25,6 +25,7 @@ const {
   renameAgent,
   resetStore,
   saveHost,
+  setAgentAvatar,
   setAgentFavourite,
 } = await import("../lib/store");
 const { closeDb } = await import("../lib/db");
@@ -149,6 +150,38 @@ describe("agent favourites (MAR-640)", () => {
     setAgentFavourite(agentId, true);
     setAgentFavourite(agentId, true);
     expect(readAgentFavourites()).toEqual(new Set([agentId]));
+  });
+});
+
+describe("agent avatar (MAR-615)", () => {
+  const agentId = "email-lead-to-crm";
+
+  it("changes the character listAgents reports, and nothing else", () => {
+    importManifest(manifest);
+    const before = listAgents()[0];
+    const next = before?.avatar === "ninja" ? "knight" : "ninja";
+
+    expect(setAgentAvatar(agentId, next)).toEqual({ ok: true });
+
+    const after = listAgents()[0];
+    expect(after?.avatar).toBe(next);
+    expect(after?.name).toBe(before?.name);
+    expect(after?.title).toBe(before?.title);
+  });
+
+  it("refuses the chief — a picker offers O_FLEET, but a direct call is the real gate", () => {
+    importManifest(manifest);
+    const before = listAgents()[0]?.avatar;
+
+    const result = setAgentAvatar(agentId, "chief" as Parameters<typeof setAgentAvatar>[1]);
+
+    expect(result.ok).toBe(false);
+    expect(listAgents()[0]?.avatar).toBe(before);
+  });
+
+  it("refuses an agent DASH has no record of", () => {
+    const result = setAgentAvatar("no-such-agent", "ninja");
+    expect(result).toMatchObject({ ok: false });
   });
 });
 

@@ -782,6 +782,7 @@ function AgentWorkspace(): ReactNode {
         avatar={view.avatar}
         canAct={canAct}
         id={view.agent}
+        onAvatarChanged={() => setRefreshKey((value) => value + 1)}
         onClose={() => goToStage("overview")}
         onRenamed={() => setRefreshKey((value) => value + 1)}
         renamed={view.renamed}

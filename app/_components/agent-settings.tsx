@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
 import { AGENT_SETTINGS_COPY, AGENT_TRIGGER_COPY } from "../../lib/copy/agent-page";
-import type { OName } from "../../lib/brand/o-cast";
-import { renameAgent } from "../_data/source";
+import { O_FLEET, type OName } from "../../lib/brand/o-cast";
+import { renameAgent, setAgentAvatar } from "../_data/source";
 import { OAvatar } from "./o-avatar";
 
 /**
@@ -57,6 +57,7 @@ export function AgentSettings({
   avatar,
   canAct,
   id,
+  onAvatarChanged,
   onClose,
   onRenamed,
   renamed,
@@ -72,6 +73,8 @@ export function AgentSettings({
   /** A value under MAR-589, and rendered as one. */
   id: string;
   onClose: () => void;
+  /** Re-read the workspace, so the row redraws with the character it just saved (MAR-615). */
+  onAvatarChanged: () => void;
   /** Re-read the workspace, so the drawer redraws with the name it just saved. */
   onRenamed: () => void;
   /** Whether `title` is a stored rename rather than the manifest's own name. */
@@ -125,19 +128,13 @@ export function AgentSettings({
           </div>
           <div>
             <dt>{AGENT_SETTINGS_COPY.identity.avatar_label}</dt>
-            <dd>
-              {/* 50, not 48. `OSize` is `50 | 100 | 200` and the union is the
-                  guard rather than a style preference: `image-rendering:
-                  pixelated` upscales by nearest neighbour, so an off-scale size
-                  lands some source pixels on two screen pixels and some on
-                  three, and the sprite stops reading as pixel art and starts
-                  reading as a rendering fault. Half the header's 100. */}
-              {avatar === null ? (
-                <span className="o-portrait-empty" aria-hidden="true" />
-              ) : (
-                <OAvatar name={avatar} size={50} action />
-              )}
-            </dd>
+            <AgentAvatarField
+              agentId={id}
+              avatar={avatar}
+              canAct={canAct}
+              onChanged={onAvatarChanged}
+              setFeedback={setFeedback}
+            />
             <dd className="muted">{AGENT_SETTINGS_COPY.identity.avatar_source}</dd>
           </div>
         </dl>
@@ -299,6 +296,117 @@ function AgentNameField({
           {AGENT_SETTINGS_COPY.identity.rename_cancel}
         </button>
       </span>
+    </dd>
+  );
+}
+
+/**
+ * The avatar row's write half (MAR-615).
+ *
+ * `AgentNameField`'s shape: closed as prose plus a button rather than a
+ * standing-open control, and closes on either outcome. Unlike the name field
+ * there is no text to draft — choosing *is* saving, so a press on one of the
+ * eleven options both picks it and commits it, the way a picker reads
+ * everywhere else in DASH (`FolderUpdate`'s own radios).
+ *
+ * Offers `O_FLEET`, never `O_NAMES`: the chief is cast but not fleet, and a
+ * grid that offered him here would be the one surface where an ordinary
+ * agent could end up in the orchestrator's own costume. `lib/store.ts`'s
+ * `setAgentAvatar` refuses him too, so this is belt-and-suspenders rather
+ * than the only gate — but the belt is what keeps the grid from ever
+ * rendering the option in the first place.
+ */
+function AgentAvatarField({
+  agentId,
+  avatar,
+  canAct,
+  onChanged,
+  setFeedback,
+}: {
+  agentId: string;
+  avatar: OName | null;
+  canAct: boolean;
+  /** Re-read the workspace, so the row redraws with the character it just saved. */
+  onChanged: () => void;
+  setFeedback: Dispatch<SetStateAction<{ ok: boolean; message: string } | null>>;
+}): ReactNode {
+  const [picking, setPicking] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  /* 50, not 48. `OSize` is `50 | 100 | 200` and the union is the guard rather
+     than a style preference: `image-rendering: pixelated` upscales by nearest
+     neighbour, so an off-scale size lands some source pixels on two screen
+     pixels and some on three, and the sprite stops reading as pixel art and
+     starts reading as a rendering fault. Half the header's 100. */
+  const portrait =
+    avatar === null ? (
+      <span className="o-portrait-empty" aria-hidden="true" />
+    ) : (
+      <OAvatar name={avatar} size={50} action />
+    );
+
+  if (!canAct) {
+    /* Said rather than drawn as a disabled button, `ModelChoice`'s reason: a
+       greyed-out Change here would read as a claim about this agent, and the
+       true statement is about which window this is. */
+    return (
+      <dd className="agent-avatar-field">
+        {portrait}
+        <span className="muted wrap">{AGENT_SETTINGS_COPY.identity.avatar_read_only}</span>
+      </dd>
+    );
+  }
+
+  async function choose(character: (typeof O_FLEET)[number]): Promise<void> {
+    setBusy(true);
+    setFeedback(null);
+    const result = await setAgentAvatar({ agent_id: agentId, avatar: character });
+    setBusy(false);
+    setFeedback({
+      ok: result.ok,
+      message: result.ok ? "Saved." : (result.detail ?? "DASH could not change this agent's avatar."),
+    });
+    if (result.ok) {
+      setPicking(false);
+      onChanged();
+    }
+  }
+
+  if (!picking) {
+    return (
+      <dd className="agent-avatar-field">
+        {portrait}
+        <button type="button" className="button-link" disabled={busy} onClick={() => setPicking(true)}>
+          {AGENT_SETTINGS_COPY.identity.avatar_edit}
+        </button>
+      </dd>
+    );
+  }
+
+  return (
+    <dd className="agent-avatar-field">
+      <ul className="avatar-picker" aria-label={AGENT_SETTINGS_COPY.identity.avatar_label}>
+        {O_FLEET.map((character) => (
+          <li key={character}>
+            <button
+              type="button"
+              className="avatar-picker-option"
+              aria-pressed={character === avatar}
+              disabled={busy}
+              onClick={() => void choose(character)}
+            >
+              {/* Decorative, like every other avatar in DASH — the accessible
+                  name is on the button, not the picture, `fleet-strip.tsx`'s
+                  own pattern for a costume inside an interactive control. */}
+              <OAvatar name={character} size={50} action />
+              <span className="visually-hidden">{AGENT_SETTINGS_COPY.identity.avatar_choose(character)}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button type="button" className="button-secondary" disabled={busy} onClick={() => setPicking(false)}>
+        {AGENT_SETTINGS_COPY.identity.avatar_cancel}
+      </button>
     </dd>
   );
 }

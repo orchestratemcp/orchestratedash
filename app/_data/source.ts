@@ -32,6 +32,7 @@
 
 import { describeViewFailure, type Recovery } from "../../lib/copy/recovery";
 import type { RenderHost } from "../../lib/copy/host";
+import type { O_FLEET } from "../../lib/brand/o-cast";
 import type { CommandResult } from "../../lib/shell/ipc";
 import type { DashReadApi } from "../../lib/shell/read";
 import type { AgentCommand } from "../../lib/workspace";
@@ -284,6 +285,14 @@ interface DashShellClient {
    * this feature has a `dashShell` without it.
    */
   setAgentFavourite?(args: { agent_id: string; favourite: boolean }): Promise<CommandResult>;
+  /**
+   * Swap the character DASH draws for one agent, from `O_FLEET`'s eleven
+   * (MAR-615).
+   *
+   * Optional for the same reason as everything above: a shell built before
+   * this feature has a `dashShell` without it.
+   */
+  setAgentAvatar?(args: { agent_id: string; avatar: string }): Promise<CommandResult>;
   /**
    * The four notification commands (MAR-588).
    *
@@ -1154,6 +1163,41 @@ export async function setAgentFavourite(args: {
       request_id: "",
       reason: "read_only_host",
       detail: "This version of the DASH app cannot star an agent yet.",
+    };
+  }
+  return call(args);
+}
+
+/**
+ * Swap the character DASH draws for one agent, from `O_FLEET`'s eleven
+ * (MAR-615).
+ *
+ * `renameAgent`'s shape exactly, for the same reason: a browser tab cannot
+ * act, and an older packaged build may not carry this method yet. `avatar`
+ * is typed against `O_FLEET`, not `OName`, so a picker offering the chief is
+ * a compile error here rather than a refusal `lib/store.ts`'s `setAgentAvatar`
+ * would otherwise have to catch alone.
+ */
+export async function setAgentAvatar(args: {
+  agent_id: string;
+  avatar: (typeof O_FLEET)[number];
+}): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to change an agent's avatar.",
+    };
+  }
+  const call = bridge.setAgentAvatar;
+  if (call === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "This version of the DASH app cannot change an agent's avatar yet.",
     };
   }
   return call(args);

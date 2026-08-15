@@ -5897,6 +5897,64 @@ button:disabled {
   justify-content: flex-start;
 }
 
+/*
+ * The avatar row, closed and open (MAR-615). `.agent-avatar-field` is the
+ * flex row `.agent-name-field` already is — a portrait beside its one
+ * button — so the two rows read as siblings rather than as two different
+ * idioms for "an identity field DASH can write."
+ */
+.agent-avatar-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/*
+ * The open picker. Zero corners and a plain grid, like everything else in
+ * Bit-Command — this is a set of options, not a gallery, so nothing here
+ * scrolls or crops.
+ */
+.avatar-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(50px, max-content));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  width: 100%;
+}
+
+.avatar-picker-option {
+  display: flex;
+  padding: var(--space-1);
+  border: 1px solid var(--line);
+  background: transparent;
+  cursor: pointer;
+}
+
+.avatar-picker-option:hover {
+  border-color: var(--line-strong);
+}
+
+/*
+ * The one state this control has: which character is stored now. Never
+ * `--ok` — `checkEmerald` fails a class here that is, since a picker is the
+ * one surface where an avatar and a health colour could plausibly be
+ * confused for meaning the same thing. `--accent` is DASH's own voice
+ * elsewhere (`.chief-glyph` used to reach for it too), which is what
+ * "this is the one you have" is — a fact about the product's state, not a
+ * verdict on the agent.
+ */
+.avatar-picker-option[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+
+.avatar-picker-option:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 /* `.agent-header-controls` and `.agent-status-line` left with MAR-641, for the
    reason `.agent-header` did: `.cockpit-header-actions` replaced both. */
 

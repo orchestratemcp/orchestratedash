@@ -187,6 +187,11 @@ describe("the audited command chokepoint", () => {
       // rather than optional — there is no absent state to mean "put it
       // back", unlike `display_name`.
       "identity.favourite",
+      // MAR-615. The same family's third member: which of `O_FLEET`'s eleven
+      // costumes the agent wears. Contacts nobody, and `avatar` is required
+      // for the same reason `favourite` is — there is no absent state that
+      // means "put it back" the way `display_name`'s omission does.
+      "identity.avatar",
       // MAR-584. A seventh family, and the only route in DASH that accepts a
       // document somebody else's editor wrote. Three members and the split
       // between the first two is the point: comparing is a read and accepting

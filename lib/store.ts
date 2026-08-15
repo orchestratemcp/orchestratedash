@@ -8,7 +8,7 @@ import {
   type RunArtifact,
   type RunEvent,
 } from "./contracts";
-import { isOName, oFor, type OName } from "./brand/o-cast";
+import { O_FLEET, isOName, oFor, type OName } from "./brand/o-cast";
 import { agentDisplayName } from "./copy/agent-name";
 import { aiKeyConnections, pickAiKeyCard } from "./ai/connection-view";
 import type { ConnectionSourceManifest } from "./connections";
@@ -851,6 +851,39 @@ export function renameAgent(agent: string, displayName: string | undefined): Ren
   }
 
   database.prepare("UPDATE agents SET display_name = ? WHERE name = ?").run(trimmed, agent);
+  return { ok: true };
+}
+
+export type SetAgentAvatarResult = { ok: true } | { ok: false; errors: string[] };
+
+/**
+ * Swap the costume DASH shows for one agent (MAR-615).
+ *
+ * `renameAgent`'s shape exactly, and the same reason: the gate belongs beside
+ * the write rather than at the IPC seam, so a second caller (a future import
+ * path, a test) gets the same refusal for free rather than having to
+ * remember it.
+ *
+ * The gate is `O_FLEET`, not `isOName`. Every character in `O_NAMES` is a
+ * legitimate value for the column — `storedAvatar` falls back gracefully for
+ * one this build does not ship — but a picker is a person choosing, and
+ * `O_FLEET` is what keeps that choice from ever landing on the chief: his
+ * costume is cast, not fleet, and no ordinary agent may wear it.
+ */
+export function setAgentAvatar(
+  agent: string,
+  avatar: (typeof O_FLEET)[number],
+): SetAgentAvatarResult {
+  const database = db();
+  const existing = database.prepare("SELECT 1 FROM agents WHERE name = ?").get(agent);
+  if (existing === undefined) {
+    return { ok: false, errors: ["DASH has no record of that agent."] };
+  }
+  if (!(O_FLEET as readonly string[]).includes(avatar)) {
+    return { ok: false, errors: ["That is not a character DASH can assign to an agent."] };
+  }
+
+  database.prepare("UPDATE agents SET avatar = ? WHERE name = ?").run(avatar, agent);
   return { ok: true };
 }
 

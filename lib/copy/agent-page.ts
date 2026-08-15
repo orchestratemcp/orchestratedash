@@ -250,7 +250,12 @@ export const AGENT_SETTINGS_COPY = {
     id_label: "ID",
     id_source: "How DASH refers to this agent internally. It never changes.",
     avatar_label: "Character",
-    avatar_source: "Assigned when the agent was added. Choosing one is not built yet.",
+    avatar_source: "Assigned when the agent was added.",
+    avatar_edit: "Change",
+    avatar_cancel: "Cancel",
+    avatar_read_only: "Open the installed DASH app to change an agent's avatar.",
+    /** Named after the character, for a screen reader choosing between eleven identical-looking buttons. */
+    avatar_choose: (name: string): string => `Use the ${name} character`,
   },
   notifications: {
     heading: "Notifications",
