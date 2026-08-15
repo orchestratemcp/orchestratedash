@@ -1,17 +1,17 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { FleetList } from "./_components/fleet-list";
 import { FleetRail } from "./_components/fleet-rail";
 import { OAvatar } from "./_components/o-avatar";
 import { HostNotice, ViewFailed, ViewLoading } from "./_components/view-state";
-import { checkRunnerStatus, retireRunnerStore } from "./_data/source";
+import { checkRunnerStatus, retireRunnerStore, setAgentFavourite } from "./_data/source";
 import { useSightings } from "./_data/sightings";
-import { useCanAct, useHost, useView } from "./_data/use-view";
+import { useCanAct, useHost, useRefreshOnWindowFocus, useView } from "./_data/use-view";
 import { oFor } from "../lib/brand/o-cast";
 import { describeRunnerStoreDamage, type RunnerStoreDamageKind } from "../lib/copy/recovery";
-import { onWindowFocus } from "../lib/shell/focus-refresh";
 import type { CommandResult } from "../lib/shell/ipc";
+import type { AgentRow } from "../lib/views/types";
 
 /**
  * Two things this page no longer implements, kept importable from here.
@@ -56,6 +56,19 @@ export default function AgentsPage(): ReactNode {
    * ADR 0015 on why a sighting is not stored.
    */
   const log = useSightings();
+  const [favouriteOverrides, toggleFavourite] = useFavouriteOverrides();
+  /*
+   * MAR-640. The store's own answer, corrected by a press this window has not
+   * yet had confirmed back by a re-read — `useView`'s own header says this
+   * page never polls, so without an overlay a star would sit unlit until the
+   * next focus or navigation re-reads the view. Both the rail's counts and
+   * the cards read the same corrected list, so they cannot disagree about
+   * which agents are starred.
+   */
+  const agents = useMemo(
+    () => (state.status === "ready" ? applyFavouriteOverrides(state.data.agents, favouriteOverrides) : []),
+    [state, favouriteOverrides],
+  );
 
   return (
     <div className="fleet-shell">
@@ -127,27 +140,52 @@ export default function AgentsPage(): ReactNode {
           rows of prose, so every fleet-specific rule remains a `fleet-grid`
           modifier rather than a change to the shared class.
         */
-        <FleetList agents={state.data.agents} log={log} />
+        <FleetList agents={agents} log={log} onToggleFavourite={toggleFavourite} />
           )}
         </>
       )}
       </div>
-      <FleetRail />
+      <FleetRail agents={agents} />
     </div>
   );
 }
+
 /**
- * MAR-595 finding 13. Bumped every time the window regains OS focus, and
- * passed to `useView` as its `refreshKey` above, so this page rereads the
- * agents list rather than staying on whatever it read at mount — the case
- * that matters is `npm run open-in-dash`'s native consent dialog adding an
- * agent while this page was underneath it the whole time. See
- * `lib/shell/focus-refresh.ts` for why `focus` rather than a poll.
+ * The store's rows, with any not-yet-confirmed favourite press laid over
+ * them (MAR-640). Pure so it is testable without a store, a bridge or React.
  */
-function useRefreshOnWindowFocus(): number {
-  const [key, setKey] = useState(0);
-  useEffect(() => onWindowFocus(window, () => { setKey((value) => value + 1); }), []);
-  return key;
+export function applyFavouriteOverrides(
+  agents: readonly AgentRow[],
+  overrides: Readonly<Record<string, boolean>>,
+): AgentRow[] {
+  return agents.map((agent) =>
+    Object.hasOwn(overrides, agent.name) ? { ...agent, favourite: overrides[agent.name] ?? agent.favourite } : agent,
+  );
+}
+
+/**
+ * Star — or unstar — one agent, optimistically (MAR-640).
+ *
+ * The press lands immediately in the overlay `applyFavouriteOverrides` reads,
+ * because a control that waits for a round trip before it moves reads as
+ * broken on anything but a fast machine. `setAgentFavourite` is what actually
+ * asks main to write the row; a refusal — the read-only browser tab is the
+ * ordinary one — rolls the overlay back to what it replaced rather than
+ * leaving the star lit for a press that never took.
+ */
+function useFavouriteOverrides(): [Readonly<Record<string, boolean>>, (agent: string, next: boolean) => void] {
+  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
+
+  const toggle = useCallback((agent: string, next: boolean): void => {
+    setOverrides((prev) => ({ ...prev, [agent]: next }));
+    void setAgentFavourite({ agent_id: agent, favourite: next }).then((result) => {
+      if (!result.ok) {
+        setOverrides((prev) => ({ ...prev, [agent]: !next }));
+      }
+    });
+  }, []);
+
+  return [overrides, toggle];
 }
 
 /**
