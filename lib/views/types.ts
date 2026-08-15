@@ -432,10 +432,33 @@ export type AgentModelSettingsView =
       field_id: string;
       headline: string;
       detail: string;
-      /** The model named for this agent, or null for matching each step. */
+      /**
+       * The model named **for this agent**, or null when nobody named one.
+       *
+       * Deliberately still null for an agent running on DASH's default
+       * (MAR-642). It is what the picker's value is bound to, and a default
+       * shown as this agent's own choice would be a control claiming a decision
+       * nobody made — and would then be un-choosable, because picking the value
+       * already displayed fires no change event.
+       */
       chosen_model_id: string | null;
       /** What DASH would use right now, in one sentence. */
       in_force: string;
+      /**
+       * True when `in_force` names DASH's default rather than this agent's own
+       * choice (MAR-642).
+       *
+       * A flag rather than a sentence, because the page does not word it — every
+       * sentence that varies with it is already composed in
+       * `lib/ai/model-choice.ts`. What the page does with it is nothing but
+       * decide whether to draw the chip that says so.
+       */
+      from_default: boolean;
+      /**
+       * The picker's first option, worded for whether a default exists
+       * (MAR-642). "Match each step to what it needs", or "Use DASH's default".
+       */
+      unpinned_option: string;
       steps: ModelStepView[];
       /** False while one named model overrides every step's own level. */
       steps_in_force: boolean;
@@ -793,6 +816,18 @@ export interface FleetConnectorView {
   service: string;
   /** `google_oauth_broker` or `api_key` — which of the two flows the button starts. */
   connector_kind: string;
+  /**
+   * The model provider this key belongs to, or null when it is not one
+   * (MAR-642).
+   *
+   * What splits Settings' two tabs: the AI tab draws the connectors with an id
+   * here and Connections draws the rest. Carried rather than inferred from
+   * `connector_kind`, which would say `api_key` for the first non-model key DASH
+   * learns to hold and land a mail service on a page about models. It is
+   * `FleetConnector.ai_provider_id`, which `lib/fleet/catalogue.ts` sets from
+   * `aiProviders()` and nothing else.
+   */
+  ai_provider_id: string | null;
   /** Why somebody would connect it, in their terms rather than DASH's. */
   purpose: string;
   /** Where to get the credential, when there is somewhere. Null for a sign-in. */
@@ -847,6 +882,28 @@ export interface FleetConnectorView {
   reach_sentence: string | null;
 }
 
+/**
+ * DASH's default model, as the AI tab reads it (MAR-642).
+ *
+ * The sentences are composed in `lib/ai/model-choice.ts` and arrive worded, for
+ * `AgentRow.glance`'s reason: a page that built them from the two ids below
+ * could describe the setting differently from the process that resolves it.
+ *
+ * `provider_id` and `model_id` are null together — there is no half-set default
+ * — and null is the state every DASH ships in rather than an empty state to be
+ * filled.
+ */
+export interface FleetModelDefaultView {
+  /** The registry id. Travels back on the command; never rendered. */
+  provider_id: string | null;
+  /** The model id, which *is* rendered: it is what the person picked. */
+  model_id: string | null;
+  headline: string;
+  detail: string;
+  /** Where the setting stands. Never a claim about what a given agent will use. */
+  in_force: string;
+}
+
 export interface ConnectionsView {
   /**
    * What DASH can connect, before and regardless of any agent (MAR-593).
@@ -854,8 +911,22 @@ export interface ConnectionsView {
    * First on the type because it is first on the page: somebody arriving at
    * Settings with nothing imported has exactly this to do, and the agent
    * checklists below are what those connections then light up.
+   *
+   * **Both Settings tabs are drawn from this one list (MAR-642).** The AI tab
+   * takes the entries with an `ai_provider_id` and Connections takes the rest,
+   * rather than a second view being built for a second page: the split is a
+   * question about what a person came to do, and a view per tab would be two
+   * projections of one catalogue, free to disagree about what is connected.
    */
   fleet: FleetConnectorView[];
+  /**
+   * The model DASH gives an agent that has not been given one (MAR-642).
+   *
+   * On this view rather than one of its own because it is read by the tab that
+   * reads `fleet` — the default and the key that reaches it are the same
+   * screen, and a person setting one is looking at the other.
+   */
+  model_default: FleetModelDefaultView;
   agents: AgentConnections[];
   /**
    * Names of imported agents whose manifest is too old to declare connections.

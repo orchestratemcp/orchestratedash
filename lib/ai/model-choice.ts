@@ -73,6 +73,101 @@ export function matchEachStep(): AgentModelChoice {
   return { kind: "match_each_step" };
 }
 
+/* ---------------------------------------------------------------------- *
+ * The fleet default (MAR-642)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * One model DASH falls back to, for an agent nobody has configured.
+ *
+ * Henrik's 2026-08-15 ruling, in two halves that are both load-bearing:
+ *
+ * 1. **It is what a new agent's unset steps resolve to.** Before this there was
+ *    no fleet-wide answer at all — model was per agent per step, and an agent
+ *    imported this morning had no model until somebody opened its Settings
+ *    stage and picked one. `describeUnavailable`'s `no_model_chosen` is what
+ *    that cost: a freshly imported agent could not be asked a question.
+ * 2. **It never overrides an explicit per-agent choice.** An agent that has
+ *    chosen keeps what it chose when the default changes, which is why this is
+ *    a *fallback* read in one function rather than a value copied into agents.
+ *
+ * The provider travels with the model because a model id means nothing without
+ * one: `moonshotai/kimi-k2` is an OpenRouter name, and presenting it to
+ * Anthropic would be DASH asking a provider for something it never offered. See
+ * `applyFleetDefault`, which is the only place that check happens.
+ */
+export interface FleetModelDefault {
+  /** DASH's own registry id — `openrouter`, `anthropic`, `openai`. */
+  provider_id: string;
+  model_id: string;
+}
+
+/**
+ * What is in force for one agent, and whose decision it was.
+ *
+ * `from_default` exists so a surface can say *which* — "you chose this" and
+ * "this is what DASH uses unless you say otherwise" are different facts about
+ * the same model id, and a person who cannot tell them apart cannot predict
+ * what changing the default will do to this agent.
+ *
+ * Nothing persists this pair. `run_models` records the resolved `choice`,
+ * because what a run started under is a model and not a provenance — a run that
+ * ran on the default ran on that model, and by the time anybody reads the row
+ * the default may be something else.
+ */
+export interface EffectiveModelChoice {
+  choice: AgentModelChoice;
+  /** True exactly when `choice` names a model this agent did not choose itself. */
+  from_default: boolean;
+}
+
+/**
+ * Fold the fleet default onto one agent's own choice.
+ *
+ * The whole precedence rule, in one pure function, so that the five places that
+ * read a model — the agent's Settings stage, the chat, the broker's spend path,
+ * the run record and the deploy bundle — cannot each have their own idea of it.
+ *
+ * Three rules, in order:
+ *
+ * 1. **An agent that chose wins.** Always, whatever the default says. This is
+ *    the half Henrik stated twice, and it is first here so it cannot be reached
+ *    around.
+ * 2. **A default of another provider does not apply.** `agentProviderId` is the
+ *    provider DASH would actually ask for this agent, resolved from its
+ *    manifest. A default naming OpenRouter cannot answer an agent whose plan
+ *    reaches Anthropic — the request would carry a model id that provider never
+ *    published — so the honest answer for that agent is the one it had before a
+ *    default existed. Null means the caller does not know which provider this
+ *    agent uses, and an unknown provider is not a match: DASH does not guess
+ *    which account gets billed.
+ * 3. **Otherwise the default is what runs.**
+ */
+export function applyFleetDefault(
+  agentChoice: AgentModelChoice,
+  fleetDefault: FleetModelDefault | null,
+  agentProviderId: string | null,
+): EffectiveModelChoice {
+  if (agentChoice.kind === "one_model") {
+    return { choice: agentChoice, from_default: false };
+  }
+  if (
+    fleetDefault === null ||
+    agentProviderId === null ||
+    fleetDefault.provider_id !== agentProviderId
+  ) {
+    return { choice: agentChoice, from_default: false };
+  }
+  return {
+    choice: {
+      kind: "one_model",
+      provider_id: fleetDefault.provider_id,
+      model_id: fleetDefault.model_id,
+    },
+    from_default: true,
+  };
+}
+
 /**
  * One step, with what its author asked for and what is in force.
  *
@@ -260,9 +355,23 @@ export function describeChoiceAvailable(
 export function describeInForce(
   choice: AgentModelChoice,
   steps: readonly ResolvedModelStep[],
+  fromDefault = false,
 ): string {
   if (choice.kind === "one_model") {
-    return `Every step that needs a model uses ${choice.model_id}.`;
+    /*
+     * MAR-642. The same model, and whose decision it was.
+     *
+     * Said here rather than left to the page, because the two sentences differ
+     * in what they predict: a person reading the first can change this agent
+     * and nothing else, and a person reading the second is looking at a
+     * setting that moves when they change the default on the AI tab. A surface
+     * that printed one sentence for both states would make the second
+     * invisible until it surprised somebody.
+     */
+    return fromDefault
+      ? `Every step that needs a model uses ${choice.model_id}, which is the model DASH uses ` +
+          "unless an agent says otherwise. Pick one below to pin this agent to it."
+      : `Every step that needs a model uses ${choice.model_id}.`;
   }
   if (steps.length === 0) {
     return "DASH has no per-step answer for this agent, so nothing here is set.";
@@ -287,11 +396,109 @@ export function describeInForce(
  * whose settings still exist is how somebody comes back in a month and finds an
  * agent behaving in a way nothing on screen explains.
  */
-export function describeStepsNotInForce(modelId: string): string {
-  return (
-    `These are set aside while every step uses ${modelId}. They come back into force if you ` +
-    "go back to matching each step."
-  );
+export function describeStepsNotInForce(modelId: string, fromDefault = false): string {
+  /*
+   * MAR-642. The second sentence is a promise about a control, so it has to be
+   * true of the control it is under. "Go back to matching each step" is what
+   * the picker's first option did before a default existed; with one set, that
+   * option lands on the default and these stay set aside — so the escape it
+   * names is the AI tab rather than this dropdown.
+   */
+  return fromDefault
+    ? `These are set aside while every step uses ${modelId}, DASH's default model. They come ` +
+        "back into force if you clear the default on the AI tab."
+    : `These are set aside while every step uses ${modelId}. They come back into force if you ` +
+        "go back to matching each step.";
+}
+
+/**
+ * The picker's first option, which is the one almost nobody should change.
+ *
+ * It is not a fixed string, and that is MAR-642's doing. "Match each step to
+ * what it needs" was the complete truth while nothing else could answer for an
+ * agent that had chosen nothing; with a default set, leaving this alone means
+ * using the default, and an option that still promised per-step matching would
+ * be describing the state this agent is *not* in.
+ */
+export function describeUnpinnedOption(fleetDefault: FleetModelDefault | null): string {
+  return fleetDefault === null
+    ? "Match each step to what it needs"
+    : `Use DASH's default — ${fleetDefault.model_id}`;
+}
+
+/* ---------------------------------------------------------------------- *
+ * The AI tab (MAR-642)
+ * ---------------------------------------------------------------------- */
+
+/** What the AI tab says above the one dropdown on it. */
+export interface FleetDefaultCopy {
+  headline: string;
+  detail: string;
+  /** Where the setting stands, in one sentence. Never a promise about a run. */
+  in_force: string;
+}
+
+/**
+ * What DASH's default model is, said on the page that sets it.
+ *
+ * Three states and each says something different about what happens next. The
+ * unset state is not an empty state — it is the state every DASH ships in — so
+ * it describes the behaviour a person already has rather than scolding them for
+ * not having chosen.
+ *
+ * **No sentence here claims a run will use this.** The default reaches an agent
+ * that has chosen nothing *and* whose plan reaches the same provider; an agent
+ * with its own model keeps it, and one that reaches a different provider is
+ * untouched. So `in_force` says what the setting is and what it is for, and the
+ * agent's own Settings stage — where the manifest is open and the provider is
+ * known — is the only surface that says what any particular agent will use.
+ */
+export function describeFleetDefault(
+  providerLabel: string | null,
+  modelId: string | null,
+  /** How many providers DASH holds a key for right now. */
+  keysHeld: number,
+): FleetDefaultCopy {
+  const headline = "The model new agents use";
+  const detail =
+    "An agent that has not been given a model of its own uses this one. Choosing a model on " +
+    "an agent's own page always wins, and changing this never moves an agent that has chosen.";
+
+  if (modelId === null || providerLabel === null) {
+    return {
+      headline,
+      detail,
+      in_force:
+        keysHeld === 0
+          ? "No default yet. Add a key below and DASH can offer you the models it reaches."
+          : "No default yet. Until you pick one, each agent is on whatever its own page says, " +
+            "and an agent that says nothing runs each step at the strength its plan asked for.",
+    };
+  }
+
+  return {
+    headline,
+    detail,
+    in_force: `${modelId}, through your ${providerLabel} key.`,
+  };
+}
+
+/** What the keys section of the AI tab says, per how many are connected. */
+export function describeKeysHeld(held: number, offered: number): string {
+  if (held === 0) {
+    return offered === 1
+      ? "DASH holds no key yet. One service, and a key from it is what lets your agents think."
+      : `DASH holds no key yet. ${String(offered)} services can give you one, and a key from ` +
+          "any of them is what lets your agents think.";
+  }
+  if (held === offered) {
+    return held === 1
+      ? "DASH holds your key for the one service it can use."
+      : `DASH holds a key for all ${String(offered)} services it can use.`;
+  }
+  return held === 1
+    ? `DASH holds 1 key. ${String(offered - held)} more can be added.`
+    : `DASH holds ${String(held)} keys. ${String(offered - held)} more can be added.`;
 }
 
 /* ---------------------------------------------------------------------- *
@@ -527,6 +734,30 @@ export function everyModelChoiceSentence(): string[] {
     describeInForce(matchEachStep(), steps),
     describeInForce(matchEachStep(), [{ ...steps[1]!, level: "frontier" }]),
     describeStepsNotInForce("a-model"),
+    /*
+     * MAR-642's branches, every one of them. The gate only ever sees a string a
+     * fixture reaches — the lesson MAR-620 wrote down about an optional field no
+     * fixture populated — and each of these is a *second* branch of a function
+     * whose first branch was already swept, which is precisely the shape that
+     * ships unchecked.
+     */
+    describeInForce(named, steps, true),
+    describeStepsNotInForce("a-model", true),
+    describeUnpinnedOption(null),
+    describeUnpinnedOption({ provider_id: "openrouter", model_id: "a-model" }),
+    ...[
+      describeFleetDefault(null, null, 0),
+      describeFleetDefault(null, null, 1),
+      describeFleetDefault("OpenRouter", "a-model", 1),
+    ].flatMap((copy) => [copy.headline, copy.detail, copy.in_force]),
+    ...[
+      [0, 1],
+      [0, 3],
+      [1, 1],
+      [3, 3],
+      [1, 3],
+      [2, 3],
+    ].map(([held, offered]) => describeKeysHeld(held as number, offered as number)),
     ...(
       [
         { setting: { choice: named, recorded_at: "2026-08-10T09:00:00Z" }, reported: [] },

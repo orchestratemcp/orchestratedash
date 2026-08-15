@@ -30,8 +30,11 @@ import { isModelId } from "../broker/operations";
 import { db } from "../db";
 import { aiProviderById } from "./providers";
 import {
+  applyFleetDefault,
   matchEachStep,
   type AgentModelChoice,
+  type EffectiveModelChoice,
+  type FleetModelDefault,
   type RunModelRecord,
 } from "./model-choice";
 import { isDefaultModelLevel, type DefaultModelLevel } from "./model-levels";
@@ -113,6 +116,116 @@ export function clearAgentModelChoice(agent: string): void {
   } catch (error: unknown) {
     console.warn(`[dash] could not clear a model choice: ${message(error)}`);
   }
+}
+
+/* ---------------------------------------------------------------------- *
+ * The fleet default (MAR-642)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * DASH's own default model, or null when nobody has set one.
+ *
+ * Null is the shipped state and every caller treats it as "there is no fallback"
+ * rather than as a failure. A row naming a provider this build no longer has, or
+ * a model id that no longer passes `isModelId`, reads as null — which is
+ * `readAgentModelChoice`'s rule applied one level up: a record this build cannot
+ * interpret should read as the absence of a record.
+ */
+export function readFleetModelDefault(): FleetModelDefault | null {
+  let row: unknown;
+  try {
+    row = db().prepare("SELECT provider_id, model_id FROM fleet_model_default WHERE id = 1").get();
+  } catch (error: unknown) {
+    console.warn(`[dash] could not read the default model: ${message(error)}`);
+    return null;
+  }
+  if (row === undefined || row === null) {
+    return null;
+  }
+
+  const record = row as Record<string, unknown>;
+  const providerId = String(record["provider_id"]);
+  const modelId = String(record["model_id"]);
+  if (aiProviderById(providerId) === null || !isModelId(modelId)) {
+    return null;
+  }
+  return { provider_id: providerId, model_id: modelId };
+}
+
+/**
+ * Name the model DASH falls back to.
+ *
+ * Returns whether it was stored, in `writeAgentModelChoice`'s shape and for its
+ * reason: false is a refusal — a provider DASH does not broker, or an id DASH is
+ * not willing to write down — and the caller renders a sentence rather than a
+ * fault.
+ *
+ * **It writes nothing to any agent.** Not one row in `agent_model_choice` is
+ * touched, which is the mechanical half of "it never overrides an explicit
+ * per-agent choice": there is no code path here that could.
+ */
+export function writeFleetModelDefault(providerId: string, modelId: string, at: string): boolean {
+  if (aiProviderById(providerId) === null || !isModelId(modelId)) {
+    return false;
+  }
+  try {
+    db()
+      .prepare(
+        "INSERT INTO fleet_model_default (id, provider_id, model_id, chosen_at) " +
+          "VALUES (1, ?, ?, ?) " +
+          "ON CONFLICT (id) DO UPDATE SET " +
+          "provider_id = excluded.provider_id, model_id = excluded.model_id, " +
+          "chosen_at = excluded.chosen_at",
+      )
+      .run(providerId, modelId, at);
+    return true;
+  } catch (error: unknown) {
+    console.warn(`[dash] could not record the default model: ${message(error)}`);
+    return false;
+  }
+}
+
+/**
+ * Go back to having no default.
+ *
+ * Deletes rather than writing an empty row, `clearAgentModelChoice`'s rule: "no
+ * default" and "a default nothing can read" would be two states meaning one
+ * thing, and only one of them is the state DASH ships in.
+ *
+ * Agents that were running on it fall back to what they were on before it
+ * existed — each step at the level its plan asked for — and agents that chose
+ * their own model are, again, untouched.
+ */
+export function clearFleetModelDefault(): void {
+  try {
+    db().prepare("DELETE FROM fleet_model_default WHERE id = 1").run();
+  } catch (error: unknown) {
+    console.warn(`[dash] could not clear the default model: ${message(error)}`);
+  }
+}
+
+/**
+ * What one agent actually runs on, default included (MAR-642).
+ *
+ * The reader every consumer of a model should use, and the reason it exists
+ * rather than each caller reading two rows and comparing them: the precedence
+ * between an agent's own choice and DASH's default is a product decision, it
+ * lives in `applyFleetDefault`, and five surfaces reading it separately is five
+ * chances to disagree about whose setting wins.
+ *
+ * `agentProviderId` is the provider DASH would ask for this agent, resolved from
+ * its manifest by the caller — which is why this takes it rather than reading it
+ * here. This module holds no manifest and should not learn to.
+ */
+export function readEffectiveModelChoice(
+  agent: string,
+  agentProviderId: string | null,
+): EffectiveModelChoice {
+  return applyFleetDefault(
+    readAgentModelChoice(agent),
+    readFleetModelDefault(),
+    agentProviderId,
+  );
 }
 
 /* ---------------------------------------------------------------------- *

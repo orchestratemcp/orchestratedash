@@ -144,6 +144,16 @@ const SURFACES = [
    * strip above them is now part of what a screenshot of them has to show.
    */
   { name: "settings-connections", path: "/settings", density: false, tall: true },
+  /*
+   * MAR-642. The sixth tab: the three model keys, and the model DASH gives an
+   * agent nobody has configured.
+   *
+   * `tall` because the page's two halves are stacked — the default's dropdown
+   * above, the key cards below — and the failure worth photographing is the
+   * one a viewport frame hides: a person who came to add a key finding the
+   * cards below the fold under a setting they cannot use yet.
+   */
+  { name: "settings-ai", path: "/settings/ai", density: false, tall: true },
   {
     name: "settings-notifications",
     path: "/settings/notifications",

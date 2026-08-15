@@ -32,7 +32,8 @@
 
 import { localRunnerChannel } from "../lib/agent-dom/runner-channel";
 import { parseAiKeyCredential } from "../lib/ai/credential";
-import { readAgentModelChoice } from "../lib/ai/model-store";
+import { aiKeyConnections, pickAiKeyCard } from "../lib/ai/connection-view";
+import { readEffectiveModelChoice } from "../lib/ai/model-store";
 import { aiAuthHeaders, aiProviderById } from "../lib/ai/providers";
 import { isKeyCredential, type BrokerCredential } from "../lib/broker/grant";
 import { createBroker, type Broker, type BrokerAuditRow, type CredentialRead } from "../lib/broker/execute";
@@ -243,8 +244,14 @@ export function hostBroker(): Broker {
     // touches no store — and it reads the same row the model picker writes and
     // the chat asks under, so an agent's own step and a person's question
     // cannot end up on two different models.
+    //
+    // MAR-642: the same row, plus DASH's default underneath it. The provider is
+    // resolved from this agent's own manifest rather than assumed, because a
+    // default naming one service must not put its model id into a request bound
+    // for another — `applyFleetDefault` is where that is decided, and this is
+    // the one seam where the manifest has to be opened to answer it.
     readModelChoice: (agentId: string) => {
-      const choice = readAgentModelChoice(agentId);
+      const choice = readEffectiveModelChoice(agentId, agentProviderId(agentId)).choice;
       return choice.kind === "one_model" ? choice.model_id : null;
     },
     audit: (row: BrokerAuditRow) => {
@@ -256,6 +263,28 @@ export function hostBroker(): Broker {
     now: () => new Date(),
   });
   return broker;
+}
+
+/**
+ * Which model provider DASH would ask for one agent, or null (MAR-642).
+ *
+ * Only ever used to decide whether DASH's default model reaches this agent, and
+ * null — an agent DASH has no manifest for, or one that declares no model
+ * provider — is a complete answer to that: no provider means no match, which
+ * means no default, which is what the agent had before a default existed.
+ *
+ * The manifest read is the one `createBroker` already does for every request
+ * through `readManifest`, repeated here rather than threaded through the seam
+ * because widening `readModelChoice` would put an agent's connection vocabulary
+ * inside `lib/broker/execute.ts`, which is the module that must stay a pure
+ * function of what it is handed.
+ */
+function agentProviderId(agentId: string): string | null {
+  const manifest = readAgentManifest(agentId) as ConnectionSourceManifest | null;
+  if (manifest === null) {
+    return null;
+  }
+  return pickAiKeyCard(aiKeyConnections(agentId, manifest))?.provider_id ?? null;
 }
 
 export function startBroker(

@@ -157,6 +157,7 @@ export function ModelChoice({
           {canAct ? (
             <ModelPicker
               chosen={settings.chosen_model_id}
+              unpinned={settings.unpinned_option}
               models={models}
               provider={settings.provider_label}
               busy={busy}
@@ -206,6 +207,7 @@ export function ModelChoice({
  */
 function ModelPicker({
   chosen,
+  unpinned,
   models,
   provider,
   busy,
@@ -213,6 +215,15 @@ function ModelPicker({
   onAsk,
 }: {
   chosen: string | null;
+  /**
+   * What leaving this alone gives you, worded by the view (MAR-642).
+   *
+   * A prop rather than the literal it used to be, because the answer changed:
+   * with DASH's default set, the first option means "use the default", and an
+   * option that went on promising per-step matching would describe a state this
+   * agent is not in. The sentence is `describeUnpinnedOption`'s.
+   */
+  unpinned: string;
   models: string[] | null;
   provider: string;
   busy: boolean;
@@ -240,7 +251,7 @@ function ModelPicker({
         }}
       >
         <optgroup label="Recommended">
-          <option value="">Match each step to what it needs</option>
+          <option value="">{unpinned}</option>
         </optgroup>
         {options.length === 0 ? null : (
           <optgroup label="One model for everything">

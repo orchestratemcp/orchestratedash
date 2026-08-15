@@ -55,16 +55,20 @@ const { performConnectionAction } = await import("../lib/connection-actions");
 const { listAiKeyModels } = await import("../lib/ai/actions");
 const { resolveCredentialTarget } = await import("../lib/connection-credentials");
 const { closeDb, db } = await import("../lib/db");
-const { ingestEvents, resetStore } = await import("../lib/store");
+const { importManifest, ingestEvents, resetStore } = await import("../lib/store");
 const {
   clearAgentModelChoice,
+  clearFleetModelDefault,
   clearStepLevelOverride,
   forgetAgentModelChoice,
   readAgentModelChoice,
+  readEffectiveModelChoice,
+  readFleetModelDefault,
   readRunModel,
   readRunModels,
   readStepLevelOverrides,
   writeAgentModelChoice,
+  writeFleetModelDefault,
   writeStepLevelOverride,
 } = await import("../lib/ai/model-store");
 const { buildAgentModelSettings, buildRunModel } = await import("../lib/views/models");
@@ -159,6 +163,29 @@ function event(runId: string, seq: number, model?: string): Record<string, unkno
 /** The events DASH holds for one run, in the shape `buildRunModel` reads. */
 function reported(...models: Array<string | undefined>): Array<{ model?: string }> {
   return models.map((model) => ({ model }));
+}
+
+/**
+ * A whole, schema-valid manifest for this agent, for the one caller that reads
+ * it back out of the store rather than being handed it (MAR-642).
+ *
+ * The shipped example with this file's own connection block and route grafted
+ * on, rather than a second hand-written manifest: what is under test is the
+ * ingest path's provider lookup, and a fixture that drifted from the schema
+ * would fail as an import error somewhere far away from the thing it was
+ * checking.
+ */
+function storedManifest(): Record<string, unknown> {
+  const example = JSON.parse(
+    readFileSync(path.join(repoRoot, "examples", "agent.manifest.example.json"), "utf8"),
+  ) as Record<string, unknown>;
+  const source = manifestWith(MIXED_ROUTE);
+  return {
+    ...example,
+    agent: { ...(example["agent"] as Record<string, unknown>), name: AGENT },
+    planned_route: source.planned_route,
+    agent_dom: source.agent_dom,
+  };
 }
 
 async function connectKey(store: Vault, source: ConnectionSourceManifest): Promise<void> {
@@ -747,6 +774,190 @@ describe("the choice in a deploy bundle", () => {
       model_id: null,
       steps: [{ step: 2, level: "cheap" }],
     });
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * DASH's own default (MAR-642)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The fallback, and the three ways it is not allowed to reach an agent.
+ *
+ * Henrik's 2026-08-15 ruling has one sentence that has to be mechanically true
+ * rather than merely intended — *it never overrides an explicit per-agent
+ * choice* — so the first test here is the one that would fail if somebody ever
+ * "simplified" the precedence in `applyFleetDefault`.
+ *
+ * The second rule is the one nobody asked for and that a wrong implementation
+ * would ship silently: a default naming OpenRouter must not answer for an agent
+ * whose plan reaches Anthropic. Nothing on screen would look wrong; the request
+ * would carry a model id that provider never published, and the person would
+ * read the refusal as their key being broken.
+ */
+describe("the model DASH falls back to", () => {
+  beforeEach(() => {
+    clearFleetModelDefault();
+  });
+
+  it("is absent until somebody sets one, with no row to say so", () => {
+    expect(readFleetModelDefault()).toBeNull();
+    const rows = db().prepare("SELECT count(*) AS n FROM fleet_model_default").get() as { n: number };
+    expect(rows.n).toBe(0);
+  });
+
+  it("goes back to absent by losing its row, not by storing an empty one", () => {
+    expect(writeFleetModelDefault("openrouter", "openai/gpt-5-mini", AT)).toBe(true);
+    expect(readFleetModelDefault()).toEqual({
+      provider_id: "openrouter",
+      model_id: "openai/gpt-5-mini",
+    });
+
+    clearFleetModelDefault();
+    expect(readFleetModelDefault()).toBeNull();
+    const rows = db().prepare("SELECT count(*) AS n FROM fleet_model_default").get() as { n: number };
+    expect(rows.n).toBe(0);
+  });
+
+  it("refuses a provider DASH does not broker and a model id that could become a path", () => {
+    // `writeAgentModelChoice`'s two refusals, on the fleet row. The same
+    // predicates, imported rather than restated, so MAR-582's hardening reaches
+    // this caller too.
+    expect(writeFleetModelDefault("some-other-service", "a-model", AT)).toBe(false);
+    expect(writeFleetModelDefault("openrouter", "../../etc/passwd", AT)).toBe(false);
+    expect(writeFleetModelDefault("openrouter", "", AT)).toBe(false);
+    expect(readFleetModelDefault()).toBeNull();
+  });
+
+  it("is one row however many times it is set", () => {
+    expect(writeFleetModelDefault("openrouter", "openai/gpt-5-mini", AT)).toBe(true);
+    expect(writeFleetModelDefault("openrouter", "anthropic/claude-sonnet-5", LATER)).toBe(true);
+    const rows = db().prepare("SELECT count(*) AS n FROM fleet_model_default").get() as { n: number };
+    expect(rows.n).toBe(1);
+    expect(readFleetModelDefault()?.model_id).toBe("anthropic/claude-sonnet-5");
+  });
+
+  it("never overrides an agent that has chosen", () => {
+    // The ruling, as an assertion. Both rows exist and disagree; the agent's
+    // wins, and `from_default` says whose decision the caller is looking at.
+    expect(writeAgentModelChoice(AGENT, "openrouter", "anthropic/claude-sonnet-5", AT)).toBe(true);
+    expect(writeFleetModelDefault("openrouter", "openai/gpt-5-mini", LATER)).toBe(true);
+
+    const effective = readEffectiveModelChoice(AGENT, "openrouter");
+    expect(effective.choice).toEqual({
+      kind: "one_model",
+      provider_id: "openrouter",
+      model_id: "anthropic/claude-sonnet-5",
+    });
+    expect(effective.from_default).toBe(false);
+  });
+
+  it("answers for an agent that has chosen nothing", () => {
+    expect(writeFleetModelDefault("openrouter", "openai/gpt-5-mini", AT)).toBe(true);
+    const effective = readEffectiveModelChoice(AGENT, "openrouter");
+    expect(effective.choice).toEqual({
+      kind: "one_model",
+      provider_id: "openrouter",
+      model_id: "openai/gpt-5-mini",
+    });
+    expect(effective.from_default).toBe(true);
+  });
+
+  it("does not answer for an agent whose plan reaches another provider", () => {
+    // The failure this prevents is invisible on screen: an OpenRouter model id
+    // in a request bound for Anthropic, refused by the provider, read by the
+    // person as their key being broken.
+    expect(writeFleetModelDefault("openrouter", "openai/gpt-5-mini", AT)).toBe(true);
+    expect(readEffectiveModelChoice(AGENT, "anthropic").choice).toEqual({
+      kind: "match_each_step",
+    });
+    // And not for a caller that does not know which provider this agent uses.
+    // An unknown provider is not a match: DASH does not guess which account
+    // gets billed.
+    expect(readEffectiveModelChoice(AGENT, null).choice).toEqual({ kind: "match_each_step" });
+  });
+
+  it("writes nothing to any agent when it is set", () => {
+    // The mechanical half of the ruling: there is no code path from setting a
+    // default to a row in `agent_model_choice`, so nobody's pinned agent can be
+    // changed by this control.
+    expect(writeFleetModelDefault("openrouter", "openai/gpt-5-mini", AT)).toBe(true);
+    const rows = db().prepare("SELECT count(*) AS n FROM agent_model_choice").get() as { n: number };
+    expect(rows.n).toBe(0);
+  });
+
+  it("puts an agent back where it was when the default is cleared", () => {
+    expect(writeFleetModelDefault("openrouter", "openai/gpt-5-mini", AT)).toBe(true);
+    expect(readEffectiveModelChoice(AGENT, "openrouter").from_default).toBe(true);
+
+    clearFleetModelDefault();
+    expect(readEffectiveModelChoice(AGENT, "openrouter").choice).toEqual({
+      kind: "match_each_step",
+    });
+  });
+
+  it("reads a default naming a dropped provider as no default at all", () => {
+    // `readAgentModelChoice`'s rule one level up: a record this build cannot
+    // interpret reads as the absence of a record, which a person can act on,
+    // rather than as a value every reader downstream needs a branch for.
+    db()
+      .prepare(
+        "INSERT INTO fleet_model_default (id, provider_id, model_id, chosen_at) VALUES (1, ?, ?, ?)",
+      )
+      .run("some-other-service", "a-model", AT);
+    expect(readFleetModelDefault()).toBeNull();
+  });
+
+  it("shows the agent page a model in force that the agent has not chosen", async () => {
+    const source = manifestWith(MIXED_ROUTE);
+    await connectKey(vault(), source);
+    expect(writeFleetModelDefault("openrouter", "openai/gpt-5-mini", AT)).toBe(true);
+
+    const settings = buildAgentModelSettings(AGENT, source);
+    expect(settings.can_choose).toBe(true);
+    if (!settings.can_choose) {
+      return;
+    }
+    // The picker still shows nothing pinned — the agent chose nothing — and the
+    // sentence beside it names the model that will run and says whose decision
+    // it was. Those are two different facts and the view carries both.
+    expect(settings.chosen_model_id).toBeNull();
+    expect(settings.from_default).toBe(true);
+    expect(settings.in_force).toContain("openai/gpt-5-mini");
+    // And the option that means "leave this alone" no longer promises per-step
+    // matching, because leaving it alone now means the default.
+    expect(settings.unpinned_option).toContain("openai/gpt-5-mini");
+  });
+
+  it("records the default on a run of an agent that has chosen nothing", () => {
+    // `run_models` records DASH's own setting at the moment it first saw the
+    // run. With a default in force that setting *is* the default, and a row
+    // saying "matched each step" would be a record of something that did not
+    // happen.
+    //
+    // The manifest has to be **in the store** rather than handed in, because
+    // this is the one caller that has nothing to hand it: `receiveEvents` reads
+    // it back through `readAgentManifest`, and only when a default exists.
+    importManifest(storedManifest());
+    expect(writeFleetModelDefault("openrouter", "openai/gpt-5-mini", AT)).toBe(true);
+    ingestEvents([event("run-default", 0)] as never);
+
+    expect(readRunModel(AGENT, "run-default")?.choice).toEqual({
+      kind: "one_model",
+      provider_id: "openrouter",
+      model_id: "openai/gpt-5-mini",
+    });
+  });
+
+  it("records matching each step when DASH cannot tell which provider an agent uses", () => {
+    // The limit, stated rather than hidden. An agent DASH holds no manifest for
+    // has no provider to match a default against, and inventing one would put a
+    // model id in a run record that nothing ever sent. No manifest is imported
+    // here, deliberately.
+    expect(writeFleetModelDefault("openrouter", "openai/gpt-5-mini", AT)).toBe(true);
+    ingestEvents([event("run-unknown", 0)] as never);
+
+    expect(readRunModel(AGENT, "run-unknown")?.choice).toEqual({ kind: "match_each_step" });
   });
 });
 

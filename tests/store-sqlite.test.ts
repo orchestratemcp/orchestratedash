@@ -113,8 +113,12 @@ describe("schema", () => {
     // is the only order that leaves an already-migrated installed store alone --
     // renumbering a step somebody's database has already recorded is the one
     // thing this pin exists to make somebody think about.
+    //
+    // 22 is MAR-642's `fleet_model_default`, appended for that same reason: it
+    // is a new step and it goes last, so an installed store that has already
+    // recorded steps 0 to 21 runs exactly one more.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(21);
+    expect(version.user_version).toBe(22);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -163,6 +167,12 @@ describe("schema", () => {
     // above is untouched and still means what it always did.
     expect(tables).toContain("fleet_connections");
     expect(tables).toContain("fleet_grants");
+    // MAR-642. One row, holding the model DASH gives an agent nobody has given
+    // one. Beside the fleet tables above because it is the same kind of fact —
+    // a decision the person made about their whole DASH rather than about one
+    // agent — and, like `agent_model_choice`, it has no cost column and no
+    // column a key could go in.
+    expect(tables).toContain("fleet_model_default");
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -522,7 +532,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(21);
+    ).toBe(22);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

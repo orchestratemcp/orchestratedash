@@ -57,6 +57,12 @@ function choosable(over: Partial<AgentModelSettingsView> = {}): AgentModelSettin
     detail: "Two steps in this agent's plan need a model.",
     chosen_model_id: null,
     in_force: "Two steps need a model and they ask for different strengths.",
+    // MAR-642's two fields, at their no-default values: this DASH has no
+    // fleet-wide model, so leaving the picker alone still means per-step
+    // matching and the option says so. `describeUnpinnedOption` words both
+    // states and `tests/model-choice.test.ts` drives the other one.
+    from_default: false,
+    unpinned_option: "Match each step to what it needs",
     steps: STEPS,
     steps_in_force: true,
     steps_note: null,

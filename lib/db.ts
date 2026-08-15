@@ -1105,6 +1105,38 @@ const MIGRATIONS: readonly Migration[] = [
       database.exec("ALTER TABLE agent_deploys ADD COLUMN brought_home_at TEXT");
     }
   },
+
+  // MAR-642. One model DASH falls back to, for an agent nobody has configured.
+  //
+  // **A fallback and never an override**, which is Henrik's 2026-08-15 ruling and
+  // the whole of what this table is allowed to mean: an agent with a row in
+  // `agent_model_choice` keeps that row when this one changes, and this one is
+  // read only where that one is absent. `applyFleetDefault` is the single place
+  // that precedence is expressed; nothing else may compare the two.
+  //
+  // One row, `CHECK (id = 1)`, for `notify_discord`'s reason — the default is a
+  // property of the *person*, and a second row would leave code deciding which
+  // of two is real. Absence is the ordinary state: DASH ships with no default,
+  // and clearing one deletes the row rather than writing an empty string,
+  // exactly as `clearAgentModelChoice` deletes rather than storing a name for
+  // "match each step".
+  //
+  // `provider_id` is DASH's own registry id and `model_id` is provider content —
+  // it arrives from a catalogue a third party wrote, through a renderer — so
+  // both are checked (`aiProviderById`, `isModelId`) before they are written and
+  // again when they are read back. ADR 0002 invariant 7.
+  //
+  // There is no key here and no column one could go in. What a person picks on
+  // the AI tab is which model to ask for; the key that reaches it stays in the
+  // vault under `fleetSecretName`, and this table names neither.
+  `
+  CREATE TABLE IF NOT EXISTS fleet_model_default (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    provider_id TEXT NOT NULL,
+    model_id    TEXT NOT NULL,
+    chosen_at   TEXT NOT NULL
+  );
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

@@ -520,6 +520,23 @@ const dashShell = {
     send("model.list", { ...args }),
 
   /**
+   * DASH's own default model, and the list to pick it from (MAR-642).
+   *
+   * Two methods that carry no agent id, which is the whole of what is new here:
+   * every other model method names one and main resolves the provider from that
+   * agent's manifest. These name the provider, and main resolves it against
+   * `fleetConnectorFor` — the same catalogue the AI tab was drawn from — so page
+   * script can name one of three services and nothing else.
+   *
+   * Omitting both fields on `setDefaultModel` is how the default is cleared, in
+   * `chooseModel`'s shape: the absent field is the instruction.
+   */
+  setDefaultModel: (args: { provider_id?: string; model_id?: string }) =>
+    send("model.default", dropUnset(args)),
+  listProviderModels: (args: { provider_id: string }) =>
+    send("model.catalogue", { ...args }),
+
+  /**
    * Ask this agent's model a question about what it has saved (MAR-545).
    *
    * The only method on this bridge that costs the person money, and the only one

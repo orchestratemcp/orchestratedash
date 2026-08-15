@@ -43,8 +43,12 @@ import {
   type AskExchange,
   type AskSpendSummary,
 } from "../ai/ask-store";
-import { aiKeyConnections, type AiKeyConnectionView } from "../ai/connection-view";
-import { readAgentModelChoice } from "../ai/model-store";
+import {
+  aiKeyConnections,
+  pickAiKeyCard,
+  type AiKeyConnectionView,
+} from "../ai/connection-view";
+import { readEffectiveModelChoice } from "../ai/model-store";
 import { aiProviderById } from "../ai/providers";
 import {
   ASK_CUSTODY,
@@ -111,7 +115,7 @@ export function buildAgentAsk(
   const history = readExchanges(agent).map(toExchangeView);
   const reported = describeReportedRunSpend(...reportedRunSpend(events), title);
 
-  const card = pickCard(aiKeyConnections(agent, manifest));
+  const card = pickAiKeyCard(aiKeyConnections(agent, manifest));
   if (card === null) {
     return blocked(
       describeUnavailable("no_provider", { agent: title, service: null }),
@@ -129,7 +133,16 @@ export function buildAgentAsk(
     );
   }
 
-  const choice = readAgentModelChoice(agent);
+  /*
+   * MAR-642. DASH's default counts as a model chosen, for this gate's purpose.
+   *
+   * The refusal below is the one a freshly imported agent used to hit: nothing
+   * could be asked of it until somebody opened its Settings stage and picked a
+   * model. A default is exactly the answer to that, so this reads the effective
+   * choice — and `electron/ask-host.ts` reads the same one, through the same
+   * function, so the page cannot offer a question main would then refuse.
+   */
+  const choice = readEffectiveModelChoice(agent, card.provider_id).choice;
   if (choice.kind !== "one_model") {
     return blocked(
       describeUnavailable("no_model_chosen", { agent: title, service: card.service }),
@@ -252,11 +265,6 @@ export function savedThingsForAgent(agent: string): SavedItem[] {
       .filter(isDigestArtifact)
       .map((artifact) => ({ artifact, run_id: artifact.run_id })),
   );
-}
-
-/** A key DASH holds beats one it does not, which is `lib/views/models.ts`' rule. */
-function pickCard(cards: readonly AiKeyConnectionView[]): AiKeyConnectionView | null {
-  return cards.find((card) => card.held) ?? cards[0] ?? null;
 }
 
 /**

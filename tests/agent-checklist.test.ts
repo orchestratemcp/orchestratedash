@@ -26,6 +26,9 @@ const CHOSEN: AgentModelSettingsView = {
   detail: "DASH holds your OpenRouter key and asks on this agent's behalf.",
   chosen_model_id: "openai/gpt-5-mini",
   in_force: "Every step that needs a model uses openai/gpt-5-mini.",
+  // This agent was pinned by hand rather than left on DASH's default (MAR-642).
+  from_default: false,
+  unpinned_option: "Match each step to what it needs",
   steps: [],
   steps_in_force: false,
   steps_note: null,
