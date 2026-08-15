@@ -3055,6 +3055,108 @@ a.plain:hover {
 }
 
 /* ---------------------------------------------------------------------- *
+ * One service, once (MAR-642)
+ *
+ * The merged row. It inherits `.connector-agent`'s rules for the agents inside
+ * it — the same three-column shape with the chip last and the same 560px
+ * breakpoint — because it is the same content: a portrait, a name, a standing.
+ * What is new is the head, which has to keep a glyph, a name, an account hint
+ * and a chip on one line at 1280 and wrap sensibly at 375.
+ * ---------------------------------------------------------------------- */
+
+.service-list {
+  display: block;
+}
+
+.service-list .row-list > li {
+  min-width: 0;
+  /* The same measure the tiles took: a single row stretched to the full 1280
+     would run its own paragraphs to a line length nothing else on the page
+     uses. */
+  max-width: 56rem;
+}
+
+.service-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--density-gap);
+}
+
+.service-glyph {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.service-name {
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+/*
+ * The account hint. `margin-inline-end: auto` is what pushes the chip to the
+ * far edge without a spacer element — and it is on the hint rather than on the
+ * name so that a row with no account still ends with its chip at the edge.
+ */
+.service-account {
+  margin-inline-end: auto;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.service-head > .chip {
+  margin-inline-start: auto;
+}
+
+.service-needed-by {
+  margin: 0 0 var(--density-gap);
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* The same row `.connector-agent` drew: portrait, name, standing — with the
+   chip last so a long name pushes the text and never the answer. */
+.service-needed {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+@media (max-width: 560px) {
+  /* `.connector-agent`'s breakpoint and its reason: three columns leave the
+     middle one about ten characters wide, so the standing moves under the text
+     rather than beside it. Placed rather than left to flow, or it lands in the
+     column that exists to hold a 50px sprite. */
+  .service-needed {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .service-needed > .chip {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+.service-needed-name {
+  font-weight: 600;
+}
+
+.service-more {
+  margin-top: var(--density-gap);
+}
+
+/* Each agent's own capability card, inside the expansion. The heading is what
+   keeps two cards from reading as one agent's two connections. */
+.service-receipt + .service-receipt {
+  margin-top: var(--density-gap);
+}
+
+/* ---------------------------------------------------------------------- *
  * The connect-a-server wizard (MAR-498)
  *
  * The concept's numbered rail and provider grid, drawn in the Bit-Command

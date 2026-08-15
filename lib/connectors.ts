@@ -273,26 +273,20 @@ export function connectorChip(standing: ConnectorStanding): ConnectorSentence {
   }
 }
 
-/**
- * Which agents need this, as a sentence rather than a list of chips.
+/*
+ * MAR-642. `describeDependents` is gone with the tile it was written for.
  *
- * The tile's whole reason for existing, said in words: this is one connection
- * and these are the agents behind it. Named rather than counted — "used by 2
- * agents" is a number a person then has to go and expand, and the names are the
- * thing that makes "connect once" believable.
+ * "Needed by News Scout and Meeting Assistant." was the tile's whole reason
+ * for existing, said in words. The merged service row says it in pictures and
+ * standings instead: one avatar per agent, each with its own name and its own
+ * connected chip, which is strictly more than the sentence carried — a partly
+ * connected service used to need the row expanded before a person could see
+ * *which* half they were in.
+ *
+ * Deleted rather than left exported and uncalled. A pure copy function nothing
+ * renders is a sentence the plain-language sweep keeps checking and nobody
+ * reads, which is the shape MAR-646 spent a whole packet removing.
  */
-export function describeDependents(tile: ConnectorTile): string {
-  const names = tile.dependents.map((one) => one.agent);
-  if (names.length === 1) {
-    return `Needed by ${names[0] as string}.`;
-  }
-  if (names.length === 2) {
-    return `Needed by ${names[0] as string} and ${names[1] as string}.`;
-  }
-  const last = names[names.length - 1] as string;
-  return `Needed by ${names.slice(0, -1).join(", ")} and ${last}.`;
-}
-
 /**
  * The disclosure that has to be read **before** the sign-in (MAR-570).
  *
@@ -349,43 +343,16 @@ export function describeSharedGrant(tile: ConnectorTile): string | null {
   );
 }
 
-/**
- * The one line above the tiles, counted rather than asserted.
+/*
+ * MAR-642. `summariseConnectors` is gone too, and for a sharper reason than
+ * disuse: with the catalogue and the tiles on one page there were **two**
+ * summaries, this one counting services an agent asked for and
+ * `FleetConnectors`' counting services DASH offers — two lines at the top of
+ * one page, counting overlapping sets, free to disagree about the same Gmail.
  *
- * `lib/connection-card.ts`'s `summarisePage` counted connections; this counts
- * services, because that is now the unit on screen. A page that said "4
- * connections" over two tiles would be a summary disagreeing with the thing it
- * summarises — the failure mode of every hand-written line at the top of a list.
+ * `summariseServices` in `lib/connections-list.ts` is the one line over the one
+ * list.
  */
-export function summariseConnectors(tiles: readonly ConnectorTile[]): string {
-  if (tiles.length === 0) {
-    return "No agent here has asked to reach anything outside this computer.";
-  }
-  const services = `${String(tiles.length)} service${tiles.length === 1 ? "" : "s"}`;
-  /*
-   * Counted by the same rule `describeSharedGrant` uses, not by how many agents
-   * name the tile.
-   *
-   * Found by photographing it. A "Model provider" tile is named by three agents
-   * and DASH holds none of it, so the first draft counted it as shared and the
-   * page said "you connect each once" about a thing there is nothing to connect.
-   * A summary may only claim what the tiles under it will actually do.
-   */
-  const shared = tiles.filter((tile) => describeSharedGrant(tile) !== null).length;
-  const waiting = tiles.filter(
-    (tile) => tile.standing === "not_connected" || tile.standing === "partly_connected",
-  ).length;
-
-  const first =
-    waiting === 0
-      ? `${services}, and everything that needs connecting is connected.`
-      : `${services}. ${String(waiting)} still ${waiting === 1 ? "needs" : "need"} connecting.`;
-
-  return shared === 0
-    ? first
-    : `${first} ${String(shared)} of them ${shared === 1 ? "is" : "are"} needed by more than one agent, and you connect ${shared === 1 ? "it" : "each"} once.`;
-}
-
 /**
  * Every sentence this module can produce, for the copy sweep.
  *
@@ -404,10 +371,7 @@ export function everyConnectorSentence(tiles: readonly ConnectorTile[]): string[
     ...standings.map((standing) => connectorChip(standing).label),
     ...tiles.flatMap((tile) => [
       tile.service,
-      describeDependents(tile),
       describeSharedGrant(tile) ?? "",
     ]),
-    summariseConnectors([]),
-    summariseConnectors(tiles),
   ];
 }

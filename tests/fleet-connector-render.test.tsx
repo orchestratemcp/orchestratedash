@@ -1,6 +1,13 @@
 /**
  * The fleet connector card, drawn (MAR-593, ADR 0013).
  *
+ * **This card is the AI tab's now (MAR-642).** The Connections page merged it
+ * with the per-agent tile into one service-keyed row -- `tests/service-row-render.test.tsx`
+ * is where the merged surface is held to these same claims -- and what still
+ * renders this component is `app/settings/ai/page.tsx`, where a model key is a
+ * card rather than a row because choosing a provider is a decision worth a
+ * paragraph of consequence.
+ *
  * `tests/fleet-connections.test.ts` drives the model and the vault. This drives
  * the thing on screen, for `tests/connector-tile-render.test.tsx`' reason: a
  * photograph proves a state was drawn once on one machine, and this proves each
@@ -22,7 +29,6 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { FleetConnectorCard } from "../app/_components/fleet-connector";
-import { FleetConnectors } from "../app/settings/page";
 import type { FleetConnectorView } from "../lib/views/types";
 
 function connector(over: Partial<FleetConnectorView> = {}): FleetConnectorView {
@@ -195,38 +201,5 @@ describe("agents that are waiting, and agents that are not coming", () => {
     expect(html).toContain("you turned this one off");
     expect(html).toContain("the agent holds its own");
     expect(html).toContain("Ledger reporter");
-  });
-});
-
-describe("the section on the Connections page", () => {
-  it("counts what it drew rather than asserting a number", () => {
-    const html = renderToStaticMarkup(
-      <FleetConnectors
-        connectors={[
-          connector(),
-          connector({
-            provider: "openrouter",
-            service: "OpenRouter",
-            connector_kind: "api_key",
-            ai_provider_id: "openrouter",
-          }),
-        ]}
-        canAct
-        onChanged={() => undefined}
-      />,
-    );
-    expect(html).toContain("2 services DASH can connect for you");
-    expect(html).toContain("None is connected yet");
-  });
-
-  it("draws nothing at all when this build offers no connectors", () => {
-    // Unreachable through `fleetCatalogue`, which is a by-value list with
-    // entries in it. If it ever happened the true statement would be that this
-    // build offers none — not that the person has connected nothing.
-    expect(
-      renderToStaticMarkup(
-        <FleetConnectors connectors={[]} canAct onChanged={() => undefined} />,
-      ),
-    ).toBe("");
   });
 });
