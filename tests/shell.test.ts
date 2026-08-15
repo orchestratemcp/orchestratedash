@@ -137,6 +137,11 @@ describe("the audited command chokepoint", () => {
       // can honestly declare `mutates: false`.
       "shell.menu",
       "shell.scale",
+      // MAR-642. The third in that family: the native half of the theme. The
+      // palette is CSS and needs no command; the window's background and the
+      // Windows title bar overlay are chosen in Node before a stylesheet
+      // exists, and this is what tells that half which one a person chose.
+      "shell.theme",
       // MAR-415. Lifecycle, not Agent DOM commands: they act on a process, no
       // manifest declares them, and they never become an envelope. The
       // `runner.` prefix is what keeps that legible at every call site.
@@ -199,6 +204,15 @@ describe("the audited command chokepoint", () => {
       "model.choose",
       "model.step",
       "model.list",
+      // MAR-642. Two more in that family, and the first commands in it that
+      // name no agent: DASH's own default model belongs to no agent, so there
+      // is no manifest to resolve a provider out of. They name one of the three
+      // ids in `AI_PROVIDER_IDS` instead and main refuses anything else — what
+      // the renderer still cannot name is an origin, a path, a header or a key.
+      // They are in this family rather than the fleet one because neither
+      // changes what DASH may reach, which is what the fleet verbs are for.
+      "model.default",
+      "model.catalogue",
       // MAR-545. The tenth family, one member, and the first command in this
       // catalogue that costs the person money. The renderer names an agent, a
       // connection, a field and a question — never a model, because which model
@@ -504,6 +518,8 @@ describe("dispatch", () => {
     // Electron would put it". Recorded rather than performed for the same
     // reason as everything else here: there is no `Menu` in this process.
     const menus: Array<{ x: number; y: number } | undefined> = [];
+    // MAR-642. Which theme main was told to draw its own chrome in.
+    const themes: string[] = [];
     // MAR-434. Recorded rather than performed, like everything else here: the
     // real one reaches the runner over a socket and raises a native save
     // dialog, and neither exists in this process.
@@ -560,6 +576,7 @@ describe("dispatch", () => {
       hosts,
       workspaces,
       menus,
+      themes,
       downloads,
       workspaceAction: (action: WorkspaceAction, target: Record<string, unknown>) => {
         if (action === "download") {
@@ -620,6 +637,13 @@ describe("dispatch", () => {
         menus.push(at);
       },
       setUiScale: (factor: number | undefined) => factor ?? 1,
+      // MAR-642. Recorded, not performed: the real one assigns
+      // `nativeTheme.themeSource`, which no test process has. What is worth
+      // asserting is that the dispatcher narrows whatever a renderer sent to
+      // one of three literals before it gets here.
+      setNativeTheme: (theme: "system" | "light" | "dark") => {
+        themes.push(theme);
+      },
       // MAR-383. Recorded, not performed — and note the fake holds no secret,
       // which it could not do usefully anyway: no credential is an argument to
       // or a result of this call.

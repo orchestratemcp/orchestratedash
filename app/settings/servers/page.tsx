@@ -24,15 +24,21 @@ import {
   readProbeStanding,
   type HostConnectState,
 } from "../../../lib/host-connect";
-import type { DeployStanding } from "../../../lib/deploy/deploying";
 import { describeDuplicateHost, findDuplicateHost } from "../../../lib/hosts";
-import { describeDuplicateRecords, summariseServers } from "../../../lib/server-card";
+import {
+  describeDuplicateRecords,
+  describeSentStanding,
+  summariseDeployedCopies,
+  summariseServers,
+} from "../../../lib/server-card";
 import { describeDeployArrangement } from "../../../lib/deploy/receipt";
+import Link from "next/link";
 import { InfoNote } from "../../_components/info-note";
 import { ServerCard } from "../../_components/server-card";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import { sightings } from "../../_data/sightings";
 import { submitHostCommand } from "../../_data/source";
+import { agentStageHref } from "../../_data/routes";
 import { useCanAct, useHost, useView } from "../../_data/use-view";
 import type { SavedServerView } from "../../../lib/views/types";
 
@@ -751,6 +757,102 @@ function ConnectServer({
 }
 
 /**
+ * Every copy DASH has put on a server, at the top of the page (MAR-642).
+ *
+ * ## Why a table here rather than a tab of its own
+ *
+ * Henrik asked whether a Settings tab should list agents for deployment. The
+ * answer recorded on MAR-642 is **no new tab**: the Agents page and this page
+ * already list agents, and a third list is where "unfindable" starts. What was
+ * missing is not somewhere to browse agents — it is the one question neither
+ * page answers, *which of my agents are on which machine?* That is a join of
+ * two things this page already holds, so it belongs here in the smallest shape
+ * that answers it.
+ *
+ * ## Every cell reads DASH's own record
+ *
+ * The rows come from `SavedServerView.sent`, which is `agent_deploys` seen from
+ * the server's side and is bounded by ADR 0010 to DASH's memory of its own
+ * outbound act. So the third column says *DASH sent it on a date* and never
+ * *it is running*: a liveness column here would be the `running` column that
+ * ADR forbids, arrived at through a renderer instead of a migration.
+ *
+ * The check on the card below asks the machine and reports what it said, with
+ * the moment it said it. The two accounts stay apart, which is the whole of
+ * `lib/host-sighting.ts`'s argument one level down.
+ *
+ * ## Each row opens the agent, not the server
+ *
+ * Because that is where the action is now, which is MAR-642's other half. A row
+ * about a copy on a server, whose link went to the server, would be a table
+ * that navigates to the page you are already on.
+ *
+ * Exported so a render test can drive it from a view document — the shape
+ * `ConnectorList` and `NotificationSettings` established.
+ */
+export function DeployedCopies({ servers }: { servers: readonly SavedServerView[] }): ReactNode {
+  const rows = servers.flatMap((server) =>
+    server.sent.map((copy) => ({
+      key: `${server.host_id} ${copy.agent}`,
+      agent: copy.agent,
+      server: server.label,
+      standing: describeSentStanding(copy.sent_on),
+    })),
+  );
+
+  if (rows.length === 0) {
+    /*
+     * Nothing at all rather than an empty table, which is the state nearly
+     * every DASH is in. A heading over three empty columns would be a section
+     * announcing that a feature exists and that the reader has not used it —
+     * `FleetConnectors`' call, and `ModelDefault`'s.
+     */
+    return null;
+  }
+
+  const machines = new Set(rows.map((row) => row.server)).size;
+
+  return (
+    <section className="deployed-copies" aria-labelledby="deployed-copies">
+      <h2 id="deployed-copies">Agents on servers</h2>
+      {/* Counted over the rows this section actually drew, never asserted. */}
+      <p className="page-summary wrap">{summariseDeployedCopies(rows.length, machines)}</p>
+      <div className="table-scroll">
+        <table className="deployed-table">
+          <thead>
+            <tr>
+              <th scope="col">Agent</th>
+              <th scope="col">Server</th>
+              <th scope="col">Standing</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.key}>
+                <th scope="row">
+                  {/*
+                    MAR-589's ruling is that a surface prints the display name
+                    rather than the id — and this row holds only the id, because
+                    `SentToServerView.agent` is what the bundle carries on the
+                    server and the deploy record is keyed by it. Rather than
+                    inventing a name here or widening a view for one table, the
+                    cell *is* the link and the agent's own page says who it is:
+                    one press away, from the surface that holds the name.
+                  */}
+                  <Link href={agentStageHref(row.agent, "settings")}>{row.agent}</Link>
+                </th>
+                <td>{row.server}</td>
+                <td className="wrap">{row.standing}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+/**
  * Why the same server is on this page more than once (MAR-574).
  *
  * Rendered once above the list rather than on each card in the group. The
@@ -798,15 +900,17 @@ export default function HostsPage(): ReactNode {
   const [busyHost, setBusyHost] = useState<string | null>(null);
   const [notices, setNotices] = useState<Record<string, string>>({});
   /*
-   * When each standing above was given, and how each card's last deploy went
-   * (MAR-577).
+   * When each standing above was given (MAR-577).
    *
-   * Both live beside the standing rather than in the store, and for its reason:
-   * DASH records nothing about a check and nothing about a deploy, so a value
-   * that outlived the visit would be a claim with nothing left to check it.
+   * Beside the standing rather than in the store, and for its reason: DASH
+   * records nothing about a check, so a value that outlived the visit would be
+   * a claim with nothing left to check it.
+   *
+   * MAR-642 removed the second half of this pair. `deploys` held how each
+   * card's last push was going, and no card pushes any more — the agent's own
+   * Settings stage holds that state now, where the deploy happens.
    */
   const [checkedAt, setCheckedAt] = useState<Record<string, string>>({});
-  const [deploys, setDeploys] = useState<Record<string, DeployStanding>>({});
 
   function setStanding(hostId: string, standing: HostConnectState): void {
     setStandings((current) => ({ ...current, [hostId]: standing }));
@@ -926,51 +1030,19 @@ export default function HostsPage(): ReactNode {
     return script;
   }
 
-  async function deploy(server: SavedServerView, agentId: string): Promise<void> {
-    setBusyHost(server.host_id);
-    setNotice(server.host_id, null);
-    /*
-     * The in-flight state, said rather than implied by a disabled button
-     * (MAR-577). Installing a bundle over SSH takes long enough that a control
-     * which simply greyed out reads as a page that has stopped responding —
-     * which is how somebody comes to press it again, or to close DASH mid-push.
-     */
-    setDeploys((current) => ({
-      ...current,
-      [server.host_id]: { step: "sending", agent: agentId, server: server.label },
-    }));
-    const result = await submitHostCommand("deploy", {
-      host_id: server.host_id,
-      agent_id: agentId,
-    });
-    setBusyHost(null);
-    if (!result.ok) {
-      /*
-       * Main's own sentence, in the deploy's own place rather than in the card's
-       * general notice. That is what puts `MANIFEST_ONLY_DEPLOY_REFUSAL` and a
-       * refused sign-in where the person is looking, under the control they just
-       * pressed, with the one next action DASH can honestly offer.
-       */
-      setDeploys((current) => ({
-        ...current,
-        [server.host_id]: {
-          step: "failed",
-          agent: agentId,
-          server: server.label,
-          detail: result.detail ?? "DASH could not put that agent on this server.",
-        },
-      }));
-      return;
-    }
-    setDeploys((current) => ({
-      ...current,
-      [server.host_id]: { step: "sent", agent: agentId, server: server.label },
-    }));
-    // Ask the server what it has now rather than assuming the deploy's own
-    // answer. The card's count is the host's report, and this is how it stays
-    // one — see `describeDeployed`.
-    void check(server);
-  }
+  /*
+   * MAR-642. There is no `deploy` here any more.
+   *
+   * It was forty lines: an in-flight state, a failure branch carrying main's
+   * own refusal, a success branch, and a re-check to replace the deploy's
+   * answer with the server's. Every one of those already exists on the agent's
+   * own Settings stage, which is where Henrik decided on 2026-08-15 that a
+   * deploy begins — and two implementations of one act is how the two surfaces
+   * came to word the same consequence differently.
+   *
+   * `host.deploy` itself is untouched. What is gone is this page's second door
+   * to it.
+   */
 
   /**
    * Take an agent's copy back off this server (MAR-611, ADR 0017).
@@ -1068,6 +1140,14 @@ export default function HostsPage(): ReactNode {
       ) : (
         <>
           {/*
+            MAR-642. Which of your agents are on which machine, above everything
+            else on the page, because it is the one question this page holds the
+            answer to and did not answer. It draws nothing at all on a DASH that
+            has deployed nothing, which is nearly all of them.
+          */}
+          <DeployedCopies servers={servers} />
+
+          {/*
             Counted rather than asserted, so this line cannot drift from the
             cards under it — the failure mode of every hand-written summary that
             has ever sat at the top of a list.
@@ -1110,11 +1190,9 @@ export default function HostsPage(): ReactNode {
                   agents={agentChoices}
                   busy={busyHost === server.host_id}
                   notice={notices[server.host_id] ?? null}
-                  deploy={deploys[server.host_id] ?? null}
                   canAct={canAct}
                   actions={{
                     check: () => void check(server),
-                    deploy: (agentId) => void deploy(server, agentId),
                     forget: () => void forget(server),
                     trust: (fingerprint) => void trust(server, fingerprint),
                     setup: () => setup(server),

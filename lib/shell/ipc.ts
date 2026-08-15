@@ -162,6 +162,30 @@ export const COMMANDS = {
     mutates: false,
     irreversible: false,
   },
+  /*
+   * MAR-642. The native half of the theme the person chose.
+   *
+   * The palette itself is CSS — an attribute on `<html>` and the `light-dark()`
+   * tokens `app/tokens.css` has carried since MAR-528 — and needs no command.
+   * What does is the chrome Electron draws in Node before a stylesheet exists:
+   * the window's background, the Windows title bar overlay and the splash. This
+   * sets `nativeTheme.themeSource`, which is the one switch all three already
+   * follow through `resolveTheme`.
+   *
+   * `mutates: false`, in this family's shape and for its reason: it asks main to
+   * draw something on this machine's screen and reaches no agent, no store and
+   * no provider. Electron does not persist `themeSource`, so nothing here
+   * outlives the process — the renderer re-sends it on every launch.
+   */
+  "shell.theme": {
+    effect: "Colour this window's title bar and background light or dark, or follow the computer.",
+    payload_keys: ["theme"],
+    // Absent is `system`, in `model.choose`'s shape: the missing field is the
+    // instruction to put it back rather than a value main has to recognise.
+    required_keys: [],
+    mutates: false,
+    irreversible: false,
+  },
 
   "runner.start": {
     effect: "Start a registered agent's process on this machine. Not an Agent DOM command.",
@@ -421,6 +445,52 @@ export const COMMANDS = {
       "Ask this agent's model provider which models its key can reach, and record what the provider said about the key.",
     payload_keys: ["agent_id", "connection_id", "field_id"],
     required_keys: ["agent_id", "connection_id", "field_id"],
+    mutates: true,
+    irreversible: false,
+  },
+
+  /*
+   * MAR-642. The two members of this family that are about no agent.
+   *
+   * They belong here rather than in `FLEET_ACTIONS` for the reason that map's
+   * own note gives about deriving a model command from a connection verb: the
+   * fleet family's three verbs grant, check and withdraw *access*, and neither
+   * of these changes what DASH may reach. What they change is which model it
+   * asks for — a setting, in the family whose name is a setting.
+   *
+   * **They name a provider, and that is the widening worth stating.** Every
+   * other member of this family names an agent, a connection and a field, and
+   * main resolves the provider from that agent's manifest — the rule the family
+   * header states. There is no agent here to resolve from, so the renderer
+   * names one of the three ids in `AI_PROVIDER_IDS` and main refuses anything
+   * else through `aiProviderById`. What it still cannot name is an origin, a
+   * path, a header or a key: those come from `lib/ai/providers.ts` by value, as
+   * they did before.
+   */
+  "model.default": {
+    effect:
+      "Set the model DASH gives an agent that has not been given one of its own, or clear it. Never changes an agent that has chosen. Contacts nobody.",
+    payload_keys: ["provider_id", "model_id"],
+    // Neither is required: no provider and no model is how the default is
+    // cleared, in `model.choose`'s shape — an absent field means "put it back",
+    // so removing a setting needs no second command.
+    required_keys: [],
+    mutates: true,
+    // Nothing in the world changes and the previous setting is one press away.
+    // What it affects is which model a *later* run of an unconfigured agent is
+    // recorded under; runs already recorded are never revised.
+    irreversible: false,
+  },
+  /*
+   * `mutates` is true for `model.list`'s reason exactly: it presents a key DASH
+   * holds to a third party over the network and records what that party said
+   * about the key, in the same row a check writes.
+   */
+  "model.catalogue": {
+    effect:
+      "Ask a model provider which models the key DASH holds for you can reach, and record what the provider said about the key.",
+    payload_keys: ["provider_id"],
+    required_keys: ["provider_id"],
     mutates: true,
     irreversible: false,
   },
@@ -1231,6 +1301,10 @@ export const MODEL_ACTIONS = {
   "model.choose": "choose",
   "model.step": "step",
   "model.list": "list",
+  // MAR-642. Two members about no agent — see their catalogue entries for why
+  // they are in this family and what naming a provider does and does not widen.
+  "model.default": "default",
+  "model.catalogue": "catalogue",
 } as const;
 
 export type ModelCommandName = keyof typeof MODEL_ACTIONS;
@@ -1368,6 +1442,9 @@ export function isHostCommandName(value: CommandName): value is HostCommandName 
 export const SHELL_UI_ACTIONS = {
   "shell.menu": "menu",
   "shell.scale": "scale",
+  // MAR-642. The third, and the only one whose effect outlives the call: a
+  // window keeps the theme it was told until it is told another or closes.
+  "shell.theme": "theme",
 } as const;
 
 export type ShellUiCommandName = keyof typeof SHELL_UI_ACTIONS;
@@ -2089,6 +2166,18 @@ export interface DispatchContext {
   showApplicationMenu(at: { x: number; y: number } | undefined): void;
   setUiScale(factor: number | undefined): number;
   /**
+   * Colour the chrome Electron draws in Node (MAR-642).
+   *
+   * Injected like the four above, and for the same plain reason: `nativeTheme`
+   * is an Electron main API and this module has to stay importable from a
+   * sandboxed preload.
+   *
+   * It returns nothing, `showApplicationMenu`'s shape. What the renderer needs
+   * to know about the theme it already knows — it is the thing that chose it,
+   * and the palette it can see is CSS. This is the half it cannot see.
+   */
+  setNativeTheme(theme: "system" | "light" | "dark"): void;
+  /**
    * The task-workspace actions: open a task, admit one user-selected file,
    * hand the task over (MAR-507), or save one of an agent's outputs where the
    * user asks (MAR-434).
@@ -2182,12 +2271,22 @@ export interface DispatchContext {
   modelAction(
     action: ModelAction,
     target: {
+      /**
+       * Empty on `default` and `catalogue`, which are about no agent (MAR-642).
+       *
+       * Empty rather than optional, so that the three members that *do* need an
+       * agent keep a `string` to hand and no branch of main has to decide what
+       * `undefined` meant. An empty id resolves to no manifest, which is the
+       * refusal those three already give.
+       */
       agent_id: string;
       connection_id?: string;
       field_id?: string;
       model_id?: string;
       step?: number;
       level?: string;
+      /** One of `AI_PROVIDER_IDS`, on the two members that name no agent. */
+      provider_id?: string;
     },
   ): Promise<{ ok: boolean; detail?: string; recovery?: Recovery; models?: string[] }>;
   /**
@@ -2546,6 +2645,18 @@ export async function dispatchCommand(
   }
 
   if (isShellUiCommandName(review.command)) {
+    if (review.command === "shell.theme") {
+      /*
+       * MAR-642. Narrowed to one of three literals here rather than passed
+       * through, so that whatever a renderer sends, what reaches
+       * `nativeTheme.themeSource` is a value this file wrote. Anything else —
+       * including nothing — is `system`, which is the default and the state
+       * every window starts in.
+       */
+      const asked = review.payload["theme"];
+      context.setNativeTheme(asked === "light" || asked === "dark" ? asked : "system");
+      return { ok: true, request_id: review.audit.request_id };
+    }
     if (review.command === "shell.scale") {
       const factor = review.payload["factor"];
       return {
@@ -2749,12 +2860,20 @@ export async function dispatchCommand(
     const step = review.payload["step"];
 
     const result = await context.modelAction(MODEL_ACTIONS[review.command], {
-      agent_id: String(review.payload["agent_id"]),
+      /*
+       * MAR-642. Empty rather than the string "undefined" for the two members
+       * that name no agent. `String(undefined)` was harmless while every member
+       * carried an id — `required_keys` refused the command before it got here
+       * — and it stops being harmless the moment a member is allowed to arrive
+       * without one.
+       */
+      agent_id: optional("agent_id") ?? "",
       connection_id: optional("connection_id"),
       field_id: optional("field_id"),
       model_id: optional("model_id"),
       step: typeof step === "number" ? step : undefined,
       level: optional("level"),
+      provider_id: optional("provider_id"),
     });
     return {
       ok: result.ok,

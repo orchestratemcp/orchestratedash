@@ -36,7 +36,7 @@ import {
   type AskFailureReasonName,
 } from "../lib/ai/ask";
 import { recordExchange } from "../lib/ai/ask-store";
-import { readAgentModelChoice } from "../lib/ai/model-store";
+import { readEffectiveModelChoice } from "../lib/ai/model-store";
 import { aiProviderById } from "../lib/ai/providers";
 import type { ConnectionSourceManifest } from "../lib/connections";
 import { resolveCredentialTarget } from "../lib/connection-credentials";
@@ -100,7 +100,13 @@ export async function performAskAction(
   // Read in main from the row a person set, never taken from the request. A
   // renderer that could name a model would be a renderer that could spend
   // somebody's money on the most expensive thing their key reaches.
-  const choice = readAgentModelChoice(target.agent_id);
+  //
+  // MAR-642: "the row a person set" is now two rows with a precedence between
+  // them — this agent's own choice, then DASH's default. The precedence is
+  // `applyFleetDefault`'s and the provider handed in is `profile.id`, resolved
+  // above from this agent's own manifest, so a default belonging to another
+  // provider cannot put its model id into a request bound for this one.
+  const choice = readEffectiveModelChoice(target.agent_id, profile.id).choice;
   if (choice.kind !== "one_model") {
     return refused("dash_error", service);
   }

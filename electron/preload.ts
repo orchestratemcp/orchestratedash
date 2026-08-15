@@ -273,6 +273,15 @@ const dashShell = {
   },
   setUiScale: (factor?: number) =>
     sendNumbers("shell.scale", factor === undefined ? {} : { factor }),
+  /**
+   * Colour the chrome Electron draws, to match the palette the page is in
+   * (MAR-642).
+   *
+   * One string from a closed set, and main narrows it again to one of three
+   * literals before it reaches `nativeTheme` — so what page script can ask for
+   * is "light", "dark" or "the computer's", and nothing else.
+   */
+  setTheme: (theme: string) => send("shell.theme", { theme }),
 
   /**
    * The seven Agent DOM commands, one named method each.
@@ -532,6 +541,23 @@ const dashShell = {
     sendStepLevel(args),
   listModels: (args: { agent_id: string; connection_id: string; field_id: string }) =>
     send("model.list", { ...args }),
+
+  /**
+   * DASH's own default model, and the list to pick it from (MAR-642).
+   *
+   * Two methods that carry no agent id, which is the whole of what is new here:
+   * every other model method names one and main resolves the provider from that
+   * agent's manifest. These name the provider, and main resolves it against
+   * `fleetConnectorFor` — the same catalogue the AI tab was drawn from — so page
+   * script can name one of three services and nothing else.
+   *
+   * Omitting both fields on `setDefaultModel` is how the default is cleared, in
+   * `chooseModel`'s shape: the absent field is the instruction.
+   */
+  setDefaultModel: (args: { provider_id?: string; model_id?: string }) =>
+    send("model.default", dropUnset(args)),
+  listProviderModels: (args: { provider_id: string }) =>
+    send("model.catalogue", { ...args }),
 
   /**
    * Ask this agent's model a question about what it has saved (MAR-545).

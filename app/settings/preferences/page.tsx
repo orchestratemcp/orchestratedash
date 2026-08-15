@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { DensityToggle } from "../../_components/density-toggle";
 import { FleetStripToggle } from "../../_components/fleet-strip";
 import { FleetViewToggle } from "../../_components/fleet-view-toggle";
+import { ThemeToggle } from "../../_components/theme-toggle";
 import { UiScaleControl } from "../../_components/ui-scale-control";
 import { InfoNote } from "../../_components/info-note";
 import { HostNotice } from "../../_components/view-state";
@@ -29,11 +30,21 @@ import { useHost } from "../../_data/use-view";
  * Both controls this page is about already exist. Density has had a working
  * toggle in the sidebar since MAR-420 — `DensityToggle` is imported here
  * unchanged, not reimplemented, so there is exactly one place that reads and
- * writes `dash.density`. Theme has no toggle anywhere in DASH: it follows
- * `nativeTheme.shouldUseDarkColors` end to end (`electron/main.ts`,
- * `lib/shell/chrome.ts`, `app/tokens.css`'s `color-scheme` rule), and this page
- * says that plainly rather than drawing a control nothing behind it would
- * answer to. Inventing one was out of scope for this pass.
+ * writes `dash.density`. Theme had no toggle anywhere in DASH: it followed
+ * `nativeTheme.shouldUseDarkColors` end to end, and this page said so plainly
+ * rather than drawing a control nothing behind it would answer to. Inventing
+ * one was out of scope for that pass.
+ *
+ * ## Theme is a control now (MAR-642)
+ *
+ * `ThemeToggle` is the fourth setting on this page and the first one built for
+ * it rather than moved to it. What made it cheap is that nothing about the
+ * palette needed inventing: `app/tokens.css` has declared every token as
+ * `light-dark(light, dark)` since MAR-528, with `:root[data-theme="light"]` and
+ * `:root[data-theme="dark"]` at the bottom of the file resolving them — written
+ * for a control that did not exist. What was missing was something to write the
+ * attribute, and something to tell Electron, whose title bar and window
+ * background are chosen in Node before a stylesheet exists.
  *
  * ## The third setting arrived the same way (MAR-612)
  *
@@ -118,11 +129,23 @@ export default function PreferencesPage(): ReactNode {
 
       <section aria-labelledby="preferences-theme">
         <h2 id="preferences-theme">Theme</h2>
+        {/*
+          MAR-642. What was here was a paragraph apologising for a missing
+          control — "there is no separate switch in DASH yet" — above a palette
+          that had been ready for one since MAR-528: every token in
+          `app/tokens.css` is declared as `light-dark(light, dark)`, and the two
+          `:root[data-theme]` rules that resolve them have been at the bottom of
+          that file the whole time, written for a control nobody had built.
+
+          The half of that paragraph that survives is the half still worth
+          knowing, because System is the default and stays it: this follows the
+          computer unless a person says otherwise.
+        */}
         <p className="muted wrap">
-          DASH follows your operating system&rsquo;s light or dark setting.
-          There is no separate switch in DASH yet — change it in your
-          system&rsquo;s display settings and DASH follows.
+          System follows this computer and changes when it does. Light and dark
+          stay where you put them.
         </p>
+        <ThemeToggle />
       </section>
     </>
   );

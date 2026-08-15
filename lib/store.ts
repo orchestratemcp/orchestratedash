@@ -10,8 +10,14 @@ import {
 } from "./contracts";
 import { isOName, oFor, type OName } from "./brand/o-cast";
 import { agentDisplayName } from "./copy/agent-name";
-import type { AgentModelChoice } from "./ai/model-choice";
-import { readAgentModelChoice, recordRunModel } from "./ai/model-store";
+import { aiKeyConnections, pickAiKeyCard } from "./ai/connection-view";
+import type { ConnectionSourceManifest } from "./connections";
+import { applyFleetDefault, type AgentModelChoice } from "./ai/model-choice";
+import {
+  readAgentModelChoice,
+  readFleetModelDefault,
+  recordRunModel,
+} from "./ai/model-store";
 import {
   clearAgentFolderIssue,
   dataDir,
@@ -533,6 +539,22 @@ export function readAgentManifest(name: string): AnyAgentManifest | null {
 }
 
 /**
+ * Which model provider DASH would ask for one agent, or null (MAR-642).
+ *
+ * Read only where the answer changes something: on the ingest path, and only
+ * once a default model exists to be matched against. Null — no manifest, an
+ * older manifest, or a plan that reaches no provider DASH brokers — is a
+ * complete answer rather than a failure, and means the default does not apply.
+ */
+function modelProviderForAgent(name: string): string | null {
+  const manifest = readAgentManifest(name) as ConnectionSourceManifest | null;
+  if (manifest === null) {
+    return null;
+  }
+  return pickAiKeyCard(aiKeyConnections(name, manifest))?.provider_id ?? null;
+}
+
+/**
  * One agent's persisted character (MAR-502).
  *
  * A targeted read for the reason `readAgentManifest` above is one: the agent
@@ -894,11 +916,33 @@ export function ingestEvents(input: unknown, options: IngestOptions = {}): Inges
      * path — and the honest place for it is the read side, where the same
      * manifest is already open and where a plan that has since changed is
      * visible. `runModelForRun` in `lib/views/build.ts` is what draws the line.
+     *
+     * ## MAR-642: the default is read here, and the manifest only if there is one
+     *
+     * DASH's default model is a second row this setting can come from, and
+     * whether it applies to an agent depends on which provider that agent's plan
+     * reaches — which is a manifest read, on the path the paragraph above argues
+     * should not have one.
+     *
+     * Both stay true because the default is read **first**, once per batch. On
+     * every DASH that has not set one — including every DASH that existed before
+     * this — `fleetDefault` is null, `applyFleetDefault` short-circuits, and not
+     * one manifest is opened: the ingest path is exactly what it was. A person
+     * who has set a default has said which model their unconfigured agents run
+     * on, and a row recording that they ran on something else would be false; one
+     * manifest read per distinct agent per batch is what that honesty costs.
      */
+    const fleetDefault = readFleetModelDefault();
     const choices = new Map<string, AgentModelChoice>();
     for (const event of accepted) {
       if (!choices.has(event.agent)) {
-        choices.set(event.agent, readAgentModelChoice(event.agent));
+        const own = readAgentModelChoice(event.agent);
+        choices.set(
+          event.agent,
+          fleetDefault === null || own.kind === "one_model"
+            ? own
+            : applyFleetDefault(own, fleetDefault, modelProviderForAgent(event.agent)).choice,
+        );
       }
     }
     transact(database, () => {

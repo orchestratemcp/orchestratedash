@@ -23,11 +23,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildConnectorTiles,
   connectorChip,
-  describeDependents,
   describeSharedGrant,
   everyConnectorSentence,
   rollUpConnector,
-  summariseConnectors,
 } from "../lib/connectors";
 import type {
   AgentConnections,
@@ -189,30 +187,17 @@ describe("where a connector stands across the agents that need it", () => {
  * The sentences
  * ---------------------------------------------------------------------- */
 
-describe("who needs this", () => {
-  it("names the agents rather than counting them", () => {
-    // "used by 2 agents" is a number a person then has to go and expand, and
-    // the names are what makes "connect once" believable.
-    const tiles = buildConnectorTiles([
-      agent("News Scout", [row()]),
-      agent("Meeting Assistant", [row()]),
-    ]);
-    expect(describeDependents(tiles[0] as never)).toBe(
-      "Needed by News Scout and Meeting Assistant.",
-    );
-  });
-
-  it("reads as a sentence for one, two and three", () => {
-    const one = buildConnectorTiles([agent("News Scout", [row()])]);
-    const three = buildConnectorTiles([
-      agent("A", [row()]),
-      agent("B", [row()]),
-      agent("C", [row()]),
-    ]);
-    expect(describeDependents(one[0] as never)).toBe("Needed by News Scout.");
-    expect(describeDependents(three[0] as never)).toBe("Needed by A, B and C.");
-  });
-});
+/*
+ * MAR-642. Two blocks are gone from here, with the two functions they held.
+ *
+ * "who needs this" tested `describeDependents`, and "the line above the tiles"
+ * tested `summariseConnectors`. Both are deleted rather than left exported and
+ * uncalled — `lib/connectors.ts` argues each — and their claims did not vanish:
+ * who needs a service is now one avatar, one name and one standing per agent on
+ * the merged row (`tests/service-row-render.test.tsx`), and the one line over
+ * the one list is `summariseServices`, tested in `tests/connections-list.test.ts`
+ * with the counted-not-asserted rule intact.
+ */
 
 describe("the disclosure that one sign-in serves two agents", () => {
   const shared = buildConnectorTiles([
@@ -261,49 +246,6 @@ describe("the disclosure that one sign-in serves two agents", () => {
       agent("B", [row({ dash_can_hold: false, field_id: null, broker: null })]),
     ]);
     expect(describeSharedGrant(theirs[0] as never)).toBeNull();
-  });
-});
-
-describe("the line above the tiles", () => {
-  it("counts services, because that is the unit on screen now", () => {
-    /*
-     * `summarisePage` counted connections. Two agents needing Gmail is one tile
-     * and would have been reported as two — a summary disagreeing with the thing
-     * it summarises.
-     */
-    const tiles = buildConnectorTiles([
-      agent("News Scout", [row()]),
-      agent("Meeting Assistant", [row()]),
-    ]);
-    const line = summariseConnectors(tiles);
-    expect(line).toContain("1 service");
-    expect(line).toContain("connect it once");
-  });
-
-  it("says how many still need connecting rather than reassuring", () => {
-    const tiles = buildConnectorTiles([
-      agent("News Scout", [row({ masked_hint: null })]),
-      agent("Other", [row({ provider: "synthetic-ledger", service: "Ledger" })]),
-    ]);
-    expect(summariseConnectors(tiles)).toContain("2 still need connecting");
-  });
-
-  it("is empty-safe and says the honest thing", () => {
-    expect(summariseConnectors([])).toContain("No agent here");
-  });
-
-  it("counts as shared only what a sign-in would actually share", () => {
-    /*
-     * Found by photographing it. A model-provider tile is named by three agents
-     * and DASH holds none of it, so counting dependents made the page say "you
-     * connect each once" about a thing there is nothing to connect. A summary
-     * may only claim what the tiles under it will do.
-     */
-    const tiles = buildConnectorTiles([
-      agent("A", [row({ dash_can_hold: false, field_id: null, broker: null })]),
-      agent("B", [row({ dash_can_hold: false, field_id: null, broker: null })]),
-    ]);
-    expect(summariseConnectors(tiles)).not.toContain("more than one agent");
   });
 });
 

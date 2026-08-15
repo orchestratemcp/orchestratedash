@@ -191,6 +191,17 @@ interface DashShellClient {
   markAgentLooked?(args: { agent_id: string }): Promise<CommandResult>;
   setUiScale?(factor?: number): Promise<CommandResult>;
   /**
+   * The native half of the theme (MAR-642).
+   *
+   * Optional for the reason every method here is, and this degradation is the
+   * gentlest of them: a shell older than this command draws the whole page in
+   * whichever palette the person chose — that is CSS and needs no bridge — and
+   * only the title bar goes on following the operating system. So the setting
+   * works and one strip at the top of the window is out of step, which is worth
+   * strictly less than a control that refused to exist.
+   */
+  setTheme?(theme: string): Promise<CommandResult>;
+  /**
    * The three model commands (MAR-583).
    *
    * Optional for the same reason as everything above, and the degradation is the
@@ -213,6 +224,16 @@ interface DashShellClient {
     connection_id: string;
     field_id: string;
   }): Promise<CommandResult>;
+  /**
+   * DASH's own default model, and the list to pick it from (MAR-642).
+   *
+   * Optional for the reason the three above are, and the degradation is the
+   * same shape: a shell older than these draws the AI tab's cards and the
+   * default already in force — both come through the view — and cannot change
+   * either. Reads, refuses to act.
+   */
+  setDefaultModel?(args: { provider_id?: string; model_id?: string }): Promise<CommandResult>;
+  listProviderModels?(args: { provider_id: string }): Promise<CommandResult>;
   /**
    * Asking an agent a question (MAR-545).
    *
@@ -813,7 +834,7 @@ export async function setNotificationKind(args: {
  * could take as "DASH does not know".
  */
 async function modelCommand(
-  method: "chooseModel" | "setStepLevel" | "listModels",
+  method: "chooseModel" | "setStepLevel" | "listModels" | "setDefaultModel" | "listProviderModels",
   args: Record<string, unknown>,
   cannot: string,
 ): Promise<CommandResult> {
@@ -865,6 +886,26 @@ export async function listAgentModels(args: {
   field_id: string;
 }): Promise<CommandResult> {
   return modelCommand("listModels", args, "ask this agent's provider which models it offers");
+}
+
+/**
+ * Set or clear DASH's default model (MAR-642).
+ *
+ * No arguments is how it is cleared, which is `chooseAgentModel`'s rule one
+ * level up: the absent field is the instruction, so there is no second command
+ * and no magic value.
+ */
+export async function setDefaultModel(
+  args: { provider_id?: string; model_id?: string } = {},
+): Promise<CommandResult> {
+  return modelCommand("setDefaultModel", args, "change the model new agents use");
+}
+
+/** Ask one provider which models the key DASH holds for you can reach. */
+export async function listProviderModels(args: {
+  provider_id: string;
+}): Promise<CommandResult> {
+  return modelCommand("listProviderModels", args, "ask that provider which models it offers");
 }
 
 /**

@@ -116,8 +116,13 @@ describe("schema", () => {
     //
     // 22 is MAR-640's `agent_prefs` table — the reader's own favourite flag,
     // kept apart from `agents` for `agent_looks`' own reason.
+    //
+    // 23 is MAR-642's `fleet_model_default`, appended for that same reason: it
+    // is a new step and it goes last (MAR-640 reached master first and holds
+    // 22), so an installed store that has already recorded steps 0 to 22 runs
+    // exactly one more.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(22);
+    expect(version.user_version).toBe(23);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -168,6 +173,12 @@ describe("schema", () => {
     // above is untouched and still means what it always did.
     expect(tables).toContain("fleet_connections");
     expect(tables).toContain("fleet_grants");
+    // MAR-642. One row, holding the model DASH gives an agent nobody has given
+    // one. Beside the fleet tables above because it is the same kind of fact —
+    // a decision the person made about their whole DASH rather than about one
+    // agent — and, like `agent_model_choice`, it has no cost column and no
+    // column a key could go in.
+    expect(tables).toContain("fleet_model_default");
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -527,7 +538,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(22);
+    ).toBe(23);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

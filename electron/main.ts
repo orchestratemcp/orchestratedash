@@ -70,12 +70,16 @@ import {
 import { stepsNeedingAModel } from "../lib/ai/model-levels";
 import {
   clearAgentModelChoice,
+  clearFleetModelDefault,
   clearStepLevelOverride,
   readAgentModelChoice,
   readStepLevelOverrides,
   writeAgentModelChoice,
+  writeFleetModelDefault,
   writeStepLevelOverride,
 } from "../lib/ai/model-store";
+import { fleetCredentialTarget } from "../lib/fleet/actions";
+import { fleetConnectorFor } from "../lib/fleet/catalogue";
 import {
   readDashLastAlive,
   recordClosedWindow,
@@ -767,6 +771,23 @@ export function registerCommandChannel(
         }
         return applyUiScale(factor);
       },
+      /*
+       * MAR-642. One assignment, and everything native follows it.
+       *
+       * `nativeTheme.themeSource` is what `shouldUseDarkColors` answers from, so
+       * setting it fires `nativeTheme`'s own `updated` event, which `followTheme`
+       * on every window already listens for and answers by re-setting the title
+       * bar overlay. That is why there is no window handling here: the wiring
+       * MAR-436 built to follow the operating system follows the person's choice
+       * unchanged, because both arrive through the same property.
+       *
+       * `resolveTheme(nativeTheme.shouldUseDarkColors, null)` at the window's
+       * creation stays correct for the same reason — its `chosen` argument is
+       * for a choice made *outside* Electron's own theme, and there is none.
+       */
+      setNativeTheme: (theme) => {
+        nativeTheme.themeSource = theme;
+      },
       // MAR-383. The vault is reachable from exactly this one entry in exactly
       // this one context object, and the value the user types never comes back
       // through it — see `lib/connection-actions.ts` for what does.
@@ -988,9 +1009,22 @@ async function pushNotifyConfiguration(runner: RunnerHandle | null): Promise<voi
  * nothing to resolve *to* — deleting DASH's own row is not an act against a
  * provider, and requiring a live connection to undo a setting would strand
  * somebody who had disconnected their key.
+ *
+ * ## Two members name a provider instead of an agent (MAR-642)
+ *
+ * `default` and `catalogue` are about DASH's own fallback model, which belongs
+ * to no agent, so there is no manifest to resolve a provider out of. They take
+ * one of `AI_PROVIDER_IDS` from the renderer and resolve everything else the
+ * way the other three do — through `fleetConnectorFor`, which is the catalogue
+ * the Connections page is drawn from, so a provider DASH does not offer is
+ * refused before a vault is opened.
+ *
+ * Both return **before** the manifest read below. That is what makes an empty
+ * `agent_id` correct rather than merely tolerated: nothing on their path reads
+ * it, and the three members that do read it still refuse an empty one.
  */
 async function performModelAction(
-  action: "choose" | "step" | "list",
+  action: "choose" | "step" | "list" | "default" | "catalogue",
   target: {
     agent_id: string;
     connection_id?: string;
@@ -998,9 +1032,54 @@ async function performModelAction(
     model_id?: string;
     step?: number;
     level?: string;
+    provider_id?: string;
   },
 ): Promise<{ ok: boolean; detail?: string; recovery?: Recovery; models?: string[] }> {
   const now = new Date().toISOString();
+
+  if (action === "default") {
+    if (target.model_id === undefined || target.provider_id === undefined) {
+      // Clearing, in `model.choose`'s shape: an absent field is the instruction
+      // to put it back, never a magic value main would have to recognise. Every
+      // agent that was running on the default goes back to what it was on
+      // before one existed, and no agent's own row is touched either way.
+      clearFleetModelDefault();
+      return {
+        ok: true,
+        detail:
+          "DASH has no default model again. Agents you have not given a model to run each step " +
+          "at the strength its plan asked for.",
+      };
+    }
+    const written = writeFleetModelDefault(target.provider_id, target.model_id, now);
+    return written
+      ? { ok: true, detail: "Saved." }
+      : {
+          ok: false,
+          detail: "DASH does not recognise that provider or that model name.",
+        };
+  }
+
+  if (action === "catalogue") {
+    const connector = fleetConnectorFor(target.provider_id ?? "");
+    if (connector === null || connector.ai_provider_id === null) {
+      return { ok: false, detail: "This version of DASH does not know how to reach that." };
+    }
+    const listed = await listAiKeyModels(
+      // The same target the fleet's own connect and check use, built by the same
+      // function from the same catalogue entry — so the key this presents is the
+      // one that page stored, under a vault name no agent can resolve to.
+      fleetCredentialTarget(connector),
+      secureStore().describeBacking().label,
+      aiKeyDeps(),
+    );
+    return {
+      ok: listed.ok,
+      detail: listed.detail,
+      recovery: listed.recovery,
+      models: listed.models,
+    };
+  }
 
   if (action === "step") {
     if (target.step === undefined) {

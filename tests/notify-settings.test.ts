@@ -21,10 +21,13 @@ import {
   NOTIFY_LIVENESS,
   NOTIFY_SETUP_STEPS,
   NO_NOTIFICATIONS,
+  describeNotificationStanding,
   describeNotificationState,
+  everyNotificationStandingSentence,
   shouldSend,
 } from "../lib/notify/settings";
 import { parseDiscordWebhook } from "../lib/notify/discord";
+import { expectPlainLanguage } from "./helpers/plain-language";
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "dash-notify-"));
 process.env.DASH_DATA_DIR = dataDir;
@@ -181,5 +184,70 @@ describe("which events are sent at all", () => {
     const sentence = describeNotificationState(NO_NOTIFICATIONS);
     expect(sentence).not.toMatch(/error|problem|failed|missing/iu);
     expect(sentence).toContain("Nothing about your agents leaves this computer");
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * The status row (MAR-642)
+ * ---------------------------------------------------------------------- */
+
+describe("the whole state as one row", () => {
+  const held = {
+    configured: true,
+    masked_hint: "••••CDEF",
+    configured_at: "2026-08-10T09:00:00.000Z",
+    send_approvals: true,
+    send_reports: true,
+  };
+
+  it("says the off state without wording it as a failure", () => {
+    const standing = describeNotificationStanding(NO_NOTIFICATIONS, null);
+    expect(standing.chip).toBe("Not set up");
+    expect(standing.on).toBe(false);
+    expect(standing.sentence).not.toMatch(/error|problem|failed|missing/iu);
+  });
+
+  it("names the address by its hint and the day in words", () => {
+    const standing = describeNotificationStanding(held, "10 August 2026");
+    expect(standing.chip).toBe("Posting");
+    expect(standing.on).toBe(true);
+    expect(standing.sentence).toContain("••••CDEF");
+    expect(standing.sentence).toContain("10 August 2026");
+  });
+
+  it("drops the date clause rather than inventing one", () => {
+    // An unreadable stored date is DASH's own machine record failing to parse.
+    // A row that filled in today would be a claim about when somebody set this
+    // up, made out of the present.
+    expect(describeNotificationStanding(held, null).sentence).not.toContain("added");
+  });
+
+  it("never invents a channel name", () => {
+    /*
+     * The one detail a person would most reasonably trust DASH about, and the
+     * one it does not have: what it holds is a webhook address in the vault and
+     * four characters of its token. "Posting to #alerts" would be a fabrication
+     * on the most credible line of the page.
+     */
+    for (const since of [null, "10 August 2026"]) {
+      expect(describeNotificationStanding(held, since).sentence).not.toContain("#");
+    }
+  });
+
+  it("refuses to say Posting when both kinds are switched off", () => {
+    // Somebody who turned both off and comes back a month later needs this row
+    // to explain why their Discord is quiet. "Posting" would be a lie only the
+    // checkboxes further down the page correct.
+    const standing = describeNotificationStanding(
+      { ...held, send_approvals: false, send_reports: false },
+      "10 August 2026",
+    );
+    expect(standing.chip).toBe("Nothing to send");
+    expect(standing.on).toBe(false);
+    expect(standing.sentence).toContain("switched off");
+  });
+
+  it("is plain language on every branch", () => {
+    expectPlainLanguage(everyNotificationStandingSentence());
   });
 });

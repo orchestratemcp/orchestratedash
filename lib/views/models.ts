@@ -20,6 +20,7 @@ import {
   describeRunModel,
   describeRunModelDetail,
   describeStepsNotInForce,
+  describeUnpinnedOption,
   resolveModelSteps,
   type NoModelChoiceReason,
   type ResolvedModelStep,
@@ -34,8 +35,14 @@ import {
   stepsNeedingAModel,
   type PlannedRouteStep,
 } from "../ai/model-levels";
-import { aiKeyConnections, type AiKeyConnectionView } from "../ai/connection-view";
-import { readAgentModelChoice, readStepLevelOverrides, readRunModel } from "../ai/model-store";
+import { aiKeyConnections, pickAiKeyCard } from "../ai/connection-view";
+import {
+  readAgentModelChoice,
+  readEffectiveModelChoice,
+  readFleetModelDefault,
+  readStepLevelOverrides,
+  readRunModel,
+} from "../ai/model-store";
 import type { ConnectionSourceManifest } from "../connections";
 import type { AgentModelSettingsView, ModelStepView, RunModelView } from "./types";
 
@@ -73,7 +80,7 @@ export function buildAgentModelSettings(
     return noChoice("no_model_needed", null, steps);
   }
 
-  const card = pickCard(aiKeyConnections(agent, manifest));
+  const card = pickAiKeyCard(aiKeyConnections(agent, manifest));
   if (card === null) {
     return noChoice("no_provider_key", null, steps);
   }
@@ -81,9 +88,27 @@ export function buildAgentModelSettings(
     return noChoice("no_key_held", card.provider_label, steps);
   }
 
-  const choice = readAgentModelChoice(agent);
+  /*
+   * MAR-642. What this agent runs on, DASH's default included.
+   *
+   * `card.provider_id` is the provider DASH would actually ask for this agent —
+   * the one `pickCard` just resolved from its manifest — so a default naming a
+   * different service does not reach it. That check is `applyFleetDefault`'s and
+   * is not repeated here.
+   */
+  const effective = readEffectiveModelChoice(agent, card.provider_id);
+  const choice = effective.choice;
   const sentence = describeChoiceAvailable(card.provider_label, declared.length);
   const named = choice.kind === "one_model" ? choice.model_id : null;
+  /*
+   * The agent's own row, separately, because two fields below mean two
+   * different things. `chosen_model_id` is what *this agent* was pinned to and
+   * drives the picker's value; `in_force` is what will run, which may be the
+   * default. Reading one from the other would either show the default as a
+   * choice nobody made or hide the fact that a model is in force at all.
+   */
+  const pinned = readAgentModelChoice(agent);
+  const pinnedModel = pinned.kind === "one_model" ? pinned.model_id : null;
 
   return {
     can_choose: true,
@@ -93,15 +118,21 @@ export function buildAgentModelSettings(
     field_id: card.field_id,
     headline: sentence.headline,
     detail: sentence.detail,
-    chosen_model_id: named,
-    in_force: describeInForce(choice, resolved),
+    chosen_model_id: pinnedModel,
+    in_force: describeInForce(choice, resolved, effective.from_default),
+    from_default: effective.from_default,
+    // Read again rather than carried off `effective`: what the option should say
+    // depends on whether a default *exists*, not on whether it reached this
+    // agent. An agent on another provider still needs the option to promise the
+    // per-step matching it will actually get.
+    unpinned_option: describeUnpinnedOption(readFleetModelDefault()),
     steps,
     // The step controls are drawn either way and said to be set aside, rather
     // than hidden: a control whose stored settings still exist but which nothing
     // on screen mentions is how somebody comes back in a month to an agent
     // behaving in a way the page does not explain.
     steps_in_force: named === null,
-    steps_note: named === null ? null : describeStepsNotInForce(named),
+    steps_note: named === null ? null : describeStepsNotInForce(named, effective.from_default),
   };
 }
 
@@ -132,11 +163,6 @@ function toStepView(step: ResolvedModelStep): ModelStepView {
     declared_label: levelLabel(step.declared),
     overridden: step.overridden,
   };
-}
-
-/** A key DASH holds beats one it does not, so the picker lands on a live list. */
-function pickCard(cards: readonly AiKeyConnectionView[]): AiKeyConnectionView | null {
-  return cards.find((card) => card.held) ?? cards[0] ?? null;
 }
 
 /* ---------------------------------------------------------------------- *
