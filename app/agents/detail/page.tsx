@@ -185,11 +185,40 @@ function AgentWorkspace(): ReactNode {
    * between "the same page" and "the page I have just asked to be taken into".
    */
   const stageParam = params.get(AGENT_WORKSPACE_PARAMS.stage);
+  /*
+   * The fragment, in state, because the stage depends on it (MAR-641).
+   *
+   * It cannot be read during render: `window` does not exist while this page is
+   * prerendered, and a value read straight off the browser would also never
+   * re-render when it changed. The lazy initialiser is safe because nothing
+   * that reads this is on screen at hydration — the page draws `ViewLoading`
+   * until its view arrives over IPC, which is well after.
+   *
+   * Re-read on a route change (a fleet chip arriving from another page) and on
+   * `hashchange` (an anchor pressed on this one). See `resolveAgentStage` for
+   * why the fragment outranks a live run.
+   */
+  const [fragment, setFragment] = useState(() =>
+    typeof window === "undefined" ? "" : window.location.hash.slice(1),
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const read = (): void => {
+      setFragment(window.location.hash.slice(1));
+    };
+    read();
+    window.addEventListener("hashchange", read);
+    return () => {
+      window.removeEventListener("hashchange", read);
+    };
+  }, [agent, stageParam]);
+
   useEffect(() => {
     if (!ready || typeof window === "undefined") {
       return;
     }
-    const fragment = window.location.hash.slice(1);
     if (fragment === "") {
       return;
     }
@@ -201,7 +230,7 @@ function AgentWorkspace(): ReactNode {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [ready, agent, stageParam]);
+  }, [ready, agent, stageParam, fragment]);
 
   async function issue(
     key: string,
@@ -519,7 +548,7 @@ function AgentWorkspace(): ReactNode {
    * one route into every view of an agent and it is one somebody can send to
    * somebody else.
    */
-  const stage = resolveAgentStage(stageParam, { running });
+  const stage = resolveAgentStage(stageParam, { running, fragment });
   const openOutput = params.get(AGENT_WORKSPACE_PARAMS.output);
   const inbox = view.snapshot?.inbox ?? [];
   const checklistFacts = {

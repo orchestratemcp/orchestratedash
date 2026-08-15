@@ -90,10 +90,33 @@ export function isAgentStage(value: string | null): value is AgentStage {
  */
 export function resolveAgentStage(
   requested: string | null,
-  facts: { running: boolean },
+  facts: {
+    running: boolean;
+    /**
+     * The address's fragment, without the `#`, or empty.
+     *
+     * **A fragment outranks the run**, and that is not a nicety: MAR-586's
+     * fleet chip links to `#waiting-work` and names no stage, so an agent with
+     * a live run *and* an approval waiting — which is the ordinary shape of an
+     * agent that needs you, because a run waiting on a person is still running
+     * — would have resolved to the Run stage, where that anchor does not
+     * exist. The chip promises to take somebody to the thing that needs them;
+     * it would have taken them to a page and left them looking, which is the
+     * exact failure MAR-586 wrote the fragment effect to fix.
+     *
+     * The rule is deliberately about *any* fragment rather than a list of the
+     * two DASH emits. An address carrying one has named something specific,
+     * and a stage that took over anyway would be the surface moving under a
+     * person who was that explicit.
+     */
+    fragment?: string;
+  },
 ): AgentStage {
   if (isAgentStage(requested)) {
     return requested;
+  }
+  if ((facts.fragment ?? "") !== "") {
+    return "overview";
   }
   return facts.running ? "run" : "overview";
 }

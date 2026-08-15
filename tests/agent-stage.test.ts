@@ -44,6 +44,26 @@ describe("which part of an agent is on screen", () => {
     expect(resolveAgentStage(null, { running: true })).toBe("run");
   });
 
+  it("lets a fragment outrank a live run, so the chip lands on the thing that needs you", () => {
+    /*
+     * MAR-586's fleet chip links to `#waiting-work` and names no stage. An
+     * agent that needs you is very often *also* running — a run waiting on an
+     * approval is still a run — so without this the chip would resolve to the
+     * Run stage, where that anchor does not exist, and leave somebody looking
+     * at a page for a decision that is one stage away. That is the exact
+     * failure MAR-586 wrote its fragment effect to fix, arriving by a new door.
+     */
+    expect(resolveAgentStage(null, { running: true, fragment: "waiting-work" })).toBe("overview");
+    expect(resolveAgentStage(null, { running: true, fragment: "work-ap-1" })).toBe("overview");
+    // Any fragment, not a list of the two DASH emits: an address carrying one
+    // has named something specific.
+    expect(resolveAgentStage(null, { running: true, fragment: "anything" })).toBe("overview");
+    // An empty fragment is no fragment.
+    expect(resolveAgentStage(null, { running: true, fragment: "" })).toBe("run");
+    // And a stage somebody named still wins over both.
+    expect(resolveAgentStage("logs", { running: true, fragment: "waiting-work" })).toBe("logs");
+  });
+
   it("does not name a stage it cannot draw", () => {
     /*
      * The wireframe names seven and this build has six. Health is absent on
