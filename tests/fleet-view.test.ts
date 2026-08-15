@@ -296,12 +296,14 @@ describe("the stylesheet", () => {
     );
 
     /*
-     * Spotlight's count is three across, and three columns want to grow with
-     * the viewport now (MAR-639) rather than sit at a fixed 13rem — see that
-     * rule's own comment for why a fixed pixel track shrinks at a lower OS
-     * UI scale while the pane around it does not.
+     * Spotlight's count is three across, and the track now grows with the
+     * viewport at a scale this test cannot set (MAR-639) rather than sitting
+     * at a bare fixed 13rem — see that rule's own comment for why a fixed
+     * pixel track shrinks at a lower OS UI scale while the pane around it
+     * does not. The floor is still the old fixed 13rem exactly, so this
+     * assertion — and the three-across claim below it — is unchanged.
      */
-    expect(block).toMatch(/--fleet-spot:\s*clamp\(14rem, 26vw, 22rem\)/);
+    expect(block).toMatch(/--fleet-spot:\s*clamp\(13rem, 16vw, 20rem\)/);
 
     // The narrow widths keep MAR-630's repair, untouched by any of the above.
     expect(globals).toContain("grid-auto-rows: auto");
@@ -312,11 +314,11 @@ describe("the stylesheet", () => {
      * The sideways-scroll fix MAR-590 shipped: a track minimum that is a plain
      * length does not consult the container, and at 375px a flat 19rem forced a
      * track 24px wider than the space it had. MAR-639 replaces the fixed
-     * `--fleet-card` track with a 12.5rem–15rem range so `auto-fill` can grow
-     * a fourth (and fifth) column, but the floor still has to give way to the
+     * `--fleet-card` track with a 9rem–10.5rem range so `auto-fill` can grow a
+     * fourth (and fifth) column, but the floor still has to give way to the
      * container below it, same job as `min(var(--fleet-card), 100%)` did.
      */
-    expect(globals).toContain("min(12.5rem, 100%)");
+    expect(globals).toContain("min(9rem, 100%)");
   });
 
   it("puts Add agent and the layout control in a right rail, not above the cards", () => {

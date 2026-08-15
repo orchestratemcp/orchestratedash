@@ -1386,16 +1386,26 @@ code {
   --fleet-card: 14rem;
   height: 100%;
   /*
-   * MAR-639: a 12.5rem floor and a 15rem ceiling, arithmetic against the same
-   * 752px stage MAR-634 measured at 1280. Four 15rem (240px) tracks and three
-   * 18px gaps want 1014px against `min(…, 100%)`'s per-track cap, so
-   * `auto-fill` settles on four 188px tracks there — the fourth column MAR-630
-   * never drew — and a wider window earns a fifth the same way, with no
-   * breakpoint written down anywhere for either number.
+   * MAR-639: a 9rem floor and a 10.5rem ceiling — measured, not the first
+   * numbers this rule shipped with. The first draft asked for
+   * `minmax(min(12.5rem, 100%), 15rem)`, on the assumption that `auto-fill`
+   * counts tracks against the *floor*. It does not: `auto-fill`'s repetition
+   * count is computed against a track's **max** sizing function whenever
+   * that max is a definite length, the same way `--fleet-card`'s own 14rem
+   * (`--fleet-card`, above) is definite and countable — `min(…, 100%)` only
+   * ever narrows the *floor*, so the ceiling is what decided the count all
+   * along. `electron/capture-fleet-views.ts` reported the resolved track at
+   * 1280: two 240px columns in a 736px pane, the same "half of three" shape
+   * MAR-634's own header describes for its 16rem mistake.
+   *
+   * 10.5rem (168px) is four columns' worth of that same 736px pane with room
+   * to spare: `4 * 168 + 3 * 18 = 726`. A wider window earns a fifth the same
+   * way `auto-fill` always has, with no breakpoint written down for either
+   * number.
    */
   grid-template-columns: repeat(
     auto-fill,
-    minmax(min(12.5rem, 100%), 15rem)
+    minmax(min(9rem, 100%), 10.5rem)
   );
   grid-auto-rows: auto;
   justify-content: start;
@@ -1944,18 +1954,29 @@ code {
    * would otherwise win — a thing to state outright rather than leave to the
    * order of the file.
    *
-   * MAR-639 replaces the fixed 13rem with `clamp(14rem, 26vw, 22rem)`. A
-   * fixed track is a fixed *pixel* size regardless of the operating system's
-   * own UI scale, so at 80–90% scale — a real, common setting, not an edge
-   * case — the card shrinks while the stage around it does not, and the
-   * spotlight reads as a small card lost in a large pane. `26vw` grows with
-   * the viewport (and therefore with the effective pixel size a scaled-down
-   * OS reports) between a 14rem floor, which keeps the card from vanishing
-   * at the narrow end of this block's own 901px boundary, and the 22rem
-   * ceiling the row-height bound below was already sized for.
+   * MAR-639 replaces the fixed 13rem with `clamp(13rem, 16vw, 20rem)` — and
+   * the floor is the *old* fixed value on purpose, not a smaller number. A
+   * fixed track is a fixed *CSS-pixel* size regardless of the operating
+   * system's own UI scale; lowering that scale (Electron's `zoomFactor`,
+   * the same one `FleetList`'s capture pins to 1) reports a *wider* window
+   * in CSS pixels for the same physical screen — the comment on `run()`
+   * below already measured this once, at 1.2 giving 1066px against a
+   * 1280px physical size — so a fixed-px card renders at fewer physical
+   * pixels as the scale drops, and the stage around it visibly does not.
+   * `16vw` grows with that reported width, so the card grows back as the
+   * scale that shrank it drops.
+   *
+   * At 1280 and 100% scale — the only case `electron/capture-fleet-views.ts`
+   * can actually render, since it pins `zoomFactor` to 1 — `16vw` resolves
+   * to 204.8px, under the 208px floor, so the clamp floors to exactly the
+   * old fixed value and MAR-630's three-across claim is unchanged pixel for
+   * pixel. The growth only shows up at a scale this harness cannot set: at
+   * 80% (reporting 1600px wide) `16vw` resolves to 256px, and at 90%
+   * (1422px) to 227.5px. 20rem bounds the far end the same way the 22rem
+   * row-height cap below already does, so neither grows without limit.
    */
   [data-fleet-view="spotlight"] .row-list.fleet-grid {
-    --fleet-spot: clamp(14rem, 26vw, 22rem);
+    --fleet-spot: clamp(13rem, 16vw, 20rem);
     grid-auto-rows: minmax(min-content, 22rem);
     align-content: safe center;
   }
