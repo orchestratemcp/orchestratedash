@@ -214,3 +214,26 @@ export function aiKeyConnections(
   }
   return cards;
 }
+
+/**
+ * Which of an agent's model connections DASH asks, when it declares more than
+ * one.
+ *
+ * The first card holding a key, or the first card. An agent declaring two model
+ * providers is legitimate and rare, and the alternative — asking about all of
+ * them — would put a second dropdown on the agent page for a case almost nobody
+ * has, at the cost of making the common case read as a choice between things.
+ *
+ * **Here rather than in each caller (MAR-642).** It was written out three times:
+ * `buildAgentModelSettings` for the picker, `buildAgentAskView` for the chat, and
+ * — the new one — `electron/broker-host.ts`, which has to resolve an agent's
+ * provider before it can decide whether DASH's default reaches it. Three copies
+ * of "which provider is this agent's" is three chances for the surface that
+ * shows a model and the request that spends money to disagree about which
+ * account is being billed.
+ */
+export function pickAiKeyCard(
+  cards: readonly AiKeyConnectionView[],
+): AiKeyConnectionView | null {
+  return cards.find((card) => card.held) ?? cards[0] ?? null;
+}

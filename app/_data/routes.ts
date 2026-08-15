@@ -111,9 +111,23 @@ export const SURFACES: readonly Surface[] = [
  * last, after the held add-agent flow, because it is the one tab that answers
  * "how does DASH look" rather than "what can DASH reach" — a different
  * question, asked less often.
+ *
+ * **AI is the sixth (MAR-642), and it is second.** Three of the cards on
+ * Connections were model-provider keys, sitting in a list whose other entry is
+ * a mailbox sign-in — one page answering two questions a person asks at
+ * different times and for different reasons. "What can my agents reach" is the
+ * mailbox; "what do my agents think with" is the key, and the second now has
+ * the fleet-wide model default beside it, which had nowhere to live at all.
+ *
+ * Second rather than last because it is the tab a DASH with no keys most needs
+ * somebody to find: an agent whose plan needs a model does nothing useful until
+ * one of these is connected, and burying that behind Servers and Add agent
+ * would be the same "unfindable is missing" defect the sidebar rule was written
+ * against.
  */
 export const SETTINGS_TABS: readonly Surface[] = [
   { href: SETTINGS_ROOT, label: "Connections" },
+  { href: "/settings/ai", label: "AI" },
   { href: "/settings/notifications", label: "Notifications" },
   { href: "/settings/servers", label: "Servers" },
   { href: "/settings/add-agent", label: "Add agent" },

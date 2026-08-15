@@ -30,6 +30,10 @@ function connector(over: Partial<FleetConnectorView> = {}): FleetConnectorView {
     provider: "google-gmail",
     service: "Gmail",
     connector_kind: "google_oauth_broker",
+    // Null is what sends this card to Connections rather than the AI tab
+    // (MAR-642). The key connectors below set it, which is what makes the split
+    // testable rather than asserted.
+    ai_provider_id: null,
     purpose: "Let your agents work with your mail.",
     help: null,
     capabilities: [
@@ -74,7 +78,12 @@ describe("a connector nobody has connected", () => {
     // DASH.
     expect(draw(connector())).toContain("Sign in to Gmail");
     expect(
-      draw(connector({ provider: "openrouter", service: "OpenRouter", connector_kind: "api_key" })),
+      draw(connector({
+            provider: "openrouter",
+            service: "OpenRouter",
+            connector_kind: "api_key",
+            ai_provider_id: "openrouter",
+          })),
     ).toContain("Add your OpenRouter key");
   });
 
@@ -195,7 +204,12 @@ describe("the section on the Connections page", () => {
       <FleetConnectors
         connectors={[
           connector(),
-          connector({ provider: "openrouter", service: "OpenRouter", connector_kind: "api_key" }),
+          connector({
+            provider: "openrouter",
+            service: "OpenRouter",
+            connector_kind: "api_key",
+            ai_provider_id: "openrouter",
+          }),
         ]}
         canAct
         onChanged={() => undefined}

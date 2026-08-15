@@ -8,6 +8,7 @@ import { FleetConnectorCard } from "../_components/fleet-connector";
 import { HostNotice, ViewFailed, ViewLoading } from "../_components/view-state";
 import { submitConnectionCommand, submitFleetCommand } from "../_data/source";
 import { useCanAct, useHost, useView } from "../_data/use-view";
+import { aiProviderFor } from "../../lib/ai/providers";
 import { buildConnectorTiles, summariseConnectors } from "../../lib/connectors";
 import type { AgentConnections, FleetConnectorView } from "../../lib/views/types";
 
@@ -89,6 +90,19 @@ import type { AgentConnections, FleetConnectorView } from "../../lib/views/types
  * without passing through this page. What this page sends is three ids — or, for
  * a fleet card, one provider — and what it gets back is a state, a masked hint
  * and a sentence.
+ *
+ * ## The model keys left (MAR-642)
+ *
+ * Three of the four fleet cards this page drew were model-provider keys, and
+ * they are the AI tab's now. What is left is what the heading has described
+ * since MAR-593 — the accounts DASH signs into on somebody's behalf — and the
+ * page is shorter by three cards that a person looking for their mailbox had to
+ * read past.
+ *
+ * The split is `ai_provider_id`, taken off the catalogue entry rather than
+ * decided here: a page choosing which cards it wants would be a second opinion
+ * about what a connector is, and the first non-model API key DASH learns to
+ * hold would land on whichever page guessed first.
  */
 export default function ConnectionsPage(): ReactNode {
   // Bumped after any command that changed something, so the page re-reads the
@@ -106,7 +120,11 @@ export default function ConnectionsPage(): ReactNode {
 
   return (
     <>
-      <h1>Accounts and keys</h1>
+      {/* MAR-642: "and keys" left with the keys. What this page holds is the
+          accounts DASH signs into for you; the model keys are on the AI tab,
+          and a heading naming both would send somebody looking for one to the
+          page holding the other. */}
+      <h1>Accounts you connect</h1>
       <HostNotice host={host} />
 
       {state.status === "loading" ? (
@@ -116,7 +134,9 @@ export default function ConnectionsPage(): ReactNode {
       ) : (
         <>
           <FleetConnectors
-            connectors={state.data.fleet}
+            connectors={state.data.fleet.filter(
+              (connector) => connector.ai_provider_id === null,
+            )}
             canAct={canAct}
             onChanged={bump}
           />
@@ -219,7 +239,23 @@ export function ConnectorList({
   canAct: boolean;
   onChanged: () => void;
 }): ReactNode {
-  const tiles = buildConnectorTiles(agents);
+  /*
+   * MAR-642. A model provider's tile is not on this page either.
+   *
+   * Moving the three fleet cards and leaving these would have left the same key
+   * on two tabs in two shapes — a card on AI saying which agents need it, and a
+   * tile here saying the same thing about the same service. `FleetConnectorCard`
+   * already names every agent that needs the key, so nothing on this page went
+   * unsaid; what went is the second telling.
+   *
+   * The predicate is `aiProviderFor` — DASH's own closed registry of the
+   * providers it holds a model key for — which is the same fact the catalogue
+   * builds `ai_provider_id` from one layer up, so the two halves of the split
+   * cannot disagree about which services are the AI tab's.
+   */
+  const tiles = buildConnectorTiles(agents).filter(
+    (tile) => aiProviderFor(tile.provider) === null,
+  );
 
   if (tiles.length === 0) {
     /*

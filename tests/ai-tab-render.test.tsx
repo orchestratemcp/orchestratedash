@@ -1,0 +1,283 @@
+/**
+ * The AI tab, drawn (MAR-642).
+ *
+ * `tests/model-choice.test.ts` drives the rows and the precedence. This drives
+ * the thing on screen, for `tests/fleet-connector-render.test.tsx`' reason: a
+ * photograph proves a state was drawn once on one machine, and this proves each
+ * one is still drawn on every run.
+ *
+ * The load-bearing claims are all about **the split**, because the way this
+ * change goes quietly wrong is a card that ends up on both tabs or on neither:
+ *
+ * - a model provider's key is on AI and not on Connections;
+ * - a sign-in is on Connections and not on AI;
+ * - the same is true of the per-agent tiles, so one key is not told twice;
+ * - a DASH holding no key opens with the choices showing, and one holding a key
+ *   puts the rest behind a control that says what it does;
+ * - the default's control is absent, not disabled, until a key exists to ask.
+ */
+
+import { describe, expect, it } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import { AiKeys, AiSettings } from "../app/settings/ai/page";
+import { ConnectorList, FleetConnectors } from "../app/settings/page";
+import { ModelDefault } from "../app/_components/model-default";
+import { describeFleetDefault } from "../lib/ai/model-choice";
+import type {
+  AgentConnections,
+  ConnectionsView,
+  FleetConnectorView,
+  FleetModelDefaultView,
+} from "../lib/views/types";
+
+function connector(over: Partial<FleetConnectorView> = {}): FleetConnectorView {
+  return {
+    provider: "google-gmail",
+    service: "Gmail",
+    connector_kind: "google_oauth_broker",
+    ai_provider_id: null,
+    purpose: "Let your agents work with your mail.",
+    help: null,
+    capabilities: [],
+    wider_permissions: [],
+    held: null,
+    agents: [],
+    skipped: [],
+    waiting: [],
+    reach_sentence: null,
+    ...over,
+  };
+}
+
+function key(
+  provider: string,
+  service: string,
+  over: Partial<FleetConnectorView> = {},
+): FleetConnectorView {
+  return connector({
+    provider,
+    service,
+    connector_kind: "api_key",
+    ai_provider_id: provider,
+    purpose: `Let DASH hold your ${service} key.`,
+    help: `Your ${service} account has a keys page.`,
+    ...over,
+  });
+}
+
+const HELD = {
+  masked_hint: "••••abcd",
+  account_hint: null,
+  since: "15 August 2026",
+  permissions: [],
+};
+
+function defaultView(over: Partial<FleetModelDefaultView> = {}): FleetModelDefaultView {
+  const copy = describeFleetDefault(null, null, 0);
+  return {
+    provider_id: null,
+    model_id: null,
+    headline: copy.headline,
+    detail: copy.detail,
+    in_force: copy.in_force,
+    ...over,
+  };
+}
+
+const KEYS = [
+  key("openrouter", "OpenRouter"),
+  key("anthropic", "Anthropic"),
+  key("openai", "OpenAI"),
+];
+
+function view(over: Partial<ConnectionsView> = {}): ConnectionsView {
+  return {
+    fleet: [connector(), ...KEYS],
+    model_default: defaultView(),
+    agents: [],
+    older_agent_names: [],
+    ...over,
+  };
+}
+
+const drawAi = (document: ConnectionsView): string =>
+  renderToStaticMarkup(<AiSettings view={document} canAct onChanged={() => undefined} />);
+
+const drawKeys = (connectors: readonly FleetConnectorView[]): string =>
+  renderToStaticMarkup(
+    <AiKeys connectors={connectors} canAct onChanged={() => undefined} />,
+  );
+
+describe("which cards land on which tab", () => {
+  it("draws the three model keys on AI and no sign-in", () => {
+    const html = drawAi(view());
+    expect(html).toContain("OpenRouter");
+    expect(html).toContain("Anthropic");
+    expect(html).toContain("OpenAI");
+    // The mailbox is the other tab's. A card on both would be the two-homes
+    // defect this split exists to end, not a convenience.
+    expect(html).not.toContain("Gmail");
+  });
+
+  it("leaves the sign-in on Connections and takes the keys off it", () => {
+    const html = renderToStaticMarkup(
+      <FleetConnectors
+        connectors={view().fleet.filter((one) => one.ai_provider_id === null)}
+        canAct
+        onChanged={() => undefined}
+      />,
+    );
+    expect(html).toContain("Gmail");
+    expect(html).not.toContain("OpenRouter");
+  });
+
+  it("takes a model provider's per-agent tile off Connections too", () => {
+    /*
+     * The half that is easy to forget. Moving the fleet cards and leaving the
+     * "what your agents need" tiles would put the same key on two tabs in two
+     * shapes — and the AI tab's own card already names every agent that needs
+     * it, so nothing goes unsaid.
+     */
+    const agents: AgentConnections[] = [
+      {
+        name: "digest-writer",
+        title: "Digest writer",
+        avatar: null,
+        rows: [
+          {
+            connection_id: "models",
+            provider: "openrouter",
+            service: "OpenRouter",
+            label: "Your model provider",
+            purpose: "Write the digest",
+            ownership: "dash_managed",
+            connector_kind: "api_key",
+            dash_can_hold: true,
+            field_id: "key",
+            masked_hint: null,
+            delivered_to_agent: false,
+            credential_kind: "provider_key",
+            broker: null,
+            also_connects: [],
+            state: "not_connected",
+            state_sentence: "DASH holds no OpenRouter key.",
+            capabilities: [],
+            requirement: null,
+          } as unknown as AgentConnections["rows"][number],
+        ],
+        lapses: [],
+      },
+    ];
+    const html = renderToStaticMarkup(
+      <ConnectorList agents={agents} older={[]} canAct onChanged={() => undefined} />,
+    );
+    expect(html).not.toContain("OpenRouter");
+    // And the section says the true thing about what is left rather than
+    // rendering an empty list under a heading.
+    expect(html).toContain("What your agents need");
+  });
+});
+
+describe("the keys, and the + that reveals the rest", () => {
+  it("opens with every choice showing when DASH holds none", () => {
+    // There is nothing to collapse and the whole page is this choice, so a
+    // person arriving at a fresh DASH sees all three without pressing anything.
+    const html = drawKeys(KEYS);
+    expect(html).toContain("OpenRouter");
+    expect(html).toContain("Anthropic");
+    expect(html).toContain("OpenAI");
+    expect(html).not.toContain("Add a key");
+  });
+
+  it("draws the key it holds and puts the rest behind a control that says so", () => {
+    const html = drawKeys([
+      key("openrouter", "OpenRouter", { held: HELD }),
+      key("anthropic", "Anthropic"),
+      key("openai", "OpenAI"),
+    ]);
+    expect(html).toContain("OpenRouter");
+    expect(html).toContain("Add a key");
+    // Not drawn, and not drawn disabled either: the button above is the door,
+    // and three paragraphs of consequence for services this person did not
+    // choose is the shape MAR-642 moved them here to fix.
+    expect(html).not.toContain("Anthropic");
+    expect(html).not.toContain("OpenAI");
+  });
+
+  it("names the one that is left when only one is", () => {
+    const html = drawKeys([
+      key("openrouter", "OpenRouter", { held: HELD }),
+      key("anthropic", "Anthropic", { held: HELD }),
+      key("openai", "OpenAI"),
+    ]);
+    expect(html).toContain("Add a key for OpenAI");
+  });
+
+  it("counts what it drew rather than asserting it", () => {
+    expect(drawKeys(KEYS)).toContain("DASH holds no key yet");
+    expect(
+      drawKeys([
+        key("openrouter", "OpenRouter", { held: HELD }),
+        key("anthropic", "Anthropic"),
+        key("openai", "OpenAI"),
+      ]),
+    ).toContain("DASH holds 1 key");
+  });
+});
+
+describe("the default model", () => {
+  const draw = (setting: FleetModelDefaultView, keys: readonly FleetConnectorView[], canAct = true): string =>
+    renderToStaticMarkup(
+      <ModelDefault setting={setting} keys={keys} canAct={canAct} onChanged={() => undefined} />,
+    );
+
+  it("draws no control at all until a key is held", () => {
+    // Not a disabled dropdown: there is nothing to list and nothing to choose
+    // between, and a greyed-out control would read as a claim about the
+    // providers rather than about what DASH is holding.
+    const html = draw(defaultView(), KEYS);
+    expect(html).toContain("The model new agents use");
+    expect(html).not.toContain("<select");
+  });
+
+  it("offers the choice once a key is held, with no default set", () => {
+    const html = draw(defaultView(), [key("openrouter", "OpenRouter", { held: HELD }), ...KEYS.slice(1)]);
+    expect(html).toContain("<select");
+    expect(html).toContain("No default");
+    expect(html).toContain("See what OpenRouter offers");
+  });
+
+  it("keeps a model already set in the list before anything has been asked for", () => {
+    // A `select` whose value matches no option silently shows the first one,
+    // and a person would read "no default" on a DASH that has one.
+    const copy = describeFleetDefault("OpenRouter", "openai/gpt-5-mini", 1);
+    const html = draw(
+      defaultView({
+        provider_id: "openrouter",
+        model_id: "openai/gpt-5-mini",
+        in_force: copy.in_force,
+      }),
+      [key("openrouter", "OpenRouter", { held: HELD }), ...KEYS.slice(1)],
+    );
+    expect(html).toContain('value="openai/gpt-5-mini" selected');
+    expect(html).toContain("through your OpenRouter key");
+  });
+
+  it("hides the service dropdown while there is only one key to pick from", () => {
+    const one = draw(defaultView(), [key("openrouter", "OpenRouter", { held: HELD }), ...KEYS.slice(1)]);
+    expect(one).not.toContain("model-default-provider");
+
+    const two = draw(defaultView(), [
+      key("openrouter", "OpenRouter", { held: HELD }),
+      key("anthropic", "Anthropic", { held: HELD }),
+    ]);
+    expect(two).toContain("model-default-provider");
+  });
+
+  it("says which window this is rather than greying the control out", () => {
+    const html = draw(defaultView(), [key("openrouter", "OpenRouter", { held: HELD })], false);
+    expect(html).toContain("Open the installed DASH app");
+    expect(html).not.toContain("<select");
+  });
+});

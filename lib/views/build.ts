@@ -40,6 +40,8 @@ import { describeEvidenceRecord } from "../copy/evidence";
 import { describeRunOrigin } from "../copy/where-it-ran";
 import { describeStoreDamage } from "../copy/recovery";
 import { deriveConnectionRequirements, type ConnectionSourceManifest } from "../connections";
+import { describeFleetDefault } from "../ai/model-choice";
+import { readFleetModelDefault } from "../ai/model-store";
 import { fleetCatalogue } from "../fleet/catalogue";
 import { describeFleetReach, fleetReach } from "../fleet/grants";
 import { readFleetConnection, withheldAgents } from "../fleet/store";
@@ -122,6 +124,7 @@ import type {
   ConnectionRowWithCredential,
   ConnectionsView,
   FleetConnectorView,
+  FleetModelDefaultView,
   HostsView,
   NotificationsView,
   PlannedStepView,
@@ -955,12 +958,19 @@ export function connectionsView(store: StoreShape = readStore()): ConnectionsVie
     }
   }
 
+  const fleet = fleetConnectorViews(capable);
+
   return {
     // MAR-593. What DASH can connect, computed from the catalogue and the fleet
     // tables rather than from any of the agents above — which is the whole point
     // of it, and why this line still produces cards on a store holding no agents
     // at all.
-    fleet: fleetConnectorViews(capable),
+    fleet,
+    // MAR-642. The default, counted against the cards above rather than against
+    // the catalogue: the sentence for somebody holding no key at all sends them
+    // to the section under it, and it should say that only while that section
+    // really is empty.
+    model_default: fleetModelDefaultView(fleet),
     agents: capable.map(({ name, manifest }) => {
       const rows = connectionRowsFor(name, manifest, agentsByProvider);
 
@@ -1040,6 +1050,9 @@ export function fleetConnectorViews(
       provider: connector.provider,
       service: connector.service,
       connector_kind: connector.connector_kind,
+      // MAR-642. What sends this card to the AI tab or leaves it on
+      // Connections. Straight off the catalogue entry, never re-derived.
+      ai_provider_id: connector.ai_provider_id,
       purpose: connector.purpose,
       help: connector.help,
       capabilities: connector.capabilities.map((capability) => ({
@@ -1076,6 +1089,39 @@ export function fleetConnectorViews(
       reach_sentence: describeFleetReach(connector, reach),
     };
   });
+}
+
+/**
+ * DASH's default model, ready to draw (MAR-642).
+ *
+ * A stored default naming a provider this build no longer offers reads as no
+ * default — `readFleetModelDefault`'s rule — and this adds the second half of
+ * it: a default whose provider is not among the cards on the page is not shown
+ * as being in force either, because the person cannot see the thing it names.
+ * Both are the same discipline `readLivenessCheck` keeps: a record this build
+ * cannot interpret should read as the absence of a record.
+ */
+function fleetModelDefaultView(fleet: readonly FleetConnectorView[]): FleetModelDefaultView {
+  const keys = fleet.filter((connector) => connector.ai_provider_id !== null);
+  const held = keys.filter((connector) => connector.held !== null).length;
+  const stored = readFleetModelDefault();
+  const card =
+    stored === null
+      ? undefined
+      : keys.find((connector) => connector.ai_provider_id === stored.provider_id);
+
+  const copy = describeFleetDefault(
+    card?.service ?? null,
+    card === undefined ? null : stored?.model_id ?? null,
+    held,
+  );
+  return {
+    provider_id: card === undefined ? null : stored?.provider_id ?? null,
+    model_id: card === undefined ? null : stored?.model_id ?? null,
+    headline: copy.headline,
+    detail: copy.detail,
+    in_force: copy.in_force,
+  };
 }
 
 /* ---------------------------------------------------------------------- *

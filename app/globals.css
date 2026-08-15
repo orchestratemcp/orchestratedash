@@ -5189,6 +5189,27 @@ button:disabled {
 }
 
 /*
+ * The same section on the AI tab, where it is about no agent (MAR-642).
+ *
+ * `.model-choice`'s rule rather than a second one, because it is the same
+ * control doing the same job one level up — and reusing `.model-picker`,
+ * `.model-in-force` and `.field` means the fleet default cannot start looking
+ * like a different kind of setting from the per-agent one it overrides nothing
+ * about. What it adds is the space below it: this section sits above a list of
+ * cards rather than at the end of a drawer, and without it the dropdown reads
+ * as part of the first card.
+ */
+.model-default {
+  display: grid;
+  gap: var(--density-gap);
+  margin-bottom: var(--space-5);
+}
+
+.model-default .field:disabled {
+  opacity: 0.6;
+}
+
+/*
  * The per-step levels, folded away. `details` and not a toggle we drew: it is
  * the platform's own disclosure, it keeps its state without a hook, and a
  * keyboard reaches it without anything being wired.

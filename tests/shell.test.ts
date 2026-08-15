@@ -199,6 +199,15 @@ describe("the audited command chokepoint", () => {
       "model.choose",
       "model.step",
       "model.list",
+      // MAR-642. Two more in that family, and the first commands in it that
+      // name no agent: DASH's own default model belongs to no agent, so there
+      // is no manifest to resolve a provider out of. They name one of the three
+      // ids in `AI_PROVIDER_IDS` instead and main refuses anything else — what
+      // the renderer still cannot name is an origin, a path, a header or a key.
+      // They are in this family rather than the fleet one because neither
+      // changes what DASH may reach, which is what the fleet verbs are for.
+      "model.default",
+      "model.catalogue",
       // MAR-545. The tenth family, one member, and the first command in this
       // catalogue that costs the person money. The renderer names an agent, a
       // connection, a field and a question — never a model, because which model
