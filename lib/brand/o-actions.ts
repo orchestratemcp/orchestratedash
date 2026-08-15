@@ -64,16 +64,26 @@ export interface OAction {
 /**
  * The sheets that exist, in the manifest's order.
  *
- * Three of eleven, and that asymmetry is the state of the art library rather
- * than a decision about these three characters. `pnpm o:actions` in
- * orchestrateweb produces more; each arrives here as vendored bytes plus a
- * manifest entry plus a line in this array, and `checkActionModule` fails if
- * any of the three arrive without the others.
+ * Twelve of twelve since MAR-615 — the whole cast animates, chief included.
+ * Three of eleven was the state of the art library at MAR-587 rather than a
+ * decision about those three characters; `pnpm o:actions` in orchestrateweb
+ * produced the rest, and each arrived here as vendored bytes plus a manifest
+ * entry plus a line in this array, and `checkActionModule` fails if any
+ * recorded sheet arrives without its line here.
  */
 export const O_ACTIONS: readonly OAction[] = [
   { key: "ninja-shuriken-toss", character: "ninja", action: "shuriken-toss" },
   { key: "knight-sword-swing", character: "knight", action: "sword-swing" },
   { key: "wizard-fireball", character: "wizard", action: "fireball" },
+  { key: "chef-pancake-flip", character: "chef", action: "pancake-flip" },
+  { key: "cowboy-lasso-spin", character: "cowboy", action: "lasso-spin" },
+  { key: "explorer-flag-wave", character: "explorer", action: "flag-wave" },
+  { key: "king-coin-flip", character: "king", action: "coin-flip" },
+  { key: "medic-cross-bob", character: "medic", action: "cross-bob" },
+  { key: "nerd-book-flip", character: "nerd", action: "book-flip" },
+  { key: "robot-gear-turn", character: "robot", action: "gear-turn" },
+  { key: "viking-axe-chop", character: "viking", action: "axe-chop" },
+  { key: "chief-baton-wave", character: "chief", action: "baton-wave" },
 ];
 
 /**

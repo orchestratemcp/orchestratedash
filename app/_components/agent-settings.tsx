@@ -135,7 +135,7 @@ export function AgentSettings({
               {avatar === null ? (
                 <span className="o-portrait-empty" aria-hidden="true" />
               ) : (
-                <OAvatar name={avatar} size={50} />
+                <OAvatar name={avatar} size={50} action />
               )}
             </dd>
             <dd className="muted">{AGENT_SETTINGS_COPY.identity.avatar_source}</dd>

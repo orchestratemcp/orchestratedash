@@ -174,6 +174,25 @@ describe("the motion rides the tokens, so reduced motion stills the fleet for fr
     const withoutComments = globals.replace(/\/\*[\s\S]*?\*\//g, "");
     expect(withoutComments).not.toMatch(/\.is-sleeping[^{}]*\{/);
   });
+
+  it("outranks the costume idle loop with real state, class for class (MAR-615)", () => {
+    // `OAvatar`'s own docblock explains why the strip can carry both `action`
+    // and `fleet-motion` without "two motions in one sprite": whichever rule
+    // has more class selectors wins the `animation` property outright, and a
+    // working/waiting/walking agent must always be the one that does. This
+    // counts classes in the selector text rather than asking a browser to
+    // compute specificity, which is what every other assertion in this file
+    // already does against raw CSS.
+    const idleSelector = /(\.o-avatar\.is-action)\s*\{/.exec(globals)?.[1];
+    expect(idleSelector).toBeDefined();
+    const idleClasses = idleSelector?.match(/\.[a-zA-Z-]+/g)?.length ?? 0;
+    for (const state of ["is-working", "is-waiting", "is-walking"]) {
+      const stateSelector = new RegExp(`(\\.fleet-strip-o\\.${state} \\.o-avatar)\\s*\\{`).exec(globals)?.[1];
+      expect(stateSelector, state).toBeDefined();
+      const stateClasses = stateSelector?.match(/\.[a-zA-Z-]+/g)?.length ?? 0;
+      expect(stateClasses, state).toBeGreaterThan(idleClasses);
+    }
+  });
 });
 
 describe("the boot sequence does not cost the first-paint gate its attribute", () => {

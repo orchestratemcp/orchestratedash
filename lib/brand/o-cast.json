@@ -145,6 +145,19 @@
       },
       "opaquePixels": 519,
       "colors": 10
+    },
+    "chief": {
+      "bytes": 398,
+      "sha256": "0aebcd822572ab612dfbcd806da32fc6fef405d2b43263f200a68d506369c7f9",
+      "cornersTransparent": true,
+      "bounds": {
+        "left": 13,
+        "top": 8,
+        "right": 36,
+        "bottom": 39
+      },
+      "opaquePixels": 563,
+      "colors": 9
     }
   }
 }

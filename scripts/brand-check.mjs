@@ -56,12 +56,15 @@ const STYLESHEETS = [path.join(APP_DIR, "globals.css"), path.join(APP_DIR, "toke
 /**
  * Files allowed to pass `label` — where the character IS the information.
  *
- * Empty, and expected to stay that way for a while. DASH's avatars sit beside
- * an agent's own name on every surface BRAND-03/04/05 plan, so the character
- * repeats nothing and announcing it would add a costume nobody asked about. A
- * surface where the cast is browsed *as a cast* would earn an entry.
+ * One entry, since MAR-615. DASH's fleet avatars sit beside an agent's own
+ * name on every surface BRAND-03/04/05 plan, so the character repeats nothing
+ * there and announcing it would add a costume nobody asked about. The chief
+ * band in `fleet-list.tsx` is the exception: nothing else on that surface
+ * names who is speaking, so the portrait genuinely is the information, the
+ * same way it was when it was a `role="img"` glyph before this issue vendored
+ * a real one.
  */
-const LABEL_ALLOWLIST = new Set([]);
+const LABEL_ALLOWLIST = new Set(["app/_components/fleet-list.tsx"]);
 
 const failures = [];
 

@@ -17,7 +17,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { OAvatar } from "../app/_components/o-avatar";
 import { O_ACTION_FRAMES, O_ACTIONS, actionFor } from "../lib/brand/o-actions";
-import { O_NAMES } from "../lib/brand/o-cast";
+import { O_NAMES, type OName } from "../lib/brand/o-cast";
 
 describe("OAvatar", () => {
   it("draws the vendored 1x file at its intrinsic size", () => {
@@ -84,14 +84,28 @@ describe("OAvatar, animated", () => {
     expect(html).toContain('class="o-avatar is-action"');
   });
 
-  it("draws the still, exactly as before, for a character with no sheet", () => {
-    // Eight of eleven today. No stand-in loop and no substitute character:
-    // "does this O move?" must never become a fact about the agent, and it
-    // would be one the moment DASH invented motion for the ones it lacks.
-    const asked = renderToStaticMarkup(<OAvatar name="chef" size={200} action />);
-    const plain = renderToStaticMarkup(<OAvatar name="chef" size={200} />);
+  it("animates every character in the cast, chef included, since MAR-615", () => {
+    // Chef was one of the eight with no sheet before MAR-615 vendored the
+    // rest of the library; asking it for `action` now draws its own loop
+    // exactly like ninja, knight and wizard always did.
+    const html = renderToStaticMarkup(<OAvatar name="chef" size={200} action />);
+    expect(html).toContain("--o-action:url(/o/actions/chef-pancake-flip.png)");
+    expect(html).toContain('class="o-avatar is-action"');
+  });
+
+  it("draws the still, exactly as before, for a character this build does not ship", () => {
+    // No stand-in loop and no substitute character: "does this O move?" must
+    // never become a fact about the agent, and it would be one the moment
+    // DASH invented motion for a name it does not recognise. Every real
+    // character has a sheet now, so this exercises the fallback the same way
+    // `lib/store.ts`'s `storedAvatar` does for a row this build cannot read —
+    // a name outside `OName` reaching the render path is the only way left to
+    // hit it.
+    const unknown = "pirate" as unknown as OName;
+    const asked = renderToStaticMarkup(<OAvatar name={unknown} size={200} action />);
+    const plain = renderToStaticMarkup(<OAvatar name={unknown} size={200} />);
     expect(asked).toBe(plain);
-    expect(asked).toContain('src="/o/1x/chef.png"');
+    expect(asked).toContain('src="/o/1x/pirate.png"');
     expect(asked).not.toContain("is-action");
   });
 
@@ -128,6 +142,6 @@ describe("OAvatar, animated", () => {
       const action = actionFor(name);
       expect(action === null || action.character === name).toBe(true);
     }
-    expect(O_ACTIONS.map((action) => action.character)).toEqual(["ninja", "knight", "wizard"]);
+    expect(O_ACTIONS.map((action) => action.character).sort()).toEqual([...O_NAMES].sort());
   });
 });

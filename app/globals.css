@@ -2345,13 +2345,12 @@ code {
 }
 
 /*
- * Accent, and it is the one place in the fleet where that colour is a voice
- * rather than a state. `app/tokens.css` reserves emerald for live and healthy
- * things and nothing here claims either; the chief is DASH speaking, drawn in
- * DASH's own colour and in the same `currentColor` idiom as the sidebar's glyphs.
+ * Positioning only, since MAR-615 vendored the chief's own portrait — nothing
+ * here draws with `currentColor` any more. Never `--ok`: `app/tokens.css`
+ * reserves emerald for live and healthy things, and `checkEmerald` fails a
+ * container that would make the chief's costume look like a health signal.
  */
 .chief-glyph {
-  color: var(--accent);
   flex: none;
   align-self: start;
 }

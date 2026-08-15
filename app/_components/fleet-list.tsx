@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentHosting, FleetCard, describeRunCount } from "./fleet-card";
 import { OpenAgentButton } from "./glance-chips";
 import { InfoNote } from "./info-note";
+import { OAvatar } from "./o-avatar";
 import { useFleetFilterSync } from "./fleet-rail";
 import { useFleetView } from "./fleet-view-toggle";
 import { agentWorkspaceHref } from "../_data/routes";
@@ -368,14 +369,20 @@ export function spotlightPosition(index: number, centred: number): string | unde
  * reach: the per-agent Ask that MAR-545 already shipped, on the agent's own
  * workspace, named after the agent the chief is talking about.
  *
- * ## The chief is not one of the O's
+ * ## The chief is not one of the O's, and now has its own portrait anyway
  *
- * Drawn as inline rects on the sidebar's 12×12 grid, in `currentColor`, like
- * `sidebar-icons.tsx` and like MAR-544's boot glyph — whose header settles this
- * exact question: *"not one of the cast: the cast are the agents' characters, and
- * the thing booting here is DASH."* The chief is DASH speaking, so it is drawn
- * the way DASH draws itself.
+ * Until MAR-615 this was drawn as inline rects on the sidebar's 12×12 grid, in
+ * `currentColor`, like `sidebar-icons.tsx` and like MAR-544's boot glyph — a
+ * placeholder standing in for *"not one of the cast: the cast are the agents'
+ * characters, and the thing booting here is DASH."* That question still holds:
+ * `O_FLEET` still excludes the chief, and `oFor()` can never land an ordinary
+ * agent in his costume. But the chief is cast, even if he is not fleet —
+ * orchestrateweb's `scripts/build-o-chief.mjs` re-dresses the audited king into
+ * his own still and his own `chief-baton-wave` idle sheet, vendored here the
+ * same way every other character is, and this band is exactly the spotlight
+ * that sheet was built for.
  *
+
  * Exported so a render test can drive it without a scroll container, which is
  * the one thing this repository's tests have no way to produce: every render
  * test here is `renderToStaticMarkup`, so no effect runs and the spotlight is
@@ -467,42 +474,20 @@ export function ChiefBand({
   );
 }
 
-/** x, y, width, height on the 12×12 grid, matching `sidebar-icons.tsx`. */
-type Px = readonly [number, number, number, number];
-
 /**
- * The chief: a crest, a visor with two gaps for eyes, ear cups and shoulders.
+ * The chief's vendored portrait, waving his baton (MAR-615).
  *
- * Filled rects with no stroke and no even-odd fill, so a gap is a cell that was
- * never drawn over — the same construction the sidebar's gear uses for its hole.
+ * `label={CHIEF_NAME}` because this is the one place `OAvatarProps.label`'s
+ * own docblock names as the exception: the character genuinely *is* the
+ * information here, standing in for who is speaking rather than decorating an
+ * agent's name that is already printed beside it. `scripts/brand-check.mjs`'s
+ * `LABEL_ALLOWLIST` names this file for exactly that reason — everywhere else
+ * in DASH the rule holds with no exceptions.
+ *
+ * `size={100}`, the portrait scale `AgentPortrait` uses for the one other
+ * surface where a character is close to being the subject rather than a
+ * marker in a list.
  */
-const CHIEF: readonly Px[] = [
-  [5, 0, 2, 2],
-  [3, 2, 6, 2],
-  [3, 4, 1, 1],
-  [5, 4, 2, 1],
-  [8, 4, 1, 1],
-  [3, 5, 6, 2],
-  [2, 2, 1, 4],
-  [9, 2, 1, 4],
-  [5, 7, 2, 1],
-  [2, 8, 8, 3],
-];
-
 function ChiefGlyph(): ReactNode {
-  return (
-    <svg
-      className="chief-glyph"
-      viewBox="0 0 12 12"
-      width="48"
-      height="48"
-      role="img"
-      aria-label={CHIEF_NAME}
-      shapeRendering="crispEdges"
-    >
-      {CHIEF.map(([x, y, w, h]) => (
-        <rect key={`${String(x)}-${String(y)}`} x={x} y={y} width={w} height={h} fill="currentColor" />
-      ))}
-    </svg>
-  );
+  return <OAvatar name="chief" size={100} action label={CHIEF_NAME} className="chief-glyph" />;
 }

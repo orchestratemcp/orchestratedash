@@ -169,13 +169,23 @@ describe("the fleet asks for the loop, and asks for nothing else", () => {
   });
 });
 
-describe("a character with no sheet is a character with no sheet", () => {
-  it("answers null for the eight, and its own action for the three", () => {
+describe("every character in the cast has its own vendored action (MAR-615)", () => {
+  it("answers an action, and its own action, for all twelve", () => {
+    // Three of eleven at MAR-587, then the rest at MAR-615 — the library
+    // caught up to the cast rather than the cast catching up to the library.
     const animated = O_NAMES.filter((name) => actionFor(name) !== null);
-    expect(animated).toEqual(["ninja", "wizard", "knight"]);
-    expect(O_NAMES.length - animated.length).toBe(8);
+    expect(animated).toEqual([...O_NAMES]);
     for (const name of animated) {
       expect(actionFor(name)?.character).toBe(name);
     }
+  });
+
+  it("still answers null for a character this build does not ship", () => {
+    // A character with no sheet is a character with no sheet, and that path
+    // has no real case left to exercise it — every name in `O_NAMES` has one
+    // now — but `OAvatar` still calls this on whatever a damaged store row or
+    // a future downgrade could hand it, so the fallback stays covered
+    // structurally rather than by a live gap in the cast.
+    expect(actionFor("pirate" as unknown as (typeof O_NAMES)[number])).toBeNull();
   });
 });
