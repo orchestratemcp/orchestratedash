@@ -1106,7 +1106,32 @@ const MIGRATIONS: readonly Migration[] = [
     }
   },
 
+  // ---------------------------------------------------------------------
+  // MAR-640. Favourites: the first per-agent preference DASH keeps for the
+  // reader rather than about the agent.
+  //
+  // Its own table rather than a column on `agents`, for `agent_looks`' own
+  // reason: this is a fact about the person at the keyboard, and `agents` is
+  // the row an author's manifest fills in. A row here that outlives the agent
+  // it named would cost nothing, so there is no foreign key to `agents` —
+  // `agent_looks`' reasoning again, and `command_audit`'s before it.
+  //
+  // `favourite` is `INTEGER` rather than a second table of starred ids,
+  // because unlike `agent_looks` this fact has a false state that matters:
+  // a person can star an agent and then unstar it, and the row should say so
+  // rather than simply not exist — the same shape `workspace_truncated`
+  // already reads back as `=== 1`.
+  `
+  CREATE TABLE IF NOT EXISTS agent_prefs (
+    agent      TEXT PRIMARY KEY,
+    favourite  INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+  );
+  `,
+
   // MAR-642. One model DASH falls back to, for an agent nobody has configured.
+  // (Migration 23: MAR-640's agent_prefs reached master first and holds 22, so
+  // this step runs after it on every store that already recorded 0 to 22.)
   //
   // **A fallback and never an override**, which is Henrik's 2026-08-15 ruling and
   // the whole of what this table is allowed to mean: an agent with a row in

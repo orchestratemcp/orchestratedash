@@ -450,6 +450,35 @@ main:focus {
 }
 
 /*
+ * MAR-640. The work-inbox count, after the label rather than instead of it —
+ * see `AppChrome`'s own note on why it is plain text and not `aria-hidden`.
+ * `margin-left: auto` pushes it to the end of the row without a fourth flex
+ * property on `.sidebar-link` that every other row would inherit for no
+ * reason.
+ */
+.sidebar-badge {
+  margin-left: auto;
+  flex: none;
+  min-width: 1.25em;
+  padding: 0 var(--space-1);
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.sidebar-link.is-active .sidebar-badge {
+  /* The row is already the accent colour; the badge borrows the row's own
+     contrast pair instead of drawing accent-on-accent, which would be
+     unreadable rather than merely quiet. */
+  background: var(--accent-contrast);
+  color: var(--accent);
+}
+
+/*
  * Below 900px the sidebar collapses to an icon rail (MAR-546).
  *
  * A rail rather than a drawer, and the reasons are DASH's own rather than
@@ -479,6 +508,7 @@ main:focus {
   }
 
   .sidebar-link {
+    position: relative;
     justify-content: center;
     padding: var(--space-3) var(--space-2);
   }
@@ -492,6 +522,20 @@ main:focus {
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+
+  /*
+   * MAR-640. The badge stays a real, on-screen number rather than collapsing
+   * with the label: an icon rail that could no longer say *how much* would
+   * be answering a narrower question than the full-width sidebar next to it,
+   * for no reason the width itself demands — the count is three characters
+   * at most and the corner of a 40px icon has room for it.
+   */
+  .sidebar-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    margin-left: 0;
   }
 }
 
@@ -684,6 +728,53 @@ main:has(.fleet-shell) {
 .fleet-rail .fleet-view-option + .fleet-view-option {
   border-left: 0;
   border-top: 1px solid var(--line);
+}
+
+/*
+ * MAR-640. "Show" — six rows, each a real radio so the group gets the same
+ * free keyboard behaviour `FleetViewToggle`'s own header argues for: arrow
+ * keys move between options, only the chosen one is a tab stop, and the
+ * legend names the group without a sighted-only caption above it.
+ */
+.fleet-filter-group {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.fleet-filter-group > legend {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.fleet-filter-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.fleet-filter-option + .fleet-filter-option {
+  border-top: 1px solid var(--line);
+}
+
+.fleet-filter-option:has(> input:checked) {
+  background: var(--surface-2);
+  font-weight: 600;
+}
+
+/* The count is the second thing in the row and the last thing pushed to the far edge — `margin-left: auto` for `.sidebar-badge`'s own reason. */
+.fleet-filter-count {
+  margin-left: auto;
+  font-size: var(--text-xs);
 }
 
 @media (max-width: 900px) {
@@ -1529,6 +1620,60 @@ code {
 }
 
 /*
+ * MAR-640. The favourite star: a sibling of `.fleet-pick` and
+ * `.fleet-card-link`, in the same top corner in every view. `z-index: 1`
+ * for `.fleet-pick`'s own reason — above the stretched whole-card link, so a
+ * press here stars the agent instead of opening it.
+ *
+ * Quiet until asked for: `opacity` rather than `display`, so the button is
+ * always in the tab order (a keyboard user reaches it whether or not a
+ * pointer has ever hovered the card) and never announced as if it had just
+ * appeared. Once an agent is starred the button stays visible — a state
+ * that vanishes the moment the pointer moves away is not a state anybody
+ * can trust.
+ */
+.fleet-favourite {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--motion-fast) linear, color var(--motion-fast) linear;
+}
+
+.fleet-card:hover .fleet-favourite,
+.fleet-card:focus-within .fleet-favourite,
+.fleet-favourite:focus-visible,
+.fleet-favourite.is-favourite {
+  opacity: 1;
+}
+
+.fleet-favourite:hover {
+  color: var(--accent);
+}
+
+.fleet-favourite.is-favourite {
+  color: var(--accent);
+}
+
+.fleet-favourite:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/*
  * The portrait tile.
  *
  * The concept draws the character on a filled square inside the card, and that
@@ -1608,29 +1753,57 @@ code {
   overflow-wrap: anywhere;
 }
 
+/*
+ * MAR-640. Rows' own addition — see `FleetCard`'s header on why this exists
+ * only when `view === "rows"` rather than being drawn everywhere and hidden.
+ * Truncated to the one line the issue asks for: a dense row has no second
+ * line to give a sentence that used to run to three on the wide card the
+ * chief now speaks it from (MAR-612).
+ */
+.fleet-goal {
+  margin: 0;
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---------------------------------------------------------------------- *
- * Three tracks, one card (MAR-612)
+ * Three tracks, one card (MAR-612, amended MAR-640)
  *
- * `lib/views/fleet-view.ts` states the rule these rules exist under: a view may
- * change **the track the cards are laid on and nothing a card says.** So there is
- * no `display: none` on a card's content anywhere below, and every selector
- * reaches the list or the card's own axis. The card's contents are
- * `app/_components/fleet-card.tsx` and are identical in all three.
+ * `lib/views/fleet-view.ts:29-46` states the rule these rules exist under: a
+ * view may change **the track the cards are laid on**, and until MAR-640 the
+ * second half of that sentence was **nothing a card says**. MAR-640 amends
+ * it deliberately rather than dropping it: a view may still never *hide* a
+ * fact the other two show, and there is still no `display: none` on a
+ * card's content anywhere below — but Rows may now *draw* a fact the other
+ * two do not, `.fleet-goal` above, because a dense row has room a square
+ * tile never did. That addition lives in `FleetCard` as a conditional
+ * render, never as a stylesheet rule, so this section's own promise —
+ * nothing here hides a card's content — is still exactly as true as it was.
  *
  * The attribute is on `<html>`, written before first paint by `FleetViewScript`.
  * **Grid carries no attribute at all** — the default writes nothing, so the
  * rules above are the grid and these are the departures from it.
  * ---------------------------------------------------------------------- */
 
-/* ── Rows: one card to a row, three on screen ────────────────────────────
+/* ── Rows: one card to a row, dense enough for the fleet at a glance ─────
  *
- * One column, and a card short enough that three fit in the same two-thirds
- * the grid uses for two rows of three. The height that makes that true is
- * MAR-634's bound at the bottom of this section; what is here is the shape.
+ * One column, and a row short enough that a screenful shows most fleets
+ * without scrolling — the height that makes that true is the density-keyed
+ * bound at the bottom of this section; what is here is the shape.
  *
  * The card turns on its side: portrait beside the name, because a full-width
- * card with a 200px character centred above a label is mostly empty. The
- * sprite is **moved, never resized**.
+ * card with a 200px character centred above a label is mostly empty.
+ *
+ * MAR-640 shrinks the portrait itself, which MAR-639's own comment on this
+ * rule once called out as something this view would never do — "the sprite
+ * is moved, never resized". That held while Rows was a wide restatement of
+ * the grid's own 224px card; it does not hold for a ~72px row, where a
+ * 100px portrait would be taller than the row around it. The sprite is
+ * still cropped rather than resampled at every size it is drawn at
+ * (`.fleet-portrait`'s own rule), which is the property that comment was
+ * actually protecting.
  */
 [data-fleet-view="rows"] .row-list.fleet-grid {
   max-width: none;
@@ -1639,32 +1812,103 @@ code {
   justify-content: stretch;
 }
 
-[data-fleet-view="rows"] .fleet-pick {
+/*
+ * MAR-640. The place badge (`.fleet-marks`) moves into the row instead of
+ * standing on its own line above `.fleet-pick`: at a ~72px target the
+ * measured content proved this the load-bearing half of the anatomy, not a
+ * cosmetic one — a second stacked line was the difference between a row
+ * that fit the density bound and one whose own content forced `minmax`'s
+ * `min-content` floor past it regardless of what the bound said, on the
+ * exact "the floor is what makes the bound safe" property MAR-634's own
+ * comment states for the grid. `order` puts it after the identity cluster
+ * so "place" still reads beside "last-run", the issue's own pairing.
+ */
+[data-fleet-view="rows"] .fleet-card {
   flex-direction: row;
   align-items: center;
-  gap: var(--space-4);
-  text-align: start;
+  padding: var(--space-1) var(--space-2);
 }
 
-[data-fleet-view="rows"] .fleet-portrait {
-  width: 100px;
-  height: 100px;
+[data-fleet-view="rows"] .fleet-marks {
+  order: 2;
+  flex: none;
+}
+
+[data-fleet-view="rows"] .fleet-pick {
+  order: 1;
+  flex: 1 1 auto;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  text-align: start;
 }
 
 /*
- * MAR-639. The identity stack sits beside the portrait rather than under it
- * in this view, so it is left-aligned rather than centred and carries no top
- * margin of its own — `.fleet-pick`'s own `gap` between the portrait and this
- * stack already gives it room.
+ * MAR-640. 56px comfortable — the issue's own number — and a smaller
+ * compact size, both chosen so portrait + this section's tightened padding
+ * stay under the row's own density-keyed height bound rather than forcing
+ * it open: see the desktop block below for the two numbers this has to fit.
+ */
+[data-fleet-view="rows"] .fleet-portrait {
+  width: 56px;
+  height: 56px;
+}
+
+[data-fleet-view="rows"][data-density="compact"] .fleet-portrait {
+  width: 40px;
+  height: 40px;
+}
+
+/*
+ * MAR-640. The row anatomy: name and goal grow on the left; the status mark
+ * and the last-run line form a second, fixed-width column on the right.
+ *
+ * A CSS grid rather than a second flex axis, because the four facts stay
+ * **flat siblings in the DOM** — `.fleet-name`, `.fleet-goal`,
+ * `.fleet-mark-*` and `.fleet-last-run`, in that document order, unchanged
+ * from Grid and Spotlight — and only `grid-template-areas` can place four
+ * flat siblings into two rows of two columns without either reordering them
+ * (which would draw the name *after* the status mark in Grid and Spotlight,
+ * where the stack is centred and order is what makes it read top-to-bottom
+ * as status-then-name) or wrapping them in new elements JSX would have to
+ * render differently per view.
+ *
+ * The never-run case has no `.fleet-last-run` at all — `FleetCard`'s own
+ * branch — so `status` sits alone in its row of the named grid and the cell
+ * below it is simply empty, which is the correct picture of "nothing to
+ * report yet" rather than a gap needing a placeholder.
  */
 [data-fleet-view="rows"] .fleet-identity {
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(7rem, auto);
+  grid-template-areas:
+    "name   status"
+    "goal   lastrun";
+  column-gap: var(--space-3);
+  align-items: center;
   margin-top: 0;
   text-align: start;
+  width: 100%;
 }
 
 [data-fleet-view="rows"] .fleet-name {
+  grid-area: name;
   font-size: var(--text-base);
+}
+
+[data-fleet-view="rows"] .fleet-goal {
+  grid-area: goal;
+}
+
+[data-fleet-view="rows"] .fleet-mark {
+  grid-area: status;
+  justify-self: end;
+}
+
+[data-fleet-view="rows"] .fleet-last-run {
+  grid-area: lastrun;
+  justify-self: end;
 }
 
 /*
@@ -1675,13 +1919,58 @@ code {
  * interfaces and the reason it is allowed here.
  */
 @media (max-width: 900px) {
+  /*
+   * MAR-640. `.fleet-card` and `.fleet-pick` both go back to a column at
+   * this width — the row-height bound below is desktop-only for MAR-634's
+   * own reason, so there is no budget being protected here and the card is
+   * free to be the full-height, fully-stacked shape Grid already draws.
+   */
+  [data-fleet-view="rows"] .fleet-card {
+    flex-direction: column;
+    padding: var(--density-card-p);
+  }
+
+  [data-fleet-view="rows"] .fleet-marks {
+    order: 0;
+  }
+
   [data-fleet-view="rows"] .fleet-pick {
+    order: 0;
     flex-direction: column;
     text-align: center;
   }
 
+  [data-fleet-view="rows"] .fleet-portrait,
+  [data-fleet-view="rows"][data-density="compact"] .fleet-portrait {
+    width: 100px;
+    height: 100px;
+  }
+
   [data-fleet-view="rows"] .fleet-name {
     margin-top: var(--space-2);
+  }
+
+  /*
+   * MAR-640. The two-column cluster is a desktop-width shape: a fixed 7rem
+   * status column beside a name column that has already given up most of
+   * its own width is the same "two rectangles fighting over 375px" defect
+   * MAR-590 fixed on the grid. Collapsed to one column here, reading
+   * top-to-bottom the same order Grid and Spotlight already draw it in.
+   */
+  [data-fleet-view="rows"] .fleet-identity {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "name"
+      "goal"
+      "status"
+      "lastrun";
+    justify-items: center;
+    text-align: center;
+  }
+
+  [data-fleet-view="rows"] .fleet-mark,
+  [data-fleet-view="rows"] .fleet-last-run {
+    justify-self: center;
   }
 }
 
@@ -1979,6 +2268,28 @@ code {
     --fleet-spot: clamp(13rem, 16vw, 20rem);
     grid-auto-rows: minmax(min-content, 22rem);
     align-content: safe center;
+  }
+
+  /*
+   * MAR-640. Rows' own height, at this selector's higher specificity over
+   * the shared `--fleet-card` bound above — Henrik's own numbers, ~72px
+   * comfortable and ~56px compact, floored at `min-content` for
+   * `tests/fleet-view.test.ts`'s own reason: the bound must give way before
+   * it clips a wrapped name.
+   *
+   * A density-keyed row height is still density changing *only spacing* —
+   * `lib/views/density.ts`'s rule, which binds `[data-density="compact"]` in
+   * `app/tokens.css` and says nothing about a compound selector combining it
+   * with a view here. Nothing about what a row *shows* changes between the
+   * two heights; only how much air is around it does, which is the whole of
+   * what density is for.
+   */
+  [data-fleet-view="rows"] .row-list.fleet-grid {
+    grid-auto-rows: minmax(min-content, 4.5rem);
+  }
+
+  [data-fleet-view="rows"][data-density="compact"] .row-list.fleet-grid {
+    grid-auto-rows: minmax(min-content, 3.5rem);
   }
 }
 
