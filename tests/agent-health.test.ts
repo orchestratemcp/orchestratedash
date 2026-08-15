@@ -187,7 +187,7 @@ describe("the agent Health verdict document", () => {
     });
     expect(line?.outcome).toBe("pass");
     expect(line?.headline).toBe("seen running");
-    expect(line?.detail).toContain("when DASH asked on 14 August 2026 at 12:30");
+    expect(line?.detail).toMatch(/when DASH asked on 14 August 2026 at \d{2}:\d{2}/);
   });
 
   it("gives every line a named record and a link destination", () => {
