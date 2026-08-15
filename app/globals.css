@@ -2312,7 +2312,21 @@ code {
   overflow: hidden;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: stretch;
+  /*
+   * MAR-648. The chief says its piece at its own height; the composer takes the
+   * rest of the band.
+   *
+   * Before the composer existed every child sat on one implicit row and the
+   * band's spare height went into that row, which was invisible with only a
+   * sentence in it. A second row stopped it being invisible: the sentence row
+   * kept stretching, the composer floated in the middle of the band, and at
+   * 375px — where the band is short enough that a `1fr` row collapses to
+   * nothing — the glyph overflowed its own row and was painted over the buttons
+   * beneath it. The capture run caught that. Nothing overflowed the page and no
+   * test could have seen it.
+   */
+  grid-template-rows: auto minmax(0, 1fr);
+  align-items: start;
   gap: var(--space-4);
   margin: 0;
   padding: var(--space-4) var(--space-5);
@@ -2385,14 +2399,86 @@ code {
     display: none;
   }
 
+  /*
+   * MAR-648. A stack, not a grid, and the band scrolls.
+   *
+   * Two separate failures, both caught by the capture run and neither visible
+   * to a test. The rigid `minmax(0, 1fr)` first row collapsed to nothing at
+   * 375px and let the glyph paint over the buttons beneath it. Replacing it
+   * with three auto rows fixed that and left the second: four children in a
+   * two-column grid are placed implicitly, and the composer landed back on the
+   * actions row on top of the Ask button.
+   *
+   * Placing all four explicitly would work and would have to be undone for the
+   * open room, where two of them are not rendered at all. A flex column has no
+   * placement to get wrong: the children stack in source order whichever of
+   * them exist. The glyph moves above the sentence rather than beside it, which
+   * at this width is the better reading of the two anyway — the speaker over
+   * what was said.
+   *
+   * `overflow: auto` because at 375px the band genuinely cannot fit a sentence,
+   * two buttons and a composer, and `hidden` resolved that by cutting the box a
+   * person is meant to type into in half. Scrolling keeps everything reachable,
+   * and the composer is last in the band, which is where a thumb already is.
+   */
   .chief-band {
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    overflow: auto;
   }
 
   .chief-actions {
-    grid-column: 1 / -1;
     justify-content: stretch;
+  }
+
+  /*
+   * The chief's sentence stops being a scroll container and becomes text.
+   *
+   * `.chief-line` carries `min-height: 0; overflow: auto` so it can scroll
+   * inside the grid's fixed row. In a flex column those two combine into
+   * something else entirely: the default `flex-shrink: 1` plus a zero minimum
+   * lets it collapse to no height at all when the band is tight, which is what
+   * the 375px capture showed — a band holding a glyph and two buttons and no
+   * sentence, with nothing overflowing and nothing to measure.
+   */
+  .chief-line {
+    flex: none;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  /*
+   * Half the stage rather than a third, and only here.
+   *
+   * At 1280 a third of the page is plenty for a sentence and a composer. At
+   * 375 it is about 230px, which is not enough for a sentence, two buttons and
+   * a box — and the box is the one that ended up below the fold. The cards give
+   * up height they were already scrolling through at this width; the composer
+   * is on screen on arrival, which is the whole claim MAR-648 makes for it.
+   */
+  .fleet-stage {
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1.4fr);
+  }
+
+  /*
+   * The glyph gives up two thirds of its area here, and that is a fix rather
+   * than a tidy-up.
+   *
+   * At 375px the band has about 230px to hold a sentence, two buttons and a
+   * composer, and at 48px square the speaker's portrait alone was a fifth of
+   * it — enough to push the box below the fold. MAR-612 was corrected once for
+   * exactly this: *"a view whose distinguishing feature is off screen on
+   * arrival is a view nobody would choose"*, said then about the chief itself
+   * and true now about the thing MAR-648 calls the front door.
+   *
+   * It stays a real glyph rather than disappearing, because it is who is
+   * speaking and the replies below are attributed to it.
+   */
+  .chief-glyph {
+    width: 24px;
+    height: 24px;
   }
 
   .chief-actions > .button-link {
@@ -7131,16 +7217,27 @@ main:has(.agent-cockpit) {
   grid-template-rows: minmax(0, 1fr) minmax(0, 2fr);
 }
 
-/* Full width of the band's three columns, under the glyph and the line. */
+/*
+ * Full width of the band's three columns, under the glyph and the line — and
+ * docked to the bottom of the space that leaves.
+ *
+ * `align-self: end` is Henrik's own word for this surface: *"dedicate a space at
+ * the bottom"*. It also makes the composer's position independent of how much
+ * the chief happens to be saying above it, so a band whose sentence grows by a
+ * line does not move the box under somebody's cursor.
+ */
 .chief-chat {
   grid-column: 1 / -1;
+  align-self: end;
   display: grid;
   gap: var(--space-2);
   min-height: 0;
+  width: 100%;
 }
 
-.chief-band.is-chatting {
-  grid-template-rows: auto minmax(0, 1fr);
+/* Open, the room wants the height, so the chat stops docking and fills. */
+.chief-band.is-chatting .chief-chat {
+  align-self: stretch;
 }
 
 .chief-room {
