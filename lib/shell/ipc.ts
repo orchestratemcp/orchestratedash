@@ -365,6 +365,27 @@ export const COMMANDS = {
   },
 
   /*
+   * MAR-640. Whether the reader has starred one agent, for the fleet rail's
+   * own filter.
+   *
+   * `identity.*`, beside `identity.rename` and for its own reason: this is
+   * the reader's own record of an agent, contacts nobody, and a row exists
+   * whether the flag is on or off — `favourite` is required rather than
+   * optional, so a caller cannot ask "change this" without saying to what.
+   *
+   * `mutates` is true — a row changes. `irreversible` is false: the previous
+   * state is one more press away.
+   */
+  "identity.favourite": {
+    effect: "Mark — or unmark — one agent as a favourite. Contacts nobody.",
+    payload_keys: ["agent_id", "favourite"],
+    payload_types: { favourite: "boolean" },
+    required_keys: ["agent_id", "favourite"],
+    mutates: true,
+    irreversible: false,
+  },
+
+  /*
    * MAR-583. Which model an agent uses.
    *
    * **An eighth family, and it is one because the question it answers is one.**
@@ -1216,20 +1237,25 @@ export function isGlanceCommandName(value: CommandName): value is GlanceCommandN
 }
 
 /**
- * The one member of the rename family (MAR-589).
+ * The reader's own record of one agent (MAR-589, MAR-640).
  *
- * One member is not a shape waiting to be filled — see `GLANCE_ACTIONS`'s own
- * note for the same standing above.
+ * One member until MAR-640 makes it two, on `FOLDER_ACTIONS`' own terms: the
+ * question this map answers widens by exactly one word — what does DASH
+ * itself remember about an agent, for the reader rather than about the agent
+ * — and a name and a star are two facts of that one story. Both members
+ * contact nobody, both are DASH's own record rather than the manifest's, and
+ * both are one more press away from whatever they replaced.
  */
-export const RENAME_ACTIONS = {
+export const IDENTITY_ACTIONS = {
   "identity.rename": "rename",
+  "identity.favourite": "favourite",
 } as const;
 
-export type RenameCommandName = keyof typeof RENAME_ACTIONS;
-export type RenameAction = (typeof RENAME_ACTIONS)[RenameCommandName];
+export type IdentityCommandName = keyof typeof IDENTITY_ACTIONS;
+export type IdentityAction = (typeof IDENTITY_ACTIONS)[IdentityCommandName];
 
-export function isRenameCommandName(value: CommandName): value is RenameCommandName {
-  return Object.hasOwn(RENAME_ACTIONS, value);
+export function isIdentityCommandName(value: CommandName): value is IdentityCommandName {
+  return Object.hasOwn(IDENTITY_ACTIONS, value);
 }
 
 /**
@@ -1446,7 +1472,7 @@ type UnroutedCommand = Exclude<
   | WorkspaceCommandName
   | SampleCommandName
   | GlanceCommandName
-  | RenameCommandName
+  | IdentityCommandName
   | FolderCommandName
   | ModelCommandName
   | NotifyCommandName
@@ -1749,10 +1775,10 @@ export function executeCommand(review: CommandReview): CommandResult {
     // every entry above: succeeding here would report a look recorded that was
     // not, and the fleet card would go on saying an output is new.
     isGlanceCommandName(review.command) ||
-    // MAR-589. Writes a row through `node:sqlite`, the same reason as the entry
-    // immediately above: succeeding here would report a rename that never
-    // touched the store.
-    isRenameCommandName(review.command) ||
+    // MAR-589, MAR-640. Writes a row through `node:sqlite`, the same reason as
+    // the entry immediately above: succeeding here would report a rename or a
+    // star that never touched the store.
+    isIdentityCommandName(review.command) ||
     // MAR-584. Two of the three read the folder off disk and the third opens a
     // window on it, none of which a sandboxed preload may do. `folder.check`
     // matters most here despite changing nothing: succeeding without looking
@@ -2213,17 +2239,20 @@ export interface DispatchContext {
    */
   glanceAction(action: GlanceAction, target: { agent_id: string }): Promise<{ ok: boolean }>;
   /**
-   * Set — or clear — the name DASH shows for one agent (MAR-589).
+   * The reader's own record of one agent: its DASH-given name, and whether
+   * it is starred (MAR-589, MAR-640).
    *
    * Injected for `glanceAction`'s own reason immediately above: the real
    * implementation reaches `node:sqlite`, and this module has to stay
    * importable from a sandboxed preload. An absent `display_name` clears the
-   * rename; see `RENAME_ACTIONS`'s own note for why that is the field's only
-   * way to mean "put this back".
+   * rename; see `IDENTITY_ACTIONS`'s own note for why that is the field's
+   * only way to mean "put this back". `favourite` is read only when `action`
+   * is `"favourite"`; `reviewCommand`'s payload rules keep the two members'
+   * fields from crossing.
    */
   agentAction(
-    action: RenameAction,
-    target: { agent_id: string; display_name?: string },
+    action: IdentityAction,
+    target: { agent_id: string; display_name?: string; favourite?: boolean },
   ): Promise<{ ok: boolean; refusal?: string }>;
   /**
    * Choose a model, set one step's level, or ask what models there are (MAR-583).
@@ -2787,20 +2816,26 @@ export async function dispatchCommand(
     return { ok: result.ok, request_id: review.audit.request_id };
   }
 
-  if (isRenameCommandName(review.command)) {
+  if (isIdentityCommandName(review.command)) {
     /*
-     * MAR-589. `display_name` is absent from `review.payload` whenever the
-     * renderer's `dropUnset` dropped it — the field's whole vocabulary for
-     * "put this back to the manifest's own name" — so it is read optionally
-     * rather than defaulted to an empty string, which `reviewCommand` would
-     * already have refused as "present but absent" if it had arrived that way.
+     * MAR-589, MAR-640. `display_name` is absent from `review.payload`
+     * whenever the renderer's `dropUnset` dropped it — the field's whole
+     * vocabulary for "put this back to the manifest's own name" — so it is
+     * read optionally rather than defaulted to an empty string, which
+     * `reviewCommand` would already have refused as "present but absent" if
+     * it had arrived that way. `favourite` is likewise read optionally: the
+     * payload rules only require it on `identity.favourite`, so a rename
+     * carries none and `performIdentityAction` reads only the field its own
+     * `action` names.
      */
-    const result = await context.agentAction(RENAME_ACTIONS[review.command], {
+    const result = await context.agentAction(IDENTITY_ACTIONS[review.command], {
       agent_id: String(review.payload["agent_id"]),
       display_name:
         review.payload["display_name"] === undefined
           ? undefined
           : String(review.payload["display_name"]),
+      favourite:
+        review.payload["favourite"] === undefined ? undefined : review.payload["favourite"] === true,
     });
     return { ok: result.ok, request_id: review.audit.request_id, reason: result.refusal };
   }

@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 
 import { agentWorkspaceHref } from "../_data/routes";
 import { OAvatar } from "./o-avatar";
+import { useFleetView } from "./fleet-view-toggle";
 import { describeAgentHosting } from "../../lib/host-sighting";
 import { sightingFor, type SightingLog } from "../../lib/host-sightings";
 import { plainDay } from "../../lib/copy/when";
@@ -59,16 +60,35 @@ function statusTone(status: FleetCardStatus | null): "warn" | "accent" | null {
  * stop. `.fleet-pick` keeps `z-index: 1` in the stylesheet so its own click
  * — selecting the card, for the chief — wins over the stretched link
  * underneath it.
+ *
+ * ## Rows adds, it never hides (MAR-640)
+ *
+ * `lib/views/fleet-view.ts:29-46`'s rule — a view may change the track and
+ * nothing a card says — is amended rather than dropped: the card still never
+ * *hides* a fact shared with the other two views, but Rows draws one it does
+ * not, `.fleet-goal`, gated on `view === "rows"` in this component rather
+ * than on a stylesheet `display: none`. That keeps the amendment checkable
+ * the same way the original rule was: `tests/fleet-view.test.ts` still scans
+ * every `[data-fleet-view]` rule for a hidden fact, and an *addition* that
+ * exists in one view's DOM and not the others' never matches that pattern.
  */
 export function FleetCard({
   agent,
   selected,
   onSelect,
+  onToggleFavourite,
 }: {
   agent: AgentRow;
   selected: boolean;
   onSelect: () => void;
+  /**
+   * Star — or unstar — this agent (MAR-640). Optional so every existing
+   * caller — the render tests included — keeps compiling; a card with no
+   * handler simply draws no star.
+   */
+  onToggleFavourite?: (next: boolean) => void;
 }): ReactNode {
+  const [view] = useFleetView();
   const status = describeFleetCardStatus({
     running: agent.running,
     run_count: agent.run_count,
@@ -76,12 +96,13 @@ export function FleetCard({
   });
   const place = describeFleetPlace(agent.hosted_on);
   const tone = statusTone(status?.id ?? null);
+  const markSize = view === "rows" ? 16 : 12;
 
   return (
     <article className={selected ? "row-card fleet-card is-selected" : "row-card fleet-card"}>
       <div className="fleet-marks">
         <span className={`fleet-mark fleet-mark-${place.id}`}>
-          <FleetMarkGlyph name={place.id} />
+          <FleetMarkGlyph name={place.id} size={markSize} />
           {place.label}
         </span>
       </div>
@@ -146,14 +167,104 @@ export function FleetCard({
             </>
           )}
           <span className="fleet-name">{agent.title}</span>
+          {/*
+            MAR-640. Rows' own addition: the goal was moved off the card and
+            onto the chief at MAR-612, and stays there in Grid and Spotlight —
+            this is not that sentence coming back, it is Rows drawing a
+            one-line version because a dense row has the width to say what a
+            square tile does not.
+          */}
+          {view === "rows" ? <p className="fleet-goal muted">{agent.goal}</p> : null}
         </span>
       </button>
+      {onToggleFavourite === undefined ? null : (
+        <FavouriteButton
+          agent={agent.title}
+          favourite={agent.favourite}
+          onToggle={onToggleFavourite}
+        />
+      )}
       <Link
         className="fleet-card-link"
         href={agentWorkspaceHref(agent.name)}
         aria-label={`Open ${agent.title}`}
       />
     </article>
+  );
+}
+
+/**
+ * Star — or unstar — one agent (MAR-640).
+ *
+ * A sibling of `.fleet-pick`, never nested inside it — the same reason
+ * `.fleet-card-link` sits beside it rather than wrapping it: two controls
+ * sharing one tab stop is not one control. `z-index: 1` in the stylesheet
+ * puts it above the stretched whole-card link for the same reason
+ * `.fleet-pick` needs it, so a press here stars the agent instead of
+ * opening it.
+ *
+ * Visible on hover or focus, and always visible once favourited — an
+ * affordance nobody can find by guessing is not a feature, and a starred
+ * agent's own state must not disappear the moment the pointer moves away.
+ * `aria-pressed` carries the state for anyone not reading colour, on the
+ * same standing `FleetCard`'s own `.fleet-pick` already gives selection.
+ */
+function FavouriteButton({
+  agent,
+  favourite,
+  onToggle,
+}: {
+  agent: string;
+  favourite: boolean;
+  onToggle: (next: boolean) => void;
+}): ReactNode {
+  return (
+    <button
+      type="button"
+      className={favourite ? "fleet-favourite is-favourite" : "fleet-favourite"}
+      aria-pressed={favourite}
+      aria-label={favourite ? `Remove ${agent} from favourites` : `Add ${agent} to favourites`}
+      title={favourite ? "Remove from favourites" : "Add to favourites"}
+      onClick={() => {
+        onToggle(!favourite);
+      }}
+    >
+      <FavouriteGlyph />
+    </button>
+  );
+}
+
+/** A blocky five-point star, `sidebar-icons.tsx`'s 12×12 grid. */
+const FAVOURITE_STAR: readonly Px[] = [
+  [5, 0, 2, 2],
+  [4, 2, 4, 2],
+  [1, 4, 10, 2],
+  [3, 6, 6, 2],
+  [2, 8, 2, 2],
+  [8, 8, 2, 2],
+];
+
+function FavouriteGlyph(): ReactNode {
+  return (
+    <svg
+      className="fleet-favourite-glyph"
+      viewBox="0 0 12 12"
+      width={14}
+      height={14}
+      aria-hidden="true"
+      shapeRendering="crispEdges"
+    >
+      {FAVOURITE_STAR.map(([x, y, w, h]) => (
+        <rect
+          key={`${String(x)}-${String(y)}-${String(w)}-${String(h)}`}
+          x={x}
+          y={y}
+          width={w}
+          height={h}
+          fill="currentColor"
+        />
+      ))}
+    </svg>
   );
 }
 
@@ -355,7 +466,18 @@ function FleetMarkGlyph({ name, size = 12 }: { name: MarkName; size?: 12 | 16 })
       shapeRendering="crispEdges"
     >
       {MARKS[name].map(([x, y, w, h]) => (
-        <rect key={`${String(x)}-${String(y)}`} x={x} y={y} width={w} height={h} fill="currentColor" />
+        <rect
+          // MAR-640. `local`'s own two rects share an `x, y` origin — a
+          // wide bar and a tall one both starting at the screen's corner —
+          // so `x-y` alone collided and React warned on every card. The
+          // full rect is unique wherever the corner is not.
+          key={`${String(x)}-${String(y)}-${String(w)}-${String(h)}`}
+          x={x}
+          y={y}
+          width={w}
+          height={h}
+          fill="currentColor"
+        />
       ))}
     </svg>
   );
