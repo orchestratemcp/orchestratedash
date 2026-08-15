@@ -131,7 +131,16 @@ export const AGENT_TILE_COPY = {
    * when they ask.
    */
   where: "Runs on",
-  /** The disclosure under the tiles. */
+  /**
+   * The disclosure under the tiles, and read by nothing since MAR-641.
+   *
+   * MAR-609 folded seven sections behind it; the cockpit gave them an address
+   * instead, so there is no summary to label. Kept for one turn rather than
+   * deleted, because `AGENT_STAGES` has one more stage to gain and a record
+   * that has to fold again would want the same three words — and because a
+   * string in this module costs nothing while a second opinion about what to
+   * call the record costs a surface.
+   */
   details_summary: "Show the full record",
   /**
    * The model tile's value in the three cases where it is not a model id.

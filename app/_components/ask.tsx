@@ -43,36 +43,21 @@ import { askAgentQuestion, submitConnectionCommand } from "../_data/source";
  * connect flow so the fix is a button rather than an instruction to go and find
  * a page.
  */
-export function AskAgent({
-  ask,
-  canAct,
-  onAsked,
-  setFeedback,
-}: {
-  ask: AgentAskView;
-  canAct: boolean;
-  /** Re-read the workspace, so the answer that just landed is drawn. */
-  onAsked: () => void;
-  setFeedback: Dispatch<SetStateAction<{ ok: boolean; message: string } | null>>;
-}): ReactNode {
-  return (
-    <AskThread ask={ask} canAct={canAct} onAsked={onAsked} setFeedback={setFeedback}>
-      <AskComposer ask={ask} canAct={canAct} onAsked={onAsked} setFeedback={setFeedback} />
-    </AskThread>
-  );
-}
-
 /**
- * The conversation, without the box you type in (MAR-641).
+ * The conversation, without the box you type in (MAR-545, split by MAR-641).
  *
  * ## Why the two are separable at all
  *
  * The cockpit pins one chat bar to the bottom of a frame that never scrolls and
  * puts the thread on a stage that does. They are one feature in two bands of
- * the window, so they are two components — and `AskAgent` above composes them
- * back into the single section every other caller has always rendered, because
- * a split that forced every caller to know about it would be a fork rather than
- * a move.
+ * the window, so they are two components.
+ *
+ * There was an `AskAgent` here that composed them back into the single section
+ * this file used to export, kept through the rebuild so that no caller had to
+ * know about the split. It is gone, because after the rebuild it had no caller
+ * except its own test — and the first sentence of `app/agents/detail/page.tsx`
+ * is about what a dead thing that looks alive costs the next person. The test
+ * renders the composition directly, which is also what the cockpit does.
  *
  * ## The estimate stays with the thread, and that is the placement decision
  *
