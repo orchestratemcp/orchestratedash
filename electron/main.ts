@@ -101,7 +101,7 @@ import {
   formatAuditLine,
   type HostAction,
   type HostActionResult,
-  type RenameAction,
+  type IdentityAction,
   type RunnerLifecycleResult,
   type WorkspaceAction,
   type WorkspaceActionResult,
@@ -159,6 +159,7 @@ import {
   recordAgentLook,
   renameAgent,
   saveHost,
+  setAgentFavourite,
 } from "../lib/store";
 // MAR-576. The folder is authoritative (ADR 0008), so the re-import reads it
 // before the row — see `refreshSampleAgent`.
@@ -836,11 +837,12 @@ export function registerCommandChannel(
         recordAgentLook(target.agent_id);
         return Promise.resolve({ ok: true });
       },
-      // MAR-589. Set or clear the name DASH shows for one agent. Every gate is
-      // inside `performAgentRenameAction`, beside the write it guards, for
+      // MAR-589, MAR-640. The reader's own record of one agent — its
+      // DASH-given name, and whether it is starred. Every gate is inside
+      // `performIdentityAction`, beside the writes it guards, for
       // `refreshSampleAgent`'s reason.
       agentAction: (action, target) =>
-        Promise.resolve(performAgentRenameAction(action, target)),
+        Promise.resolve(performIdentityAction(action, target)),
       // MAR-584. The one route in DASH that accepts a document somebody else's
       // editor wrote. Every gate is inside `electron/folder-update.ts`, beside
       // the reads and the write it guards, for `refreshSampleAgent`'s reason.
@@ -1167,17 +1169,25 @@ function refreshSampleAgent(agentId: string): { ok: boolean; refusal?: string; d
 }
 
 /**
- * Set — or clear — the name DASH shows for one agent (MAR-589).
+ * The reader's own record of one agent: its DASH-given name, and whether it
+ * is starred (MAR-589, MAR-640).
  *
- * The only gate is `renameAgent`'s own: the agent has to exist, and a name
- * that survives trimming has to be non-empty and not absurdly long. Both are
- * checked beside the write in `lib/store.ts`, `refreshSampleAgent`'s reason
- * for its own gate living beside its write rather than at this seam.
+ * Renaming's only gate is `renameAgent`'s own: the agent has to exist, and a
+ * name that survives trimming has to be non-empty and not absurdly long.
+ * Starring has none — `setAgentFavourite` upserts either state and there is
+ * nothing a caller could send that is not a legitimate value for it. Both
+ * writes are checked beside themselves in `lib/store.ts`,
+ * `refreshSampleAgent`'s reason for its own gate living beside its write
+ * rather than at this seam.
  */
-function performAgentRenameAction(
-  _action: RenameAction,
-  target: { agent_id: string; display_name?: string },
+function performIdentityAction(
+  action: IdentityAction,
+  target: { agent_id: string; display_name?: string; favourite?: boolean },
 ): { ok: boolean; refusal?: string } {
+  if (action === "favourite") {
+    setAgentFavourite(target.agent_id, target.favourite ?? false);
+    return { ok: true };
+  }
   const result = renameAgent(target.agent_id, target.display_name);
   if (!result.ok) {
     return { ok: false, refusal: result.errors.join(" ") };

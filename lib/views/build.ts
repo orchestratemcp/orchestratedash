@@ -86,6 +86,7 @@ import {
   listRuns,
   readAgentAvatar,
   readAgentDeploys,
+  readAgentFavourites,
   readHostDeploys,
   readAgentManifest,
   readEvidencePulls,
@@ -235,6 +236,9 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
       lastRunAt.set(run.agent, run.started_at);
     }
   }
+  // MAR-640. One read of the whole starred set, `live`'s own reason: the
+  // fleet page draws every card, so one statement beats one per row.
+  const favourites = readAgentFavourites();
 
   return {
     agents: listAgents(store).map((agent) => ({
@@ -285,6 +289,9 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
       // asks no server anything. See `AgentRow.hosted_on` for why this reverses
       // `deploy_targets`'s deliberate absence from this view.
       hosted_on: agentHostedOn(agent.name),
+      // MAR-640. The reader's own record, never the agent's — see
+      // `AgentRow.favourite`.
+      favourite: favourites.has(agent.name),
     })),
     // Composed here rather than in the page, so both hosts hand the renderer the
     // same sentence — the property this module exists to keep.

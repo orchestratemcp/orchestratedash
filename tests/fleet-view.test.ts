@@ -23,6 +23,7 @@ import {
   FLEET_VIEW_STORAGE_KEY,
   describeFleetView,
   parseFleetView,
+  stepRowsSelection,
   stepSpotlight,
   type FleetView,
 } from "../lib/views/fleet-view";
@@ -158,6 +159,30 @@ describe("stepping the spotlight", () => {
     expect(stepSpotlight(-1, 3, 1)).toBe(0);
     expect(stepSpotlight(1.5, 3, 1)).toBe(0);
     expect(stepSpotlight(0, 0, 1)).toBe(0);
+  });
+});
+
+describe("stepping Rows' selection (MAR-640)", () => {
+  it("moves one row at a time in both directions", () => {
+    expect(stepRowsSelection(1, 4, 1)).toBe(2);
+    expect(stepRowsSelection(1, 4, -1)).toBe(0);
+  });
+
+  it("clamps at both ends rather than wrapping — a list has a top and a bottom", () => {
+    expect(stepRowsSelection(3, 4, 1)).toBe(3);
+    expect(stepRowsSelection(0, 4, -1)).toBe(0);
+  });
+
+  it("is a no-op on a fleet of one", () => {
+    expect(stepRowsSelection(0, 1, 1)).toBe(0);
+    expect(stepRowsSelection(0, 1, -1)).toBe(0);
+  });
+
+  it("lands somewhere real when the fleet has shrunk underneath it", () => {
+    expect(stepRowsSelection(9, 3, 1)).toBe(0);
+    expect(stepRowsSelection(-1, 3, 1)).toBe(0);
+    expect(stepRowsSelection(1.5, 3, 1)).toBe(0);
+    expect(stepRowsSelection(0, 0, 1)).toBe(0);
   });
 });
 
