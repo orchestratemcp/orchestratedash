@@ -528,7 +528,8 @@ async function run(): Promise<void> {
 
     for (const viewport of VIEWPORTS) {
       for (const item of SCENES) {
-        const route = `/agents/detail?agent=${encodeURIComponent(item.agent)}`;
+        /* MAR-641. The model picker is on the cockpit's Settings stage. */
+        const route = `/agents/detail?agent=${encodeURIComponent(item.agent)}&stage=settings`;
         await go(window, route);
         const at = await resizeTo(window, viewport.width, viewport.height);
         // Reloaded after the resize as well: a page reads its view once, on

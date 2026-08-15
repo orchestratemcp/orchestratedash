@@ -1,8 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
+import { AGENT_COCKPIT_COPY } from "../../lib/copy/agent-page";
 import type { AgentAskView, AskExchangeView } from "../../lib/views/types";
+import { agentStageHref } from "../_data/routes";
 import { askAgentQuestion, submitConnectionCommand } from "../_data/source";
 
 /**
@@ -52,31 +55,49 @@ export function AskAgent({
   onAsked: () => void;
   setFeedback: Dispatch<SetStateAction<{ ok: boolean; message: string } | null>>;
 }): ReactNode {
-  const [question, setQuestion] = useState("");
-  const [busy, setBusy] = useState(false);
+  return (
+    <AskThread ask={ask} canAct={canAct} onAsked={onAsked} setFeedback={setFeedback}>
+      <AskComposer ask={ask} canAct={canAct} onAsked={onAsked} setFeedback={setFeedback} />
+    </AskThread>
+  );
+}
 
-  async function submit(): Promise<void> {
-    if (!ask.can_ask || question.trim().length === 0) {
-      return;
-    }
-    setBusy(true);
-    setFeedback(null);
-    const result = await askAgentQuestion({
-      agent_id: ask.ask.agent_id,
-      connection_id: ask.ask.connection_id,
-      field_id: ask.ask.field_id,
-      question: question.trim(),
-    });
-    setBusy(false);
-    if (result.ok) {
-      // Cleared only on success. A question that failed is still in the box, so
-      // pressing the button again is one press rather than typing it out again —
-      // and the row saying it failed is already in the history below.
-      setQuestion("");
-    }
-    setFeedback({ ok: result.ok, message: result.detail ?? "" });
-    onAsked();
-  }
+/**
+ * The conversation, without the box you type in (MAR-641).
+ *
+ * ## Why the two are separable at all
+ *
+ * The cockpit pins one chat bar to the bottom of a frame that never scrolls and
+ * puts the thread on a stage that does. They are one feature in two bands of
+ * the window, so they are two components — and `AskAgent` above composes them
+ * back into the single section every other caller has always rendered, because
+ * a split that forced every caller to know about it would be a fork rather than
+ * a move.
+ *
+ * ## The estimate stays with the thread, and that is the placement decision
+ *
+ * MAR-545's rule is that the cost sentence sits *above* the box: it is the
+ * thing that could change what somebody types, and under the button it is read
+ * after the decision. The thread is the last thing above the bar in the
+ * cockpit, so ending it with the estimate keeps that literally true — and the
+ * chat bar's own behaviour is what guarantees it, because focusing the bar
+ * moves the stage to this thread.
+ */
+export function AskThread({
+  ask,
+  canAct,
+  children,
+  onAsked,
+  setFeedback,
+}: {
+  ask: AgentAskView;
+  canAct: boolean;
+  /** The composer, for the caller that wants it inside the section. */
+  children?: ReactNode;
+  onAsked: () => void;
+  setFeedback: Dispatch<SetStateAction<{ ok: boolean; message: string } | null>>;
+}): ReactNode {
+  const [busy, setBusy] = useState(false);
 
   async function connect(): Promise<void> {
     if (ask.can_ask || ask.connect === null) {
@@ -109,8 +130,19 @@ export function AskAgent({
           <p className="muted wrap">{ask.purpose.detail}</p>
         </>
       ) : (
-        <>
-          <p className="wrap">{ask.blocked.headline}</p>
+        /*
+         * MAR-641 asks for a blocked chat to render as **one fix-it action
+         * card** in the stage, and this is it: the same three sentences this
+         * component has always drawn, in a box that says it is the thing
+         * standing between the person and a conversation. The card is a class
+         * rather than a new component — the arm already had the headline, the
+         * meaning and the one action that clears it, which is exactly what a
+         * fix-it card is.
+         */
+        <div className="ask-blocked-card">
+          <p className="wrap">
+            <strong>{ask.blocked.headline}</strong>
+          </p>
           <p className="muted wrap">{ask.blocked.meaning}</p>
           {ask.connect === null || !canAct ? (
             <p className="ask-next wrap">{ask.blocked.next_action}</p>
@@ -119,51 +151,19 @@ export function AskAgent({
               {ask.blocked.next_action}
             </button>
           )}
-        </>
+        </div>
       )}
 
       <AskHistory exchanges={ask.history} sourcesHeading={ask.sources_heading} />
 
       {ask.can_ask ? (
-        <div className="ask-compose">
+        <div className="ask-terms">
           {/* The estimate sits above the box, not under the button. It is the
               thing that could change what somebody types — a narrower question
               sends fewer saved reports — and a sentence about cost placed under
               the control it applies to is a sentence read after the decision. */}
           <p className="ask-estimate wrap">{ask.estimate.headline}</p>
           <p className="muted wrap">{ask.estimate.detail}</p>
-          {canAct ? (
-            <>
-              <label className="ask-field">
-                <span className="visually-hidden">{ask.purpose.headline}</span>
-                <textarea
-                  className="ask-input"
-                  rows={2}
-                  value={question}
-                  placeholder={ask.placeholder}
-                  disabled={busy}
-                  onChange={(event) => setQuestion(event.target.value)}
-                />
-              </label>
-              <button
-                type="button"
-                className="primary"
-                // Disabled on an empty box rather than refused on press: there is
-                // no sentence worth showing for "you typed nothing", and a button
-                // that charges an account should not be pressable with nothing to
-                // ask.
-                disabled={busy || question.trim().length === 0}
-                onClick={() => void submit()}
-              >
-                {busy ? ask.working : ask.submit}
-              </button>
-            </>
-          ) : (
-            /* Said rather than drawn disabled, `ModelChoice`'s reason: a greyed
-               box would read as a claim about the agent, and the true statement
-               is about which window this is. */
-            <p className="muted wrap">Open the installed DASH app to ask this agent a question.</p>
-          )}
           <p className="muted wrap ask-custody">{ask.custody}</p>
           {ask.spent === null ? null : <p className="muted wrap">{ask.spent}</p>}
           {ask.reported === null ? null : <p className="muted wrap">{ask.reported}</p>}
@@ -171,7 +171,183 @@ export function AskAgent({
       ) : ask.reported === null ? null : (
         <p className="muted wrap">{ask.reported}</p>
       )}
+
+      {children}
     </section>
+  );
+}
+
+/**
+ * The box you type a question into, and nothing else (MAR-545, split out by
+ * MAR-641).
+ *
+ * Renders nothing at all when there is nothing to ask with. That is not the
+ * silence `AgentControls` was filed against: the reason is on screen directly
+ * above, as the thread's fix-it card, and a disabled textarea under it would be
+ * the dead input this component's own header refuses.
+ */
+export function AskComposer({
+  ask,
+  canAct,
+  onAsked,
+  onFocus,
+  setFeedback,
+}: {
+  ask: AgentAskView;
+  canAct: boolean;
+  onAsked: () => void;
+  /** Called when the box takes focus, so the cockpit can show the thread. */
+  onFocus?: () => void;
+  setFeedback: Dispatch<SetStateAction<{ ok: boolean; message: string } | null>>;
+}): ReactNode {
+  const [question, setQuestion] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  if (!ask.can_ask) {
+    return null;
+  }
+
+  const flow = ask.ask;
+
+  async function submit(): Promise<void> {
+    if (question.trim().length === 0) {
+      return;
+    }
+    setBusy(true);
+    setFeedback(null);
+    const result = await askAgentQuestion({
+      agent_id: flow.agent_id,
+      connection_id: flow.connection_id,
+      field_id: flow.field_id,
+      question: question.trim(),
+    });
+    setBusy(false);
+    if (result.ok) {
+      // Cleared only on success. A question that failed is still in the box, so
+      // pressing the button again is one press rather than typing it out again —
+      // and the row saying it failed is already in the history below.
+      setQuestion("");
+    }
+    setFeedback({ ok: result.ok, message: result.detail ?? "" });
+    onAsked();
+  }
+
+  if (!canAct) {
+    /* Said rather than drawn disabled, `ModelChoice`'s reason: a greyed box
+       would read as a claim about the agent, and the true statement is about
+       which window this is. */
+    return (
+      <div className="ask-compose">
+        <p className="muted wrap">Open the installed DASH app to ask this agent a question.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="ask-compose">
+      <label className="ask-field">
+        <span className="visually-hidden">{ask.purpose.headline}</span>
+        <textarea
+          className="ask-input"
+          rows={2}
+          value={question}
+          placeholder={ask.placeholder}
+          disabled={busy}
+          onChange={(event) => setQuestion(event.target.value)}
+          onFocus={onFocus}
+          /*
+           * Enter sends, Shift+Enter is a new line — the wireframe's own
+           * sentence for the pinned bar, and the convention of every chat box a
+           * person has used. `Escape` is deliberately not bound: this box holds
+           * a question somebody typed, and a key that discarded it would be a
+           * destructive control with no confirmation.
+           */
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              void submit();
+            }
+          }}
+        />
+      </label>
+      <button
+        type="button"
+        className="primary"
+        // Disabled on an empty box rather than refused on press: there is no
+        // sentence worth showing for "you typed nothing", and a button that
+        // charges an account should not be pressable with nothing to ask.
+        disabled={busy || question.trim().length === 0}
+        onClick={() => void submit()}
+      >
+        {busy ? ask.working : ask.submit}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The chat bar pinned to the bottom of the cockpit (MAR-641).
+ *
+ * One band of the frame, on screen whatever stage is showing, and the reason it
+ * is here rather than on the Chat stage is Henrik's: a person should be able to
+ * say something to an agent from wherever they are looking at it.
+ *
+ * ## What it does when there is nothing to ask with
+ *
+ * It says so in one line and offers the way to the fix, which is on the Chat
+ * stage as the thread's fix-it card. The bar deliberately does **not** carry
+ * the connect button itself: `ask.blocked` is a headline, a meaning and a next
+ * action, and a bar that showed the button without the two sentences would be
+ * offering a consequence without its explanation.
+ */
+export function AgentChatBar({
+  agent,
+  ask,
+  canAct,
+  onAsked,
+  onFocus,
+  onChatStage = false,
+  setFeedback,
+}: {
+  agent: string;
+  ask: AgentAskView;
+  canAct: boolean;
+  onAsked: () => void;
+  onFocus?: () => void;
+  /**
+   * Whether the thread is already the stage.
+   *
+   * Only the blocked bar reads it, and the first capture of this frame is why
+   * it exists: the fix-it card and the bar drew the same sentence 800px apart
+   * on one screen, which is exactly the defect MAR-609 removed a Status tile
+   * for. The bar's blocked state is a *pointer* at the card, so on the card's
+   * own stage there is nothing for it to point at and it draws nothing.
+   */
+  onChatStage?: boolean;
+  setFeedback: Dispatch<SetStateAction<{ ok: boolean; message: string } | null>>;
+}): ReactNode {
+  if (!ask.can_ask && onChatStage) {
+    return null;
+  }
+  return (
+    <div className="cockpit-chat" aria-label={AGENT_COCKPIT_COPY.chat_label}>
+      {ask.can_ask ? (
+        <AskComposer
+          ask={ask}
+          canAct={canAct}
+          onAsked={onAsked}
+          onFocus={onFocus}
+          setFeedback={setFeedback}
+        />
+      ) : (
+        <div className="cockpit-chat-blocked">
+          <p className="wrap">{ask.blocked.headline}</p>
+          <Link className="button-link" href={agentStageHref(agent, "chat")}>
+            {AGENT_COCKPIT_COPY.chat_open}
+          </Link>
+        </div>
+      )}
+    </div>
   );
 }
 

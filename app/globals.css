@@ -5098,23 +5098,12 @@ button:disabled {
  * names explicitly.
  * ------------------------------------------------------------------------ */
 
-.agent-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--density-gap);
-  margin-bottom: var(--density-gap);
-}
+/* `.agent-header` and its `.lede` rule left with MAR-641. The identity block is
+   `.cockpit-header` now, in this file's last section, and a rule that matches
+   nothing is a rule the next person has to prove is dead before touching it. */
 
 .agent-identity-text {
   min-width: 0;
-}
-
-/* Tighter than the old `.workspace-title .lede`, which had the goal sitting on
-   its own with a full line of air under it. The goal is one line of context,
-   not a paragraph. */
-.agent-header .lede {
-  margin: var(--space-1) 0 0;
 }
 
 /* The id, as a value beside the name (MAR-589).
@@ -5156,19 +5145,8 @@ button:disabled {
   justify-content: flex-start;
 }
 
-.agent-header-controls {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--space-2);
-  flex: none;
-}
-
-.agent-status-line {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
+/* `.agent-header-controls` and `.agent-status-line` left with MAR-641, for the
+   reason `.agent-header` did: `.cockpit-header-actions` replaced both. */
 
 /* The status, as one chip. Zero corners, like everything else in Bit-Command. */
 .status-pill {
@@ -5586,4 +5564,671 @@ button:disabled {
   min-width: var(--space-1);
   background: var(--accent);
   border-radius: var(--radius-sm);
+}
+
+/* ------------------------------------------------------------------------ *
+ * The agent cockpit — a frame that never scrolls around one stage that does
+ * (MAR-641)
+ *
+ * ## The shape, and where it is borrowed from
+ *
+ * This is the Agents page's own move applied to one agent. `main:has(.fleet-
+ * shell)` gives up `main`'s padding, max-width and scrolling so the fleet rail
+ * can be a band of the *window*; the same rule here does the same for the same
+ * reason, and the graph paper travels with it onto the one element that
+ * actually scrolls, because `background-attachment: local` only scrolls with
+ * its own scroller.
+ *
+ * Three rows: the identity band, the body, the chat bar. The middle row is
+ * `minmax(0, 1fr)` for the reason `body`'s middle row is — `1fr` alone will not
+ * shrink below its content's height, and a body taller than its track is a
+ * frame with the chat bar pushed off the bottom of the window.
+ *
+ * ## Everything here is new, and nothing above it was rearranged
+ *
+ * This section is appended rather than woven into the agent-page block above,
+ * because a second session is working in the fleet region of this file. New
+ * class names throughout for the same reason: nothing here can change how an
+ * element on another surface is drawn.
+ * ------------------------------------------------------------------------ */
+
+:root {
+  /*
+   * Wider than `--sidebar-width` and deliberately so. The rail carries output
+   * titles and the labels of decisions that are waiting, and at 240px an
+   * ordinary digest title wraps to three lines — which turns a titles-only
+   * index into a paragraph list.
+   */
+  --cockpit-rail: 18rem;
+}
+
+main:has(.agent-cockpit) {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  max-width: none;
+  overflow: hidden;
+  background-image: none;
+}
+
+.agent-cockpit {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+/* The identity band and anything DASH has to say about the last press. Both
+   are `auto` inside one row so a notice grows the band rather than the page. */
+.cockpit-top {
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.cockpit-top > .notice {
+  margin: 0 var(--space-6) var(--space-3);
+}
+
+.cockpit-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-6);
+}
+
+.cockpit-identity {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/*
+ * The status tint is on the frame, never on the character.
+ *
+ * `scripts/brand-rules.mjs` forbids an avatar rule from reaching `--ok`, and
+ * the three tones here are the status pill's own: muted, accent, error. None
+ * of them is emerald, and the border is on the box rather than on the sprite,
+ * so the costume is the same picture in every state.
+ */
+.cockpit-portrait {
+  flex: none;
+  display: block;
+  padding: var(--space-1);
+  border: 2px solid var(--line);
+  background: var(--surface-2);
+}
+
+.cockpit-portrait.tone-live {
+  border-color: var(--accent);
+}
+
+.cockpit-portrait.tone-attention {
+  border-color: var(--err);
+}
+
+/* The reserved box at the header's own portrait size. See `AgentPortrait`. */
+.cockpit-portrait .o-portrait-empty {
+  display: block;
+  width: 50px;
+  height: 50px;
+}
+
+.cockpit-name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+}
+
+.cockpit-name-row h1 {
+  margin: 0;
+  font-size: var(--text-xl);
+  overflow-wrap: anywhere;
+}
+
+.cockpit-name-row .agent-id-chip {
+  margin: 0;
+}
+
+.cockpit-goal {
+  margin: var(--space-1) 0 0;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Where this agent lives, and a way to the stage that owns it. A link, so it
+   reads as one; the value is the word the fleet card uses. */
+.place-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.place-chip:hover,
+.place-chip:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.place-chip.is-cloud {
+  border-color: var(--line-strong);
+}
+
+.place-chip-label {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.place-chip-value {
+  font-weight: 650;
+}
+
+/*
+ * The action grid, the overflow and the live note, in one small grid so the
+ * note can sit under both without the DOM having to nest them.
+ */
+.cockpit-header-actions {
+  flex: none;
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas:
+    "actions more"
+    "live live";
+  align-items: start;
+  gap: var(--space-2);
+}
+
+.cockpit-action-grid {
+  grid-area: actions;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-1);
+}
+
+/*
+ * Three cells in a two-column grid, and the odd one out spans.
+ *
+ * The wireframe's grid is a square of four and the fourth is Health, which is
+ * not built (see `AGENT_STAGES`). A three-cell grid with a hole in the corner
+ * reads as something half-drawn; a third cell that spans reads as a decision.
+ * When Health lands it becomes the square with no rule to remove — `:last-
+ * child:nth-child(odd)` stops matching at four.
+ */
+.cockpit-action-grid > :last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.cockpit-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 8rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.cockpit-action:hover,
+.cockpit-action:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.cockpit-action.is-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.cockpit-action.is-primary:hover,
+.cockpit-action.is-primary:focus-visible {
+  background: var(--accent-hover);
+  color: var(--accent-contrast);
+}
+
+.cockpit-action.is-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* The stage you are on, marked in the grid as well as announced by
+   `aria-current`. The bar rather than a fill, so the active cell does not
+   compete with the one primary action beside it. */
+.cockpit-action.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: inset var(--active-bar) 0 0 0 var(--accent);
+}
+
+.cockpit-overflow {
+  grid-area: more;
+  position: relative;
+}
+
+.cockpit-overflow > summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-7);
+  height: var(--space-7);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.cockpit-overflow > summary::-webkit-details-marker {
+  display: none;
+}
+
+.cockpit-overflow > summary:hover,
+.cockpit-overflow > summary:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.cockpit-overflow-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--space-1));
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 12rem;
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-1);
+}
+
+.live-note {
+  grid-area: live;
+  margin: 0;
+  justify-self: end;
+}
+
+/* ------------------------------------------------------------------------ *
+ * The body: one stage and one rail
+ * ------------------------------------------------------------------------ */
+
+.cockpit-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--cockpit-rail);
+}
+
+.cockpit-stage {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--density-stack) var(--space-6);
+  background-image:
+    repeating-linear-gradient(
+      to right,
+      var(--grid-line) 0 1px,
+      transparent 1px var(--grid-step)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      var(--grid-line) 0 1px,
+      transparent 1px var(--grid-step)
+    );
+  background-attachment: local;
+}
+
+/* The stage is a scroller and therefore a focus target; the outline is the
+   chrome's own and never removed. */
+.cockpit-stage:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.cockpit-rail {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  border-left: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.cockpit-rail-panel h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cockpit-rail-panel > .muted {
+  margin: 0;
+}
+
+.rail-output-list,
+.rail-work-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rail-output a,
+.rail-work-item a {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  /* The accent edge lives on this border, so every entry reserves it and only
+     the marked ones colour it — a list whose rows shifted sideways when one of
+     them became the newest would be motion nobody asked for. */
+  border-left: var(--active-bar) solid transparent;
+  background: var(--surface-2);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.rail-output a:hover,
+.rail-output a:focus-visible,
+.rail-work-item a:hover,
+.rail-work-item a:focus-visible {
+  border-left-color: var(--line-strong);
+  color: var(--accent);
+}
+
+.rail-output.is-newest a {
+  border-left-color: var(--accent);
+}
+
+.rail-output.is-open a {
+  background: var(--surface-3);
+}
+
+.rail-output-title {
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.rail-output-when {
+  font-size: var(--text-sm);
+}
+
+.cockpit-rail-work .rail-work-item a {
+  border-left-color: var(--warn);
+}
+
+.rail-work-item.is-expired a {
+  border-left-color: var(--line-strong);
+}
+
+.rail-work-kind {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.rail-work-label {
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------------ *
+ * The chat bar
+ * ------------------------------------------------------------------------ */
+
+.cockpit-chat {
+  border-top: 1px solid var(--line);
+  background: var(--surface-1);
+  padding: var(--space-2) var(--space-6);
+}
+
+/* One row rather than the stacked block the full-width section draws. The
+   sentences that used to sit above the box are in the thread now — see
+   `AskThread` — which is what keeps MAR-545's ordering rule true here. */
+.cockpit-chat .ask-compose {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.cockpit-chat .ask-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.cockpit-chat .ask-input {
+  min-height: var(--space-8);
+  margin: 0;
+}
+
+.cockpit-chat .ask-compose > .muted {
+  margin: 0;
+}
+
+.cockpit-chat-blocked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.cockpit-chat-blocked p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------------------ *
+ * Stage furniture
+ * ------------------------------------------------------------------------ */
+
+/* The estimate, the custody sentence and the two money lines, at the foot of
+   the thread and therefore directly above the bar. */
+.ask-terms {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--density-gap);
+}
+
+.ask-terms > p {
+  margin: 0;
+}
+
+/* The one fix-it card a blocked conversation renders (MAR-641, MAR-624). */
+.ask-blocked-card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--density-card-p);
+  border: 1px solid var(--warn);
+  background: var(--warn-bg);
+}
+
+.ask-blocked-card p {
+  margin: 0;
+}
+
+.ask-blocked-card button {
+  justify-self: start;
+}
+
+.outputs-more {
+  margin: var(--space-3) 0 0;
+}
+
+/* The guided checklist for an agent that has never run. */
+.checklist-steps {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checklist-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+  padding: var(--density-card-p);
+  border: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.checklist-step.is-done {
+  border-color: var(--line);
+  color: var(--text-muted);
+}
+
+.checklist-mark {
+  font-weight: 700;
+  color: var(--text-faint);
+}
+
+.checklist-step.is-done .checklist-mark {
+  color: var(--accent);
+}
+
+.checklist-body {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.checklist-label {
+  font-weight: 700;
+}
+
+.checklist-body .button-link {
+  justify-self: start;
+}
+
+/* ------------------------------------------------------------------------ *
+ * Narrow windows
+ *
+ * The rail becomes a strip above the stage rather than an overlay, which is
+ * the constraint the fleet rail is built under and it is sharper here: the
+ * strip holds decisions that are waiting on a person, and a scrim over an
+ * approval is the one thing this product may not draw.
+ * ------------------------------------------------------------------------ */
+
+@media (max-width: 900px) {
+  .cockpit-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .cockpit-rail {
+    order: -1;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--space-3);
+    border-left: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .cockpit-rail-panel {
+    flex: 1 1 12rem;
+    min-width: 0;
+  }
+
+  /* Bounded, so a busy agent's rail cannot take the stage's whole height on a
+     phone. It scrolls inside itself instead. */
+  .rail-output-list,
+  .rail-work-list {
+    max-height: 8rem;
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .cockpit-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cockpit-header-actions {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .cockpit-action {
+    min-width: 0;
+  }
+
+  .live-note {
+    justify-self: start;
+  }
+
+  /*
+   * Two trims the first 375px frame asked for, and both are placement rather
+   * than deletion.
+   *
+   * The band was 640px of an 812px window — a frame that never scrolls, around
+   * a stage with a fifth of the screen left to scroll in. The id is the first
+   * to go: MAR-589 keeps it here because the fleet card and the connector tiles
+   * print an id a person may need to match, and the Settings stage carries the
+   * same value under a heading that says what it is. On a phone that is one
+   * press away rather than 90px of a header.
+   */
+  .cockpit-name-row .agent-id-chip {
+    display: none;
+  }
+
+  /*
+   * The author's own sentence, clamped to the two lines the wireframe calls a
+   * one-line description. It is the only text here that has no fixed length —
+   * this one runs to five lines at 375 — and it is on the fleet card in full.
+   */
+  .cockpit-goal {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+@media (max-width: 480px) {
+  .cockpit-header,
+  .cockpit-chat {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+
+  .cockpit-top > .notice {
+    margin-left: var(--space-4);
+    margin-right: var(--space-4);
+  }
+
+  .cockpit-stage {
+    padding: var(--space-4);
+  }
 }

@@ -123,6 +123,13 @@ export const AGENT_TILE_COPY = {
    */
   trigger: "Starts when",
   model: "Model",
+  /**
+   * No longer a tile (MAR-641). It labels the runtime row in the Logs stage's
+   * State facts, where `WorkspaceOverview.runtime_label` always had a value to
+   * put under it — the tile's version had to invent `where_unknown` for the
+   * agents with no snapshot, which is most of the ones a person is looking at
+   * when they ask.
+   */
   where: "Runs on",
   /** The disclosure under the tiles. */
   details_summary: "Show the full record",
@@ -146,7 +153,16 @@ export const AGENT_TILE_COPY = {
   },
   /** The trigger tile, when the agent's manifest declares nothing. */
   trigger_default: "On command",
-  /** The "Runs on" tile, when there is no snapshot to name a runtime. */
+  /**
+   * Kept, and read by nothing since MAR-641 moved the runtime into the record.
+   *
+   * `WorkspaceOverview.runtime_label` is never absent — it words its own
+   * unknown as "Unknown runtime" — so the row in the Logs stage has no gap for
+   * this to fill. It stays because the copy tests assert this whole object
+   * against the guided-path rule, and deleting a string to keep a test honest
+   * is the wrong direction: the next surface that needs a tile-length "where"
+   * should find this rather than invent a second one.
+   */
   where_unknown: "Not reported",
 } as const;
 
@@ -403,6 +419,153 @@ export function describeFeedDuration(fromIso: string, untilIso: string): string 
   const minuteWord = minuteRest === 1 ? "1 minute" : `${String(minuteRest)} minutes`;
   return `${hourWord} ${minuteWord}`;
 }
+
+/**
+ * The cockpit frame — the header band, the rail and the chat bar (MAR-641).
+ *
+ * ## What the frame is allowed to be
+ *
+ * Henrik's wireframe replaced a long scroll with a frame that never moves
+ * around one centre that swaps. Everything named here is *chrome*: it is DASH
+ * speaking about an agent, in the band that is on screen whatever the person is
+ * looking at. That makes it the most-read copy in the product per visit, so
+ * every string is a label and none of them is a sentence — the rule at the top
+ * of this module, applied where it costs the most to break.
+ *
+ * ## The four-cell action grid has three cells today
+ *
+ * The wireframe's grid is *Trigger run · Health check · Settings · Logs*, and
+ * three of those four are here. Health is a stage that aggregates five recorded
+ * facts nothing in this repository computes yet (see `AGENT_STAGES`), and a
+ * fourth button leading to an empty room is the dead control
+ * `lib/workspace.ts` refuses. The grid is authored as a two-column grid whose
+ * odd last cell spans both, so it reads as finished at three and becomes the
+ * wireframe's square the day the fourth arrives.
+ */
+export const AGENT_COCKPIT_COPY = {
+  /** The accessible name of the frame's action grid. */
+  actions_label: "Agent actions",
+  /**
+   * The first cell, in its two truthful states.
+   *
+   * `trigger_run` starts a run **and** moves the stage to it, which is what the
+   * wireframe means by a button that both acts and switches. `open_run` is what
+   * the same cell says when there is nothing to start — a run already in
+   * flight, an agent that has reported no state, a window that cannot act. It
+   * names a destination rather than promising an action, because the Run stage
+   * carries `AGENT_CONTROL_COPY.idle`'s sentence for each of those and a button
+   * reading "Trigger run" that triggers nothing is the exact defect MAR-609 was
+   * filed on.
+   */
+  trigger_run: "Trigger run",
+  open_run: "Run",
+  settings: "Settings",
+  logs: "Logs",
+  /**
+   * The overflow menu — three actions that are real and rare.
+   *
+   * A `<details>` rather than a popup: it needs no click-outside handler, it is
+   * reachable from a keyboard without one being written, and nothing inside it
+   * is destructive. **Remove is a link into the Settings stage, not a button.**
+   * The removal controls live under their own heading with the sentence saying
+   * it cannot be undone, and a destructive control inside something that closes
+   * on a stray press is the wrong container for it — the argument MAR-609 made
+   * when it declined to put `RemoveAgent` in a modal.
+   */
+  more: "More",
+  more_label: "More actions",
+  refresh: "Refresh",
+  open_folder: "Open folder",
+  remove: "Remove this agent",
+  /** Where this agent lives, above the chip that says Local or Cloud. */
+  place_label: "Lives on",
+  /**
+   * The rail. Two panels, both of which say nothing when they hold nothing.
+   *
+   * The outputs list is titles only by design: the stage is where an output is
+   * read, and a rail that rendered bodies would be a second, narrower copy of
+   * the Output stage competing with it.
+   */
+  rail_label: "This agent at a glance",
+  outputs_heading: "Latest output",
+  outputs_empty: "Nothing made yet.",
+  /** On the newest entry, for a reader who cannot see the accent edge. */
+  outputs_newest: "Newest",
+  /** Under the Overview stage's one output, when there are more of them. */
+  outputs_all: "Open every output",
+  work_heading: "Action needed",
+  /** Each row of the action-needed panel takes the reader to the decision. */
+  work_open: "Open this decision",
+  /**
+   * What kind of thing is waiting, in the rail and on the card it points at.
+   *
+   * Named here because two surfaces now say it about the same item, and the
+   * rail row and the card it opens disagreeing about what a person is being
+   * asked would be the three-cards defect of MAR-624 in miniature.
+   * `app/approval-popup/page.tsx` says "Guarded action" too and is deliberately
+   * left alone: it is a separate window with one question in it and no list to
+   * be consistent with.
+   */
+  work_kind: { approval: "Guarded action", choice: "Choice" },
+  /**
+   * The chat bar, pinned to the bottom of the frame.
+   *
+   * `ask` owns every word of the conversation itself (`lib/copy/ask.ts`); these
+   * are the two strings the *bar* needs and the thread does not — the label on
+   * a box that is one line tall, and the way into the thread when a person
+   * cannot type in it yet.
+   */
+  chat_label: "Message this agent",
+  chat_open: "Open chat",
+  /**
+   * The stage names, for the region's accessible name.
+   *
+   * A screen reader announces the region a person has just moved into, and
+   * "Output" is what it should say rather than the label of whatever heading
+   * happens to be first inside it.
+   */
+  stage: {
+    overview: "Overview",
+    run: "Run",
+    output: "Output",
+    chat: "Chat",
+    settings: "Settings",
+    logs: "Logs",
+  },
+  /**
+   * The guided checklist for an agent that has never run (MAR-609's rule, still
+   * binding, and MAR-641's restatement of it).
+   *
+   * > *"the never-run agent gets a guided Overview checklist, not eight empty
+   * > sections."*
+   *
+   * Three items at most, each a fact DASH already holds rather than a step in a
+   * tutorial. The first is ticked on arrival on purpose: a checklist whose
+   * every line is undone reads as a list of failures, and "this agent is here"
+   * is both true and the thing a person just did.
+   */
+  checklist: {
+    heading: "Getting started",
+    /** Read out instead of the tick and the bullet, which say nothing aloud. */
+    done: ". Done",
+    todo: ". Still to do",
+    added: {
+      label: "This agent is here",
+      detail: "DASH holds its plan and can start it on this computer.",
+    },
+    model: {
+      label: "It has a model",
+      /** When there is nothing more to do, and the view has no sentence. */
+      ready: "A model is set for this agent.",
+      action: "Open settings",
+    },
+    first_run: {
+      label: "It has run once",
+      detail: "Press Trigger run. It runs only when you ask.",
+      action: "Go to Run",
+    },
+  },
+} as const;
 
 /*
  * There is deliberately no chat copy in this module.

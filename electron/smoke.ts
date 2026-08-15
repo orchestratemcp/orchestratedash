@@ -1853,10 +1853,22 @@ if (recorded !== null) {
            *
            * The route is the workspace, not a run. A panel is a property of the
            * *agent*, and 6k already covers the run detail page.
+           *
+           * ## Two addresses since MAR-641, and the difference is the point
+           *
+           * The agent page is a frame around one swappable stage now, so "on
+           * the agent's page" is no longer one document. The author's panel is
+           * on the Output stage, beneath DASH's own record of the same
+           * artifacts — ADR 0008's ordering, unchanged, in a smaller container
+           * — so 6n and 6o name that stage. 6p asks a different question, about
+           * what a person *lands* on, and it therefore keeps the address with
+           * no stage in it: whatever `resolveAgentStage` decides an ordinary
+           * link to an agent means, the news has to be on it.
            */
-          const workspaceUrl =
+          const workspaceRoot =
             `${parsedRenderer.protocol}//${parsedRenderer.host}` +
             `/agents/detail?agent=${encodeURIComponent(agentId)}`;
+          const workspaceUrl = `${workspaceRoot}&stage=output`;
 
           let panel: {
             heading: string;
@@ -1988,7 +2000,8 @@ if (recorded !== null) {
           }
 
           /*
-           * 6p — the agent's own output leads its page (MAR-576).
+           * 6p — the agent's own output is on the page a link to it lands on
+           * (MAR-576, restated for the cockpit by MAR-641).
            *
            * MAR-576 was filed on this exact route, in these words: "I get no AI
            * news from it. Only some text about that it ran or something." The
@@ -1998,82 +2011,106 @@ if (recorded !== null) {
            * 812px screen, so the answer to "what did it find?" sat a screen and
            * a half below the question.
            *
-           * That is a claim about **document order**, so this measures document
-           * order rather than pixels: a height comparison would make the same
-           * check pass or fail on the size of CI's window.
-           * `compareDocumentPosition` is also what a screen reader and a keyboard
-           * follow, which is the population an ordering defect hurts most and
-           * the one a screenshot says nothing about.
+           * ## Why this proof changed shape, and what it must not lose
            *
-           * The two comparisons are separate because they fail separately. A
-           * heading that moved without its contents would mean an empty
-           * "Outputs" section had been hoisted above the receipt while the news
-           * stayed below it — the reordering that looks right in a diff and
-           * fixes nothing.
+           * The original measured document order between the news, the outputs
+           * heading and `#permission-receipt`. Two of those three are no longer
+           * in one document: the permission receipt is on the Logs stage, and
+           * the digest is on the stage an address with no stage resolves to. A
+           * proof that kept comparing them would go permanently `null` — which
+           * is to say it would stop being a proof while continuing to look like
+           * one.
            *
-           * Same already-loaded page as 6n, and skipped on the same condition:
-           * with no completed run there is no digest, and "the news is not above
-           * the receipt" would be a true sentence about 6g's failure wearing
-           * this proof's name.
+           * So it asks the same question about the new arrangement, and the
+           * question is the one Henrik actually asked: **open the agent, and the
+           * news is there.** Three claims, each of which fails separately:
+           *
+           * 1. The digest is on the landing stage at all. This is the whole of
+           *    MAR-576 and the only one that would have caught the original
+           *    defect.
+           * 2. Nothing of DASH's provenance precedes it *within its own card*.
+           *    `.output-receipt` is the four-row block the news used to sit
+           *    under, and it is still on this page — one press inside a
+           *    disclosure — so the ordering claim is still measurable and still
+           *    real.
+           * 3. The permission receipt is **not** on the landing stage. That is
+           *    MAR-641's move recorded rather than assumed: a future change that
+           *    quietly put the disclaimer back in front of the news would fail
+           *    here rather than pass by omission.
+           *
+           * Its own navigation, because 6n moved this window to the Output
+           * stage. Skipped on the same condition as 6n: with no completed run
+           * there is no digest, and "the news is not on the landing stage" would
+           * be a true sentence about 6g's failure wearing this proof's name.
            */
           /*
-           * A named type rather than `typeof ordering` at the cast below. The
+           * A named type rather than `typeof landing` at the cast below. The
            * variable is initialised to `null`, so `typeof` there resolves to the
            * *narrowed* type and the assertion silently produces `never` — which
            * `tsc` reports as a missing property on the branch that reads it, a
            * message that points at the reader rather than the cast.
            */
-          interface WorkspaceOrdering {
-            news_before_receipt: boolean | null;
-            heading_before_receipt: boolean | null;
-            has_receipt: boolean;
+          interface WorkspaceLanding {
+            has_news: boolean;
+            news_before_card_receipt: boolean | null;
+            has_card_receipt: boolean;
+            has_permission_receipt: boolean;
           }
-          let ordering: WorkspaceOrdering | null = null;
-          if (canWitnessPanel && panel !== null) {
+          let landing: WorkspaceLanding | null = null;
+          if (canWitnessPanel) {
             try {
-              ordering = (await window.webContents.executeJavaScript(
-                `(() => {
-                   const main = document.querySelector("main") ?? document.body;
-                   /* The first digest item anywhere on the page. This agent's
-                      manifest declares a report section as well, so the news
-                      appears twice; the first in document order is the Outputs
-                      area, which is the one this proof is about. */
-                   const news = main.querySelector(".digest-items li");
-                   const heading = document.querySelector("#outputs-heading");
-                   const receipt = document.querySelector("#permission-receipt");
-                   if (news === null || heading === null) return null;
-                   const before = (a, b) =>
-                     (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
-                   return {
-                     news_before_receipt: receipt === null ? null : before(news, receipt),
-                     heading_before_receipt: receipt === null ? null : before(heading, receipt),
-                     has_receipt: receipt !== null,
-                   };
-                 })()`,
-              )) as WorkspaceOrdering | null;
+              await window.loadURL(workspaceRoot);
+              landing = await waitForValue(async () => {
+                const seen = (await window.webContents.executeJavaScript(
+                  `(() => {
+                     const stage = document.querySelector(".cockpit-stage");
+                     if (stage === null) return null;
+                     /* Inside the stage, not the document: the rail lists the
+                        same outputs by title, and a query over the whole page
+                        could answer this proof with a link in a sidebar. */
+                     const news = stage.querySelector(".digest-items li");
+                     const cardReceipt = stage.querySelector(".output-receipt");
+                     const permission = document.querySelector("#permission-receipt");
+                     const before = (a, b) =>
+                       (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+                     return {
+                       has_news: news !== null,
+                       news_before_card_receipt:
+                         news === null || cardReceipt === null ? null : before(news, cardReceipt),
+                       has_card_receipt: cardReceipt !== null,
+                       has_permission_receipt: permission !== null,
+                     };
+                   })()`,
+                )) as WorkspaceLanding | null;
+                // The page reads its view in an effect, so an empty stage is
+                // "not yet" rather than an answer.
+                return seen !== null && seen.has_news ? seen : null;
+              }, "the landing stage to draw the agent's newest output");
             } catch (error: unknown) {
-              console.warn(`[smoke] the workspace ordering could not be read: ${String(error)}`);
+              console.warn(`[smoke] the landing stage could not be read: ${String(error)}`);
             }
           }
 
-          if (ordering === null) {
+          if (landing === null) {
             skip(
-              "6p. the agent's own output comes before DASH's run chatter",
+              "6p. the agent's own output is on the page a link to it lands on",
               canWitnessPanel
-                ? "6n found no drawn workspace to inspect"
+                ? "the landing stage did not draw"
                 : "6g produced no run whose digest could lead the page",
             );
           } else {
             check(
-              "6p. the agent's own output comes before DASH's run chatter",
-              // `has_receipt` is asserted rather than assumed. The scaffold
-              // declares one read permission, so this agent has a receipt — and
-              // on the day it stops having one, both comparisons go null and
-              // this proof would otherwise pass by having nothing to compare.
-              ordering.has_receipt &&
-                ordering.news_before_receipt === true &&
-                ordering.heading_before_receipt === true,
-              ordering,
+              "6p. the agent's own output is on the page a link to it lands on",
+              // `has_card_receipt` is asserted rather than assumed, for the
+              // reason the old proof asserted `has_receipt`: without it, an
+              // output card that lost its provenance entirely would make the
+              // ordering comparison null and this proof would pass by having
+              // nothing left to compare.
+              landing.has_news &&
+                landing.has_card_receipt &&
+                landing.news_before_card_receipt === true &&
+                !landing.has_permission_receipt,
+              landing,
             );
           }
 

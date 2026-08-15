@@ -1,96 +1,221 @@
 "use client";
 
+import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { AGENT_CONTROL_COPY, AGENT_HEADER_COPY } from "../../lib/copy/agent-page";
+import {
+  AGENT_COCKPIT_COPY,
+  AGENT_CONTROL_COPY,
+  AGENT_HEADER_COPY,
+} from "../../lib/copy/agent-page";
+/* MAR-641. The fleet card's own two words for where an agent lives, imported
+   rather than re-derived — the chip in this header and the chip on the card
+   answer the same question about the same record, and two functions computing
+   "Cloud" from `deploy_targets` is how they come to disagree. */
+import { describeFleetPlace } from "../../lib/copy/fleet-status";
 /* MAR-602. Safe as a value in this bundle: `lib/copy/where-it-ran.ts` imports
    nothing that reaches a disk, and its one reference to `lib/store.ts` is a
    type. The same arrangement the agent page itself relies on. */
 import { describeRunOnHost } from "../../lib/copy/where-it-ran";
 import type { AgentControlView } from "../../lib/views/agent-control";
+import { agentStageHref } from "../_data/routes";
+import type { AgentStage } from "../../lib/views/agent-stage";
 import type { AgentDeployTarget } from "../../lib/views/types";
 import type { AvailableControl } from "../../lib/workspace";
 import type { OName } from "../../lib/brand/o-cast";
 import { OAvatar } from "./o-avatar";
 
 /**
- * Who this agent is, and the buttons that act on it — in one block, above
- * everything (MAR-609).
+ * Who this agent is, and the four ways into it — the band that never scrolls
+ * (MAR-609, rebuilt as a frame by MAR-641).
  *
- * ## What this replaces
+ * ## What this replaces, twice over
  *
- * The old page opened with a portrait, a name, a goal and a **Refresh state**
- * button, and then put the things a person came to do at positions four, six
- * and eleven of eighteen sections. Henrik's complaint was *"you get no
- * overview"*, and the header was the clearest instance of it: the one region
- * guaranteed to be on screen was spent entirely on identity, with a single
- * control on it, and that control was the one that does the least.
+ * MAR-609 replaced a header that was identity and one Refresh button with a
+ * header that was identity *and* the control panel, because five of Henrik's
+ * six asks were things you do. MAR-641 keeps that and moves the rest of the
+ * page out from under it: the header is now one band of a fixed frame, and the
+ * things it used to sit on top of are stages it switches between.
  *
- * Five of his six asks are things you *do*. So the header is now identity **and**
- * the control panel, and the page below it is what the agent has made.
+ * So every control here does two jobs, which is the wireframe's own sentence
+ * about the action grid — *"each both acts and switches the stage"*. Trigger
+ * run starts a run and puts the run on screen. Settings and Logs are
+ * destinations, and destinations are links: a person may open the Logs of an
+ * agent in a second window, and a `<button>` that navigated would take that
+ * away for no gain.
  *
  * ## The id, under MAR-589's ruling
  *
- * Henrik ruled that the display name is first-class and the id is a value. So
- * the name is the `<h1>` and the id sits beside it in a monospace chip with the
- * word "ID" in front of it. The chip is not decoration: this page is where
- * somebody reads the name, and the fleet card, the deploy picker and the
- * connector tiles all still print the id — until the cross-surface pass lands,
- * the chip is what lets a person match this page to those.
+ * Henrik ruled that the display name is first-class and the id is a value. The
+ * name is the `<h1>` and the id sits beside it in a monospace chip labelled
+ * "ID". It survives the move into a denser band because the fleet card, the
+ * deploy picker and the connector tiles all still print the id, and this chip
+ * is what lets a person match this page to those.
+ *
+ * ## The portrait is 50px here and 100px was right before
+ *
+ * MAR-502 chose 100 because the agent page was the one surface where the
+ * character is closest to being the subject. In a fixed band that also carries
+ * a name, a status, a place, a description and six controls, 100px is a third
+ * of the header at 375px — so this is the same portrait at the other exact
+ * multiple of the 50px source, which is the only other size that upscales
+ * without turning the sprite into a rendering fault.
  */
-export function AgentHeader({
+export function AgentCockpitHeader({
+  agent,
   avatar,
+  busy,
+  canTrigger,
   control,
   goal,
-  id,
+  hasFolder,
   live,
+  onOpenFolder,
   onRefresh,
-  onSettings,
+  onTriggerRun,
+  places,
+  stage,
   title,
 }: {
+  /** The agent's id, for the stage links. A value, never a label (MAR-589). */
+  agent: string;
   avatar: OName | null;
+  /** The pending command key, or null. Disables the acting controls. */
+  busy: string | null;
+  /**
+   * Whether pressing the first cell would actually start something.
+   *
+   * False for a run already in flight, an agent that has reported no state, and
+   * a window that cannot act — three different reasons, all of which leave the
+   * cell as a way *to* the Run stage, where `AGENT_CONTROL_COPY.idle` has the
+   * sentence for each.
+   */
+  canTrigger: boolean;
   control: AgentControlView;
   goal: string;
-  /** The agent's id — a value, never a label. See MAR-589. */
-  id: string;
+  /** Whether DASH holds a folder of its own to open (MAR-584's `folder_checkable`). */
+  hasFolder: boolean;
   /** The clock time of the last poll while a run is being followed, else null. */
   live: string | null;
+  onOpenFolder: () => void;
   onRefresh: () => void;
-  onSettings: () => void;
+  onTriggerRun: () => void;
+  /** Every server this agent has been sent to. Empty means it lives here. */
+  places: readonly AgentDeployTarget[];
+  /** The stage on screen, so the grid can say which one you are in. */
+  stage: AgentStage;
   /** The display name, from `agentDisplayName`. Never the raw id. */
   title: string;
-  children?: ReactNode;
 }): ReactNode {
+  const place = describeFleetPlace(places);
   return (
-    <header className="agent-header">
-      <div className="agent-identity agent-portrait">
-        <AgentPortrait avatar={avatar} />
+    <header className="cockpit-header">
+      <div className="cockpit-identity">
+        {/*
+          Status-tinted, per the wireframe, and tinted on the *frame* around the
+          portrait rather than on the character. A costume that changed colour
+          with a run would be status readable only from the picture, which is
+          the fiction MAR-547 refused and `scripts/brand-rules.mjs` enforces;
+          a border on the box beside a pill that says the same word in text is
+          the calm version of the same idea.
+        */}
+        <span className={`cockpit-portrait tone-${control.status.tone}`}>
+          <AgentPortrait avatar={avatar} size={50} />
+        </span>
         <div className="agent-identity-text">
-          <p className="eyebrow">{AGENT_HEADER_COPY.eyebrow}</p>
-          <h1>{title}</h1>
+          <div className="cockpit-name-row">
+            <h1>{title}</h1>
+            <StatusPill control={control} />
+            {/* Clicks through to the stage that owns where an agent lives.
+                MAR-641's deploy move is not made here — this is a link to the
+                block that already exists, not a claim about where deploying
+                will live once the single-home decision is taken. */}
+            <Link className={`place-chip is-${place.id}`} href={agentStageHref(agent, "settings")}>
+              <span className="place-chip-label">{AGENT_COCKPIT_COPY.place_label}</span>
+              <span className="place-chip-value">{place.label}</span>
+            </Link>
+            <span className="agent-id-chip">
+              <span className="agent-id-label">{AGENT_HEADER_COPY.id_label}</span>{" "}
+              <code className="value">{agent}</code>
+            </span>
+          </div>
           {/* One line, and it is the author's sentence about what the agent is
               for. Everything else that used to be prose up here is now either a
-              tile or behind the settings button. */}
-          <p className="lede">{goal}</p>
-          <p className="agent-id-chip">
-            <span className="agent-id-label">{AGENT_HEADER_COPY.id_label}</span>{" "}
-            <code className="value">{id}</code>
-          </p>
+              tile on the Overview stage or a stage of its own. */}
+          <p className="lede cockpit-goal">{goal}</p>
         </div>
       </div>
 
-      <div className="agent-header-controls">
-        <div className="agent-status-line">
-          <StatusPill control={control} />
-          <div className="button-row">
-            <button className="button-secondary" onClick={onSettings} type="button">
-              {AGENT_HEADER_COPY.settings}
-            </button>
-            <button className="button-secondary" onClick={onRefresh} type="button">
-              {AGENT_HEADER_COPY.refresh}
-            </button>
-          </div>
+      <div className="cockpit-header-actions">
+        <div className="cockpit-action-grid" role="group" aria-label={AGENT_COCKPIT_COPY.actions_label}>
+          {/*
+            The one cell that acts. It is a `<button>` and not a link because
+            pressing it starts a run; the page moves the stage itself, so the
+            two halves of "acts and switches" cannot come apart in a browser
+            that follows the link before the handler runs.
+          */}
+          <button
+            className="cockpit-action is-primary"
+            disabled={busy !== null}
+            onClick={onTriggerRun}
+            type="button"
+          >
+            {canTrigger ? AGENT_COCKPIT_COPY.trigger_run : AGENT_COCKPIT_COPY.open_run}
+          </button>
+          <StageAction
+            agent={agent}
+            current={stage}
+            label={AGENT_COCKPIT_COPY.settings}
+            target="settings"
+          />
+          <StageAction
+            agent={agent}
+            current={stage}
+            label={AGENT_COCKPIT_COPY.logs}
+            target="logs"
+          />
         </div>
+
+        {/*
+          The rare three. A `<details>` rather than a popup: no click-outside
+          handler to write, keyboard-reachable without one, and nothing inside
+          it is destructive — Remove is a link into the Settings stage, where
+          the removal controls sit under a heading and the sentence that says
+          it cannot be undone.
+        */}
+        <details className="cockpit-overflow">
+          <summary aria-label={AGENT_COCKPIT_COPY.more_label} title={AGENT_COCKPIT_COPY.more_label}>
+            <span aria-hidden="true">···</span>
+          </summary>
+          <div className="cockpit-overflow-menu">
+            <button
+              className="button-link"
+              disabled={busy !== null}
+              onClick={onRefresh}
+              type="button"
+            >
+              {AGENT_COCKPIT_COPY.refresh}
+            </button>
+            {/* Only where there is a folder to open. `lib/workspace.ts`'s rule
+                about dead controls: an agent DASH holds no folder of its own
+                for has nothing for this to reveal, and the refusal would arrive
+                after the press. */}
+            {hasFolder ? (
+              <button
+                className="button-link"
+                disabled={busy !== null}
+                onClick={onOpenFolder}
+                type="button"
+              >
+                {AGENT_COCKPIT_COPY.open_folder}
+              </button>
+            ) : null}
+            <Link className="button-link" href={agentStageHref(agent, "settings")}>
+              {AGENT_COCKPIT_COPY.remove}
+            </Link>
+          </div>
+        </details>
+
         {/*
           The design brief's rule — "nothing moves or refreshes without saying
           it did" — applied to the one place DASH refreshes on its own. A live
@@ -103,6 +228,37 @@ export function AgentHeader({
         </p>
       </div>
     </header>
+  );
+}
+
+/**
+ * One cell of the action grid that is purely a destination.
+ *
+ * `aria-current="page"` rather than a class alone, for the reason the sidebar
+ * carries it: the solid block of accent is exactly as silent to somebody not
+ * looking at it as no marking at all, and this attribute is the half that
+ * actually says which view you are in.
+ */
+function StageAction({
+  agent,
+  current,
+  label,
+  target,
+}: {
+  agent: string;
+  current: AgentStage;
+  label: string;
+  target: AgentStage;
+}): ReactNode {
+  const active = current === target;
+  return (
+    <Link
+      aria-current={active ? "page" : undefined}
+      className={active ? "cockpit-action is-active" : "cockpit-action"}
+      href={agentStageHref(agent, target)}
+    >
+      {label}
+    </Link>
   );
 }
 
@@ -363,9 +519,23 @@ export function AgentControls({
  * belongs to is now a component and a portrait defined on the page but rendered
  * in the header is how the two drift apart.
  */
-export function AgentPortrait({ avatar }: { avatar: OName | null }): ReactNode {
+export function AgentPortrait({
+  avatar,
+  size = 100,
+}: {
+  avatar: OName | null;
+  /**
+   * 100 for a surface where the character is the subject, 50 in the cockpit's
+   * fixed band (MAR-641).
+   *
+   * Only the two, and only because both are whole multiples of the 50px source
+   * — the union in `lib/brand/o-cast.ts` is the guard, and the reason there is
+   * no percentage here is in this function's own docblock.
+   */
+  size?: 50 | 100;
+}): ReactNode {
   if (avatar === null) {
     return <span className="o-portrait-empty" aria-hidden="true" />;
   }
-  return <OAvatar name={avatar} size={100} />;
+  return <OAvatar name={avatar} size={size} />;
 }

@@ -210,10 +210,48 @@ export function isSeparateWindowRoute(pathname: string): boolean {
   );
 }
 
-/** Static-export-safe agent workspace route, for the same reason as run detail. */
-export const AGENT_WORKSPACE_PARAMS = { agent: "agent" } as const;
+/**
+ * Static-export-safe agent workspace route, for the same reason as run detail.
+ *
+ * `stage` and `output` joined it with MAR-641's cockpit. Both are optional and
+ * both have a defined absence: no `stage` means "whichever view of this agent
+ * suits what it is doing" (`resolveAgentStage`), and no `output` means the
+ * newest one. That is what keeps every link written before the cockpit — the
+ * fleet cards, the glance chips, `lib/open-link.ts` — pointing somewhere real.
+ */
+export const AGENT_WORKSPACE_PARAMS = {
+  agent: "agent",
+  stage: "stage",
+  /** Which output the Output stage opens, when the rail names one. */
+  output: "output",
+} as const;
 
 export function agentWorkspaceHref(agent: string): string {
   const params = new URLSearchParams({ [AGENT_WORKSPACE_PARAMS.agent]: agent });
+  return `/agents/detail?${params.toString()}`;
+}
+
+/**
+ * One part of one agent, addressable (MAR-641).
+ *
+ * Takes the stage as a plain string rather than as an `AgentStage`, so this
+ * module keeps importing nothing: `app/_data/routes.ts` is read by the title
+ * bar, the sidebar, the fleet cards and four capture harnesses, and a type
+ * import here would put the stage vocabulary in all of them. The callers that
+ * build these links hold the union already, and `resolveAgentStage` is the one
+ * place a string becomes a stage.
+ */
+export function agentStageHref(
+  agent: string,
+  stage: string,
+  options: { output?: string } = {},
+): string {
+  const params = new URLSearchParams({
+    [AGENT_WORKSPACE_PARAMS.agent]: agent,
+    [AGENT_WORKSPACE_PARAMS.stage]: stage,
+  });
+  if (options.output !== undefined) {
+    params.set(AGENT_WORKSPACE_PARAMS.output, options.output);
+  }
   return `/agents/detail?${params.toString()}`;
 }

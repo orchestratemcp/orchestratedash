@@ -630,7 +630,10 @@ async function run(): Promise<void> {
     for (const viewport of VIEWPORTS) {
       for (const density of DENSITIES) {
         for (const item of SCENES) {
-          const route = `/agents/detail?agent=${encodeURIComponent(item.agent)}`;
+          /* MAR-641. The conversation is a stage of the agent cockpit now, and the
+             composer is the bar pinned under it — this harness photographs both
+             by naming the stage rather than by scrolling to a section. */
+          const route = `/agents/detail?agent=${encodeURIComponent(item.agent)}&stage=chat`;
           await go(window, route);
           const at = await resizeTo(window, viewport.width, viewport.height);
           // Reloaded after the resize as well: a page reads its view once, on
