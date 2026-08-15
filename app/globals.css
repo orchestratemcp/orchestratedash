@@ -3298,6 +3298,25 @@ button.button-unavailable:disabled {
   background: var(--surface-1);
 }
 
+/*
+ * The Discord page's whole state, in one row (MAR-642).
+ *
+ * `.page-summary`'s look, because it is the same kind of line — one sentence
+ * counted from what is actually true, at the top of a page, above the things it
+ * describes. What it adds is the chip beside it, which needs the two to sit on
+ * one baseline rather than the chip dropping to its own line at 375px.
+ */
+.notify-standing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0 0 var(--density-gap);
+  padding: var(--space-3) var(--space-4);
+  border-left: var(--active-bar) solid var(--accent);
+  background: var(--surface-1);
+}
+
 .connection-purpose {
   margin: 0 0 var(--density-gap);
   color: var(--text);

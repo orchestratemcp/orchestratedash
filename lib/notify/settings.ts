@@ -164,6 +164,106 @@ export function describeNotificationState(settings: NotificationSettings): strin
 }
 
 /**
+ * The whole state of this feature, as one row (MAR-642).
+ *
+ * ## Why a chip and a sentence rather than the section that was here
+ *
+ * The page was forty lines of prose around four controls. Every line was true
+ * and most of it was read once — the shape MAR-614 named and MAR-639 began
+ * cutting, applied to the surface that had the most of it. What a person opens
+ * this page for is one of two questions: *is it on?* and *change it.* This
+ * answers the first in a chip they can read without reading, and one sentence
+ * under it.
+ *
+ * `describeNotificationState` above is unchanged and still says which **kinds**
+ * of message are switched on, because that is a different fact with its own
+ * control. This says whether DASH is posting at all, to which address, and
+ * since when.
+ *
+ * ## What the chip may not say
+ *
+ * **Not a channel name.** DASH does not have one: what it holds is a webhook
+ * address in the vault and four characters of its token. A row reading "Posting
+ * to #alerts" would be DASH inventing the one detail a person would most
+ * reasonably trust it about.
+ *
+ * `since` arrives already worded, through `plainDay`, and null drops the clause
+ * rather than printing a stored timestamp — an ISO string on a guided surface
+ * is the same defect as an identifier on one.
+ */
+export interface NotificationStanding {
+  /** Two words at most. What somebody reads without reading. */
+  chip: string;
+  /** Whether the chip is the good state, for the page to colour it. */
+  on: boolean;
+  /** The one sentence under it. Never a channel name and never an address. */
+  sentence: string;
+}
+
+export function describeNotificationStanding(
+  settings: NotificationSettings,
+  /** `plainDay(configured_at)`, resolved by the caller. Null when unreadable. */
+  since: string | null,
+): NotificationStanding {
+  if (!settings.configured) {
+    return {
+      chip: "Not set up",
+      on: false,
+      sentence: "Nothing about your agents leaves this computer.",
+    };
+  }
+
+  const address =
+    settings.masked_hint === null
+      ? "an address DASH holds"
+      : `the address ending ${settings.masked_hint}`;
+  const added = since === null ? "" : `, added ${since}`;
+
+  if (!settings.send_approvals && !settings.send_reports) {
+    /*
+     * Held, and sending nothing. Its own branch because the chip has to say the
+     * true thing rather than the reassuring one: somebody who switched both
+     * kinds off and comes back a month later needs this row to explain why
+     * their Discord is quiet, and "Posting" would be a lie that only the
+     * checkboxes further down correct.
+     */
+    return {
+      chip: "Nothing to send",
+      on: false,
+      sentence: `DASH holds ${address}${added}, and both kinds of message are switched off.`,
+    };
+  }
+
+  return {
+    chip: "Posting",
+    on: true,
+    sentence: `DASH posts to ${address}${added}.`,
+  };
+}
+
+/** Every sentence this module composes, for the plain-language check. */
+export function everyNotificationStandingSentence(): string[] {
+  const held: NotificationSettings = {
+    configured: true,
+    masked_hint: "••••abcd",
+    configured_at: "2026-08-15T09:00:00.000Z",
+    send_approvals: true,
+    send_reports: true,
+  };
+  return [
+    NO_NOTIFICATIONS,
+    { ...held, masked_hint: null },
+    held,
+    { ...held, send_approvals: false, send_reports: false },
+  ].flatMap((settings) =>
+    [null, "15 August 2026"].flatMap((since) => {
+      const standing = describeNotificationStanding(settings, since);
+      return [standing.chip, standing.sentence];
+    }),
+  );
+}
+
+/**
  * Whether an event of this kind should be sent at all.
  *
  * Here rather than in the runner, so the switch that a person set on a page and
