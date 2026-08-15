@@ -21,7 +21,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { AiKeys, AiSettings } from "../app/settings/ai/page";
-import { ConnectorList, FleetConnectors } from "../app/settings/page";
+import { ServiceList } from "../app/settings/page";
 import { ModelDefault } from "../app/_components/model-default";
 import { describeFleetDefault } from "../lib/ai/model-choice";
 import type {
@@ -120,24 +120,16 @@ describe("which cards land on which tab", () => {
     expect(html).not.toContain("Gmail");
   });
 
-  it("leaves the sign-in on Connections and takes the keys off it", () => {
-    const html = renderToStaticMarkup(
-      <FleetConnectors
-        connectors={view().fleet.filter((one) => one.ai_provider_id === null)}
-        canAct
-        onChanged={() => undefined}
-      />,
-    );
-    expect(html).toContain("Gmail");
-    expect(html).not.toContain("OpenRouter");
-  });
-
-  it("takes a model provider's per-agent tile off Connections too", () => {
+  it("leaves the sign-in on Connections and takes both halves of the key off it", () => {
     /*
-     * The half that is easy to forget. Moving the fleet cards and leaving the
-     * "what your agents need" tiles would put the same key on two tabs in two
-     * shapes — and the AI tab's own card already names every agent that needs
-     * it, so nothing goes unsaid.
+     * Both halves, which is the part that is easy to get half right. Moving the
+     * catalogue card and leaving the per-agent row would put one key on two
+     * tabs in two shapes — and the AI tab's own card already names every agent
+     * that needs it, so nothing goes unsaid.
+     *
+     * Asserted against the merged list (MAR-642) rather than against the two
+     * sections that used to be there: `ServiceList` filters both halves by the
+     * same fact, so this is the one place the split can be checked whole.
      */
     const agents: AgentConnections[] = [
       {
@@ -149,10 +141,8 @@ describe("which cards land on which tab", () => {
             connection_id: "models",
             provider: "openrouter",
             service: "OpenRouter",
-            label: "Your model provider",
             purpose: "Write the digest",
-            ownership: "dash_managed",
-            connector_kind: "api_key",
+            ownership: "dash",
             dash_can_hold: true,
             field_id: "key",
             masked_hint: null,
@@ -160,22 +150,21 @@ describe("which cards land on which tab", () => {
             credential_kind: "provider_key",
             broker: null,
             also_connects: [],
-            state: "not_connected",
-            state_sentence: "DASH holds no OpenRouter key.",
             capabilities: [],
-            requirement: null,
           } as unknown as AgentConnections["rows"][number],
         ],
         lapses: [],
       },
     ];
     const html = renderToStaticMarkup(
-      <ConnectorList agents={agents} older={[]} canAct onChanged={() => undefined} />,
+      <ServiceList
+        view={view({ agents })}
+        canAct
+        onChanged={() => undefined}
+      />,
     );
+    expect(html).toContain("Gmail");
     expect(html).not.toContain("OpenRouter");
-    // And the section says the true thing about what is left rather than
-    // rendering an empty list under a heading.
-    expect(html).toContain("What your agents need");
   });
 });
 
