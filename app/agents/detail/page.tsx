@@ -401,6 +401,16 @@ function AgentWorkspace(): ReactNode {
    * is the whole reason the stage is in the address rather than in state — see
    * `lib/views/agent-stage.ts` — and a replace here would have quietly given it
    * up while keeping the URL that advertises it.
+   *
+   * **This is the first `useRouter` in DASH, and it is the machinery every link
+   * here already uses.** `next/link` renders an anchor and calls this same
+   * router on click; the fleet cards reach this page, query string and all,
+   * through it, in the packaged shell over `dash-app://`. So the risk worth
+   * naming is not whether it navigates — it is that a *button* has no `href` to
+   * fall back on if the script that binds it never runs. Both call sites are
+   * covered: the action grid's Settings and Logs cells are real links, the chat
+   * bar's blocked state is a real link, and this is reached only from the two
+   * controls that must be buttons because they also *act*.
    */
   function goToStage(next: AgentStage, options: { output?: string } = {}): void {
     router.push(agentStageHref(agent, next, options));
