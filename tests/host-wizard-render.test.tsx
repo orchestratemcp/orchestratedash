@@ -102,9 +102,24 @@ describe("the live wizard's command path", () => {
      * MAR-574. `host.deploy` was the fourth action and, until this page could
      * render a saved server, it had **no page affordance at all** — dispatcher
      * and preload only, which is precisely the MAR-518 shape this test exists to
-     * catch. The manage card is where it finally has one.
+     * catch. The manage card was where it finally got one.
+     *
+     * MAR-642 moved it rather than removing it. Henrik decided on 2026-08-15
+     * that a deploy begins on the agent, so this page no longer calls it and
+     * `DeployToServer` — on the agent's own Settings stage — is the only caller
+     * left. The property under test is unchanged: every named host action is
+     * reachable from a real surface. What moved is where this looks.
+     *
+     * The second assertion is the half that keeps the demotion honest. A page
+     * that quietly grew a second deploy path again would pass the first line
+     * and fail this one.
      */
-    expect(source).toContain('submitHostCommand("deploy"');
+    const deployPanel = readFileSync(
+      path.join(repoRoot, "app", "_components", "deploy.tsx"),
+      "utf8",
+    );
+    expect(deployPanel).toContain('submitHostCommand("deploy"');
+    expect(source).not.toContain('submitHostCommand("deploy"');
     /*
      * MAR-579. `host.trust` and `host.setup` landed in the IPC layer with no
      * caller — the same MAR-518 shape. Enrollment (confirm the fingerprint) and

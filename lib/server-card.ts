@@ -440,6 +440,66 @@ export interface ServerCheck {
  * that has just opened has checked nothing, and saying so is what stops the
  * reader assuming silence means working.
  */
+/**
+ * Why this card cannot put an agent on this server any more (MAR-642).
+ *
+ * One sentence, and it names the destination rather than the rule. "Deploy
+ * initiation has moved to the agent's Settings stage" is a changelog; what a
+ * person needs is *where to press next*, which is why the list under this line
+ * is links and this line is one clause of context above them.
+ *
+ * A constant rather than a function because it varies with nothing — not the
+ * server, not the agent, not whether anything is deployed.
+ * `MODEL_KEY_STAYS_HOME_REFUSAL` is a constant for the same reason.
+ */
+export const DEPLOY_LIVES_ON_THE_AGENT =
+  "Putting an agent on a server starts on the agent, where its connections and its model are. " +
+  "Open one and its settings will offer this server.";
+
+/**
+ * One deployed copy, as the table at the top of the page reads it (MAR-642).
+ *
+ * ## What this may say, and the one thing it may not
+ *
+ * **It reads the deploy record and never a liveness claim.** ADR 0010 bounds
+ * `agent_deploys` to DASH's memory of its own outbound act — it sent these
+ * bytes, on this date — and forbids a `running` column for a later feature to
+ * reach for. A table whose third column said "Running" would be that column,
+ * arrived at through a renderer instead of a migration.
+ *
+ * So the standing is *"DASH sent it on 12 August 2026"*: a fact DASH witnessed,
+ * with DASH named as the actor so it cannot be read as a report about the
+ * machine. What the server itself says is a different account and lives on the
+ * card below, beside the moment it was said — `lib/host-sighting.ts` is where
+ * the two are put side by side without being blended into one.
+ *
+ * A row exists only while DASH believes a copy is there: `sent` already drops
+ * anything brought home (`lib/views/build.ts`), so a bring-home empties this
+ * table rather than leaving a row nothing corrects.
+ */
+export function describeSentStanding(sentOn: string | null): string {
+  return sentOn === null
+    ? "DASH sent it. The date DASH recorded cannot be read."
+    : `DASH sent it on ${sentOn}.`;
+}
+
+/**
+ * The one line above that table, counted rather than asserted.
+ *
+ * `summariseServers`' rule, which that function's own header explains at length
+ * and which this one inherits whole: a summary that asserts something the rows
+ * under it do not is a summary that will eventually be the only wrong thing on
+ * the page.
+ */
+export function summariseDeployedCopies(copies: number, servers: number): string {
+  if (copies === 0) {
+    return "DASH has not put any agent on a server.";
+  }
+  const what = copies === 1 ? "One agent copy" : `${String(copies)} agent copies`;
+  const where = servers === 1 ? "one server" : `${String(servers)} servers`;
+  return `${what} DASH sent, on ${where}. Each row opens that agent's own settings, where the sending happens.`;
+}
+
 export function summariseServers(
   servers: readonly { same_server_count: number }[],
   /**
@@ -617,6 +677,18 @@ export function everyServerCardSentence(): string[] {
         { answered: true, at: CHECKED_AT },
       ],
     ),
+    /*
+     * MAR-642's four sentences, every branch of each. The gate only ever sees a
+     * string a fixture reaches — MAR-620's lesson about an optional field no
+     * fixture populated — and three of these are second branches of functions
+     * whose first branch is the one a reader would think to check.
+     */
+    DEPLOY_LIVES_ON_THE_AGENT,
+    describeSentStanding("12 August 2026"),
+    describeSentStanding(null),
+    summariseDeployedCopies(0, 0),
+    summariseDeployedCopies(1, 1),
+    summariseDeployedCopies(3, 2),
   ];
 }
 

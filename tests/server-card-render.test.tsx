@@ -16,9 +16,12 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { DeployPanel, ServerCard } from "../app/_components/server-card";
+import { SendAnAgentHere, ServerCard } from "../app/_components/server-card";
+import { DeployedCopies } from "../app/settings/servers/page";
 import { MANIFEST_ONLY_DEPLOY_REFUSAL } from "../lib/agent-folders";
 import { NOTHING_STRANDED } from "../lib/deploy/connection-travel";
+import { DEPLOY_LIVES_ON_THE_AGENT } from "../lib/server-card";
+import { agentStageHref } from "../app/_data/routes";
 import type { DeployStanding } from "../lib/deploy/deploying";
 import {
   describeConnectState,
@@ -120,7 +123,6 @@ function card(
       agents={[SENDABLE]}
       busy={false}
       notice={notice}
-      deploy={null}
       canAct
       actions={NOTHING}
     />,
@@ -358,202 +360,6 @@ describe("the four rows on a real machine", () => {
   });
 });
 
-describe("the deploy panel", () => {
-  const panel = (
-    agents: AgentDeployChoice[] = [SENDABLE],
-    over: {
-      chosenAgent?: string;
-      deploy?: DeployStanding | null;
-      report?: HostConnectState;
-      checkedAt?: string | null;
-      /** DASH's own record of what it already put on this server (MAR-606). */
-      server?: SavedServerView;
-    } = {},
-  ): string =>
-    renderToStaticMarkup(
-      <DeployPanel
-        server={over.server ?? SERVER}
-        agents={agents}
-        busy={false}
-        canAct
-        chosenAgent={over.chosenAgent ?? ""}
-        deploy={over.deploy ?? null}
-        report={over.report ?? { step: "not_checked", label: SERVER.label }}
-        checkedAt={over.checkedAt ?? null}
-        onChoose={() => undefined}
-        onCancel={() => undefined}
-        onDeploy={() => undefined}
-        onCheck={() => undefined}
-      />,
-    );
-
-  /*
-   * MAR-606 finding 31, and Henrik's own sentence: *"ONce connected the button
-   * should instead say disconnect this agent from the server or something."*
-   *
-   * Not literally that — ADR 0014 is that DASH cannot start or stop a deployed
-   * agent, and a button claiming to would be worse than the stale one. What the
-   * surface can honestly change to is what a second press actually does, and
-   * what makes sense the moment a push lands.
-   */
-  describe("what the control offers, after a deploy", () => {
-    const SENT_HERE: SavedServerView = {
-      ...SERVER,
-      sent: [{ agent: SENDABLE.name, sent_at: "2026-08-10T21:00:00Z", sent_on: "10 August 2026" }],
-    };
-
-    it("offers to send, the first time", () => {
-      const html = panel([SENDABLE], { chosenAgent: SENDABLE.name });
-      expect(html).toContain("Put it on this server");
-      expect(html).not.toContain("Replace the copy");
-    });
-
-    it("offers to replace once DASH has a record of sending it here", () => {
-      /*
-       * The answer to *"I could put the same agent two times on the server."*
-       * The install replaces rather than accumulating, DASH knows that from its
-       * own record, and saying so above the control is what stops the second
-       * press looking like it makes a second copy.
-       */
-      const html = panel([SENDABLE], { chosenAgent: SENDABLE.name, server: SENT_HERE });
-      expect(html).toContain("Replace the copy on this server");
-      expect(html).toContain("rather than adding a second copy");
-      expect(html).toContain("10 August 2026");
-    });
-
-    it("stops re-offering to send the moment a push has landed", () => {
-      // The finding itself. The one thing that can answer the question a person
-      // has at that moment is the server, so that is what the primary does.
-      const html = panel([SENDABLE], {
-        chosenAgent: SENDABLE.name,
-        server: SENT_HERE,
-        deploy: { step: "sent", agent: SENDABLE.name, server: SERVER.label },
-      });
-      expect(html).toContain(`Check ${SERVER.label}`);
-      expect(html).not.toContain("Put it on this server");
-      // Reachable, but no longer the thing being pushed at you.
-      expect(html).toContain("Send it again");
-      expect(html).toContain("Close");
-      expect(html).not.toContain("Not now");
-    });
-
-    it("keeps offering to send while a different agent's push is settling", () => {
-      // The standing belongs to one agent. Somebody who deploys A and then picks
-      // B must be offered B's own state, not A's aftermath.
-      const html = panel([SENDABLE, MIGRATED], {
-        chosenAgent: MIGRATED.name,
-        deploy: { step: "sent", agent: SENDABLE.name, server: SERVER.label },
-      });
-      expect(html).not.toContain(`Check ${SERVER.label}`);
-    });
-  });
-
-  it("carries ADR 0007's receipt before the deploy rather than with it", () => {
-    /*
-     * The while-closed sentence is required *before* the first deploy. This is
-     * the second place a deploy can begin, so it is the second place that has to
-     * say it — and it says it from the same function the connect flow uses, so
-     * neither copy can be softened alone.
-     */
-    const html = panel();
-    expect(html).toContain("Before you put an agent here");
-    expect(html).toContain("only show you what the server still has");
-    expect(html).toContain("Turning this off in DASH does not stop it");
-  });
-
-  it("no longer carries the dead-end bootstrap-gap sentence (MAR-579)", () => {
-    // MAR-579 deleted `describeBootstrapGap`: the gap now has a way out (the
-    // setup snippet on the card), so the deploy panel no longer describes a
-    // gap it cannot close.
-    expect(panel()).not.toContain("known gap");
-  });
-
-  it("says so plainly when there is no agent to put anywhere", () => {
-    expect(panel([])).toContain("no agent here");
-  });
-
-  describe("what the chosen agent leaves behind (MAR-591)", () => {
-    const STRANDED: AgentDeployChoice = {
-      name: "Meeting Assistant",
-      title: "Meeting Assistant",
-      deploy: {
-        deployable: true,
-        refusal: null,
-        travel: {
-          verdict: "warn",
-          stranded: [
-            {
-              connection_id: "gmail",
-              service: "Your Gmail",
-              custody: "oauth",
-              need: "undeclared",
-            },
-          ],
-        },
-      },
-    };
-    const BLOCKED: AgentDeployChoice = {
-      name: "Meeting Assistant",
-      title: "Meeting Assistant",
-      deploy: {
-        deployable: true,
-        refusal: null,
-        travel: {
-          verdict: "refuse",
-          stranded: [
-            {
-              connection_id: "gmail",
-              service: "Your Gmail",
-              custody: "oauth",
-              need: "run_needs_it",
-            },
-          ],
-        },
-      },
-    };
-
-    it("says nothing until an agent is chosen", () => {
-      // The panel opens on "Choose an agent". A sentence about somebody's Gmail
-      // before they have named an agent would be about no agent in particular.
-      expect(panel([STRANDED])).not.toContain("Your Gmail");
-    });
-
-    it("says it the moment the agent is chosen, from the agent page's component", () => {
-      /*
-       * `ConnectionTravelNotice` is `app/_components/deploy.tsx`'s, imported
-       * here rather than restated — the same arrangement `DeployOutcome` has,
-       * and for the same reason: two entry points that worded one consequence
-       * twice would be two places it could be softened.
-       */
-      const html = panel([STRANDED], { chosenAgent: STRANDED.name });
-      expect(html).toContain("Your Gmail");
-      expect(html).toContain(`stays on this computer`);
-    });
-
-    it("stops the deploy when the agent's own file says it needs what stays here", () => {
-      const html = panel([BLOCKED], { chosenAgent: BLOCKED.name });
-      expect(html).toContain('role="alert"');
-      expect(html).toContain(`needs something DASH cannot send to ${SERVER.label}`);
-      expect(html).toContain("disabled");
-    });
-
-    it("keeps the migrated-agent refusal beside it rather than instead of it", () => {
-      /*
-       * Two separate things can be wrong with one agent. Showing one would leave
-       * the other to be discovered after the first was fixed.
-       */
-      const both: AgentDeployChoice = {
-        name: MIGRATED.name,
-        title: MIGRATED.title,
-        deploy: { ...MIGRATED.deploy, travel: STRANDED.deploy.travel },
-      };
-      const html = panel([both], { chosenAgent: both.name });
-      expect(html).toContain(RENDERED_REFUSAL);
-      expect(html).toContain("Your Gmail");
-    });
-  });
-});
-
 describe("the enrollment and setup affordances (MAR-579)", () => {
   it("shows the fingerprint and a Confirm control when the host key is unconfirmed", () => {
     const html = card({
@@ -594,164 +400,6 @@ describe("the enrollment and setup affordances (MAR-579)", () => {
 
       }),
     ).not.toContain("Show the setup text");
-  });
-});
-
-/* ---------------------------------------------------------------------- *
- * MAR-577
- * ---------------------------------------------------------------------- */
-
-describe("an agent DASH cannot send", () => {
-  const panel = (chosenAgent: string): string =>
-    renderToStaticMarkup(
-      <DeployPanel
-        server={SERVER}
-        agents={[SENDABLE, MIGRATED]}
-        busy={false}
-        canAct
-        chosenAgent={chosenAgent}
-        deploy={null}
-        report={{ step: "not_checked", label: SERVER.label }}
-        checkedAt={null}
-        onChoose={() => undefined}
-        onCancel={() => undefined}
-        onDeploy={() => undefined}
-        onCheck={() => undefined}
-      />,
-    );
-
-  it("renders MAR-553's own refusal the moment the agent is chosen", () => {
-    /*
-     * The assertion the issue asks for by name, and it is against the constant
-     * rather than against a copy of its words: a sentence reworded in a
-     * component is one that stops matching the refusal main will actually give.
-     */
-    expect(panel(MIGRATED.name)).toContain(RENDERED_REFUSAL);
-  });
-
-  it("says nothing about it until that agent is the one chosen", () => {
-    expect(panel("")).not.toContain(RENDERED_REFUSAL);
-    expect(panel(SENDABLE.name)).not.toContain(RENDERED_REFUSAL);
-  });
-
-  it("keeps it in the list rather than filtering it out", () => {
-    /*
-     * A person's own agent missing from a picker, with nothing said, is a worse
-     * answer than the sentence explaining why it cannot go. It is also the
-     * failure mode that would make this bug invisible again.
-     */
-    expect(panel("")).toContain(MIGRATED.name);
-  });
-
-  it("stops the deploy rather than letting it be pressed", () => {
-    const chosen = panel(MIGRATED.name);
-    const sendable = panel(SENDABLE.name);
-    expect(chosen).toContain("disabled");
-    // The same markup with a deployable agent chosen has a live button, so the
-    // assertion above is about the refusal and not about the panel always
-    // rendering something disabled.
-    expect(sendable).not.toContain("disabled");
-  });
-});
-
-describe("a deploy while it is happening, and after", () => {
-  const withDeploy = (deploy: DeployStanding, report: HostConnectState, checkedAt: string | null): string =>
-    renderToStaticMarkup(
-      <DeployPanel
-        server={SERVER}
-        agents={[SENDABLE]}
-        busy={deploy.step === "sending"}
-        canAct
-        chosenAgent={SENDABLE.name}
-        deploy={deploy}
-        report={report}
-        checkedAt={checkedAt}
-        onChoose={() => undefined}
-        onCancel={() => undefined}
-        onDeploy={() => undefined}
-        onCheck={() => undefined}
-      />,
-    );
-
-  const REACHABLE: HostConnectState = {
-    step: "reachable",
-    label: SERVER.label,
-    runner_build: "96cef120",
-    agents_running: 1,
-    agents_there: [{ agent_id: "News Scout", running: true }],
-  };
-
-  it("says what is happening rather than only greying the button out", () => {
-    /*
-     * Installing a bundle over SSH takes long enough that a control which simply
-     * stopped responding reads as a page that has hung — which is how somebody
-     * comes to press it twice, or to close DASH mid-push.
-     */
-    const html = withDeploy(
-      { step: "sending", agent: SENDABLE.name, server: SERVER.label },
-      { step: "not_checked", label: SERVER.label },
-      null,
-    );
-    expect(html).toContain("Putting News Scout on My server");
-    expect(html).toContain("Nothing on this computer changes");
-  });
-
-  it("does not report what the server has while the push is still going", () => {
-    // The previous check's answer under "putting it there" would be DASH
-    // answering the question the person is waiting on with the previous one.
-    const html = withDeploy(
-      { step: "sending", agent: SENDABLE.name, server: SERVER.label },
-      REACHABLE,
-      "2026-08-09T14:14:37Z",
-    );
-    expect(html).not.toContain("The server reported");
-  });
-
-  it("reports the server's own answer afterwards, with when it was given", () => {
-    const html = withDeploy(
-      { step: "sent", agent: SENDABLE.name, server: SERVER.label },
-      REACHABLE,
-      "2026-08-09T14:14:37Z",
-    );
-    expect(html).toContain("The server reported 1 agent running");
-    expect(html).toContain("keeps no list of its own");
-    expect(html).toContain("August 2026");
-  });
-
-  it("never says the agent is running there, because DASH has no such record", () => {
-    /*
-     * The one sentence this surface is most likely to acquire by accident.
-     * `host.deploy` pushes a bundle, starts it and stores nothing, so the only
-     * account of what is on a server is that server's answer to a check.
-     */
-    const html = withDeploy(
-      { step: "sent", agent: SENDABLE.name, server: SERVER.label },
-      REACHABLE,
-      "2026-08-09T14:14:37Z",
-    );
-    expect(html).toContain("DASH keeps no list of what it has put on a server");
-    expect(html).not.toContain("is now running on");
-  });
-
-  it("sends a failed deploy to the server rather than claiming nothing changed", () => {
-    /*
-     * Three steps run behind one answer — produce, install, start — and DASH
-     * cannot tell which of them stopped. "Nothing was changed on your server" is
-     * the reassuring sentence and the one that would be wrong.
-     */
-    const html = withDeploy(
-      {
-        step: "failed",
-        agent: SENDABLE.name,
-        server: SERVER.label,
-        detail: MANIFEST_ONLY_DEPLOY_REFUSAL,
-      },
-      { step: "not_checked", label: SERVER.label },
-      null,
-    );
-    expect(html).toContain(RENDERED_REFUSAL);
-    expect(html).toContain("Check My server to see what is on it now");
-    expect(html).not.toContain("Nothing was changed");
   });
 });
 
@@ -801,12 +449,131 @@ describe("a window that cannot act", () => {
         agents={[]}
         busy={false}
         notice={null}
-        deploy={null}
         canAct={false}
         actions={NOTHING}
       />,
     );
     expect(html).toContain("Check this server");
     expect(html).toContain("disabled");
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * MAR-642: the card stopped deploying
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What used to be here, and where it went.
+ *
+ * Three describe blocks — the deploy panel, an agent DASH cannot send, and a
+ * deploy while it is happening — were deleted with this packet rather than
+ * rewritten. Every claim in them is still made, by
+ * `tests/deploy-render.test.tsx` against `DeployToServerPanel`: ADR 0007's
+ * receipt before the deploy, MAR-553's refusal for an agent DASH holds no build
+ * for, MAR-591's travel notice, the outcome while it is happening and after,
+ * and the read-only window. That file tests the surface that still performs a
+ * deploy; this one tests the surface that no longer does.
+ */
+describe("putting an agent here starts on the agent", () => {
+  const list = (agents = [SENDABLE, MIGRATED], canAct = true): string =>
+    renderToStaticMarkup(<SendAnAgentHere server={SERVER} agents={agents} canAct={canAct} />);
+
+  it("links each agent into its own settings rather than deploying", () => {
+    const html = list();
+    // The destination, not an explanation of where the button went. A card that
+    // simply lost its control would leave somebody on this page with a working
+    // server and nothing to do with it.
+    expect(html).toContain(`href="${agentStageHref(SENDABLE.name, "settings").replace("&", "&amp;")}"`);
+    expect(html).not.toContain("Put it there");
+  });
+
+  it("says why this page no longer asks, once, above the list", () => {
+    expect(list()).toContain(DEPLOY_LIVES_ON_THE_AGENT);
+  });
+
+  it("draws an agent it cannot send with its reason, rather than a link", () => {
+    /*
+     * `DeployPanel`'s rule, and it matters more here than it did there: a link
+     * is an invitation, and inviting somebody to walk to another page to be
+     * told no is worse than telling them here.
+     */
+    const html = list();
+    expect(html).toContain(RENDERED_REFUSAL);
+    expect(html).not.toContain(`href="${agentStageHref(MIGRATED.name, "settings").replace("&", "&amp;")}"`);
+  });
+
+  it("marks the agents DASH has already sent here", () => {
+    const sent: SavedServerView = {
+      ...SERVER,
+      sent: [{ agent: SENDABLE.name, sent_at: "2026-08-12T09:00:00.000Z", sent_on: "12 August 2026" }],
+    };
+    expect(
+      renderToStaticMarkup(<SendAnAgentHere server={sent} agents={[SENDABLE]} canAct />),
+    ).toContain("already here");
+  });
+
+  it("says which window this is rather than drawing a link that would refuse", () => {
+    const html = list([SENDABLE], false);
+    expect(html).toContain("Open the installed DASH app");
+    expect(html).not.toContain("href=");
+  });
+
+  it("says so plainly when there is no agent to send", () => {
+    expect(list([])).toContain("There is no agent here to put on a server yet");
+  });
+});
+
+/**
+ * The table at the top of the Servers page (MAR-642).
+ *
+ * Henrik asked whether a Settings tab should list agents for deployment; the
+ * answer recorded on the issue is no new tab, because the Agents page and the
+ * Servers page already list agents. What neither answers is *which of my agents
+ * are on which machine*, and this is that, in three columns.
+ *
+ * The assertion that matters is the third column's. `agent_deploys` is bounded
+ * by ADR 0010 to DASH's memory of its own outbound act, and a table saying
+ * "Running" would be the column that ADR forbids, reached through a renderer
+ * instead of a migration.
+ */
+describe("agents on servers, at the top of the page", () => {
+  const SENT: SavedServerView = {
+    ...SERVER,
+    sent: [
+      { agent: "news-scout", sent_at: "2026-08-12T09:00:00.000Z", sent_on: "12 August 2026" },
+      { agent: "digest-writer", sent_at: "2026-08-13T09:00:00.000Z", sent_on: null },
+    ],
+  };
+
+  const table = (servers: SavedServerView[]): string =>
+    renderToStaticMarkup(<DeployedCopies servers={servers} />);
+
+  it("draws nothing at all when DASH has deployed nothing", () => {
+    // The state nearly every DASH is in. A heading over three empty columns
+    // would announce a feature and that the reader has not used it.
+    expect(table([SERVER])).toBe("");
+  });
+
+  it("has one row per copy, with the agent linking into its own settings", () => {
+    const html = table([SENT]);
+    expect(html.match(/<tr>/gu)).toHaveLength(3); // the header row and two copies
+    expect(html).toContain(agentStageHref("news-scout", "settings").replace("&", "&amp;"));
+    expect(html).toContain(SERVER.label);
+  });
+
+  it("says DASH sent it, never that it is running", () => {
+    const html = table([SENT]);
+    expect(html).toContain("DASH sent it on 12 August 2026");
+    for (const claim of ["Running", "running", "Live", "Online", "Healthy"]) {
+      expect(html, claim).not.toContain(claim);
+    }
+  });
+
+  it("says so rather than inventing a date it cannot read", () => {
+    expect(table([SENT])).toContain("The date DASH recorded cannot be read");
+  });
+
+  it("counts what it drew rather than asserting it", () => {
+    expect(table([SENT])).toContain("2 agent copies DASH sent, on one server");
   });
 });
