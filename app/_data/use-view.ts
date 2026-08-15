@@ -17,6 +17,7 @@
 import { useEffect, useState } from "react";
 
 import type { Recovery } from "../../lib/copy/recovery";
+import { onWindowFocus } from "../../lib/shell/focus-refresh";
 import { dataSource, type DashDataSource, type ViewResult } from "./source";
 
 export type ViewState<T> =
@@ -136,4 +137,28 @@ export function useHost(): DashDataSource["host"] | null {
     setHost(dataSource().host);
   }, []);
   return host;
+}
+
+/**
+ * A key that bumps every time the window regains OS focus (MAR-595 finding
+ * 13, moved here from `app/page.tsx` for MAR-640's sidebar badge, which
+ * needs the same refresh key `AgentsPage` already had).
+ *
+ * Passed to `useView` as its `refreshKey`, so a page rereads its view rather
+ * than staying on whatever it read at mount. `npm run open-in-dash`'s native
+ * consent dialog adding an agent while a page was underneath it the whole
+ * time is the case this exists for; a work-inbox item arriving the same way
+ * is the same case for the badge. See `lib/shell/focus-refresh.ts` for why
+ * `focus` rather than a poll.
+ */
+export function useRefreshOnWindowFocus(): number {
+  const [key, setKey] = useState(0);
+  useEffect(
+    () =>
+      onWindowFocus(window, () => {
+        setKey((value) => value + 1);
+      }),
+    [],
+  );
+  return key;
 }

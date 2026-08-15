@@ -267,6 +267,13 @@ interface DashShellClient {
    */
   renameAgent?(args: { agent_id: string; display_name?: string }): Promise<CommandResult>;
   /**
+   * Star — or unstar — one agent, for the fleet rail's own filter (MAR-640).
+   *
+   * Optional for the same reason as everything above: a shell built before
+   * this feature has a `dashShell` without it.
+   */
+  setAgentFavourite?(args: { agent_id: string; favourite: boolean }): Promise<CommandResult>;
+  /**
    * The four notification commands (MAR-588).
    *
    * Optional for the same reason as everything above. Note what three of them
@@ -1105,6 +1112,37 @@ export async function renameAgent(args: {
       request_id: "",
       reason: "read_only_host",
       detail: "This version of the DASH app cannot rename an agent yet.",
+    };
+  }
+  return call(args);
+}
+
+/**
+ * Star — or unstar — one agent, for the fleet rail's own filter (MAR-640).
+ *
+ * `renameAgent`'s shape exactly, for the same reason: a browser tab cannot
+ * act, and an older packaged build may not carry this method yet.
+ */
+export async function setAgentFavourite(args: {
+  agent_id: string;
+  favourite: boolean;
+}): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to star an agent.",
+    };
+  }
+  const call = bridge.setAgentFavourite;
+  if (call === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "This version of the DASH app cannot star an agent yet.",
     };
   }
   return call(args);

@@ -19,7 +19,7 @@
  * static render a scroll position.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { describeRunCount } from "../app/_components/fleet-card";
@@ -30,6 +30,16 @@ import { FLEET_CARD_STATUSES, describeFleetCardStatus } from "../lib/copy/fleet-
 import { FLEET_VIEWS, describeFleetView } from "../lib/views/fleet-view";
 import { GLANCE_ALL_CLEAR } from "../lib/copy/glance";
 import type { AgentRow } from "../lib/views/types";
+
+/*
+ * MAR-640. `FleetList` now calls `useRouter` for Enter-to-open in Rows —
+ * `tests/sidebar.test.tsx`'s own precedent for the same reason: a static
+ * render has no app-router context to invariant-check against, and every
+ * render test in this file is exactly that render.
+ */
+vi.mock("next/navigation", () => ({
+  useRouter: (): { push: (href: string) => void } => ({ push: () => undefined }),
+}));
 
 function agent(over: Partial<AgentRow> = {}): AgentRow {
   return {
@@ -49,6 +59,7 @@ function agent(over: Partial<AgentRow> = {}): AgentRow {
     glance: [GLANCE_ALL_CLEAR],
     hosted_on: [],
     running: false,
+    favourite: false,
     ...over,
   } as AgentRow;
 }
@@ -112,18 +123,32 @@ describe("the layout control", () => {
 });
 
 describe("the agents page rail", () => {
-  const markup = renderToStaticMarkup(<FleetRail />);
+  const markup = renderToStaticMarkup(<FleetRail agents={[]} />);
 
   it("is a named aside, not a row above the cards", () => {
     expect(markup).toContain('class="fleet-rail"');
     expect(markup).toContain('aria-label="Agent actions"');
   });
 
-  it("holds Add agent and the three-view control together", () => {
+  it("holds Add agent, the filter and the three-view control together", () => {
     expect(markup).toContain('href="/settings/add-agent"');
     expect(markup).toContain("Add agent");
     expect(markup).toContain("fleet-view-toggle");
-    expect([...markup.matchAll(/type="radio"/g)]).toHaveLength(3);
+    // Six filter options plus the three views — one radio group each.
+    expect([...markup.matchAll(/type="radio"/g)]).toHaveLength(9);
+  });
+
+  it("names the filter group and shows all six options, MAR-640", () => {
+    expect(markup).toContain(">Show<");
+    for (const label of ["All", "Needs action", "Running", "Ready", "Not run", "Favourites"]) {
+      expect(markup).toContain(`>${label}<`);
+    }
+  });
+
+  it("counts render from a real fleet, even at zero", () => {
+    const zero = renderToStaticMarkup(<FleetRail agents={[]} />);
+    // Every count is 0 when the fleet is empty — the row is drawn either way.
+    expect([...zero.matchAll(/fleet-filter-count[^>]*>(\d+)</g)]).toHaveLength(6);
   });
 });
 
