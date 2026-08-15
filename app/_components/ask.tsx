@@ -231,7 +231,14 @@ export function AskComposer({
   return (
     <div className="ask-compose">
       <label className="ask-field">
-        <span className="visually-hidden">{ask.purpose.headline}</span>
+        {/* The bar's own name, not the thread's opening sentence (MAR-646).
+            This label used to be `ask.purpose.headline`, which is the paragraph
+            the thread draws directly above it on the Chat stage — one sentence
+            in two places on one screen, and the hidden half is still in the
+            markup, which is exactly the kind of duplication a copy gate reads
+            straight past. A control's accessible name should say what the
+            control is. */}
+        <span className="visually-hidden">{AGENT_COCKPIT_COPY.chat_label}</span>
         <textarea
           className="ask-input"
           rows={2}

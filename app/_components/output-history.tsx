@@ -8,38 +8,38 @@ import type { ArtifactCardView } from "../../lib/views/artifacts";
  * Both artifact-card renderers use this wrapper. The card itself stays theirs:
  * DASH's Outputs area keeps its actions and developer reference, while the
  * author's panel keeps both out under ADR 0008.
+ *
+ * ## `collapsed` is the author's panel's now, and nothing else's (MAR-646)
+ *
+ * The agent page passed it too, and on the cockpit's Output stage the dated
+ * rows it produced were the rail's own list a second time — the same day and
+ * the same title per entry, side by side on one screen. That stage draws one
+ * output now and the rail is the index of them, so `OutputsPanel` reaches this
+ * wrapper only for the run detail page's flat list.
+ *
+ * The author's panel keeps both halves, and that is ADR 0008 rather than an
+ * inconsistency: a panel is a region somebody else declared, inside a stage,
+ * with no rail indexing *it*. The rail indexes DASH's own record of the
+ * artifacts, which is the section above it.
+ *
+ * The `openId` this took with MAR-641 went with the same change. Which card is
+ * open is a property of a *list*, and the surface that had to choose no longer
+ * draws one — `OutputsPanel` resolves the id where the single card is chosen.
  */
 export function OutputHistory({
   cards,
   collapsed,
-  openId,
   renderCard,
 }: {
   cards: readonly ArtifactCardView[];
   collapsed: boolean;
-  /**
-   * Which output is the one in full, or null for the newest (MAR-641).
-   *
-   * The cockpit's rail is a titles-only list whose whole promise is that
-   * pressing an entry opens *that* output in the stage. This is how: the named
-   * card takes the open position and every other one — including the newest —
-   * becomes a dated disclosure. An id this list does not hold falls back to the
-   * newest rather than opening nothing, because a link that has outlived its
-   * artifact should land on the page it named rather than on an empty one.
-   */
-  openId?: string | null;
   renderCard: (card: ArtifactCardView, index: number) => ReactNode;
 }): ReactNode {
-  const named =
-    openId === undefined || openId === null
-      ? -1
-      : cards.findIndex((card) => card.reference.artifact_id === openId);
-  const open = named === -1 ? 0 : named;
   return (
     <ol className="output-list">
       {cards.map((card, index) => (
         <li key={`${card.reference.run_id}:${card.reference.artifact_id}`}>
-          {!collapsed || index === open ? (
+          {!collapsed || index === 0 ? (
             renderCard(card, index)
           ) : (
             <details className="output-history-entry">

@@ -385,6 +385,21 @@ await Promise.all([
     format: "esm",
   }),
 
+  // The cockpit's de-duplication (MAR-646), on the same terms as every harness
+  // above and for a reason none of them could cover: `capture-deploy.ts` already
+  // photographs all six agent stages, and every frame it takes is of an agent
+  // that has never run — so its rail is empty, and a duplication between a rail
+  // and the stage beside it cannot be photographed with the rail empty. This one
+  // seeds an agent with four outputs, a run of telemetry and a queue, and counts
+  // how many of the rail's titles the stage repeats. See
+  // `electron/capture-cockpit.ts`.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-cockpit.ts")],
+    outfile: path.join(outDir, "capture-cockpit.mjs"),
+    format: "esm",
+  }),
+
   // The fleet's three layouts (MAR-612), on the same terms and for two reasons
   // at once: the store decides whether a spotlight has neighbours to turn, and a
   // stored preference decides what shape the page draws at all. A run against

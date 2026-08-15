@@ -19,6 +19,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { OutputsPanel } from "../app/_components/outputs";
+import { OutputHistory } from "../app/_components/output-history";
 import { OUTPUTS_PANEL_COPY, describeArtifactAvailability } from "../lib/copy/artifacts";
 import { buildArtifactCards } from "../lib/views/artifacts";
 import { plainMoment } from "../lib/copy/when";
@@ -143,6 +144,15 @@ describe("every output is drawn", () => {
   });
 });
 
+/**
+ * MAR-622's dated history, where MAR-646 left it.
+ *
+ * `OutputsPanel` no longer collapses anything: the cockpit's Output stage draws
+ * one output because the rail beside it is the index, and the run detail page
+ * draws one run's outputs flat. The wrapper still owns the behaviour and the
+ * author's panel still asks for it, so the coverage moves to the wrapper rather
+ * than going with the prop.
+ */
 describe("an agent's output history", () => {
   const today = new Date(2026, 4, 3, 12);
   const historical = [
@@ -180,10 +190,14 @@ describe("an agent's output history", () => {
 
   const html = decode(
     renderToStaticMarkup(
-      <OutputsPanel
+      <OutputHistory
         cards={buildArtifactCards(historical, undefined, today)}
-        grounding={null}
-        history
+        collapsed
+        renderCard={(card) => (
+          <article className="output-card">
+            <h3 className="value">{card.artifact.title}</h3>
+          </article>
+        )}
       />,
     ),
   );

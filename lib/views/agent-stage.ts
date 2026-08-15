@@ -87,11 +87,41 @@ export function isAgentStage(value: string | null): value is AgentStage {
  * there. Nothing on screen moves without somebody asking for it — the design
  * brief's rule, applied to the one part of this page that could move on its
  * own.
+ *
+ * ## An agent that has made something lands on what it made (MAR-646)
+ *
+ * This clause is the other half of a deletion. The Overview stage used to draw
+ * the newest output under the heading *Latest output*, three hundred pixels
+ * from a rail panel with the same heading and the same title in it — the
+ * clearest of the duplications MAR-646 was filed on. Overview stopped drawing
+ * it, and that is only a subtraction if the output is still the thing a link to
+ * an agent lands on: otherwise the fix for "the same thing twice" would be "the
+ * thing nowhere", which is the failure MAR-576 is named after.
+ *
+ * So a produced agent resolves to `output` and a new one still resolves to
+ * `overview`, where the guided checklist is. Nothing moves under anybody: this
+ * is what an address with *no* stage means, and every address that names one is
+ * honoured exactly as before.
+ *
+ * `electron/smoke.ts`'s proof 6p is the witness. It loads the agent's address
+ * with no stage in it and requires the digest to be inside `.cockpit-stage` —
+ * *"whatever `resolveAgentStage` decides an ordinary link to an agent means,
+ * the news has to be on it"* — so this clause is checked on the installed shell
+ * rather than only here.
  */
 export function resolveAgentStage(
   requested: string | null,
   facts: {
     running: boolean;
+    /**
+     * Whether DASH holds anything this agent produced (MAR-646).
+     *
+     * Read off the same `outputs` list the rail indexes, so the landing stage
+     * and the rail cannot disagree about whether there is anything to read.
+     * Optional, and absent is false: a caller that has not looked gets the
+     * overview, which is the answer for an agent that has made nothing.
+     */
+    has_output?: boolean;
     /**
      * The address's fragment, without the `#`, or empty.
      *
@@ -118,5 +148,8 @@ export function resolveAgentStage(
   if ((facts.fragment ?? "") !== "") {
     return "overview";
   }
-  return facts.running ? "run" : "overview";
+  if (facts.running) {
+    return "run";
+  }
+  return facts.has_output === true ? "output" : "overview";
 }
