@@ -191,6 +191,17 @@ interface DashShellClient {
   markAgentLooked?(args: { agent_id: string }): Promise<CommandResult>;
   setUiScale?(factor?: number): Promise<CommandResult>;
   /**
+   * The native half of the theme (MAR-642).
+   *
+   * Optional for the reason every method here is, and this degradation is the
+   * gentlest of them: a shell older than this command draws the whole page in
+   * whichever palette the person chose — that is CSS and needs no bridge — and
+   * only the title bar goes on following the operating system. So the setting
+   * works and one strip at the top of the window is out of step, which is worth
+   * strictly less than a control that refused to exist.
+   */
+  setTheme?(theme: string): Promise<CommandResult>;
+  /**
    * The three model commands (MAR-583).
    *
    * Optional for the same reason as everything above, and the degradation is the

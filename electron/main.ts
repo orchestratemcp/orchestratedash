@@ -770,6 +770,23 @@ export function registerCommandChannel(
         }
         return applyUiScale(factor);
       },
+      /*
+       * MAR-642. One assignment, and everything native follows it.
+       *
+       * `nativeTheme.themeSource` is what `shouldUseDarkColors` answers from, so
+       * setting it fires `nativeTheme`'s own `updated` event, which `followTheme`
+       * on every window already listens for and answers by re-setting the title
+       * bar overlay. That is why there is no window handling here: the wiring
+       * MAR-436 built to follow the operating system follows the person's choice
+       * unchanged, because both arrive through the same property.
+       *
+       * `resolveTheme(nativeTheme.shouldUseDarkColors, null)` at the window's
+       * creation stays correct for the same reason — its `chosen` argument is
+       * for a choice made *outside* Electron's own theme, and there is none.
+       */
+      setNativeTheme: (theme) => {
+        nativeTheme.themeSource = theme;
+      },
       // MAR-383. The vault is reachable from exactly this one entry in exactly
       // this one context object, and the value the user types never comes back
       // through it — see `lib/connection-actions.ts` for what does.

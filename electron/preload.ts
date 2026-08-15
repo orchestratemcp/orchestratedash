@@ -259,6 +259,15 @@ const dashShell = {
   },
   setUiScale: (factor?: number) =>
     sendNumbers("shell.scale", factor === undefined ? {} : { factor }),
+  /**
+   * Colour the chrome Electron draws, to match the palette the page is in
+   * (MAR-642).
+   *
+   * One string from a closed set, and main narrows it again to one of three
+   * literals before it reaches `nativeTheme` — so what page script can ask for
+   * is "light", "dark" or "the computer's", and nothing else.
+   */
+  setTheme: (theme: string) => send("shell.theme", { theme }),
 
   /**
    * The seven Agent DOM commands, one named method each.

@@ -137,6 +137,11 @@ describe("the audited command chokepoint", () => {
       // can honestly declare `mutates: false`.
       "shell.menu",
       "shell.scale",
+      // MAR-642. The third in that family: the native half of the theme. The
+      // palette is CSS and needs no command; the window's background and the
+      // Windows title bar overlay are chosen in Node before a stylesheet
+      // exists, and this is what tells that half which one a person chose.
+      "shell.theme",
       // MAR-415. Lifecycle, not Agent DOM commands: they act on a process, no
       // manifest declares them, and they never become an envelope. The
       // `runner.` prefix is what keeps that legible at every call site.
@@ -508,6 +513,8 @@ describe("dispatch", () => {
     // Electron would put it". Recorded rather than performed for the same
     // reason as everything else here: there is no `Menu` in this process.
     const menus: Array<{ x: number; y: number } | undefined> = [];
+    // MAR-642. Which theme main was told to draw its own chrome in.
+    const themes: string[] = [];
     // MAR-434. Recorded rather than performed, like everything else here: the
     // real one reaches the runner over a socket and raises a native save
     // dialog, and neither exists in this process.
@@ -562,6 +569,7 @@ describe("dispatch", () => {
       hosts,
       workspaces,
       menus,
+      themes,
       downloads,
       workspaceAction: (action: WorkspaceAction, target: Record<string, unknown>) => {
         if (action === "download") {
@@ -622,6 +630,13 @@ describe("dispatch", () => {
         menus.push(at);
       },
       setUiScale: (factor: number | undefined) => factor ?? 1,
+      // MAR-642. Recorded, not performed: the real one assigns
+      // `nativeTheme.themeSource`, which no test process has. What is worth
+      // asserting is that the dispatcher narrows whatever a renderer sent to
+      // one of three literals before it gets here.
+      setNativeTheme: (theme: "system" | "light" | "dark") => {
+        themes.push(theme);
+      },
       // MAR-383. Recorded, not performed — and note the fake holds no secret,
       // which it could not do usefully anyway: no credential is an argument to
       // or a result of this call.
