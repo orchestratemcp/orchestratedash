@@ -138,7 +138,13 @@ describe("the fleet asks for the loop, and asks for nothing else", () => {
     // two rows of three portraits can fill the pane; the chief quotes the
     // most pressing one rather than drawing the row again.
     expect(fleetCard).not.toContain("<GlanceChips");
-    const portrait = fleetCard.indexOf('<span className="fleet-portrait">');
+    /*
+     * MAR-639 tints the portrait's class by status, so the attribute is now a
+     * `tone === null ? "fleet-portrait" : …` expression rather than one
+     * literal string — the class name itself still has to appear in it
+     * either way.
+     */
+    const portrait = fleetCard.indexOf('"fleet-portrait"');
     expect(portrait).toBeGreaterThan(-1);
     expect(rules).not.toMatch(/\.glance[^{}]*\{[^}]*--o-/);
   });

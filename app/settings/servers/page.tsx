@@ -1038,15 +1038,12 @@ export default function HostsPage(): ReactNode {
         MAR-599, the same fix MAR-593 made for Connections. The tab strip above
         this page already says "Servers" — an `<h1>` repeating it says nothing
         new to somebody who just read the word they pressed. "Remote machines"
-        says what a server *is* here: not a rented box in the abstract, but the
-        specific thing the lede below explains — one your agents keep running on
-        after DASH itself is closed.
+        says what a server *is* here: not a rented box in the abstract, but one
+        your agents keep running on after DASH itself is closed — the sentence
+        MAR-639's text axe removes from below the heading, since the deploy
+        flow itself says the rest.
       */}
       <h1>Remote machines</h1>
-      <p className="lede">
-        Put an agent on a server and it keeps working when DASH is closed. DASH
-        reaches out to the server; the server never reaches back.
-      </p>
       <HostNotice host={host} />
 
       {state.status === "loading" ? (

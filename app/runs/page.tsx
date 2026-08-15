@@ -130,10 +130,6 @@ export default function RunsPage(): ReactNode {
   return (
     <>
       <h1>Runs</h1>
-      <p className="lede">
-        Every time one of your agents has done its job, and whether it went the
-        way its plan said it would.
-      </p>
       {/* A live region so the page's own refreshing is announced as well as
           seen, and it disappears with the running run rather than becoming
           furniture — `agents/detail`'s pattern. */}

@@ -219,11 +219,22 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
   // then answers per card — see `glanceReader` for why those two in particular
   // must not be asked per agent.
   const glanceFor = glanceReader(store, { connectionRows: connectionRowsFor });
-  const live = new Set(
-    listRuns(store)
-      .filter((run) => run.status === "running")
-      .map((run) => run.agent),
-  );
+  // MAR-639. One pass over the same run list `live` already walked, rather
+  // than a second `listRuns(store)` — `glanceReader`'s own reason for reading
+  // the looks table and the run list once for the whole fleet rather than
+  // once per card. `listRuns` is newest first, so the first entry per agent
+  // is its last run — `lib/views/glance.ts`'s own comment for its `lastRun`
+  // map, read again here because that map is private to `glanceReader`.
+  const live = new Set<string>();
+  const lastRunAt = new Map<string, string>();
+  for (const run of listRuns(store)) {
+    if (run.status === "running") {
+      live.add(run.agent);
+    }
+    if (!lastRunAt.has(run.agent)) {
+      lastRunAt.set(run.agent, run.started_at);
+    }
+  }
 
   return {
     agents: listAgents(store).map((agent) => ({
@@ -238,6 +249,9 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
       planned_steps: agent.planned_steps,
       automation_clearance: agent.automation_clearance,
       run_count: agent.run_count,
+      // MAR-639. Newest `started_at` DASH has an event for, or null for an
+      // agent that has never run — the same map `running` below reads.
+      last_run_at: lastRunAt.get(agent.name) ?? null,
       origin: agentOrigin(registrations.get(agent.name)),
       compliance: complianceForAgent(agent.name, store),
       // MAR-501. Straight from the summary, which took it straight from the

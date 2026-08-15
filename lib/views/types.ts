@@ -184,6 +184,16 @@ export interface AgentRow {
   planned_steps: number;
   automation_clearance: string;
   run_count: number;
+  /**
+   * When DASH last saw this agent run, or null when it never has (MAR-639).
+   *
+   * `started_at` off the newest row in the runs table — the same "what did DASH
+   * see" reading `lib/views/glance.ts` already takes for the overdue chip's
+   * `last_run_at`, not the agent's own account of itself. On the row so the
+   * fleet card can put a date beside `run_count` without opening the runs view
+   * a second time.
+   */
+  last_run_at: string | null;
   origin: AgentOriginView;
   compliance: AgentCompliance;
   /**

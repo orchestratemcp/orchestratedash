@@ -61,9 +61,6 @@ export default function AgentsPage(): ReactNode {
     <div className="fleet-shell">
       <div className="fleet-main">
       <h1>Agents</h1>
-      <p className="lede">
-        Every agent this DASH knows about, and where each one came from.
-      </p>
       <HostNotice host={host} />
       {/*
         Above everything, including the loading state below: a damaged runner
