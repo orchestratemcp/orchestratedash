@@ -121,8 +121,15 @@ describe("schema", () => {
     // is a new step and it goes last (MAR-640 reached master first and holds
     // 22), so an installed store that has already recorded steps 0 to 22 runs
     // exactly one more.
+    //
+    // 24 is MAR-659's `chief_messages` (ADR 0023 decision 6) — the chief's own
+    // transcript with its receipt frozen beside each turn. Appended last for the
+    // same reason every step since 21 has been: an installed store that has
+    // already recorded 0 to 23 runs exactly one more, and renumbering a step
+    // somebody's database has recorded is the one thing this pin exists to make
+    // somebody think about.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(23);
+    expect(version.user_version).toBe(24);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -179,6 +186,11 @@ describe("schema", () => {
     // agent — and, like `agent_model_choice`, it has no cost column and no
     // column a key could go in.
     expect(tables).toContain("fleet_model_default");
+    // MAR-659, ADR 0023 decision 6. The chief's own transcript, and the second
+    // conversation table in this list. It is not keyed by agent and cannot be:
+    // the fleet room and an agent's room are two threads with nothing shared,
+    // because `{ kind: "chief" }` carries no agent id to key one by.
+    expect(tables).toContain("chief_messages");
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -538,7 +550,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(23);
+    ).toBe(24);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

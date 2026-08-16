@@ -96,50 +96,182 @@ export const CHIEF_CHAT_COPY = {
   open_chat: "Ask it there",
   /** Closes the room and puts the fleet back. Never clears the box. */
   close: "Back to the fleet",
+
+  /* -------------------------------------------------------------------- *
+   * MAR-659, ADR 0023: the chief can now ask a model, and keeps what it said
+   * -------------------------------------------------------------------- */
+
+  /**
+   * Above the frozen briefing rows under an answer.
+   *
+   * *Read* rather than *used* or *sources*: these are facts DASH pulled off its
+   * own cards a moment before it asked, and the heading has to be a claim DASH
+   * can stand behind whatever the answer above it says. "What this answer is
+   * based on" would be a claim about the model's reasoning, which nobody can
+   * check.
+   */
+  receipt_heading: "What I read before answering",
+  /**
+   * The receipt under an answer that used no records at all (decision 7).
+   *
+   * The structural half of what keeps small talk from becoming speculation. A
+   * person can see per turn whether the chief was speaking from records or being
+   * polite — and an answer making a claim about the fleet under this line is a
+   * defect anybody can spot.
+   */
+  receipt_empty: "Nothing from your records was used for this one.",
+  /**
+   * On a stored turn whose frozen facts no longer match DASH's records.
+   *
+   * It says the fleet moved, and deliberately **not** that the answer is wrong.
+   * DASH compared two of its own records and found them different; whether that
+   * makes the sentence above it false is a judgement DASH cannot make and does
+   * not attempt.
+   */
+  stale: "Your fleet has changed since this was written.",
+  /** The person's own control over their own transcript. */
+  clear: "Clear this conversation",
+  /** The scrollback's heading, once it survives leaving the page. */
+  thread_kept_heading: "This conversation",
+  /**
+   * Where a paid turn shows what it cost, on a turn that cost nothing.
+   *
+   * `describeCharge` is not called for one of these, because there is no
+   * provider whose number it could be quoting — see `ChiefTurnView.charge`. A
+   * zero here would be DASH making its own claim about money, which is the one
+   * thing no surface in this product does.
+   */
+  free: "Answered from your own records. No model was asked and nothing was charged.",
+  /** The activity line's accessible name, `ASK_ACTIVITY_LABEL`'s shape. */
+  activity_label: "Question in progress",
 } as const;
 
 /**
- * What the chief can answer, what it cannot, and what it keeps.
+ * What the chief can answer, what it cannot, and what it costs.
  *
  * On the surface rather than discovered, which is MAR-536's rule for the host
  * wizard's unwired button applied to a box that looks exactly like every other
- * chat box a person has used. Three true statements, and the third is the one
- * nobody would think to ask:
+ * chat box a person has used.
  *
- * **It costs nothing**, because it asks no model. That is worth saying beside a
- * composer whose twin on the agent page carries a spend estimate — a person who
- * has read that one will reasonably assume this one charges too.
+ * ## Both of the promises this used to make have stopped being true (MAR-659)
  *
- * **Its answers are not kept**, and that is a design decision rather than a
- * missing feature. ADR 0012 argues that a conversation which forgets everything
- * when the page closes is not one, and stores every agent question for that
- * reason. The chief's answers are statements about how the fleet is doing *now*;
- * a stored one would be a sentence that was true last Tuesday sitting in a
- * scrollback looking like a sentence about today. Re-asking is free and gives
- * the current answer.
+ * The version before ADR 0023 said two things that were correct when they were
+ * written and are now false, and that ADR named this function as the one that
+ * has to be rewritten with it:
  *
- * ## Why this leads with the reset rather than burying it (MAR-659)
+ * - *"It costs nothing to ask."* The chief could not reach a model, so it could
+ *   not spend. It can now, and a person deserves to read that before they type
+ *   rather than after they are charged.
+ * - *"Nothing said here is saved."* The thread was cleared by leaving the page.
+ *   It is kept now, in DASH's own store on this computer, until the person
+ *   clears it.
  *
- * Henrik hit the consequence of the paragraph above directly: he asked the chief
- * something, navigated away and came back to a thread with nothing in it, and it
- * read as broken. ADR 0023 decision 6 is the argument that the session-only
- * choice was against undated re-presentation, not against storage, and that this
- * packet — the shape half — owes the emptiness a plain reason rather than a fix
- * to what MAR-648 decided. So the sentence a returning reader lands on says the
- * true, specific thing that just happened to them (leaving the page cleared it)
- * before it explains what the chief is for, because that is the question a blank
- * box actually raises.
+ * ## Two things are still true and both are load-bearing
+ *
+ * **The standing question is still free.** `answerChief` runs first and answers
+ * from records with no model, no charge and no latency, which is why the
+ * sentence below separates the two rather than quoting one price for the box.
+ *
+ * **The chief still cannot tell you what an agent found.** That is the
+ * hand-off, unchanged: the briefing carries counts and titles, never the text of
+ * anything an agent saved, which is also what keeps a chief question from
+ * costing what an agent question costs.
  */
 export function describeChiefScope(): { headline: string; meaning: string } {
   return {
-    headline: "Nothing said here is saved",
+    headline: "I read your own records, and I keep what we say",
     meaning:
-      "Leaving this page, or closing DASH, clears this chat — it does not keep one, so an " +
-      "empty thread when you come back is expected, not a lost conversation. I can tell you " +
-      "how your agents are doing, because I read the same records their cards do. I cannot " +
-      "tell you what one of them found — that is its own to answer, and I will say which one " +
-      "to ask. It costs nothing to ask, and what I say is true of right now, so ask again " +
-      "whenever you like.",
+      "Ask me how your agents are doing and I answer from the same records their cards are " +
+      "drawn from — that part is free and instant. Anything else I put to your model provider, " +
+      "with those same facts attached, and your own account is charged for it; underneath every " +
+      "answer I show you exactly which facts I read. I cannot tell you what one of your agents " +
+      "found — that is its own to answer, and I will say which one to ask. This conversation is " +
+      "kept on this computer until you clear it.",
+  };
+}
+
+/**
+ * The chief with no model to ask (MAR-659, ADR 0023 decision 4).
+ *
+ * The shipped state on a DASH where nobody has set a fleet default, which is
+ * every DASH today: `fleet_model_default` has no row, so there is no provider,
+ * so there is no manifest, so the broker would refuse with `unknown_connection`
+ * before it touched a vault.
+ *
+ * Said plainly rather than approximated. Three things it deliberately does not
+ * do:
+ *
+ * - It does **not** fall back to an agent's pinned model. The chief is not an
+ *   agent, and spending under a setting somebody made about their news scout
+ *   would be DASH choosing on their behalf — ADR 0012 decision 4.
+ * - It does **not** disable the box. The standing question still works without a
+ *   model, and greying out a composer that answers half the questions people ask
+ *   would be a dead input where a working one is.
+ * - It does **not** name a model to pick. Which one to set is Henrik's decision
+ *   and the ADR makes a recommendation to him; a sentence here naming one would
+ *   be DASH taking it.
+ */
+export function describeChiefNoModel(): { headline: string; meaning: string } {
+  return {
+    headline: "I can read your records, but I cannot write you a sentence yet",
+    meaning:
+      "Answering in my own words means putting your question to a model provider, and DASH has " +
+      "no default model set — so there is nothing for me to ask, and nothing has been charged. " +
+      "I can still tell you how your fleet is standing, which I read straight off your agents' " +
+      "own cards. Set a default on the AI tab in Settings and I can answer the rest.",
+  };
+}
+
+/* ---------------------------------------------------------------------- *
+ * A model-written answer, and what DASH puts around it (MAR-659)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What is in flight, while it is.
+ *
+ * `describeAskActivity`'s rule, restated for this room rather than imported so
+ * the two can say different true things: the preload bridge is `invoke`-only, so
+ * a question is one awaited round trip and the steps inside it are invisible
+ * from the renderer. A line that animated through their names would be reciting
+ * a script — right about the order, wrong about the timing, every time.
+ *
+ * So: the operation genuinely in flight, and a clock the component read itself.
+ * The model id is set beside this as a value, never inside the sentence.
+ *
+ * There is deliberately no loader on the standing answer. That one is a pure
+ * function of props this render already holds and returns before the next frame,
+ * and a spinner over a synchronous read is the same fabrication MAR-648 forbids
+ * wearing the opposite costume.
+ */
+export function describeChiefActivity(elapsedSeconds: number): string {
+  return elapsedSeconds < 1
+    ? "Asking your model…"
+    : `Asking your model… ${String(Math.floor(elapsedSeconds))}s`;
+}
+
+/**
+ * Under a model-written answer, above the rows DASH actually sent.
+ *
+ * The sentence that makes the receipt worth reading. It says where the rows come
+ * from — DASH's own records, listed by DASH — and it says the thing the receipt
+ * cannot fix, which ADR 0023 insists is named in copy rather than papered over:
+ * a model can attribute a fact to the wrong agent or leave one out, and a
+ * person's defence against that is the list itself.
+ */
+export function describeChiefReceipt(rows: number): ChiefSentence {
+  if (rows === 0) {
+    return { sentence: CHIEF_CHAT_COPY.receipt_empty, quoted: null, values: [] };
+  }
+  return {
+    sentence:
+      rows === 1
+        ? "I wrote that from one agent's record, listed below exactly as I read it. Check what " +
+          "I said against it — the list is mine, the wording above is the model's."
+        : `I wrote that from ${String(rows)} agents' records, listed below exactly as I read ` +
+          "them. Check what I said against them — the list is mine, the wording above is the " +
+          "model's.",
+    quoted: null,
+    values: [],
   };
 }
 

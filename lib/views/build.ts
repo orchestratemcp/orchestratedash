@@ -72,6 +72,7 @@ import { describeNotificationState } from "../notify/settings";
 import { describeManifestGap } from "../sample-refresh";
 import { glanceReader } from "./glance";
 import { buildAgentAsk } from "./ask";
+import { chiefRoomView } from "./chief";
 import {
   buildAgentModelSettings,
   buildRunModel,
@@ -119,6 +120,7 @@ import type {
   AgentDeployView,
   AgentModelSettingsView,
   AgentOriginView,
+  AgentRow,
   AgentsView,
   BrokerCapabilityView,
   BrokerLapseView,
@@ -245,8 +247,7 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
   // fleet page draws every card, so one statement beats one per row.
   const favourites = readAgentFavourites();
 
-  return {
-    agents: listAgents(store).map((agent) => ({
+  const agents: AgentRow[] = listAgents(store).map((agent) => ({
       name: agent.name,
       // MAR-589. Straight from the summary for `avatar`'s own reason below: one
       // stored precedence, read once, rather than every surface deriving its
@@ -305,10 +306,24 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
       // MAR-640. The reader's own record, never the agent's — see
       // `AgentRow.favourite`.
       favourite: favourites.has(agent.name),
-    })),
+    }));
+
+  return {
+    agents,
     // Composed here rather than in the page, so both hosts hand the renderer the
     // same sentence — the property this module exists to keep.
     damage: describeStoreDamage(store.unreadable),
+    /*
+     * MAR-659, ADR 0023. The chief's room, built from the rows above rather
+     * than from a second read of the store.
+     *
+     * That is not a saving, it is a correctness property: `chiefRoomView` marks
+     * a stored turn stale by comparing its frozen receipt against the fleet as
+     * it is now, and "as it is now" has to mean the same fleet the cards on the
+     * same screen are drawn from. Two reads a frame apart could mark a turn
+     * against a state the page never displays.
+     */
+    chief: chiefRoomView(agents),
   };
 }
 

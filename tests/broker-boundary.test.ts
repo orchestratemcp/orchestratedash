@@ -12,6 +12,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createBroker } from "../lib/broker/execute";
+import { agentPrincipal } from "../lib/broker/principal";
 import {
   brokeredField,
   describeGrant,
@@ -734,7 +735,7 @@ describe("the shipped operations", () => {
     });
 
     await broker.handle(
-      AGENT,
+      agentPrincipal(AGENT),
       {
         request_id: "req-1",
         connection_id: "gmail",

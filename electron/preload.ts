@@ -587,6 +587,30 @@ const dashShell = {
     }),
 
   /**
+   * Ask the chief about the fleet (MAR-659, ADR 0023).
+   *
+   * The second method here that can cost the person money, and the shortest
+   * payload on this bridge: one field, and the emptiness is the point. There is
+   * no agent id because the chief principal has no field one could go in, no
+   * connection id because the chief's one connection is a constant of DASH's own
+   * composed manifest, and no model id for `askQuestion`'s reason.
+   *
+   * **No answer comes back through this call.** It resolves to whether the
+   * question was asked; the answer arrives with the fleet view on the next poll,
+   * and it is still there tomorrow. See `DispatchContext.chiefAction`.
+   */
+  askChief: (args: { question: string }) => send("chief.ask", { question: args.question }),
+
+  /**
+   * Forget the whole conversation with the chief (MAR-659).
+   *
+   * No payload at all, which is the only correct shape: there is one thread, and
+   * a page able to name which one to delete would be a page able to delete a
+   * different one. The rows are removed rather than hidden.
+   */
+  clearChiefThread: () => send("chief.clear", {}),
+
+  /**
    * The runner's own health, and its one repair (MAR-518).
    *
    * `status` carries no payload — it is a fact about the runner as a whole,
