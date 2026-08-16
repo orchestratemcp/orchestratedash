@@ -30,11 +30,14 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { ConnectionSourceManifest } from "../lib/connections";
+import type { FleetCapability } from "../lib/fleet/catalogue";
 import { SecureStoreError, type SecureStore } from "../lib/secure-store";
+import type { BrokerCapabilityView } from "../lib/views/types";
 import { Vault } from "../lib/vault";
 import { FakeSafeStorage } from "./fakes/fake-safe-storage";
 import { scriptedOAuth } from "./fakes/oauth-operations";
 import { refusingAi, scriptedAi } from "./fakes/ai-operations";
+import { expectPlainLanguage } from "./helpers/plain-language";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -45,9 +48,8 @@ const { performConnectionAction } = await import("../lib/connection-actions");
 const { adoptFleetCredential } = await import("../lib/fleet/actions");
 const { connectionSecretName } = await import("../lib/connection-credentials");
 const { closeDb, db } = await import("../lib/db");
-const { fleetCatalogue, fleetConnectorFor, fleetSecretName } = await import(
-  "../lib/fleet/catalogue"
-);
+const { everyFleetCatalogueSentence, fleetCatalogue, fleetConnectorFor, fleetSecretName } =
+  await import("../lib/fleet/catalogue");
 const { fleetReach } = await import("../lib/fleet/grants");
 const { FLEET_PRINCIPAL } = await import("../lib/fleet/principal");
 const {
@@ -345,6 +347,55 @@ describe("what DASH can connect before any agent exists", () => {
     for (const connector of fleetCatalogue()) {
       expect(connector.purpose.length).toBeGreaterThan(0);
     }
+  });
+
+  it("says everything it says in plain language", () => {
+    /*
+     * The call that makes `everyFleetCatalogueSentence` worth anything.
+     *
+     * It was written as the copy sweep for this module — *"derived from the
+     * catalogue rather than written out, so a connector added without a purpose
+     * is one the plain-language check never sees"* — and then had **no caller
+     * anywhere in the repository**. So the rule it exists to run was green on
+     * every surface and unenforced on exactly the fields it names: each
+     * connector's service, purpose and help, and every capability label,
+     * consequence and wider-permission sentence underneath it. A function shaped
+     * like a gate that nothing calls is not a gate, and this repository has hit
+     * that failure before — a copy rule holds only over the fields somebody
+     * actually feeds it.
+     *
+     * Both halves matter. `expectPlainLanguage` catches a raw identifier that
+     * reached the copy; the non-empty loop catches the opposite defect, a
+     * connector added with nothing to say, which reads as clean copy to a
+     * scanner precisely because there is none of it. The helper drops `help` and
+     * a read's `consequence` when null — both are null by design — so a blank
+     * here is a real one.
+     */
+    const sentences = everyFleetCatalogueSentence();
+    expect(sentences.length).toBeGreaterThan(0);
+    expectPlainLanguage(sentences);
+    for (const sentence of sentences) {
+      expect(sentence.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("pins a fleet capability against the view the cards are drawn from", () => {
+    /*
+     * `FleetCapability` restates `BrokerCapabilityView`'s four members rather
+     * than importing them, because `lib/views/` sits above this module and a
+     * type import for a value erased at compile time would point a base module
+     * upward. Its docblock promises this check; until now nothing performed it.
+     *
+     * One compile-time assignment each way, the shape `tests/broker-spend.test.ts`
+     * pins `BrokerAccess` with: it costs nothing at runtime and fails the moment
+     * the two restatements drift.
+     */
+    const capability = fleetCatalogue()[0]?.capabilities[0];
+    expect(capability).toBeDefined();
+
+    const asView: BrokerCapabilityView = capability as FleetCapability;
+    const back: FleetCapability = asView;
+    expect(back.id).toBe(capability?.id);
   });
 
   it("does not offer the loopback proof provider", () => {
