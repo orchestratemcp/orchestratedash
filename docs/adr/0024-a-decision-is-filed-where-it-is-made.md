@@ -1,6 +1,9 @@
 # ADR 0024: A decision is filed where it is made, and activity is never filed at all
 
-**Status:** proposed
+**Status:** accepted — Henrik, 2026-08-16 ("lets sign it and start working"),
+the same day the draft was posted. Implementation starts with the log itself —
+the table, the filing module, the write-sites, the surface; the chief's memory
+briefing is the following slice, on this document's own sequencing.
 **Date:** 2026-08-16
 **Issue:** MAR-673 (DASH — the chief's memory: what the fleet did and what was
 decided, as one store it files as it goes)
