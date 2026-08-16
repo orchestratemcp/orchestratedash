@@ -26,10 +26,12 @@
  * kept rather than re-argued.
  */
 
+import { describeFleetConnected, describeFleetDisconnected } from "../copy/decisions";
 import { db } from "../db";
 import { isDisplayableHint } from "../secret-refs";
 import { assertValidSecretName } from "../secure-store";
 import type { ConnectorKindV1 } from "../connection-spec";
+import { fileDecision } from "./decisions-store";
 
 /* ---------------------------------------------------------------------- *
  * The connection
@@ -80,6 +82,10 @@ export function recordFleetConnection(input: FleetConnectionInput, at: string): 
     }
   }
 
+  // Before the write, so the decisions log records the connection being
+  // *made* and not every re-key — `connected_at` surviving the update is the
+  // same fact kept for the same reason (ADR 0024 decision 1).
+  const isNew = readFleetConnection(input.provider) === null;
   db()
     .prepare(
       "INSERT INTO fleet_connections " +
@@ -104,6 +110,21 @@ export function recordFleetConnection(input: FleetConnectionInput, at: string): 
       at,
       at,
     );
+  if (isNew) {
+    fileDecision({
+      decided_at: at,
+      subject_kind: "connection",
+      subject_id: input.provider,
+      kind: "fleet_connection",
+      topic: "",
+      summary: describeFleetConnected(input.provider),
+      outcome: { state: "connected", provider: input.provider },
+      decided_by: "person",
+      rule: null,
+      reason: null,
+      receipts: [`fleet_connections ${input.provider}`],
+    });
+  }
 }
 
 export function readFleetConnection(provider: string): FleetConnectionRow | null {
@@ -142,8 +163,26 @@ export function listFleetConnections(): FleetConnectionRow[] {
  * nobody could see any more.
  */
 export function forgetFleetConnection(provider: string): void {
-  db().prepare("DELETE FROM fleet_connections WHERE provider = ?").run(provider);
+  const result = db().prepare("DELETE FROM fleet_connections WHERE provider = ?").run(provider);
+  // The grants go unfiled: they are this one decision's cascade, and the
+  // withheld rows going with the connection is what the docblock above
+  // already argues — one decision, one row (ADR 0024 decision 1).
   db().prepare("DELETE FROM fleet_grants WHERE provider = ?").run(provider);
+  if (Number(result.changes) > 0) {
+    fileDecision({
+      decided_at: new Date().toISOString(),
+      subject_kind: "connection",
+      subject_id: provider,
+      kind: "fleet_connection",
+      topic: "",
+      summary: describeFleetDisconnected(provider),
+      outcome: { state: "disconnected", provider },
+      decided_by: "person",
+      rule: null,
+      reason: null,
+      receipts: [`fleet_connections ${provider}`],
+    });
+  }
 }
 
 function toConnection(row: Record<string, unknown>): FleetConnectionRow {

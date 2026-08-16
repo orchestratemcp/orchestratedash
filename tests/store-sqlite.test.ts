@@ -136,8 +136,12 @@ describe("schema", () => {
     // branches each appending "the last migration" — and it produced it here,
     // in a blocking gate, rather than in an installed store that silently
     // skipped somebody's step.
+    //
+    // 26 is MAR-673's `fleet_decisions` (ADR 0024) — the decisions half of the
+    // fleet's memory, appended on the standing terms: an installed store that
+    // has recorded 0 to 25 runs exactly one more.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(25);
+    expect(version.user_version).toBe(26);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -558,7 +562,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(25);
+    ).toBe(26);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

@@ -97,7 +97,37 @@ export function touchReceipt(agent: string, connectionId: string, at: string): v
     .run(at, agent, connectionId);
 }
 
-/** Forget a receipt. Called by disconnect, after the credential is gone. */
+/**
+ * Whether a receipt exists for this agent and connection.
+ *
+ * For the decision-filing call sites in `lib/connection-actions.ts`, which
+ * need "was this already connected?" *before* they write or delete — the
+ * decisions log records transitions, and a reconnect or a re-paste is not
+ * one (ADR 0024 decision 1). False on a read error, which errs toward not
+ * filing: a missing decision row is a smaller lie than an invented one.
+ */
+export function hasReceipt(agent: string, connectionId: string): boolean {
+  try {
+    return (
+      db()
+        .prepare("SELECT 1 FROM broker_grants WHERE agent = ? AND connection_id = ?")
+        .get(agent, connectionId) !== undefined
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Forget a receipt. Called by disconnect, after the credential is gone.
+ *
+ * No decision is filed here, deliberately (ADR 0024 decision 1). This is
+ * shared plumbing: the fleet's `withdrawEverywhere` calls it once per agent
+ * while executing one person decision, and filing here would turn that one
+ * decision into a row per agent nobody individually revoked. The
+ * `connection_grant` decision is filed where the per-agent decision is
+ * actually made — `lib/connection-actions.ts`.
+ */
 export function forgetReceipt(agent: string, connectionId: string): void {
   db().prepare("DELETE FROM broker_grants WHERE agent = ? AND connection_id = ?").run(agent, connectionId);
 }

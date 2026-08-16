@@ -59,6 +59,8 @@ import {
   type AgentCommandAuditRecord,
   type CommandOutcome,
 } from "./store";
+import { describeIrreversibleApproval } from "../copy/decisions";
+import { fileDecision } from "../fleet/decisions-store";
 
 /* ---------------------------------------------------------------------- *
  * The adapter seam
@@ -276,7 +278,36 @@ export async function runAgentCommand(
       expires_at: envelope.expires_at,
       decided_at: decidedAt,
     };
-    transact(database, () => writeCommandAudit(database, record));
+    transact(database, () => {
+      writeCommandAudit(database, record);
+      // ADR 0024 decision 1's one non-standing entry: a person let something
+      // happen that cannot be undone. Filed in the same transaction as the
+      // audit row it cites, and only for that exact case — an agent's own
+      // command, a denial, or a reversible act files nothing, because
+      // `command_audit` is already their record and the activity projection
+      // reads it. The topic is the command *id*, not its name: an approval
+      // is an act, not a standing, and two presses chained by name would
+      // render the first as "later changed" — a supersession nothing did.
+      // Each press is its own chain of one.
+      if (decision === "allowed" && input.irreversible && runtime.principal.type === "user") {
+        fileDecision(
+          {
+            decided_at: decidedAt,
+            subject_kind: "agent",
+            subject_id: input.target.agent_id,
+            kind: "irreversible_approval",
+            topic: commandId,
+            summary: describeIrreversibleApproval(input.command),
+            outcome: { state: "approved", command: input.command, command_id: commandId },
+            decided_by: "person",
+            rule: null,
+            reason: null,
+            receipts: [`command_audit ${commandId}`],
+          },
+          database,
+        );
+      }
+    });
     console.warn(formatCommandAuditLine(record));
 
     return {
