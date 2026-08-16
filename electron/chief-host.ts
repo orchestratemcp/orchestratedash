@@ -160,8 +160,13 @@ export async function performChiefAction(
         // A renderer that could name a model would be a renderer that could
         // spend somebody's money on the most expensive thing their key reaches.
         model: fleetDefault.model_id,
-        question: context.length === 0 ? question : `${context}\n\nThey now ask:\n${question}`,
+        // The person's own words, and only those. The conversation so far
+        // travels in its own field with its own bound — see
+        // `MAX_CHIEF_CONTEXT_CHARS`, and note that folding it in here would
+        // have meant a question nobody can finish typing after three turns.
+        question,
         material: briefing,
+        context,
         max_output_tokens: ASK_MAX_OUTPUT_TOKENS,
       },
       // Note what is absent: no `frame`. `lib/broker/execute.ts` writes it from

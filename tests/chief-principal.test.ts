@@ -345,6 +345,48 @@ describe("which system prompt a question is set in", () => {
   });
 
   /*
+   * MAR-659. The conversation so far rides in its own field with its own bound.
+   *
+   * The bug this pins: the first draft prepended it to `question`, which
+   * `MAX_QUESTION_CHARS` caps at 600 — so a thread would have started refusing
+   * itself after about three turns, with `input_out_of_range` and no obvious
+   * cause. A separate field keeps the question's ceiling doing the job it was
+   * written for (nobody pushes a document through the chat onto their own bill)
+   * while letting DASH's own text be as long as it needs.
+   */
+  it("carries the conversation beside the question rather than inside it", async () => {
+    const broker = driven();
+    const asked = question(chiefOperationId(PROVIDER));
+    const input = asked["input"] as Record<string, unknown>;
+    input["context"] = "They asked: how many agents\nYou answered: one";
+    // Comfortably past `MAX_QUESTION_CHARS`, which is what would have broken.
+    expect(String(input["context"]).length + String(input["question"]).length).toBeLessThan(600);
+    input["context"] = `${String(input["context"])}\n${"a".repeat(1_200)}`;
+
+    const answer = (await broker.handle(CHIEF, asked as never, "person")) as { ok: boolean };
+    expect(answer.ok).toBe(true);
+
+    const body = JSON.stringify(broker.sent[0]);
+    expect(body).toContain("EARLIER");
+    // And the fence says what it is, so a model cannot read an old exchange as a
+    // current fact — ADR 0023 decision 6: never an old receipt, and what does
+    // travel is labelled as carrying no facts.
+    expect(body).toContain("carries no current facts");
+  });
+
+  it("refuses a conversation longer than DASH will send", async () => {
+    const broker = driven();
+    const asked = question(chiefOperationId(PROVIDER));
+    (asked["input"] as Record<string, unknown>)["context"] = "x".repeat(4_001);
+    const answer = (await broker.handle(CHIEF, asked as never, "person")) as {
+      ok: boolean;
+      refusal?: string;
+    };
+    expect(answer.ok).toBe(false);
+    expect(answer.refusal).toBe("invalid_input");
+  });
+
+  /*
    * And the other direction, which is the one an agent could try: an agent
    * asking under the chief's frame gets the agent frame, because the same line
    * overwrites it from *its* principal.

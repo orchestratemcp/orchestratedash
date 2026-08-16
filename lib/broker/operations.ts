@@ -1122,12 +1122,61 @@ function askUserMessage(material: string, question: string): string {
  * That is the one genuinely untrusted span here, and it is bounded by the
  * briefing builder rather than by this function.
  */
-function chiefUserMessage(briefing: string, question: string): string {
+function chiefUserMessage(briefing: string, context: string, question: string): string {
   return (
     "Here is the briefing, read from this app's own records just now.\n\n" +
     `<<<BRIEFING\n${briefing}\nBRIEFING>>>\n\n` +
+    (context.length === 0
+      ? ""
+      : "Earlier in this conversation. It is what the two of you said, and it carries no " +
+        "current facts — every fact you use must come from the briefing above.\n\n" +
+        `<<<EARLIER\n${context}\nEARLIER>>>\n\n`) +
     `The person asks:\n\n${question}`
   );
+}
+
+/**
+ * How much of the conversation so far may ride along with a question
+ * (MAR-659).
+ *
+ * Its own bound rather than room inside `MAX_QUESTION_CHARS`, and that is the
+ * whole reason this is a separate field. The question's 600 characters exist to
+ * stop somebody pushing a document through DASH's chat onto their own bill; the
+ * conversation is DASH's own text, read out of `chief_messages` in main, and
+ * folding it into the same field would have meant either a question a person
+ * cannot finish typing after three turns or a ceiling that no longer bounds what
+ * it was written to bound.
+ *
+ * Four thousand is a few exchanges. `recentChiefContext` already sends only the
+ * last few turns and never a receipt; this is the refusal that catches a bug in
+ * that, the way `MAX_MATERIAL_CHARS` catches one in `lib/ai/ask.ts`.
+ */
+const MAX_CHIEF_CONTEXT_CHARS = 4_000;
+
+/**
+ * An optional string input, or a refusal.
+ *
+ * `requireString` refuses an empty value, which is right for a question and
+ * wrong for the conversation so far — the first turn of every thread has none.
+ * Absent and empty both read as empty here; anything present and wrong is still
+ * refused rather than coerced, which is that function's own rule.
+ */
+function optionalText(
+  input: Record<string, unknown>,
+  field: string,
+  max: number,
+): { ok: true; value: string } | { ok: false; refusal: BrokerInputRefusal; field: string } {
+  const raw = input[field];
+  if (raw === undefined || raw === null) {
+    return { ok: true, value: "" };
+  }
+  if (typeof raw !== "string") {
+    return { ok: false, refusal: "input_wrong_type", field };
+  }
+  if (raw.length > max) {
+    return { ok: false, refusal: "input_out_of_range", field };
+  }
+  return { ok: true, value: raw };
 }
 
 /**
@@ -1231,9 +1280,21 @@ function completionOperation(provider: AiProviderProfile): SpendOperation {
        */
       const frame = completionFrame(input);
       const system = frame === "fleet_briefing" ? CHIEF_SYSTEM_PROMPT : ASK_SYSTEM_PROMPT;
+
+      /*
+       * Read on both frames and used on one, so that an agent supplying it
+       * cannot make its request behave differently from one that does not. The
+       * agent frame drops the value on the floor; the chief frame fences it and
+       * says in the fence that it carries no current facts.
+       */
+      const context = optionalText(input, "context", MAX_CHIEF_CONTEXT_CHARS);
+      if (!context.ok) {
+        return context;
+      }
+
       const user =
         frame === "fleet_briefing"
-          ? chiefUserMessage(material.value, question.value)
+          ? chiefUserMessage(material.value, context.value, question.value)
           : askUserMessage(material.value, question.value);
 
       switch (provider.completion.dialect) {
