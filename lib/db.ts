@@ -1163,6 +1163,68 @@ const MIGRATIONS: readonly Migration[] = [
   );
   `,
 
+  // MAR-659, ADR 0023 decision 6. The chief's own conversation, kept.
+  //
+  // **This reverses a decision, and the reasoning it reverses is quoted.**
+  // MAR-648 made the chief's scrollback session-only on the argument that its
+  // answers are statements about the fleet *now*, and a stored one would be "a
+  // sentence that was true last Tuesday sitting in a scrollback looking like a
+  // sentence about today". That is an argument against undated
+  // re-presentation, not against storage — and `receipt_json` is the missing
+  // date. A turn renders with its timestamp and the exact facts it was built
+  // from, and DASH marks it when those facts no longer match its own records.
+  //
+  // Beside `agent_questions` and on that table's own precedent, which ADR 0012
+  // argued in exactly these terms: a person typed these words, on their own
+  // computer, into something shaped like a conversation, and a conversation
+  // that forgets everything when the page closes is not one.
+  //
+  // Two columns differ from `agent_questions` and both are the point:
+  //
+  // `receipt_json` is the fleet briefing **as it stood** — one row per agent,
+  // every field a string DASH already rendered on a card. Frozen rather than
+  // recomputed, for `citations_json`'s reason turned up one notch: recomputing
+  // would silently rewrite what an old answer was built from, which is the
+  // precise way a sentence about last Tuesday starts reading like one about
+  // today. An empty array is a real and common value — a greeting used no
+  // records, and its receipt says so.
+  //
+  // There is no `agent` column and there cannot be one. ADR 0023 decision 8:
+  // the fleet room and an agent's room are two transcripts in two tables with
+  // no shared thread, because `{ kind: "chief" }` carries no agent id and there
+  // is no value a chief question could be aimed at an agent with.
+  //
+  // Kept until the person clears the thread, from a control in the chat room.
+  // ADR 0008 is untouched: nothing is added to the author's panel.
+  `
+  CREATE TABLE IF NOT EXISTS chief_messages (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    -- DASH's own clock at the moment the question was sent.
+    asked_at     TEXT NOT NULL,
+    question     TEXT NOT NULL,
+    -- The answer's text, or NULL when the question produced none.
+    answer       TEXT,
+    -- Which failure, when there is no answer. One of AskFailureReason.
+    failure      TEXT,
+    -- Which provider was asked, from DASH's own closed registry — and NULL when
+    -- none was, which is the difference from agent_questions.provider_id and
+    -- is ADR 0023's "records first, model second" written into the schema. A
+    -- standing question is answered from DASH's own records with no model, no
+    -- charge and no latency; its row has NULL here and NULL in all four columns
+    -- below, and the surface says so per turn rather than leaving somebody to
+    -- infer from an absent price that a free answer was a broken one.
+    provider_id  TEXT,
+    -- The model the provider says answered, which may not be the one asked for.
+    model_id     TEXT,
+    tokens_in    INTEGER,
+    tokens_out   INTEGER,
+    -- The provider's own figure for what it charged. NULL means it stated none.
+    -- Written only from a number a provider stated, exactly as agent_questions
+    -- is: nothing in DASH multiplies a token count by a rate.
+    amount_usd   REAL,
+    -- The briefing rows that were sent, frozen. See the note above.
+    receipt_json TEXT NOT NULL
+  );
   // MAR-628, ADR 0019: what DASH asked its own browser to do, and what it
   // stopped a page from doing.
   //

@@ -122,13 +122,22 @@ describe("schema", () => {
     // 22), so an installed store that has already recorded steps 0 to 22 runs
     // exactly one more.
     //
-    // 24 is MAR-628's three browser tables, appended on the same terms. This
-    // number colliding is the one failure a parallel packet reliably produces —
-    // two branches each appending "the last migration" — and it produces it
-    // here, in a blocking gate, rather than in an installed store that silently
+    // 24 is MAR-659's `chief_messages` (ADR 0023 decision 6) — the chief's own
+    // transcript with its receipt frozen beside each turn. Appended last for the
+    // same reason every step since 21 has been: an installed store that has
+    // already recorded 0 to 23 runs exactly one more, and renumbering a step
+    // somebody's database has recorded is the one thing this pin exists to make
+    // somebody think about.
+    //
+    // 25 is MAR-628's three browser tables, appended on the same terms — it was
+    // authored as 24 in parallel with MAR-659's, and MAR-659 reached master
+    // first, so the browser step renumbered to the end at the merge. That
+    // collision is the one failure a parallel packet reliably produces — two
+    // branches each appending "the last migration" — and it produced it here,
+    // in a blocking gate, rather than in an installed store that silently
     // skipped somebody's step.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(24);
+    expect(version.user_version).toBe(25);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -185,6 +194,11 @@ describe("schema", () => {
     // agent — and, like `agent_model_choice`, it has no cost column and no
     // column a key could go in.
     expect(tables).toContain("fleet_model_default");
+    // MAR-659, ADR 0023 decision 6. The chief's own transcript, and the second
+    // conversation table in this list. It is not keyed by agent and cannot be:
+    // the fleet room and an agent's room are two threads with nothing shared,
+    // because `{ kind: "chief" }` carries no agent id to key one by.
+    expect(tables).toContain("chief_messages");
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -544,7 +558,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(24);
+    ).toBe(25);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

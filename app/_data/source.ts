@@ -276,6 +276,16 @@ interface DashShellClient {
     question: string;
   }): Promise<CommandResult>;
   /**
+   * Ask the chief about the fleet, and forget what it said (MAR-659, ADR 0023).
+   *
+   * Optional for `askQuestion`'s reason, and the degradation is the same shape:
+   * the whole conversation arrives in the fleet view and reads perfectly in a
+   * browser tab, because it is stored now. Only asking something new, and
+   * clearing the thread, need the installed app.
+   */
+  askChief?(args: { question: string }): Promise<CommandResult>;
+  clearChiefThread?(): Promise<CommandResult>;
+  /**
    * The runner's own health, and its one repair (MAR-518).
    *
    * Optional on top of the bridge already being optional, like `openAppMenu`
@@ -995,6 +1005,56 @@ export async function askAgentQuestion(args: {
     };
   }
   return bridge.askQuestion(args);
+}
+
+/**
+ * Ask the chief about your fleet (MAR-659, ADR 0023).
+ *
+ * `askAgentQuestion`'s three refusals, and the third sentence is the one worth
+ * reading: a shell too old for this command still shows the whole conversation,
+ * because the transcript is in the fleet view like everything else. Only asking
+ * something new needs the installed app.
+ */
+export async function askChief(args: { question: string }): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to ask the chief a question.",
+    };
+  }
+  if (bridge.askChief === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail:
+        "This version of the DASH app cannot ask the chief a question. Everything already asked is shown below.",
+    };
+  }
+  return bridge.askChief(args);
+}
+
+/**
+ * Forget the whole conversation with the chief (MAR-659).
+ *
+ * Refused rather than faked where the bridge cannot reach the store, because the
+ * one thing a clear must never do is report a conversation deleted that is still
+ * on disk.
+ */
+export async function clearChiefThread(): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge?.clearChiefThread === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to clear this conversation.",
+    };
+  }
+  return bridge.clearChiefThread();
 }
 
 /**

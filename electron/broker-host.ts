@@ -33,10 +33,12 @@
 import { localRunnerChannel } from "../lib/agent-dom/runner-channel";
 import { parseAiKeyCredential } from "../lib/ai/credential";
 import { aiKeyConnections, pickAiKeyCard } from "../lib/ai/connection-view";
-import { readEffectiveModelChoice } from "../lib/ai/model-store";
+import { readEffectiveModelChoice, readFleetModelDefault } from "../lib/ai/model-store";
 import { aiAuthHeaders, aiProviderById } from "../lib/ai/providers";
+import { chiefManifest } from "../lib/chief/manifest";
 import { isKeyCredential, type BrokerCredential } from "../lib/broker/grant";
 import { createBroker, type Broker, type BrokerAuditRow, type CredentialRead } from "../lib/broker/execute";
+import { agentPrincipal } from "../lib/broker/principal";
 import {
   hasBrokerRequest,
   markBrokerAnswerUndelivered,
@@ -230,8 +232,26 @@ export function hostBroker(): Broker {
     return broker;
   }
   broker = createBroker({
-    readManifest: (agentId: string) =>
-      readAgentManifest(agentId) as ConnectionSourceManifest | null,
+    /*
+     * Two answers, and the branch lives here rather than in the broker
+     * (MAR-659, ADR 0023 decision 2).
+     *
+     * An agent gets the document DASH imported for it, read out of the store
+     * exactly as it always was — that path is not edited, which is what keeps
+     * "what the broker resolves for an agent is indistinguishable from today" a
+     * consequence of not touching it rather than a claim needing proof.
+     *
+     * The chief has no imported document, so DASH composes one from the fleet
+     * catalogue for whichever provider its own default names. No default means
+     * no provider means no manifest, which the broker reports as
+     * `unknown_connection` — the chief cannot spend before somebody has chosen
+     * what it would spend on, and `lib/copy/chief-chat.ts` is where that becomes
+     * a sentence pointing at the AI tab.
+     */
+    readManifest: (principal) =>
+      principal.kind === "chief"
+        ? chiefManifest(readFleetModelDefault()?.provider_id ?? "")
+        : (readAgentManifest(principal.agent_id) as ConnectionSourceManifest | null),
     readCredential,
     mintAuthorization,
     fetchImpl: fetch,
@@ -423,7 +443,7 @@ export function startBroker(
         // `BrokerOrigin`: a request that came off a child process's stdout is an
         // agent's request, whatever it contains, because the value is decided by
         // which function read it rather than by anything in it.
-        response = await broker.handle(candidate.agent_id, parsed, "agent");
+        response = await broker.handle(agentPrincipal(candidate.agent_id), parsed, "agent");
       } catch (error: unknown) {
         // An unexpected throw is DASH's bug. The agent still gets an answer,
         // because an agent waiting forever on a DASH bug is a worse outcome than

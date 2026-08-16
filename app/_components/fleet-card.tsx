@@ -12,6 +12,7 @@ import { plainDay } from "../../lib/copy/when";
 import {
   describeFleetCardStatus,
   describeFleetPlace,
+  describeRunCount,
   type FleetCardStatus,
 } from "../../lib/copy/fleet-status";
 import type { AgentHostedOnView, AgentRow } from "../../lib/views/types";
@@ -408,23 +409,17 @@ export function AgentHosting({
 }
 
 /**
- * How many times this agent has worked, in a sentence rather than a number
- * (MAR-491).
+ * Re-exported from `lib/copy/fleet-status.ts`, where it moved (MAR-659).
  *
- * `0` under a `Runs` label is a fact a person has to assemble; "Not run yet" is
- * the same fact already assembled. The plural is spelled out because "1 runs"
- * is the smallest possible way for a surface to look unfinished.
- *
- * The chief speaks this sentence (`lib/copy/chief.ts`), and takes it already
- * worded rather than rebuilding it from the number — two copies of "Not run yet"
- * is two copies that can disagree the day somebody improves one of them.
+ * It was written here and its own note explained why the chief takes it already
+ * worded rather than rebuilding it: *"two copies of 'Not run yet' is two copies
+ * that can disagree the day somebody improves one of them."* ADR 0023's fleet
+ * briefing is assembled in Electron main, which cannot import this file at all,
+ * so the sentence had to live somewhere both a React card and a main-process
+ * builder can reach. The re-export keeps `app/page.tsx` and `fleet-list.tsx`
+ * pointing where they always did.
  */
-export function describeRunCount(runs: number): string {
-  if (runs <= 0) {
-    return "Not run yet";
-  }
-  return runs === 1 ? "Run once" : `Run ${String(runs)} times`;
-}
+export { describeRunCount } from "../../lib/copy/fleet-status";
 
 /**
  * "Run 3 times · 7 August 2026", or just the count when DASH has no date

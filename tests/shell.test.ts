@@ -16,6 +16,7 @@ import type {
   GlanceAction,
   HostAction,
   AskAction,
+  ChiefAction,
   IdentityAction,
   ModelAction,
   NotifyAction,
@@ -235,6 +236,16 @@ describe("the audited command chokepoint", () => {
       // answers is read in main from the row a person set through
       // `model.choose`.
       "ask.question",
+      // MAR-659, ADR 0023. The eleventh family, and the second that can spend
+      // the person's money. Its own family rather than more of `ask.*` because
+      // the two are aimed at different principals: `ask.question` carries an
+      // agent id and reaches `{ kind: "agent" }`; these carry no id at all and
+      // reach `{ kind: "chief" }`. `chief.ask` names a question and nothing
+      // else — no agent, no connection, no field, no model — and `chief.clear`
+      // names nothing, which is the only correct payload for deleting the one
+      // thread there is.
+      "chief.ask",
+      "chief.clear",
       "folder.check",
       "folder.adopt",
       "folder.reveal",
@@ -483,6 +494,41 @@ describe("the renderer's half of an agent command", () => {
     }
   });
 
+  /*
+   * MAR-659, ADR 0023 decision 8. *"Fleet page → the chief principal, the fleet
+   * briefing, no agent's saved material. Agent page → that agent's principal and
+   * that agent's saved reports."*
+   *
+   * Semantically **and** structurally, and this is the structural half at the
+   * IPC boundary: `{ kind: "chief" }` carries no agent id, so there is no value
+   * a chief question could be aimed at an agent with. That is only true while
+   * the catalogue declares no key one could travel in — a `payload_keys`
+   * entry added here would put the value back and no other test would notice.
+   *
+   * `chief.clear` is asserted separately and to a stronger standard: an empty
+   * payload, because there is one thread and a page able to name which one to
+   * delete would be a page able to delete a different one.
+   */
+  it("gives the chief no way to name an agent, a connection or a model", () => {
+    expect(COMMANDS["chief.ask"].payload_keys).toEqual(["question"]);
+    expect(COMMANDS["chief.ask"].required_keys).toEqual(["question"]);
+    expect(COMMANDS["chief.clear"].payload_keys).toEqual([]);
+    // Both spend or destroy, so both say so — `irreversible` describes the worst
+    // thing a command can do rather than the commonest, and a standing question
+    // being free does not make a charged one reversible.
+    expect(COMMANDS["chief.ask"].irreversible).toBe(true);
+    expect(COMMANDS["chief.clear"].irreversible).toBe(true);
+  });
+
+  it("denies a chief question that tries to name an agent", () => {
+    const review = reviewCommand({
+      command: "chief.ask",
+      request_id: "req-chief-1",
+      payload: { question: "what needs me", agent_id: "ai-agent-news" },
+    });
+    expect(review).toMatchObject({ decision: "denied", reason: "unexpected_payload_field" });
+  });
+
   it("denies an attempt to name the actor, because the key is not declared", () => {
     const review = reviewCommand({
       ...approve,
@@ -571,6 +617,11 @@ describe("dispatch", () => {
     // property one layer along.
     const models: Array<{ action: ModelAction; target: Record<string, unknown> }> = [];
     const asks: Array<{ action: AskAction; target: Record<string, string> }> = [];
+    // MAR-659. The chief's own two, beside the agent's one and kept apart from
+    // it for the same reason the maps in `lib/shell/ipc.ts` are: a test asserting
+    // that a fleet question carried no agent id should not have to filter it out
+    // of a list of agent questions first.
+    const chiefs: Array<{ action: ChiefAction; target: { question?: string } }> = [];
     // MAR-588. Recorded, not performed, for `folderAction`'s reason and one
     // more: the real implementation opens the credential window and reaches
     // Discord, and a fake that did either would make these tests -- which are
@@ -588,6 +639,7 @@ describe("dispatch", () => {
       folders,
       models,
       asks,
+      chiefs,
       modelAction: (action: ModelAction, target: Record<string, unknown>) => {
         models.push({ action, target });
         return Promise.resolve({ ok: true, detail: `${action} ok` });
@@ -651,6 +703,12 @@ describe("dispatch", () => {
       // that did anything at all would be a test suite that spends money.
       askAction: (action: AskAction, target: Record<string, string>) => {
         asks.push({ action, target });
+        return Promise.resolve({ ok: true });
+      },
+      // MAR-659. Recorded, not performed, for the entry above's reason — and
+      // with the same teeth: the real one bills somebody's account.
+      chiefAction: (action: ChiefAction, target: { question?: string }) => {
+        chiefs.push({ action, target });
         return Promise.resolve({ ok: true });
       },
       showApplicationMenu: (at: { x: number; y: number } | undefined) => {

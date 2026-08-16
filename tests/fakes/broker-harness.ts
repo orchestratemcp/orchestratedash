@@ -27,6 +27,7 @@ import {
   type CredentialRead,
 } from "../../lib/broker/execute";
 import { isKeyCredential } from "../../lib/broker/grant";
+import { agentPrincipal, type BrokerPrincipal } from "../../lib/broker/principal";
 import type { ConnectionSourceManifest } from "../../lib/connections";
 import { OAUTH_CREDENTIAL_VERSION, type OAuthCredential } from "../../lib/oauth/credential";
 import { OAuthError } from "../../lib/oauth/flow";
@@ -141,7 +142,21 @@ export interface HarnessOptions {
 }
 
 export interface Harness {
-  handle(agentId: string, request: unknown, origin?: BrokerOrigin): Promise<unknown>;
+  /**
+   * `who` is an agent id or a principal (MAR-659).
+   *
+   * A bare string is still accepted and still means an agent, which is why the
+   * hundred existing call sites in this repository are unchanged: they all drive
+   * the boundary as an agent, and rewriting each one to say so would have been a
+   * hundred lines of noise around a change none of them is about. A test about
+   * the chief passes `CHIEF` and says so in one visible argument, the way a test
+   * about the person's own chat passes `"person"` for the origin.
+   */
+  handle(
+    who: string | BrokerPrincipal,
+    request: unknown,
+    origin?: BrokerOrigin,
+  ): Promise<unknown>;
   /**
    * Stand in for a person pressing Run now (MAR-619, ADR 0016).
    *
@@ -245,8 +260,12 @@ export function harness(options: HarnessOptions = {}): Harness {
      * spend operation appeared. A test about the chat passes `"person"` and says
      * so in one visible argument.
      */
-    handle: (agentId, request, origin = "agent") =>
-      broker.handle(agentId, request as Parameters<typeof broker.handle>[1], origin),
+    handle: (who, request, origin = "agent") =>
+      broker.handle(
+        typeof who === "string" ? agentPrincipal(who) : who,
+        request as Parameters<typeof broker.handle>[1],
+        origin,
+      ),
   };
 }
 

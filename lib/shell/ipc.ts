@@ -621,6 +621,51 @@ export const COMMANDS = {
   },
 
   /*
+   * MAR-659, ADR 0023. Asking the chief about the whole fleet, and clearing
+   * what it said.
+   *
+   * **An eleventh family, and the shortest payload in this catalogue.** Compare
+   * `ask.question` directly above: that one names an agent, a connection and a
+   * field, because a person is talking to one agent about one of its
+   * connections. This one names a question and nothing else, and the absence is
+   * the security property rather than a convenience.
+   *
+   * There is no agent id because there is nothing to aim: the chief is
+   * `{ kind: "chief" }`, a value with no id field, so a renderer cannot direct a
+   * fleet question at an agent or an agent question at the fleet. There is no
+   * connection id because the chief's one connection is a constant of DASH's own
+   * composed manifest (`lib/chief/manifest.ts`), and there is no model id for
+   * `ask.question`'s reason, sharpened: the chief has no picker at all and asks
+   * under DASH's fleet default.
+   *
+   * `irreversible` is true for exactly the same reason `ask.question` is, and
+   * with the same caveat: nothing in the world changes, and what cannot be undone
+   * is the charge. It is true even though a standing question is answered from
+   * records for free, because the flag has to describe the worst thing the
+   * command can do rather than the commonest.
+   *
+   * `chief.clear` is the person's control over their own transcript. It mutates
+   * and it is irreversible — the rows are deleted rather than hidden, which is
+   * `forgetAgentQuestions`' rule: a "clear" that kept a copy of a conversation
+   * somebody asked DASH to forget would not be one.
+   */
+  "chief.ask": {
+    effect:
+      "Ask the chief about your fleet. Questions about how your agents are doing are answered from DASH's own records for nothing; anything else goes to your default model provider with those records attached, and your own account is charged for the answer.",
+    payload_keys: ["question"],
+    required_keys: ["question"],
+    mutates: true,
+    irreversible: true,
+  },
+  "chief.clear": {
+    effect: "Delete the whole conversation with the chief from this computer.",
+    payload_keys: [],
+    required_keys: [],
+    mutates: true,
+    irreversible: true,
+  },
+
+  /*
    * MAR-584. An outside editor changed an agent's folder; these three are how a
    * person finds it, hears what changed, and decides.
    *
@@ -1428,6 +1473,33 @@ export function isAskCommandName(value: CommandName): value is AskCommandName {
 }
 
 /**
+ * Talking to the chief (MAR-659, ADR 0023).
+ *
+ * An eleventh family, and not more of `ask.*`, on the terms the tenth was
+ * created under. That map answers *what in DASH can spend the person's money?*
+ * and this one is a second thing that can, so the honest reading is that the
+ * question now has two answers and a reviewer should see both maps.
+ *
+ * They are kept apart because the two commands are aimed at different
+ * principals, which is the distinction ADR 0023 spent a type on: `ask.*` carries
+ * an agent id and reaches `{ kind: "agent" }`; `chief.*` carries no id at all
+ * and reaches `{ kind: "chief" }`. One map holding both would make "which of
+ * these can be pointed at an agent?" a question about payload keys rather than
+ * about which family a command is in.
+ */
+export const CHIEF_ACTIONS = {
+  "chief.ask": "ask",
+  "chief.clear": "clear",
+} as const;
+
+export type ChiefCommandName = keyof typeof CHIEF_ACTIONS;
+export type ChiefAction = (typeof CHIEF_ACTIONS)[ChiefCommandName];
+
+export function isChiefCommandName(value: CommandName): value is ChiefCommandName {
+  return Object.hasOwn(CHIEF_ACTIONS, value);
+}
+
+/**
  * Where DASH posts when an agent needs somebody (MAR-588).
  *
  * A ninth family, on the terms the eighth was created under. A reviewer
@@ -1588,6 +1660,7 @@ type UnroutedCommand = Exclude<
   | ModelCommandName
   | NotifyCommandName
   | AskCommandName
+  | ChiefCommandName
   | "shell.ping"
 >;
 const _allCommandsAreRouted: UnroutedCommand extends never ? true : never = true;
@@ -1915,7 +1988,14 @@ export function executeCommand(review: CommandReview): CommandResult {
     // MAR-545. Opens the vault, reaches a provider and bills an account.
     // Succeeding here would report a question asked that nothing asked, beside
     // a cost sentence about a charge nobody made.
-    isAskCommandName(review.command)
+    isAskCommandName(review.command) ||
+    // MAR-659, ADR 0023. `chief.ask` opens the vault, reaches a provider and
+    // bills an account, exactly as the entry above does. `chief.clear` is in
+    // this list for the opposite reason and it is the sharper one: it deletes
+    // every row of a conversation through `node:sqlite`, and succeeding here
+    // would tell somebody their transcript was forgotten while every word of it
+    // was still on their disk.
+    isChiefCommandName(review.command)
   ) {
     // Not a denial and not a result: a caller that reached here bypassed the
     // trusted side entirely. Throwing is the only honest answer — returning a
@@ -2449,6 +2529,25 @@ export interface DispatchContext {
   askAction(
     action: AskAction,
     target: { agent_id: string; connection_id: string; field_id: string; question: string },
+  ): Promise<{ ok: boolean; detail?: string; recovery?: Recovery }>;
+  /**
+   * Ask the chief about the fleet, or clear what it said (MAR-659, ADR 0023).
+   *
+   * Injected for `askAction`'s three reasons at once — the vault, the network
+   * and a `node:sqlite` write — and it returns the same shape for the same
+   * reason: **the answer does not come back through this seam.** It lands in
+   * `chief_messages` and reaches the page on the next poll with the rest of the
+   * fleet view, so there is exactly one path by which a chief answer becomes
+   * something on screen, and it is the same path a conversation reopened
+   * tomorrow takes.
+   *
+   * `target` is one optional string and nothing else. There is no agent id to
+   * pass, because `{ kind: "chief" }` has no field one could go in — see
+   * `CHIEF_ACTIONS`.
+   */
+  chiefAction(
+    action: ChiefAction,
+    target: { question?: string },
   ): Promise<{ ok: boolean; detail?: string; recovery?: Recovery }>;
   /**
    * Compare, accept, open — or choose — an agent's folder (MAR-584, MAR-598).
@@ -3077,6 +3176,33 @@ export async function dispatchCommand(
       connection_id: String(review.payload["connection_id"]),
       field_id: String(review.payload["field_id"]),
       question: String(review.payload["question"]),
+    });
+    return {
+      ok: result.ok,
+      request_id: review.audit.request_id,
+      detail: result.detail,
+      recovery: result.recovery,
+    };
+  }
+
+  if (isChiefCommandName(review.command)) {
+    /*
+     * MAR-659. One field, optional, and nothing else crosses.
+     *
+     * `chief.clear` carries no payload at all, so `question` is read
+     * defensively rather than asserted — `String(undefined)` is `"undefined"`,
+     * which is a question DASH would then really put to a model on somebody's
+     * bill. `toAgentCommandInput`'s copy-explicitly rule, applied to the one
+     * family where the field is genuinely absent for half the members.
+     *
+     * Note what is *not* here: no agent id, no connection id, no field id, no
+     * model id. There is no value on this line a compromised page could use to
+     * aim a fleet question at an agent, because the chief principal has no field
+     * one could be assigned to.
+     */
+    const question = review.payload["question"];
+    const result = await context.chiefAction(CHIEF_ACTIONS[review.command], {
+      question: typeof question === "string" ? question : undefined,
     });
     return {
       ok: result.ok,

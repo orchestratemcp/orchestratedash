@@ -81,3 +81,33 @@ export function describeFleetPlace(hostedOn: readonly unknown[]): { id: "cloud" 
     ? { id: "cloud", label: "Cloud" }
     : { id: "local", label: "Local" };
 }
+
+/**
+ * How many times this agent has worked, in a sentence rather than a number
+ * (MAR-491).
+ *
+ * `0` under a `Runs` label is a fact a person has to assemble; "Not run yet" is
+ * the same fact already assembled. The plural is spelled out because "1 runs"
+ * is the smallest possible way for a surface to look unfinished.
+ *
+ * ## It lives here now, and the move is the point (MAR-659)
+ *
+ * Written in `app/_components/fleet-card.tsx`, beside the card that draws it,
+ * with a note saying *"the chief speaks this sentence, and takes it already
+ * worded rather than rebuilding it from the number — two copies of 'Not run yet'
+ * is two copies that can disagree the day somebody improves one of them."*
+ *
+ * That note is the reason it had to move. ADR 0023 puts this sentence on the
+ * fleet briefing, which is assembled in Electron main by
+ * `lib/chief/briefing.ts` — and main cannot import a `"use client"` React
+ * component. The choice was a second copy or a move, the note above already
+ * ruled against the copy, and this module is where its two neighbours on the
+ * same card already live. `fleet-card.tsx` re-exports it, so every existing
+ * caller is unchanged.
+ */
+export function describeRunCount(runs: number): string {
+  if (runs <= 0) {
+    return "Not run yet";
+  }
+  return runs === 1 ? "Run once" : `Run ${String(runs)} times`;
+}

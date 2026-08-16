@@ -24,6 +24,9 @@ import { describe, expect, it } from "vitest";
 import {
   CHIEF_CHAT_COPY,
   describeAmbiguous,
+  describeChiefActivity,
+  describeChiefNoModel,
+  describeChiefReceipt,
   describeChiefScope,
   describeMatch,
   describeRouted,
@@ -104,25 +107,95 @@ describe("what the chief promises about itself", () => {
    * rather than as an exact string, so the wording can be improved without
    * this test becoming a copy of it.
    */
-  it("says it reads records, cannot answer for an agent, costs nothing and keeps nothing", () => {
+  /*
+   * ## Two of these inverted, and this test is where that is recorded
+   *
+   * It used to assert `costs nothing` and `keep` — the second reading as "keeps
+   * nothing". ADR 0023 named `describeChiefScope` as the function that has to be
+   * rewritten with it, because after the chief gets a model and a transcript
+   * neither promise is true: a question outside `STANDING_WORDS` reaches a
+   * provider and is charged, and every turn is written to `chief_messages`.
+   *
+   * The assertions are inverted rather than deleted. A test that simply stopped
+   * checking would be one that no longer notices if this surface goes back to
+   * promising a free, forgetful chief.
+   */
+  it("says it reads records, cannot answer for an agent, can charge, and keeps the thread", () => {
     const { meaning } = describeChiefScope();
     expect(meaning).toContain("records");
     expect(meaning).toContain("which one to ask");
-    expect(meaning).toContain("costs nothing");
-    expect(meaning).toContain("keep");
+    expect(meaning).toContain("charged");
+    expect(meaning).toContain("kept on this computer");
+    // The retired promises, refused by name. Both were true before ADR 0023 and
+    // are now the two sentences it would be worst to leave on screen.
+    expect(meaning).not.toContain("costs nothing");
+    expect(meaning).not.toContain("Nothing said here is saved");
   });
 
   /*
-   * MAR-659. The headline changed from "I answer from your own records" to
-   * naming the reset directly — this is the assertion that keeps it a fact
-   * about the actual reset behaviour (leaving the page, or closing DASH)
-   * rather than a vague "nothing is kept" a reader has to interpret.
+   * MAR-659. The free half survives and has to keep saying so.
+   *
+   * Records-first is not a performance note: it is the reason MAR-547's
+   * exactness is intact for the question people ask most, so the sentence has to
+   * distinguish the two halves rather than quoting one price for the box.
    */
-  it("names what actually empties the thread, not just that it can be empty", () => {
-    const { headline, meaning } = describeChiefScope();
-    expect(headline).toContain("saved");
-    expect(meaning).toContain("Leaving this page");
-    expect(meaning).toContain("closing DASH");
+  it("separates the free half from the paid one", () => {
+    const { meaning } = describeChiefScope();
+    expect(meaning).toContain("free");
+    expect(meaning).toContain("charged");
+  });
+
+  /*
+   * MAR-659, ADR 0023 decision 4. The shipped state on every DASH today.
+   *
+   * Three things the sentence must do, and the third is the one a well-meaning
+   * edit would break: it must not name a model to set. Which one to choose is
+   * Henrik's decision and the ADR makes a recommendation to him; a sentence here
+   * naming one would be DASH taking it.
+   */
+  it("says why there is no model, and points at the tab rather than picking one", () => {
+    const { headline, meaning } = describeChiefNoModel();
+    expect(headline.length).toBeGreaterThan(0);
+    expect(meaning).toContain("no default model set");
+    expect(meaning).toContain("nothing has been charged");
+    expect(meaning).toContain("AI tab");
+    for (const model of ["claude", "gpt", "haiku", "sonnet", "opus"]) {
+      expect(meaning.toLowerCase()).not.toContain(model);
+    }
+  });
+
+  /*
+   * MAR-659, ADR 0023 decisions 5 and 7. The receipt's own sentence.
+   *
+   * The empty case is the structural half of what keeps small talk from becoming
+   * speculation: a person can see per turn whether the chief spoke from records
+   * or was being polite, so an answer making a fleet claim under that line is a
+   * defect anybody can spot.
+   *
+   * The populated case has to keep saying whose the list is and whose the
+   * wording is, because that division is the whole honest claim — the receipt
+   * makes a wrong attribution visible and does not make it impossible.
+   */
+  it("says what the receipt is, and admits which half of a turn the model wrote", () => {
+    expect(describeChiefReceipt(0).sentence).toContain("Nothing from your records");
+    expect(describeChiefReceipt(1).sentence).toContain("one agent's record");
+    const many = describeChiefReceipt(3).sentence;
+    expect(many).toContain("3 agents' records");
+    expect(many).toContain("the list is mine");
+    expect(many).toContain("the wording above is the model's");
+  });
+
+  /*
+   * MAR-648's honesty rule, carried into this room: the activity line names the
+   * operation genuinely in flight and a clock the component read itself, and
+   * nothing else. It must never recite a step DASH cannot observe.
+   */
+  it("says only what is in flight and how long it has been", () => {
+    expect(describeChiefActivity(0)).toBe("Asking your model…");
+    expect(describeChiefActivity(4.7)).toContain("4s");
+    for (const invented of ["reading", "thinking", "analysing", "searching"]) {
+      expect(describeChiefActivity(9).toLowerCase()).not.toContain(invented);
+    }
   });
 
   it("counts the agents waiting on you rather than rounding it into a word", () => {
