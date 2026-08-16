@@ -1,6 +1,9 @@
 # ADR 0023: The chief is a principal, and it is not an agent
 
-**Status:** proposed
+**Status:** accepted — Henrik, 2026-08-16 ("Ok unblock it"), with persistent
+memory named a must-have in the same message. The durable-transcript half
+(decision 6) is therefore direction, not option; the wider activity-and-decisions
+memory is MAR-673's own ADR.
 **Date:** 2026-08-16
 **Issue:** MAR-659 (DASH — the chief needs to actually know the fleet)
 **Touches:** ADR 0002 (the broker), ADR 0011 (which model an agent uses), ADR 0012
