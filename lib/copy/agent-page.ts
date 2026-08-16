@@ -46,6 +46,27 @@ export const AGENT_HEADER_COPY = {
 } as const;
 
 /**
+ * The About disclosure — the header's goal, and the plan behind it (MAR-664).
+ *
+ * Henrik: *"The agent description doesn't need to be in the header. Too much
+ * text. Better add an about the agent button. Shows steps and description."*
+ * `AGENT_HEADER_COPY.eyebrow` above is the one word the header keeps about
+ * what this agent *is*; everything about what it *does* moved here, and
+ * `tests/agent-about.test.tsx` is the gate that keeps it from moving back.
+ *
+ * Every sentence that depends on a step's own data — its risk, its declared
+ * strength — is composed in `lib/agent-plan.ts`, not here. This module only
+ * has the labels that do not depend on any agent's manifest.
+ */
+export const AGENT_ABOUT_COPY = {
+  open: "About",
+  open_label: "About this agent",
+  goal_heading: "What it does",
+  steps_heading: "Its plan",
+  step_label: (step: number): string => `Step ${String(step)}`,
+} as const;
+
+/**
  * The control panel — Henrik's *"controlpanel to start, pause, check status"*.
  *
  * The three verbs are not invented here. `pause`, `resume` and `cancel` already

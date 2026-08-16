@@ -100,6 +100,7 @@ import {
   type EvidencePullRecord,
   type StoreShape,
 } from "../store";
+import { describeAgentPlan } from "../agent-plan";
 import { buildAgentFeed, buildAgentTelemetry } from "./agent-feed";
 import { buildAgentHealth } from "./agent-health-build";
 import { buildArtifactCards, type ArtifactCardView } from "./artifacts";
@@ -1396,6 +1397,11 @@ export function workspaceView(
     // DASH derived from anything else would be DASH describing somebody else's
     // agent.
     input_roles: buildInputRoles(manifest),
+    // MAR-664. Every step the plan declares, read from the same manifest
+    // `input_roles` and `permissions` above already have open. `lib/agent-
+    // plan.ts` is pure and carries no policy of its own; this is the one call
+    // that reads a real manifest into it.
+    plan: describeAgentPlan(manifest.planned_route),
     // MAR-583. What each step asked for, what the person chose, and whether
     // there is anything to choose at all. Built here rather than in the page
     // because it reads the vault's reference table and the choice rows, and

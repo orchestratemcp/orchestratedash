@@ -38,6 +38,7 @@ import type { InputRoleView } from "./inputs";
 import type { PanelView } from "./panel";
 import type { ManifestGapView } from "../sample-refresh";
 import type { AgentHealthView } from "./agent-health";
+import type { AgentPlanStep } from "../agent-plan";
 import type { Recovery } from "../copy/recovery";
 import type { ConnectionRequirementRow } from "../connections";
 import type { ConnectionTravel } from "../deploy/connection-travel";
@@ -1280,6 +1281,17 @@ export type WorkspaceView =
        * files, which is not the same as taking anything — see `buildInputRoles`.
        */
       input_roles: InputRoleView[];
+      /**
+       * Every step this agent's plan declares, in order (MAR-664).
+       *
+       * All of them, not only the ones `models.steps` shows — that field is
+       * scoped to the steps a person can set a level for, and Henrik's ask was
+       * to see the plan itself: *"We can't see the planned steps."* Read from
+       * `manifest.planned_route` by `lib/agent-plan.ts`, which is also the
+       * module the About disclosure imports directly, so the sentence a person
+       * reads there is the one this array already carries.
+       */
+      plan: AgentPlanStep[];
       /**
        * Which model this agent uses, and what its steps asked for (MAR-583).
        *
