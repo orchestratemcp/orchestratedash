@@ -137,36 +137,3 @@ export function GlanceChips({
     </div>
   );
 }
-
-/**
- * The button MAR-586 asks for by name: *"besides this it needs buttons to its
- * agent page."*
- *
- * The agent's name at the top of the card has been a link since MAR-501, and
- * that is not the same thing. A word that happens to be clickable is something a
- * person discovers; a button is something they can see. MAR-547's two named
- * defects on this surface are "a lot of things that can't be clicked" and "info
- * lacking", and a card whose only route onward is its own heading is the first
- * one from the reader's side even though the link works.
- *
- * A `Link` wearing a button's clothes rather than a `button` with a handler:
- * this is navigation, and a real anchor is what gives a person the middle-click,
- * the context menu and the keyboard behaviour they already have. `canAct` is not
- * consulted anywhere here, and deliberately — going to a page is the one thing a
- * read-only browser tab can do exactly as well as the installed app.
- *
- * `button-link` is the class the Work inbox already uses for its own route to an
- * agent's workspace, rather than a new one that would look almost the same: two
- * surfaces offering the same journey should offer it in the same clothes.
- */
-export function OpenAgentButton({ agent }: { agent: string }): ReactNode {
-  return (
-    <Link
-      aria-label={`Open ${agent}`}
-      className="button-link open-agent"
-      href={agentWorkspaceHref(agent)}
-    >
-      Open this agent
-    </Link>
-  );
-}
