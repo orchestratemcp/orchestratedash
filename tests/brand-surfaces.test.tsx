@@ -103,6 +103,9 @@ function row(name: string, avatar: OName): AgentRow {
     name,
     title: name,
     goal: "does a thing",
+    // MAR-648. Nothing in this file routes; the field is required on the row,
+    // and an empty declaration is what an agent too old to carry one has.
+    capabilities: [],
     plan_source: "orchestratekit",
     build_target: "node",
     planned_steps: 1,

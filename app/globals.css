@@ -2312,7 +2312,21 @@ code {
   overflow: hidden;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: stretch;
+  /*
+   * MAR-648. The chief says its piece at its own height; the composer takes the
+   * rest of the band.
+   *
+   * Before the composer existed every child sat on one implicit row and the
+   * band's spare height went into that row, which was invisible with only a
+   * sentence in it. A second row stopped it being invisible: the sentence row
+   * kept stretching, the composer floated in the middle of the band, and at
+   * 375px — where the band is short enough that a `1fr` row collapses to
+   * nothing — the glyph overflowed its own row and was painted over the buttons
+   * beneath it. The capture run caught that. Nothing overflowed the page and no
+   * test could have seen it.
+   */
+  grid-template-rows: auto minmax(0, 1fr);
+  align-items: start;
   gap: var(--space-4);
   margin: 0;
   padding: var(--space-4) var(--space-5);
@@ -2384,14 +2398,86 @@ code {
     display: none;
   }
 
+  /*
+   * MAR-648. A stack, not a grid, and the band scrolls.
+   *
+   * Two separate failures, both caught by the capture run and neither visible
+   * to a test. The rigid `minmax(0, 1fr)` first row collapsed to nothing at
+   * 375px and let the glyph paint over the buttons beneath it. Replacing it
+   * with three auto rows fixed that and left the second: four children in a
+   * two-column grid are placed implicitly, and the composer landed back on the
+   * actions row on top of the Ask button.
+   *
+   * Placing all four explicitly would work and would have to be undone for the
+   * open room, where two of them are not rendered at all. A flex column has no
+   * placement to get wrong: the children stack in source order whichever of
+   * them exist. The glyph moves above the sentence rather than beside it, which
+   * at this width is the better reading of the two anyway — the speaker over
+   * what was said.
+   *
+   * `overflow: auto` because at 375px the band genuinely cannot fit a sentence,
+   * two buttons and a composer, and `hidden` resolved that by cutting the box a
+   * person is meant to type into in half. Scrolling keeps everything reachable,
+   * and the composer is last in the band, which is where a thumb already is.
+   */
   .chief-band {
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    overflow: auto;
   }
 
   .chief-actions {
-    grid-column: 1 / -1;
     justify-content: stretch;
+  }
+
+  /*
+   * The chief's sentence stops being a scroll container and becomes text.
+   *
+   * `.chief-line` carries `min-height: 0; overflow: auto` so it can scroll
+   * inside the grid's fixed row. In a flex column those two combine into
+   * something else entirely: the default `flex-shrink: 1` plus a zero minimum
+   * lets it collapse to no height at all when the band is tight, which is what
+   * the 375px capture showed — a band holding a glyph and two buttons and no
+   * sentence, with nothing overflowing and nothing to measure.
+   */
+  .chief-line {
+    flex: none;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  /*
+   * Half the stage rather than a third, and only here.
+   *
+   * At 1280 a third of the page is plenty for a sentence and a composer. At
+   * 375 it is about 230px, which is not enough for a sentence, two buttons and
+   * a box — and the box is the one that ended up below the fold. The cards give
+   * up height they were already scrolling through at this width; the composer
+   * is on screen on arrival, which is the whole claim MAR-648 makes for it.
+   */
+  .fleet-stage {
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1.4fr);
+  }
+
+  /*
+   * The glyph gives up two thirds of its area here, and that is a fix rather
+   * than a tidy-up.
+   *
+   * At 375px the band has about 230px to hold a sentence, two buttons and a
+   * composer, and at 48px square the speaker's portrait alone was a fifth of
+   * it — enough to push the box below the fold. MAR-612 was corrected once for
+   * exactly this: *"a view whose distinguishing feature is off screen on
+   * arrival is a view nobody would choose"*, said then about the chief itself
+   * and true now about the thing MAR-648 calls the front door.
+   *
+   * It stays a real glyph rather than disappearing, because it is who is
+   * speaking and the replies below are attributed to it.
+   */
+  .chief-glyph {
+    width: 24px;
+    height: 24px;
   }
 
   .chief-actions > .button-link {
@@ -7085,5 +7171,291 @@ main:has(.agent-cockpit) {
 
   .cockpit-stage {
     padding: var(--space-4);
+  }
+}
+
+/* ------------------------------------------------------------------------ *
+ * The chat is the front door (MAR-648)
+ *
+ * Two composers, one grammar. The agent page's bar gains a settings row; the
+ * chief's band gains the whole thing. Neither moves when its room opens, which
+ * is the shape Henrik asked for and the one constraint every rule below is
+ * written to keep.
+ * ------------------------------------------------------------------------ */
+
+/*
+ * The settings row and the activity line occupy the same slot.
+ *
+ * `.cockpit-chat .ask-compose` is a flex row of box-and-button, so both of
+ * these take a full basis and wrap under it rather than squeezing the box —
+ * which is what would move the thing a person is typing in.
+ */
+.cockpit-chat .ask-compose {
+  flex-wrap: wrap;
+}
+
+.ask-settings,
+.ask-activity {
+  flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--space-6);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.ask-settings {
+  justify-content: space-between;
+}
+
+.ask-setting {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* The model id can be long. It truncates rather than pushing the change link
+   off the row — the id is recognition here, not something to be read out. */
+.ask-setting > code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ask-setting-change {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.ask-setting-change:hover,
+.ask-setting-change:focus-visible {
+  color: var(--accent);
+}
+
+/*
+ * The O at work, and the line beside it.
+ *
+ * No `animation` here and none anywhere near it: `.o-avatar.is-action` already
+ * rides `var(--motion-idle)`, which `app/tokens.css` zeroes under
+ * `prefers-reduced-motion: reduce`. A second animation declared on this
+ * container would be one that keeps moving after somebody asked it not to, and
+ * `scripts/brand-rules.mjs` refuses a literal duration on an avatar rule for
+ * exactly that reason.
+ */
+.ask-activity-o {
+  flex: none;
+  display: inline-flex;
+}
+
+.ask-activity-line {
+  margin: 0;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+/* ------------------------------------------------------------------------ *
+ * The chief's composer and its room
+ * ------------------------------------------------------------------------ */
+
+/*
+ * The band gives the chief two thirds while the room is open.
+ *
+ * The cards are not hidden and not removed — they lose height and keep their
+ * scroll, which is `FleetList`'s standing rule that no view ever takes an agent
+ * out of the document or the tab order. "Expands over" is a ratio, not a
+ * curtain.
+ */
+.fleet-stage.chief-is-open {
+  grid-template-rows: minmax(0, 1fr) minmax(0, 2fr);
+}
+
+/*
+ * Full width of the band's three columns, under the glyph and the line — and
+ * docked to the bottom of the space that leaves.
+ *
+ * `align-self: end` is Henrik's own word for this surface: *"dedicate a space at
+ * the bottom"*. It also makes the composer's position independent of how much
+ * the chief happens to be saying above it, so a band whose sentence grows by a
+ * line does not move the box under somebody's cursor.
+ */
+.chief-chat {
+  grid-column: 1 / -1;
+  align-self: end;
+  display: grid;
+  gap: var(--space-2);
+  min-height: 0;
+  width: 100%;
+}
+
+/* Open, the room wants the height, so the chat stops docking and fills. */
+.chief-band.is-chatting .chief-chat {
+  align-self: stretch;
+}
+
+.chief-room {
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-0);
+}
+
+.chief-room-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.chief-room-head h2 {
+  margin: 0;
+  font-size: var(--text-base);
+}
+
+.chief-scope {
+  margin-top: var(--space-2);
+  max-width: 70ch;
+}
+
+.chief-scope p {
+  margin: 0 0 var(--space-1);
+}
+
+.chief-turns {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.chief-turn {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/*
+ * The question, given the accent bar the estimate has on the agent page: it is
+ * the person's own words, and marking them is what lets a reader scan a
+ * scrollback for the thing they asked rather than the answers between.
+ */
+.chief-asked {
+  margin: 0;
+  padding-left: var(--space-3);
+  border-left: var(--active-bar) solid var(--accent);
+  font-weight: 600;
+  max-width: 70ch;
+}
+
+.chief-reply {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  max-width: 70ch;
+}
+
+.chief-reply .chief-says {
+  font-size: var(--text-sm);
+}
+
+.chief-standing {
+  margin: 0;
+  font-weight: 600;
+}
+
+/*
+ * An author's sentence, marked as somebody else's.
+ *
+ * A left rule and a muted colour rather than quotation marks alone: the whole
+ * point of `ChiefSentence.quoted` is that a reader can tell DASH's words from
+ * an author's at a glance, and punctuation inside a paragraph is not a glance.
+ */
+.chief-quoted {
+  margin: 0;
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--line);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.chief-values,
+.chief-choices,
+.chief-demands {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chief-demands {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.chief-demands > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.chief-demand-agent {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.chief-compose {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.chief-field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.chief-input {
+  width: 100%;
+  min-height: var(--space-8);
+  padding: var(--space-3);
+  background: var(--surface-0);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  line-height: var(--leading-normal);
+  resize: vertical;
+  field-sizing: content;
+}
+
+.chief-input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-color: var(--accent);
+}
+
+.chief-settings {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 760px) {
+  /*
+   * The band stacks at this width already. The room keeps a floor so it is a
+   * room rather than a letterbox — below this the cards scroll, which is the
+   * trade a narrow window has to make and the one the reader chose by opening
+   * the composer.
+   */
+  .fleet-stage.chief-is-open {
+    grid-template-rows: minmax(0, auto) minmax(12rem, 2fr);
   }
 }
