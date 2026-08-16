@@ -1145,7 +1145,7 @@
     {
       "id": "MAR-658",
       "lifecycle": "planned",
-      "linear_status": "In Progress",
+      "linear_status": "In Review",
       "commit": null,
       "proof": {
         "command": "pnpm typecheck (own command, not piped); pnpm brand:check; pnpm exec vitest run tests/agent-cockpit-render.test.tsx tests/agent-one-home.test.tsx tests/agent-checklist.test.ts tests/agent-stage.test.ts tests/copy-agent-page.test.ts; pnpm test; pnpm build:renderer && pnpm build:shell; from PowerShell with a visible window: DASH_SHELL_URL=dash-app://ui/ DASH_DATA_DIR=<fresh scratch> DASH_CAPTURE_DIR=qa-screenshots-mar658 pnpm exec electron dist/electron/capture-cockpit.mjs --user-data-dir=<isolated>",
