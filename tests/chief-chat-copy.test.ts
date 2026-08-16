@@ -108,8 +108,21 @@ describe("what the chief promises about itself", () => {
     const { meaning } = describeChiefScope();
     expect(meaning).toContain("records");
     expect(meaning).toContain("which one to ask");
-    expect(meaning).toContain("costs anything");
+    expect(meaning).toContain("costs nothing");
     expect(meaning).toContain("keep");
+  });
+
+  /*
+   * MAR-659. The headline changed from "I answer from your own records" to
+   * naming the reset directly — this is the assertion that keeps it a fact
+   * about the actual reset behaviour (leaving the page, or closing DASH)
+   * rather than a vague "nothing is kept" a reader has to interpret.
+   */
+  it("names what actually empties the thread, not just that it can be empty", () => {
+    const { headline, meaning } = describeChiefScope();
+    expect(headline).toContain("saved");
+    expect(meaning).toContain("Leaving this page");
+    expect(meaning).toContain("closing DASH");
   });
 
   it("counts the agents waiting on you rather than rounding it into a word", () => {

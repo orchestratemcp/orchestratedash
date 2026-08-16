@@ -46,6 +46,27 @@ export const AGENT_HEADER_COPY = {
 } as const;
 
 /**
+ * The About disclosure — the header's goal, and the plan behind it (MAR-664).
+ *
+ * Henrik: *"The agent description doesn't need to be in the header. Too much
+ * text. Better add an about the agent button. Shows steps and description."*
+ * `AGENT_HEADER_COPY.eyebrow` above is the one word the header keeps about
+ * what this agent *is*; everything about what it *does* moved here, and
+ * `tests/agent-about.test.tsx` is the gate that keeps it from moving back.
+ *
+ * Every sentence that depends on a step's own data — its risk, its declared
+ * strength — is composed in `lib/agent-plan.ts`, not here. This module only
+ * has the labels that do not depend on any agent's manifest.
+ */
+export const AGENT_ABOUT_COPY = {
+  open: "About",
+  open_label: "About this agent",
+  goal_heading: "What it does",
+  steps_heading: "Its plan",
+  step_label: (step: number): string => `Step ${String(step)}`,
+} as const;
+
+/**
  * The control panel — Henrik's *"controlpanel to start, pause, check status"*.
  *
  * The three verbs are not invented here. `pause`, `resume` and `cancel` already
@@ -562,12 +583,11 @@ export const AGENT_COCKPIT_COPY = {
   /**
    * The chat bar, pinned to the bottom of the frame.
    *
-   * `ask` owns every word of the conversation itself (`lib/copy/ask.ts`); these
-   * are the two strings the *bar* needs and the thread does not — the label on
-   * a box that is one line tall, and the way into the thread when a person
-   * cannot type in it yet.
+   * `ask` owns every word of the conversation itself (`lib/copy/ask.ts`),
+   * including the bar's own visible name now (`describeChatSubject`, MAR-659)
+   * — this is the one string the bar needs that is not about the conversation
+   * at all: the way into the thread when a person cannot type in it yet.
    */
-  chat_label: "Message this agent",
   chat_open: "Open chat",
   /**
    * The stage names, for the region's accessible name.

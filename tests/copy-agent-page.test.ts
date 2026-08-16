@@ -21,6 +21,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AGENT_ABOUT_COPY,
   AGENT_CONTROL_COPY,
   AGENT_FEED_COPY,
   AGENT_HEADER_COPY,
@@ -34,6 +35,7 @@ import { expectPlainLanguage } from "./helpers/plain-language";
 
 const MODULES = {
   AGENT_HEADER_COPY,
+  AGENT_ABOUT_COPY,
   AGENT_CONTROL_COPY,
   AGENT_TILE_COPY,
   AGENT_TRIGGER_COPY,
