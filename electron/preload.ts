@@ -284,6 +284,28 @@ const dashShell = {
   setTheme: (theme: string) => send("shell.theme", { theme }),
 
   /**
+   * Where the supervision panel is, so main can paint the watched browser
+   * there (MAR-628, ADR 0019).
+   *
+   * `sendNumbers`, like `openAppMenu` and `setUiScale`, and here that is not a
+   * convenience — four numbers is the entire vocabulary. The renderer cannot
+   * name a session, an address, an agent's origins or an operation, so what
+   * page script can ask for is "put it in this rectangle" and nothing else.
+   */
+  setBrowserViewport: (bounds: { x: number; y: number; width: number; height: number }) =>
+    sendNumbers("browser.viewport", bounds),
+
+  /**
+   * Stop the browser DASH opened for one agent (MAR-628, ADR 0019).
+   *
+   * The person's half of revocation, and the only half there is: no operation
+   * in `lib/browser/protocol.ts` lets an agent stop, start or notice a
+   * revocation except by being refused. What crosses is an agent name; main
+   * resolves the session from the agent it is already tracking.
+   */
+  stopBrowser: (agent: string) => send("browser.stop", { agent }),
+
+  /**
    * The seven Agent DOM commands, one named method each.
    *
    * One method per command rather than a single `command(name, payload)`: a
@@ -739,6 +761,12 @@ const dashData = {
   // `view.notifications` entry in `lib/shell/read.ts` for why this read cannot
   // become a route to the vault.
   notifications: () => read("view.notifications"),
+  // MAR-628, ADR 0019. The controlled browser's own record. What crosses is
+  // where DASH let its browser go, where it went, and what it decided about
+  // each request — never the page's content, which goes to the agent through
+  // `lib/browser/protocol.ts` and is not stored at all. See the `view.browser`
+  // entry in `lib/shell/read.ts`.
+  browser: (agent: string) => read("view.browser", { agent }),
   // `satisfies`, so the pages and this bridge cannot drift: the shape is
   // declared in `lib/shell/read.ts`, which a client component may import and
   // this file may not be imported by.

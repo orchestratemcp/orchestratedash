@@ -22,6 +22,9 @@
  * 2. **Rate limit** — before the manifest, so a flood costs a counter increment.
  * 3. **Operation exists** — before the connection, because an operation nothing
  *    implements can be refused without consulting the user's data at all.
+ * 3a. **For a write or a spend: has this run read a web page?** (MAR-628). The
+ *    read-then-reach rule, before every other check those two get, because its
+ *    answer depends on nothing in the request. See `BrokerDeps.hasReadUntrusted`.
  * 3b. **For a write: the durable replay check and the write budget** (MAR-469).
  *    Both before the vault, so a repeated or excessive write costs a query
  *    rather than a token — and the durable check has to come before anything
@@ -237,6 +240,34 @@ export interface BrokerDeps {
    * `electron/broker-host.ts` supplies it.
    */
   readModelChoice?(agentId: string): string | null;
+  /**
+   * Has this agent read a web page through DASH's controlled browser, in the run
+   * it is in now (MAR-628, ADR 0019, ADR 0020's rule)?
+   *
+   * The read-then-reach rule, arriving at the broker from the one place in DASH
+   * that can answer it. `lib/mcp/reach.ts` states the rule and its four limits:
+   * a successful read of content DASH did not control marks the run, and after
+   * that mark any `write` or `spend` in the same run needs a person.
+   *
+   * **Why a predicate rather than the ledger.** `lib/mcp/reach.ts` keys by run
+   * id because every MCP call arrives inside one. A `BrokerRequest` carries no
+   * run id and must not — a request that could name its own run is a request
+   * that could name a run with no mark on it. So the question asked here is
+   * *"about this agent, right now"*, and the module that owns both the browser
+   * session and DASH's view of which run the agent is in answers it. See
+   * `BrowserController.hasReadUntrusted` for which direction its approximation
+   * errs in, which is towards asking a person more often.
+   *
+   * Consulted **only for a write or a spend**, and never for a read. A browsed
+   * article followed by a second read is not the chain the rule is about; the
+   * chain is read-then-*reach*, and the reaching half is what the broker gates.
+   *
+   * Optional so the pure tests can leave it out. Absent behaves as false, which
+   * is the behaviour every broker had before this rule existed — a weaker broker
+   * rather than a broken one. `electron/broker-host.ts` supplies it, so the
+   * shipped one always has it.
+   */
+  hasReadUntrusted?(agentId: string): boolean;
   /** Record one attempt. Called exactly once per request, on every path. */
   audit(row: BrokerAuditRow): void;
   /** Note that a grant was used, for the receipt's "last used". */
@@ -553,6 +584,42 @@ export function createBroker(deps: BrokerDeps): Broker {
         // `gmail.compose` is granted and usable now (MAR-469), and this line is
         // still where every send-shaped request ends.
         return no("unknown_operation");
+      }
+
+      /* 3a. Read-then-reach (MAR-628, ADR 0019, ADR 0020's rule).
+         Before every other check a write or a spend gets, because it is the
+         cheapest of them and because it is the one whose answer does not depend
+         on anything in the request. An agent that has read a web page in this
+         run and now wants to change somebody's account or spend their money is
+         stopped here, whatever the request contains.
+
+         A `person` origin passes and that is the rule working rather than a
+         loophole — `decideReach` makes the same argument at length. `origin`
+         records which code path inside DASH's own process the request took, and
+         `person` means somebody at the keyboard asked for this specific call
+         with its inputs in front of them. That is exactly the approval the rule
+         demands, so requiring a second would be asking one person the same
+         question twice.
+
+         `needs_a_person` and not a new code, for `lib/mcp/reach.ts`'s reason:
+         its docblock already says what this means, and the agent's move is
+         identical — stop, and let the person decide.
+
+         Asked only about an **agent**, and that narrowing is the rule rather
+         than a gap left by MAR-659's principal union. The chief has no browser:
+         `lib/browser/session.ts` keys every session by an agent id, and no code
+         path opens one for a principal that is not an agent. So there is no run
+         in which the chief could have read a web page, and a `hasReadUntrusted`
+         call for it would be a question about a session that cannot exist.
+         Narrowing here also means the predicate keeps taking an agent id, which
+         is what `BrowserController` actually indexes by. */
+      if (
+        origin !== "person" &&
+        operation.access !== "read" &&
+        principal.kind === "agent" &&
+        deps.hasReadUntrusted?.(principal.agent_id) === true
+      ) {
+        return no("needs_a_person");
       }
 
       /* 3b. A write, twice over (MAR-469).

@@ -50,6 +50,13 @@
  * can run no Node built-ins and resolve no imports at runtime.
  */
 
+// `import type` throughout, which is what keeps this module importable from a
+// sandboxed preload: the declarations are erased at compile time, so nothing
+// here resolves an import at runtime. `BrowserView` comes from
+// `../views/browser` rather than `../views/types` for that reason and no other —
+// that module reaches the store, and a value import of it here would put SQLite
+// on the preload's dependency graph.
+import type { BrowserView } from "../views/browser";
 import type {
   AgentsView,
   ConnectionsView,
@@ -144,6 +151,28 @@ export const READS = {
       "Whether DASH is set up to post to Discord, when it was set up, and which kinds of message it sends. Never the channel address.",
     params: [],
   },
+  /*
+   * MAR-628, ADR 0019. The ninth, and the one whose whole point is that a person
+   * can see it: the controlled browser's own record — where DASH let its browser
+   * go, where it went, what it decided about each request, and what it refused
+   * on the page's behalf.
+   *
+   * Read against the catalogue's promise above. What comes back is a projection
+   * of `browser_sessions`, `browser_actions` and a count from `browser_blocked`,
+   * none of which hold a credential — an ephemeral session has no cookie jar to
+   * leak and no sign-in to name. The page's *content* never crosses this read
+   * either: the text an agent asked for goes to the agent through
+   * `lib/browser/protocol.ts` and is not stored, so there is nothing here for a
+   * hostile page to write into a DASH surface through.
+   *
+   * `frame_after` is a file name and never a path, so this read cannot become a
+   * way to name a file outside the run's own frame folder.
+   */
+  "view.browser": {
+    returns:
+      "One agent's controlled browser: which addresses DASH set it up for, where it went, what DASH decided about each request, and what it refused on the page's behalf.",
+    params: ["agent"],
+  },
 } as const satisfies Record<string, ReadSpec>;
 
 export type ReadName = keyof typeof READS;
@@ -168,6 +197,7 @@ export interface ReadResults {
   "view.workspace": WorkspaceView;
   "view.hosts": HostsView;
   "view.notifications": NotificationsView;
+  "view.browser": BrowserView;
 }
 
 type UntypedRead = Exclude<ReadName, keyof ReadResults>;
@@ -272,6 +302,8 @@ export interface DashReadApi {
   hosts?(): Promise<ReadResponse<ReadResults["view.hosts"]>>;
   /** Optional for `hosts`'s reason: a shell older than MAR-588 has no such read. */
   notifications?(): Promise<ReadResponse<ReadResults["view.notifications"]>>;
+  /** Optional for `hosts`'s reason: a shell older than MAR-628 has no such read. */
+  browser?(agent: string): Promise<ReadResponse<ReadResults["view.browser"]>>;
 }
 
 /**

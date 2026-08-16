@@ -1,0 +1,115 @@
+{
+  "manifest_version": 2,
+  "agent": {
+    "name": "synthetic-news-scout-browser",
+    "display_name": "News Scout (browser)",
+    "goal": "Open one cited article in the browser DASH watches and report what it said",
+    "plan_source": "composed",
+    "playbook_id": "",
+    "route_id": "",
+    "build_target": "code",
+    "purpose": "Opens one cited article in the browser DASH watches, reads it, and reports what it said."
+  },
+  "planned_route": [
+    {
+      "step": 1,
+      "component_id": "article_open",
+      "risk_level": "low",
+      "model_tier": "none"
+    },
+    {
+      "step": 2,
+      "component_id": "article_read",
+      "risk_level": "low",
+      "model_tier": "none"
+    }
+  ],
+  "safety_contract": {
+    "automation_clearance": "L2",
+    "enforced_approval_gates": [],
+    "irreversible_components": []
+  },
+  "monitoring": {
+    "events": [
+      "run_started",
+      "step_started",
+      "step_completed",
+      "run_completed",
+      "run_failed"
+    ],
+    "endpoint_env": "DASH_INGEST_URL",
+    "token_env": "DASH_INGEST_TOKEN",
+    "output_location": "Local exception report"
+  },
+  "provenance": {
+    "generated_by": "synthetic MAR-382 example",
+    "registry_fingerprint": "example-agent-managed",
+    "generated_at": "2026-07-16T08:00:00Z"
+  },
+  "agent_dom": {
+    "dom_version": 1,
+    "runtime": {
+      "class": "local_process",
+      "provider": "user workstation",
+      "label": "Local invoice worker",
+      "availability": "on_demand",
+      "continues_when_dash_closed": true
+    },
+    "trigger": {
+      "type": "manual",
+      "label": "Run when requested"
+    },
+    "locations": {
+      "runtime": {
+        "id": "invoice-worker",
+        "label": "Local invoice worker",
+        "kind": "local",
+        "offline_behavior": "Stops when the local worker is closed"
+      },
+      "control": [
+        {
+          "id": "invoice-control",
+          "label": "Invoice worker controls",
+          "kind": "local",
+          "uri": "http://127.0.0.1:4318/agent-dom",
+          "offline_behavior": "Controls are unavailable while the worker is offline"
+        }
+      ],
+      "interaction": [
+        {
+          "id": "dash-workspace",
+          "label": "DASH agent workspace",
+          "kind": "dash",
+          "offline_behavior": "Last safe state remains read-only"
+        }
+      ]
+    },
+    "connections": [],
+    "control": {
+      "supported": true,
+      "command_version": 1,
+      "location_id": "invoice-control",
+      "commands": [
+        "retry",
+        "pause",
+        "resume",
+        "cancel"
+      ]
+    },
+    "memory": [
+      {
+        "id": "review-preferences",
+        "label": "Review preferences",
+        "description": "User-approved invoice review preferences only",
+        "visibility": "user_visible",
+        "retention": "user_approved"
+      }
+    ],
+    "browser": {
+      "purpose": "Opens one cited article so a person can watch it being read, and reads the words on it.",
+      "origins": [
+        "https://example.com"
+      ]
+    }
+  }
+}

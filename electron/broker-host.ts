@@ -56,6 +56,7 @@ import type { ConnectionSourceManifest } from "../lib/connections";
 import { parseOAuthCredential } from "../lib/oauth/credential";
 import { isSecureStoreError } from "../lib/secure-store";
 import { readAgentManifest } from "../lib/store";
+import { hostBrowserController } from "./browser-host";
 import { mintAccessToken } from "./oauth-session";
 import { type RunnerHandle } from "./runner-process";
 import { secureStore } from "./secure-store";
@@ -274,6 +275,13 @@ export function hostBroker(): Broker {
       const choice = readEffectiveModelChoice(agentId, agentProviderId(agentId)).choice;
       return choice.kind === "one_model" ? choice.model_id : null;
     },
+    // MAR-628, ADR 0019. Whether this agent has read a web page through DASH's
+    // controlled browser in the run it is in now — after which a write or a
+    // spend in the same run needs a person. Supplied here for
+    // `hasHandledRequest`'s reason: `lib/broker/` touches no store and knows
+    // nothing about a browser, and this is the seam where the module that owns
+    // both the session and DASH's view of the run can be asked.
+    hasReadUntrusted: (agentId: string) => hostBrowserController().hasReadUntrusted(agentId),
     audit: (row: BrokerAuditRow) => {
       written.push({ id: recordBrokerCall(row), request_id: row.request_id });
     },

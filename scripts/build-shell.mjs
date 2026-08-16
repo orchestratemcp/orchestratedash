@@ -238,6 +238,20 @@ await Promise.all([
     format: "esm",
   }),
 
+  // MAR-628's controlled browser, on `prove-start.ts`'s exact terms: evidence
+  // rather than a verdict, named by no `package.json` script, and requiring its
+  // own `DASH_DATA_DIR`. Different from every harness beside it in one way —
+  // it opens a real `WebContentsView` against a real page on the open internet,
+  // so it is the only one whose result depends on a network. See
+  // `electron/prove-browser.ts` for what it proves and what it deliberately
+  // does not.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "prove-browser.ts")],
+    outfile: path.join(outDir, "prove-browser.mjs"),
+    format: "esm",
+  }),
+
   // The panel's own screenshot harness (MAR-554), on exactly the terms above.
   // Separate from `capture.ts` because that one walks routes and the declarative
   // panel has none yet — a real manifest declaring one arrives with MAR-548. See

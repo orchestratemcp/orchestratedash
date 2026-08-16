@@ -326,3 +326,175 @@ local to the browser process; DASH talks to the host in named commands.
   [experimental Electron support](https://playwright.dev/docs/api/class-electron).
 - Puppeteer: [installation and `puppeteer-core`](https://pptr.dev/guides/installation)
   and [locators/page interactions](https://pptr.dev/guides/page-interactions).
+
+## Amendment 1 (MAR-628): what slice 1 built, and what stays deferred
+
+Status: Proposed
+
+Date: 2026-08-16
+
+The decision above is unchanged. This amendment records the gap between the
+"smallest first slice" the ADR specified and the slice that was actually built,
+because two of its eight items were deliberately not attempted and one was met
+in a narrower form than the wording implies. A slice that quietly shipped less
+than its own decision document claimed would make every later reading of that
+document wrong.
+
+### The catalogue is two operations, not four
+
+The ADR's slice named `navigate`, `read title and visible text`, `scroll` and
+one approval-required `click`. What shipped is `browser.open` and
+`browser.read`, and `lib/browser/operations.ts` contains nothing else.
+
+The reason is not that the other two are hard. It is that `scroll` and `click`
+are the operations that need the approval surface — *"an operation class marked
+`approval_required` stops before input is dispatched and shows the live page,
+resolved target and proposed value or redaction"* — and building that surface
+beside an unproven controller would have meant a person approving gestures
+against a browser nobody had yet watched work.
+
+What the narrowing buys is a claim that is entirely true of the catalogue as
+shipped: **every operation DASH offers reads, and none of them dispatches an
+input event.** A person watching this browser is watching something that cannot
+type, cannot click and cannot submit, because none of those exist rather than
+because none of them is currently permitted.
+`tests/browser-threat-model.test.ts` asserts the array by value and asserts that
+every entry has `access: "read"` and `approval_required: false`, so the first
+operation that dispatches input turns both of those lines red.
+
+What the narrowing costs is that **this slice does not exercise the approval
+path at all.** The ADR's paragraph on approval remains a decision about
+operations that do not yet exist, and nothing here should be read as evidence
+that it works.
+
+### The seven things built as specified
+
+1. **One ephemeral `WebContentsView` per run**, in an in-memory Electron
+   partition — a partition name with no `persist:` prefix, which is Electron's
+   own switch rather than a cleanup step somebody could forget. No preload, no
+   node integration, sandboxed, context isolated. This is the ADR's third
+   credential option: an ephemeral public-web session with no login and no
+   credential input.
+2. **An exact HTTPS origin list, per run**, declared in the manifest as
+   `agent_dom.browser.origins` and parsed by `URL` into scheme, host and port.
+   There is no prefix comparison anywhere. A path in a declaration is refused
+   rather than accepted and silently widened to the whole host.
+3. **Every request checked, not only navigations.** `onBeforeRequest` on the
+   partition covers scripts, styles, fonts, images and API calls, and fires
+   again for each hop of a redirect chain. `will-navigate`, `will-redirect` and
+   `will-frame-navigate` are kept beside it because a `javascript:` URL or an
+   external protocol reaches those without ever becoming a network request.
+4. **Everything that opens something else, denied**: popups and new
+   `WebContents` through `setWindowOpenHandler`, downloads through
+   `will-download`, permission prompts through both permission handlers, and
+   every non-HTTPS scheme on one branch of `decideRequest` — which is why the
+   controller can claim to deny external protocols without keeping a list of
+   them.
+5. **CDP attached by DASH and by nothing else.** The debugger is attached when
+   the session opens; the only commands sent are `Page.getFrameTree`,
+   `Page.createIsolatedWorld` and `Runtime.evaluate`; and the expression
+   evaluated is a constant in `electron/browser-view.ts`, run in an isolated
+   world so a page that has redefined its own globals cannot change what DASH
+   reads. No agent-supplied value is interpolated into a CDP parameter, and
+   `BrowserGesture` has no member that could carry one.
+6. **An append-only trail**, in three shapes rather than one. `browser_actions`
+   is a decision DASH took about a request an agent made. `browser_blocked` is a
+   request a *page* made and DASH refused, and it deliberately has no request
+   id, no operation and no decision column — on `broker_lapses`' terms, so that
+   a publisher's advertising network cannot be joined onto an agent's conduct
+   record. `browser_sessions` is the receipt, and its `declared_origins` is
+   written once so a manifest edited mid-run cannot change what a finished
+   receipt says the person agreed to.
+7. **A Stop that destroys the view and refuses the rest of the run.** It is
+   reachable only from DASH's own IPC and from the quit path;
+   `lib/browser/protocol.ts` has no `stop` and no `close`, so an agent cannot
+   revoke, cannot un-revoke, and cannot discover that it has been revoked except
+   by being refused. Revocation is checked first, before replay and before the
+   rate limit, so a request already in flight cannot overtake it.
+
+### One thing beyond the slice, because the slice created the need for it
+
+**Read-then-reach is wired.** A successful `browser.read` is a read of content
+DASH did not control, which is the first link of the chain `lib/mcp/reach.ts`
+describes; after it, any `write` or `spend` for the same agent in the same run
+is refused with `needs_a_person`. ADR 0020's rule is unchanged and all four of
+its stated limits apply here unaltered.
+
+The fifth limit belongs to this wiring and is stated on
+`BrowserController.hasReadUntrusted`: a `BrokerRequest` carries no run id and
+must not — a request that could name its own run is a request that could name a
+run with no mark on it — so the mark is keyed by agent and compared against the
+newest run DASH has *observed* for that agent. Where DASH can observe no run,
+the mark holds. That errs towards asking a person more often, which is the only
+side of this rule it is safe to be wrong on.
+
+### What stays deferred, named rather than implied
+
+- **`scroll`, `click`, typing, forms, uploads, downloads, permission grants,
+  new windows and multiple tabs.** None exists. The first one to arrive needs
+  the approval surface, and it needs three things this slice did not build with
+  it: the `target` and `typed_value` columns the trail deliberately does not
+  have, the redaction rule that must arrive with them (a password field's
+  description and character count, never its value), and the durable replay
+  memory `lib/broker/execute.ts` gives a write. Replaying a read costs a second
+  page load; replaying a click costs whatever the click did.
+- **The before-frame.** The controller boundary above says "a frame captured
+  before and after a gesture" and this slice captures after only. The frame
+  *pair* exists to evidence what a gesture landed on — a state a later
+  screenshot cannot recover — and no operation here dispatches one, so the state
+  before an action is fully described by the trail's `url_before`. The first
+  operation that clicks brings the before-frame with it.
+- **"The run stopping to ask" on a cross-origin redirect.** The decision
+  requires that an agent asking for `example.com/article` may not end up on a
+  different origin without the trail saying so and the run stopping to ask. The
+  trail says so and the run stops: the navigation is refused, the refused origin
+  is recorded, and the operation returns `origin_not_allowed`. **The asking is
+  not built.** There is no surface on which a person can widen a run's origins,
+  and there should not be one until the approval path exists — it would be the
+  first thing in DASH that lets a page's own choice of destination become a
+  question a tired person clicks through.
+- **Credentials and a persistent profile.** Unchanged from the decision: a
+  logged-in browser is a credential with no OS-vault boundary, and shipping one
+  incidentally because Electron sessions persist by default would be the worst
+  of the three choices. The in-memory partition is what makes that structural
+  rather than a promise.
+- **The VPS.** Offscreen rendering, Xvfb and a host-reported frame trail are
+  untouched. `BROWSER_ROUTES` is confined to `LocalRunnerChannel`, so
+  `channel.call("/browser/drain")` on a host's channel is a compile error rather
+  than a thing somebody has to remember not to do. When the remote path arrives
+  it is a different claim — timestamped host-reported evidence, never live
+  supervision — and it needs its own route and its own entry in ADR 0014's
+  admitted set rather than a widening of these two.
+
+### The "full control" checklist, scored honestly
+
+Against the eight conditions the decision says must all hold before the phrase
+is earned — and they do not:
+
+1. **One reviewed catalogue, raw CDP unreachable** — met, and pinned by value.
+2. **Origin and new-window limits enforced before dispatch, including redirects
+   and subresources** — met.
+3. **Every dispatched input has an action record and before/after visual
+   evidence** — vacuous. Nothing dispatches input, so this is not met in any
+   sense that counts. See the before-frame note above.
+4. **Revocation has a tested stop point and the UI says what may already have
+   left the machine** — met. `tests/browser-session.test.ts` drives the stop
+   point; `describeStop` carries the sentence, and `tests/copy-browser.test.ts`
+   asserts that nothing anywhere on the surface claims Stop undid anything.
+5. **Approval-required classes cannot be reached by a lower-risk alias** —
+   vacuous, for condition 3's reason: there are no approval-required classes.
+6. **Local and VPS receipts distinguish DASH-observed facts, host-reported facts
+   and agent declarations** — not applicable; there is no VPS path.
+7. **Credential custody and provider-side revocation visible before sign-in** —
+   not applicable; there is no sign-in.
+8. **Resource use and failure recovery measured on the packaged desktop and the
+   supported VPS image** — **not met, and this is the largest gap.** One
+   concurrent session on one machine has been exercised. Nothing here says what
+   several concurrent sessions cost, what happens when a page exhausts memory,
+   or how the controller behaves on a machine under load.
+
+So the product goes on saying **controlled browser operations** and not full
+browser control. The surface says so too: `lib/copy/browser.ts` contains no
+sentence with the words "full control" in it, and `describeReach` says DASH
+limited this browser run rather than that the agent could only reach these
+addresses.

@@ -1226,6 +1226,102 @@ const MIGRATIONS: readonly Migration[] = [
     receipt_json TEXT NOT NULL
   );
   `,
+
+  // MAR-628, ADR 0019: what DASH asked its own browser to do, and what it
+  // stopped a page from doing.
+  //
+  // Two tables and not one, on `broker_audit` / `broker_lapses`' exact terms.
+  // **Look at what the second one cannot say.** It has no request id, no
+  // operation and no decision column, because the agent asked for none of it: a
+  // script, a font or a redirect chose those addresses and DASH refused them.
+  // Giving them the columns of an adjudication would let a careless join, or a
+  // later renderer, present a publisher's advertising network as something an
+  // agent did. `browser_actions` stays believable precisely because every row in
+  // it is a request an agent made and a decision DASH took.
+  //
+  // What is deliberately absent from `browser_actions` is as much of the design
+  // as what is present. There is no `target` column and no `typed_value` column,
+  // because no operation in `BROWSER_OPERATIONS` resolves a target or supplies a
+  // value — this slice's catalogue is `browser.open` and `browser.read` and
+  // neither dispatches an input event. A column null in every row is a column
+  // inviting a later reader to believe DASH once recorded something it never
+  // did; ADR 0019 amendment 1 records that the first operation which types or
+  // clicks adds them, along with the redaction rule that has to arrive with
+  // them.
+  //
+  // `url_before` and `url_after` hold an origin and a path and never a query
+  // string — see `trailUrl`. An article URL routinely carries a session id, a
+  // tracking parameter and occasionally somebody's email address in its query,
+  // and a durable table of every one of them is a record nobody asked DASH to
+  // keep.
+  //
+  // `frame_after` is a file name inside the run's own frame folder, never a
+  // path: `lib/copy/identifiers.ts`'s rule that a renderer names a kind of file
+  // and never a file, applied to the one column that points at bytes on disk.
+  `
+  CREATE TABLE IF NOT EXISTS browser_sessions (
+    session_id       TEXT PRIMARY KEY,
+    agent            TEXT NOT NULL,
+    -- Null when DASH could observe no run. A session outside a run is a real
+    -- situation and a null says so rather than inventing an id to group by.
+    run_id           TEXT,
+    -- The exact origins this run was set up for, as JSON. Written once, at open
+    -- time, so a manifest edited mid-run cannot change what a finished receipt
+    -- says the person agreed to.
+    declared_origins TEXT NOT NULL,
+    -- The origins the view actually reached, as JSON, in the order first
+    -- allowed. A subset of the above by construction.
+    visited_origins  TEXT NOT NULL,
+    opened_at        TEXT NOT NULL,
+    -- When this session first returned page content, or NULL. It is the moment
+    -- the read-then-reach rule started applying to the rest of the run.
+    first_read_at    TEXT,
+    ended_at         TEXT,
+    end_reason       TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS browser_sessions_by_agent
+    ON browser_sessions (agent, opened_at);
+
+  CREATE TABLE IF NOT EXISTS browser_actions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent       TEXT NOT NULL,
+    run_id      TEXT,
+    session_id  TEXT NOT NULL,
+    request_id  TEXT NOT NULL,
+    -- Verbatim, even when DASH has no such operation. A row saying an agent
+    -- asked for browser.evaluate and was refused is the most interesting row
+    -- this table can hold, and normalising it away would lose it.
+    operation   TEXT NOT NULL,
+    decision    TEXT NOT NULL,
+    refusal     TEXT,
+    origin      TEXT,
+    url_before  TEXT,
+    url_after   TEXT,
+    frame_after TEXT,
+    decided_at  TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS browser_actions_by_session
+    ON browser_actions (session_id, decided_at);
+  CREATE INDEX IF NOT EXISTS browser_actions_by_agent
+    ON browser_actions (agent, decided_at);
+
+  CREATE TABLE IF NOT EXISTS browser_blocked (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent      TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    -- The refused origin, or a scheme such as data: when the URL had no origin
+    -- DASH was willing to name.
+    origin     TEXT,
+    reason     TEXT NOT NULL,
+    blocked_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS browser_blocked_by_session
+    ON browser_blocked (session_id, blocked_at);
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

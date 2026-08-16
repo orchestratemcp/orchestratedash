@@ -128,8 +128,16 @@ describe("schema", () => {
     // already recorded 0 to 23 runs exactly one more, and renumbering a step
     // somebody's database has recorded is the one thing this pin exists to make
     // somebody think about.
+    //
+    // 25 is MAR-628's three browser tables, appended on the same terms — it was
+    // authored as 24 in parallel with MAR-659's, and MAR-659 reached master
+    // first, so the browser step renumbered to the end at the merge. That
+    // collision is the one failure a parallel packet reliably produces — two
+    // branches each appending "the last migration" — and it produced it here,
+    // in a blocking gate, rather than in an installed store that silently
+    // skipped somebody's step.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(24);
+    expect(version.user_version).toBe(25);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -550,7 +558,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(24);
+    ).toBe(25);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {
