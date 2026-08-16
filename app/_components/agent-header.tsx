@@ -180,6 +180,31 @@ export function AgentCockpitHeader({
             label={AGENT_COCKPIT_COPY.logs}
             target="logs"
           />
+          {/*
+            MAR-658. The fifth cell, and the odd one that spans — see
+            `.cockpit-action-grid > :last-child:nth-child(odd)`, which sat
+            unused since MAR-641 wrote it for exactly this.
+
+            Every other cell here is a stage this agent's frame did not
+            otherwise lead to. This one is a stage the frame used to lead to
+            by accident, until MAR-646 sent a produced agent's plain link to
+            `output` instead — after that, an agent with even one output had
+            no button or link back to its Overview anywhere in the cockpit,
+            only the URL bar. Named as a destination, not a direction, so it
+            cannot strand a deep link the way `router.back()` would: a link
+            straight to the Chat stage has no earlier stage of *this* agent
+            behind it in history, but it always has an Overview.
+
+            Drawn on the Overview stage too, marked current like the other
+            three: a cell that vanished under its own destination would be
+            one more control whose presence a person had to remember.
+          */}
+          <StageAction
+            agent={agent}
+            current={stage}
+            label={AGENT_COCKPIT_COPY.overview}
+            target="overview"
+          />
         </div>
 
         {/*

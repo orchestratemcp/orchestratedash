@@ -449,6 +449,20 @@ export const AGENT_COCKPIT_COPY = {
   settings: "Settings",
   logs: "Logs",
   /**
+   * The fifth cell, and the answer to a proof-pass finding (MAR-658).
+   *
+   * Every other cell in the grid names a destination this agent has, and
+   * `overview` is the one the grid had never named. It was reachable by
+   * accident until MAR-646 sent a produced agent's plain link to `output`
+   * instead — after that, an agent with even one output had no button or link
+   * anywhere back to its Overview stage, only the URL bar. A control that
+   * always names this one destination cannot strand a deep link the way
+   * `router.back()` would: see the comment on `onEscape` in
+   * `app/agents/detail/page.tsx` for why the composer's Escape is a different
+   * question with a different, correct answer.
+   */
+  overview: "Overview",
+  /**
    * The overflow menu — three actions that are real and rare.
    *
    * A `<details>` rather than a popup: it needs no click-outside handler, it is
