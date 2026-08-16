@@ -193,6 +193,54 @@ describe("the motion rides the tokens, so reduced motion stills the fleet for fr
       expect(stateClasses, state).toBeGreaterThan(idleClasses);
     }
   });
+
+  it("resizes the chief's portrait through --o-size, never width (MAR-615)", () => {
+    /*
+     * The regression this pins cost a capture run to find and could not have
+     * been found any other way. `.chief-glyph` used to be an inline `<svg>`, so
+     * MAR-648's narrow-width rule shrank it with `width`/`height`. MAR-615 made
+     * it an `OAvatar`, and that rule died in two separate ways at once:
+     *
+     * 1. `.chief-glyph` and `.o-avatar` are both a single class, so source
+     *    order breaks the tie and `.o-avatar { width: var(--o-size) }` — 2,500
+     *    lines further down — won. A media query adds no specificity. The chief
+     *    drew at 100px in a band with 230px to spend and the composer collapsed
+     *    to zero height.
+     * 2. Even winning, `width` alone would have *cropped*: the sprite is a
+     *    background sheet sized from `--o-size`, so the box and the sheet have
+     *    to move together or one frame is shown as a corner of itself.
+     *
+     * So the rule is about the mechanism, not the numbers: any rule that
+     * resizes this element goes through the custom property. Nothing renders
+     * differently for a reader of this test — which is the point, because
+     * nothing rendered differently for the whole suite last time either.
+     */
+    const bodies = [...globals.matchAll(/\.chief-glyph\s*\{([^}]*)\}/g)].map((match) => match[1] ?? "");
+    expect(bodies.length).toBeGreaterThan(1);
+
+    const sized = bodies.filter((body) => /--o-size/.test(body));
+    expect(sized.length, "no rule sizes the chief's portrait").toBeGreaterThan(0);
+    for (const body of sized) {
+      // Inline styles are what `OAvatar` writes, and only an important author
+      // declaration beats one.
+      expect(body).toMatch(/--o-size\s*:[^;]*!important/);
+      /*
+       * An integer ratio of the sheet's own 50px frames, `agent-settings.tsx`'s
+       * rule: `image-rendering: pixelated` upscales by nearest neighbour, so
+       * anything else lands some source pixels on two screen pixels and some on
+       * three and the sprite reads as a rendering fault rather than as pixel art.
+       */
+      const value = /--o-size\s*:\s*([0-9]+)px/.exec(body)?.[1];
+      expect(value, "the size is not a plain pixel length").toBeDefined();
+      expect([25, 50, 100, 200]).toContain(Number(value));
+    }
+
+    for (const body of bodies) {
+      expect(body, "sizing the chief's portrait by box crops the sheet").not.toMatch(
+        /(?:^|[\s;])(?:width|height)\s*:/,
+      );
+    }
+  });
 });
 
 describe("the boot sequence does not cost the first-paint gate its attribute", () => {

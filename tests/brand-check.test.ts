@@ -285,6 +285,31 @@ describe("the stylesheet's own half", () => {
     );
     expect(failures.some((failure: string) => failure.includes("--o-size: 30px"))).toBe(true);
   });
+
+  it("accepts the one exact half-step, and only that one (MAR-615)", () => {
+    /*
+     * The stylesheet may reduce where the component API may not, and 25 is the
+     * only reduction it may make. `checkSizeApi` still refuses 25 for the
+     * `OSize` union two describes above — that is the intended difference, not
+     * a gap: a surface asking to draw a character asks to draw it at size, and
+     * only a layout with no room imposes a smaller one. MAR-648's composer on
+     * the chief's band at 375px is the first such layout DASH has had.
+     *
+     * 25 is exact because nearest-neighbour halving of a 50px source lands
+     * every source pixel the same way. 30 is the neighbour that proves the rule
+     * did not simply get looser: it is still refused, above.
+     */
+    expect(
+      checkAvatarCss(`.o-avatar { image-rendering: pixelated; } .chief-glyph { --o-size: 25px; }`),
+    ).toEqual([]);
+
+    for (const size of [10, 20, 30, 40, 75]) {
+      const failures = checkAvatarCss(
+        `.o-avatar { image-rendering: pixelated; } .chief-glyph { --o-size: ${String(size)}px; }`,
+      );
+      expect(failures.some((failure: string) => failure.includes(`--o-size: ${String(size)}px`)), `${String(size)}px`).toBe(true);
+    }
+  });
 });
 
 /* ---------------------------------------------------------------------- *
