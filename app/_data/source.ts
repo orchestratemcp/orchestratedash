@@ -36,6 +36,9 @@ import type { O_FLEET } from "../../lib/brand/o-cast";
 import type { CommandResult } from "../../lib/shell/ipc";
 import type { DashReadApi } from "../../lib/shell/read";
 import type { AgentCommand } from "../../lib/workspace";
+// `import type`, so this client module names the shape without pulling
+// `lib/views/browser.ts` — which reaches the store — toward the browser bundle.
+import type { BrowserView } from "../../lib/views/browser";
 import type {
   AgentsView,
   ConnectionsView,
@@ -198,6 +201,27 @@ interface DashShellClient {
   markAgentLooked?(args: { agent_id: string }): Promise<CommandResult>;
   setUiScale?(factor?: number): Promise<CommandResult>;
   /**
+   * The controlled browser's two commands (MAR-628, ADR 0019).
+   *
+   * Optional for the reason every method here is, and the degradation is worth
+   * naming because only one half of it is quiet. A shell older than
+   * `setBrowserViewport` cannot place the view, so it sits where
+   * `FALLBACK_BOUNDS` puts it — visible, in the wrong place, which is the right
+   * way round for a browser somebody is meant to be watching.
+   *
+   * A shell older than `stopBrowser` is the loud half: it also has no browser
+   * to stop, because the same build that added one added both. So the panel
+   * that would offer Stop is a panel with nothing to show, and
+   * `BrowserPanel` renders nothing at all rather than a dead button.
+   */
+  setBrowserViewport?(bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }): Promise<CommandResult>;
+  stopBrowser?(agent: string): Promise<CommandResult>;
+  /**
    * The native half of the theme (MAR-642).
    *
    * Optional for the reason every method here is, and this degradation is the
@@ -258,6 +282,16 @@ interface DashShellClient {
     question: string;
   }): Promise<CommandResult>;
   /**
+   * Ask the chief about the fleet, and forget what it said (MAR-659, ADR 0023).
+   *
+   * Optional for `askQuestion`'s reason, and the degradation is the same shape:
+   * the whole conversation arrives in the fleet view and reads perfectly in a
+   * browser tab, because it is stored now. Only asking something new, and
+   * clearing the thread, need the installed app.
+   */
+  askChief?(args: { question: string }): Promise<CommandResult>;
+  clearChiefThread?(): Promise<CommandResult>;
+  /**
    * The runner's own health, and its one repair (MAR-518).
    *
    * Optional on top of the bridge already being optional, like `openAppMenu`
@@ -267,6 +301,17 @@ interface DashShellClient {
    */
   runnerStatus?(): Promise<CommandResult>;
   retireRunnerStore?(): Promise<CommandResult>;
+  /**
+   * Start one registered agent's process on this computer (MAR-657).
+   *
+   * Optional for the reason everything around it is: an installed shell built
+   * before this feature has a `dashShell` without it, and a page that assumed
+   * otherwise would throw where a refusal is the honest answer. That case is
+   * real here rather than theoretical — this method is the only way the control
+   * MAR-657 adds can do anything, so an older shell has to be told it cannot
+   * rather than shown a button that throws.
+   */
+  startAgent?(args: { agent_id: string }): Promise<CommandResult>;
   /**
    * DASH's two removal actions (MAR-595 finding 18).
    *
@@ -436,6 +481,8 @@ export interface DashDataSource {
   workspace(agent: string): Promise<ViewResult<WorkspaceView>>;
   hosts(): Promise<ViewResult<HostsView>>;
   notifications(): Promise<ViewResult<NotificationsView>>;
+  /** MAR-628, ADR 0019. One agent's controlled browser and its trail. */
+  browser(agent: string): Promise<ViewResult<BrowserView>>;
 }
 
 /**
@@ -468,6 +515,8 @@ function shellSource(bridge: DashReadApi): DashDataSource {
   /* MAR-588. Same treatment, same reason: a shell older than this read has no
      such method, and the narrowing has to survive into the closure. */
   const readNotifications = bridge.notifications?.bind(bridge);
+  /* MAR-628. Same treatment, same reason. */
+  const readBrowser = bridge.browser?.bind(bridge);
   return {
     host: "shell",
     can_act: typeof window !== "undefined" && window.dashShell !== undefined,
@@ -491,6 +540,10 @@ function shellSource(bridge: DashReadApi): DashDataSource {
       readNotifications === undefined
         ? Promise.resolve({ ok: false, recovery: describeViewFailure("refused") })
         : fromBridge(readNotifications),
+    browser: (agent) =>
+      readBrowser === undefined
+        ? Promise.resolve({ ok: false, recovery: describeViewFailure("refused") })
+        : fromBridge(() => readBrowser(agent)),
   };
 }
 
@@ -531,6 +584,7 @@ function browserSource(): DashDataSource {
       fromHttp(`/api/views/workspace?agent=${encodeURIComponent(agent)}`),
     hosts: () => fromHttp("/api/views/hosts"),
     notifications: () => fromHttp("/api/views/notifications"),
+    browser: (agent) => fromHttp(`/api/views/browser?agent=${encodeURIComponent(agent)}`),
   };
 }
 
@@ -962,6 +1016,56 @@ export async function askAgentQuestion(args: {
 }
 
 /**
+ * Ask the chief about your fleet (MAR-659, ADR 0023).
+ *
+ * `askAgentQuestion`'s three refusals, and the third sentence is the one worth
+ * reading: a shell too old for this command still shows the whole conversation,
+ * because the transcript is in the fleet view like everything else. Only asking
+ * something new needs the installed app.
+ */
+export async function askChief(args: { question: string }): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to ask the chief a question.",
+    };
+  }
+  if (bridge.askChief === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail:
+        "This version of the DASH app cannot ask the chief a question. Everything already asked is shown below.",
+    };
+  }
+  return bridge.askChief(args);
+}
+
+/**
+ * Forget the whole conversation with the chief (MAR-659).
+ *
+ * Refused rather than faked where the bridge cannot reach the store, because the
+ * one thing a clear must never do is report a conversation deleted that is still
+ * on disk.
+ */
+export async function clearChiefThread(): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge?.clearChiefThread === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to clear this conversation.",
+    };
+  }
+  return bridge.clearChiefThread();
+}
+
+/**
  * Ask DASH to save one of an agent's outputs (MAR-434).
  *
  * Three refusals rather than one, because they are three different things to
@@ -1080,15 +1184,29 @@ export async function retireRunnerStore(): Promise<CommandResult> {
  * not to have the method yet — the same shape as `retireRunnerStore` above.
  */
 export async function removeAgent(args: { agent_id: string }): Promise<CommandResult> {
-  return removeCommand("removeAgent", args, "remove an agent");
+  return agentIdCommand("removeAgent", args, "remove an agent");
 }
 
 export async function removeAgentKeepFiles(args: { agent_id: string }): Promise<CommandResult> {
-  return removeCommand("removeAgentKeepFiles", args, "remove an agent");
+  return agentIdCommand("removeAgentKeepFiles", args, "remove an agent");
 }
 
-async function removeCommand(
-  method: "removeAgent" | "removeAgentKeepFiles",
+/**
+ * Start one registered agent's process on this computer (MAR-657).
+ *
+ * `agentIdCommand`'s shape and its refusals, which is the point: this is the
+ * same family of act — DASH operating on something it launched — reaching the
+ * same lifecycle route through the same audited channel. The two refusals below
+ * are the ones that matter, and the second is not hypothetical: an installed
+ * shell older than this feature has a `dashShell` with no `startAgent`, and it
+ * is better told so than left with a button that throws.
+ */
+export async function startAgent(args: { agent_id: string }): Promise<CommandResult> {
+  return agentIdCommand("startAgent", args, "start an agent");
+}
+
+async function agentIdCommand(
+  method: "removeAgent" | "removeAgentKeepFiles" | "startAgent",
   args: { agent_id: string },
   cannot: string,
 ): Promise<CommandResult> {
@@ -1116,7 +1234,7 @@ async function removeCommand(
 /**
  * Set — or clear — the name DASH shows for one agent (MAR-589).
  *
- * `removeCommand`'s shape, and its own function rather than a third case
+ * `agentIdCommand`'s shape, and its own function rather than a third case
  * added there: the argument carries an optional `display_name` the two
  * removal methods have no equivalent of.
  */

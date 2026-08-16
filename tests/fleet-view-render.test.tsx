@@ -176,6 +176,23 @@ describe("the list a cold render draws", () => {
     expect([...markup.matchAll(/>Local</g)]).toHaveLength(2);
   });
 
+  it("opens every agent from its own card, not just the one the chief is talking about (MAR-660)", () => {
+    /*
+     * Henrik, station 11 of his 2026-08-16 attended pass, verbatim: "under the
+     * avatar in the card for every agent." A cold render has no effect and
+     * therefore no `localStorage`, so `useFleetView` cannot resolve anything
+     * but the default — this is the grid path, where `FleetOpenLink` draws for
+     * every card; Rows' own omission is Electron-capture evidence, not
+     * something a static render can exercise (`useFleetView` never sees the
+     * document's `data-fleet-view` attribute without an effect).
+     */
+    expect([...markup.matchAll(/class="fleet-open"/g)]).toHaveLength(2);
+    expect(markup).toContain('href="/agents/detail?agent=news-scout"');
+    expect(markup).toContain('aria-label="Open News Scout"');
+    expect(markup).toContain('href="/agents/detail?agent=digest"');
+    expect(markup).toContain('aria-label="Open Digest"');
+  });
+
   it("takes no tab stop when it is not a scroll container", () => {
     /*
      * The `tabIndex` and the label are the spotlight's, because there the `<ol>`
@@ -276,12 +293,16 @@ describe("the chief, under the cards", () => {
     /*
      * MAR-419's chat is not built. The action is MAR-545's per-agent Ask instead,
      * on the agent's own workspace — a real destination rather than a box that
-     * would take a question nothing can answer. Opening the agent is here too,
-     * because the card is no longer a link.
+     * would take a question nothing can answer.
+     *
+     * MAR-660 moves "Open this agent" off the chief entirely — Henrik's own
+     * words, it belongs "under the avatar in the card for every agent," not
+     * on a component about the fleet as a whole. See "the list a cold render
+     * draws" below for its new home.
      */
     const markup = renderToStaticMarkup(<ChiefBand agent={agent()} />);
     expect(markup).toContain("Ask news-scout");
-    expect(markup).toContain("Open this agent");
+    expect(markup).not.toContain("Open this agent");
     expect(markup).toContain("/agents/detail?agent=news-scout#ask-agent");
   });
 

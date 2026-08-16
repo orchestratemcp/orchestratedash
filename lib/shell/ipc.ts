@@ -187,6 +187,71 @@ export const COMMANDS = {
     irreversible: false,
   },
 
+  /*
+   * MAR-628, ADR 0019. The two halves of the supervision surface that are not
+   * reads: telling main where to paint the controlled browser, and stopping it.
+   *
+   * ## Why these ride the audited channel
+   *
+   * `shell.menu`'s argument, and it is stronger here. A `WebContentsView` is a
+   * native surface painted over the window, so *something* in the renderer has
+   * to be able to say where it goes — and the alternative to routing that
+   * through this catalogue is a third `contextBridge` surface, which ADR 0001
+   * amendment 7 makes a review event precisely so that it does not happen
+   * casually. Routing through here means the request is allowlisted and its
+   * payload is constrained to four numbers.
+   *
+   * What crosses is a rectangle. The renderer cannot name a session, a URL, an
+   * origin or an operation: main resolves the session from the agent it is
+   * already tracking, and every one of those belongs to `lib/browser/`.
+   */
+  "browser.viewport": {
+    effect: "Put the watched browser where the page says its panel is. Changes nothing else.",
+    payload_keys: ["x", "y", "width", "height"],
+    required_keys: ["x", "y", "width", "height"],
+    /*
+     * Four numbers, declared as numbers.
+     *
+     * `host.create.port` is the precedent and the reason is the same one: a
+     * rectangle is four numbers, and accepting string representations would put
+     * a second parser between the renderer and `setBounds`. Without this every
+     * one of these is refused as a missing field, which is what the first proof
+     * run found — the panel reported its rectangle sixteen times, all sixteen
+     * were denied, and the browser sat in `FALLBACK_BOUNDS` over the top-left of
+     * the window while the panel below it drew an empty stage. Required *and*
+     * typed, so a partial rectangle is still a refusal.
+     */
+    payload_types: { x: "number", y: "number", width: "number", height: "number" },
+    // Moving a view is not a mutation in this catalogue's sense: it reaches no
+    // agent, no store and no provider, and nothing about it outlives the
+    // window. `shell.scale` and `shell.menu` are the same family.
+    mutates: false,
+    irreversible: false,
+  },
+  /*
+   * Stop, and it is the one command in this family that is not cosmetic.
+   *
+   * `mutates: true`, because it ends something and the audit should say who
+   * ended it.
+   *
+   * `irreversible: false`, and that value is worth defending rather than
+   * assuming. What Stop destroys is DASH's own browser session, which a person
+   * can have again by running the agent again. The thing that genuinely cannot
+   * be undone is not this command's effect — it is that requests the browser
+   * already sent have already arrived — and marking the command irreversible
+   * would attach that fact to the wrong object, implying DASH's approval
+   * machinery could have prevented it. `describeStop` says it in words, on the
+   * button, which is where somebody will actually read it.
+   */
+  "browser.stop": {
+    effect:
+      "Close the browser DASH opened for this agent, and refuse anything else it asks for during this run.",
+    payload_keys: ["agent"],
+    required_keys: ["agent"],
+    mutates: true,
+    irreversible: false,
+  },
+
   "runner.start": {
     effect: "Start a registered agent's process on this machine. Not an Agent DOM command.",
     payload_keys: ["agent_id"],
@@ -551,6 +616,51 @@ export const COMMANDS = {
       "Ask this agent's model a question about what the agent has saved, and charge your own account with that provider for the answer.",
     payload_keys: ["agent_id", "connection_id", "field_id", "question"],
     required_keys: ["agent_id", "connection_id", "field_id", "question"],
+    mutates: true,
+    irreversible: true,
+  },
+
+  /*
+   * MAR-659, ADR 0023. Asking the chief about the whole fleet, and clearing
+   * what it said.
+   *
+   * **An eleventh family, and the shortest payload in this catalogue.** Compare
+   * `ask.question` directly above: that one names an agent, a connection and a
+   * field, because a person is talking to one agent about one of its
+   * connections. This one names a question and nothing else, and the absence is
+   * the security property rather than a convenience.
+   *
+   * There is no agent id because there is nothing to aim: the chief is
+   * `{ kind: "chief" }`, a value with no id field, so a renderer cannot direct a
+   * fleet question at an agent or an agent question at the fleet. There is no
+   * connection id because the chief's one connection is a constant of DASH's own
+   * composed manifest (`lib/chief/manifest.ts`), and there is no model id for
+   * `ask.question`'s reason, sharpened: the chief has no picker at all and asks
+   * under DASH's fleet default.
+   *
+   * `irreversible` is true for exactly the same reason `ask.question` is, and
+   * with the same caveat: nothing in the world changes, and what cannot be undone
+   * is the charge. It is true even though a standing question is answered from
+   * records for free, because the flag has to describe the worst thing the
+   * command can do rather than the commonest.
+   *
+   * `chief.clear` is the person's control over their own transcript. It mutates
+   * and it is irreversible — the rows are deleted rather than hidden, which is
+   * `forgetAgentQuestions`' rule: a "clear" that kept a copy of a conversation
+   * somebody asked DASH to forget would not be one.
+   */
+  "chief.ask": {
+    effect:
+      "Ask the chief about your fleet. Questions about how your agents are doing are answered from DASH's own records for nothing; anything else goes to your default model provider with those records attached, and your own account is charged for the answer.",
+    payload_keys: ["question"],
+    required_keys: ["question"],
+    mutates: true,
+    irreversible: true,
+  },
+  "chief.clear": {
+    effect: "Delete the whole conversation with the chief from this computer.",
+    payload_keys: [],
+    required_keys: [],
     mutates: true,
     irreversible: true,
   },
@@ -1379,6 +1489,33 @@ export function isAskCommandName(value: CommandName): value is AskCommandName {
 }
 
 /**
+ * Talking to the chief (MAR-659, ADR 0023).
+ *
+ * An eleventh family, and not more of `ask.*`, on the terms the tenth was
+ * created under. That map answers *what in DASH can spend the person's money?*
+ * and this one is a second thing that can, so the honest reading is that the
+ * question now has two answers and a reviewer should see both maps.
+ *
+ * They are kept apart because the two commands are aimed at different
+ * principals, which is the distinction ADR 0023 spent a type on: `ask.*` carries
+ * an agent id and reaches `{ kind: "agent" }`; `chief.*` carries no id at all
+ * and reaches `{ kind: "chief" }`. One map holding both would make "which of
+ * these can be pointed at an agent?" a question about payload keys rather than
+ * about which family a command is in.
+ */
+export const CHIEF_ACTIONS = {
+  "chief.ask": "ask",
+  "chief.clear": "clear",
+} as const;
+
+export type ChiefCommandName = keyof typeof CHIEF_ACTIONS;
+export type ChiefAction = (typeof CHIEF_ACTIONS)[ChiefCommandName];
+
+export function isChiefCommandName(value: CommandName): value is ChiefCommandName {
+  return Object.hasOwn(CHIEF_ACTIONS, value);
+}
+
+/**
  * Where DASH posts when an agent needs somebody (MAR-588).
  *
  * A ninth family, on the terms the eighth was created under. A reviewer
@@ -1495,6 +1632,28 @@ export function isShellUiCommandName(value: CommandName): value is ShellUiComman
 }
 
 /**
+ * The controlled browser's two commands (MAR-628, ADR 0019).
+ *
+ * A family of its own rather than two more entries in `SHELL_UI_ACTIONS`, and
+ * the reason is that they are not the same kind of thing. Everything in that
+ * map changes how this window looks and nothing else; `browser.stop` destroys a
+ * Chromium session and refuses an agent's requests for the rest of its run,
+ * which is `mutates: true` and belongs in an audit row somebody may later go
+ * looking for. Filing it under the cosmetic family would have been one line of
+ * convenience and a misfiled receipt.
+ */
+export const BROWSER_ACTIONS = {
+  "browser.viewport": "viewport",
+  "browser.stop": "stop",
+} as const;
+
+export type BrowserCommandName = keyof typeof BROWSER_ACTIONS;
+
+export function isBrowserCommandName(value: CommandName): value is BrowserCommandName {
+  return Object.hasOwn(BROWSER_ACTIONS, value);
+}
+
+/**
  * Every command is local, an Agent DOM command, or runner lifecycle.
  *
  * This is a compile-time assertion, not a runtime one: adding an entry to
@@ -1510,6 +1669,7 @@ type UnroutedCommand = Exclude<
   | FleetCommandName
   | HostCommandName
   | ShellUiCommandName
+  | BrowserCommandName
   | WorkspaceCommandName
   | SampleCommandName
   | GlanceCommandName
@@ -1518,6 +1678,7 @@ type UnroutedCommand = Exclude<
   | ModelCommandName
   | NotifyCommandName
   | AskCommandName
+  | ChiefCommandName
   | "shell.ping"
 >;
 const _allCommandsAreRouted: UnroutedCommand extends never ? true : never = true;
@@ -1805,6 +1966,11 @@ export function executeCommand(review: CommandReview): CommandResult {
     isFleetCommandName(review.command) ||
     isHostCommandName(review.command) ||
     isShellUiCommandName(review.command) ||
+    // MAR-628. One moves a native `WebContentsView` and one destroys a Chromium
+    // session. Neither is reachable from a sandboxed preload, and succeeding
+    // here would be the worse of the two failures this list guards against:
+    // reporting that a person's Stop closed a browser that is still open.
+    isBrowserCommandName(review.command) ||
     // MAR-507. In this list for the plainest reason of all: performing one
     // opens a file picker, which this module cannot do and must not appear to.
     isWorkspaceCommandName(review.command) ||
@@ -1840,7 +2006,14 @@ export function executeCommand(review: CommandReview): CommandResult {
     // MAR-545. Opens the vault, reaches a provider and bills an account.
     // Succeeding here would report a question asked that nothing asked, beside
     // a cost sentence about a charge nobody made.
-    isAskCommandName(review.command)
+    isAskCommandName(review.command) ||
+    // MAR-659, ADR 0023. `chief.ask` opens the vault, reaches a provider and
+    // bills an account, exactly as the entry above does. `chief.clear` is in
+    // this list for the opposite reason and it is the sharper one: it deletes
+    // every row of a conversation through `node:sqlite`, and succeeding here
+    // would tell somebody their transcript was forgotten while every word of it
+    // was still on their disk.
+    isChiefCommandName(review.command)
   ) {
     // Not a denial and not a result: a caller that reached here bypassed the
     // trusted side entirely. Throwing is the only honest answer — returning a
@@ -2219,6 +2392,30 @@ export interface DispatchContext {
    */
   setNativeTheme(theme: "system" | "light" | "dark"): void;
   /**
+   * Put the controlled browser where the supervision panel says it is
+   * (MAR-628).
+   *
+   * Injected like the three above, and for the plainest of their reasons: a
+   * `WebContentsView` is an Electron main object and this module has to stay
+   * importable from a sandboxed preload.
+   *
+   * It returns nothing, `showApplicationMenu`'s shape. There is no result the
+   * renderer could act on — it already knows where its own panel is, and
+   * whether a view exists to be moved is a question about a session it cannot
+   * name.
+   */
+  setBrowserViewport(bounds: { x: number; y: number; width: number; height: number }): void;
+  /**
+   * Destroy one agent's browser session and refuse the rest of its run
+   * (MAR-628).
+   *
+   * The only path to revocation, and the only one there is: `lib/browser/protocol.ts`
+   * has no `stop` and no `close` operation, so an agent cannot revoke, cannot
+   * un-revoke, and cannot discover that it has been revoked except by being
+   * refused.
+   */
+  stopBrowser(agentId: string): Promise<void>;
+  /**
    * The task-workspace actions: open a task, admit one user-selected file,
    * hand the task over (MAR-507), or save one of an agent's outputs where the
    * user asks (MAR-434).
@@ -2350,6 +2547,25 @@ export interface DispatchContext {
   askAction(
     action: AskAction,
     target: { agent_id: string; connection_id: string; field_id: string; question: string },
+  ): Promise<{ ok: boolean; detail?: string; recovery?: Recovery }>;
+  /**
+   * Ask the chief about the fleet, or clear what it said (MAR-659, ADR 0023).
+   *
+   * Injected for `askAction`'s three reasons at once — the vault, the network
+   * and a `node:sqlite` write — and it returns the same shape for the same
+   * reason: **the answer does not come back through this seam.** It lands in
+   * `chief_messages` and reaches the page on the next poll with the rest of the
+   * fleet view, so there is exactly one path by which a chief answer becomes
+   * something on screen, and it is the same path a conversation reopened
+   * tomorrow takes.
+   *
+   * `target` is one optional string and nothing else. There is no agent id to
+   * pass, because `{ kind: "chief" }` has no field one could go in — see
+   * `CHIEF_ACTIONS`.
+   */
+  chiefAction(
+    action: ChiefAction,
+    target: { question?: string },
   ): Promise<{ ok: boolean; detail?: string; recovery?: Recovery }>;
   /**
    * Compare, accept, open — or choose — an agent's folder (MAR-584, MAR-598).
@@ -2726,6 +2942,39 @@ export async function dispatchCommand(
     return { ok: true, request_id: review.audit.request_id };
   }
 
+  if (isBrowserCommandName(review.command)) {
+    if (review.command === "browser.stop") {
+      // The agent is named and nothing else is. The renderer cannot name a
+      // session, and main resolves one from the agent it is already tracking —
+      // so the widest thing a compromised renderer could ask for is "stop the
+      // browser belonging to agent X", which is the same thing the button asks
+      // for.
+      await context.stopBrowser(String(review.payload["agent"]));
+      return { ok: true, request_id: review.audit.request_id };
+    }
+    /*
+     * Four numbers, each narrowed here rather than passed through.
+     *
+     * `reviewCommand` has already required all four to be present by the time
+     * this runs; what it cannot say is that they are numbers, because the
+     * payload rules are about which keys exist. A non-number becomes zero, and
+     * zero is a safe value in both directions: a view with no width paints
+     * nothing and reports no error, which is the correct outcome for a panel
+     * that measured itself wrong.
+     */
+    const number = (key: string): number => {
+      const value = review.payload[key];
+      return typeof value === "number" && Number.isFinite(value) ? value : 0;
+    };
+    context.setBrowserViewport({
+      x: number("x"),
+      y: number("y"),
+      width: number("width"),
+      height: number("height"),
+    });
+    return { ok: true, request_id: review.audit.request_id };
+  }
+
   if (isWorkspaceCommandName(review.command)) {
     /*
      * Note what does *not* leave this function: a path.
@@ -2951,6 +3200,33 @@ export async function dispatchCommand(
       connection_id: String(review.payload["connection_id"]),
       field_id: String(review.payload["field_id"]),
       question: String(review.payload["question"]),
+    });
+    return {
+      ok: result.ok,
+      request_id: review.audit.request_id,
+      detail: result.detail,
+      recovery: result.recovery,
+    };
+  }
+
+  if (isChiefCommandName(review.command)) {
+    /*
+     * MAR-659. One field, optional, and nothing else crosses.
+     *
+     * `chief.clear` carries no payload at all, so `question` is read
+     * defensively rather than asserted — `String(undefined)` is `"undefined"`,
+     * which is a question DASH would then really put to a model on somebody's
+     * bill. `toAgentCommandInput`'s copy-explicitly rule, applied to the one
+     * family where the field is genuinely absent for half the members.
+     *
+     * Note what is *not* here: no agent id, no connection id, no field id, no
+     * model id. There is no value on this line a compromised page could use to
+     * aim a fleet question at an agent, because the chief principal has no field
+     * one could be assigned to.
+     */
+    const question = review.payload["question"];
+    const result = await context.chiefAction(CHIEF_ACTIONS[review.command], {
+      question: typeof question === "string" ? question : undefined,
     });
     return {
       ok: result.ok,

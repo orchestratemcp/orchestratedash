@@ -22,6 +22,9 @@
  * 2. **Rate limit** — before the manifest, so a flood costs a counter increment.
  * 3. **Operation exists** — before the connection, because an operation nothing
  *    implements can be refused without consulting the user's data at all.
+ * 3a. **For a write or a spend: has this run read a web page?** (MAR-628). The
+ *    read-then-reach rule, before every other check those two get, because its
+ *    answer depends on nothing in the request. See `BrokerDeps.hasReadUntrusted`.
  * 3b. **For a write: the durable replay check and the write budget** (MAR-469).
  *    Both before the vault, so a repeated or excessive write costs a query
  *    rather than a token — and the durable check has to come before anything
@@ -31,8 +34,12 @@
  *    that may not spend does not get so far as costing DASH a database query
  *    for asking.
  * 4. **Connection is brokered** — from the manifest.
+ * 4b. **For the chief: the operation is one DASH declared** (MAR-659). The
+ *    chief's manifest is DASH's own, so its capability list is authoritative in
+ *    a way an agent author's is not.
  * 5. **Credential** — the first vault touch, and only for a request that has
- *    already survived four checks.
+ *    already survived four checks. Two names are computable here and exactly one
+ *    is reachable per principal: see step 5's own note.
  * 6. **Grant covers the operation** — the intersection in `grant.ts`.
  * 7. **Input narrows to a request** — the operation's own validation.
  * 8. **Origin check** — the planned URL really is the profile's host, and for a
@@ -42,6 +49,20 @@
  * Every one of them writes an audit row. A refusal that left no trace would make
  * the audit a log of successful calls, which is the half nobody needs to
  * investigate.
+ *
+ * ## Who is asking is a type, not a string (MAR-659, ADR 0023)
+ *
+ * The first parameter of `handle` is a `BrokerPrincipal`, and every check below
+ * that used to read an agent id now reads either the principal or the label
+ * derived from it. There are two arms — an agent, and the chief — and they
+ * differ in exactly three places in this file: which manifest is resolved (step
+ * 4, through an injected dep), whether the declared capability list is enforced
+ * (step 4b), and which vault name is computed (step 5). Everything else is
+ * indifferent to which one it just answered, which is the property worth having.
+ *
+ * `lib/broker/principal.ts` argues why a union beats a reserved string. The
+ * short version is that `dash.fleet` is a legal agent id, so a string comparison
+ * here would be an authority an agent author could claim by choosing a name.
  *
  * ## Why the grant is resolved on every single call
  *
@@ -64,8 +85,10 @@
 import { AI_AUTH_HEADERS } from "../ai/providers";
 import type { ConnectionSourceManifest } from "../connections";
 import { connectionSecretName } from "../connection-credentials";
+import { FLEET_PRINCIPAL } from "../fleet/principal";
 import { isOAuthError } from "../oauth/flow";
 import { maskAccount } from "../secret-refs";
+import { principalKey, type BrokerPrincipal } from "./principal";
 import {
   brokeredField,
   credentialAccount,
@@ -113,6 +136,16 @@ export type CredentialRead =
  * what any of them were.
  */
 export interface BrokerAuditRow {
+  /**
+   * Who asked, as a name a person reading the audit can recognise.
+   *
+   * The agent id for an agent, and `FLEET_PRINCIPAL` for the chief (MAR-659) —
+   * which is exactly the job that constant's own docblock claims: *a label, not
+   * a lock*. It already names the fleet's rows in `connection_secrets` and
+   * `ai_key_checks`, and a chief's brokered call belongs beside them under the
+   * same word. Nothing reads this column back as a principal; the principal is
+   * `BrokerPrincipal` and has no string form.
+   */
   agent: string;
   connection_id: string;
   operation: string;
@@ -128,7 +161,32 @@ export interface BrokerAuditRow {
 }
 
 export interface BrokerDeps {
-  readManifest(agentId: string): ConnectionSourceManifest | null;
+  /**
+   * The connections DASH brokers for whoever is asking.
+   *
+   * Two answers from one seam since MAR-659, and the asymmetry is the whole of
+   * ADR 0023 decision 2. For an agent this is the manifest DASH imported for
+   * that agent, read out of the store exactly as it always was. For the chief
+   * there is no imported document, so DASH **composes** one from
+   * `lib/fleet/catalogue.ts` — one connection, one capability — and
+   * `lib/chief/manifest.ts` is the builder.
+   *
+   * Injected rather than branched on here, so `lib/broker/` goes on being a pure
+   * function of what it is handed and knows nothing about a catalogue, a
+   * provider registry or a fleet default. `electron/broker-host.ts` is where the
+   * two answers are actually chosen.
+   */
+  readManifest(principal: BrokerPrincipal): ConnectionSourceManifest | null;
+  /**
+   * The authoritative vault name for a provider's default fleet account.
+   *
+   * MAR-643 makes `fleet_connections.secret_name` the sole readable reference
+   * for fleet vault entries. The chief therefore reads that row through this
+   * injected seam instead of recomputing a name that would omit the selected
+   * account segment. Optional for agent-only pure tests; a chief with no answer
+   * is not connected and never falls back to an agent-computable name.
+   */
+  readFleetSecretName?(provider: string): string | null;
   readCredential(secretName: string): Promise<CredentialRead>;
   /**
    * Turn a stored credential into the headers that authorize one request.
@@ -191,6 +249,34 @@ export interface BrokerDeps {
    * `electron/broker-host.ts` supplies it.
    */
   readModelChoice?(agentId: string): string | null;
+  /**
+   * Has this agent read a web page through DASH's controlled browser, in the run
+   * it is in now (MAR-628, ADR 0019, ADR 0020's rule)?
+   *
+   * The read-then-reach rule, arriving at the broker from the one place in DASH
+   * that can answer it. `lib/mcp/reach.ts` states the rule and its four limits:
+   * a successful read of content DASH did not control marks the run, and after
+   * that mark any `write` or `spend` in the same run needs a person.
+   *
+   * **Why a predicate rather than the ledger.** `lib/mcp/reach.ts` keys by run
+   * id because every MCP call arrives inside one. A `BrokerRequest` carries no
+   * run id and must not — a request that could name its own run is a request
+   * that could name a run with no mark on it. So the question asked here is
+   * *"about this agent, right now"*, and the module that owns both the browser
+   * session and DASH's view of which run the agent is in answers it. See
+   * `BrowserController.hasReadUntrusted` for which direction its approximation
+   * errs in, which is towards asking a person more often.
+   *
+   * Consulted **only for a write or a spend**, and never for a read. A browsed
+   * article followed by a second read is not the chain the rule is about; the
+   * chain is read-then-*reach*, and the reaching half is what the broker gates.
+   *
+   * Optional so the pure tests can leave it out. Absent behaves as false, which
+   * is the behaviour every broker had before this rule existed — a weaker broker
+   * rather than a broken one. `electron/broker-host.ts` supplies it, so the
+   * shipped one always has it.
+   */
+  hasReadUntrusted?(agentId: string): boolean;
   /** Record one attempt. Called exactly once per request, on every path. */
   audit(row: BrokerAuditRow): void;
   /** Note that a grant was used, for the receipt's "last used". */
@@ -241,6 +327,14 @@ export const BROKER_WRITES_PER_WINDOW = 3;
  *
  * A question also costs a call from the general budget above, so nothing is
  * exempt from the coarser bound by being expensive.
+ *
+ * ## The chief gets its own six, and that is a real widening (MAR-659)
+ *
+ * The budgets below are keyed by **principal**, so the fleet-wide ceiling on
+ * questions per minute rises by six the day the chief can ask one. Deliberate,
+ * and ADR 0023 states the alternative it is refusing: sharing a window with an
+ * agent would mean a person's own question failing because a scout was busy,
+ * which is the failure a rate limit should never cause.
  */
 export const BROKER_SPEND_PER_WINDOW = 6;
 
@@ -323,7 +417,14 @@ const AUTHORIZATION_HEADERS: ReadonlySet<string> = new Set<string>([
  * The broker
  * ---------------------------------------------------------------------- */
 
-interface AgentBudget {
+/**
+ * One principal's windows.
+ *
+ * Named for the principal rather than the agent since MAR-659, because the chief
+ * has one of these too and has no agent id. The four fields are unchanged; what
+ * changed is only what the map is keyed by. See `principalKey`.
+ */
+interface PrincipalBudget {
   /** Request ids seen, newest last. Bounded to `BROKER_REPLAY_MEMORY`. */
   seen: string[];
   seenSet: Set<string>;
@@ -348,6 +449,13 @@ export interface Broker {
   /**
    * A person asked for a run: open this agent's spend allowance (MAR-619).
    *
+   * Still an **agent id** and not a principal (MAR-659), because there is no
+   * such thing as a chief run. ADR 0016's allowance is what lets an agent's own
+   * program spend inside a window a person opened by pressing Run now; the chief
+   * has no program, no scheduler can reach it, and every question it asks is
+   * `origin: "person"` by the time it arrives. So an unattended chief spend is
+   * not refused-by-policy — there is no method by which one could be opened.
+   *
    * The **only** way an allowance comes into being, and it is a method on the
    * broker rather than a field on a request for `BrokerOrigin`'s reason — the
    * fact it records is which code path DASH's own process took, and a request
@@ -361,51 +469,70 @@ export interface Broker {
    */
   allowRunSpend(agentId: string, at: Date): void;
   /**
-   * Answer one request about one agent's connection.
+   * Answer one request about one principal's connection.
    *
-   * `agentId` is the **supervisor's** identity for the child process, never a
+   * `principal` is the **supervisor's** identity for whoever is asking, never a
    * value from the request. That binding is what stops one agent asking for
    * another agent's connection: the manifest looked up below is the one DASH
    * imported for the process that actually wrote the line.
    *
+   * It is a union rather than an agent id since MAR-659 (ADR 0023 decision 1),
+   * and `lib/broker/principal.ts` carries the argument. The short version is
+   * that the chief needed to be let through and a reserved *string* would have
+   * been an authority an agent author could claim by choosing a name; a variant
+   * with no id field cannot be inhabited by any string at all.
+   *
    * `origin` is required and has no default (MAR-545). A default would be a
    * decision about somebody's money taken by whichever call site forgot to pass
    * it, and there is no safe side to default to: `"agent"` would break the
-   * person's own chat and `"person"` would let a child process spend. Both call
-   * sites are in `electron/`, both are one line, and both say which they are.
+   * person's own chat and `"person"` would let a child process spend. All three
+   * call sites are in `electron/`, each is one line, and each says which it is.
    */
-  handle(agentId: string, request: BrokerRequest, origin: BrokerOrigin): Promise<BrokerResponse>;
+  handle(
+    principal: BrokerPrincipal,
+    request: BrokerRequest,
+    origin: BrokerOrigin,
+  ): Promise<BrokerResponse>;
 }
 
 export function createBroker(deps: BrokerDeps): Broker {
-  const budgets = new Map<string, AgentBudget>();
+  const budgets = new Map<string, PrincipalBudget>();
 
-  function budgetFor(agentId: string): AgentBudget {
-    let budget = budgets.get(agentId);
+  function budgetFor(principal: BrokerPrincipal): PrincipalBudget {
+    const key = principalKey(principal);
+    let budget = budgets.get(key);
     if (budget === undefined) {
       budget = { seen: [], seenSet: new Set(), calls: [], writes: [], spends: [] };
-      budgets.set(agentId, budget);
+      budgets.set(key, budget);
     }
     return budget;
   }
 
   return {
     allowRunSpend(agentId: string, at: Date): void {
-      budgetFor(agentId).runSpend = openRunSpend(at.getTime());
+      budgetFor({ kind: "agent", agent_id: agentId }).runSpend = openRunSpend(at.getTime());
     },
 
     async handle(
-      agentId: string,
+      principal: BrokerPrincipal,
       request: BrokerRequest,
       origin: BrokerOrigin,
     ): Promise<BrokerResponse> {
       const startedAt = deps.now().getTime();
       const inputKeys = Object.keys(request.input).sort();
+      /*
+       * The name this principal stands under wherever a string is required — the
+       * audit row, the durable replay check, and the receipt `touchGrant`
+       * writes. `FLEET_PRINCIPAL` for the chief, which is that constant's
+       * declared job: a label in DASH's own tables, never a principal. See
+       * `BrokerAuditRow.agent`.
+       */
+      const auditName = principal.kind === "chief" ? FLEET_PRINCIPAL : principal.agent_id;
 
       /** One exit. Every refusal goes through here, so every one is audited. */
       const no = (refusal: BrokerRefusal, accountHint: string | null = null): BrokerResponse => {
         deps.audit({
-          agent: agentId,
+          agent: auditName,
           connection_id: request.connection_id,
           operation: request.operation,
           request_id: request.request_id,
@@ -420,7 +547,7 @@ export function createBroker(deps: BrokerDeps): Broker {
         return refuse(request.request_id, refusal);
       };
 
-      const budget = budgetFor(agentId);
+      const budget = budgetFor(principal);
 
       /**
        * What the operation will actually be planned against.
@@ -468,13 +595,49 @@ export function createBroker(deps: BrokerDeps): Broker {
         return no("unknown_operation");
       }
 
+      /* 3a. Read-then-reach (MAR-628, ADR 0019, ADR 0020's rule).
+         Before every other check a write or a spend gets, because it is the
+         cheapest of them and because it is the one whose answer does not depend
+         on anything in the request. An agent that has read a web page in this
+         run and now wants to change somebody's account or spend their money is
+         stopped here, whatever the request contains.
+
+         A `person` origin passes and that is the rule working rather than a
+         loophole — `decideReach` makes the same argument at length. `origin`
+         records which code path inside DASH's own process the request took, and
+         `person` means somebody at the keyboard asked for this specific call
+         with its inputs in front of them. That is exactly the approval the rule
+         demands, so requiring a second would be asking one person the same
+         question twice.
+
+         `needs_a_person` and not a new code, for `lib/mcp/reach.ts`'s reason:
+         its docblock already says what this means, and the agent's move is
+         identical — stop, and let the person decide.
+
+         Asked only about an **agent**, and that narrowing is the rule rather
+         than a gap left by MAR-659's principal union. The chief has no browser:
+         `lib/browser/session.ts` keys every session by an agent id, and no code
+         path opens one for a principal that is not an agent. So there is no run
+         in which the chief could have read a web page, and a `hasReadUntrusted`
+         call for it would be a question about a session that cannot exist.
+         Narrowing here also means the predicate keeps taking an agent id, which
+         is what `BrowserController` actually indexes by. */
+      if (
+        origin !== "person" &&
+        operation.access !== "read" &&
+        principal.kind === "agent" &&
+        deps.hasReadUntrusted?.(principal.agent_id) === true
+      ) {
+        return no("needs_a_person");
+      }
+
       /* 3b. A write, twice over (MAR-469).
          The durable replay check first, because the point of it is to survive
          the process that holds the set consulted in step 1 — and then the write
          budget, which is the second, tighter window. Both before the vault, so
          a repeated write costs a query rather than a token. */
       if (operation.access === "write") {
-        if (deps.hasHandledRequest?.(agentId, request.request_id) === true) {
+        if (deps.hasHandledRequest?.(auditName, request.request_id) === true) {
           return no("duplicate_request");
         }
         budget.writes = budget.writes.filter((at) => at > windowStart);
@@ -511,6 +674,19 @@ export function createBroker(deps: BrokerDeps): Broker {
           budget.runSpend = spendOne(budget.runSpend as RunSpendAllowance);
 
           /*
+           * MAR-659. Unreachable for the chief, and the reason is structural
+           * rather than a check written here: `allowRunSpend` takes an agent id,
+           * so no chief budget can ever hold an allowance, so the branch above
+           * refuses first. This narrowing exists because the compiler needs it
+           * to read `agent_id` below, and it is a `broker_error` rather than a
+           * refusal that would read as somebody's fault: reaching it would mean
+           * DASH opened an allowance for something with no id.
+           */
+          if (principal.kind !== "agent") {
+            return no("broker_error");
+          }
+
+          /*
            * The model is the owner's, never the agent's (ADR 0011 decision 1).
            *
            * Overwritten rather than validated, and before `planCall` narrows
@@ -521,13 +697,13 @@ export function createBroker(deps: BrokerDeps): Broker {
            * second copy of, and picking one anyway would be DASH choosing what
            * somebody's account gets billed for.
            */
-          const chosen = deps.readModelChoice?.(agentId) ?? null;
+          const chosen = deps.readModelChoice?.(principal.agent_id) ?? null;
           if (chosen === null) {
             return no("no_model_chosen");
           }
           plannedInput = { ...request.input, model: chosen };
         }
-        if (deps.hasHandledRequest?.(agentId, request.request_id) === true) {
+        if (deps.hasHandledRequest?.(auditName, request.request_id) === true) {
           return no("duplicate_request");
         }
         budget.spends = budget.spends.filter((at) => at > windowStart);
@@ -535,10 +711,34 @@ export function createBroker(deps: BrokerDeps): Broker {
           return no("rate_limited");
         }
         budget.spends.push(startedAt);
+
+        /*
+         * Which frame the model is asked under, decided by **who is asking**
+         * (MAR-659, ADR 0023 decision 5).
+         *
+         * Written the way the model is written above — overwritten rather than
+         * validated, after both branches so neither can lose it — and for the
+         * same reason: a value a caller supplies is a value a caller could
+         * choose, and the frame decides which of DASH's frozen system prompts
+         * the question is set in. `lib/broker/operations.ts` holds both strings
+         * and this decides which one; the caller supplies neither.
+         *
+         * That keeps `CHIEF_SYSTEM_PROMPT` unreachable from the agent path
+         * without making the chief a second operation. The file's own rule for
+         * when a prompt earns an operation of its own is that the card sentence,
+         * the scope list, the request shape and the projection all differ —
+         * `curateOperation` is a separate operation because all four do. Here
+         * three of the four are identical: it is the same charge, the same
+         * fields and the same answer, asked about different material.
+         */
+        plannedInput = {
+          ...plannedInput,
+          frame: principal.kind === "chief" ? "fleet_briefing" : "agent_material",
+        };
       }
 
-      /* 4. Is the connection one DASH brokers for this agent? */
-      const manifest = deps.readManifest(agentId);
+      /* 4. Is the connection one DASH brokers for this principal? */
+      const manifest = deps.readManifest(principal);
       if (manifest === null) {
         return no("unknown_connection");
       }
@@ -547,12 +747,57 @@ export function createBroker(deps: BrokerDeps): Broker {
         return no(field.refusal === "unknown_connection" ? "unknown_connection" : "not_granted");
       }
 
-      /* 5. The credential. First vault touch. */
-      const secretName = connectionSecretName(
-        agentId,
-        request.connection_id,
-        field.field.field_id,
-      );
+      /* 4b. And for the chief, is it one of the capabilities DASH declared?
+         (MAR-659, ADR 0023 decision 4.)
+
+         The chief's manifest is DASH's own, so its declared capability list is
+         authoritative in a way an agent's is not — an agent's manifest is its
+         *author's* document, which is exactly why `resolveKeyGrant` ignores what
+         it declares and grants every operation the provider has. That is right
+         for an agent, whose owner connected a key knowing what DASH can do with
+         it, and it is wrong for the chief, whose whole invariant is:
+
+           > The chief can ask a model a question and be charged for it. It can
+           > do nothing else.
+
+         Without this line the chief would inherit `digest.curate` and
+         `models.list` from the same provider, so the invariant would be a
+         sentence rather than a property. Before the vault, for the reason every
+         check above it is: a principal that may not reach an operation should
+         not cause a vault read by naming it. */
+      if (
+        principal.kind === "chief" &&
+        !field.field.connection.capabilities.some((one) => one.id === operation.id)
+      ) {
+        return no("not_granted");
+      }
+
+      /* 5. The credential. First vault touch — and the one `switch` on who is
+         asking that is not the origin gate (MAR-659, ADR 0023 decision 3).
+
+         `connectionSecretName` does not move and is **never called for a chief**.
+         It goes on emitting `dash.connection.` for every agent, so the sentence
+         `lib/fleet/principal.ts` protects survives verbatim: *no agent, named
+         anything at all, resolves to the fleet credential's vault key.* It is
+         now true for two independent reasons rather than one — the namespaces
+         still cannot meet, and the chief principal is not a name.
+
+         MAR-643 makes the selected default account's stored `secret_name` the
+         authority. Reading it through `BrokerDeps` keeps this module store-free
+         while preserving aliases migrated from the old two-segment name and the
+         account segment on every newly connected key. Nothing is copied into a
+         second place and re-key still writes N+1 vault entries rather than N+2. */
+      const secretName =
+        principal.kind === "chief"
+          ? (deps.readFleetSecretName?.(field.field.connection.provider) ?? null)
+          : connectionSecretName(
+              principal.agent_id,
+              request.connection_id,
+              field.field.field_id,
+            );
+      if (secretName === null) {
+        return no("not_connected");
+      }
       const read = await deps.readCredential(secretName);
       if (read.kind === "vault_error") {
         return no("vault_unavailable");
@@ -568,7 +813,7 @@ export function createBroker(deps: BrokerDeps): Broker {
 
       /* 6. Does the grant cover it? */
       const resolved = resolveGrant(
-        agentId,
+        auditName,
         manifest,
         request.connection_id,
         read.credential,
@@ -702,7 +947,7 @@ export function createBroker(deps: BrokerDeps): Broker {
       const decidedAt = new Date(startedAt).toISOString();
 
       deps.audit({
-        agent: agentId,
+        agent: auditName,
         connection_id: request.connection_id,
         operation: operation.id,
         request_id: request.request_id,

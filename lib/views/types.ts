@@ -38,6 +38,7 @@ import type { InputRoleView } from "./inputs";
 import type { PanelView } from "./panel";
 import type { ManifestGapView } from "../sample-refresh";
 import type { AgentHealthView } from "./agent-health";
+import type { AgentPlanStep } from "../agent-plan";
 import type { Recovery } from "../copy/recovery";
 import type { ConnectionRequirementRow } from "../connections";
 import type { ConnectionTravel } from "../deploy/connection-travel";
@@ -348,6 +349,164 @@ export interface AgentsView {
    * through.
    */
   damage: Recovery | null;
+  /**
+   * The chief's room, as the fleet page draws it (MAR-659, ADR 0023).
+   *
+   * On this view rather than one of its own, because it is the fleet page's
+   * document and the chief's whole subject is the list above it. A second view
+   * would mean two polls for one screen, and — worse — two reads of the store a
+   * frame apart, so a receipt could be marked stale against a fleet the cards
+   * beside it had not caught up with yet.
+   */
+  chief: ChiefRoomView;
+}
+
+/* ---------------------------------------------------------------------- *
+ * The chief's room (MAR-659, ADR 0023)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * One fact about one agent, as the chief was told it and as the receipt shows
+ * it back.
+ *
+ * Restated structurally rather than imported from `lib/chief/briefing.ts`
+ * (MAR-659). That module imports `lib/copy/when.ts` and the copy layer, and this
+ * one is the boundary a `"use client"` page reads — `tests/client-bundle.test.ts`
+ * computes the client set by walking the import graph to a fixed point, and
+ * pointing this file at a builder would be the defect MAR-498 shipped once.
+ *
+ * Pinned against the real type by a one-line compile-time assignment in
+ * `tests/chief-briefing.test.ts`, which is the mechanism `AiKeyActionResult` and
+ * `RequiredCapability` both use for the same problem.
+ */
+export interface ChiefReceiptRow {
+  /** The agent id. A value: it keys the row and links out, never prose. */
+  agent: string;
+  title: string;
+  /** "Local" or "Cloud", in `describeFleetPlace`'s own words. */
+  place: string;
+  /** A glance chip's `meaning`, verbatim. */
+  standing: string;
+  /** `describeRunCount`'s sentence. */
+  runs: string;
+  /** The day of the last run DASH saw, or null. */
+  last_run: string | null;
+  /** Declared component ids. Values, never labels. */
+  capabilities: readonly string[];
+}
+
+/**
+ * An agent the chief hands a question to, with its author's own sentence.
+ *
+ * MAR-648's hand-off, kept (ADR 0023 decision 8): the chief never answers *from*
+ * an agent's saved material, so a question about what one **found** is named
+ * rather than answered, and the link goes to the one surface that can answer it
+ * and charge for it properly.
+ *
+ * `goal` is the **author's** sentence and is rendered as an attributed
+ * quotation, never folded into the chief's paragraph —
+ * `lib/copy/chief-chat.ts`' standing rule, and the reason the stored answer text
+ * never contains it.
+ *
+ * Recomputed from the question at render time rather than frozen with the turn,
+ * and the asymmetry with `receipt` is deliberate. A receipt is a claim about
+ * what was true when the answer was written, so freezing it is the whole point.
+ * A link is somewhere to go **now**: one pointing at an agent that has been
+ * removed would be a dead end, and one pointing at a renamed agent should carry
+ * the new name. If the routing itself has moved, the staleness marker beside it
+ * already says the fleet changed.
+ */
+export interface ChiefHandoffView {
+  agent: string;
+  title: string;
+  /** The author's own sentence. Untrusted text, rendered as a quotation. */
+  goal: string;
+}
+
+/** One turn of the chief's kept conversation. */
+export interface ChiefTurnView {
+  id: number;
+  question: string;
+  /** When it was asked, in words. Never a machine timestamp. */
+  asked: string;
+  /** The answer's text, or null when the question did not produce one. */
+  answer: string | null;
+  /** Why it failed, with a next action. Null exactly when there is an answer. */
+  failure: Recovery | null;
+  /**
+   * Answered from DASH's own records, with no model asked and nothing charged.
+   *
+   * True for a standing question and for a hand-off; false for anything a model
+   * wrote. Said per turn rather than inferred from an absent price, because "no
+   * amount shown" already means something else on this surface — a provider that
+   * does not price its own answers.
+   */
+  from_records: boolean;
+  /**
+   * The agents this question is really for, or empty.
+   *
+   * One for a routed question, several for an ambiguous one, none otherwise.
+   */
+  handoffs: ChiefHandoffView[];
+  /** The words that put those agents forward. Empty when there are none. */
+  matched: string[];
+  /**
+   * The briefing rows sent with this question, **frozen at the time it was
+   * asked** and never recomputed.
+   *
+   * Empty is a real and ordinary value: somebody said hello, no records were
+   * read, and `CHIEF_CHAT_COPY.receipt_empty` is the line under it.
+   */
+  receipt: ChiefReceiptRow[];
+  /** `describeChiefReceipt`'s sentence for this row count. */
+  receipt_note: string;
+  /**
+   * A fact in the frozen receipt differs from the same fact now.
+   *
+   * DASH comparing two of its own records, which is what stops an old sentence
+   * impersonating a current one — the whole of MAR-648's objection to storing
+   * these at all. It says the fleet moved and never that the answer is wrong.
+   */
+  stale: boolean;
+  /** The model the provider says answered. Null when it did not say. */
+  model: string | null;
+  /**
+   * What it cost, said by whoever knows — the provider when it stated an
+   * amount, a count of what was read and written otherwise. Never DASH's own
+   * arithmetic.
+   *
+   * Null exactly when `from_records` is true: there was no provider, so there is
+   * nobody whose number this could be, and a zero would be DASH's own claim
+   * about money.
+   */
+  charge: string | null;
+}
+
+/**
+ * What the chief's composer can do, and what it says when it cannot.
+ *
+ * `can_ask` gates only the **model** half. The standing question is answered
+ * from records by `answerChief` with no model, no charge and no latency, and it
+ * works whatever this says — which is why there is no arm here that disables the
+ * box. A composer greyed out while half the questions people ask still work
+ * would be the dead input MAR-545 forbids.
+ */
+export interface ChiefRoomView {
+  /** Whether DASH has a fleet default it could put a question to. */
+  can_ask: boolean;
+  /**
+   * The model DASH would ask under, as the provider's own id. Null when
+   * `can_ask` is false.
+   *
+   * A value on the settings row, never a word in a sentence —
+   * `lib/copy/identifiers.ts`, and `AskModelView`'s own note on why DASH holds
+   * no friendlier name to give.
+   */
+  model_id: string | null;
+  /** Why the model half is unavailable, or null when it is available. */
+  blocked: { headline: string; meaning: string } | null;
+  /** The kept conversation, oldest first. */
+  turns: ChiefTurnView[];
 }
 
 /* ---------------------------------------------------------------------- *
@@ -1295,6 +1454,17 @@ export type WorkspaceView =
        * files, which is not the same as taking anything — see `buildInputRoles`.
        */
       input_roles: InputRoleView[];
+      /**
+       * Every step this agent's plan declares, in order (MAR-664).
+       *
+       * All of them, not only the ones `models.steps` shows — that field is
+       * scoped to the steps a person can set a level for, and Henrik's ask was
+       * to see the plan itself: *"We can't see the planned steps."* Read from
+       * `manifest.planned_route` by `lib/agent-plan.ts`, which is also the
+       * module the About disclosure imports directly, so the sentence a person
+       * reads there is the one this array already carries.
+       */
+      plan: AgentPlanStep[];
       /**
        * Which model this agent uses, and what its steps asked for (MAR-583).
        *

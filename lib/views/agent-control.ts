@@ -65,6 +65,18 @@ const STATUS_TONE: Record<WorkspaceStatus, StatusTone> = {
 };
 
 /**
+ * The statuses that mean the local process is not running (MAR-657).
+ *
+ * Exactly the two `runner/state.ts` produces when its child is not live, and
+ * exactly the two `SELF_REPORTABLE_STATUSES` forbids an agent from claiming for
+ * itself. That asymmetry is what makes this set safe to spawn from: every other
+ * status in the table is something a *running* agent said about itself, and
+ * starting a process because the process told us it was idle would be a spawn
+ * decided by the thing being spawned.
+ */
+const STOPPED: ReadonlySet<WorkspaceStatus> = new Set(["offline", "error"]);
+
+/**
  * The primary action, or the reason there is not one.
  *
  * A union rather than an optional button, so that "DASH cannot start this" and
@@ -77,6 +89,26 @@ export type AgentRunControl =
       /** The pending task this press binds to. */
       task_id: string;
       /** The snapshot's own value, never re-read. See `RunNow`'s note on MAR-464. */
+      observed_at: string;
+    }
+  | {
+      /**
+       * The agent is registered on this computer and its process is not running
+       * (MAR-657).
+       *
+       * Distinct from `run_now` because the press is a different act on a
+       * different channel: this one asks the runner to *start the process*
+       * (`runner.start` → `POST /agents/{id}/lifecycle`), and only then binds the
+       * task that starting it produces. `run_now` binds a task that already
+       * exists and starts no process at all.
+       */
+      kind: "start";
+      /**
+       * The snapshot's own value, never re-read — `run_now`'s rule, and it
+       * matters less here only because the task this press eventually binds is
+       * one the agent has not published yet. Carried so the caller has the same
+       * freshness token for the second half.
+       */
       observed_at: string;
     }
   | {
@@ -153,6 +185,42 @@ export function buildAgentControl(
   }
 
   /*
+   * The process is not running, so the thing to offer is starting it (MAR-657).
+   *
+   * ## Why this is above the pending-task check and not below it
+   *
+   * `runner/state.ts` gates `runs`, `choices`, `actions` and
+   * `approval_requests` on the process being live. **`tasks` is the one array it
+   * does not gate** — a dead agent's last self-report keeps its tasks verbatim.
+   * So an agent that ran and then exited still carries its pending
+   * `waiting-to-be-run`, and a `run_now` decided before this branch would draw a
+   * button whose `retry` the supervisor answers with `not_running`. That is
+   * precisely the after-the-press refusal the note below refuses to create,
+   * arriving by the road MAR-657's own correction comment predicted. Deciding
+   * `start` first replaces a button that cannot work with one that can.
+   *
+   * ## Why these two statuses and no others
+   *
+   * `offline` and `error` are the only statuses `resolveStatus` produces for a
+   * process that is not live, and `SELF_REPORTABLE_STATUSES` forbids an agent
+   * from claiming either — "a claim about the process, which is the runner's to
+   * make". So this reads the runner's own verdict about its own child, which is
+   * the only thing in the snapshot that could honestly gate a spawn.
+   *
+   * ## Why this is a statement about *this* computer
+   *
+   * `agent_dom_state` "is keyed by agent id alone — … there is exactly one row
+   * and it belongs to the copy on this computer" (`lib/agent-dom/runner.ts`). A
+   * deployed copy's state never lands in it; a remote command is judged against
+   * a substituted snapshot instead. Nothing here reads `agent_deploys`, so ADR
+   * 0010's rule that a deploy row is not a liveness record is untouched, and the
+   * copy names the machine per ADR 0014.
+   */
+  if (STOPPED.has(overview.status)) {
+    return { status, run: { kind: "start", observed_at: snapshot.observed_at } };
+  }
+
+  /*
    * The same predicate `RunNow` used, and it has to stay the same one.
    *
    * A pending task with no run attached is what "there is something to start"
@@ -160,6 +228,10 @@ export function buildAgentControl(
    * run. Widening this — offering Run now whenever the agent looks idle — would
    * put a button on screen that `submitAgentCommand` refuses, which is worse
    * than no button because the refusal arrives after the press.
+   *
+   * MAR-657 did not widen it. The branch above answers a *different* question on
+   * a *different* channel — is there a process — and leaves this one deciding
+   * exactly what it always decided about a live agent.
    */
   const waiting = snapshot.tasks.find(
     (task) => task.status === "pending" && task.run_id === null,

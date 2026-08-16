@@ -1163,8 +1163,170 @@ const MIGRATIONS: readonly Migration[] = [
   );
   `,
 
+  // MAR-659, ADR 0023 decision 6. The chief's own conversation, kept.
+  //
+  // **This reverses a decision, and the reasoning it reverses is quoted.**
+  // MAR-648 made the chief's scrollback session-only on the argument that its
+  // answers are statements about the fleet *now*, and a stored one would be "a
+  // sentence that was true last Tuesday sitting in a scrollback looking like a
+  // sentence about today". That is an argument against undated
+  // re-presentation, not against storage — and `receipt_json` is the missing
+  // date. A turn renders with its timestamp and the exact facts it was built
+  // from, and DASH marks it when those facts no longer match its own records.
+  //
+  // Beside `agent_questions` and on that table's own precedent, which ADR 0012
+  // argued in exactly these terms: a person typed these words, on their own
+  // computer, into something shaped like a conversation, and a conversation
+  // that forgets everything when the page closes is not one.
+  //
+  // Two columns differ from `agent_questions` and both are the point:
+  //
+  // `receipt_json` is the fleet briefing **as it stood** — one row per agent,
+  // every field a string DASH already rendered on a card. Frozen rather than
+  // recomputed, for `citations_json`'s reason turned up one notch: recomputing
+  // would silently rewrite what an old answer was built from, which is the
+  // precise way a sentence about last Tuesday starts reading like one about
+  // today. An empty array is a real and common value — a greeting used no
+  // records, and its receipt says so.
+  //
+  // There is no `agent` column and there cannot be one. ADR 0023 decision 8:
+  // the fleet room and an agent's room are two transcripts in two tables with
+  // no shared thread, because `{ kind: "chief" }` carries no agent id and there
+  // is no value a chief question could be aimed at an agent with.
+  //
+  // Kept until the person clears the thread, from a control in the chat room.
+  // ADR 0008 is untouched: nothing is added to the author's panel.
+  `
+  CREATE TABLE IF NOT EXISTS chief_messages (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    -- DASH's own clock at the moment the question was sent.
+    asked_at     TEXT NOT NULL,
+    question     TEXT NOT NULL,
+    -- The answer's text, or NULL when the question produced none.
+    answer       TEXT,
+    -- Which failure, when there is no answer. One of AskFailureReason.
+    failure      TEXT,
+    -- Which provider was asked, from DASH's own closed registry — and NULL when
+    -- none was, which is the difference from agent_questions.provider_id and
+    -- is ADR 0023's "records first, model second" written into the schema. A
+    -- standing question is answered from DASH's own records with no model, no
+    -- charge and no latency; its row has NULL here and NULL in all four columns
+    -- below, and the surface says so per turn rather than leaving somebody to
+    -- infer from an absent price that a free answer was a broken one.
+    provider_id  TEXT,
+    -- The model the provider says answered, which may not be the one asked for.
+    model_id     TEXT,
+    tokens_in    INTEGER,
+    tokens_out   INTEGER,
+    -- The provider's own figure for what it charged. NULL means it stated none.
+    -- Written only from a number a provider stated, exactly as agent_questions
+    -- is: nothing in DASH multiplies a token count by a rate.
+    amount_usd   REAL,
+    -- The briefing rows that were sent, frozen. See the note above.
+    receipt_json TEXT NOT NULL
+  );
+  `,
+
+  // MAR-628, ADR 0019: what DASH asked its own browser to do, and what it
+  // stopped a page from doing.
+  //
+  // Two tables and not one, on `broker_audit` / `broker_lapses`' exact terms.
+  // **Look at what the second one cannot say.** It has no request id, no
+  // operation and no decision column, because the agent asked for none of it: a
+  // script, a font or a redirect chose those addresses and DASH refused them.
+  // Giving them the columns of an adjudication would let a careless join, or a
+  // later renderer, present a publisher's advertising network as something an
+  // agent did. `browser_actions` stays believable precisely because every row in
+  // it is a request an agent made and a decision DASH took.
+  //
+  // What is deliberately absent from `browser_actions` is as much of the design
+  // as what is present. There is no `target` column and no `typed_value` column,
+  // because no operation in `BROWSER_OPERATIONS` resolves a target or supplies a
+  // value — this slice's catalogue is `browser.open` and `browser.read` and
+  // neither dispatches an input event. A column null in every row is a column
+  // inviting a later reader to believe DASH once recorded something it never
+  // did; ADR 0019 amendment 1 records that the first operation which types or
+  // clicks adds them, along with the redaction rule that has to arrive with
+  // them.
+  //
+  // `url_before` and `url_after` hold an origin and a path and never a query
+  // string — see `trailUrl`. An article URL routinely carries a session id, a
+  // tracking parameter and occasionally somebody's email address in its query,
+  // and a durable table of every one of them is a record nobody asked DASH to
+  // keep.
+  //
+  // `frame_after` is a file name inside the run's own frame folder, never a
+  // path: `lib/copy/identifiers.ts`'s rule that a renderer names a kind of file
+  // and never a file, applied to the one column that points at bytes on disk.
+  `
+  CREATE TABLE IF NOT EXISTS browser_sessions (
+    session_id       TEXT PRIMARY KEY,
+    agent            TEXT NOT NULL,
+    -- Null when DASH could observe no run. A session outside a run is a real
+    -- situation and a null says so rather than inventing an id to group by.
+    run_id           TEXT,
+    -- The exact origins this run was set up for, as JSON. Written once, at open
+    -- time, so a manifest edited mid-run cannot change what a finished receipt
+    -- says the person agreed to.
+    declared_origins TEXT NOT NULL,
+    -- The origins the view actually reached, as JSON, in the order first
+    -- allowed. A subset of the above by construction.
+    visited_origins  TEXT NOT NULL,
+    opened_at        TEXT NOT NULL,
+    -- When this session first returned page content, or NULL. It is the moment
+    -- the read-then-reach rule started applying to the rest of the run.
+    first_read_at    TEXT,
+    ended_at         TEXT,
+    end_reason       TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS browser_sessions_by_agent
+    ON browser_sessions (agent, opened_at);
+
+  CREATE TABLE IF NOT EXISTS browser_actions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent       TEXT NOT NULL,
+    run_id      TEXT,
+    session_id  TEXT NOT NULL,
+    request_id  TEXT NOT NULL,
+    -- Verbatim, even when DASH has no such operation. A row saying an agent
+    -- asked for browser.evaluate and was refused is the most interesting row
+    -- this table can hold, and normalising it away would lose it.
+    operation   TEXT NOT NULL,
+    decision    TEXT NOT NULL,
+    refusal     TEXT,
+    origin      TEXT,
+    url_before  TEXT,
+    url_after   TEXT,
+    frame_after TEXT,
+    decided_at  TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS browser_actions_by_session
+    ON browser_actions (session_id, decided_at);
+  CREATE INDEX IF NOT EXISTS browser_actions_by_agent
+    ON browser_actions (agent, decided_at);
+
+  CREATE TABLE IF NOT EXISTS browser_blocked (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent      TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    -- The refused origin, or a scheme such as data: when the URL had no origin
+    -- DASH was willing to name.
+    origin     TEXT,
+    reason     TEXT NOT NULL,
+    blocked_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS browser_blocked_by_session
+    ON browser_blocked (session_id, blocked_at);
+  `,
+
   // MAR-643. A service may hold more than one account, with one default for
-  // agents that have not been assigned yet.
+  // agents that have not been assigned yet. Migration 26: MAR-659's chief
+  // transcript and MAR-628's browser ledger reached master first as 24 and 25,
+  // so this incoming step moves to the end without renumbering either of them.
   //
   // This is a table replacement rather than ALTER TABLE additions because the
   // shipped primary key is `provider`. SQLite cannot widen that key in place.

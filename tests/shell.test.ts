@@ -16,6 +16,7 @@ import type {
   GlanceAction,
   HostAction,
   AskAction,
+  ChiefAction,
   IdentityAction,
   ModelAction,
   NotifyAction,
@@ -142,6 +143,17 @@ describe("the audited command chokepoint", () => {
       // Windows title bar overlay are chosen in Node before a stylesheet
       // exists, and this is what tells that half which one a person chose.
       "shell.theme",
+      // MAR-628, ADR 0019. The controlled browser's two, and they are not one
+      // family. `browser.viewport` belongs beside the three above — it moves a
+      // native view and reaches no agent, no store and no provider. Its
+      // neighbour does not: `browser.stop` destroys a Chromium session and
+      // refuses an agent's requests for the rest of its run, which is
+      // `mutates: true` and belongs in a receipt somebody may go looking for.
+      // They sit together here because they arrived together; they are
+      // deliberately apart in `SHELL_UI_ACTIONS`, which is the map that decides
+      // how they are handled.
+      "browser.viewport",
+      "browser.stop",
       // MAR-415. Lifecycle, not Agent DOM commands: they act on a process, no
       // manifest declares them, and they never become an envelope. The
       // `runner.` prefix is what keeps that legible at every call site.
@@ -224,6 +236,16 @@ describe("the audited command chokepoint", () => {
       // answers is read in main from the row a person set through
       // `model.choose`.
       "ask.question",
+      // MAR-659, ADR 0023. The eleventh family, and the second that can spend
+      // the person's money. Its own family rather than more of `ask.*` because
+      // the two are aimed at different principals: `ask.question` carries an
+      // agent id and reaches `{ kind: "agent" }`; these carry no id at all and
+      // reach `{ kind: "chief" }`. `chief.ask` names a question and nothing
+      // else — no agent, no connection, no field, no model — and `chief.clear`
+      // names nothing, which is the only correct payload for deleting the one
+      // thread there is.
+      "chief.ask",
+      "chief.clear",
       "folder.check",
       "folder.adopt",
       "folder.reveal",
@@ -477,6 +499,41 @@ describe("the renderer's half of an agent command", () => {
     }
   });
 
+  /*
+   * MAR-659, ADR 0023 decision 8. *"Fleet page → the chief principal, the fleet
+   * briefing, no agent's saved material. Agent page → that agent's principal and
+   * that agent's saved reports."*
+   *
+   * Semantically **and** structurally, and this is the structural half at the
+   * IPC boundary: `{ kind: "chief" }` carries no agent id, so there is no value
+   * a chief question could be aimed at an agent with. That is only true while
+   * the catalogue declares no key one could travel in — a `payload_keys`
+   * entry added here would put the value back and no other test would notice.
+   *
+   * `chief.clear` is asserted separately and to a stronger standard: an empty
+   * payload, because there is one thread and a page able to name which one to
+   * delete would be a page able to delete a different one.
+   */
+  it("gives the chief no way to name an agent, a connection or a model", () => {
+    expect(COMMANDS["chief.ask"].payload_keys).toEqual(["question"]);
+    expect(COMMANDS["chief.ask"].required_keys).toEqual(["question"]);
+    expect(COMMANDS["chief.clear"].payload_keys).toEqual([]);
+    // Both spend or destroy, so both say so — `irreversible` describes the worst
+    // thing a command can do rather than the commonest, and a standing question
+    // being free does not make a charged one reversible.
+    expect(COMMANDS["chief.ask"].irreversible).toBe(true);
+    expect(COMMANDS["chief.clear"].irreversible).toBe(true);
+  });
+
+  it("denies a chief question that tries to name an agent", () => {
+    const review = reviewCommand({
+      command: "chief.ask",
+      request_id: "req-chief-1",
+      payload: { question: "what needs me", agent_id: "ai-agent-news" },
+    });
+    expect(review).toMatchObject({ decision: "denied", reason: "unexpected_payload_field" });
+  });
+
   it("denies an attempt to name the actor, because the key is not declared", () => {
     const review = reviewCommand({
       ...approve,
@@ -530,6 +587,10 @@ describe("dispatch", () => {
     const menus: Array<{ x: number; y: number } | undefined> = [];
     // MAR-642. Which theme main was told to draw its own chrome in.
     const themes: string[] = [];
+    // MAR-628. Where main was told to paint the controlled browser, and whose
+    // browser a person pressed Stop on.
+    const viewports: Array<{ x: number; y: number; width: number; height: number }> = [];
+    const browserStops: string[] = [];
     // MAR-434. Recorded rather than performed, like everything else here: the
     // real one reaches the runner over a socket and raises a native save
     // dialog, and neither exists in this process.
@@ -561,6 +622,11 @@ describe("dispatch", () => {
     // property one layer along.
     const models: Array<{ action: ModelAction; target: Record<string, unknown> }> = [];
     const asks: Array<{ action: AskAction; target: Record<string, string> }> = [];
+    // MAR-659. The chief's own two, beside the agent's one and kept apart from
+    // it for the same reason the maps in `lib/shell/ipc.ts` are: a test asserting
+    // that a fleet question carried no agent id should not have to filter it out
+    // of a list of agent questions first.
+    const chiefs: Array<{ action: ChiefAction; target: { question?: string } }> = [];
     // MAR-588. Recorded, not performed, for `folderAction`'s reason and one
     // more: the real implementation opens the credential window and reaches
     // Discord, and a fake that did either would make these tests -- which are
@@ -578,6 +644,7 @@ describe("dispatch", () => {
       folders,
       models,
       asks,
+      chiefs,
       modelAction: (action: ModelAction, target: Record<string, unknown>) => {
         models.push({ action, target });
         return Promise.resolve({ ok: true, detail: `${action} ok` });
@@ -643,6 +710,12 @@ describe("dispatch", () => {
         asks.push({ action, target });
         return Promise.resolve({ ok: true });
       },
+      // MAR-659. Recorded, not performed, for the entry above's reason — and
+      // with the same teeth: the real one bills somebody's account.
+      chiefAction: (action: ChiefAction, target: { question?: string }) => {
+        chiefs.push({ action, target });
+        return Promise.resolve({ ok: true });
+      },
       showApplicationMenu: (at: { x: number; y: number } | undefined) => {
         menus.push(at);
       },
@@ -653,6 +726,18 @@ describe("dispatch", () => {
       // one of three literals before it gets here.
       setNativeTheme: (theme: "system" | "light" | "dark") => {
         themes.push(theme);
+      },
+      // MAR-628. Recorded, not performed, on `setNativeTheme`'s terms: the real
+      // ones move a `WebContentsView` and destroy a Chromium session, neither of
+      // which a test process has. What is worth asserting from here is that the
+      // dispatcher narrows four payload values to numbers, and that a Stop
+      // carries the agent and nothing else.
+      setBrowserViewport: (bounds: { x: number; y: number; width: number; height: number }) => {
+        viewports.push(bounds);
+      },
+      stopBrowser: (agentId: string) => {
+        browserStops.push(agentId);
+        return Promise.resolve();
       },
       // MAR-383. Recorded, not performed — and note the fake holds no secret,
       // which it could not do usefully anyway: no credential is an argument to

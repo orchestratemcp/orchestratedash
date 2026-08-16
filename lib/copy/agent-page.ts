@@ -46,6 +46,27 @@ export const AGENT_HEADER_COPY = {
 } as const;
 
 /**
+ * The About disclosure — the header's goal, and the plan behind it (MAR-664).
+ *
+ * Henrik: *"The agent description doesn't need to be in the header. Too much
+ * text. Better add an about the agent button. Shows steps and description."*
+ * `AGENT_HEADER_COPY.eyebrow` above is the one word the header keeps about
+ * what this agent *is*; everything about what it *does* moved here, and
+ * `tests/agent-about.test.tsx` is the gate that keeps it from moving back.
+ *
+ * Every sentence that depends on a step's own data — its risk, its declared
+ * strength — is composed in `lib/agent-plan.ts`, not here. This module only
+ * has the labels that do not depend on any agent's manifest.
+ */
+export const AGENT_ABOUT_COPY = {
+  open: "About",
+  open_label: "About this agent",
+  goal_heading: "What it does",
+  steps_heading: "Its plan",
+  step_label: (step: number): string => `Step ${String(step)}`,
+} as const;
+
+/**
  * The control panel — Henrik's *"controlpanel to start, pause, check status"*.
  *
  * The three verbs are not invented here. `pause`, `resume` and `cancel` already
@@ -69,6 +90,50 @@ export const AGENT_CONTROL_COPY = {
    * DASH did not observe.
    */
   asking: "Asking…",
+  /**
+   * The primary control for an agent whose process is not running (MAR-657).
+   *
+   * Two verbs because the press is two acts — DASH starts the agent on this
+   * computer, then asks it to run — and naming only the second would promise a
+   * run to somebody whose agent might not start. Naming only the first would be
+   * worse: it would be a button that changes a status and appears to do nothing,
+   * which is the shape of the defect MAR-609 was filed on.
+   *
+   * No machine in the label, and that is ADR 0014's rule rather than an
+   * omission: the copy on this computer is the permanent default target and the
+   * named controls are the *other* machines' — "Run on Hostinger" beside it.
+   * `start_here` below carries the machine into the sentence under the button,
+   * where there is room to say it in words.
+   */
+  start_and_run: "Start and run",
+  /**
+   * Under the button, because a press that spawns a process is a fact about one
+   * machine, and ADR 0014 says a control that starts a run names the one it will
+   * use. It also answers the question the two-verb label raises — *why does this
+   * one say something different from Run now* — in the place a person is already
+   * looking.
+   */
+  start_here: "This agent is not running. DASH will start it on this computer, then ask it to run.",
+  /**
+   * The start worked and the agent offered nothing to run.
+   *
+   * Deliberately not worded as a failure. An agent built with DASH's kit
+   * publishes a task the moment it starts; one written by hand or brought from
+   * another toolchain has never been obliged to, and telling that person their
+   * agent is broken would be DASH inventing a fault to explain its own silence.
+   * The process is up, which is the part that is worth saying.
+   */
+  start_nothing_offered:
+    "It started on this computer and is running now, but it has not offered anything to run.",
+  /**
+   * The start itself was refused and the runner said nothing about why.
+   *
+   * A fallback and rarely the sentence anybody sees: `runner.start` refuses with
+   * its own detail — an unregistered agent, a manifest that does not validate, a
+   * process that would not spawn — and that detail is better than this one every
+   * time it exists.
+   */
+  start_failed: "DASH could not start this agent on this computer.",
   /**
    * What the panel says when there is nothing to press, per reason.
    *
@@ -449,6 +514,20 @@ export const AGENT_COCKPIT_COPY = {
   settings: "Settings",
   logs: "Logs",
   /**
+   * The fifth cell, and the answer to a proof-pass finding (MAR-658).
+   *
+   * Every other cell in the grid names a destination this agent has, and
+   * `overview` is the one the grid had never named. It was reachable by
+   * accident until MAR-646 sent a produced agent's plain link to `output`
+   * instead — after that, an agent with even one output had no button or link
+   * anywhere back to its Overview stage, only the URL bar. A control that
+   * always names this one destination cannot strand a deep link the way
+   * `router.back()` would: see the comment on `onEscape` in
+   * `app/agents/detail/page.tsx` for why the composer's Escape is a different
+   * question with a different, correct answer.
+   */
+  overview: "Overview",
+  /**
    * The overflow menu — three actions that are real and rare.
    *
    * A `<details>` rather than a popup: it needs no click-outside handler, it is
@@ -504,12 +583,11 @@ export const AGENT_COCKPIT_COPY = {
   /**
    * The chat bar, pinned to the bottom of the frame.
    *
-   * `ask` owns every word of the conversation itself (`lib/copy/ask.ts`); these
-   * are the two strings the *bar* needs and the thread does not — the label on
-   * a box that is one line tall, and the way into the thread when a person
-   * cannot type in it yet.
+   * `ask` owns every word of the conversation itself (`lib/copy/ask.ts`),
+   * including the bar's own visible name now (`describeChatSubject`, MAR-659)
+   * — this is the one string the bar needs that is not about the conversation
+   * at all: the way into the thread when a person cannot type in it yet.
    */
-  chat_label: "Message this agent",
   chat_open: "Open chat",
   /**
    * The stage names, for the region's accessible name.

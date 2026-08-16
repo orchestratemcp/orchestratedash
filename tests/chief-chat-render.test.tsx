@@ -88,11 +88,29 @@ describe("the chief's band grows a composer", () => {
 
   it("says what it answers from, where a model indicator would be", () => {
     // MAR-648's rule for this row: affordances as they become real, never as
-    // dead chrome. There is no model here, so there is no model chip — what is
-    // true is where the answers come from.
+    // dead chrome. This band is rendered with no `chief` prop, which is the
+    // no-fleet-default state every DASH is in today — so there is still no model
+    // chip, and what is true is where the answers come from.
+    //
+    // The sentence changed with ADR 0023 and the old one is refused by name.
+    // "Nothing said here is saved" was true until this packet and is now the
+    // worst thing this row could claim, because the conversation is kept.
     const html = band({ agent: row(), agents: [row()] });
-    expect(html).toContain("I answer from your own records");
+    expect(html).toContain("I read your own records");
+    expect(html).not.toContain("Nothing said here is saved");
     expect(html).not.toContain("Asking under");
+  });
+
+  /*
+   * MAR-659. The fleet is this composer's subject and it used to be
+   * announcement-only — `CHIEF_CHAT_COPY.label` inside a `visually-hidden`
+   * span. A person should not need a screen reader to learn this box is not
+   * one particular agent's.
+   */
+  it("says whose composer this is, in words a sighted reader sees too", () => {
+    const html = band({ agent: row(), agents: [row()] });
+    expect(html).toContain(CHIEF_CHAT_COPY.label);
+    expect(html).not.toContain(`<span class="visually-hidden">${CHIEF_CHAT_COPY.label}</span>`);
   });
 
   /*
@@ -130,6 +148,46 @@ describe("the room opens above the composer", () => {
     // The composer is still there, and after the room in the document — which
     // is what "the room appears above it" means in a source order.
     expect(html.indexOf("chief-room")).toBeLessThan(html.indexOf("chief-compose"));
+  });
+
+  /*
+   * MAR-659, ADR 0023. Henrik's own report: he changed view, came back, and the
+   * thread was blank.
+   *
+   * The shape half of this issue answered that by explaining the emptiness —
+   * *"leaving this page clears this chat"* — which was the honest thing to say
+   * about a chief that really did forget. This packet removes the cause instead,
+   * so the explanation has to go with it: a thread that survives must not carry
+   * a sentence telling a reader it does not.
+   *
+   * What replaces it is the scope note for a room nobody has asked anything in
+   * yet, which is a different claim: not *this was cleared* but *here is what I
+   * am for*.
+   */
+  it("no longer tells a returning reader their conversation was cleared", () => {
+    const html = band({ agent: row(), agents: [row()], chatOpen: true });
+    expect(html).not.toContain("Nothing said here is saved");
+    expect(html).not.toContain("is expected, not a lost conversation");
+    expect(html).toContain("I read your own records");
+    expect(html).toContain("kept on this computer until you clear it");
+  });
+
+  /*
+   * MAR-659, ADR 0023 decision 4. The state every DASH is in today.
+   *
+   * Rendered with no `chief` prop, which is `EMPTY_CHIEF_ROOM` — no model, no
+   * turns. Three things have to be true at once and the third is the one worth
+   * a test: the notice appears, it points at the tab, and the **box is still
+   * live**, because the standing question is answered from records whatever the
+   * notice says. A composer greyed out here would be a dead input where a
+   * working one is.
+   */
+  it("says why it has no model, and leaves the box working anyway", () => {
+    const html = band({ agent: row(), agents: [row()], chatOpen: true });
+    expect(html).toContain("no default model set");
+    expect(html).toContain("AI tab");
+    expect(html).toContain('<textarea class="chief-input"');
+    expect(/<textarea[^>]*\sdisabled/.test(html)).toBe(false);
   });
 
   /*

@@ -390,9 +390,27 @@ export function describeUnavailable(
  */
 export function describeAskFailure(
   reason: AskFailureReason,
-  context: { service: string },
+  context: {
+    service: string;
+    /**
+     * Where the model this question ran under was chosen, as a noun phrase
+     * (MAR-659).
+     *
+     * Exactly one sentence below needs it — `provider_refused`, whose commonest
+     * cause is a model the key cannot reach — and that sentence was written when
+     * the only asker was an agent with a picker on its own page. The chief has
+     * no picker and asks under DASH's fleet default, so *"the model this agent
+     * is set to use"* would send somebody looking for a control that is not
+     * there.
+     *
+     * Defaulted rather than required, so the agent path is unchanged and its
+     * call sites stay one argument long.
+     */
+    model_setting?: string;
+  },
 ): Recovery {
   const { service } = context;
+  const modelSetting = context.model_setting ?? "the model this agent is set to use";
   switch (reason) {
     case "not_connected":
       return {
@@ -433,7 +451,7 @@ export function describeAskFailure(
           "It gave a reason DASH does not pass on, because a service's error text is not something DASH will " +
           "put in front of you as if it were DASH speaking. The most common causes are a model your key cannot " +
           "use and an account that has run out of credit.",
-        next_action: `Check the model this agent is set to use, and your balance at ${service}.`,
+        next_action: `Check ${modelSetting}, and your balance at ${service}.`,
         actor: "user",
       };
     case "answer_lost":
@@ -512,6 +530,25 @@ export const ASK_WORKING = "Asking…";
 
 /** The heading over the list of saved things an answer was built from. */
 export const ASK_SOURCES_HEADING = "What this answer used";
+
+/**
+ * The composer's own visible name (MAR-659).
+ *
+ * MAR-646 tried `describeAskPurpose`'s full sentence here once and reverted it
+ * — "one sentence in two places on one screen" — because the thread already
+ * draws that sentence directly above this bar on the Chat stage. This is
+ * shorter and says a different thing: not what the conversation is for, but
+ * who it is with, which is the fact the fleet's own composer (MAR-659, beside
+ * this one) needed to start saying out loud too. Two composers share a
+ * grammar; neither said its subject before this.
+ *
+ * `agent` is `null` for the one caller that has not resolved a display name
+ * yet — the render tests that compose `AskComposer` directly — and falls back
+ * to the bar's own former label rather than rendering nothing.
+ */
+export function describeChatSubject(agent: string | null): string {
+  return agent === null ? "Message this agent" : `Message ${agent}`;
+}
 
 /* ---------------------------------------------------------------------- *
  * The composer's settings row (MAR-648)

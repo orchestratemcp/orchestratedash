@@ -62,6 +62,7 @@ import {
 import type { ConnectionSourceManifest } from "../lib/connections";
 import { listAiKeyModels } from "../lib/ai/actions";
 import { performAskAction } from "./ask-host";
+import { performChiefAction } from "./chief-host";
 import {
   bundledModelChoice,
   resolveModelSteps,
@@ -118,6 +119,7 @@ import {
   type ReadResponse,
   type ReadResults,
 } from "../lib/shell/read";
+import { browserView } from "../lib/views/browser";
 import {
   agentsView,
   connectionsView,
@@ -180,6 +182,12 @@ import { performFolderAction } from "./folder-update";
 import { buildNotifyConfiguration, performNotifyAction } from "./notify-settings";
 import { providerOperations } from "./oauth-session";
 import { hostBroker, startBroker } from "./broker-host";
+import {
+  hostBrowserController,
+  revokeBrowser,
+  startBrowserController,
+} from "./browser-host";
+import { setBrowserViewportBounds } from "./browser-view";
 import { ensureRunner, runnerFetch, stopRunner, type RunnerHandle } from "./runner-process";
 import { assertSampleTemplatesPresent, offerSampleAgent } from "./sample-agent";
 import {
@@ -241,6 +249,9 @@ let stopPolling: (() => void) | null = null;
 
 /** Stops the permission broker's loop (MAR-458). Null when there is no runner. */
 let stopBroker: (() => void) | null = null;
+
+/** Stops the controlled browser's loop (MAR-628). Null when there is no runner. */
+let stopBrowser: (() => void) | null = null;
 
 /** Stops the uptime heartbeat (MAR-467). */
 let stopHeartbeat: (() => void) | null = null;
@@ -790,6 +801,13 @@ export function registerCommandChannel(
       setNativeTheme: (theme) => {
         nativeTheme.themeSource = theme;
       },
+      // MAR-628, ADR 0019. Where the supervision panel says it is, and the one
+      // agent whose browser a person is stopping. Both are one line here
+      // because both belong to `electron/browser-view.ts` and
+      // `electron/browser-host.ts` — this object is a wiring table and not a
+      // second place any of that is decided.
+      setBrowserViewport: setBrowserViewportBounds,
+      stopBrowser: (agentId) => revokeBrowser(agentId, "stopped_by_person"),
       // MAR-383. The vault is reachable from exactly this one entry in exactly
       // this one context object, and the value the user types never comes back
       // through it — see `lib/connection-actions.ts` for what does.
@@ -877,11 +895,20 @@ export function registerCommandChannel(
       // answer. Every gate is inside `performModelAction`, beside the reads it
       // guards, for `refreshSampleAgent`'s reason.
       modelAction: (action, target) => performModelAction(action, target),
-      // MAR-545. The only route in DASH that can spend the person's money, and
-      // the only caller anywhere that hands the broker `"person"` rather than
-      // `"agent"`. Every gate is inside `electron/ask-host.ts`, beside the call
-      // it guards, for `performFolderAction`'s reason.
+      // MAR-545. One of the two routes in DASH that can spend the person's
+      // money, and one of the two callers anywhere that hand the broker
+      // `"person"` rather than `"agent"`. Every gate is inside
+      // `electron/ask-host.ts`, beside the call it guards, for
+      // `performFolderAction`'s reason.
+      //
+      // This said "the only" until MAR-659, and it is corrected here rather than
+      // left to become a claim the file makes about itself and no longer keeps.
       askAction: (_action, target) => performAskAction(target),
+      // MAR-659, ADR 0023. The second of those two, and the difference is the
+      // principal: this one reaches `{ kind: "chief" }`, which carries no agent
+      // id, so there is no value on this line that could aim a fleet question at
+      // an agent. Every gate is inside `electron/chief-host.ts`.
+      chiefAction: (action, target) => performChiefAction(action, target),
       // MAR-588. The only route in DASH that can send something off this machine
       // without an agent asking it to. Every gate is inside
       // `electron/notify-settings.ts`, beside the vault read and the write, for
@@ -1487,6 +1514,21 @@ export function registerReadChannel(): void {
           ok: true,
           data: notificationsView(),
         } satisfies ReadResponse<ReadResults["view.notifications"]>;
+      case "view.browser": {
+        // MAR-628, ADR 0019. The open session id comes from the live controller
+        // and not from the store, and that is the whole reason this case has a
+        // body rather than being one line. A session row's `ended_at` is null
+        // both while the session is open and when DASH was killed with one open;
+        // only the process holding the `WebContents` can tell the two apart. So
+        // an abandoned row from a previous DASH renders as a finished session,
+        // and the Stop control is live only for a browser that actually exists
+        // to be stopped.
+        const agent = review.params["agent"] ?? "";
+        return {
+          ok: true,
+          data: browserView(agent, hostBrowserController().sessionFor(agent)?.session_id ?? null),
+        } satisfies ReadResponse<ReadResults["view.browser"]>;
+      }
       default: {
         const unreachable: never = review.read;
         throw new Error(`Unhandled read: ${String(unreachable)}`);
@@ -2686,6 +2728,13 @@ if (typeof app !== "undefined") {
     // `electron/broker-host.ts`.
     stopBroker = startBroker(runner);
 
+    // MAR-628. Its own loop beside the broker's rather than inside it, because
+    // the two answer different questions and fail differently: an unanswered
+    // brokered request is an agent that waited, and an unanswered browser
+    // request is that plus a Chromium view on somebody's desktop. See
+    // `electron/browser-host.ts`.
+    stopBrowser = startBrowserController(runner);
+
     registerCommandChannel(channels, runner);
     registerReadChannel();
     // MAR-383. The third and last `ipcMain.handle` group. Registered here beside
@@ -2803,6 +2852,15 @@ if (typeof app !== "undefined") {
     // the app they granted it through is exactly what ADR 0002 is about.
     stopBroker?.();
     stopBroker = null;
+    // MAR-628. The loop stops, and then every open session is destroyed — the
+    // second half is not optional and is not the same as the first. A quit that
+    // stopped answering requests but left a `WebContentsView` alive would be a
+    // browser outliving the supervision surface that justified it, which is the
+    // one shape ADR 0019 does not permit. This runs before the window is torn
+    // down, so the views are removed from a window that still exists.
+    stopBrowser?.();
+    stopBrowser = null;
+    void hostBrowserController().revokeEverything("run_ended");
     // MAR-467. One last heartbeat on the way out, so a clean quit starts the
     // next launch's closed window at the moment DASH actually stopped rather
     // than up to thirty seconds before it.

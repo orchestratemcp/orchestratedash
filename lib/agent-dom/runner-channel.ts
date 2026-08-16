@@ -91,8 +91,37 @@ export const EVIDENCE_ROUTES = [
  */
 export const BROKER_ROUTES = ["/broker/drain", "/broker/responses"] as const;
 
+/**
+ * The two routes that drive a browser window on this machine (MAR-628, ADR
+ * 0019).
+ *
+ * Local-only for a **stronger** reason than the broker's, and the strength is
+ * worth stating rather than inheriting. `/broker/drain` must stay here because
+ * of what it can reach: a user's mailbox, through DASH's grant. These two must
+ * stay here because of where the thing they drive *is* — a `WebContentsView`
+ * attached to DASH's own window, on the desktop somebody is watching. There is
+ * no sense in which a runner on a VPS could serve them: the view it would drive
+ * does not exist in this process, and a person watching this screen would see
+ * nothing.
+ *
+ * ADR 0019 does describe a remote path — the same controller and the same
+ * command/event contract in an offscreen `BrowserWindow` under Xvfb — and it is
+ * explicitly not this slice. When it arrives it is a **host-reported frame
+ * trail** with an observation time, which is a different claim needing a
+ * different route and its own entry in ADR 0014's admitted set. Widening these
+ * two would smuggle it in as an implementation detail.
+ *
+ * A separate list rather than two more entries in `BROKER_ROUTES`, because
+ * `tests/broker-channel-exclusion.test.ts` reads that array as *the routes ADR
+ * 0006 keeps on this machine* and these are kept here by ADR 0019. Two rules,
+ * two lists, and a reader who follows either one back arrives at the document
+ * that decided it.
+ */
+export const BROWSER_ROUTES = ["/browser/drain", "/browser/responses"] as const;
+
 export type EvidenceRoute = (typeof EVIDENCE_ROUTES)[number];
 export type BrokerRoute = (typeof BROKER_ROUTES)[number];
+export type BrowserRoute = (typeof BROWSER_ROUTES)[number];
 
 /* ---------------------------------------------------------------------- *
  * The one route that is not a fixed string
@@ -264,6 +293,7 @@ export interface ArtifactBytesRoute {
 export type RunnerRoute =
   | EvidenceRoute
   | BrokerRoute
+  | BrowserRoute
   | AgentCommandRoute
   | AgentStateRoute
   | ArtifactBytesRoute;
@@ -403,7 +433,18 @@ declare const BROKER_CAPABLE: unique symbol;
 
 export interface LocalRunnerChannel
   extends RunnerChannel<
-    EvidenceRoute | AgentCommandRoute | AgentStateRoute | ArtifactBytesRoute | BrokerRoute
+    | EvidenceRoute
+    | AgentCommandRoute
+    | AgentStateRoute
+    | ArtifactBytesRoute
+    | BrokerRoute
+    // MAR-628. Added here and deliberately *not* to `RemoteRunnerChannel`,
+    // which is the one place this module's "a route is added to both channels
+    // or to neither" rule is overridden — and it is overridden by the same
+    // mechanism the rule's own exception uses: `BrokerRoute` is here and not
+    // there either. Both are capabilities ADRs confine to this machine, so both
+    // sit inside the brand rather than in the shared parameter.
+    | BrowserRoute
   > {
   readonly [BROKER_CAPABLE]: true;
 }

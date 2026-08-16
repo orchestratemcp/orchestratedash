@@ -31,11 +31,59 @@
  * - **`app.getPath("userData")` is read before `whenReady`.** That is supported
  *   — `userData` is one of the paths Electron resolves as soon as the app module
  *   loads — and it is the only reason this can be done early enough at all.
+ *
+ * ## The app's name is decided here too (MAR-656)
+ *
+ * `userData` is `<appData>/<app name>`, and Electron takes the name from the
+ * package.json of the **app directory** — which it only has when it was launched
+ * with one. `electron .` gets `orchestratedash`; `electron dist/electron/main.mjs`
+ * consults no package.json at all and falls back to the name `Electron`.
+ *
+ * The registered `dash://` handler is the second form, so every deep-link launch
+ * ran as a different application with a different store: `%APPDATA%\Electron`,
+ * with its own agents, its own runner, and — because the single-instance lock is
+ * keyed on `userData` — no collision with the DASH already on screen. It had been
+ * quietly collecting agents since 2026-08-03.
+ *
+ * `electron/smoke-identity.ts` had already found this and fixed it for the proof
+ * harness. The shell never made the same call, so the harness was more careful
+ * about its own identity than the product was. That asymmetry is closed here.
+ *
+ * **The call is gated on the entry point, and the gate is not caution.** A dozen
+ * capture harnesses under `electron/` import `main.ts` and deliberately skip
+ * `smoke-identity.ts` so that they run as `Electron` — that is what lets them
+ * photograph DASH beside a live one without fighting it for the single-instance
+ * lock. Claiming the name for every importer of this file would take that away.
+ * See `isAppEntryPoint` in `lib/shell/app-identity.ts`, which owns the rule
+ * because the `dash://` registration asks the identical question.
+ *
+ * The harnesses keep their old identity and lose their old *silence*:
+ * `assertStoreLocation` now refuses a store that is not DASH's, so a harness
+ * that forgets `DASH_DATA_DIR` crashes on line one instead of quietly opening a
+ * second DASH's worth of agents.
  */
 
 import { app } from "electron";
 
+import {
+  APP_NAME,
+  isAppEntryPoint,
+  storeIdentityProblem,
+  storeLocationChosen,
+} from "../lib/shell/app-identity";
 import { useUserDataDirectory } from "./secure-store";
+
+// BEFORE `useUserDataDirectory()`, which is the first thing to read
+// `app.getPath("userData")` — see the header. A name set after that read would
+// be a no-op wearing the appearance of a fix.
+//
+// Gated on the entry point, and that gate is load-bearing rather than cautious:
+// a dozen capture harnesses import this file through `main.ts` and rely on NOT
+// being `orchestratedash`, so that they can run beside a live DASH without
+// fighting it for the single-instance lock. `isAppEntryPoint` says why in full.
+if (isAppEntryPoint(process.argv[1] ?? "")) {
+  app.setName(APP_NAME);
+}
 
 /**
  * Whether the caller had already chosen a directory before we ran.
@@ -45,8 +93,15 @@ import { useUserDataDirectory } from "./secure-store";
  * what lets `assertStoreLocation` tell "someone chose a different directory on
  * purpose" apart from "the ordering broke", which look identical from the
  * outside and need opposite responses.
+ *
+ * **Read before `useUserDataDirectory()` runs**, because that call is what makes
+ * the two indistinguishable. `storeLocationChosen` also counts Electron's own
+ * `--user-data-dir` switch, which is a second way of choosing on purpose and one
+ * this repository's capture harnesses use to keep parallel worktrees from
+ * colliding — see that function for why the identity check would otherwise crash
+ * a run whose store was exactly where its operator put it.
  */
-const overridden = process.env.DASH_DATA_DIR !== undefined;
+const overridden = storeLocationChosen(process.env, process.argv);
 
 useUserDataDirectory();
 
@@ -65,6 +120,15 @@ useUserDataDirectory();
  *
  * `resolved` is `lib/db.ts`'s `dataDir`, passed in by `main.ts`. See the module
  * header for why it is a parameter and not an import.
+ *
+ * ## Why agreement is not enough (MAR-656)
+ *
+ * The equality check catches import-order bugs and nothing else. In the phantom
+ * `%APPDATA%\Electron` store *both* sides read `%APPDATA%\Electron`, so they
+ * agreed, and this function passed while DASH wrote a person's agents somewhere
+ * no DASH window has ever shown. Identity has to be checked against a constant,
+ * not against itself — which is precisely the check `electron/smoke.ts` already
+ * made about the harness and the shell never made about itself.
  */
 export function assertStoreLocation(resolved: string): void {
   if (overridden) {
@@ -79,5 +143,10 @@ export function assertStoreLocation(resolved: string): void {
         `Something imported lib/db.ts before electron/data-dir.ts ran — check the ` +
         `import order at the top of electron/main.ts.`,
     );
+  }
+
+  const problem = storeIdentityProblem(resolved, app.getName());
+  if (problem !== null) {
+    throw new Error(problem);
   }
 }

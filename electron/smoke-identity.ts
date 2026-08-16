@@ -22,6 +22,17 @@
  * never opens. Both launch paths have to agree about where the user's data
  * lives, or the proof is about the harness rather than the product.
  *
+ * ## The shell now makes the same call (MAR-656)
+ *
+ * For two weeks this file was the only place in the repository that knew any of
+ * the above, and the product it was proving did not. Every `dash://` deep link
+ * launched `electron dist/electron/main.mjs`, became app name `Electron`, and
+ * added the person's agent to `%APPDATA%\Electron`. `electron/data-dir.ts` now
+ * calls `app.setName` for the shell, on the same reasoning and one import
+ * earlier, so this module is a belt beside a brace rather than the only thing
+ * holding the trousers up. It stays because `smoke.ts` must not depend on
+ * `main.ts`'s import order to know who it is.
+ *
  * The name is duplicated from the root package.json rather than read from it:
  * reading the file would mean resolving the repo root from a bundle, which is
  * the cwd-dependence this shell already has one instance of too many

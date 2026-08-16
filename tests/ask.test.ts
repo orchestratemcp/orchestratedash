@@ -40,6 +40,7 @@ import {
 import {
   describeAmount,
   describeAskFailure,
+  describeChatSubject,
   describeCharge,
   describeEstimate,
   describeReportedRunSpend,
@@ -507,5 +508,21 @@ describe("the conversation, over a real store", () => {
     ask();
     forgetAgentQuestions(AGENT);
     expect(readExchanges(AGENT)).toEqual([]);
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * The composer's own visible name (MAR-659)
+ * ---------------------------------------------------------------------- */
+
+describe("the composer's subject", () => {
+  it("names the agent, in plain language", () => {
+    const subject = describeChatSubject("AI agent news");
+    expect(subject).toBe("Message AI agent news");
+    expectPlainLanguage([subject]);
+  });
+
+  it("falls back to a generic label rather than rendering nothing", () => {
+    expect(describeChatSubject(null)).toBe("Message this agent");
   });
 });

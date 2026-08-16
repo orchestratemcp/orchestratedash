@@ -1674,6 +1674,48 @@ code {
 }
 
 /*
+ * MAR-660. "Open this agent," under the avatar rather than on the chief —
+ * `FleetOpenLink`'s own header in `fleet-card.tsx` has the reasoning and the
+ * Rows exception. Quiet rather than boxed: `.fleet-card-link` has opened the
+ * agent from anywhere on the card since MAR-639, so this is the visible half
+ * of an existing fact rather than a second, competing way in, and a full
+ * `.button-link` box would not fit a 168px grid card without wrapping onto
+ * enough lines to push the card past its own height bound. `position:
+ * relative; z-index: 1` is `.fleet-pick`'s own reason: above the stretched
+ * whole-card link, so a press here is caught by this control first.
+ *
+ * No `margin-top` of its own: `.fleet-card`'s own `gap` already spaces every
+ * flex child from the one above it, and a second gap on top of the first was
+ * measured costing real room — six agents at 1280 went from 94% of the pane
+ * to exactly 100% with the naive version of this rule, on `electron/capture-
+ * fleet-views.ts`'s own count. `padding` stays at zero for the same reason;
+ * the link is still comfortably wider than a 24px touch target end to end.
+ */
+.fleet-open {
+  position: relative;
+  z-index: 1;
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  text-align: center;
+  text-decoration: none;
+  color: var(--text-muted);
+}
+
+.fleet-open:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.fleet-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  color: var(--accent);
+}
+
+/*
  * The portrait tile.
  *
  * The concept draws the character on a filled square inside the card, and that
@@ -1822,16 +1864,53 @@ code {
  * exact "the floor is what makes the bound safe" property MAR-634's own
  * comment states for the grid. `order` puts it after the identity cluster
  * so "place" still reads beside "last-run", the issue's own pairing.
+ *
+ * MAR-660 widens the gap between that cluster and the identity grid beside
+ * it: Henrik's own words, the status and place text "gets too tight… give
+ * lots of room to the status indicators." Measured, not guessed — a card
+ * this wide at 1280 has the width to spare, and the tightness was never
+ * about pixels available, only about how few of them this rule was asking
+ * for.
  */
 [data-fleet-view="rows"] .fleet-card {
   flex-direction: row;
   align-items: center;
+  gap: var(--space-4);
   padding: var(--space-1) var(--space-2);
 }
 
+/*
+ * MAR-660. Bottom-aligned rather than centred on the row's own cross axis,
+ * which is what put it here in the first place: `.fleet-favourite`'s corner
+ * is fixed (`top/right: var(--space-2)`, 28px tall) regardless of the row's
+ * own height, and a badge centred across a 56-72px row sits squarely inside
+ * that footprint — Henrik's station 2, "the star that is placed over the
+ * status indicators," measured as a real pixel overlap rather than a mere
+ * impression before this rule existed. Aligning to the end of the row
+ * instead lands the badge beside `.fleet-last-run` — the grid's own
+ * "lastrun" cell, immediately to its left — clear of the star's fixed band
+ * at both pinned row heights, and leaves `status` alone on the row above it
+ * with the room this issue's own words ask for.
+ */
 [data-fleet-view="rows"] .fleet-marks {
   order: 2;
   flex: none;
+  align-self: flex-end;
+}
+
+/*
+ * MAR-660. Compact's ~56px row leaves less clearance under the star's fixed
+ * corner than comfortable's ~68-72px does — measured, not assumed: aligning
+ * `.fleet-marks` to the row's end (above) cleared the star at comfortable but
+ * still left a 2px overlap at compact. Tucked in and slightly smaller here,
+ * on `.fleet-portrait`'s own precedent for a compact-only size a few rules up
+ * — 24px keeps the star at WCAG's own 24px minimum target size rather than
+ * shrinking under it.
+ */
+[data-fleet-view="rows"][data-density="compact"] .fleet-favourite {
+  top: var(--space-1);
+  width: 1.5rem;
+  height: 1.5rem;
 }
 
 [data-fleet-view="rows"] .fleet-pick {
@@ -5962,6 +6041,19 @@ button:disabled {
 }
 
 /*
+ * MAR-659. Above the box on the pinned cockpit bar — the fact a person needs
+ * before they type into it, on every stage, not only the Chat stage where
+ * `ask.purpose.headline` already says the fuller version. `describeChatSubject`
+ * used to be `visually-hidden` here.
+ */
+.ask-subject {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/*
  * The box.
  *
  * `field-sizing: content` where it is supported, so two lines of question grow
@@ -6645,12 +6737,6 @@ main:has(.agent-cockpit) {
   margin: 0;
 }
 
-.cockpit-goal {
-  margin: var(--space-1) 0 0;
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
-}
-
 /* Where this agent lives, and a way to the stage that owns it. A link, so it
    reads as one; the value is the word the fleet card uses. */
 .place-chip {
@@ -6709,7 +6795,8 @@ main:has(.agent-cockpit) {
   gap: var(--space-1);
 }
 
-/* A future odd final cell spans; the current four actions form the square. */
+/* An odd final cell spans the row. Written for a future fifth cell by
+   MAR-641; MAR-658's Overview action is that cell. */
 .cockpit-action-grid > :last-child:nth-child(odd) {
   grid-column: 1 / -1;
 }
@@ -6867,6 +6954,115 @@ main:has(.agent-cockpit) {
   padding: var(--space-3);
   border: 1px solid var(--line-strong);
   background: var(--surface-1);
+}
+
+/*
+ * MAR-664. The goal moved here from a permanent line under the name; the
+ * control that reveals it is a chip, `.place-chip`'s own shape, so it reads as
+ * one more fact about identity rather than a fourth action grid cell.
+ */
+.cockpit-about {
+  position: relative;
+}
+
+.cockpit-about > summary {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  list-style: none;
+}
+
+.cockpit-about > summary::-webkit-details-marker {
+  display: none;
+}
+
+.cockpit-about > summary:hover,
+.cockpit-about > summary:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/*
+ * A read-only disclosure of manifest facts, not a menu — wider than
+ * `.cockpit-overflow-menu` and scrollable, because six steps and a paragraph
+ * of goal prose do not fit a 12rem column. Anchored left rather than right:
+ * this control sits early in a row that wraps, and a panel opening off the
+ * left edge of a narrow window is worse than one that opens wide.
+ */
+.cockpit-about-panel {
+  position: absolute;
+  left: 0;
+  top: calc(100% + var(--space-1));
+  z-index: 5;
+  display: grid;
+  gap: var(--space-4);
+  width: min(30rem, calc(100vw - var(--space-6) * 2));
+  max-height: min(70vh, 34rem);
+  overflow-y: auto;
+  padding: var(--space-4);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-1);
+}
+
+.cockpit-about-panel section {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.cockpit-about-heading {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 700;
+}
+
+.cockpit-about-panel > section > p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.plan-step-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-step {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--density-card-p);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.plan-step-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.plan-step-number {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.plan-step p {
+  margin: 0;
+  color: var(--text-muted);
 }
 
 .live-note {
@@ -7385,13 +7581,16 @@ main:has(.agent-cockpit) {
   align-self: stretch;
 }
 
+/*
+ * MAR-659, from ADR 0022's proposal: this used to draw its own border and its
+ * own `--surface-0` against `.chief-band`'s `--surface-1` — a bordered box
+ * inside a bordered band, and one of the four named reasons the room read as
+ * "edgy" rather than as a soft, Claude/ChatGPT-shaped conversation. The band's
+ * own frame is the only border this surface needs.
+ */
 .chief-room {
   min-height: 0;
   overflow: auto;
-  padding: var(--space-3);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface-0);
 }
 
 .chief-room-head {
@@ -7406,21 +7605,36 @@ main:has(.agent-cockpit) {
   font-size: var(--text-base);
 }
 
-.chief-scope {
+.chief-scope,
+/*
+ * MAR-659, ADR 0023. Why one half of this composer is off, said above the
+ * composer it is about. Same measure and rhythm as the scope note it sits below
+ * — this is the second standing sentence in the room, not a different kind of
+ * thing, and giving it its own treatment would make a fixable gap look like a
+ * fault.
+ */
+.chief-blocked {
   margin-top: var(--space-2);
   max-width: 70ch;
 }
 
-.chief-scope p {
+.chief-scope p,
+.chief-blocked p {
   margin: 0 0 var(--space-1);
 }
 
+/*
+ * MAR-659. Generous rather than `--space-4`: no chrome marks where one turn
+ * ends and the next begins any more, so the gap itself is what does — the
+ * "vertical rhythm" the proposal named as one of the four things a rounded
+ * corner would not have fixed.
+ */
 .chief-turns {
   list-style: none;
   margin: var(--space-2) 0 0;
   padding: 0;
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-6);
 }
 
 .chief-turn {
@@ -7429,27 +7643,45 @@ main:has(.agent-cockpit) {
 }
 
 /*
- * The question, given the accent bar the estimate has on the agent page: it is
- * the person's own words, and marking them is what lets a reader scan a
- * scrollback for the thing they asked rather than the answers between.
+ * The question. No accent bar (MAR-659, ADR 0022's proposal): the bar was
+ * chrome per turn, the exact thing "edgy" was naming. `.chief-speaker` is what
+ * marks whose words these are now — a label, not a rule down the side.
  */
 .chief-asked {
   margin: 0;
-  padding-left: var(--space-3);
-  border-left: var(--active-bar) solid var(--accent);
   font-weight: 600;
   max-width: 70ch;
 }
 
 .chief-reply {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-3);
   justify-items: start;
   max-width: 70ch;
 }
 
-.chief-reply .chief-says {
+/*
+ * The speaker label (MAR-659): "You" above the person's own words, the
+ * chief's name above its own — a line, not a bubble, and the one place this
+ * room spends an accent colour. `Says` renders it visible for both; it used to
+ * be announcement-only.
+ *
+ * `.chief-reply .chief-says` used to drop to `--text-sm` here, which made the
+ * chief's answer smaller than the question it was answering — ADR 0022's
+ * proposal named this one directly. That rule is gone rather than reworded:
+ * base size, same as `.chief-asked`, is the inherited default with nothing
+ * left to override.
+ */
+.chief-speaker {
+  display: block;
+  margin-bottom: var(--space-1);
   font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.chief-reply .chief-speaker {
+  color: var(--accent);
 }
 
 .chief-standing {
@@ -7460,14 +7692,13 @@ main:has(.agent-cockpit) {
 /*
  * An author's sentence, marked as somebody else's.
  *
- * A left rule and a muted colour rather than quotation marks alone: the whole
- * point of `ChiefSentence.quoted` is that a reader can tell DASH's words from
- * an author's at a glance, and punctuation inside a paragraph is not a glance.
+ * Italic and muted rather than a second rule beside `.chief-asked`'s (MAR-659,
+ * ADR 0022's proposal named this pairing directly): `<blockquote>` already
+ * says "these are not DASH's words" to a screen reader, and two vertical bars
+ * in one turn is exactly the border-count "edgy" was about.
  */
 .chief-quoted {
   margin: 0;
-  padding-left: var(--space-3);
-  border-left: 1px solid var(--line);
   color: var(--text-muted);
   font-style: italic;
 }
@@ -7500,6 +7731,87 @@ main:has(.agent-cockpit) {
   font-size: var(--text-sm);
 }
 
+/*
+ * MAR-659, ADR 0023. The hand-off and the receipt, under a turn.
+ *
+ * Indented from the answer by one step and nothing else — no box, no border, no
+ * second accent. ADR 0023's reading of "softer" is that what makes Claude and
+ * ChatGPT feel that way is the *absence* of chrome per turn, and a receipt in a
+ * bordered card would put back the exact thing MAR-648's pass took off.
+ * Separation here is space and type size, which is the same toolkit
+ * `.chief-quoted` uses one element up.
+ */
+.chief-handoff,
+.chief-receipt {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.chief-receipt {
+  font-size: var(--text-sm);
+}
+
+.chief-receipt-heading {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.chief-receipt-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.chief-receipt-rows > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+/*
+ * The one place a turn is marked, and it is marked with a word rather than a
+ * colour alone: `--warn` carries the tone, and the sentence carries the meaning
+ * for a reader who cannot see the tone. Left rule rather than a filled box, so
+ * the mark reads as an annotation on the turn instead of a second card inside
+ * it.
+ */
+.chief-stale {
+  margin: 0;
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--warn);
+  color: var(--warn);
+}
+
+.chief-charge,
+.chief-when {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+/*
+ * What main said about the last press, under the thread. Not a toast and not a
+ * badge: it is one sentence in the reading column, in the place the next answer
+ * would appear, because that is where somebody is already looking.
+ */
+.chief-feedback {
+  margin: var(--space-3) 0 0;
+  color: var(--warn);
+}
+
+.chief-room-actions {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
 .chief-compose {
   display: flex;
   align-items: flex-end;
@@ -7509,6 +7821,18 @@ main:has(.agent-cockpit) {
 .chief-field {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/*
+ * MAR-659. Above the box, on screen whether the room is open or not — the
+ * fact a person needs before they type a word: this composer is the fleet's,
+ * not one agent's. `CHIEF_CHAT_COPY.label` used to be `visually-hidden`.
+ */
+.chief-subject {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
 
 .chief-input {
@@ -7545,5 +7869,137 @@ main:has(.agent-cockpit) {
    */
   .fleet-stage.chief-is-open {
     grid-template-rows: minmax(0, auto) minmax(12rem, 2fr);
+  }
+}
+
+/* ---------------------------------------------------------------------- *
+ * The watched browser (MAR-628, ADR 0019)
+ *
+ * The only unusual rule in this block is `.browser-stage`, and it is unusual
+ * because it is not really a box: it is a *reservation*. Chromium paints a
+ * native `WebContentsView` over it, positioned by main from the rectangle this
+ * element reports — so nothing inside it is ever seen, and anything given to it
+ * would flash for one frame before the view arrived.
+ *
+ * It therefore needs a size and a placeholder appearance and nothing else. The
+ * dashed edge is what a person sees in the moment between the panel mounting
+ * and the view being placed, and on the developer path, where there is no
+ * Electron and no view will ever arrive.
+ * ---------------------------------------------------------------------- */
+
+.browser-panel {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.browser-notice {
+  border-left: 2px solid var(--line-strong);
+  padding-left: var(--space-3);
+  color: var(--text-muted);
+}
+
+.browser-stage {
+  /* A 16:10 window, floored so a narrow column still gives the page room to
+     lay itself out rather than handing Chromium a letterbox. */
+  aspect-ratio: 16 / 10;
+  min-height: 18rem;
+  width: 100%;
+  border: 1px dashed var(--line);
+  background: var(--surface-2);
+}
+
+.browser-declared .origin-list,
+.browser-session .origin {
+  font-family: var(--font-mono);
+}
+
+.origin-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.origin-list code,
+.browser-session .origin {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: var(--text-sm);
+}
+
+.browser-session .origin + .origin {
+  margin-left: var(--space-2);
+}
+
+.browser-stop-meaning {
+  color: var(--text-muted);
+}
+
+.browser-trail {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.browser-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--line);
+}
+
+/* Refused rows are marked by a rule, not by a fill. Most refusals here are an
+   agent meeting a limit somebody set on purpose — the system working — and a
+   trail that painted every one of them red would train a person to stop
+   reading it. See `describeBrowserRefusal`. */
+.browser-action.is-refused {
+  border-left: 2px solid var(--line-strong);
+  padding-left: var(--space-2);
+}
+
+.browser-action-what {
+  font-weight: 600;
+}
+
+.browser-action-url {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.browser-action-why {
+  flex-basis: 100%;
+  color: var(--text-muted);
+}
+
+.browser-action-at {
+  margin-left: auto;
+  font-size: var(--text-sm);
+}
+
+.browser-past h3 {
+  margin-bottom: var(--space-2);
+}
+
+@media (max-width: 40rem) {
+  /* The action row stacks rather than wrapping mid-line, and the timestamp
+     gives up its `margin-left: auto` — pushed right in a stacked layout it
+     would sit alone on a line of its own for no gain. */
+  .browser-action {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  .browser-action-at {
+    margin-left: 0;
   }
 }

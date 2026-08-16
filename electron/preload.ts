@@ -284,6 +284,28 @@ const dashShell = {
   setTheme: (theme: string) => send("shell.theme", { theme }),
 
   /**
+   * Where the supervision panel is, so main can paint the watched browser
+   * there (MAR-628, ADR 0019).
+   *
+   * `sendNumbers`, like `openAppMenu` and `setUiScale`, and here that is not a
+   * convenience — four numbers is the entire vocabulary. The renderer cannot
+   * name a session, an address, an agent's origins or an operation, so what
+   * page script can ask for is "put it in this rectangle" and nothing else.
+   */
+  setBrowserViewport: (bounds: { x: number; y: number; width: number; height: number }) =>
+    sendNumbers("browser.viewport", bounds),
+
+  /**
+   * Stop the browser DASH opened for one agent (MAR-628, ADR 0019).
+   *
+   * The person's half of revocation, and the only half there is: no operation
+   * in `lib/browser/protocol.ts` lets an agent stop, start or notice a
+   * revocation except by being refused. What crosses is an agent name; main
+   * resolves the session from the agent it is already tracking.
+   */
+  stopBrowser: (agent: string) => send("browser.stop", { agent }),
+
+  /**
    * The seven Agent DOM commands, one named method each.
    *
    * One method per command rather than a single `command(name, payload)`: a
@@ -595,6 +617,30 @@ const dashShell = {
     }),
 
   /**
+   * Ask the chief about the fleet (MAR-659, ADR 0023).
+   *
+   * The second method here that can cost the person money, and the shortest
+   * payload on this bridge: one field, and the emptiness is the point. There is
+   * no agent id because the chief principal has no field one could go in, no
+   * connection id because the chief's one connection is a constant of DASH's own
+   * composed manifest, and no model id for `askQuestion`'s reason.
+   *
+   * **No answer comes back through this call.** It resolves to whether the
+   * question was asked; the answer arrives with the fleet view on the next poll,
+   * and it is still there tomorrow. See `DispatchContext.chiefAction`.
+   */
+  askChief: (args: { question: string }) => send("chief.ask", { question: args.question }),
+
+  /**
+   * Forget the whole conversation with the chief (MAR-659).
+   *
+   * No payload at all, which is the only correct shape: there is one thread, and
+   * a page able to name which one to delete would be a page able to delete a
+   * different one. The rows are removed rather than hidden.
+   */
+  clearChiefThread: () => send("chief.clear", {}),
+
+  /**
    * The runner's own health, and its one repair (MAR-518).
    *
    * `status` carries no payload — it is a fact about the runner as a whole,
@@ -604,6 +650,24 @@ const dashShell = {
    */
   runnerStatus: () => send("runner.status", {}),
   retireRunnerStore: () => send("runner.retireStore", {}),
+
+  /**
+   * Start one registered agent's process on this computer (MAR-657).
+   *
+   * `runner.start` is not new — it has been in `COMMANDS` since MAR-415 and
+   * reaches `POST /agents/{id}/lifecycle` — and until now the only thing in the
+   * product that called it was the add-agent flow. So an agent was started on
+   * the day it was installed and by nothing afterwards, which is why every agent
+   * in a real store reads `offline` with nothing waiting. This is the method
+   * that gives a person the verb DASH already had.
+   *
+   * It grants no reach the catalogue had not already granted: main forwards it
+   * to the runner's lifecycle route, the runner starts a *registration* and
+   * never a command line, and `runner/supervisor.ts` refuses a second start
+   * rather than spawning a second process. The renderer names an agent id and
+   * nothing else — it cannot say what runs, only which registration to run.
+   */
+  startAgent: (args: { agent_id: string }) => send("runner.start", { ...args }),
 
   /**
    * DASH's two removal actions (MAR-595 finding 18).
@@ -705,6 +769,12 @@ const dashData = {
   // `view.notifications` entry in `lib/shell/read.ts` for why this read cannot
   // become a route to the vault.
   notifications: () => read("view.notifications"),
+  // MAR-628, ADR 0019. The controlled browser's own record. What crosses is
+  // where DASH let its browser go, where it went, and what it decided about
+  // each request — never the page's content, which goes to the agent through
+  // `lib/browser/protocol.ts` and is not stored at all. See the `view.browser`
+  // entry in `lib/shell/read.ts`.
+  browser: (agent: string) => read("view.browser", { agent }),
   // `satisfies`, so the pages and this bridge cannot drift: the shape is
   // declared in `lib/shell/read.ts`, which a client component may import and
   // this file may not be imported by.

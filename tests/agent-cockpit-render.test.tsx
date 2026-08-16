@@ -28,6 +28,7 @@ import {
   ASK_MODEL_CHANGE,
   ASK_PLACEHOLDER,
   describeAskModel,
+  describeChatSubject,
   describeUnavailable,
 } from "../lib/copy/ask";
 import { buildArtifactCards } from "../lib/views/artifacts";
@@ -75,6 +76,7 @@ function header(over: Partial<Parameters<typeof AgentCockpitHeader>[0]> = {}): s
         onRefresh={() => undefined}
         onTriggerRun={() => undefined}
         places={[]}
+        plan={[]}
         stage="overview"
         title="News Scout"
         {...over}
@@ -112,13 +114,33 @@ describe("the band that never scrolls", () => {
     expect(html).toContain("Cloud");
   });
 
-  it("offers the four actions, with Health leading to its stage", () => {
+  it("offers the five actions, with Health leading to its stage", () => {
     const html = header();
     expect(html).toContain(AGENT_COCKPIT_COPY.trigger_run);
     expect(html).toContain(AGENT_COCKPIT_COPY.health);
     expect(html).toContain(AGENT_COCKPIT_COPY.settings);
     expect(html).toContain(AGENT_COCKPIT_COPY.logs);
+    expect(html).toContain(AGENT_COCKPIT_COPY.overview);
     expect(html).toContain("stage=health");
+  });
+
+  /**
+   * MAR-658. The proof-pass finding this cell exists for: an agent with even
+   * one output has no way back to its own Overview once MAR-646 sent a plain
+   * link to `output` instead of `overview`. Rendered at `stage="output"`
+   * specifically, because that is the exact stage the finding named.
+   */
+  it("offers a way back to Overview from the Output stage", () => {
+    const html = header({ stage: "output" });
+    expect(html).toContain(`href="/agents/detail?agent=${AGENT}&stage=overview"`);
+    expect(html).toContain(AGENT_COCKPIT_COPY.overview);
+  });
+
+  it("marks Overview current when you are on it, like every other cell", () => {
+    const html = header({ stage: "overview" });
+    expect(html).toMatch(
+      new RegExp(`<a[^>]*aria-current="page"[^>]*stage=overview[^>]*>${AGENT_COCKPIT_COPY.overview}<`),
+    );
   });
 
   it("promises to start a run only when there is one to start", () => {
@@ -171,6 +193,7 @@ describe("the band that never scrolls", () => {
       AGENT_COCKPIT_COPY.health,
       AGENT_COCKPIT_COPY.settings,
       AGENT_COCKPIT_COPY.logs,
+      AGENT_COCKPIT_COPY.overview,
       AGENT_COCKPIT_COPY.refresh,
       AGENT_COCKPIT_COPY.open_folder,
       AGENT_COCKPIT_COPY.remove,
@@ -424,6 +447,29 @@ describe("the chat bar", () => {
     const html = chatBar(ASKABLE);
     expect(html).toContain("<textarea");
     expect(html).toContain(ASK_PLACEHOLDER);
+  });
+
+  /*
+   * MAR-659. This agent's own name, read rather than only announced — the
+   * bar used to carry a generic "Message this agent" as a `visually-hidden`
+   * label, which is a prop deciding who the box talks to with no word on
+   * screen confirming it.
+   */
+  it("names this agent, visibly, above the box", () => {
+    const html = decode(
+      renderToStaticMarkup(
+        <AgentChatBar
+          agent={AGENT}
+          agentTitle="AI agent news"
+          ask={ASKABLE}
+          canAct
+          onAsked={() => undefined}
+          setFeedback={() => undefined}
+        />,
+      ),
+    );
+    expect(html).toContain(describeChatSubject("AI agent news"));
+    expect(html).not.toContain('<span class="visually-hidden">Message');
   });
 
   it("is never a dead input", () => {

@@ -189,21 +189,51 @@ export function writeHandoff(
 }
 
 /**
+ * The program that will be asked to follow the link, and its arguments.
+ *
+ * ## Why no shell is in this list (MAR-655)
+ *
+ * It used to be `cmd /c start "" <url>` on Windows, and that could never have
+ * worked. A handoff URL is `dash://handoff?v=1&file=…&nonce=…`; it contains no
+ * spaces, so Node does not quote it, and `cmd.exe` treats every unquoted `&` as
+ * a **command separator**. What cmd actually ran was three things — `start ""
+ * dash://handoff?v=1`, then `file=C:\…` and `nonce=…` as commands that do not
+ * exist — so DASH was handed a URL with no `file` and no `nonce` and refused it,
+ * correctly, with "That link does not say where the agent is." `%` is the same
+ * story one step further on: cmd expands `%3A` in a percent-encoded path.
+ *
+ * Quoting the URL would have fixed today's failure and left the parser in the
+ * path. `rundll32 url.dll,FileProtocolHandler` is ShellExecute and nothing else,
+ * which is all `start` was ever wanted for. Node's own `spawn` hands the
+ * argument to `CreateProcess` verbatim, so no character in the URL is special to
+ * anything between here and the OS.
+ *
+ * Platform-parameterised rather than reading `process.platform` inline so the
+ * Windows decision can be asserted from a posix CI runner. The bug was
+ * Windows-only, and a test that only runs on Windows is a test that does not run.
+ */
+export function openCommand(
+  url: string,
+  platform: NodeJS.Platform,
+): { command: string; args: string[] } {
+  if (platform === "win32") {
+    return { command: "rundll32", args: ["url.dll,FileProtocolHandler", url] };
+  }
+  if (platform === "darwin") {
+    return { command: "open", args: [url] };
+  }
+  return { command: "xdg-open", args: [url] };
+}
+
+/**
  * Ask the operating system to follow the link.
  *
  * Detached and with its output discarded: the opener is not this process's
- * child in any meaningful sense, and on Windows `start` returns immediately
- * while the app it launched is still coming up.
+ * child in any meaningful sense, and on Windows it returns immediately while the
+ * app it launched is still coming up.
  */
-export function openUrl(url: string): void {
-  const [command, args] =
-    process.platform === "win32"
-      ? // `start` is a cmd builtin, so it needs cmd. The empty string is the
-        // window title argument, which `start` otherwise takes the URL to be.
-        ["cmd", ["/c", "start", "", url]]
-      : process.platform === "darwin"
-        ? ["open", [url]]
-        : ["xdg-open", [url]];
+export function openUrl(url: string, platform: NodeJS.Platform = process.platform): void {
+  const { command, args } = openCommand(url, platform);
 
   try {
     const child = spawn(command, args, { detached: true, stdio: "ignore" });

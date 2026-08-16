@@ -60,7 +60,7 @@ import { checkRequestedScopes, oauthProviderFor } from "../oauth/providers";
  * `BrokerCapabilityView`'s four members, restated rather than imported for
  * `RequiredCapability`'s reason: that type lives under `lib/views/`, which is
  * above this module, and a type import for a value erased at compile time would
- * point a base module upward. `tests/fleet-catalogue.test.ts` pins the two
+ * point a base module upward. `tests/fleet-connections.test.ts` pins the two
  * together the way `tests/broker-spend.test.ts` pins `BrokerAccess`.
  */
 export interface FleetCapability {
@@ -145,7 +145,7 @@ const FLEET_OAUTH_PROVIDERS: readonly string[] = Object.freeze(["google-gmail"])
  * Here rather than on the broker profile because a profile is about custody and
  * origins, and this is about somebody's reason for pressing a button. Keyed by
  * provider so a provider added to `FLEET_OAUTH_PROVIDERS` without a sentence is
- * caught by `tests/fleet-catalogue.test.ts` rather than shipping a blank card.
+ * caught by `tests/fleet-connections.test.ts` rather than shipping a blank card.
  */
 const PURPOSE: Readonly<Record<string, string>> = Object.freeze({
   "google-gmail":
@@ -205,7 +205,7 @@ export function fleetConnectorFor(provider: unknown): FleetConnector | null {
  * belt and braces: an operation requiring a scope the provider's allowlist does
  * not carry is a bug in DASH's own tables, and the honest response is to ask for
  * less rather than to ask for something `lib/oauth/flow.ts` would then send.
- * `tests/fleet-catalogue.test.ts` asserts the filter removes nothing, which is
+ * `tests/fleet-connections.test.ts` asserts the filter removes nothing, which is
  * the assertion that would fail if those two tables ever drifted.
  *
  * Sorted, so two builds of the same catalogue produce the same authorization
@@ -356,14 +356,31 @@ export function fleetSecretName(
  * Derived from the catalogue rather than written out, so a connector added
  * without a purpose is one the plain-language check never sees — the shape
  * `everyConnectorSentence` established.
+ *
+ * ## A null is dropped; a blank is reported
+ *
+ * `help` and a read's `consequence` are **skipped** when null rather than
+ * flattened to `""`, and that asymmetry is the load-bearing part. Both are null
+ * by design — a sign-in sends nobody anywhere to fetch a credential, and a read
+ * leaves nothing behind to warn about — so a blank from either says nothing. Six
+ * of these on the catalogue as it stands, which is enough to make "no entry is
+ * empty" an assertion nobody could write.
+ *
+ * `purpose` is a plain `string` that `oauthConnector` fills from `PURPOSE` with
+ * `?? ""` behind it, so the only blank this list can now carry is a connector
+ * somebody added without a sentence. That is what lets
+ * `tests/fleet-connections.test.ts` assert every entry is non-empty and have the
+ * assertion catch the one thing it is for.
  */
 export function everyFleetCatalogueSentence(): string[] {
   return fleetCatalogue().flatMap((connector) => [
     connector.service,
     connector.purpose,
-    connector.help ?? "",
-    ...connector.capabilities.map((capability) => capability.label),
-    ...connector.capabilities.map((capability) => capability.consequence ?? ""),
+    ...(connector.help === null ? [] : [connector.help]),
+    ...connector.capabilities.flatMap((capability) => [
+      capability.label,
+      ...(capability.consequence === null ? [] : [capability.consequence]),
+    ]),
     ...connector.wider_permissions,
   ]);
 }

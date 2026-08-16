@@ -121,10 +121,28 @@ describe("schema", () => {
     // is a new step and it goes last (MAR-640 reached master first and holds
     // 22), so an installed store that has already recorded steps 0 to 22 runs
     // exactly one more.
-    // 24 is MAR-643's multi-account replacement of `fleet_connections` and the
-    // non-null per-agent account-assignment table beside it.
+    //
+    // 24 is MAR-659's `chief_messages` (ADR 0023 decision 6) — the chief's own
+    // transcript with its receipt frozen beside each turn. Appended last for the
+    // same reason every step since 21 has been: an installed store that has
+    // already recorded 0 to 23 runs exactly one more, and renumbering a step
+    // somebody's database has recorded is the one thing this pin exists to make
+    // somebody think about.
+    //
+    // 25 is MAR-628's three browser tables, appended on the same terms — it was
+    // authored as 24 in parallel with MAR-659's, and MAR-659 reached master
+    // first, so the browser step renumbered to the end at the merge. That
+    // collision is the one failure a parallel packet reliably produces — two
+    // branches each appending "the last migration" — and it produced it here,
+    // in a blocking gate, rather than in an installed store that silently
+    // skipped somebody's step.
+    //
+    // 26 is MAR-643's multi-account replacement of `fleet_connections` and the
+    // non-null per-agent account-assignment table beside it. It was also
+    // authored as 24; both 24 and 25 reached master first, so this incoming step
+    // moves after them and neither installed version is renumbered.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(24);
+    expect(version.user_version).toBe(26);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -182,9 +200,14 @@ describe("schema", () => {
     // agent — and, like `agent_model_choice`, it has no cost column and no
     // column a key could go in.
     expect(tables).toContain("fleet_model_default");
+    // MAR-659, ADR 0023 decision 6. The chief's own transcript, and the second
+    // conversation table in this list. It is not keyed by agent and cannot be:
+    // the fleet room and an agent's room are two threads with nothing shared,
+    // because `{ kind: "chief" }` carries no agent id to key one by.
+    expect(tables).toContain("chief_messages");
   });
 
-  it("migrates a copied real-shape v23 fleet row without re-entering its vault key", async () => {
+  it("migrates a copied real-shape v25 fleet row without re-entering its vault key", async () => {
     const first = await freshStore();
     const handle = first.db.db();
     handle.prepare(
@@ -221,11 +244,11 @@ describe("schema", () => {
       "2026-08-01T00:00:00.000Z",
     );
 
-    // Turn only the two tables this migration owns back into the exact v23
+    // Turn only the two tables this migration owns back into the exact v25
     // shape. Every other table and row stays from a current, real schema: this
     // is the copied-store case rather than a miniature fixture database.
     handle.exec(`
-      ALTER TABLE fleet_connections RENAME TO fleet_connections_v24;
+      ALTER TABLE fleet_connections RENAME TO fleet_connections_v26;
       CREATE TABLE fleet_connections (
         provider TEXT PRIMARY KEY,
         connector_kind TEXT NOT NULL,
@@ -241,10 +264,10 @@ describe("schema", () => {
       INSERT INTO fleet_connections
         SELECT provider, connector_kind, field_id, secret_name, masked_hint,
                account_hint, scopes, backend, connected_at, updated_at
-        FROM fleet_connections_v24;
-      DROP TABLE fleet_connections_v24;
+        FROM fleet_connections_v26;
+      DROP TABLE fleet_connections_v26;
       DROP TABLE fleet_account_assignments;
-      PRAGMA user_version = 23;
+      PRAGMA user_version = 25;
     `);
     first.db.closeDb();
 
@@ -268,7 +291,7 @@ describe("schema", () => {
     ).toEqual({ count: 0 });
     expect(
       (nextDb.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(24);
+    ).toBe(26);
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -628,7 +651,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(24);
+    ).toBe(26);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

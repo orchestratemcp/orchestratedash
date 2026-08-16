@@ -91,6 +91,53 @@ a person can trigger — is **not met**, and no dependency and no client exist.
 
 ---
 
+Updated: 2026-08-16 (MAR-628 slice 1: the controlled browser is built, and one
+real page has been read through it)
+
+ADR 0019's decision is now code. An agent may ask DASH for exactly two things —
+open one page, read the words on it — and `lib/browser/operations.ts` contains
+nothing else, pinned by value the way `WRITE_PATHS` is. `BrowserGesture` has no
+member that could carry a selector, a script, a key or a CDP parameter, so
+"no arbitrary JavaScript" is a property of the type rather than a promise.
+
+Origins are exact and per run, declared in a new `agent_dom.browser` manifest
+block, parsed by `URL` and compared with `===`. There is no prefix match
+anywhere and a path in a declaration is refused rather than quietly widened to
+the whole host. Every request is checked, including subresources and each hop of
+a redirect chain. The session is one ephemeral `WebContentsView` in an in-memory
+partition — no `persist:` prefix, which is the structural reason nothing
+survives the run — with popups, downloads, permission prompts, new windows and
+every non-HTTPS scheme denied. Stop destroys the view and refuses the rest of
+the run, and no agent operation can reach it.
+
+**One real page has been read through it.** `electron/prove-browser.ts` drove
+the real controller against a real page in a real view attached to DASH's own
+window: eleven checks, all passing, including 129 characters of real page text
+read back through CDP in an isolated world, an origin refusal on
+`https://example.com.attacker.test`, a refusal of `browser.evaluate`, and a
+browser pixel-aligned with the supervision panel's stage — which is the claim
+ADR 0019 chose Electron over Playwright for. That run found four defects no unit
+test saw, all fixed here: a CDP call that never settled, a session receipt
+written by the transport rather than the controller, an origin refusal written
+where no person could see it, and a viewport command denied on every tick so the
+browser sat in the wrong corner of the window.
+
+After a browsed read, any write or spend for that agent in that run needs a
+person. That is ADR 0020's read-then-reach rule, wired; its four limits are
+unchanged and a fifth, specific to this wiring, is stated where it applies.
+
+This is `planned`. ADR 0019 amendment 1 (proposed) records the gap between the
+ADR's own smallest slice and what shipped: `scroll` and the approval-required
+`click` are deferred with the approval surface they need, and so are typing,
+forms, uploads, downloads, multiple tabs, the before-frame, credentials and the
+whole VPS/Xvfb path. The amendment also scores ADR 0019's eight-point "full
+control" checklist honestly — **condition 8, resource use and failure recovery
+measured under load, is not met and is the largest gap.** One concurrent session
+on one machine has been exercised. The product goes on saying *controlled
+browser operations*.
+
+---
+
 Updated: 2026-08-13 (MAR-628: browser control is decided before it is built)
 
 ADR 0019 recommends one browser shape: the Chromium DASH already ships,
@@ -6098,3 +6145,105 @@ write and fail-before-start ordering. ADR 0004 keeps the Hostinger half
 attended: the real forced command, filesystem mode, provider call, broker-route
 absence, provider rotation and bring-home removal require a dated run against
 the enrolled host.
+
+---
+
+## MAR-659 — the chief is a principal, built (ADR 0023, planned)
+
+Branch `000henrik/mar-659-chief-principal-build`, cut from `origin/master` at
+`d4552d0` after confirming that commit is master's tip, so there is no
+reconciliation merge to read. ADR 0023 was accepted by Henrik on 2026-08-16 and
+this is the first product code written against it. The shape half shipped
+separately in PR #210; the ADR itself in #204 and #211.
+
+**Who is asking is a type, and that is the load-bearing decision.**
+`broker.handle`'s first parameter is a `BrokerPrincipal` union rather than an
+agent id. A reserved *string* would have been a hole an agent author could aim
+at: `lib/handoff.ts` and `lib/open-link.ts` both accept the agent-id pattern and
+`dash.fleet` satisfies it. A variant with no id field cannot be inhabited by any
+string at all, so *"an agent contrives to be called `dash.fleet`"* stops being an
+argument about validation and becomes a compile error. `FLEET_PRINCIPAL` goes on
+being exactly what its docblock claims — a label in DASH's own tables and on the
+audit row, never a principal.
+
+**Three lines differ between the two arms and everything else is indifferent.**
+Which manifest is resolved (through an injected dep, so `lib/broker/` stays a
+pure function of what it is handed), whether the declared capability list is
+enforced, and which vault name is computed. `connectionSecretName` did not move,
+is never called for a chief, and `lib/fleet/principal.ts` is unchanged — a test
+reads that file and asserts its sentence survives verbatim, normalised for CRLF
+and comment wrapping so a reflow does not fail it and a softening does.
+
+**The invariant needed a check, not just a manifest.** `resolveKeyGrant` grants
+every operation a provider has, which is right for an agent whose owner
+connected the key knowing what DASH can do with it, and wrong for the chief. So
+step 4b narrows a chief request against DASH's own declared capability list
+before the vault is touched. Without it the chief would inherit
+`digest.curate` and `models.list`, and *"it can do nothing else"* would be a
+sentence rather than a property. The negatives are driven over the real
+`handle`: every Gmail operation, every other operation on the chief's own
+connection, and an agent-origin chief question — all refused, none touching a
+vault.
+
+**Which system prompt a question is set in is decided by the principal.**
+`CHIEF_SYSTEM_PROMPT` joins the two already in `lib/broker/operations.ts`, and
+`lib/broker/execute.ts` writes the frame from the principal after both branches,
+the way it already overwrites the model for an agent-origin spend. An agent
+cannot reach the chief's prompt and the chief cannot reach the agent's; both
+directions are tested. It is one operation and not a third because that file's
+own rule is that a new operation needs a different card sentence, scope list,
+request shape *and* projection — here three of the four are identical.
+
+**The briefing rule replaces a rule that could not survive the question that
+failed station 11.** `describeChief`'s *"quote one record, never reword it"* is a
+property of quoting one record, and *"which agents run local and which on the
+cloud"* is `describeFleetPlace` per agent and grouped. What replaces it is
+weaker on purpose so that it can be true: every field on a briefing row is a
+string DASH already renders on a card. `describeRunCount` moved from
+`app/_components/fleet-card.tsx` into `lib/copy/fleet-status.ts` for that — the
+briefing is assembled in Electron main, which cannot import a `"use client"`
+component, and that function's own docblock had already ruled against a second
+copy.
+
+**The receipt is the guarantee and the honest gap is named in copy.** Under
+every answer DASH renders the exact briefing rows it sent, from its own records
+and never parsed out of the answer text. A model can still attribute a fact to
+the wrong agent or leave one out; the receipt makes that visible and does not
+make it impossible, and `describeChiefReceipt` says so on screen rather than
+leaving it in an ADR.
+
+**Storage was never the thing MAR-648 objected to.** Its argument was against
+undated re-presentation, and the receipt is the missing date. `chief_messages`
+keeps the question, the answer, the model, the charge and the briefing **frozen**;
+`fleetChangedSince` compares those frozen rows against the fleet now and marks
+the turn. `provider_id` is nullable, which is records-first written into the
+schema: a standing question is answered with no model, no charge and no latency,
+and its row says so rather than showing a zero. What the model is told about the
+past is the last few turns as text and never an old receipt.
+
+**The empty state is the shipped state.** `fleet_model_default` has no row on
+Henrik's machine, so the chief has no model and says so, pointing at the AI tab.
+It does not fall back to an agent's pinned model — the chief is not an agent —
+and it does not disable the box, because the standing question still works.
+
+**What is not proven.** No request has been made to a real model provider by the
+chief. The bar ADR 0023 sets is one real charged question with a real receipt
+against Henrik's own store, and that needs him to set a fleet default first;
+DASH must not choose one for him. `pnpm verify:shell` was **not run** — DASH
+itself is running on this machine and holds the single-instance lock, and
+AGENTS.md forbids force-killing it — so CI's Windows shell-smoke is this
+branch's installed witness. No capture was taken, for the same reason: the room
+mid-conversation needs a stored turn, and seeding one needs a store and a model.
+
+**Overlap with PR #203 (MAR-643), recorded rather than avoided.** Both branches
+append migration 24 and pin `user_version` to 24, at the same position, so git
+conflicts rather than mis-merging; whichever merges second moves its step to 25
+and bumps both pins. The half worth reading is semantic: #203 gives a fleet
+connection multiple accounts and grows `fleetSecretName` an optional third
+segment, so a key connected after it lands stands under a three-segment name
+while the broker recomputes a two-segment one. Its migration keeps the existing
+row's `secret_name` verbatim, so the chief reads the right key on every store
+that exists today, and the one-line fix — read the name off the
+`fleet_connections` row that PR makes the sole reference — belongs to whichever
+merges second. The note is written at the site in `execute.ts` step 5 as well as
+here.
