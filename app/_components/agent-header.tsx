@@ -4,10 +4,14 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import {
+  AGENT_ABOUT_COPY,
   AGENT_COCKPIT_COPY,
   AGENT_CONTROL_COPY,
   AGENT_HEADER_COPY,
 } from "../../lib/copy/agent-page";
+/* MAR-664. Pure — see the module's own docblock for why it is safe here,
+   the same arrangement `lib/ai/model-levels.ts` has with `ModelChoice`. */
+import { AGENT_PLAN_EMPTY_SENTENCE, AGENT_PLAN_MODEL_BOUNDARY, type AgentPlanStep } from "../../lib/agent-plan";
 /* MAR-641. The fleet card's own two words for where an agent lives, imported
    rather than re-derived — the chip in this header and the chip on the card
    answer the same question about the same record, and two functions computing
@@ -74,6 +78,7 @@ export function AgentCockpitHeader({
   onRefresh,
   onTriggerRun,
   places,
+  plan,
   stage,
   title,
 }: {
@@ -92,6 +97,7 @@ export function AgentCockpitHeader({
    */
   canTrigger: boolean;
   control: AgentControlView;
+  /** The author's own sentence about what this agent is for. Read inside About. */
   goal: string;
   /** Whether DASH holds a folder of its own to open (MAR-584's `folder_checkable`). */
   hasFolder: boolean;
@@ -102,6 +108,8 @@ export function AgentCockpitHeader({
   onTriggerRun: () => void;
   /** Every server this agent has been sent to. Empty means it lives here. */
   places: readonly AgentDeployTarget[];
+  /** Every step this agent's plan declares, in order (MAR-664). Read inside About. */
+  plan: readonly AgentPlanStep[];
   /** The stage on screen, so the grid can say which one you are in. */
   stage: AgentStage;
   /** The display name, from `agentDisplayName`. Never the raw id. */
@@ -138,11 +146,28 @@ export function AgentCockpitHeader({
               <span className="agent-id-label">{AGENT_HEADER_COPY.id_label}</span>{" "}
               <code className="value">{agent}</code>
             </span>
+            {/*
+              MAR-664. The goal prose used to sit here as a permanent line under
+              the name; Henrik's words were "Too much text." It lives inside this
+              disclosure now, beside the plan behind it, and nowhere else —
+              `tests/agent-about.test.tsx` is the one-fact-one-home gate for that.
+              A `<details>`, in `.cockpit-overflow`'s own shape: no click-outside
+              handler to write, reachable from a keyboard without one, and
+              nothing inside it is destructive.
+            */}
+            <details className="cockpit-about">
+              <summary aria-label={AGENT_ABOUT_COPY.open_label} title={AGENT_ABOUT_COPY.open_label}>
+                {AGENT_ABOUT_COPY.open}
+              </summary>
+              <div className="cockpit-about-panel">
+                <section>
+                  <h2 className="cockpit-about-heading">{AGENT_ABOUT_COPY.goal_heading}</h2>
+                  <p className="wrap">{goal}</p>
+                </section>
+                <AgentPlanSection plan={plan} />
+              </div>
+            </details>
           </div>
-          {/* One line, and it is the author's sentence about what the agent is
-              for. Everything else that used to be prose up here is now either a
-              tile on the Overview stage or a stage of its own. */}
-          <p className="lede cockpit-goal">{goal}</p>
         </div>
       </div>
 
@@ -259,6 +284,54 @@ export function AgentCockpitHeader({
         </p>
       </div>
     </header>
+  );
+}
+
+/**
+ * The plan behind the goal — every step the manifest declares, in order,
+ * and what DASH does and does not do with its declared model (MAR-664).
+ *
+ * A read-only disclosure of manifest facts, never a control: ADR 0008 bars
+ * controls from the author's own declared panel, and while this section is
+ * not that panel, it holds itself to the same rule on purpose — nothing here
+ * has a press in it. The per-step level control already lives on the
+ * Settings stage's `ModelChoice`; this is the plan it is a control *for*,
+ * not a second copy of it.
+ */
+function AgentPlanSection({ plan }: { plan: readonly AgentPlanStep[] }): ReactNode {
+  const hasModelStep = plan.some((step) => step.model.kind !== "no_model");
+  return (
+    <section>
+      <h2 className="cockpit-about-heading">{AGENT_ABOUT_COPY.steps_heading}</h2>
+      {plan.length === 0 ? (
+        <p className="muted wrap">{AGENT_PLAN_EMPTY_SENTENCE}</p>
+      ) : (
+        <>
+          {/* Said once for the whole plan, not once per step — ADR 0011's
+              answer to Henrik's fuller ask, "decide what model each step
+              use": there is no per-step model picker, and this sentence is
+              why. See `lib/agent-plan.ts`. */}
+          {hasModelStep ? <p className="muted wrap">{AGENT_PLAN_MODEL_BOUNDARY}</p> : null}
+          <ol className="row-list plan-step-list">
+            {plan.map((step) => (
+              <li key={step.step} className="plan-step">
+                <div className="plan-step-head">
+                  <span className="plan-step-number">{AGENT_ABOUT_COPY.step_label(step.step)}</span>
+                  {/* The id travels but is never composed into a sentence — the
+                      rule `AgentRow.capabilities` states and the plain-language
+                      sweep in `tests/agent-plan.test.ts` enforces. It is a
+                      labelled value here, the same standing the id chip above
+                      gives the agent's own id. */}
+                  <code className="value">{step.component_id}</code>
+                  <span className={`chip chip-${step.risk_tone}`}>{step.risk_label}</span>
+                </div>
+                <p className="muted wrap">{step.model.sentence}</p>
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+    </section>
   );
 }
 

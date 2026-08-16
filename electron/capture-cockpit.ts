@@ -324,6 +324,55 @@ function seed(): void {
   console.log(`[cockpit] seeded ${AGENT}: 4 outputs, 1 run of telemetry, 1 snapshot`);
 }
 
+/** MAR-664's own agent, for the About scene below. */
+const PLAN_AGENT = "competitor-scout";
+
+/**
+ * The real installed competitor scout's own six-step `planned_route`, copied
+ * by value rather than read off this machine's real store — a capture
+ * harness seeds a scratch store and must not reach outside it.
+ *
+ * The richest plan DASH holds: four fixed steps and two AI ones at different
+ * declared strengths, which is what makes the About panel worth
+ * photographing rather than a one-step manifest that would draw the same
+ * frame regardless of what this issue built.
+ */
+function seedPlanAgent(): void {
+  const manifest = example("agent.manifest.example.json") as Record<string, unknown> & {
+    agent: { name: string; display_name?: string; goal: string };
+  };
+  manifest.agent.name = PLAN_AGENT;
+  manifest.agent.display_name = "Competitor scout";
+  manifest.agent.goal =
+    "Watches public sources for what competing agent products ship and for what people praise, " +
+    "complain about and ask for, and writes a briefing where every claim links to where it came from.";
+  manifest["planned_route"] = [
+    { step: 1, component_id: "public_source_fetch", risk_level: "low", model_tier: "none" },
+    { step: 2, component_id: "signal_sort", risk_level: "low", model_tier: "none" },
+    {
+      step: 3,
+      component_id: "digest_curate",
+      risk_level: "medium",
+      model_tier: "small",
+      default_model_level: "cheap",
+    },
+    {
+      step: 4,
+      component_id: "deep_dive_synthesis",
+      risk_level: "medium",
+      model_tier: "standard",
+      default_model_level: "standard",
+    },
+    { step: 5, component_id: "competitor_choice", risk_level: "low", model_tier: "none" },
+    { step: 6, component_id: "report_file_write", risk_level: "high", model_tier: "none" },
+  ];
+  const imported = importManifest(manifest);
+  if (!imported.ok) {
+    throw new Error(`the plan agent's manifest was refused: ${JSON.stringify(imported)}`);
+  }
+  console.log(`[cockpit] seeded ${PLAN_AGENT}: 6-step plan, no runs`);
+}
+
 /* ---------------------------------------------------------------------- *
  * The harness — the guards the other capture files earned the hard way
  * ---------------------------------------------------------------------- */
@@ -655,6 +704,85 @@ async function run(): Promise<void> {
     await resizeTo(window, VIEWPORT.width, VIEWPORT.height);
   }
 
+  /*
+   * MAR-664's scene: the About disclosure, closed and then open, on the
+   * scout with the richest plan DASH holds. One viewport, one theme — this
+   * is not asking whether the frame's layout survives every width the way
+   * the loop above is; it is asking whether the goal and the plan actually
+   * render inside the disclosure, which is true or false regardless of size.
+   */
+  nativeTheme.themeSource = "light";
+  await settle(300);
+  seedPlanAgent();
+  const planRoute = `/agents/detail?agent=${encodeURIComponent(PLAN_AGENT)}&stage=overview`;
+  await go(window, planRoute);
+  await resizeTo(window, VIEWPORT.width, VIEWPORT.height);
+  await go(window, planRoute);
+
+  await shoot(window, "agent-about-closed");
+  /*
+   * `.open` is a boolean IDL property and reads `false` when the attribute is
+   * absent — never `null` or `undefined` — so the closed check has to compare
+   * against `false` explicitly rather than lean on `??`, which a missing
+   * element would also produce and which this line must tell apart from a
+   * present-but-closed one.
+   */
+  const closedOpenAttr = await within(
+    "read the About disclosure before opening it",
+    5_000,
+    window.webContents.executeJavaScript(
+      `(() => { const el = document.querySelector(".cockpit-about"); return el === null ? "missing" : el.open; })()`,
+    ),
+  );
+
+  /*
+   * `<details>` opened by dispatching a real click on the summary rather than
+   * setting `.open` in script — a closed `<details>` keeps its layout boxes,
+   * and the thing worth proving here is that a person's own press reveals the
+   * goal and the plan, not that the DOM property can be flipped.
+   */
+  await within(
+    "open the About disclosure",
+    5_000,
+    window.webContents.executeJavaScript(
+      `document.querySelector(".cockpit-about > summary")?.click()`,
+    ),
+  );
+  await settle(400);
+  const openOpenAttr = await within(
+    "read the About disclosure after opening it",
+    5_000,
+    window.webContents.executeJavaScript(
+      `document.querySelector(".cockpit-about")?.open ?? null`,
+    ),
+  );
+  const aboutText = await within(
+    "read the About panel's text",
+    5_000,
+    window.webContents.executeJavaScript(
+      `document.querySelector(".cockpit-about-panel")?.textContent ?? ""`,
+    ),
+  );
+  await shoot(window, "agent-about-open");
+
+  console.log(
+    `[cockpit] about: closed.open=${JSON.stringify(closedOpenAttr)} open.open=${JSON.stringify(openOpenAttr)} ` +
+      `panel_words=${String(String(aboutText).split(/\s+/).filter(Boolean).length)}`,
+  );
+  measurements.push({
+    stage: "about",
+    theme: "light",
+    viewport: VIEWPORT.name,
+    closed_before_press: closedOpenAttr === false,
+    open_after_press: openOpenAttr === true,
+    goal_in_panel: String(aboutText).includes(
+      "Watches public sources for what competing agent products ship",
+    ),
+    steps_in_panel: ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5", "Step 6"].every((label) =>
+      String(aboutText).includes(label),
+    ),
+  });
+
   writeFileSync(
     path.join(OUT, "layout.json"),
     `${JSON.stringify({ captured_at: new Date().toISOString(), agent: AGENT, measurements }, null, 2)}\n`,
@@ -681,8 +809,18 @@ async function run(): Promise<void> {
   const missingOverviewAction = measurements.filter(
     (entry) =>
       (entry as { stage: string }).stage !== "(no stage named)" &&
+      // MAR-664's own scene, appended below — it is not one of `STAGES` and
+      // was not put through `measure()`, so it carries no verdict for this
+      // check to read.
+      (entry as { stage: string }).stage !== "about" &&
       !(entry as { overview_action_visible: boolean }).overview_action_visible,
   );
+  const about = measurements.find((entry) => (entry as { stage: string }).stage === "about") as
+    | { closed_before_press: boolean; open_after_press: boolean; goal_in_panel: boolean; steps_in_panel: boolean }
+    | undefined;
+  if (about !== undefined && (!about.closed_before_press || !about.open_after_press || !about.goal_in_panel || !about.steps_in_panel)) {
+    console.log(`[cockpit] the About scene did not prove what it set out to: ${JSON.stringify(about)}`);
+  }
   console.log(
     `[cockpit] wrote ${String(written.length)} image(s) to ${OUT}; ` +
       `${String(doubled.length)} frame(s) draw the rail's list twice; ` +
