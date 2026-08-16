@@ -504,6 +504,34 @@ export class Supervisor {
       title: string,
       event: { kind: "state"; state: unknown } | { kind: "artifact"; artifact: unknown },
     ) => void,
+    /**
+     * A broker on this machine that answers instead of DASH (MAR-629, ADR 0021).
+     *
+     * **Absent is the local case and nothing about it moves.** In DASH's own
+     * runner this is undefined, every broker request is buffered exactly as it
+     * has been since MAR-458, and `drainBrokerRequests` hands them to the broker
+     * in Electron.
+     *
+     * Present is the host case. `runner/main.ts` supplies it only when the
+     * helper handed this process a host root and a bundle id — that is, only on
+     * a machine enrolled with a pack — and then a request is adjudicated here
+     * and answered down the pipe it arrived on. It is not buffered in that case,
+     * because there is nobody to drain it: ADR 0006 keeps `/broker/drain` off
+     * the remote channel, which is the whole reason a key on a server used to be
+     * a key that could not be spent.
+     *
+     * Injected for `onArtifactFile`'s reason and a sharper version of it: this
+     * class supervises processes and must not learn what a broker, a key or a
+     * provider is. It hands over a line and writes back whatever it is given.
+     *
+     * Resolving to null means "not mine" and falls through to the buffer, so a
+     * line the host broker cannot answer ends up where an ordinary runner would
+     * leave it rather than being silently dropped.
+     */
+    private readonly adjudicateBrokerRequest?: (
+      agentId: string,
+      request: unknown,
+    ) => Promise<string | null>,
   ) {
     for (const registration of registrations) {
       this.agents.set(registration.agent_id, this.entryFor(registration));
@@ -1069,11 +1097,42 @@ export class Supervisor {
     }
 
     if (message.type === "broker_request") {
-      this.bufferBrokerRequest(
-        entry.registration.agent_id,
-        message.request,
-        Buffer.byteLength(line, "utf8"),
-      );
+      const agentId = entry.registration.agent_id;
+      const bytes = Buffer.byteLength(line, "utf8");
+      if (this.adjudicateBrokerRequest === undefined) {
+        this.bufferBrokerRequest(agentId, message.request, bytes);
+        return;
+      }
+      /*
+       * Adjudicated here, on this machine, and answered down the same pipe
+       * (MAR-629, ADR 0021).
+       *
+       * Not awaited, and that is the same shape the local path has: DASH's
+       * broker also answers later, over a drain and a response route, while the
+       * line reader goes on reading. The agent is blocked on its own answer
+       * either way and its own timeout is what bounds the wait.
+       *
+       * The rejection branch buffers instead. A host broker that threw is a bug
+       * in this pack, and losing the request to it would leave the agent waiting
+       * for an answer nothing is going to send — whereas a buffered request on a
+       * host is merely never drained, which is the state every remote broker
+       * request was in before this pack existed. Falling back to the worse of
+       * two behaviours beats inventing a third.
+       */
+      void this.adjudicateBrokerRequest(agentId, message.request)
+        .then((answer) => {
+          if (answer === null) {
+            this.bufferBrokerRequest(agentId, message.request, bytes);
+            return;
+          }
+          if (!this.respondToBroker(agentId, answer)) {
+            this.log(`[runner] ${agentId} stopped before the host broker could answer it`);
+          }
+        })
+        .catch(() => {
+          this.log(`[runner] the host broker failed to adjudicate a request from ${agentId}`);
+          this.bufferBrokerRequest(agentId, message.request, bytes);
+        });
       return;
     }
 

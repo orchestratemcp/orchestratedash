@@ -36,6 +36,7 @@ import { randomBytes } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { encodeBrokerResponse } from "../lib/broker/protocol";
 import { contractsDirectory } from "../lib/contracts";
 import { ensureChannelSecret } from "./channel-secret";
 import {
@@ -46,6 +47,7 @@ import {
   type RunnerEndpoint,
 } from "./endpoint";
 import { DASH_LOCAL_PRINCIPAL } from "./execute";
+import { hostBrokerFor } from "./host-broker";
 import { DiscordNotifier } from "./notify";
 import { createRunnerServer } from "./server";
 import { RUNNER_BUILD_ID, RUNNER_PROTOCOL_VERSION } from "./identity";
@@ -189,6 +191,36 @@ async function main(): Promise<void> {
    */
   const notifier = new DiscordNotifier();
 
+  /**
+   * The host broker, when this runner is on a host that has a pack (MAR-629,
+   * ADR 0021).
+   *
+   * Null in DASH's own runner, because `electron/runner-process.ts` sets neither
+   * variable — so the local path is untouched and broker requests go on being
+   * buffered for the broker in Electron. Non-null only when
+   * `scripts/host-helper/main.ts` started this process and proved a pack, which
+   * is the one situation in which there is nobody to drain those requests and a
+   * key on this machine to answer them with.
+   *
+   * Built before the supervisor because the supervisor takes it, and the
+   * ordering is worth a sentence: a broker attached later would leave a window
+   * in which an agent started by a previous run could write a request that got
+   * buffered instead of answered, and a request in the wrong place is one an
+   * agent waits out.
+   */
+  const hostBroker = hostBrokerFor(
+    {
+      hostRoot: process.env["DASH_HOST_ROOT"],
+      bundleId: process.env["DASH_HOST_BUNDLE_ID"],
+      dataDir,
+      registrations,
+      log: (line) => {
+        console.warn(line);
+      },
+    },
+    { fetchImpl: fetch, now: () => new Date() },
+  );
+
   const supervisor = new Supervisor(
     registrations,
     undefined,
@@ -206,6 +238,14 @@ async function main(): Promise<void> {
       }
       notifier.observeState(agentId, title, event.state);
     },
+    // Undefined off a host, which is what keeps every local runner on exactly
+    // the path it was on before this pack existed.
+    hostBroker === null
+      ? undefined
+      : async (agentId, request) => {
+          const response = await hostBroker.adjudicate(agentId, request);
+          return response === null ? null : encodeBrokerResponse(response);
+        },
   );
 
   /**
@@ -265,6 +305,13 @@ async function main(): Promise<void> {
       notifier.configure(configuration);
     },
     storeDamage: () => storeDamage,
+    // MAR-629, ADR 0021. The remote half of `electron/main.ts`'s one line: a
+    // person's Run on this host opens the allowance on this host, and nothing
+    // else on this machine may open one. Absent off a host, where there is
+    // nothing that could spend.
+    allowRunSpend: hostBroker === null ? undefined : (agentId, at) => {
+      hostBroker.allowRunSpend(agentId, at);
+    },
     /**
      * MAR-520. The second half of MAR-506's two detections, connected.
      *
