@@ -17,7 +17,24 @@ import { describeFleetCardStatus } from "../../lib/copy/fleet-status";
 import { matchesFleetFilter } from "../../lib/views/fleet-filter";
 import { stepRowsSelection, stepSpotlight } from "../../lib/views/fleet-view";
 import type { SightingLog } from "../../lib/host-sightings";
-import type { AgentRow } from "../../lib/views/types";
+import { describeChiefNoModel } from "../../lib/copy/chief-chat";
+import type { AgentRow, ChiefRoomView } from "../../lib/views/types";
+
+/**
+ * The chief's room when nobody handed one in (MAR-659).
+ *
+ * The state a DASH with no fleet default is really in, so a caller that omits
+ * the prop — a render test, or a host built before ADR 0023 — gets the honest
+ * answer rather than a shape claiming a model is available. Frozen, because it
+ * is shared by every such caller and a component that mutated it would change
+ * what the next one sees.
+ */
+const EMPTY_CHIEF_ROOM: ChiefRoomView = Object.freeze({
+  can_ask: false,
+  model_id: null,
+  blocked: describeChiefNoModel(),
+  turns: [],
+});
 
 /**
  * The fleet, laid out the way the reader asked for (MAR-612, then the 2/3 split).
@@ -66,11 +83,27 @@ import type { AgentRow } from "../../lib/views/types";
  */
 export function FleetList({
   agents,
+  chief = EMPTY_CHIEF_ROOM,
+  canAct = false,
+  onAsked,
   log,
   onToggleFavourite,
 }: {
   /** The whole fleet — the rail's own counts depend on this being unfiltered. */
   agents: readonly AgentRow[];
+  /**
+   * The chief's kept conversation, and what its composer can do (MAR-659).
+   *
+   * Optional, so the render tests that drive this band with a list of rows and
+   * nothing else go on working. The default is the honest one — no model, no
+   * turns, and the room's own notice saying why — rather than a shape that
+   * claims a model is available.
+   */
+  chief?: ChiefRoomView;
+  /** False in a browser tab, where there is no bridge to ask through. */
+  canAct?: boolean;
+  /** Ask the page to re-read the view, so a new chief turn appears. */
+  onAsked?: () => void;
   /** What the Servers page saw, this window (MAR-606, ADR 0015). */
   log: SightingLog;
   /** Star — or unstar — one agent (MAR-640). Optional: see `FleetCard`'s own note. */
@@ -347,6 +380,9 @@ export function FleetList({
       <ChiefBand
         agent={visible[current] ?? null}
         agents={visible}
+        chief={chief}
+        canAct={canAct}
+        onAsked={onAsked}
         chatOpen={chiefOpen}
         log={log}
         onCloseChat={() => {
@@ -442,6 +478,9 @@ export function spotlightPosition(index: number, centred: number): string | unde
 export function ChiefBand({
   agent,
   agents = [],
+  chief = EMPTY_CHIEF_ROOM,
+  canAct = false,
+  onAsked,
   chatOpen = false,
   log = {},
   onCloseChat,
@@ -459,6 +498,12 @@ export function ChiefBand({
    * you rather than about a fleet somebody else filtered.
    */
   agents?: readonly AgentRow[];
+  /** The chief's kept conversation (MAR-659). See `FleetList`'s own note. */
+  chief?: ChiefRoomView;
+  /** False in a browser tab, where there is no bridge to ask through. */
+  canAct?: boolean;
+  /** Ask the page to re-read the view, so a new chief turn appears. */
+  onAsked?: () => void;
   /** Whether the room is open. Optional, for the render tests that predate it. */
   chatOpen?: boolean;
   log?: SightingLog;
@@ -549,6 +594,9 @@ export function ChiefBand({
       */}
       <ChiefChat
         agents={agents}
+        view={chief}
+        canAct={canAct}
+        onAsked={onAsked ?? noop}
         open={chatOpen}
         onClose={onCloseChat ?? noop}
         onOpen={onOpenChat ?? noop}

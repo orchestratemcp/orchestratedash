@@ -43,7 +43,16 @@ export const SAMPLE_AGENT_SEED = "ai-news-scout";
  */
 export default function AgentsPage(): ReactNode {
   const focusKey = useRefreshOnWindowFocus();
-  const state = useView((source) => source.agents(), focusKey);
+  /*
+   * MAR-659. One more reason to re-read, beside the window regaining focus.
+   *
+   * The chief's answers land in the store rather than coming back through the
+   * bridge, so a question asked without leaving this window would otherwise sit
+   * unanswered until the next focus or navigation. `AgentDetailPage` keeps the
+   * same counter for the same reason and under the same name.
+   */
+  const [refreshKey, setRefreshKey] = useState(0);
+  const state = useView((source) => source.agents(), focusKey + refreshKey);
   const host = useHost();
   const canAct = useCanAct();
   const storeDamage = useRunnerStoreDamage(canAct);
@@ -140,7 +149,16 @@ export default function AgentsPage(): ReactNode {
           rows of prose, so every fleet-specific rule remains a `fleet-grid`
           modifier rather than a change to the shared class.
         */
-        <FleetList agents={agents} log={log} onToggleFavourite={toggleFavourite} />
+        <FleetList
+          agents={agents}
+          chief={state.data.chief}
+          canAct={canAct}
+          onAsked={() => {
+            setRefreshKey((value) => value + 1);
+          }}
+          log={log}
+          onToggleFavourite={toggleFavourite}
+        />
           )}
         </>
       )}

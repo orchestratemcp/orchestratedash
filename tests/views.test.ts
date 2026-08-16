@@ -124,7 +124,18 @@ describe("agentsView", () => {
   it("is empty, not absent, when nothing has been imported", () => {
     // `damage: null` rather than an absent key: an intact store states that it
     // is intact. See `tests/store-damage.test.ts` for the other branch.
-    expect(agentsView()).toEqual({ agents: [], damage: null });
+    //
+    // MAR-659, ADR 0023. The chief's room rides on this view too, and on an
+    // empty store it is the state a fresh DASH is really in — no fleet default,
+    // so no model, with the notice that says why. Asserted structurally rather
+    // than by its sentences, which are `tests/chief-chat-copy.test.ts`' to pin.
+    const view = agentsView();
+    expect(view.agents).toEqual([]);
+    expect(view.damage).toBeNull();
+    expect(view.chief.can_ask).toBe(false);
+    expect(view.chief.model_id).toBeNull();
+    expect(view.chief.turns).toEqual([]);
+    expect(view.chief.blocked).not.toBeNull();
   });
 
   it("carries what the agents list renders", () => {

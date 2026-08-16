@@ -4,24 +4,24 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { agentStageHref } from "../_data/routes";
-import { answerChief, type ChiefFleetAgent, type ChiefReply } from "../../lib/chief/reply";
+import { askChief, clearChiefThread } from "../_data/source";
+import { OAvatar } from "./o-avatar";
+import { answeredFromRecords } from "../../lib/chief/records-answer";
 import {
   CHIEF_CHAT_COPY,
   describeAmbiguous,
+  describeChiefActivity,
   describeChiefScope,
   describeMatch,
   describeRouted,
-  describeStanding,
-  describeUndeclared,
   type ChiefSentence,
 } from "../../lib/copy/chief-chat";
 import { CHIEF_NAME } from "../../lib/copy/chief";
-import { describeFleetCardStatus } from "../../lib/copy/fleet-status";
-import type { AgentRow } from "../../lib/views/types";
+import type { AgentRow, ChiefRoomView, ChiefTurnView } from "../../lib/views/types";
 
 /**
- * The chief's composer, and the room it opens (MAR-648, closing MAR-419's
- * first half).
+ * The chief's composer, and the room it opens (MAR-648; given a model and a
+ * memory by MAR-659, ADR 0023).
  *
  * Henrik, with a screenshot of Claude Code's composer: *"Can we just dedicate a
  * space at the bottom that looks like the screenshot… When you click the chat
@@ -33,55 +33,86 @@ import type { AgentRow } from "../../lib/views/types";
  * along: a composer docked at the bottom of the chief's band, and a room that
  * opens above it on focus without the composer moving a pixel.
  *
- * ## What it is allowed to say, which is nothing
+ * ## What changed, and what did not
  *
- * Every sentence comes from `lib/copy/chief-chat.ts` through `ChiefReply`, which
- * is `ask.tsx`'s rule and matters at least as much here: the chief is a
- * character that appears to be talking, and MAR-547's ruling against invented
- * facts applies hardest in a speech position because a sentence attributed to
- * somebody is the easiest place in an interface to smuggle a claim nobody can
- * source.
+ * **Changed.** The answers no longer come from a pure function in this file.
+ * Every question goes to Electron main, which decides between DASH's own records
+ * and the model, writes a row, and returns whether it was asked. The
+ * conversation arrives in `view.turns` with the rest of the fleet document and
+ * is still there tomorrow, which is what Henrik's station-11 walk asked for: he
+ * changed view, came back, and the thread was blank.
  *
- * The one exception proves it. An agent's `goal` is **its author's** sentence,
- * so it is rendered quoted and attributed rather than folded into the chief's
- * words — `ChiefSentence.quoted` exists for that and this component is where the
- * quotation marks are actually drawn.
+ * **Not changed.** Every sentence still comes from `lib/copy/chief-chat.ts`,
+ * except the one the model wrote — and that one is `turn.answer`, rendered as
+ * plain text, with the exact records DASH read listed underneath it. MAR-547's
+ * ruling applies hardest in a speech position, and the answer to a model
+ * speaking there is not to forbid it but to show its sources beside it and mark
+ * them when they go out of date.
  *
- * ## Why there is no loader here, and there is one on the agent page
+ * The one exception still proves the rule. An agent's `goal` is **its author's**
+ * sentence, so it is rendered quoted and attributed rather than folded into
+ * anybody's words — `ChiefSentence.quoted` exists for that, and the stored
+ * answer text can never contain one because `recordsAnswer` never puts one in.
  *
- * `answerChief` is a pure function of records already in this component's props.
- * It returns before the next frame. A spinner over a synchronous read would be
- * the same fabrication MAR-648 forbids on the agent side, wearing the opposite
- * costume — theatre asserting that work is happening when none is.
+ * ## The loader, and the one thing this component predicts
  *
- * The O at work lives on `AskComposer`, which really does await a provider over
- * a process boundary. When the chief gains a model, it gains the loader with it.
+ * MAR-648's honesty rule: no loader on a path that returns before the next
+ * frame. A standing question is answered from records in main and comes back in
+ * a millisecond; a model question waits on a provider. So the activity line is
+ * shown only for the second, and `answeredFromRecords` is how this component
+ * guesses which it is about to be.
  *
- * ## The scrollback is not stored, and the surface says so
- *
- * `describeChiefScope` carries the sentence. The reasoning is in that function's
- * own header: the chief's answers are statements about how the fleet is doing
- * *now*, and a stored one would be a sentence that was true last Tuesday sitting
- * in a scrollback looking like a sentence about today. ADR 0012's argument for
- * storing every agent question does not reach it, because that conversation is
- * about material an agent saved and this one is about a standing that moves.
+ * That guess is a **prediction about latency, not a decision about the answer**
+ * — main decides, using the same function. If the two ever disagreed, the worst
+ * case is a loader that was not needed or one missing for a moment.
  */
 export function ChiefChat({
   agents,
+  view,
+  canAct,
+  onAsked,
   open,
   onOpen,
   onClose,
 }: {
   /** The fleet as the band already has it — filtered, in the list's own order. */
   agents: readonly AgentRow[];
+  /** The kept conversation and what the composer can do. */
+  view: ChiefRoomView;
+  /** False in a browser tab, where there is no bridge to ask through. */
+  canAct: boolean;
+  /** Ask the page to re-read the view, so a new turn appears. */
+  onAsked: () => void;
   /** Whether the room is showing. Owned by `FleetList`, which dims the cards. */
   open: boolean;
   onOpen: () => void;
   onClose: () => void;
 }): ReactNode {
   const [question, setQuestion] = useState("");
-  const [turns, setTurns] = useState<readonly ChiefTurn[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [feedback, setFeedback] = useState<string | null>(null);
   const thread = useRef<HTMLDivElement | null>(null);
+
+  /*
+   * Whole seconds since the press — the one number on this surface the renderer
+   * measured first-hand, which is why it is the one number MAR-648's honesty
+   * rule lets it show while a question is in flight. `AskComposer` carries the
+   * same clock for the same reason, read from `Date.now()` rather than counted
+   * per tick so a throttled background tab does not under-report.
+   */
+  useEffect(() => {
+    if (!busy) {
+      return;
+    }
+    const started = Date.now();
+    const tick = window.setInterval(() => {
+      setElapsed((Date.now() - started) / 1000);
+    }, 1000);
+    return () => {
+      window.clearInterval(tick);
+    };
+  }, [busy]);
 
   /*
    * The newest turn, scrolled to, and only when there is one to scroll to.
@@ -92,44 +123,43 @@ export function ChiefChat({
    * things asked this one too.
    */
   useEffect(() => {
-    if (!open || turns.length === 0) {
+    if (!open || view.turns.length === 0) {
       return;
     }
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     thread.current?.scrollTo({ top: thread.current.scrollHeight, behavior: reduce ? "auto" : "smooth" });
-  }, [open, turns.length]);
+  }, [open, view.turns.length]);
 
-  const fleet: ChiefFleetAgent[] = agents.map((agent) => ({
-    name: agent.name,
-    title: agent.title,
-    goal: agent.goal,
-    avatar: agent.avatar,
-    capabilities: agent.capabilities,
-    glance: agent.glance,
-    status:
-      describeFleetCardStatus({
-        running: agent.running,
-        run_count: agent.run_count,
-        glance: agent.glance,
-      })?.id ?? null,
-  }));
-
-  function ask(): void {
+  async function ask(): Promise<void> {
     const asked = question.trim();
     if (asked.length === 0) {
       return;
     }
-    /*
-     * Answered here and now, from the props this render already holds. There is
-     * no request, so there is nothing to fail and nothing to wait for — see this
-     * component's header on why that means no loader rather than a fast one.
-     */
-    setTurns((previous) => [...previous, { id: previous.length, question: asked, reply: answerChief(asked, fleet) }]);
-    // Cleared on send, unlike `AskComposer`, and the asymmetry is the point:
-    // that box keeps a failed question so the retry is one press, and this one
-    // cannot fail. The question is in the scrollback a line above either way.
-    setQuestion("");
     onOpen();
+    setFeedback(null);
+    setElapsed(0);
+    // Only for a question that will really wait on a provider. See the header.
+    const willWait = !answeredFromRecords(asked);
+    setBusy(willWait);
+    const result = await askChief({ question: asked });
+    setBusy(false);
+    if (result.ok) {
+      // Cleared only on success, `AskComposer`'s rule: a question that failed is
+      // still in the box, so retrying is one press rather than typing it again.
+      setQuestion("");
+    }
+    setFeedback(result.detail ?? null);
+    // The answer is not in `result`. It is in the store, and it reaches this
+    // component when the page re-reads the view — one path by which an answer
+    // becomes something on screen, and the same one a reopened conversation
+    // takes. See `DispatchContext.chiefAction`.
+    onAsked();
+  }
+
+  async function clear(): Promise<void> {
+    const result = await clearChiefThread();
+    setFeedback(result.ok ? null : (result.detail ?? null));
+    onAsked();
   }
 
   /*
@@ -138,9 +168,8 @@ export function ChiefChat({
    * `AskComposer` declined to bind this key at all, and its reason is right and
    * still holds: *"a key that discarded it would be a destructive control with
    * no confirmation."* Closing the room discards nothing — the question stays
-   * typed, the scrollback stays where it is, and re-focusing the box brings both
-   * back. What Escape means here is "put the cards back", which is what a person
-   * pressing it on a surface that expanded over something expects.
+   * typed, the conversation stays in the store, and re-focusing the box brings
+   * both back.
    */
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
     if (event.key === "Escape") {
@@ -150,7 +179,7 @@ export function ChiefChat({
     }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      ask();
+      void ask();
     }
   }
 
@@ -162,11 +191,24 @@ export function ChiefChat({
         <div className="chief-room" ref={thread}>
           <div className="chief-room-head">
             <h2>{CHIEF_CHAT_COPY.heading}</h2>
-            <button type="button" className="button-link" onClick={onClose}>
-              {CHIEF_CHAT_COPY.close}
-            </button>
+            <div className="chief-room-actions">
+              {view.turns.length === 0 || !canAct ? null : (
+                /* The person's own control over their own transcript, and the
+                   reason `describeChiefScope` can promise the conversation is
+                   kept: something kept until you say otherwise needs an
+                   otherwise. Absent when there is nothing to clear rather than
+                   drawn disabled — `ModelChoice`'s rule. */
+                <button type="button" className="button-link" onClick={() => void clear()}>
+                  {CHIEF_CHAT_COPY.clear}
+                </button>
+              )}
+              <button type="button" className="button-link" onClick={onClose}>
+                {CHIEF_CHAT_COPY.close}
+              </button>
+            </div>
           </div>
-          {turns.length === 0 ? (
+
+          {view.turns.length === 0 ? (
             /* The scope note is the room's empty state rather than a line that
                is always on screen. It answers the two questions somebody has the
                first time they meet this box — what can it tell me, and what does
@@ -178,17 +220,40 @@ export function ChiefChat({
               <p className="muted wrap">{scope.meaning}</p>
             </div>
           ) : (
-            <ol className="chief-turns" aria-label={CHIEF_CHAT_COPY.thread_heading}>
-              {turns.map((turn) => (
+            <ol className="chief-turns" aria-label={CHIEF_CHAT_COPY.thread_kept_heading}>
+              {view.turns.map((turn) => (
                 <li key={turn.id} className="chief-turn">
                   <p className="chief-asked wrap">
                     <span className="chief-speaker">{CHIEF_CHAT_COPY.you}</span>
                     {turn.question}
                   </p>
-                  <ChiefReplyBody reply={turn.reply} />
+                  <ChiefTurnBody agents={agents} turn={turn} />
                 </li>
               ))}
             </ol>
+          )}
+
+          {busy ? <ChiefActivity elapsed={elapsed} model={view.model_id} /> : null}
+          {feedback === null ? null : <p className="chief-feedback wrap">{feedback}</p>}
+
+          {view.blocked === null ? null : (
+            /*
+               The chief with no model to ask (ADR 0023 decision 4).
+
+               Last in the room, which puts it directly above the composer it is
+               about — `ask-terms`' rule, that a sentence about what a control
+               will do belongs where it is read *before* the decision rather than
+               under the button. It is a standing fact about this DASH rather
+               than about any one question, so it stays on screen with a full
+               thread above it, and the box under it still works: the standing
+               question is answered from records whatever this says.
+            */
+            <div className="chief-blocked">
+              <p className="wrap">
+                <strong>{view.blocked.headline}</strong>
+              </p>
+              <p className="muted wrap">{view.blocked.meaning}</p>
+            </div>
           )}
         </div>
       ) : null}
@@ -199,8 +264,6 @@ export function ChiefChat({
             MAR-659. Visible rather than `visually-hidden`, so the subject of
             this room — the whole fleet, never one agent — is a fact a person
             reads rather than one this component just happens to be wired for.
-            `CHIEF_CHAT_COPY.label` already names it ("about your fleet"); it
-            only had to stop being announcement-only.
           */}
           <span className="chief-subject">{CHIEF_CHAT_COPY.label}</span>
           <textarea
@@ -216,8 +279,8 @@ export function ChiefChat({
         <button
           type="button"
           className="primary"
-          disabled={question.trim().length === 0}
-          onClick={ask}
+          disabled={question.trim().length === 0 || busy}
+          onClick={() => void ask()}
         >
           {CHIEF_CHAT_COPY.submit}
         </button>
@@ -228,93 +291,232 @@ export function ChiefChat({
         screenshot had.
 
         MAR-648's own words about this row: affordances *"as they become real,
-        never as dead chrome"*. The agent composer's row names the model it will
-        ask under, because there is one and a person chose it. There is no model
-        here, so a greyed model chip would be exactly the dead chrome that
-        sentence refuses. What is true — and is the thing somebody most needs to
-        know before typing — is where the answers come from and that they are
-        free, so that is the row.
+        never as dead chrome"*. There is a model now, so the row names it — the
+        id as a value, `lib/copy/identifiers.ts`' rule and `AskModelView`'s note
+        on why DASH holds no friendlier name to give. On a DASH with no default
+        there is still no chip, because there is still nothing true to put in
+        one; the blocked notice inside the room says why, where there is room
+        for the sentence.
       */}
-      <p className="chief-settings muted">{scope.headline}</p>
+      <p className="chief-settings muted">
+        {scope.headline}
+        {view.model_id === null ? null : (
+          <>
+            {" "}
+            <code className="value">{view.model_id}</code>
+          </>
+        )}
+      </p>
     </div>
   );
 }
 
-interface ChiefTurn {
-  id: number;
-  question: string;
-  reply: ChiefReply;
+/**
+ * What DASH is doing while a question is in flight.
+ *
+ * `AskActivity`'s shape and its argument, restated for this room: the preload
+ * bridge is `invoke`-only, so a question is one awaited round trip and the steps
+ * inside it are invisible from here. A component that animated through their
+ * names would be reciting a script — right about the order, wrong about the
+ * timing, every time.
+ *
+ * The character is `chief`, which is the one the cast already holds for this
+ * role — not a persona invented here. Bit-Command's fiction layer stays refused
+ * whole and ADR 0023 adds nothing to it: no invented personality, no typing
+ * animation, no name beyond `CHIEF_NAME`. `action` is the literal `true`
+ * `scripts/brand-rules.mjs` requires, and it is a decision about this surface
+ * rather than a fact about anything — this element only exists while a provider
+ * really is being waited on.
+ */
+function ChiefActivity({ elapsed, model }: { elapsed: number; model: string | null }): ReactNode {
+  return (
+    <div className="ask-activity">
+      <span className="ask-activity-o">
+        <OAvatar name="chief" size={50} action />
+      </span>
+      {/*
+        `role="status"` so the wait is announced rather than only seen. The model
+        id is inside the live region and the seconds are not: a counter in a live
+        region would announce itself once a second forever, which is the
+        accessibility failure that makes people turn the feature off.
+      */}
+      <p className="ask-activity-line" role="status">
+        <span className="visually-hidden">{CHIEF_CHAT_COPY.activity_label}. </span>
+        {describeChiefActivity(elapsed)}
+        {model === null ? null : (
+          <>
+            {" "}
+            <code className="value">{model}</code>
+          </>
+        )}
+      </p>
+    </div>
+  );
 }
 
 /**
- * One reply, drawn.
+ * One turn, drawn.
  *
- * A `switch` over the union rather than a chain of truthiness checks, so a sixth
- * kind of reply stops this file compiling instead of silently rendering nothing
- * — the same guarantee `AgentStageView` gets from its record of stages.
+ * Three parts and a strict order: what was said, who could say more about it,
+ * and what DASH read before saying it. The receipt is last because it is the
+ * thing a reader checks the answer *against* — putting it above would make
+ * somebody read the evidence before the claim.
  */
-function ChiefReplyBody({ reply }: { reply: ChiefReply }): ReactNode {
-  if (reply.kind === "nothing_asked") {
-    return null;
-  }
-
-  if (reply.kind === "routed") {
+function ChiefTurnBody({
+  agents,
+  turn,
+}: {
+  agents: readonly AgentRow[];
+  turn: ChiefTurnView;
+}): ReactNode {
+  if (turn.answer === null) {
     return (
       <div className="chief-reply">
-        <Says sentence={describeRouted(reply.agent.title, reply.agent.goal)} />
-        <Says sentence={describeMatch(reply.matched)} />
-        <Link className="button-link" href={agentStageHref(reply.agent.name, "chat")}>
-          {CHIEF_CHAT_COPY.open_chat}
-        </Link>
-      </div>
-    );
-  }
-
-  if (reply.kind === "ambiguous") {
-    return (
-      <div className="chief-reply">
-        <Says sentence={describeAmbiguous(reply.agents.map((agent) => agent.title))} />
-        <ul className="chief-choices">
-          {reply.agents.map((agent) => (
-            <li key={agent.name}>
-              <Link className="button-link" href={agentStageHref(agent.name, "chat")}>
-                {agent.title}
-              </Link>
-            </li>
-          ))}
-        </ul>
-        <Says sentence={describeMatch(reply.matched)} />
+        <p className="chief-says wrap">
+          <span className="chief-speaker">{CHIEF_NAME}</span>
+          {turn.failure?.headline}
+        </p>
+        <p className="muted wrap">{turn.failure?.meaning}</p>
+        <p className="wrap">{turn.failure?.next_action}</p>
       </div>
     );
   }
 
   return (
     <div className="chief-reply">
-      <Says
-        sentence={
-          reply.kind === "standing"
-            ? describeStanding(reply.demands.length)
-            : describeUndeclared(reply.declared)
-        }
-      />
-      <p className="chief-standing wrap">{reply.summary}</p>
-      {reply.demands.length === 0 ? null : (
-        <ul className="chief-demands">
-          {reply.demands.map((demand) => (
-            <li key={demand.agent}>
-              {/* The chip's own two words, then the chip's own whole sentence.
-                  Neither is reworded here — `ChiefDemand` carries them straight
-                  off `lib/copy/glance.ts`, so the line the chief says and the
-                  chip on the card above cannot come to mean different things. */}
-              <Link className="chief-demand-agent" href={agentStageHref(demand.agent, "overview")}>
-                {demand.title}
-              </Link>
-              <span className="chip">{demand.label}</span>
-              <span className="muted wrap"> {demand.meaning}</span>
-            </li>
-          ))}
-        </ul>
+      {/*
+        The answer as it arrived, as plain text and nothing else. Never parsed,
+        no link followed out of it, no command derived from it — ADR 0012's
+        structural guarantee, unchanged by the chief gaining a voice.
+      */}
+      <p className="chief-says wrap">
+        <span className="chief-speaker">{CHIEF_NAME}</span>
+        {turn.answer}
+      </p>
+
+      <ChiefHandoff agents={agents} turn={turn} />
+      <ChiefReceipt turn={turn} />
+    </div>
+  );
+}
+
+/**
+ * The agent this question is really for, when one declared the subject.
+ *
+ * MAR-648's hand-off, kept (ADR 0023 decision 8). The chief never answers *from*
+ * an agent's saved material — the briefing carries counts and titles, never item
+ * text — so a question about what one **found** is named and linked rather than
+ * guessed at, and the link goes to the surface that can answer it and charge for
+ * it properly.
+ *
+ * DASH supplies the link, from `routeRequest` over the fleet as it is now. The
+ * model may or may not have mentioned the same agent in its own sentence; this
+ * is not read out of that sentence, which is the same discipline the receipt
+ * below follows and for the same reason.
+ */
+function ChiefHandoff({
+  agents,
+  turn,
+}: {
+  agents: readonly AgentRow[];
+  turn: ChiefTurnView;
+}): ReactNode {
+  if (turn.handoffs.length === 0) {
+    return null;
+  }
+  const known = new Set(agents.map((agent) => agent.name));
+  const live = turn.handoffs.filter((one) => known.has(one.agent));
+  if (live.length === 0) {
+    // Every agent this question once routed to has been removed. Nothing is
+    // drawn rather than a dead link — `ChiefHandoffView`'s own reason for being
+    // recomputed instead of frozen.
+    return null;
+  }
+
+  if (live.length === 1) {
+    const one = live[0] as (typeof live)[number];
+    return (
+      <div className="chief-handoff">
+        <Says sentence={describeRouted(one.title, one.goal)} />
+        <Says sentence={describeMatch(turn.matched)} />
+        <Link className="button-link" href={agentStageHref(one.agent, "chat")}>
+          {CHIEF_CHAT_COPY.open_chat}
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="chief-handoff">
+      <Says sentence={describeAmbiguous(live.map((one) => one.title))} />
+      <ul className="chief-choices">
+        {live.map((one) => (
+          <li key={one.agent}>
+            <Link className="button-link" href={agentStageHref(one.agent, "chat")}>
+              {one.title}
+            </Link>
+          </li>
+        ))}
+      </ul>
+      <Says sentence={describeMatch(turn.matched)} />
+    </div>
+  );
+}
+
+/**
+ * What DASH read before it answered, listed from DASH's own records.
+ *
+ * **The receipt, not the prompt, is the guarantee** (ADR 0023 decision 5). Every
+ * row here came out of the store on the way *in*; nothing is parsed out of the
+ * answer text. A model that invents an agent cannot make that agent appear in
+ * this table beside its sentence, and a person can check the phrasing above
+ * against DASH's own list without leaving the room.
+ *
+ * What it does not do is named rather than designed around: a model can
+ * attribute a fact to the wrong agent, omit an agent, or soften a definite fact
+ * into a vague one. The receipt makes those visible; it does not make them
+ * impossible. `describeChiefReceipt` says so in the sentence above the list.
+ *
+ * `stale` is DASH comparing two of its own records — the frozen rows against the
+ * fleet now — and it says the fleet changed, never that the answer is wrong.
+ */
+function ChiefReceipt({ turn }: { turn: ChiefTurnView }): ReactNode {
+  return (
+    <div className="chief-receipt">
+      {turn.stale ? <p className="chief-stale wrap">{CHIEF_CHAT_COPY.stale}</p> : null}
+      <p className="muted wrap">{turn.receipt_note}</p>
+      {turn.receipt.length === 0 ? null : (
+        <>
+          <h3 className="chief-receipt-heading">{CHIEF_CHAT_COPY.receipt_heading}</h3>
+          <ul className="chief-receipt-rows">
+            {turn.receipt.map((row) => (
+              <li key={row.agent}>
+                <Link className="chief-demand-agent" href={agentStageHref(row.agent, "overview")}>
+                  {row.title}
+                </Link>
+                {/* Every one of these is a string DASH already prints on that
+                    agent's own card, quoted rather than reworded — which is what
+                    lets a reader check this list against the cards behind the
+                    room without translating anything. */}
+                <span className="chip">{row.place}</span>
+                <span className="muted"> {row.runs}</span>
+                {row.last_run === null ? null : <span className="muted"> · {row.last_run}</span>}
+                <span className="muted wrap"> {row.standing}</span>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
+      <p className="muted chief-charge">
+        {turn.charge ?? CHIEF_CHAT_COPY.free}
+        {turn.model === null ? null : (
+          <>
+            {" "}
+            <code className="value">{turn.model}</code>
+          </>
+        )}
+      </p>
+      <p className="muted chief-when">{turn.asked}</p>
     </div>
   );
 }

@@ -62,6 +62,7 @@ import {
 import type { ConnectionSourceManifest } from "../lib/connections";
 import { listAiKeyModels } from "../lib/ai/actions";
 import { performAskAction } from "./ask-host";
+import { performChiefAction } from "./chief-host";
 import {
   bundledModelChoice,
   resolveModelSteps,
@@ -876,11 +877,20 @@ export function registerCommandChannel(
       // answer. Every gate is inside `performModelAction`, beside the reads it
       // guards, for `refreshSampleAgent`'s reason.
       modelAction: (action, target) => performModelAction(action, target),
-      // MAR-545. The only route in DASH that can spend the person's money, and
-      // the only caller anywhere that hands the broker `"person"` rather than
-      // `"agent"`. Every gate is inside `electron/ask-host.ts`, beside the call
-      // it guards, for `performFolderAction`'s reason.
+      // MAR-545. One of the two routes in DASH that can spend the person's
+      // money, and one of the two callers anywhere that hand the broker
+      // `"person"` rather than `"agent"`. Every gate is inside
+      // `electron/ask-host.ts`, beside the call it guards, for
+      // `performFolderAction`'s reason.
+      //
+      // This said "the only" until MAR-659, and it is corrected here rather than
+      // left to become a claim the file makes about itself and no longer keeps.
       askAction: (_action, target) => performAskAction(target),
+      // MAR-659, ADR 0023. The second of those two, and the difference is the
+      // principal: this one reaches `{ kind: "chief" }`, which carries no agent
+      // id, so there is no value on this line that could aim a fleet question at
+      // an agent. Every gate is inside `electron/chief-host.ts`.
+      chiefAction: (action, target) => performChiefAction(action, target),
       // MAR-588. The only route in DASH that can send something off this machine
       // without an agent asking it to. Every gate is inside
       // `electron/notify-settings.ts`, beside the vault read and the write, for

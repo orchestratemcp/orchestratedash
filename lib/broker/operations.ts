@@ -1028,6 +1028,72 @@ const ASK_SYSTEM_PROMPT =
   "bullet characters or links.";
 
 /**
+ * What DASH tells the model when the chief is asking (MAR-659, ADR 0023
+ * decision 5).
+ *
+ * A third constant beside the two above, on this file's own rule: the caller
+ * supplies values, DASH supplies the shape. Which of the two completion frames
+ * is used is decided in `lib/broker/execute.ts` from the **principal** — an
+ * agent cannot name this one, because the field it would name is overwritten
+ * before `compose` ever sees the request.
+ *
+ * ## What it may claim, and the rule it replaces
+ *
+ * `describeChief`'s standing rule is that fleet facts are quoted from DASH's own
+ * records and never reworded. That rule does not survive contact with *"which
+ * agents run local and which on the cloud"* — that is `describeFleetPlace`
+ * evaluated per agent and grouped, and there is no single record to quote. So
+ * the rule this prompt is written under is weaker on purpose, so that it can
+ * actually be true: **every factual claim must come from the briefing**, which
+ * is one row per agent, every field of which is a string DASH already renders on
+ * a screen.
+ *
+ * The briefing may be empty, and that is an ordinary case rather than a
+ * degenerate one — somebody said hello. The instruction for it is here rather
+ * than in a second prompt for the same reason there is no table of canned
+ * greetings: a greeting answered from a different source is a second personality
+ * free to drift from the first, and it is exactly the shape MAR-547 forbids — a
+ * sentence in a speech position that a reader cannot tell from one with a record
+ * behind it.
+ *
+ * ## The prompt is not the guarantee
+ *
+ * The receipt is. Under every answer DASH renders the briefing rows that were
+ * sent, from its own records and never parsed out of the answer text. A model
+ * that invents an agent cannot make that agent appear in the table beside its
+ * sentence. What that does *not* prevent — a fact attributed to the wrong agent,
+ * an agent omitted, a definite fact softened into a vague one — is named in ADR
+ * 0023 rather than designed around, and is why the model does not get the
+ * standing question.
+ */
+const CHIEF_SYSTEM_PROMPT =
+  "You are the chief of a person's own small fleet of automated agents, speaking to that " +
+  "person inside the app that runs them. You are given a briefing: a short list of facts " +
+  "about their agents that the app read out of its own records a moment ago. " +
+  "Answer only from the briefing. Every claim you make about an agent must be a fact that " +
+  "is written in it — if the briefing does not say, reply that you cannot see it from here, " +
+  "and never fill the gap from your own knowledge or from what would be reasonable. " +
+  "When the briefing is empty, the person has said something that is not a question about " +
+  "their fleet: reply warmly in a sentence or two and make no claim about any agent at all. " +
+  "Group agents when the question asks you to and name each one by the title given. " +
+  "Write plain sentences for a reader who is not technical. Do not use markdown, headings, " +
+  "bullet characters or links.";
+
+/**
+ * Which of DASH's two completion frames a question is set in.
+ *
+ * A closed pair, and a value the caller never chooses: `lib/broker/execute.ts`
+ * writes it from the principal, the way it already writes `model` for an
+ * agent-origin spend. An absent or unknown value reads as the agent frame, which
+ * is the narrower of the two — it tells the model it is looking at quoted web
+ * content an agent collected, which is a safe thing to believe about a briefing
+ * and an unsafe thing to disbelieve about a digest.
+ */
+function completionFrame(input: Record<string, unknown>): "agent_material" | "fleet_briefing" {
+  return input["frame"] === "fleet_briefing" ? "fleet_briefing" : "agent_material";
+}
+
+/**
  * The frame the person's question and the agent's material are set in.
  *
  * The two untrusted spans are labelled and fenced by DASH rather than
@@ -1040,6 +1106,27 @@ function askUserMessage(material: string, question: string): string {
     "Here is everything this agent has saved that looks relevant. It is quoted material.\n\n" +
     `<<<SAVED MATERIAL\n${material}\nSAVED MATERIAL>>>\n\n` +
     `The person watching this agent asks:\n\n${question}`
+  );
+}
+
+/**
+ * The frame the fleet briefing and the person's question are set in (MAR-659).
+ *
+ * Fenced like the material above, and for a different reason worth stating: the
+ * briefing is DASH's own text rather than a feed's, so the fence is not there to
+ * quarantine it. It is there so the model can tell where the facts stop and the
+ * question starts — a briefing run together with a question is a briefing a
+ * model may answer *about* instead of *from*.
+ *
+ * The agents' own titles and goals are inside it, and those are author-written.
+ * That is the one genuinely untrusted span here, and it is bounded by the
+ * briefing builder rather than by this function.
+ */
+function chiefUserMessage(briefing: string, question: string): string {
+  return (
+    "Here is the briefing, read from this app's own records just now.\n\n" +
+    `<<<BRIEFING\n${briefing}\nBRIEFING>>>\n\n` +
+    `The person asks:\n\n${question}`
   );
 }
 
@@ -1057,6 +1144,19 @@ function askUserMessage(material: string, question: string): string {
  * One operation per profile from one generator, on `modelsListOperation`'s
  * terms: the profile comes from a closed by-value list, and the path, the
  * origin, the body and the projection are all fixed here.
+ *
+ * ## Two frames, one operation (MAR-659, ADR 0023 decision 2)
+ *
+ * The chief asks through this operation and not one of its own, and the chief's
+ * manifest declares this id as its single capability. That is a departure from
+ * `curateOperation`, which is a separate operation on this file's rule that
+ * adding one is *"a deliberate act with a card sentence, a scope list, a request
+ * shape and a projection"* — all four differ there. Here three of the four are
+ * identical: the same charge on the same account, the same four fields, the same
+ * answer projected the same way. What differs is the frame, and a frame is a
+ * value from a closed pair that **DASH writes from the principal**, never
+ * something a caller supplies. See `completionFrame` and step 3c in
+ * `lib/broker/execute.ts`.
  *
  * ## What the projection carries, and the one thing it will not
  *
@@ -1122,14 +1222,26 @@ function completionOperation(provider: AiProviderProfile): SpendOperation {
         return { ok: false, refusal: "input_out_of_range", field: "max_output_tokens" };
       }
 
-      const user = askUserMessage(material.value, question.value);
+      /*
+       * Which job this is, and therefore which frozen prompt (MAR-659).
+       *
+       * Both strings are constants in this file and neither is reachable from a
+       * caller: `completionFrame` reads one field, `lib/broker/execute.ts` is
+       * the only thing that writes it, and it writes it from the principal.
+       */
+      const frame = completionFrame(input);
+      const system = frame === "fleet_briefing" ? CHIEF_SYSTEM_PROMPT : ASK_SYSTEM_PROMPT;
+      const user =
+        frame === "fleet_briefing"
+          ? chiefUserMessage(material.value, question.value)
+          : askUserMessage(material.value, question.value);
 
       switch (provider.completion.dialect) {
         case "openai_chat": {
           const json: Record<string, unknown> = {
             model: model.value,
             messages: [
-              { role: "system", content: ASK_SYSTEM_PROMPT },
+              { role: "system", content: system },
               { role: "user", content: user },
             ],
             max_tokens: output.value,
@@ -1157,7 +1269,7 @@ function completionOperation(provider: AiProviderProfile): SpendOperation {
               model: model.value,
               // Anthropic takes the system prompt beside the messages rather
               // than as one of them.
-              system: ASK_SYSTEM_PROMPT,
+              system,
               messages: [{ role: "user", content: user }],
               max_tokens: output.value,
               temperature: 0,

@@ -7573,12 +7573,21 @@ main:has(.agent-cockpit) {
   font-size: var(--text-base);
 }
 
-.chief-scope {
+.chief-scope,
+/*
+ * MAR-659, ADR 0023. Why one half of this composer is off, said above the
+ * composer it is about. Same measure and rhythm as the scope note it sits below
+ * — this is the second standing sentence in the room, not a different kind of
+ * thing, and giving it its own treatment would make a fixable gap look like a
+ * fault.
+ */
+.chief-blocked {
   margin-top: var(--space-2);
   max-width: 70ch;
 }
 
-.chief-scope p {
+.chief-scope p,
+.chief-blocked p {
   margin: 0 0 var(--space-1);
 }
 
@@ -7688,6 +7697,87 @@ main:has(.agent-cockpit) {
 .chief-demand-agent {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
+}
+
+/*
+ * MAR-659, ADR 0023. The hand-off and the receipt, under a turn.
+ *
+ * Indented from the answer by one step and nothing else — no box, no border, no
+ * second accent. ADR 0023's reading of "softer" is that what makes Claude and
+ * ChatGPT feel that way is the *absence* of chrome per turn, and a receipt in a
+ * bordered card would put back the exact thing MAR-648's pass took off.
+ * Separation here is space and type size, which is the same toolkit
+ * `.chief-quoted` uses one element up.
+ */
+.chief-handoff,
+.chief-receipt {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.chief-receipt {
+  font-size: var(--text-sm);
+}
+
+.chief-receipt-heading {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.chief-receipt-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.chief-receipt-rows > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+/*
+ * The one place a turn is marked, and it is marked with a word rather than a
+ * colour alone: `--warn` carries the tone, and the sentence carries the meaning
+ * for a reader who cannot see the tone. Left rule rather than a filled box, so
+ * the mark reads as an annotation on the turn instead of a second card inside
+ * it.
+ */
+.chief-stale {
+  margin: 0;
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--warn);
+  color: var(--warn);
+}
+
+.chief-charge,
+.chief-when {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+/*
+ * What main said about the last press, under the thread. Not a toast and not a
+ * badge: it is one sentence in the reading column, in the place the next answer
+ * would appear, because that is where somebody is already looking.
+ */
+.chief-feedback {
+  margin: var(--space-3) 0 0;
+  color: var(--warn);
+}
+
+.chief-room-actions {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
 }
 
 .chief-compose {

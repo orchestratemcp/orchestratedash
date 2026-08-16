@@ -38,6 +38,7 @@ import {
 import { recordExchange } from "../lib/ai/ask-store";
 import { readEffectiveModelChoice } from "../lib/ai/model-store";
 import { aiProviderById } from "../lib/ai/providers";
+import { agentPrincipal } from "../lib/broker/principal";
 import type { ConnectionSourceManifest } from "../lib/connections";
 import { resolveCredentialTarget } from "../lib/connection-credentials";
 import { describeAskFailure } from "../lib/copy/ask";
@@ -125,7 +126,7 @@ export async function performAskAction(
   const statesCost = profile.completion.prices_its_own_answer;
 
   const response = await hostBroker().handle(
-    target.agent_id,
+    agentPrincipal(target.agent_id),
     {
       // Fresh per question and never derived from the question's text: the
       // broker's replay memory refuses a repeat, and two people asking the same
