@@ -1,0 +1,136 @@
+{
+  "article": "https://example.com/",
+  "agent": "synthetic-news-scout-browser",
+  "run_id": "mar628-proof",
+  "session": {
+    "session_id": "bs-1",
+    "agent": "synthetic-news-scout-browser",
+    "run_id": "mar628-proof",
+    "declared_origins": [
+      "https://example.com"
+    ],
+    "visited_origins": [
+      "https://example.com"
+    ],
+    "opened_at": "2026-08-16T19:12:51.159Z",
+    "first_read_at": "2026-08-16T19:13:02.044Z",
+    "ended_at": "2026-08-16T19:13:09.181Z",
+    "end_reason": "stopped_by_person"
+  },
+  "actions": [
+    {
+      "request_id": "proof-open",
+      "operation": "browser.open",
+      "decision": "allowed",
+      "refusal": null,
+      "origin": "https://example.com",
+      "url_before": null,
+      "url_after": "https://example.com/",
+      "frame_after": "frame-001.png",
+      "decided_at": "2026-08-16T19:12:51.159Z"
+    },
+    {
+      "request_id": "proof-read",
+      "operation": "browser.read",
+      "decision": "allowed",
+      "refusal": null,
+      "origin": "https://example.com",
+      "url_before": "https://example.com",
+      "url_after": "https://example.com/",
+      "frame_after": "frame-002.png",
+      "decided_at": "2026-08-16T19:13:02.044Z"
+    },
+    {
+      "request_id": "proof-evaluate",
+      "operation": "browser.evaluate",
+      "decision": "refused",
+      "refusal": "unknown_operation",
+      "origin": null,
+      "url_before": "https://example.com",
+      "url_after": "https://example.com",
+      "frame_after": null,
+      "decided_at": "2026-08-16T19:13:02.082Z"
+    }
+  ],
+  "refused_before_opening": [
+    {
+      "request_id": "proof-refused",
+      "operation": "browser.open",
+      "decision": "refused",
+      "refusal": "origin_not_allowed",
+      "origin": "https://example.com.attacker.test",
+      "url_before": null,
+      "url_after": null,
+      "frame_after": null,
+      "decided_at": "2026-08-16T19:12:51.156Z"
+    },
+    {
+      "request_id": "proof-after-stop",
+      "operation": "browser.open",
+      "decision": "refused",
+      "refusal": "revoked",
+      "origin": null,
+      "url_before": null,
+      "url_after": null,
+      "frame_after": null,
+      "decided_at": "2026-08-16T19:13:09.268Z"
+    }
+  ],
+  "steps": [
+    {
+      "what": "1. the agent is in the store",
+      "ok": true,
+      "detail": "synthetic-news-scout-browser"
+    },
+    {
+      "what": "2. a run exists to attach the trail to",
+      "ok": true,
+      "detail": "{\"accepted\":1,\"rejected\":[]}"
+    },
+    {
+      "what": "3. an origin that only looks declared is refused",
+      "ok": true,
+      "detail": "{\"protocol_version\":1,\"type\":\"browser_response\",\"request_id\":\"proof-refused\",\"ok\":false,\"refusal\":\"origin_not_allowed\"}"
+    },
+    {
+      "what": "4. a real page loaded in a real WebContentsView",
+      "ok": true,
+      "detail": "Example Domain"
+    },
+    {
+      "what": "5. the view is where the supervision panel says its stage is",
+      "ok": true,
+      "detail": "view={\"x\":264,\"y\":242,\"width\":688,\"height\":430} panel={\"x\":264,\"y\":242,\"width\":688,\"height\":430}"
+    },
+    {
+      "what": "6. the words on the page came back as evidence",
+      "ok": true,
+      "detail": "129 characters, beginning \"Example Domain\\n\\nThis domain is for use in documentation exam\""
+    },
+    {
+      "what": "7. the run is marked as having read untrusted content",
+      "ok": true,
+      "detail": "a write or a spend in this run now needs a person"
+    },
+    {
+      "what": "8. an operation DASH does not build is refused",
+      "ok": true,
+      "detail": "{\"protocol_version\":1,\"type\":\"browser_response\",\"request_id\":\"proof-evaluate\",\"ok\":false,\"refusal\":\"unknown_operation\"}"
+    },
+    {
+      "what": "9. Stop destroyed the view and refuses the rest of the run",
+      "ok": true,
+      "detail": "{\"protocol_version\":1,\"type\":\"browser_response\",\"request_id\":\"proof-after-stop\",\"ok\":false,\"refusal\":\"revoked\"}"
+    },
+    {
+      "what": "10. the trail is readable back out of the store",
+      "ok": true,
+      "detail": "[[\"browser.open\",\"allowed\",null,\"https://example.com\"],[\"browser.read\",\"allowed\",null,\"https://example.com\"],[\"browser.evaluate\",\"refused\",\"unknown_operation\",null]]"
+    },
+    {
+      "what": "11. a refusal that preceded any session is still readable",
+      "ok": true,
+      "detail": "[[\"browser.open\",\"origin_not_allowed\",\"https://example.com.attacker.test\"],[\"browser.open\",\"revoked\",null]]"
+    }
+  ]
+}

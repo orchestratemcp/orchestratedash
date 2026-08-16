@@ -121,8 +121,14 @@ describe("schema", () => {
     // is a new step and it goes last (MAR-640 reached master first and holds
     // 22), so an installed store that has already recorded steps 0 to 22 runs
     // exactly one more.
+    //
+    // 24 is MAR-628's three browser tables, appended on the same terms. This
+    // number colliding is the one failure a parallel packet reliably produces —
+    // two branches each appending "the last migration" — and it produces it
+    // here, in a blocking gate, rather than in an installed store that silently
+    // skipped somebody's step.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(23);
+    expect(version.user_version).toBe(24);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -538,7 +544,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(23);
+    ).toBe(24);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

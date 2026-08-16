@@ -208,6 +208,39 @@ export interface AgentBrokerRequestMessage {
 }
 
 /**
+ * One controlled-browser request (MAR-628, ADR 0019).
+ *
+ * `request` stays `unknown` for `broker_request`'s reason: this parser owns the
+ * newline-delimited envelope and not the browser's contract.
+ * `lib/browser/protocol.ts` is the parser, on the DASH side where the operation
+ * catalogue and the origin allowlist are.
+ *
+ * ## Why this is not a broker request with a different operation id
+ *
+ * Because a brokered request names a **connection**, and this names none. There
+ * is no account behind a browser session, no scope, no token and no provider — so
+ * riding the broker's envelope would have meant making `connection_id` optional,
+ * and that is the one field binding a request to somebody's mailbox. A required
+ * field made optional for a caller that does not need it is how the next caller
+ * ends up not needing it either.
+ *
+ * The two also fail differently in a way the transport has to keep apart. A
+ * brokered request DASH never answers is an agent that waited. A browser request
+ * DASH never answers is that, **plus** a Chromium view attached to DASH's window
+ * with a page loaded in it — so `runner/supervisor.ts` gives this its own, much
+ * shallower bound rather than a share of the broker's.
+ *
+ * It rides this pipe on the same authenticated-by-construction argument: only
+ * the process holding the other end can write to it, so the runner binds each
+ * request to the child that wrote it, and an agent has no field in which to name
+ * a browser session belonging to anybody else.
+ */
+export interface AgentBrowserRequestMessage {
+  type: "browser_request";
+  request: unknown;
+}
+
+/**
  * The agent saying it wrote a file into its outbox (MAR-434).
  *
  * Every field is checked here rather than left `unknown`, which is the opposite
@@ -239,7 +272,8 @@ export type AgentMessage =
   | AgentTelemetryMessage
   | AgentArtifactMessage
   | AgentArtifactFileMessage
-  | AgentBrokerRequestMessage;
+  | AgentBrokerRequestMessage
+  | AgentBrowserRequestMessage;
 
 /**
  * Parse one line of agent output.
@@ -324,6 +358,10 @@ export function parseAgentMessage(line: string): AgentMessage | null {
 
   if (message["type"] === "broker_request" && Object.hasOwn(message, "request")) {
     return { type: "broker_request", request: message["request"] };
+  }
+
+  if (message["type"] === "browser_request" && Object.hasOwn(message, "request")) {
+    return { type: "browser_request", request: message["request"] };
   }
 
   return null;

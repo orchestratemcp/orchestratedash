@@ -7749,3 +7749,135 @@ main:has(.agent-cockpit) {
     grid-template-rows: minmax(0, auto) minmax(12rem, 2fr);
   }
 }
+
+/* ---------------------------------------------------------------------- *
+ * The watched browser (MAR-628, ADR 0019)
+ *
+ * The only unusual rule in this block is `.browser-stage`, and it is unusual
+ * because it is not really a box: it is a *reservation*. Chromium paints a
+ * native `WebContentsView` over it, positioned by main from the rectangle this
+ * element reports — so nothing inside it is ever seen, and anything given to it
+ * would flash for one frame before the view arrived.
+ *
+ * It therefore needs a size and a placeholder appearance and nothing else. The
+ * dashed edge is what a person sees in the moment between the panel mounting
+ * and the view being placed, and on the developer path, where there is no
+ * Electron and no view will ever arrive.
+ * ---------------------------------------------------------------------- */
+
+.browser-panel {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.browser-notice {
+  border-left: 2px solid var(--line-strong);
+  padding-left: var(--space-3);
+  color: var(--text-muted);
+}
+
+.browser-stage {
+  /* A 16:10 window, floored so a narrow column still gives the page room to
+     lay itself out rather than handing Chromium a letterbox. */
+  aspect-ratio: 16 / 10;
+  min-height: 18rem;
+  width: 100%;
+  border: 1px dashed var(--line);
+  background: var(--surface-2);
+}
+
+.browser-declared .origin-list,
+.browser-session .origin {
+  font-family: var(--font-mono);
+}
+
+.origin-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.origin-list code,
+.browser-session .origin {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: var(--text-sm);
+}
+
+.browser-session .origin + .origin {
+  margin-left: var(--space-2);
+}
+
+.browser-stop-meaning {
+  color: var(--text-muted);
+}
+
+.browser-trail {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.browser-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--line);
+}
+
+/* Refused rows are marked by a rule, not by a fill. Most refusals here are an
+   agent meeting a limit somebody set on purpose — the system working — and a
+   trail that painted every one of them red would train a person to stop
+   reading it. See `describeBrowserRefusal`. */
+.browser-action.is-refused {
+  border-left: 2px solid var(--line-strong);
+  padding-left: var(--space-2);
+}
+
+.browser-action-what {
+  font-weight: 600;
+}
+
+.browser-action-url {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.browser-action-why {
+  flex-basis: 100%;
+  color: var(--text-muted);
+}
+
+.browser-action-at {
+  margin-left: auto;
+  font-size: var(--text-sm);
+}
+
+.browser-past h3 {
+  margin-bottom: var(--space-2);
+}
+
+@media (max-width: 40rem) {
+  /* The action row stacks rather than wrapping mid-line, and the timestamp
+     gives up its `margin-left: auto` — pushed right in a stacked layout it
+     would sit alone on a line of its own for no gain. */
+  .browser-action {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  .browser-action-at {
+    margin-left: 0;
+  }
+}

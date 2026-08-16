@@ -91,6 +91,53 @@ a person can trigger — is **not met**, and no dependency and no client exist.
 
 ---
 
+Updated: 2026-08-16 (MAR-628 slice 1: the controlled browser is built, and one
+real page has been read through it)
+
+ADR 0019's decision is now code. An agent may ask DASH for exactly two things —
+open one page, read the words on it — and `lib/browser/operations.ts` contains
+nothing else, pinned by value the way `WRITE_PATHS` is. `BrowserGesture` has no
+member that could carry a selector, a script, a key or a CDP parameter, so
+"no arbitrary JavaScript" is a property of the type rather than a promise.
+
+Origins are exact and per run, declared in a new `agent_dom.browser` manifest
+block, parsed by `URL` and compared with `===`. There is no prefix match
+anywhere and a path in a declaration is refused rather than quietly widened to
+the whole host. Every request is checked, including subresources and each hop of
+a redirect chain. The session is one ephemeral `WebContentsView` in an in-memory
+partition — no `persist:` prefix, which is the structural reason nothing
+survives the run — with popups, downloads, permission prompts, new windows and
+every non-HTTPS scheme denied. Stop destroys the view and refuses the rest of
+the run, and no agent operation can reach it.
+
+**One real page has been read through it.** `electron/prove-browser.ts` drove
+the real controller against a real page in a real view attached to DASH's own
+window: eleven checks, all passing, including 129 characters of real page text
+read back through CDP in an isolated world, an origin refusal on
+`https://example.com.attacker.test`, a refusal of `browser.evaluate`, and a
+browser pixel-aligned with the supervision panel's stage — which is the claim
+ADR 0019 chose Electron over Playwright for. That run found four defects no unit
+test saw, all fixed here: a CDP call that never settled, a session receipt
+written by the transport rather than the controller, an origin refusal written
+where no person could see it, and a viewport command denied on every tick so the
+browser sat in the wrong corner of the window.
+
+After a browsed read, any write or spend for that agent in that run needs a
+person. That is ADR 0020's read-then-reach rule, wired; its four limits are
+unchanged and a fifth, specific to this wiring, is stated where it applies.
+
+This is `planned`. ADR 0019 amendment 1 (proposed) records the gap between the
+ADR's own smallest slice and what shipped: `scroll` and the approval-required
+`click` are deferred with the approval surface they need, and so are typing,
+forms, uploads, downloads, multiple tabs, the before-frame, credentials and the
+whole VPS/Xvfb path. The amendment also scores ADR 0019's eight-point "full
+control" checklist honestly — **condition 8, resource use and failure recovery
+measured under load, is not met and is the largest gap.** One concurrent session
+on one machine has been exercised. The product goes on saying *controlled
+browser operations*.
+
+---
+
 Updated: 2026-08-13 (MAR-628: browser control is decided before it is built)
 
 ADR 0019 recommends one browser shape: the Chromium DASH already ships,

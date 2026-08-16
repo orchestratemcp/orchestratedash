@@ -187,6 +187,71 @@ export const COMMANDS = {
     irreversible: false,
   },
 
+  /*
+   * MAR-628, ADR 0019. The two halves of the supervision surface that are not
+   * reads: telling main where to paint the controlled browser, and stopping it.
+   *
+   * ## Why these ride the audited channel
+   *
+   * `shell.menu`'s argument, and it is stronger here. A `WebContentsView` is a
+   * native surface painted over the window, so *something* in the renderer has
+   * to be able to say where it goes — and the alternative to routing that
+   * through this catalogue is a third `contextBridge` surface, which ADR 0001
+   * amendment 7 makes a review event precisely so that it does not happen
+   * casually. Routing through here means the request is allowlisted and its
+   * payload is constrained to four numbers.
+   *
+   * What crosses is a rectangle. The renderer cannot name a session, a URL, an
+   * origin or an operation: main resolves the session from the agent it is
+   * already tracking, and every one of those belongs to `lib/browser/`.
+   */
+  "browser.viewport": {
+    effect: "Put the watched browser where the page says its panel is. Changes nothing else.",
+    payload_keys: ["x", "y", "width", "height"],
+    required_keys: ["x", "y", "width", "height"],
+    /*
+     * Four numbers, declared as numbers.
+     *
+     * `host.create.port` is the precedent and the reason is the same one: a
+     * rectangle is four numbers, and accepting string representations would put
+     * a second parser between the renderer and `setBounds`. Without this every
+     * one of these is refused as a missing field, which is what the first proof
+     * run found — the panel reported its rectangle sixteen times, all sixteen
+     * were denied, and the browser sat in `FALLBACK_BOUNDS` over the top-left of
+     * the window while the panel below it drew an empty stage. Required *and*
+     * typed, so a partial rectangle is still a refusal.
+     */
+    payload_types: { x: "number", y: "number", width: "number", height: "number" },
+    // Moving a view is not a mutation in this catalogue's sense: it reaches no
+    // agent, no store and no provider, and nothing about it outlives the
+    // window. `shell.scale` and `shell.menu` are the same family.
+    mutates: false,
+    irreversible: false,
+  },
+  /*
+   * Stop, and it is the one command in this family that is not cosmetic.
+   *
+   * `mutates: true`, because it ends something and the audit should say who
+   * ended it.
+   *
+   * `irreversible: false`, and that value is worth defending rather than
+   * assuming. What Stop destroys is DASH's own browser session, which a person
+   * can have again by running the agent again. The thing that genuinely cannot
+   * be undone is not this command's effect — it is that requests the browser
+   * already sent have already arrived — and marking the command irreversible
+   * would attach that fact to the wrong object, implying DASH's approval
+   * machinery could have prevented it. `describeStop` says it in words, on the
+   * button, which is where somebody will actually read it.
+   */
+  "browser.stop": {
+    effect:
+      "Close the browser DASH opened for this agent, and refuse anything else it asks for during this run.",
+    payload_keys: ["agent"],
+    required_keys: ["agent"],
+    mutates: true,
+    irreversible: false,
+  },
+
   "runner.start": {
     effect: "Start a registered agent's process on this machine. Not an Agent DOM command.",
     payload_keys: ["agent_id"],
@@ -1477,6 +1542,28 @@ export function isShellUiCommandName(value: CommandName): value is ShellUiComman
 }
 
 /**
+ * The controlled browser's two commands (MAR-628, ADR 0019).
+ *
+ * A family of its own rather than two more entries in `SHELL_UI_ACTIONS`, and
+ * the reason is that they are not the same kind of thing. Everything in that
+ * map changes how this window looks and nothing else; `browser.stop` destroys a
+ * Chromium session and refuses an agent's requests for the rest of its run,
+ * which is `mutates: true` and belongs in an audit row somebody may later go
+ * looking for. Filing it under the cosmetic family would have been one line of
+ * convenience and a misfiled receipt.
+ */
+export const BROWSER_ACTIONS = {
+  "browser.viewport": "viewport",
+  "browser.stop": "stop",
+} as const;
+
+export type BrowserCommandName = keyof typeof BROWSER_ACTIONS;
+
+export function isBrowserCommandName(value: CommandName): value is BrowserCommandName {
+  return Object.hasOwn(BROWSER_ACTIONS, value);
+}
+
+/**
  * Every command is local, an Agent DOM command, or runner lifecycle.
  *
  * This is a compile-time assertion, not a runtime one: adding an entry to
@@ -1492,6 +1579,7 @@ type UnroutedCommand = Exclude<
   | FleetCommandName
   | HostCommandName
   | ShellUiCommandName
+  | BrowserCommandName
   | WorkspaceCommandName
   | SampleCommandName
   | GlanceCommandName
@@ -1787,6 +1875,11 @@ export function executeCommand(review: CommandReview): CommandResult {
     isFleetCommandName(review.command) ||
     isHostCommandName(review.command) ||
     isShellUiCommandName(review.command) ||
+    // MAR-628. One moves a native `WebContentsView` and one destroys a Chromium
+    // session. Neither is reachable from a sandboxed preload, and succeeding
+    // here would be the worse of the two failures this list guards against:
+    // reporting that a person's Stop closed a browser that is still open.
+    isBrowserCommandName(review.command) ||
     // MAR-507. In this list for the plainest reason of all: performing one
     // opens a file picker, which this module cannot do and must not appear to.
     isWorkspaceCommandName(review.command) ||
@@ -2200,6 +2293,30 @@ export interface DispatchContext {
    * and the palette it can see is CSS. This is the half it cannot see.
    */
   setNativeTheme(theme: "system" | "light" | "dark"): void;
+  /**
+   * Put the controlled browser where the supervision panel says it is
+   * (MAR-628).
+   *
+   * Injected like the three above, and for the plainest of their reasons: a
+   * `WebContentsView` is an Electron main object and this module has to stay
+   * importable from a sandboxed preload.
+   *
+   * It returns nothing, `showApplicationMenu`'s shape. There is no result the
+   * renderer could act on — it already knows where its own panel is, and
+   * whether a view exists to be moved is a question about a session it cannot
+   * name.
+   */
+  setBrowserViewport(bounds: { x: number; y: number; width: number; height: number }): void;
+  /**
+   * Destroy one agent's browser session and refuse the rest of its run
+   * (MAR-628).
+   *
+   * The only path to revocation, and the only one there is: `lib/browser/protocol.ts`
+   * has no `stop` and no `close` operation, so an agent cannot revoke, cannot
+   * un-revoke, and cannot discover that it has been revoked except by being
+   * refused.
+   */
+  stopBrowser(agentId: string): Promise<void>;
   /**
    * The task-workspace actions: open a task, admit one user-selected file,
    * hand the task over (MAR-507), or save one of an agent's outputs where the
@@ -2699,6 +2816,39 @@ export async function dispatchCommand(
         ? { x: Math.round(x), y: Math.round(y) }
         : undefined;
     context.showApplicationMenu(at);
+    return { ok: true, request_id: review.audit.request_id };
+  }
+
+  if (isBrowserCommandName(review.command)) {
+    if (review.command === "browser.stop") {
+      // The agent is named and nothing else is. The renderer cannot name a
+      // session, and main resolves one from the agent it is already tracking —
+      // so the widest thing a compromised renderer could ask for is "stop the
+      // browser belonging to agent X", which is the same thing the button asks
+      // for.
+      await context.stopBrowser(String(review.payload["agent"]));
+      return { ok: true, request_id: review.audit.request_id };
+    }
+    /*
+     * Four numbers, each narrowed here rather than passed through.
+     *
+     * `reviewCommand` has already required all four to be present by the time
+     * this runs; what it cannot say is that they are numbers, because the
+     * payload rules are about which keys exist. A non-number becomes zero, and
+     * zero is a safe value in both directions: a view with no width paints
+     * nothing and reports no error, which is the correct outcome for a panel
+     * that measured itself wrong.
+     */
+    const number = (key: string): number => {
+      const value = review.payload[key];
+      return typeof value === "number" && Number.isFinite(value) ? value : 0;
+    };
+    context.setBrowserViewport({
+      x: number("x"),
+      y: number("y"),
+      width: number("width"),
+      height: number("height"),
+    });
     return { ok: true, request_id: review.audit.request_id };
   }
 

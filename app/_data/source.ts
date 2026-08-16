@@ -36,6 +36,9 @@ import type { O_FLEET } from "../../lib/brand/o-cast";
 import type { CommandResult } from "../../lib/shell/ipc";
 import type { DashReadApi } from "../../lib/shell/read";
 import type { AgentCommand } from "../../lib/workspace";
+// `import type`, so this client module names the shape without pulling
+// `lib/views/browser.ts` — which reaches the store — toward the browser bundle.
+import type { BrowserView } from "../../lib/views/browser";
 import type {
   AgentsView,
   ConnectionsView,
@@ -191,6 +194,27 @@ interface DashShellClient {
    */
   markAgentLooked?(args: { agent_id: string }): Promise<CommandResult>;
   setUiScale?(factor?: number): Promise<CommandResult>;
+  /**
+   * The controlled browser's two commands (MAR-628, ADR 0019).
+   *
+   * Optional for the reason every method here is, and the degradation is worth
+   * naming because only one half of it is quiet. A shell older than
+   * `setBrowserViewport` cannot place the view, so it sits where
+   * `FALLBACK_BOUNDS` puts it — visible, in the wrong place, which is the right
+   * way round for a browser somebody is meant to be watching.
+   *
+   * A shell older than `stopBrowser` is the loud half: it also has no browser
+   * to stop, because the same build that added one added both. So the panel
+   * that would offer Stop is a panel with nothing to show, and
+   * `BrowserPanel` renders nothing at all rather than a dead button.
+   */
+  setBrowserViewport?(bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }): Promise<CommandResult>;
+  stopBrowser?(agent: string): Promise<CommandResult>;
   /**
    * The native half of the theme (MAR-642).
    *
@@ -439,6 +463,8 @@ export interface DashDataSource {
   workspace(agent: string): Promise<ViewResult<WorkspaceView>>;
   hosts(): Promise<ViewResult<HostsView>>;
   notifications(): Promise<ViewResult<NotificationsView>>;
+  /** MAR-628, ADR 0019. One agent's controlled browser and its trail. */
+  browser(agent: string): Promise<ViewResult<BrowserView>>;
 }
 
 /**
@@ -471,6 +497,8 @@ function shellSource(bridge: DashReadApi): DashDataSource {
   /* MAR-588. Same treatment, same reason: a shell older than this read has no
      such method, and the narrowing has to survive into the closure. */
   const readNotifications = bridge.notifications?.bind(bridge);
+  /* MAR-628. Same treatment, same reason. */
+  const readBrowser = bridge.browser?.bind(bridge);
   return {
     host: "shell",
     can_act: typeof window !== "undefined" && window.dashShell !== undefined,
@@ -494,6 +522,10 @@ function shellSource(bridge: DashReadApi): DashDataSource {
       readNotifications === undefined
         ? Promise.resolve({ ok: false, recovery: describeViewFailure("refused") })
         : fromBridge(readNotifications),
+    browser: (agent) =>
+      readBrowser === undefined
+        ? Promise.resolve({ ok: false, recovery: describeViewFailure("refused") })
+        : fromBridge(() => readBrowser(agent)),
   };
 }
 
@@ -534,6 +566,7 @@ function browserSource(): DashDataSource {
       fromHttp(`/api/views/workspace?agent=${encodeURIComponent(agent)}`),
     hosts: () => fromHttp("/api/views/hosts"),
     notifications: () => fromHttp("/api/views/notifications"),
+    browser: (agent) => fromHttp(`/api/views/browser?agent=${encodeURIComponent(agent)}`),
   };
 }
 

@@ -142,6 +142,17 @@ describe("the audited command chokepoint", () => {
       // Windows title bar overlay are chosen in Node before a stylesheet
       // exists, and this is what tells that half which one a person chose.
       "shell.theme",
+      // MAR-628, ADR 0019. The controlled browser's two, and they are not one
+      // family. `browser.viewport` belongs beside the three above — it moves a
+      // native view and reaches no agent, no store and no provider. Its
+      // neighbour does not: `browser.stop` destroys a Chromium session and
+      // refuses an agent's requests for the rest of its run, which is
+      // `mutates: true` and belongs in a receipt somebody may go looking for.
+      // They sit together here because they arrived together; they are
+      // deliberately apart in `SHELL_UI_ACTIONS`, which is the map that decides
+      // how they are handled.
+      "browser.viewport",
+      "browser.stop",
       // MAR-415. Lifecycle, not Agent DOM commands: they act on a process, no
       // manifest declares them, and they never become an envelope. The
       // `runner.` prefix is what keeps that legible at every call site.
@@ -525,6 +536,10 @@ describe("dispatch", () => {
     const menus: Array<{ x: number; y: number } | undefined> = [];
     // MAR-642. Which theme main was told to draw its own chrome in.
     const themes: string[] = [];
+    // MAR-628. Where main was told to paint the controlled browser, and whose
+    // browser a person pressed Stop on.
+    const viewports: Array<{ x: number; y: number; width: number; height: number }> = [];
+    const browserStops: string[] = [];
     // MAR-434. Recorded rather than performed, like everything else here: the
     // real one reaches the runner over a socket and raises a native save
     // dialog, and neither exists in this process.
@@ -648,6 +663,18 @@ describe("dispatch", () => {
       // one of three literals before it gets here.
       setNativeTheme: (theme: "system" | "light" | "dark") => {
         themes.push(theme);
+      },
+      // MAR-628. Recorded, not performed, on `setNativeTheme`'s terms: the real
+      // ones move a `WebContentsView` and destroy a Chromium session, neither of
+      // which a test process has. What is worth asserting from here is that the
+      // dispatcher narrows four payload values to numbers, and that a Stop
+      // carries the agent and nothing else.
+      setBrowserViewport: (bounds: { x: number; y: number; width: number; height: number }) => {
+        viewports.push(bounds);
+      },
+      stopBrowser: (agentId: string) => {
+        browserStops.push(agentId);
+        return Promise.resolve();
       },
       // MAR-383. Recorded, not performed — and note the fake holds no secret,
       // which it could not do usefully anyway: no credential is an argument to

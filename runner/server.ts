@@ -512,6 +512,63 @@ async function handle(
     return;
   }
 
+  // POST /browser/drain — controlled-browser requests waiting for a decision
+  // (MAR-628, ADR 0019). The runner does not interpret them:
+  // `lib/browser/protocol.ts` parses each candidate on the DASH side, which is
+  // where the operation catalogue and the origin allowlist are. What the runner
+  // contributes, and what nothing else could, is the identity of the child that
+  // wrote each line.
+  //
+  // Its own pair of routes rather than a widening of `/broker/*`, for the reason
+  // `AgentBrowserRequestMessage` gives: these carry no connection, and a broker
+  // request without one is not a broker request.
+  if (
+    request.method === "POST" &&
+    segments.length === 2 &&
+    segments[0] === "browser" &&
+    segments[1] === "drain"
+  ) {
+    send(response, 200, { ok: true, ...options.supervisor.drainBrowserRequests() });
+    return;
+  }
+
+  // POST /browser/responses — DASH's decisions, on their way back to the
+  // children that asked (MAR-628).
+  //
+  // `/broker/responses`' contract exactly, down to the delivery reporting: the
+  // body names an agent and carries one already-encoded response line, the
+  // runner writes it to that child's stdin and nothing else, and a caller on
+  // this channel is already DASH because it holds the bearer token.
+  //
+  // It reuses `deliverBrokerResponses` rather than growing a near-copy. That
+  // function does not parse a response, does not know what a broker is, and
+  // does exactly one thing — write the caller's own line to the named child and
+  // report which positions in the caller's array reached a live pipe. A second
+  // implementation of that would be a second place for the index bookkeeping
+  // MAR-467 got right to be got wrong.
+  if (
+    request.method === "POST" &&
+    segments.length === 2 &&
+    segments[0] === "browser" &&
+    segments[1] === "responses"
+  ) {
+    const body = await readBody(request);
+    if (body === null) {
+      send(response, 413, { ok: false, detail: "The request body was too large." });
+      return;
+    }
+    let parsed: { responses?: unknown };
+    try {
+      parsed = JSON.parse(body) as { responses?: unknown };
+    } catch {
+      send(response, 400, { ok: false, detail: "The request body was not JSON." });
+      return;
+    }
+    const delivered = deliverBrokerResponses(options.supervisor, parsed.responses);
+    send(response, 200, { ok: true, ...delivered });
+    return;
+  }
+
   // GET /workspace-artifacts — the file-backed index, with availability
   // recomputed (MAR-434).
   //

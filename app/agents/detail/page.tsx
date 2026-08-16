@@ -34,6 +34,7 @@ import { AgentChatBar, AskThread } from "../../_components/ask";
 import { LiveFeed } from "../../_components/live-feed";
 import { ModelChoice } from "../../_components/model-choice";
 import { InputsPanel, type SelectedInput } from "../../_components/inputs";
+import { LiveBrowserPanel } from "../../_components/browser-panel";
 import { OutputsPanel } from "../../_components/outputs";
 import { AgentPanel } from "../../_components/panel";
 import { RemoveAgent } from "../../_components/remove-agent";
@@ -858,6 +859,15 @@ function AgentWorkspace(): ReactNode {
           roles={view.input_roles}
           selected={selectedInputs}
         />
+
+        {/* MAR-628, ADR 0019. On this stage and no other, because the browser
+            exists during a run and the person watching one is standing here.
+            The alternative homes were both worse: Overview is where MAR-646
+            found a page of echoes, and a stage of its own would be a tab that
+            is empty for every agent that never asks for a browser — which is
+            every agent but one. Renders nothing at all for those; see
+            `BrowserPanel`. */}
+        <LiveBrowserPanel agent={view.agent} />
       </>
     ),
 
