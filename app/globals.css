@@ -6756,7 +6756,8 @@ main:has(.agent-cockpit) {
   gap: var(--space-1);
 }
 
-/* A future odd final cell spans; the current four actions form the square. */
+/* An odd final cell spans the row. Written for a future fifth cell by
+   MAR-641; MAR-658's Overview action is that cell. */
 .cockpit-action-grid > :last-child:nth-child(odd) {
   grid-column: 1 / -1;
 }
