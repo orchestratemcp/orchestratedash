@@ -6009,6 +6009,19 @@ button:disabled {
 }
 
 /*
+ * MAR-659. Above the box on the pinned cockpit bar — the fact a person needs
+ * before they type into it, on every stage, not only the Chat stage where
+ * `ask.purpose.headline` already says the fuller version. `describeChatSubject`
+ * used to be `visually-hidden` here.
+ */
+.ask-subject {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/*
  * The box.
  *
  * `field-sizing: content` where it is supported, so two lines of question grow
@@ -7433,13 +7446,16 @@ main:has(.agent-cockpit) {
   align-self: stretch;
 }
 
+/*
+ * MAR-659, from ADR 0022's proposal: this used to draw its own border and its
+ * own `--surface-0` against `.chief-band`'s `--surface-1` — a bordered box
+ * inside a bordered band, and one of the four named reasons the room read as
+ * "edgy" rather than as a soft, Claude/ChatGPT-shaped conversation. The band's
+ * own frame is the only border this surface needs.
+ */
 .chief-room {
   min-height: 0;
   overflow: auto;
-  padding: var(--space-3);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface-0);
 }
 
 .chief-room-head {
@@ -7463,12 +7479,18 @@ main:has(.agent-cockpit) {
   margin: 0 0 var(--space-1);
 }
 
+/*
+ * MAR-659. Generous rather than `--space-4`: no chrome marks where one turn
+ * ends and the next begins any more, so the gap itself is what does — the
+ * "vertical rhythm" the proposal named as one of the four things a rounded
+ * corner would not have fixed.
+ */
 .chief-turns {
   list-style: none;
   margin: var(--space-2) 0 0;
   padding: 0;
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-6);
 }
 
 .chief-turn {
@@ -7477,27 +7499,45 @@ main:has(.agent-cockpit) {
 }
 
 /*
- * The question, given the accent bar the estimate has on the agent page: it is
- * the person's own words, and marking them is what lets a reader scan a
- * scrollback for the thing they asked rather than the answers between.
+ * The question. No accent bar (MAR-659, ADR 0022's proposal): the bar was
+ * chrome per turn, the exact thing "edgy" was naming. `.chief-speaker` is what
+ * marks whose words these are now — a label, not a rule down the side.
  */
 .chief-asked {
   margin: 0;
-  padding-left: var(--space-3);
-  border-left: var(--active-bar) solid var(--accent);
   font-weight: 600;
   max-width: 70ch;
 }
 
 .chief-reply {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-3);
   justify-items: start;
   max-width: 70ch;
 }
 
-.chief-reply .chief-says {
+/*
+ * The speaker label (MAR-659): "You" above the person's own words, the
+ * chief's name above its own — a line, not a bubble, and the one place this
+ * room spends an accent colour. `Says` renders it visible for both; it used to
+ * be announcement-only.
+ *
+ * `.chief-reply .chief-says` used to drop to `--text-sm` here, which made the
+ * chief's answer smaller than the question it was answering — ADR 0022's
+ * proposal named this one directly. That rule is gone rather than reworded:
+ * base size, same as `.chief-asked`, is the inherited default with nothing
+ * left to override.
+ */
+.chief-speaker {
+  display: block;
+  margin-bottom: var(--space-1);
   font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.chief-reply .chief-speaker {
+  color: var(--accent);
 }
 
 .chief-standing {
@@ -7508,14 +7548,13 @@ main:has(.agent-cockpit) {
 /*
  * An author's sentence, marked as somebody else's.
  *
- * A left rule and a muted colour rather than quotation marks alone: the whole
- * point of `ChiefSentence.quoted` is that a reader can tell DASH's words from
- * an author's at a glance, and punctuation inside a paragraph is not a glance.
+ * Italic and muted rather than a second rule beside `.chief-asked`'s (MAR-659,
+ * ADR 0022's proposal named this pairing directly): `<blockquote>` already
+ * says "these are not DASH's words" to a screen reader, and two vertical bars
+ * in one turn is exactly the border-count "edgy" was about.
  */
 .chief-quoted {
   margin: 0;
-  padding-left: var(--space-3);
-  border-left: 1px solid var(--line);
   color: var(--text-muted);
   font-style: italic;
 }
@@ -7557,6 +7596,18 @@ main:has(.agent-cockpit) {
 .chief-field {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/*
+ * MAR-659. Above the box, on screen whether the room is open or not — the
+ * fact a person needs before they type a word: this composer is the fleet's,
+ * not one agent's. `CHIEF_CHAT_COPY.label` used to be `visually-hidden`.
+ */
+.chief-subject {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
 
 .chief-input {

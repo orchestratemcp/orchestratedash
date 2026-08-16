@@ -28,6 +28,7 @@ import {
   ASK_MODEL_CHANGE,
   ASK_PLACEHOLDER,
   describeAskModel,
+  describeChatSubject,
   describeUnavailable,
 } from "../lib/copy/ask";
 import { buildArtifactCards } from "../lib/views/artifacts";
@@ -445,6 +446,29 @@ describe("the chat bar", () => {
     const html = chatBar(ASKABLE);
     expect(html).toContain("<textarea");
     expect(html).toContain(ASK_PLACEHOLDER);
+  });
+
+  /*
+   * MAR-659. This agent's own name, read rather than only announced — the
+   * bar used to carry a generic "Message this agent" as a `visually-hidden`
+   * label, which is a prop deciding who the box talks to with no word on
+   * screen confirming it.
+   */
+  it("names this agent, visibly, above the box", () => {
+    const html = decode(
+      renderToStaticMarkup(
+        <AgentChatBar
+          agent={AGENT}
+          agentTitle="AI agent news"
+          ask={ASKABLE}
+          canAct
+          onAsked={() => undefined}
+          setFeedback={() => undefined}
+        />,
+      ),
+    );
+    expect(html).toContain(describeChatSubject("AI agent news"));
+    expect(html).not.toContain('<span class="visually-hidden">Message');
   });
 
   it("is never a dead input", () => {

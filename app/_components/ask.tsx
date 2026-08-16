@@ -8,6 +8,7 @@ import {
   ASK_ACTIVITY_LABEL,
   ASK_MODEL_LABEL,
   describeAskActivity,
+  describeChatSubject,
 } from "../../lib/copy/ask";
 import type { OName } from "../../lib/brand/o-cast";
 import type { AgentAskView, AskExchangeView } from "../../lib/views/types";
@@ -180,6 +181,7 @@ export function AskThread({
  */
 export function AskComposer({
   agentAvatar = null,
+  agentTitle = null,
   ask,
   canAct,
   onAsked,
@@ -196,6 +198,12 @@ export function AskComposer({
    * costume this agent might not be wearing on the card it came from.
    */
   agentAvatar?: OName | null;
+  /**
+   * This agent's own display name, for the composer's visible label
+   * (`describeChatSubject`, MAR-659). Null falls back to a generic label —
+   * see that function's own note on the one caller that has none to give.
+   */
+  agentTitle?: string | null;
   ask: AgentAskView;
   canAct: boolean;
   onAsked: () => void;
@@ -301,8 +309,11 @@ export function AskComposer({
             in two places on one screen, and the hidden half is still in the
             markup, which is exactly the kind of duplication a copy gate reads
             straight past. A control's accessible name should say what the
-            control is. */}
-        <span className="visually-hidden">{AGENT_COCKPIT_COPY.chat_label}</span>
+            control is — and MAR-659 is why it is visible now rather than
+            `visually-hidden`: naming *this* agent, not the thread's fuller
+            sentence about what it can answer, is the one thing this label
+            says that nothing else on a non-Chat stage does. */}
+        <span className="ask-subject">{describeChatSubject(agentTitle)}</span>
         <textarea
           className="ask-input"
           rows={2}
@@ -471,6 +482,7 @@ function AskActivity({
 export function AgentChatBar({
   agent,
   agentAvatar = null,
+  agentTitle = null,
   ask,
   canAct,
   onAsked,
@@ -482,6 +494,13 @@ export function AgentChatBar({
   agent: string;
   /** This agent's character, for the loader on the composer (MAR-648). */
   agentAvatar?: OName | null;
+  /**
+   * This agent's own display name — `view.title`, not `agent` — for the
+   * bar's visible subject and its region name (MAR-659). `agent` stays the
+   * id: it drives the hand-off link below and `describeChatSubject` needs a
+   * word a person reads, not the identifier that link is built from.
+   */
+  agentTitle?: string | null;
   ask: AgentAskView;
   canAct: boolean;
   onAsked: () => void;
@@ -504,10 +523,11 @@ export function AgentChatBar({
     return null;
   }
   return (
-    <div className="cockpit-chat" aria-label={AGENT_COCKPIT_COPY.chat_label}>
+    <div className="cockpit-chat" aria-label={describeChatSubject(agentTitle)}>
       {ask.can_ask ? (
         <AskComposer
           agentAvatar={agentAvatar}
+          agentTitle={agentTitle}
           ask={ask}
           canAct={canAct}
           onAsked={onAsked}

@@ -83,6 +83,15 @@ export const CHIEF_CHAT_COPY = {
   thread_heading: "Asked this session",
   /** On the reply, so the chief's words are attributable to the chief. */
   speaker: "The chief",
+  /**
+   * Above the person's own words in the scrollback (MAR-659).
+   *
+   * Visible rather than the announcement-only prefix `speaker` started as: a
+   * returning reader scanning a room with several turns in it should be able
+   * to tell who said which paragraph at a glance, not only by a screen reader
+   * or by the accent colour alone.
+   */
+  you: "You",
   /** The link out of a hand-off, into the one surface that can answer. */
   open_chat: "Ask it there",
   /** Closes the room and puts the fleet back. Never clears the box. */
@@ -108,15 +117,29 @@ export const CHIEF_CHAT_COPY = {
  * a stored one would be a sentence that was true last Tuesday sitting in a
  * scrollback looking like a sentence about today. Re-asking is free and gives
  * the current answer.
+ *
+ * ## Why this leads with the reset rather than burying it (MAR-659)
+ *
+ * Henrik hit the consequence of the paragraph above directly: he asked the chief
+ * something, navigated away and came back to a thread with nothing in it, and it
+ * read as broken. ADR 0022 decision 6 is the argument that the session-only
+ * choice was against undated re-presentation, not against storage, and that this
+ * packet — the shape half — owes the emptiness a plain reason rather than a fix
+ * to what MAR-648 decided. So the sentence a returning reader lands on says the
+ * true, specific thing that just happened to them (leaving the page cleared it)
+ * before it explains what the chief is for, because that is the question a blank
+ * box actually raises.
  */
 export function describeChiefScope(): { headline: string; meaning: string } {
   return {
-    headline: "I answer from your own records",
+    headline: "Nothing said here is saved",
     meaning:
-      "I can tell you how your agents are doing, because I am reading the same records " +
-      "their cards are. I cannot tell you what one of them found — that is its own to " +
-      "answer, and I will say which one to ask. Nothing here costs anything, and I keep " +
-      "no answers: what I say is true of right now, so ask me again whenever you like.",
+      "Leaving this page, or closing DASH, clears this chat — it does not keep one, so an " +
+      "empty thread when you come back is expected, not a lost conversation. I can tell you " +
+      "how your agents are doing, because I read the same records their cards do. I cannot " +
+      "tell you what one of them found — that is its own to answer, and I will say which one " +
+      "to ask. It costs nothing to ask, and what I say is true of right now, so ask again " +
+      "whenever you like.",
   };
 }
 
