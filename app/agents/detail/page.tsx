@@ -204,6 +204,28 @@ function AgentWorkspace(): ReactNode {
   const [fragment, setFragment] = useState(() =>
     typeof window === "undefined" ? "" : window.location.hash.slice(1),
   );
+  /*
+   * MAR-648. The stage the chat composer was focused from, for Escape.
+   *
+   * A ref and not state, deliberately: nothing renders differently because of
+   * it, and making it state would repaint the whole cockpit the moment somebody
+   * put a cursor in the box. Null until the composer is focused from another
+   * stage, which is also the honest answer for somebody who arrived on the chat
+   * stage directly — there is nothing underneath to put back.
+   *
+   * **Declared up here with the other hooks, and that placement is the bug this
+   * line was written wrong once.** It first sat beside `stage`, three hundred
+   * lines down, which reads better and is after three early returns — the
+   * loading, failed and not-found branches. So the first render of this page
+   * (loading) ran one fewer hook than the second, and React threw *Rendered
+   * more hooks than during the previous render* the instant a view arrived.
+   *
+   * Nothing caught it. Every render test here is `renderToStaticMarkup`, which
+   * renders once and can never see a hook count change between two renders; the
+   * whole suite, the typecheck and the brand gate were all green. Two capture
+   * harnesses photographing Next's error boundary are what found it.
+   */
+  const returnStage = useRef<AgentStage | null>(null);
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
@@ -543,16 +565,6 @@ function AgentWorkspace(): ReactNode {
     fragment,
     has_output: view.outputs.length > 0,
   });
-  /*
-   * MAR-648. The stage the chat composer was focused from, for Escape.
-   *
-   * A ref and not state, deliberately: nothing renders differently because of
-   * it, and making it state would repaint the whole cockpit the moment somebody
-   * put a cursor in the box. Null until the composer is focused from another
-   * stage, which is also the honest answer for somebody who arrived on the chat
-   * stage directly — there is nothing underneath to put back.
-   */
-  const returnStage = useRef<AgentStage | null>(null);
   const openOutput = params.get(AGENT_WORKSPACE_PARAMS.output);
   const checklistFacts = {
     models: view.models,

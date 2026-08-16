@@ -403,6 +403,15 @@ function appWindowLoaded(): Promise<BrowserWindow> {
 const written: string[] = [];
 const measurements: object[] = [];
 
+/**
+ * Frames not taken because this page has no density control (MAR-648).
+ *
+ * Counted and reported rather than left silent, which is the whole lesson of
+ * the branch that increments it: a harness that skips is a harness whose
+ * summary line is true of nothing.
+ */
+let uncontrolled = 0;
+
 /** Photograph the window, retrying a compositor that was not ready. */
 async function shoot(target: BrowserWindow, name: string): Promise<void> {
   let last: unknown = null;
@@ -641,12 +650,38 @@ async function run(): Promise<void> {
           // photographed under this width's filename.
           await go(window, route);
 
+          /*
+           * MAR-648. A missing density control skips the *variation*, not the
+           * frame.
+           *
+           * This harness went silent between MAR-545 and here: MAR-630 and
+           * MAR-640 moved the density toggle to the fleet page's right rail and
+           * to Settings, so `button.density-toggle` stopped existing on the
+           * agent page — and the branch below `continue`d on every one of the
+           * thirty frames. The run still exited 0 and reported *"0 frame(s)
+           * overflowed sideways"*, which is true of no frames at all.
+           *
+           * That is the failure `lib/views/agent-stage.ts` warns about from the
+           * other side: change a page's IA and its witnesses go quiet rather
+           * than red. The fix keeps the guard that matters — a frame is never
+           * filed under a density it is not in — and stops treating "this page
+           * has no density control" as a reason to photograph nothing. The
+           * comfortable pass shoots at whatever density the document reports
+           * and says so; the compact pass is skipped once, with a count.
+           */
           const at_density = await setDensity(window, density);
           if (at_density === null) {
-            console.log(`[ask] no density control at ${viewport.name} — ${density} frame skipped`);
-            continue;
-          }
-          if (at_density !== density) {
+            if (density !== DENSITIES[0]) {
+              uncontrolled += 1;
+              continue;
+            }
+            const actual = (await window.webContents.executeJavaScript(
+              `document.documentElement.getAttribute("data-density") ?? "comfortable"`,
+            )) as string;
+            console.log(
+              `[ask] no density control on this page — ${viewport.name} shot at ${actual}, the document's own`,
+            );
+          } else if (at_density !== density) {
             // Loudly, rather than a frame filed under a density it is not in.
             throw new Error(
               `the page would not go to ${density} at ${viewport.name}; it reports ${at_density}`,
@@ -703,8 +738,22 @@ async function run(): Promise<void> {
       `${String(missing.length)} frame(s) with no conversation section; ` +
       `${String(dead.length)} frame(s) with neither an input nor a next action; ` +
       `${String(markup.length)} frame(s) where an answer was not plain text; ` +
-      `${String(jargon.length)} frame(s) using DASH's own filing words`,
+      `${String(jargon.length)} frame(s) using DASH's own filing words; ` +
+      `${String(uncontrolled)} compact frame(s) skipped for want of a density control`,
   );
+  /*
+   * MAR-648. A run that photographed nothing is a failure, not a clean sweep.
+   *
+   * Every count above is a count of *frames*, so all of them read zero when
+   * none were taken — which is exactly how this harness reported success while
+   * being silently orphaned by a moved control. The one number that cannot lie
+   * that way is the number of images.
+   */
+  if (written.length === 0) {
+    console.error("[ask] no images were written — this harness proved nothing");
+    app.exit(1);
+    return;
+  }
   app.exit(0);
 }
 
