@@ -31,6 +31,7 @@ import { appWindow } from "./app-window";
 import path from "node:path";
 
 import { HANDOFF_SCHEME } from "../lib/handoff";
+import { appDirectoryFor, entryBasename, isAppEntryPoint } from "../lib/shell/app-identity";
 import {
   openHandoff,
   removeAgent,
@@ -74,23 +75,11 @@ import { runnerFetch, type RunnerHandle } from "./runner-process";
  * Doing nothing is deliberately the failure mode: a correct registration from an
  * earlier `pnpm shell` survives a smoke run, where overwriting-then-restoring
  * would leave the machine broken for as long as the harness ran.
+ *
+ * `isAppEntryPoint` and `appDirectoryFor` live in `lib/shell/app-identity.ts`
+ * because MAR-656 gave them a second caller: the same question decides who may
+ * claim the app's *name*, and the two answers must not be allowed to differ.
  */
-export function isAppEntryPoint(entry: string): boolean {
-  // `package.json`'s `main` is `dist/electron/main.mjs`, and `electron .`
-  // resolves argv[1] to exactly that. The basename is what distinguishes it from
-  // `smoke.mjs` beside it; the directory is the same for both.
-  //
-  // Split on both separators rather than using `path.basename`, which follows the
-  // platform it runs on: the bug this guards against is a Windows one, and on a
-  // posix CI runner `path.basename` does not split a backslash path at all, so
-  // the case that matters would go untested.
-  return ["main.mjs", "main.js"].includes(entryBasename(entry));
-}
-
-function entryBasename(entry: string): string {
-  return entry.split(/[\\/]/).pop() ?? "";
-}
-
 export function registerProtocolClient(): void {
   if (app.isPackaged) {
     app.setAsDefaultProtocolClient(HANDOFF_SCHEME);
@@ -108,7 +97,14 @@ export function registerProtocolClient(): void {
     );
     return;
   }
-  app.setAsDefaultProtocolClient(HANDOFF_SCHEME, process.execPath, [path.resolve(entry)]);
+  const resolved = path.resolve(entry);
+  // The directory when it can be derived, the script when it cannot. The
+  // fallback is no longer an identity hazard — `app.setName` covers that on
+  // every launch form — so it is a launch that merely looks unlike the one a
+  // person makes, rather than a launch that becomes a different application.
+  const target = appDirectoryFor(resolved) ?? resolved;
+  app.setAsDefaultProtocolClient(HANDOFF_SCHEME, process.execPath, [target]);
+  console.warn(`[dash-shell] ${HANDOFF_SCHEME}:// handler → ${process.execPath} ${target}`);
 }
 
 /**
