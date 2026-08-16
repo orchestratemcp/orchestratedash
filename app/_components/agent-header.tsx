@@ -419,6 +419,7 @@ export function AgentControls({
   onRun,
   onRunControl,
   onRunOnHost,
+  onStart,
   run,
   runSpend,
 }: {
@@ -436,6 +437,20 @@ export function AgentControls({
   /** Builds the pending key for a run control, so the caller owns key shape. */
   onCancelKey: (command: AvailableControl["command"], runId: string) => string;
   onRun: (taskId: string, observedAt: string) => void;
+  /**
+   * Start this agent's process on this computer, then ask it to run (MAR-657).
+   *
+   * A separate callback from `onRun` rather than a mode on it, because they are
+   * two different acts on two different channels — `runner.start` and the
+   * lifecycle route for this one, an Agent DOM `retry` envelope for the other —
+   * and one callback taking a flag would be a page one boolean away from
+   * spawning a process when it meant to bind a task.
+   *
+   * It takes no task id, and that absence is the whole shape of the issue: the
+   * task this press eventually binds does not exist yet and cannot, because the
+   * agent that publishes it is not running.
+   */
+  onStart: () => void;
   /*
    * `AvailableControl["command"]` rather than `string`, so the page needs no
    * cast on the way to `submitAgentCommand`. A `string` here would have forced
@@ -528,6 +543,45 @@ export function AgentControls({
         </div>
         {hostButtons === null ? null : <div className="button-row">{hostButtons}</div>}
         <p className="muted">{AGENT_CONTROL_COPY.idle[run.reason]}</p>
+      </section>
+    );
+  }
+
+  /*
+   * The agent is registered here and its process is not running (MAR-657).
+   *
+   * Rendered as the primary control in the same slot Run now occupies, because
+   * it is the same intention — *make this agent do its work* — and a person who
+   * closed DASH yesterday should not have to learn that their agent's process is
+   * a separate thing from their agent. The label says both verbs and
+   * `start_here` says which machine, which is ADR 0014's rule met in the
+   * sentence rather than in the button.
+   *
+   * It carries `runSpend` for the same reason the Run now branch does, and the
+   * reason is sharper here: this press ends in a `retry`, so it opens the same
+   * allowance and can spend the same money. A disclosure that appeared on one of
+   * the two buttons that spend would be worse than none, because its absence
+   * would read as "this one is free".
+   */
+  if (run.kind === "start") {
+    return (
+      <section aria-labelledby="agent-commands-heading" className="section agent-controls">
+        <div className="section-heading">
+          <h2 id="agent-commands-heading">{AGENT_CONTROL_COPY.heading}</h2>
+        </div>
+        <div className="button-row">
+          <button
+            className="button-primary"
+            disabled={busy !== null}
+            onClick={onStart}
+            type="button"
+          >
+            {busy === "start" ? AGENT_CONTROL_COPY.running : AGENT_CONTROL_COPY.start_and_run}
+          </button>
+          {hostButtons}
+        </div>
+        <p className="muted">{AGENT_CONTROL_COPY.start_here}</p>
+        {runSpend === null ? null : <p className="muted">{runSpend}</p>}
       </section>
     );
   }

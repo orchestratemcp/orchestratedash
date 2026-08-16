@@ -41,10 +41,12 @@ import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-stat
 import { WorkingLine } from "../../_components/working";
 import { AGENT_WORKSPACE_PARAMS, agentStageHref, runDetailHref } from "../../_data/routes";
 import {
+  dataSource,
   downloadOutput,
   markAgentLooked,
   refreshSampleAgent,
   revealAgentFolder,
+  startAgent,
   submitAgentCommand,
   submitHostCommand,
   submitWorkspaceCommand,
@@ -53,8 +55,10 @@ import {
 import { useCanAct, useHost, useLiveView } from "../../_data/use-view";
 import type { GroundingAnalysis } from "../../../lib/analyze";
 import type { PermissionGrant } from "../../../lib/contracts";
+import { startAndRun } from "../../../lib/agent-start";
 import {
   AGENT_COCKPIT_COPY,
+  AGENT_CONTROL_COPY,
   AGENT_OUTPUTS_COPY,
   AGENT_TILE_COPY,
 } from "../../../lib/copy/agent-page";
@@ -407,6 +411,119 @@ function AgentWorkspace(): ReactNode {
   }
 
   /**
+   * Start this agent on this computer, then ask it to run (MAR-657).
+   *
+   * The sequence itself is `lib/agent-start.ts` and is tested without a browser;
+   * this supplies the four local ports and turns the outcome into the one line
+   * this page uses for every command's answer.
+   *
+   * ## Why the files are dispatched inside the run port
+   *
+   * `dispatchTask` hands staged files down the child's own stdin, and a child
+   * that is not running has no stdin — so the order that works for Run now
+   * (files, then run) has to become *start, then files, then run* here. Putting
+   * it in the port rather than before the call is what guarantees that: the port
+   * is invoked once, immediately before the run, on the far side of a start that
+   * succeeded. Doing it earlier would hand a person's files to a process that
+   * does not exist yet and report a run that read none of them.
+   *
+   * ## Why `pending` is the literal "start"
+   *
+   * `AgentControls` compares against that exact string, and the key cannot be
+   * built from a task id the way `run:${taskId}` is, because the task this press
+   * will bind does not exist when the press happens. That absence is the issue.
+   */
+  async function startAndRunHere(): Promise<void> {
+    setPending("start");
+    setFeedback(null);
+    /*
+     * Whether the files step already put its own, more specific sentence on
+     * screen. A flag rather than a distinguishable `CommandResult`, because
+     * `dispatchTask` reports by calling `setFeedback` and returning a boolean —
+     * inventing a reason code here so this function could recognise its own
+     * refusal downstream would be a second vocabulary for one failure.
+     */
+    let filesRefused = false;
+    try {
+      const outcome = await startAndRun(agent, {
+        start: (agentId) => startAgent({ agent_id: agentId }),
+        readWaitingTask: async (agentId) => {
+          const result = await dataSource().workspace(agentId);
+          if (!result.ok || !result.data.found || result.data.snapshot === null) {
+            return null;
+          }
+          const { snapshot } = result.data;
+          // `buildAgentControl`'s predicate, deliberately by hand rather than by
+          // calling it: that function decides what to *draw* from a snapshot the
+          // page already has, and this is asking whether a just-started agent has
+          // published anything yet. Reusing it would mean re-deciding the whole
+          // control — including the `start` branch this press is already inside —
+          // and getting `start` back forever, because a status poll is slower
+          // than this loop.
+          const waiting = snapshot.tasks.find(
+            (task) => task.status === "pending" && task.run_id === null,
+          );
+          return waiting === undefined
+            ? null
+            : { task_id: waiting.id, observed_at: snapshot.observed_at };
+        },
+        retry: async (agentId, task) => {
+          if (!(await dispatchTask())) {
+            // `dispatchTask` has already put its own sentence on screen, and it
+            // is the more specific one. Reported as a refusal so nothing below
+            // overwrites it with a cheerier summary.
+            filesRefused = true;
+            return { ok: false, request_id: "" };
+          }
+          return submitAgentCommand("retry", {
+            agent_id: agentId,
+            observed_at: task.observed_at,
+            task_id: task.task_id,
+          });
+        },
+        wait: (ms) =>
+          new Promise<void>((resolve) => {
+            window.setTimeout(resolve, ms);
+          }),
+      });
+
+      if (outcome.kind === "start_refused") {
+        setFeedback({
+          ok: false,
+          message: outcome.result.detail ?? AGENT_CONTROL_COPY.start_failed,
+        });
+        return;
+      }
+      if (outcome.kind === "nothing_offered") {
+        // `ok: true` on purpose. The process is up, which is what the person
+        // asked for and what a red alert would deny. See `start_nothing_offered`.
+        setFeedback({ ok: true, message: AGENT_CONTROL_COPY.start_nothing_offered });
+        return;
+      }
+      if (filesRefused) {
+        // The files refusal, already on screen and more specific. Leave it.
+        return;
+      }
+      setFeedback({
+        ok: outcome.result.ok,
+        message:
+          outcome.result.detail ??
+          (outcome.result.ok
+            ? "The runner accepted the request."
+            : "The runner refused the request."),
+      });
+    } catch {
+      setFeedback({
+        ok: false,
+        message: "DASH could not reach the command boundary. Your agent was not changed.",
+      });
+    } finally {
+      setPending(null);
+      setRefreshKey((value) => value + 1);
+    }
+  }
+
+  /**
    * Ask one server to start the copy of this agent that is on it (MAR-602,
    * ADR 0014).
    *
@@ -615,6 +732,11 @@ function AgentWorkspace(): ReactNode {
             observed_at: observedAt,
             run_id: runId,
           });
+        }}
+        /* MAR-657. The press that starts a stopped agent's process on this
+           computer and then asks it to run. */
+        onStart={() => {
+          void startAndRunHere();
         }}
         run={control.run}
         /* MAR-619, ADR 0016. Already worded by `lib/copy/curation.ts` and
@@ -944,7 +1066,11 @@ function AgentWorkspace(): ReactNode {
           agent={view.agent}
           avatar={view.avatar}
           busy={pending}
-          canTrigger={control.run.kind === "run_now"}
+          /* MAR-657. A stopped agent can be acted on from here too, and the
+             cell says so: before this, the one agent state a person is most
+             likely to arrive in — nothing running, nothing waiting — got the
+             cell's passive label and a press that only changed stage. */
+          canTrigger={control.run.kind === "run_now" || control.run.kind === "start"}
           control={control}
           goal={view.goal}
           hasFolder={view.folder_checkable && canAct}
@@ -963,6 +1089,15 @@ function AgentWorkspace(): ReactNode {
              * was filed about wearing a different shape.
              */
             goToStage("run");
+            /* MAR-657. The same press, for an agent whose process is not
+               running: start it here, then ask it to run. Routed to the one
+               function that owns that sequence rather than repeated, so the
+               cell and the panel's own button cannot come to disagree about
+               what a start does. */
+            if (control.run.kind === "start") {
+              void startAndRunHere();
+              return;
+            }
             if (control.run.kind !== "run_now") {
               return;
             }

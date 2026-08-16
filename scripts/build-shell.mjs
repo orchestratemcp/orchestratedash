@@ -223,6 +223,21 @@ await Promise.all([
     format: "esm",
   }),
 
+  // MAR-657's run record, on exactly the terms above: evidence, not a verdict,
+  // and named by no `package.json` script. Different from every capture harness
+  // beside it in one way worth stating — it *presses a control* and reports what
+  // the store did, because the claim MAR-657 has to support is that an agent
+  // which was offline with nothing waiting ended up with a run, and no test in
+  // this repository can make that claim about a process it does not own. See
+  // `electron/prove-start.ts` for why its data directory is required rather than
+  // defaulted.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "prove-start.ts")],
+    outfile: path.join(outDir, "prove-start.mjs"),
+    format: "esm",
+  }),
+
   // The panel's own screenshot harness (MAR-554), on exactly the terms above.
   // Separate from `capture.ts` because that one walks routes and the declarative
   // panel has none yet — a real manifest declaring one arrives with MAR-548. See
