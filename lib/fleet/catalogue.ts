@@ -339,9 +339,15 @@ function keyConnector(provider: string): FleetConnector | null {
  * the same shape `connectionSecretName` uses, so a provider string with a dot in
  * it cannot merge two segments into one.
  */
-export function fleetSecretName(provider: string, fieldId: string): string {
+export function fleetSecretName(
+  provider: string,
+  fieldId: string,
+  accountId?: string,
+): string {
   const safe = (part: string): string => part.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
-  return `dash.fleet.${safe(provider)}.${safe(fieldId)}`;
+  return accountId === undefined
+    ? `dash.fleet.${safe(provider)}.${safe(fieldId)}`
+    : `dash.fleet.${safe(provider)}.${safe(accountId)}.${safe(fieldId)}`;
 }
 
 /**

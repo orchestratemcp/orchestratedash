@@ -52,7 +52,12 @@ import {
   serializeOAuthCredential,
   type OAuthCredential,
 } from "./oauth/credential";
-import { adoptFleetCredential, noteAgentDecision, performFleetAction } from "./fleet/actions";
+import {
+  adoptFleetCredential,
+  noteAgentDecision,
+  performFleetAction,
+  type FleetActionName,
+} from "./fleet/actions";
 import { isFleetPrincipal } from "./fleet/principal";
 import {
   describePermissions,
@@ -365,7 +370,7 @@ function fromStoreError(
 }
 
 export async function performConnectionAction(
-  action: ConnectionActionName,
+  action: ConnectionActionName | FleetActionName,
   target: ConnectionActionTarget,
   deps: ConnectionActionDeps,
 ): Promise<ConnectionActionResult> {
@@ -379,8 +384,11 @@ export async function performConnectionAction(
    * property that let the fleet commands ship without `electron/main.ts`
    * learning about them.
    */
-  if (isFleetPrincipal(target.agent_id)) {
-    return performFleetAction(action, target.connection_id, deps);
+  if (isFleetPrincipal(target.agent_id) || action === "assign" || action === "default") {
+    return performFleetAction(action, target.connection_id, deps, {
+      account_id: target.field_id === "" ? undefined : target.field_id,
+      agent_id: isFleetPrincipal(target.agent_id) ? undefined : target.agent_id,
+    });
   }
 
   const manifest = deps.readManifest(target.agent_id);

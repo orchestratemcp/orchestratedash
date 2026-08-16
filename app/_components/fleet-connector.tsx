@@ -42,8 +42,10 @@ interface CardOutcome {
 }
 
 export type FleetAct = (
-  action: "connect" | "test" | "disconnect" | "share",
+  action: "connect" | "test" | "disconnect" | "share" | "default" | "assign",
   provider: string,
+  accountId?: string,
+  agentId?: string,
 ) => Promise<CardOutcome>;
 
 export function FleetConnectorCard({
@@ -64,7 +66,8 @@ export function FleetConnectorCard({
   async function run(action: "connect" | "test" | "disconnect" | "share"): Promise<void> {
     setBusy(action);
     setOutcome(null);
-    const result = await act(action, connector.provider);
+    const defaultAccount = connector.accounts?.find((account) => account.is_default);
+    const result = await act(action, connector.provider, defaultAccount?.id);
     setBusy(null);
     setOutcome(result);
   }

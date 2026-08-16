@@ -94,10 +94,15 @@ export function ServiceRow({
   const proof = tile === null ? null : describeProof(tile.proof, row.service);
   const split = tile === null || proof === null ? null : splitProof(tile.proof as ProofKind, proof);
 
-  async function runFleet(action: "connect" | "test" | "disconnect" | "share"): Promise<void> {
-    setBusy(action);
+  async function runFleet(
+    action: "connect" | "test" | "disconnect" | "share" | "default" | "assign",
+    accountId?: string,
+    agentId?: string,
+  ): Promise<void> {
+    const key = [action, accountId, agentId].filter(Boolean).join(":");
+    setBusy(key);
     setOutcome(null);
-    const result = await fleetAct(action, row.provider);
+    const result = await fleetAct(action, row.provider, accountId, agentId);
     setBusy(null);
     setOutcome(result);
   }
@@ -169,6 +174,82 @@ export function ServiceRow({
               <span className={`chip ${dependent.connected ? "chip-ok" : "chip-muted"}`}>
                 {dependent.connected ? "connected" : "not connected"}
               </span>
+              {(fleet?.accounts?.length ?? 0) === 0 ? null : (
+                <label className="service-account-choice">
+                  <span className="visually-hidden">Account for {dependent.title}</span>
+                  <select
+                    aria-label={`Account for ${dependent.title}`}
+                    value={
+                      fleet?.agents.find((one) => one.agent === dependent.agent)?.account_id ??
+                      fleet?.accounts?.find((one) => one.is_default)?.id ??
+                      ""
+                    }
+                    disabled={busy !== null}
+                    onChange={(event) =>
+                      void runFleet("assign", event.currentTarget.value, dependent.agent)
+                    }
+                  >
+                    {(fleet?.accounts ?? []).map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.account_hint ?? account.masked_hint ?? "Unnamed account"}
+                        {account.is_default ? " (default)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {(fleet?.accounts?.length ?? 0) === 0 ? null : (
+        <ul className="service-account-list" aria-label={`${row.service} accounts`}>
+          {(fleet?.accounts ?? []).map((account) => (
+            <li key={account.id} className="service-account-row">
+              <p className="wrap">
+                <strong>{account.account_hint ?? account.masked_hint ?? "An account the provider did not name"}</strong>
+                {account.since === null ? "" : `, since ${account.since}`}
+              </p>
+              {account.is_default ? <span className="chip chip-ok">Default</span> : null}
+              {canAct ? (
+                <div className="button-row service-account-actions">
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    disabled={busy !== null}
+                    onClick={() => void runFleet("connect", account.id)}
+                  >
+                    {busy === `connect:${account.id}` ? "Waitingâ€¦" : signIn ? "Sign in again" : "Replace"}
+                  </button>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    disabled={busy !== null}
+                    onClick={() => void runFleet("test", account.id)}
+                  >
+                    {busy === `test:${account.id}` ? "Checkingâ€¦" : "Check"}
+                  </button>
+                  {account.is_default ? null : (
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={busy !== null}
+                      onClick={() => void runFleet("default", account.id)}
+                    >
+                      Make default
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    disabled={busy !== null}
+                    onClick={() => void runFleet("disconnect", account.id)}
+                  >
+                    {busy === `disconnect:${account.id}` ? "Disconnectingâ€¦" : "Disconnect"}
+                  </button>
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -284,15 +365,15 @@ export function ServiceRow({
                 {busy === "connect"
                   ? "Waiting…"
                   : signIn
-                    ? connected
-                      ? `Sign in to ${row.service} again`
+                    ? row.accounts.length > 0
+                      ? `Add another ${row.service} account`
                       : `Sign in to ${row.service}`
-                    : connected
-                      ? "Replace the key"
+                    : row.accounts.length > 0
+                      ? `Add another ${row.service} key`
                       : `Add your ${row.service} key`}
               </button>
 
-              {connected ? (
+              {connected && (fleet.accounts?.length ?? 0) === 0 ? (
                 <button
                   type="button"
                   className="button-secondary"
@@ -322,7 +403,7 @@ export function ServiceRow({
                 </button>
               ) : null}
 
-              {connected ? (
+              {connected && (fleet.accounts?.length ?? 0) === 0 ? (
                 <button
                   type="button"
                   className="button-secondary"

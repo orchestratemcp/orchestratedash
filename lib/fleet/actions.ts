@@ -29,18 +29,17 @@
  * `CredentialTarget` is the shape the prompt, the sign-in window and the vault
  * seam all speak, and its `agent_id` is not optional. `FLEET_PRINCIPAL` fills it.
  *
- * **What that does and does not reach.** It reaches the bookkeeping row in
- * `connection_secrets`, which is how `alreadyHeld` in `electron/main.ts` knows to
- * say "Replace" rather than "Connect" on a re-key, and the liveness row in
- * `ai_key_checks`. It does **not** reach the credential: `fleetSecretName` writes
- * into the `dash.fleet.` namespace, and `connectionSecretName` — the only name
- * the broker ever computes — always emits `dash.connection.`. So no agent, named
- * anything at all, resolves to the fleet credential's vault key; the namespaces
- * cannot meet. The row is a label, and the name is the lock.
+ * **What that does and does not reach.** The shared key action briefly records a
+ * `connection_secrets` row for that required principal; this module removes the
+ * row immediately because migration 24 makes `fleet_connections` the sole fleet
+ * reference. It does **not** expose the credential: `fleetSecretName` writes into
+ * the `dash.fleet.` namespace, and `connectionSecretName` — the only name the
+ * broker ever computes — always emits `dash.connection.`. No agent can resolve a
+ * fleet vault name directly; materialization writes the ordinary per-agent copy.
  */
 
 import { performAiKeyAction, type AiKeyOperations } from "../ai/actions";
-import { recordReceipt, forgetReceipt } from "../broker/store";
+import { forgetReceipt, recordReceipt } from "../broker/store";
 import { resolveGrant, resolveKeyGrantWithoutCredential } from "../broker/grant";
 import type { CredentialTarget } from "../connection-credentials";
 import type { ConnectionSourceManifest } from "../connections";
@@ -72,13 +71,21 @@ import { fleetConnectorFor, fleetSecretName, type FleetConnector } from "./catal
 import { fleetReach, type FleetCandidate, type FleetReach } from "./grants";
 import { FLEET_PRINCIPAL } from "./principal";
 import {
+  assignedFleetConnection,
+  forgetFleetAccountAssignment,
   forgetFleetConnection,
   forgetOneFleetGrant,
+  listFleetConnections,
+  nextFleetAccountId,
   readFleetConnection,
+  readFleetAccountAssignment,
   readFleetGrants,
+  recordFleetAccountAssignment,
   recordFleetConnection,
   recordFleetGrant,
+  setDefaultFleetConnection,
   withheldAgents,
+  type FleetConnectionRow,
 } from "./store";
 
 /* ---------------------------------------------------------------------- *
@@ -95,7 +102,11 @@ import {
  * would turn a brokered credential back into a raw one is answered by
  * construction.
  */
-export function fleetCredentialTarget(connector: FleetConnector): CredentialTarget {
+export function fleetCredentialTarget(
+  connector: FleetConnector,
+  account?: FleetConnectionRow | string,
+): CredentialTarget {
+  const accountId = typeof account === "string" ? account : account?.account_id;
   return {
     kind: connector.oauth !== null ? "oauth" : "provider_key",
     oauth: connector.oauth,
@@ -107,7 +118,10 @@ export function fleetCredentialTarget(connector: FleetConnector): CredentialTarg
     field_label: connector.field_label,
     purpose: connector.purpose,
     help: connector.help,
-    secret_name: fleetSecretName(connector.provider, connector.field_id),
+    secret_name:
+      typeof account === "object"
+        ? account.secret_name
+        : fleetSecretName(connector.provider, connector.field_id, accountId),
     environment_name: null,
   };
 }
@@ -145,6 +159,8 @@ export interface FleetActionDeps {
   /** One agent's validated manifest, or null. */
   readManifest(agentId: string): ConnectionSourceManifest | null;
   now?(): Date;
+  /** Opaque local id for a newly added account; injected so tests are deterministic. */
+  newAccountId?(): string;
 }
 
 /**
@@ -167,7 +183,20 @@ export interface FleetActionDeps {
  * somebody re-consent to something they already consented to teaches them to
  * click through consent screens.
  */
-export type FleetActionName = "connect" | "test" | "disconnect" | "share";
+export type FleetActionName =
+  | "connect"
+  | "test"
+  | "disconnect"
+  | "share"
+  | "default"
+  | "assign";
+
+export interface FleetActionTarget {
+  /** Omitted on add-account and share-default. */
+  account_id?: string;
+  /** Required only by assign. */
+  agent_id?: string;
+}
 
 export interface FleetActionResult {
   ok: boolean;
@@ -193,6 +222,7 @@ export async function performFleetAction(
   action: FleetActionName,
   provider: string,
   deps: FleetActionDeps,
+  selection: FleetActionTarget = {},
 ): Promise<FleetActionResult> {
   const connector = fleetConnectorFor(provider);
   if (connector === null) {
@@ -208,13 +238,30 @@ export async function performFleetAction(
     };
   }
 
+  if (action === "default") {
+    const account = selection.account_id;
+    const changed = account !== undefined && setDefaultFleetConnection(provider, account);
+    return {
+      ok: changed,
+      state: changed ? "connected" : "not_connected",
+      masked_hint: changed ? readFleetConnection(provider, account)?.masked_hint ?? null : null,
+      detail: changed
+        ? `${connector.service} will use this account for new agents unless you choose another.`
+        : `DASH could not find that ${connector.service} account.`,
+    };
+  }
+
+  if (action === "assign") {
+    return assignFleetConnection(connector, selection, deps);
+  }
+
   if (action === "share") {
-    return shareFleetConnection(connector, deps);
+    return shareFleetConnection(connector, deps, selection.account_id);
   }
 
   return connector.connector_kind === "api_key"
-    ? performFleetKeyAction(action, connector, deps)
-    : performFleetSignIn(action, connector, deps);
+    ? performFleetKeyAction(action, connector, deps, selection.account_id)
+    : performFleetSignIn(action, connector, deps, selection.account_id);
 }
 
 /**
@@ -240,8 +287,9 @@ export async function performFleetAction(
 async function shareFleetConnection(
   connector: FleetConnector,
   deps: FleetActionDeps,
+  accountId?: string,
 ): Promise<FleetActionResult> {
-  const stored = readFleetConnection(connector.provider);
+  const stored = readFleetConnection(connector.provider, accountId);
   if (stored === null) {
     return {
       ok: false,
@@ -251,7 +299,7 @@ async function shareFleetConnection(
     };
   }
 
-  const spread = await materialize(connector, deps);
+  const spread = await materialize(connector, deps, accountId === undefined ? undefined : stored);
   if (spread.unreadable) {
     // DASH holds the credential in name only, right now — the store could not
     // be read, so nothing was attempted and nothing else may be said about it.
@@ -312,13 +360,47 @@ async function shareFleetConnection(
  * ---------------------------------------------------------------------- */
 
 async function performFleetKeyAction(
-  action: Exclude<FleetActionName, "share">,
+  action: "connect" | "test" | "disconnect",
   connector: FleetConnector,
   deps: FleetActionDeps,
+  accountId?: string,
 ): Promise<FleetActionResult> {
-  const target = fleetCredentialTarget(connector);
+  const stored =
+    action === "connect" && accountId === undefined
+      ? null
+      : readFleetConnection(connector.provider, accountId);
+  const chosenId =
+    stored?.account_id ??
+    accountId ??
+    (deps.newAccountId?.() ?? nextFleetAccountId(connector.provider));
+  const target = fleetCredentialTarget(connector, stored ?? chosenId);
   const backing = deps.store.describeBacking();
   const clock = deps.now ?? ((): Date => new Date());
+  const assignedOnDisconnect =
+    action === "disconnect" && stored !== null ? assignedAgents(connector, stored, deps) : [];
+
+  if (action === "connect" && accountId !== undefined && stored === null) {
+    return {
+      ok: false,
+      state: "not_connected",
+      masked_hint: null,
+      detail: `DASH could not find that ${connector.service} key.`,
+    };
+  }
+
+  if (
+    action === "disconnect" &&
+    stored !== null &&
+    assignedOnDisconnect.length > 0 &&
+    listFleetConnections(connector.provider).length > 1
+  ) {
+    return {
+      ok: false,
+      state: "connected",
+      masked_hint: stored.masked_hint,
+      detail: `Choose another ${connector.service} key for ${listAgentNames(assignedOnDisconnect)} before disconnecting this one.`,
+    };
+  }
 
   if (action === "connect") {
     try {
@@ -340,10 +422,19 @@ async function performFleetKeyAction(
     ai: deps.ai,
     now: clock,
   });
+  // `performAiKeyAction` is shared with per-agent keys and records the target
+  // it was given. A fleet target is intentionally not representable in
+  // `connection_secrets` after migration 24: that table's primary key can hold
+  // only one account. The fleet row above the vault is the reference instead.
+  forgetSecretReference(FLEET_PRINCIPAL, connector.provider, connector.field_id);
 
   if (action === "disconnect") {
-    await withdrawEverywhere(connector, deps);
-    forgetFleetConnection(connector.provider);
+    if (stored === null) {
+      return { ...result, ok: false, detail: `${connector.service} no longer has that key.` };
+    }
+    await withdrawAgentMaterializations(connector, deps, assignedOnDisconnect);
+    forgetFleetConnection(connector.provider, stored.account_id);
+    ensureDefaultAfterDelete(connector.provider);
     return result;
   }
 
@@ -353,6 +444,7 @@ async function performFleetKeyAction(
     recordFleetConnection(
       {
         provider: connector.provider,
+        account_id: chosenId,
         connector_kind: connector.connector_kind,
         field_id: connector.field_id,
         secret_name: target.secret_name,
@@ -363,11 +455,15 @@ async function performFleetKeyAction(
         account_hint: null,
         scopes: [],
         backend: backing.backend,
+        is_default: stored?.is_default ?? listFleetConnections(connector.provider).length === 0,
       },
       clock().toISOString(),
     );
 
-    const spread = await materialize(connector, deps);
+    const recorded = readFleetConnection(connector.provider, chosenId);
+    const spread = recorded === null
+      ? { connected: [], write_failed: [], unreadable: false }
+      : await materialize(connector, deps, recorded);
     return { ...result, detail: withReach(result.detail, spread.connected) };
   }
 
@@ -379,16 +475,32 @@ async function performFleetKeyAction(
  * ---------------------------------------------------------------------- */
 
 async function performFleetSignIn(
-  action: Exclude<FleetActionName, "share">,
+  action: "connect" | "test" | "disconnect",
   connector: FleetConnector,
   deps: FleetActionDeps,
+  accountId?: string,
 ): Promise<FleetActionResult> {
-  const target = fleetCredentialTarget(connector);
+  const stored =
+    action === "connect" && accountId === undefined
+      ? null
+      : readFleetConnection(connector.provider, accountId);
+  const chosenId =
+    stored?.account_id ?? accountId ?? (deps.newAccountId?.() ?? nextFleetAccountId(connector.provider));
+  const target = fleetCredentialTarget(connector, stored ?? chosenId);
   const backing = deps.store.describeBacking();
   const service = connector.service;
   const required = connector.oauth?.scopes ?? [];
   const provider = oauthProviderById(connector.oauth?.provider_id ?? "");
   const clock = deps.now ?? ((): Date => new Date());
+
+  if (action === "connect" && accountId !== undefined && stored === null) {
+    return {
+      ok: false,
+      state: "not_connected",
+      masked_hint: null,
+      detail: `DASH could not find that ${service} account.`,
+    };
+  }
 
   if (provider === null) {
     return {
@@ -399,10 +511,26 @@ async function performFleetSignIn(
     };
   }
 
-  const stored = readFleetConnection(connector.provider);
   const held = stored?.masked_hint ?? null;
 
   if (action === "disconnect") {
+    if (stored === null) {
+      return {
+        ok: false,
+        state: "not_connected",
+        masked_hint: null,
+        detail: `DASH no longer has that ${service} account.`,
+      };
+    }
+    const assigned = assignedAgents(connector, stored, deps);
+    if (assigned.length > 0) {
+      return {
+        ok: false,
+        state: "connected",
+        masked_hint: held,
+        detail: `Choose another ${service} account for ${listAgentNames(assigned)} before disconnecting this one.`,
+      };
+    }
     const grant = await readStoredGrant(deps.store, target.secret_name);
     if (grant.kind === "error") {
       return fromStoreError(grant.error, service, backing.label, held);
@@ -421,20 +549,19 @@ async function performFleetSignIn(
         return fromStoreError(error, service, backing.label, held);
       }
     }
-    forgetSecretReference(FLEET_PRINCIPAL, target.connection_id, target.field_id);
-    await withdrawEverywhere(connector, deps);
-    forgetFleetConnection(connector.provider);
+    forgetFleetConnection(connector.provider, stored.account_id);
+    ensureDefaultAfterDelete(connector.provider);
 
     return {
       ok: true,
       state: "not_connected",
       masked_hint: null,
       detail: withdrawn
-        ? `${service} is disconnected everywhere. DASH deleted its sign-in from ${backing.label} and told ${provider.label} to withdraw the access.`
+        ? `${service} is disconnected. DASH deleted this sign-in from ${backing.label} and told ${provider.label} to withdraw the access.`
         : // Says the smaller true thing rather than the larger convenient one.
           // Somebody who believes access was withdrawn and finds DASH still
           // listed in their account later has been misled by this sentence.
-          `${service} is disconnected everywhere and DASH deleted its sign-in from ${backing.label}. DASH could not reach ${provider.label} to withdraw the access, so you may want to remove it in your ${provider.label} account settings.`,
+          `${service} is disconnected and DASH deleted this sign-in from ${backing.label}. DASH could not reach ${provider.label} to withdraw the access, so you may want to remove it in your ${provider.label} account settings.`,
     };
   }
 
@@ -509,9 +636,18 @@ async function performFleetSignIn(
   }
 
   const credential = outcome.credential;
+  const matching =
+    stored === null && credential.account !== null
+      ? await findStoredOAuthAccount(connector.provider, credential.account, deps.store)
+      : null;
+  const destination = stored ?? matching;
+  const destinationId = destination?.account_id ?? chosenId;
+  const destinationTarget = destination === null
+    ? target
+    : fleetCredentialTarget(connector, destination);
 
   try {
-    await deps.store.set(target.secret_name, serializeOAuthCredential(credential));
+    await deps.store.set(destinationTarget.secret_name, serializeOAuthCredential(credential));
   } catch (error: unknown) {
     if (isSecureStoreError(error)) {
       return fromStoreError(error, service, backing.label, held);
@@ -525,21 +661,13 @@ async function performFleetSignIn(
   const hint =
     credential.account === null ? maskSecret(credential.refresh_token) : maskAccount(credential.account);
 
-  recordSecretReference({
-    agent: FLEET_PRINCIPAL,
-    connection_id: target.connection_id,
-    field_id: target.field_id,
-    secret_name: target.secret_name,
-    masked_hint: hint,
-    backend: backing.backend,
-  });
-
   recordFleetConnection(
     {
       provider: connector.provider,
+      account_id: destinationId,
       connector_kind: connector.connector_kind,
       field_id: connector.field_id,
-      secret_name: target.secret_name,
+      secret_name: destinationTarget.secret_name,
       masked_hint: hint,
       account_hint: credential.account === null ? null : maskAccount(credential.account),
       // What the consent actually issued, intersected with what DASH asked for.
@@ -548,11 +676,16 @@ async function performFleetSignIn(
       // would show them access they did not give.
       scopes: required.filter((scope) => !missingScopes(credential, [scope]).includes(scope)),
       backend: backing.backend,
+      is_default:
+        destination?.is_default ?? listFleetConnections(connector.provider).length === 0,
     },
     clock().toISOString(),
   );
 
-  const spread = await materialize(connector, deps);
+  const recorded = readFleetConnection(connector.provider, destinationId);
+  const spread = recorded === null
+    ? { connected: [], write_failed: [], unreadable: false }
+    : await materialize(connector, deps, recorded);
 
   const missing = describePermissions(provider, missingScopes(credential, required));
   if (missing.length > 0) {
@@ -675,23 +808,46 @@ interface MaterializeOutcome {
 async function materialize(
   connector: FleetConnector,
   deps: FleetActionDeps,
+  changedAccount?: FleetConnectionRow,
+  onlyAgent?: string,
 ): Promise<MaterializeOutcome> {
-  let raw: string;
-  try {
-    raw = await deps.store.get(fleetSecretName(connector.provider, connector.field_id));
-  } catch {
-    return { connected: [], write_failed: [], unreadable: true };
-  }
-
   const reach = fleetReachNow(connector, deps);
-  const parsed = connector.oauth === null ? null : parseOAuthCredential(raw);
   const at = (deps.now ?? ((): Date => new Date()))().toISOString();
   const connected: string[] = [];
   const write_failed: string[] = [];
+  let unreadable = false;
+  const credentials = new Map<string, { raw: string; parsed: OAuthCredential | null } | null>();
 
   for (const one of reach.materializes) {
+    if (onlyAgent !== undefined && one.agent_id !== onlyAgent) {
+      continue;
+    }
+    const account = assignedFleetConnection(connector.provider, one.agent_id);
+    if (account === null || (changedAccount !== undefined && account.account_id !== changedAccount.account_id)) {
+      continue;
+    }
+    let held = credentials.get(account.account_id);
+    if (held === undefined) {
+      try {
+        const raw = await deps.store.get(account.secret_name);
+        held = {
+          raw,
+          parsed: connector.oauth === null ? null : parseOAuthCredential(raw),
+        };
+      } catch {
+        held = null;
+        unreadable = true;
+      }
+      credentials.set(account.account_id, held);
+    }
+    if (held === null) {
+      if (!write_failed.includes(one.agent_id)) {
+        write_failed.push(one.agent_id);
+      }
+      continue;
+    }
     try {
-      await deps.store.set(one.target.secret_name, raw);
+      await deps.store.set(one.target.secret_name, held.raw);
     } catch {
       if (!write_failed.includes(one.agent_id)) {
         write_failed.push(one.agent_id);
@@ -703,14 +859,14 @@ async function materialize(
       connection_id: one.target.connection_id,
       field_id: one.target.field_id,
       secret_name: one.target.secret_name,
-      masked_hint: hintFor(connector, parsed, raw),
+      masked_hint: hintFor(connector, held.parsed, held.raw),
       backend: deps.store.describeBacking().backend,
     });
 
     const manifest = deps.readManifest(one.agent_id);
     if (manifest !== null) {
       const grant =
-        parsed === null
+        held.parsed === null
           ? resolveKeyGrantWithoutCredential(
               one.agent_id,
               manifest,
@@ -721,7 +877,7 @@ async function materialize(
               one.agent_id,
               manifest,
               one.target.connection_id,
-              parsed,
+              held.parsed,
               one.target.secret_name,
             );
       if (grant.ok) {
@@ -731,9 +887,119 @@ async function materialize(
     if (!connected.includes(one.agent_id)) {
       connected.push(one.agent_id);
     }
+    if (readFleetAccountAssignment(connector.provider, one.agent_id) === null) {
+      recordFleetAccountAssignment(connector.provider, one.agent_id, account.account_id, at);
+    }
   }
 
-  return { connected, write_failed, unreadable: false };
+  return { connected, write_failed, unreadable };
+}
+
+/** Assign one agent, then replace only that agent's materialized credential. */
+async function assignFleetConnection(
+  connector: FleetConnector,
+  selection: FleetActionTarget,
+  deps: FleetActionDeps,
+): Promise<FleetActionResult> {
+  const account = selection.account_id === undefined
+    ? null
+    : readFleetConnection(connector.provider, selection.account_id);
+  const agent = selection.agent_id;
+  if (account === null || agent === undefined || deps.readManifest(agent) === null) {
+    return {
+      ok: false,
+      state: "not_connected",
+      masked_hint: null,
+      detail: `DASH could not match that ${connector.service} account to that agent.`,
+    };
+  }
+
+  const at = (deps.now ?? ((): Date => new Date()))().toISOString();
+  const previousAssignment = readFleetAccountAssignment(connector.provider, agent);
+  const previousGrant =
+    readFleetGrants(connector.provider).find((row) => row.agent === agent) ?? null;
+  recordFleetGrant(connector.provider, agent, "granted", at);
+  recordFleetAccountAssignment(connector.provider, agent, account.account_id, at);
+
+  const spread = await materialize(connector, deps, account, agent);
+  if (!spread.connected.includes(agent)) {
+    if (previousAssignment === null) {
+      forgetFleetAccountAssignment(connector.provider, agent);
+    } else {
+      recordFleetAccountAssignment(
+        connector.provider,
+        agent,
+        previousAssignment.account_id,
+        previousAssignment.decided_at,
+      );
+    }
+    if (previousGrant === null) {
+      forgetOneFleetGrant(connector.provider, agent);
+    } else {
+      recordFleetGrant(
+        connector.provider,
+        agent,
+        previousGrant.standing,
+        previousGrant.decided_at,
+      );
+    }
+    return {
+      ok: false,
+      state: "connected",
+      masked_hint: account.masked_hint,
+      detail: `${connector.service} could not be changed for ${agent}; its previous account is unchanged.`,
+    };
+  }
+
+  return {
+    ok: true,
+    state: "connected",
+    masked_hint: account.masked_hint,
+    detail: `${agent} now uses ${account.account_hint ?? account.masked_hint ?? `this ${connector.service} account`}.`,
+  };
+}
+
+/** Qualifying agents whose explicit or default selection resolves to this row. */
+function assignedAgents(
+  connector: FleetConnector,
+  account: FleetConnectionRow,
+  deps: Pick<FleetActionDeps, "listAgentIds" | "readManifest">,
+): string[] {
+  return fleetReachNow(connector, deps).materializes
+    .filter(
+      (one) =>
+        assignedFleetConnection(connector.provider, one.agent_id)?.account_id === account.account_id,
+    )
+    .map((one) => one.agent_id);
+}
+
+async function withdrawAgentMaterializations(
+  connector: FleetConnector,
+  deps: FleetActionDeps,
+  agents: readonly string[],
+): Promise<void> {
+  const selected = new Set(agents);
+  for (const one of fleetReachNow(connector, deps).materializes) {
+    if (!selected.has(one.agent_id)) {
+      continue;
+    }
+    try {
+      await deps.store.delete(one.target.secret_name);
+    } catch {
+      // Best effort after the fleet key itself is gone. The reference and
+      // receipt must not keep claiming the agent can still use it.
+    }
+    forgetSecretReference(one.agent_id, one.target.connection_id, one.target.field_id);
+    forgetReceipt(one.agent_id, one.target.connection_id);
+  }
+}
+
+/** Deleting the default promotes the oldest remaining account, never a NULL marker. */
+function ensureDefaultAfterDelete(provider: string): void {
+  const remaining = listFleetConnections(provider);
+  if (remaining.length > 0 && !remaining.some((one) => one.is_default)) {
+    setDefaultFleetConnection(provider, (remaining[0] as FleetConnectionRow).account_id);
+  }
 }
 
 /** Names in a sentence, with the comma rules a list of two does not need. */
@@ -834,7 +1100,8 @@ export async function adoptFleetCredential(
   }
 
   const at = (deps.now ?? ((): Date => new Date()))().toISOString();
-  const previousGrant = readFleetGrants(provider).find((row) => row.agent === agentId) ?? null;
+  const previousGrant =
+    readFleetGrants(provider).find((row) => row.agent === agentId) ?? null;
   // Recorded before the write, so that an agent somebody had revoked is no
   // longer withheld by the time `materialize` reads the set — the press is the
   // decision, and this is what makes it one.
@@ -863,38 +1130,6 @@ export async function adoptFleetCredential(
   };
 }
 
-/**
- * Delete every materialization of this connector.
- *
- * Computed with an **empty** withheld set on purpose: this runs on a
- * disconnect-everywhere, and the question is not "who should have it" but "who
- * could DASH ever have written it to". An agent revoked earlier has nothing left
- * to delete and deleting nothing is free; missing one would leave a live
- * credential behind a card that says the connection is gone.
- *
- * The audit rows stay, for ADR 0002 amendment 1's reason: they are the record of
- * what was done while the access existed, and a disconnect that erased them
- * would delete exactly the history a suspicious person disconnected to check.
- */
-async function withdrawEverywhere(
-  connector: FleetConnector,
-  deps: FleetActionDeps,
-): Promise<void> {
-  const reach = fleetReach(connector, candidates(deps), new Set());
-  for (const one of reach.materializes) {
-    try {
-      await deps.store.delete(one.target.secret_name);
-    } catch {
-      // Best effort, and deliberately silent per agent: a vault that refused one
-      // delete must not stop the other agents being cleared, and the person's
-      // own credential is already gone from the fleet entry by the time this
-      // runs on the sign-in path.
-    }
-    forgetSecretReference(one.agent_id, one.target.connection_id, one.target.field_id);
-    forgetReceipt(one.agent_id, one.target.connection_id);
-  }
-}
-
 /* ---------------------------------------------------------------------- *
  * Shared shapes
  * ---------------------------------------------------------------------- */
@@ -904,6 +1139,21 @@ type StoredGrant =
   | { kind: "absent" }
   | { kind: "unusable" }
   | { kind: "error"; error: SecureStoreError };
+
+/** Match a provider-named account without ever putting its full name in SQLite. */
+async function findStoredOAuthAccount(
+  provider: string,
+  account: string,
+  store: SecureStore,
+): Promise<FleetConnectionRow | null> {
+  for (const row of listFleetConnections(provider)) {
+    const read = await readStoredGrant(store, row.secret_name);
+    if (read.kind === "found" && read.credential.account === account) {
+      return row;
+    }
+  }
+  return null;
+}
 
 async function readStoredGrant(store: SecureStore, secretName: string): Promise<StoredGrant> {
   let raw: string;

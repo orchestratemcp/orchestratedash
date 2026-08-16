@@ -1,5 +1,6 @@
 /**
- * Reading and writing the two fleet tables (MAR-593, ADR 0013).
+ * Reading and writing the fleet connection, assignment, and grant tables
+ * (MAR-593, MAR-643, ADR 0013).
  *
  * The only impure module under `lib/fleet/`, and deliberately the thinnest, in
  * `lib/broker/store.ts`'s shape: it writes rows the action layer already decided
@@ -37,6 +38,8 @@ import type { ConnectorKindV1 } from "../connection-spec";
 
 export interface FleetConnectionRow {
   provider: string;
+  /** Opaque local identity. Never derived from the account name or credential. */
+  account_id: string;
   connector_kind: ConnectorKindV1;
   field_id: string;
   /** The key into the OS vault. A name, not a value. */
@@ -47,12 +50,32 @@ export interface FleetConnectionRow {
   /** What the consent issued, for the readable projection. */
   scopes: string[];
   backend: string;
+  /** Exactly one row per provider is the fallback for an unassigned agent. */
+  is_default: boolean;
   connected_at: string;
   updated_at: string;
 }
 
 /** What a caller supplies. `connected_at` is the table's to preserve. */
-export type FleetConnectionInput = Omit<FleetConnectionRow, "connected_at" | "updated_at">;
+export type FleetConnectionInput = Omit<
+  FleetConnectionRow,
+  "connected_at" | "updated_at" | "account_id" | "is_default"
+> &
+  Partial<Pick<FleetConnectionRow, "account_id" | "is_default">>;
+
+/** The non-secret id migration 24 gives the one account older stores held. */
+export const LEGACY_FLEET_ACCOUNT_ID = "account-1";
+
+/** The first unused opaque local id. It contains no account or credential data. */
+export function nextFleetAccountId(provider: string): string {
+  const used = new Set(listFleetConnections(provider).map((one) => one.account_id));
+  for (let index = 1; ; index += 1) {
+    const candidate = `account-${String(index)}`;
+    if (!used.has(candidate)) {
+      return candidate;
+    }
+  }
+}
 
 /**
  * Write or refresh one fleet connection.
@@ -80,51 +103,94 @@ export function recordFleetConnection(input: FleetConnectionInput, at: string): 
     }
   }
 
-  db()
-    .prepare(
+  const database = db();
+  const accountId = input.account_id ?? LEGACY_FLEET_ACCOUNT_ID;
+  const existingCount = Number(
+    (database
+      .prepare("SELECT COUNT(*) AS count FROM fleet_connections WHERE provider = ?")
+      .get(input.provider) as { count?: number } | undefined)?.count ?? 0,
+  );
+  const isDefault = input.is_default ?? existingCount === 0;
+
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    if (isDefault) {
+      database
+        .prepare("UPDATE fleet_connections SET is_default = 0 WHERE provider = ?")
+        .run(input.provider);
+    }
+    database
+      .prepare(
       "INSERT INTO fleet_connections " +
-        "(provider, connector_kind, field_id, secret_name, masked_hint, account_hint, " +
-        " scopes, backend, connected_at, updated_at) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
-        "ON CONFLICT (provider) DO UPDATE SET " +
+        "(provider, account_id, connector_kind, field_id, secret_name, masked_hint, account_hint, " +
+        " scopes, backend, is_default, connected_at, updated_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+        "ON CONFLICT (provider, account_id) DO UPDATE SET " +
         "connector_kind = excluded.connector_kind, field_id = excluded.field_id, " +
         "secret_name = excluded.secret_name, masked_hint = excluded.masked_hint, " +
         "account_hint = excluded.account_hint, scopes = excluded.scopes, " +
-        "backend = excluded.backend, updated_at = excluded.updated_at",
-    )
-    .run(
-      input.provider,
-      input.connector_kind,
-      input.field_id,
-      input.secret_name,
-      input.masked_hint,
-      input.account_hint,
-      JSON.stringify(input.scopes),
-      input.backend,
-      at,
-      at,
-    );
+        "backend = excluded.backend, is_default = excluded.is_default, " +
+        "updated_at = excluded.updated_at",
+      )
+      .run(
+        input.provider,
+        accountId,
+        input.connector_kind,
+        input.field_id,
+        input.secret_name,
+        input.masked_hint,
+        input.account_hint,
+        JSON.stringify(input.scopes),
+        input.backend,
+        isDefault ? 1 : 0,
+        at,
+        at,
+      );
+    database.exec("COMMIT");
+  } catch (error: unknown) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
 }
 
-export function readFleetConnection(provider: string): FleetConnectionRow | null {
-  const row = db()
-    .prepare(
+export function readFleetConnection(
+  provider: string,
+  accountId?: string,
+): FleetConnectionRow | null {
+  const row = accountId === undefined
+    ? db()
+      .prepare(
       "SELECT provider, connector_kind, field_id, secret_name, masked_hint, account_hint, " +
-        " scopes, backend, connected_at, updated_at FROM fleet_connections WHERE provider = ?",
-    )
-    .get(provider);
+        " account_id, scopes, backend, is_default, connected_at, updated_at " +
+        "FROM fleet_connections WHERE provider = ? " +
+        "ORDER BY is_default DESC, connected_at, account_id LIMIT 1",
+      )
+      .get(provider)
+    : db()
+      .prepare(
+        "SELECT provider, connector_kind, field_id, secret_name, masked_hint, account_hint, " +
+          " account_id, scopes, backend, is_default, connected_at, updated_at " +
+          "FROM fleet_connections WHERE provider = ? AND account_id = ?",
+      )
+      .get(provider, accountId);
   return row === undefined || row === null ? null : toConnection(row as Record<string, unknown>);
 }
 
 /** Every fleet connection, oldest first, so the page is stable across reads. */
-export function listFleetConnections(): FleetConnectionRow[] {
-  return db()
-    .prepare(
+export function listFleetConnections(provider?: string): FleetConnectionRow[] {
+  const rows = provider === undefined
+    ? db().prepare(
       "SELECT provider, connector_kind, field_id, secret_name, masked_hint, account_hint, " +
-        " scopes, backend, connected_at, updated_at FROM fleet_connections " +
-        "ORDER BY connected_at, provider",
-    )
-    .all()
+        " account_id, scopes, backend, is_default, connected_at, updated_at " +
+        "FROM fleet_connections ORDER BY connected_at, provider, account_id",
+      ).all()
+    : db().prepare(
+      "SELECT provider, connector_kind, field_id, secret_name, masked_hint, account_hint, " +
+        " account_id, scopes, backend, is_default, connected_at, updated_at " +
+        "FROM fleet_connections WHERE provider = ? " +
+        "ORDER BY is_default DESC, connected_at, account_id",
+      ).all(provider);
+  return rows
     .map((row) => toConnection(row as Record<string, unknown>));
 }
 
@@ -141,14 +207,51 @@ export function listFleetConnections(): FleetConnectionRow[] {
  * excluded from a connection made months later — a consequence of a decision
  * nobody could see any more.
  */
-export function forgetFleetConnection(provider: string): void {
-  db().prepare("DELETE FROM fleet_connections WHERE provider = ?").run(provider);
-  db().prepare("DELETE FROM fleet_grants WHERE provider = ?").run(provider);
+export function forgetFleetConnection(provider: string, accountId?: string): void {
+  const database = db();
+  if (accountId === undefined) {
+    database.prepare("DELETE FROM fleet_connections WHERE provider = ?").run(provider);
+    database.prepare("DELETE FROM fleet_account_assignments WHERE provider = ?").run(provider);
+    database.prepare("DELETE FROM fleet_grants WHERE provider = ?").run(provider);
+    return;
+  }
+  database
+    .prepare("DELETE FROM fleet_connections WHERE provider = ? AND account_id = ?")
+    .run(provider, accountId);
+  database
+    .prepare("DELETE FROM fleet_account_assignments WHERE provider = ? AND account_id = ?")
+    .run(provider, accountId);
+  if (listFleetConnections(provider).length === 0) {
+    database.prepare("DELETE FROM fleet_grants WHERE provider = ?").run(provider);
+  }
+}
+
+/** Make one existing account the fallback. Existing explicit assignments do not move. */
+export function setDefaultFleetConnection(provider: string, accountId: string): boolean {
+  if (readFleetConnection(provider, accountId) === null) {
+    return false;
+  }
+  const database = db();
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    database.prepare("UPDATE fleet_connections SET is_default = 0 WHERE provider = ?").run(provider);
+    database
+      .prepare(
+        "UPDATE fleet_connections SET is_default = 1 WHERE provider = ? AND account_id = ?",
+      )
+      .run(provider, accountId);
+    database.exec("COMMIT");
+    return true;
+  } catch (error: unknown) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 function toConnection(row: Record<string, unknown>): FleetConnectionRow {
   return {
     provider: String(row["provider"]),
+    account_id: String(row["account_id"]),
     connector_kind: String(row["connector_kind"]) as ConnectorKindV1,
     field_id: String(row["field_id"]),
     secret_name: String(row["secret_name"]),
@@ -156,9 +259,70 @@ function toConnection(row: Record<string, unknown>): FleetConnectionRow {
     account_hint: row["account_hint"] === null ? null : String(row["account_hint"]),
     scopes: parseScopes(row["scopes"]),
     backend: String(row["backend"]),
+    is_default: Number(row["is_default"]) === 1,
     connected_at: String(row["connected_at"]),
     updated_at: String(row["updated_at"]),
   };
+}
+
+/* ---------------------------------------------------------------------- *
+ * The per-agent account selection
+ * ---------------------------------------------------------------------- */
+
+export interface FleetAccountAssignmentRow {
+  provider: string;
+  agent: string;
+  account_id: string;
+  decided_at: string;
+}
+
+export function recordFleetAccountAssignment(
+  provider: string,
+  agent: string,
+  accountId: string,
+  at: string,
+): boolean {
+  if (readFleetConnection(provider, accountId) === null) {
+    return false;
+  }
+  db().prepare(
+    "INSERT INTO fleet_account_assignments (provider, agent, account_id, decided_at) " +
+      "VALUES (?, ?, ?, ?) ON CONFLICT (provider, agent) DO UPDATE SET " +
+      "account_id = excluded.account_id, decided_at = excluded.decided_at",
+  ).run(provider, agent, accountId, at);
+  return true;
+}
+
+export function readFleetAccountAssignment(
+  provider: string,
+  agent: string,
+): FleetAccountAssignmentRow | null {
+  const row = db().prepare(
+    "SELECT provider, agent, account_id, decided_at FROM fleet_account_assignments " +
+      "WHERE provider = ? AND agent = ?",
+  ).get(provider, agent) as Record<string, unknown> | undefined;
+  return row === undefined ? null : {
+    provider: String(row["provider"]),
+    agent: String(row["agent"]),
+    account_id: String(row["account_id"]),
+    decided_at: String(row["decided_at"]),
+  };
+}
+
+export function forgetFleetAccountAssignment(provider: string, agent: string): void {
+  db().prepare(
+    "DELETE FROM fleet_account_assignments WHERE provider = ? AND agent = ?",
+  ).run(provider, agent);
+}
+
+export function assignedFleetConnection(
+  provider: string,
+  agent: string,
+): FleetConnectionRow | null {
+  const assignment = readFleetAccountAssignment(provider, agent);
+  return assignment === null
+    ? readFleetConnection(provider)
+    : readFleetConnection(provider, assignment.account_id) ?? readFleetConnection(provider);
 }
 
 /**

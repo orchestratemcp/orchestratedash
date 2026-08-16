@@ -72,7 +72,7 @@ import { appWindow } from "./app-window.js";
 
 import { app, BrowserWindow, nativeTheme } from "electron";
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 /*
@@ -85,6 +85,13 @@ import path from "node:path";
  * again. Importing them means a rename breaks the build instead.
  */
 import { FLEET_STRIP_ATTRIBUTE, FLEET_STRIP_STORAGE_KEY } from "../lib/views/fleet-strip";
+import { importManifest } from "../lib/store";
+import { recordSecretReference } from "../lib/secret-refs";
+import {
+  recordFleetAccountAssignment,
+  recordFleetConnection,
+  recordFleetGrant,
+} from "../lib/fleet/store";
 
 const OUT = path.resolve(
   process.cwd(),
@@ -104,6 +111,86 @@ const VIEWPORTS = [
 ] as const;
 
 const THEMES = ["light", "dark"] as const;
+
+/**
+ * MAR-643's opt-in state for the existing `settings-connections` scene.
+ *
+ * A scene, not another harness: the real shell, route, read channel, themes,
+ * resizing, and capture loop below remain the authority. This only gives a
+ * scratch store the state the issue is about. The guard prevents an accidental
+ * run from writing fixtures into the person's ordinary DASH store.
+ */
+function seedMar643Scene(): void {
+  if (process.env.DASH_CAPTURE_SCENE !== "mar643-multi-account") {
+    return;
+  }
+  if (process.env.DASH_DATA_DIR === undefined) {
+    throw new Error("DASH_CAPTURE_SCENE=mar643-multi-account requires a scratch DASH_DATA_DIR");
+  }
+
+  const gmail = JSON.parse(
+    readFileSync(
+      path.resolve(process.cwd(), "examples", "gmail-meeting-assistant.manifest.v2.example.json"),
+      "utf8",
+    ),
+  ) as {
+    agent: { name: string; display_name?: string };
+    agent_dom: { connections: Array<Record<string, unknown>> };
+  };
+  gmail.agent.name = "meeting-assistant";
+  gmail.agent.display_name = "Meeting Assistant";
+  importManifest(gmail);
+
+  const scout = JSON.parse(JSON.stringify(gmail)) as typeof gmail;
+  scout.agent.name = "news-scout";
+  scout.agent.display_name = "News Scout";
+  const scoutConnection = scout.agent_dom.connections[0];
+  if (scoutConnection !== undefined) {
+    scoutConnection["id"] = "mail";
+  }
+  importManifest(scout);
+
+  const at = "2026-08-16T08:00:00.000Z";
+  for (const account of [
+    { id: "account-1", hint: "he••••@gmail.com", isDefault: true },
+    { id: "account-2", hint: "wo••••@gmail.com", isDefault: false },
+  ]) {
+    recordFleetConnection(
+      {
+        provider: "google-gmail",
+        account_id: account.id,
+        connector_kind: "google_oauth_broker",
+        field_id: "sign_in",
+        secret_name: `dash.fleet.google-gmail.${account.id}.sign_in`,
+        masked_hint: account.hint,
+        account_hint: account.hint,
+        scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+        backend: "os_keychain",
+        is_default: account.isDefault,
+      },
+      at,
+    );
+  }
+
+  for (const assignment of [
+    { agent: "meeting-assistant", account: "account-1", connection: "gmail" },
+    { agent: "news-scout", account: "account-2", connection: "mail" },
+  ]) {
+    recordFleetGrant("google-gmail", assignment.agent, "granted", at);
+    recordFleetAccountAssignment("google-gmail", assignment.agent, assignment.account, at);
+    recordSecretReference({
+      agent: assignment.agent,
+      connection_id: assignment.connection,
+      field_id: "gmail-account",
+      secret_name: `dash.connection.${assignment.agent}.${assignment.connection}.gmail-account`,
+      masked_hint:
+        assignment.account === "account-1" ? "he••••@gmail.com" : "wo••••@gmail.com",
+      backend: "os_keychain",
+    });
+  }
+
+  console.log("[capture] seeded MAR-643: two Gmail accounts assigned to two agents");
+}
 
 /**
  * The surfaces photographed, and why it is more than one now.
@@ -1107,6 +1194,7 @@ async function densityNow(target: BrowserWindow): Promise<string> {
 async function run(): Promise<void> {
   await app.whenReady();
   mkdirSync(OUT, { recursive: true });
+  seedMar643Scene();
 
   /*
    * The splash first, and immediately — its lifetime ends when the app window
@@ -1156,6 +1244,14 @@ async function run(): Promise<void> {
     console.log("[capture] no agents in this store — the workspace surface will be skipped");
   }
 
+  const mar643 = process.env.DASH_CAPTURE_SCENE === "mar643-multi-account";
+  const surfaces = mar643
+    ? SURFACES.filter((surface) => surface.name === "settings-connections")
+    : SURFACES;
+  const viewports = mar643
+    ? VIEWPORTS.filter((viewport) => viewport.name === "375" || viewport.name === "1280")
+    : VIEWPORTS;
+
   for (const theme of THEMES) {
     // The OS's own signal, not a stylesheet override. `followTheme` in main.ts
     // repaints the title-bar overlay from this too, so the chrome in the image
@@ -1163,7 +1259,7 @@ async function run(): Promise<void> {
     nativeTheme.themeSource = theme;
     await settle(250);
 
-    for (const surface of SURFACES) {
+    for (const surface of surfaces) {
       const route =
         surface.path ??
         (agent === null ? null : `/agents/detail?agent=${encodeURIComponent(agent)}`);
@@ -1172,7 +1268,7 @@ async function run(): Promise<void> {
       }
       await go(window, route);
 
-      for (const viewport of VIEWPORTS) {
+      for (const viewport of viewports) {
         const at = await resizeTo(window, viewport.width, viewport.height);
         console.log(`[capture] ${surface.name} at ${viewport.name}/${theme} (window reports ${String(at)}px)`);
 

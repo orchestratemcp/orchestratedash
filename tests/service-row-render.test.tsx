@@ -402,4 +402,51 @@ describe("one service, once", () => {
     expect(html).toContain("Give it to news-scout");
     expect(html).toContain("Disconnect");
   });
+
+  it("draws two accounts honestly and an account selector for every agent", () => {
+    const accounts = [
+      {
+        id: "account-1",
+        masked_hint: "fiâ€¢â€¢â€¢@example.com",
+        account_hint: "fiâ€¢â€¢â€¢@example.com",
+        since: "10 August 2026",
+        permissions: [],
+        is_default: true,
+      },
+      {
+        id: "account-2",
+        masked_hint: "seâ€¢â€¢â€¢@example.com",
+        account_hint: "seâ€¢â€¢â€¢@example.com",
+        since: "16 August 2026",
+        permissions: [],
+        is_default: false,
+      },
+    ];
+    const { html } = merged(
+      [
+        connector({
+          held: accounts[0] as FleetConnectorView["held"],
+          accounts,
+          agents: [
+            { agent: "News Scout", title: "News Scout", connected: true, account_id: "account-1" },
+            { agent: "Meeting Assistant", title: "Meeting Assistant", connected: true, account_id: "account-2" },
+          ],
+        }),
+      ],
+      [
+        agent("News Scout", [row({ masked_hint: "fiâ€¢â€¢â€¢@example.com" })]),
+        agent("Meeting Assistant", [row({ masked_hint: "seâ€¢â€¢â€¢@example.com" })]),
+      ],
+    );
+
+    expect(html).toContain("2 accounts");
+    expect(html).toContain("fiâ€¢â€¢â€¢@example.com");
+    expect(html).toContain("seâ€¢â€¢â€¢@example.com");
+    expect(html).toContain('aria-label="Account for News Scout"');
+    expect(html).toContain('aria-label="Account for Meeting Assistant"');
+    expect(html).toContain("(default)");
+    expect(html).toContain("Make default");
+    expect(html).toContain("Add another Gmail account");
+    expect(html).not.toContain("Disconnect everywhere");
+  });
 });
