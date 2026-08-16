@@ -538,21 +538,29 @@ check(
     JSON.stringify(dataBridge.methods) ===
       /*
        * MAR-574 adds `hosts`, the seventh read; MAR-588 adds `notifications`,
-       * the eighth. This list is written out by value rather than derived from
-       * `READS` on purpose: widening what a renderer may ask for should have to
-       * be typed here, in a blocking gate, by whoever widened it. This line
-       * going red on the first push is the gate doing its job, not a
-       * maintenance chore — and it did exactly that for MAR-588, which is the
-       * only reason this comment can name the eighth read.
+       * the eighth; MAR-628 adds `browser`, the ninth. This list is written out
+       * by value rather than derived from `READS` on purpose: widening what a
+       * renderer may ask for should have to be typed here, in a blocking gate,
+       * by whoever widened it. This line going red on the first push is the gate
+       * doing its job, not a maintenance chore — and it did exactly that for
+       * MAR-588, which is the only reason this comment can name the eighth read.
        *
        * `notifications` earns one extra sentence because it is the first read
        * whose subject is a credential. What it returns is a masked hint, a date
        * and two switches; the Discord channel address lives in the OS vault,
        * `notificationsView` never opens it, and `NotificationsView` has no field
        * it could be assigned to.
+       *
+       * `browser` earns one because it is the first read whose subject is
+       * content from the open web (ADR 0019). It carries none of it: the words
+       * on a page go to the agent that asked for them and are never stored, so
+       * what crosses here is DASH's own record — the addresses the run was set
+       * up for, the ones its browser reached, and the decision on each request.
+       * A page's own text has no field on `BrowserView` to occupy.
        */
       JSON.stringify([
         "agents",
+        "browser",
         "connections",
         "hosts",
         "inbox",

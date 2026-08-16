@@ -112,6 +112,9 @@
         "permissions": {
           "$ref": "#/$defs/permissions"
         },
+        "browser": {
+          "$ref": "#/$defs/browser"
+        },
         "task_inputs": {
           "type": "array",
           "description": "What files this agent accepts as a task, declared per role (MAR-434). Optional, and absent means the agent takes no files — which is every agent shipped before this block existed, so absence must never be read as an unrestricted agent. The declaration is what the runner narrows its own ceilings down to; it can never widen them, so a manifest asking for a 4 GiB input gets the runner's limit and a refusal, not 4 GiB. See runner/workspace.ts effectiveLimits.",
@@ -488,6 +491,31 @@
         "read": { "type": "array", "items": { "$ref": "#/$defs/permissionGrant" } },
         "write": { "type": "array", "items": { "$ref": "#/$defs/permissionGrant" } },
         "approval_required_for": { "type": "array", "items": { "$ref": "#/$defs/permissionGrant" } }
+      }
+    },
+    "browser": {
+      "type": "object",
+      "required": ["purpose", "origins"],
+      "description": "The browser this agent asks DASH to open for it (MAR-628, ADR 0019). Additive and optional: a manifest without this block asks for no browser, which is every agent shipped before it existed.\n\n**Unlike `permissions`, this one is enforced** — and only for the browser DASH provides. DASH opens an ephemeral Chromium view inside its own window, checks every request that view makes against `origins`, and refuses the rest. It does not and cannot constrain the agent's own process, which has an ordinary network stack; `lib/browser/origins.ts` carries the sentence every surface must use, and no copy built on this block may say an agent could only reach these addresses.\n\nThe block is separate from `permissions` precisely because that one's contract is \"DASH does not enforce this\". An enforced list inside the unenforced block would have made both halves unreadable.\n\nWhat DASH decides and the author does not is the **operation catalogue**: an agent may open a page and read the words on it, and nothing else. There is no click, no typing, no scrolling, no second tab and no arbitrary JavaScript, because `lib/browser/operations.ts` contains no such operation — see ADR 0019 amendment 1 for what slice 1 shipped and what stays deferred.",
+      "properties": {
+        "purpose": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "description": "Why this agent needs a browser, in the words a person reads before they run it. Held to lib/copy/identifiers.ts: plain language, no operation ids, no addresses."
+        },
+        "origins": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "description": "Exact HTTPS origins, and exactly that — a scheme, a host and an optional port, with no path, no query and no fragment. `https://example.com/news` is refused rather than accepted-and-widened, because an origin has no path and silently granting the whole host while the manifest, the card and the person all read a directory is the failure ADR 0019 names first. A prefix match is not used anywhere: `https://example.com.attacker.test` is not inside `https://example.com`.\n\nList every origin the page actually needs, including the ones it does not choose — scripts, fonts, images and API calls are requests the controlled browser makes and are held to this same list. An article whose stylesheet lives on a CDN needs the CDN named here or the page renders without it.",
+          "items": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://[^/?#]+$"
+          }
+        }
       }
     },
     "permissionGrant": {

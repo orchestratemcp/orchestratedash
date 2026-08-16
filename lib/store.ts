@@ -2128,6 +2128,28 @@ export interface RunSummary {
  * moment it also cached status or counts it would become a second source of
  * truth, free to disagree with the events it was computed from.
  */
+/**
+ * The newest run DASH has seen for one agent, or null (MAR-628).
+ *
+ * One indexed row rather than `listRuns`, which groups every event in the store
+ * to answer a question about a page. This is asked once per controlled-browser
+ * request, on a path a person is watching.
+ *
+ * **"The newest run DASH has seen" is not the same as "the run this agent is in
+ * now"**, and the difference is stated here rather than hidden behind the name.
+ * A run exists in this table from the moment its first event arrives, and events
+ * arrive by a poll — so an agent that has just started a run and emitted nothing
+ * yet has no row for it, and this returns its previous run or null. Every caller
+ * has to be safe under both readings. `BrowserController.hasReadUntrusted` is
+ * the caller that is, and its docblock says which direction it errs in.
+ */
+export function newestRunFor(agent: string): string | null {
+  const row = db()
+    .prepare("SELECT run_id FROM runs WHERE agent = ? ORDER BY first_seen_at DESC LIMIT 1")
+    .get(agent) as { run_id?: string } | undefined;
+  return row?.run_id ?? null;
+}
+
 export function listRuns(store: StoreShape = readStore()): RunSummary[] {
   const grouped = new Map<string, RunEvent[]>();
   for (const event of store.events) {

@@ -168,7 +168,28 @@ describe("every page that reads a view uses the marked loading state", () => {
    */
   const SILENT_CHROME = ["app/_components/fleet-strip.tsx", "app/_components/app-chrome.tsx"];
 
-  const EXEMPT = [...OTHER_WINDOWS, ...SILENT_CHROME];
+  /**
+   * MAR-628, ADR 0019. The watched browser's panel, on `SILENT_CHROME`'s terms
+   * and for a third reason of its own.
+   *
+   * It sits inside a stage of the agent page, which has already announced its
+   * own loading state by the time this mounts — so a placeholder here would be
+   * a second one, on a frame that has already painted. That is the fleet
+   * strip's argument, unchanged.
+   *
+   * The reason of its own is that **for almost every agent the finished state
+   * is also nothing.** The panel is drawn only for an agent whose manifest asks
+   * for a browser; on every other agent's page its job is to be absent. A
+   * loading placeholder there would announce the imminent arrival of something
+   * that is never going to arrive, once per page load, forever.
+   *
+   * Listed separately rather than folded into `SILENT_CHROME` because this is
+   * not chrome — it is a panel on one stage of one page — and a shared list
+   * would let one reason cover a file the other was written for.
+   */
+  const SILENT_PANELS = ["app/_components/browser-panel.tsx"];
+
+  const EXEMPT = [...OTHER_WINDOWS, ...SILENT_CHROME, ...SILENT_PANELS];
 
   function pages(dir: string): string[] {
     const found: string[] = [];

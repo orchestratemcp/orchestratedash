@@ -327,6 +327,25 @@ export interface BrokerDropTally {
   last_at: string;
 }
 
+/**
+ * One controlled-browser request waiting for DASH to decide it (MAR-628).
+ *
+ * `agent_id` carries `BufferedBrokerRequest`'s whole argument: DASH looks up
+ * *this* agent's declared origins and *this* agent's session, so the identity
+ * has to come from the child that wrote the line rather than from anything in
+ * it. There is no session field in the request body, which is what stops one
+ * agent's request reaching another agent's view.
+ */
+export interface BufferedBrowserRequest {
+  agent_id: string;
+  request: unknown;
+}
+
+export interface BrowserDrain {
+  requests: BufferedBrowserRequest[];
+  dropped: number;
+}
+
 export interface BrokerDrain {
   requests: BufferedBrokerRequest[];
   dropped: number;
@@ -419,6 +438,30 @@ export const MAX_ARTIFACT_BUFFER_COUNT = 200;
 export const MAX_BROKER_BUFFER_BYTES = 256 * 1024;
 export const MAX_BROKER_BUFFER_COUNT = 64;
 
+/**
+ * The controlled browser's own bound, and it is the shallowest of the four
+ * (MAR-628, ADR 0019).
+ *
+ * Shallower than the broker's for the reason the broker's is shallower than the
+ * artifact buffer, one step further along. A queued brokered request is a read
+ * against somebody's account that DASH would work through after the fact. A
+ * queued **browser** request is that, and it is also a page load into a Chromium
+ * view attached to DASH's own window — so a deep queue here is a browser that
+ * keeps navigating through a backlog after the person watching it has stopped
+ * paying attention, which is precisely the situation the supervision surface
+ * exists to prevent.
+ *
+ * Eight is more than the slice's own task needs — open one article, read it —
+ * and small enough that a runaway agent's queue is exhausted in seconds rather
+ * than working its way through a publisher. `lib/browser/session.ts` re-decides
+ * every request against the run's origins and its revocation state, so a queued
+ * request that arrives after a person pressed Stop is refused rather than
+ * served; this bound is the second half of that argument, which is that the
+ * queue should not be able to get deep in the first place.
+ */
+export const MAX_BROWSER_BUFFER_BYTES = 32 * 1024;
+export const MAX_BROWSER_BUFFER_COUNT = 8;
+
 interface BufferedTelemetryEntry extends BufferedTelemetryEvent {
   bytes: number;
 }
@@ -428,6 +471,10 @@ interface BufferedArtifactEntry extends BufferedArtifact {
 }
 
 interface BufferedBrokerEntry extends BufferedBrokerRequest {
+  bytes: number;
+}
+
+interface BufferedBrowserEntry extends BufferedBrowserRequest {
   bytes: number;
 }
 
@@ -452,6 +499,9 @@ export class Supervisor {
    * cost the bound was protecting against.
    */
   private readonly droppedBrokerByAgent = new Map<string, BrokerDropTally>();
+  private readonly browserRequests: BufferedBrowserEntry[] = [];
+  private browserBytes = 0;
+  private droppedBrowserRequests = 0;
 
   constructor(
     registrations: readonly AgentRegistration[],
@@ -721,6 +771,36 @@ export class Supervisor {
    * worth surfacing to a user — it means the agent stopped while DASH was
    * deciding — but it is worth the caller being able to see.
    */
+  /**
+   * Take every controlled-browser request waiting for an answer (MAR-628).
+   *
+   * `drainBrokerRequests`' contract, minus the per-agent drop tallies. Those
+   * exist over there because a brokered request DASH never decided is a *silent*
+   * gap — nothing else in the system records it, so `broker_lapses` had to. A
+   * dropped browser request is not silent: the browser it would have driven is
+   * either visible in DASH's own window or not open at all, and the trail for
+   * the session says what did happen. Adding a second lapse table to record the
+   * absence of something a person can see the absence of would be a table
+   * nobody reads.
+   *
+   * The aggregate count is still returned and still logged, because the agent
+   * is blocked on an answer that is now never coming and its own timeout is what
+   * will settle it.
+   */
+  drainBrowserRequests(): BrowserDrain {
+    const requests = this.browserRequests.map(({ agent_id, request }) => ({ agent_id, request }));
+    const dropped = this.droppedBrowserRequests;
+    this.browserRequests.length = 0;
+    this.browserBytes = 0;
+    this.droppedBrowserRequests = 0;
+    return { requests, dropped };
+  }
+
+  /** Deliver one browser answer to the agent that asked. `respondToBroker`'s terms. */
+  respondToBrowser(agentId: string, line: string): boolean {
+    return this.respondToBroker(agentId, line);
+  }
+
   respondToBroker(agentId: string, line: string): boolean {
     const entry = this.agents.get(agentId);
     if (entry === undefined || entry.child === null || entry.child.stdin === null) {
@@ -1136,6 +1216,15 @@ export class Supervisor {
       return;
     }
 
+    if (message.type === "browser_request") {
+      this.bufferBrowserRequest(
+        entry.registration.agent_id,
+        message.request,
+        Buffer.byteLength(line, "utf8"),
+      );
+      return;
+    }
+
     const resolve = entry.pending.get(message.command_id);
     if (resolve === undefined) {
       // An ack for something we are not waiting for: a late answer after a
@@ -1239,5 +1328,23 @@ export class Supervisor {
 
     this.brokerRequests.push({ agent_id: agentId, request, bytes });
     this.brokerBytes += bytes;
+  }
+
+  private bufferBrowserRequest(agentId: string, request: unknown, bytes: number): void {
+    if (
+      this.browserRequests.length >= MAX_BROWSER_BUFFER_COUNT ||
+      this.browserBytes + bytes > MAX_BROWSER_BUFFER_BYTES
+    ) {
+      this.droppedBrowserRequests += 1;
+      // Logged and counted, and not tallied per agent — see `drainBrowserRequests`
+      // for why this one does not get a lapse table of its own.
+      this.log(
+        `[runner] ${agentId} asked DASH's browser for something while the bounded buffer was full; the request was dropped`,
+      );
+      return;
+    }
+
+    this.browserRequests.push({ agent_id: agentId, request, bytes });
+    this.browserBytes += bytes;
   }
 }
