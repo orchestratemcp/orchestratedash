@@ -7,7 +7,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AgentHosting, FleetCard, describeRunCount } from "./fleet-card";
 import { ChiefChat } from "./chief-chat";
-import { OpenAgentButton } from "./glance-chips";
 import { InfoNote } from "./info-note";
 import { OAvatar } from "./o-avatar";
 import { useFleetFilterSync } from "./fleet-rail";
@@ -522,12 +521,16 @@ export function ChiefBand({
             <AgentHosting agent={agent.name} hostedOn={agent.hosted_on} log={log} />
           </div>
           <div className="chief-actions">
-            <OpenAgentButton agent={line.agent} />
             {/*
               A link to the workspace, with the Ask section's own anchor on it.
               The fragment lands when the page has drawn and is a no-op when it
               has not — either way the reader is on the one surface in DASH
               where this agent can actually be asked something.
+
+              MAR-660 moves the button that used to open the agent from here
+              onto the card itself — Henrik's own words, "under the avatar in
+              the card for every agent," not on a component about the fleet as
+              a whole. `fleet-card.tsx`'s `FleetOpenLink` is where it lives now.
             */}
             <Link className="button-link" href={`${agentWorkspaceHref(line.agent)}#ask-agent`}>
               {line.action}

@@ -71,6 +71,19 @@ function statusTone(status: FleetCardStatus | null): "warn" | "accent" | null {
  * the same way the original rule was: `tests/fleet-view.test.ts` still scans
  * every `[data-fleet-view]` rule for a hidden fact, and an *addition* that
  * exists in one view's DOM and not the others' never matches that pattern.
+ *
+ * ## Visible again, and the corner it shares (MAR-660)
+ *
+ * MAR-639's whole-card link made opening an agent possible from anywhere on
+ * the card; it did not make that possible *discoverable*. Henrik's attended
+ * pass names the gap directly and asks for it under the avatar, on every
+ * card — `FleetOpenLink`, below, is that control, in Grid and Spotlight only,
+ * for the reasoning its own header gives. The same pass also caught the
+ * favourite star sitting on top of Rows' place badge (`.fleet-marks`) and
+ * asked for more room around the status cluster generally — both are
+ * `app/globals.css`'s `[data-fleet-view="rows"]` rules now, not this
+ * component's, since neither changes what a card says, only where Rows draws
+ * it.
  */
 export function FleetCard({
   agent,
@@ -177,6 +190,11 @@ export function FleetCard({
           {view === "rows" ? <p className="fleet-goal muted">{agent.goal}</p> : null}
         </span>
       </button>
+      {/*
+        MAR-660. Grid and Spotlight only — see `FleetOpenLink`'s own header
+        for why Rows keeps relying on `.fleet-card-link` instead.
+      */}
+      {view === "rows" ? null : <FleetOpenLink agent={agent.name} title={agent.title} />}
       {onToggleFavourite === undefined ? null : (
         <FavouriteButton
           agent={agent.title}
@@ -190,6 +208,57 @@ export function FleetCard({
         aria-label={`Open ${agent.title}`}
       />
     </article>
+  );
+}
+
+/**
+ * "Open this agent," under the avatar rather than on the chief (MAR-660).
+ *
+ * From Henrik's attended proof pass, 2026-08-16, station 11, verbatim: *"The
+ * button 'open this agent' shouldn't be in the chief component but under the
+ * avatar in the card for every agent."* The control used to live only on
+ * `fleet-list.tsx`'s chief band — one button, for whichever single agent the
+ * chief happened to be talking about. This is the replacement: every card
+ * draws its own, so opening an agent is no longer a fact the fleet keeps in
+ * one place.
+ *
+ * It replaces `glance-chips.tsx`'s old `OpenAgentButton` rather than reusing
+ * it — that component's one caller was the chief band this issue empties, so
+ * keeping it around would have been a component with no production caller.
+ * Reusing its own reasoning instead: a real `Link`, not a `button` with a
+ * handler, because this is navigation and an anchor is what gives a person
+ * the middle-click, the context menu and the keyboard behaviour a script
+ * cannot fake. `title` (the agent's display name) rather than `agent` (its
+ * slug) makes the accessible name, on `.fleet-card-link`'s and
+ * `FavouriteButton`'s own standing — the other two controls on this same
+ * card already name the agent that way.
+ *
+ * `position: relative; z-index: 1` in the stylesheet, `.fleet-pick`'s own
+ * reason: above `.fleet-card-link`'s stretch, so a press here opens the
+ * agent through this control rather than falling through to the whole-card
+ * link underneath it. That whole-card link is not replaced or diminished —
+ * it is still there and still works everywhere — this only makes the
+ * capability visible instead of something a reader has to discover by
+ * pointing at the card.
+ *
+ * ## Grid and Spotlight only
+ *
+ * Rows does not draw this. Its row is pinned to a measured height (MAR-640:
+ * ~68px comfortable, exactly 56px compact) and this exact corner already
+ * carries a second control, the favourite star — MAR-660's own issue text
+ * warns against "stacking a third control into a space that is already too
+ * tight for two," which is precisely what a third visible affordance here
+ * would be. Rows keeps `.fleet-card-link`'s whole-row click as its way in,
+ * the same dense-list convention it already used before this change, so
+ * nothing a Rows card used to say is hidden — this is a new fact, and
+ * `lib/views/fleet-view.ts`'s amendment permits a view to add one the others
+ * do not without being obliged to add it everywhere.
+ */
+function FleetOpenLink({ agent, title }: { agent: string; title: string }): ReactNode {
+  return (
+    <Link className="fleet-open" href={agentWorkspaceHref(agent)} aria-label={`Open ${title}`}>
+      Open this agent
+    </Link>
   );
 }
 

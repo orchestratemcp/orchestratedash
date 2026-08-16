@@ -34,7 +34,7 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-const { GlanceChips, OpenAgentButton } = await import("../app/_components/glance-chips");
+const { GlanceChips } = await import("../app/_components/glance-chips");
 
 /** The stylesheet with its comments removed — `tests/record-card.test.tsx`'s reason. */
 const globals = readFileSync(path.join(repoRoot, "app", "globals.css"), "utf8").replace(
@@ -185,28 +185,14 @@ describe("every chip is a way in (MAR-586, MAR-547's clickability)", () => {
   });
 });
 
-describe("the button to the agent page (MAR-586)", () => {
-  it("is a real anchor to the agent's own page, named for a screen reader too", () => {
-    const html = renderToStaticMarkup(<OpenAgentButton agent={AGENT} />);
-    expect(html).toContain(`href="${agentWorkspaceHref(AGENT)}"`);
-    expect(html).toContain("Open this agent");
-    // The visible words are the same for every card, so the accessible name
-    // carries which agent this one is.
-    expect(html).toContain(`aria-label="Open ${AGENT}"`);
-    expect(html).toContain("<a ");
-  });
-
-  /**
-   * It wears the class the Work inbox already uses for the same journey. A
-   * second class that looked almost the same would be two answers to "what does
-   * a link to an agent look like".
-   */
-  it("wears the shared button-link clothes rather than a private copy", () => {
-    const html = renderToStaticMarkup(<OpenAgentButton agent={AGENT} />);
-    expect(html).toContain("button-link");
-    expect(globals).toMatch(/button,\s*\.button-link\s*\{/);
-  });
-});
+/**
+ * `OpenAgentButton` used to live here and be tested here (MAR-586). MAR-660
+ * moved it — Henrik's own words, it belongs "under the avatar in the card
+ * for every agent," not on a component about the fleet's glance chips, which
+ * nothing renders yet. `tests/fleet-view-render.test.tsx`'s "opens every
+ * agent from its own card" is its test now, and `fleet-card.tsx`'s
+ * `FleetOpenLink` is where the component lives.
+ */
 
 /**
  * Henrik, 2026-08-09, looking at the first set of these screenshots: *"I want
