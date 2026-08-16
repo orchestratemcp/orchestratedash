@@ -25,6 +25,7 @@ import {
   renderBriefing,
   type ChiefBriefingRow,
 } from "../lib/chief/briefing";
+import { everyChiefManifestSentence } from "../lib/chief/manifest";
 import { describeFleetPlace, describeRunCount } from "../lib/copy/fleet-status";
 import { plainDay } from "../lib/copy/when";
 import type { AgentRow, ChiefReceiptRow } from "../lib/views/types";
@@ -195,6 +196,37 @@ describe("the briefing as the model sees it", () => {
     expect(renderBriefing([])).toBe(EMPTY_BRIEFING);
     expect(EMPTY_BRIEFING.length).toBeGreaterThan(0);
     expectPlainLanguage([EMPTY_BRIEFING]);
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * The one sentence the chief's manifest puts on a screen
+ * ---------------------------------------------------------------------- */
+
+describe("the chief manifest's own copy", () => {
+  /*
+   * `everyChiefManifestSentence` is derived from the builder rather than written
+   * out, which is the shape `everyFleetCatalogueSentence` established — and this
+   * is the call that makes it worth anything.
+   *
+   * Worth saying why the assertion exists at all: on master its sibling has
+   * **no caller**, so the pattern as inherited is a function that looks like a
+   * gate and is not one. Writing a second unconsumed one would have been copy
+   * with a plain-language walk that never runs over it, which is exactly the
+   * failure mode this repository has already hit — a rule green everywhere and
+   * unenforced on the field nobody feeds it.
+   *
+   * The connection's `purpose` is the one sentence a person could meet: it is
+   * DASH's own description of DASH's own connection, and it would surface
+   * wherever a capability card is drawn for the chief's manifest.
+   */
+  it("passes the plain-language walk for every provider", () => {
+    const sentences = everyChiefManifestSentence();
+    expect(sentences.length).toBeGreaterThan(0);
+    expectPlainLanguage(sentences);
+    for (const sentence of sentences) {
+      expect(sentence.length).toBeGreaterThan(0);
+    }
   });
 });
 
