@@ -70,6 +70,50 @@ export const AGENT_CONTROL_COPY = {
    */
   asking: "Asking…",
   /**
+   * The primary control for an agent whose process is not running (MAR-657).
+   *
+   * Two verbs because the press is two acts — DASH starts the agent on this
+   * computer, then asks it to run — and naming only the second would promise a
+   * run to somebody whose agent might not start. Naming only the first would be
+   * worse: it would be a button that changes a status and appears to do nothing,
+   * which is the shape of the defect MAR-609 was filed on.
+   *
+   * No machine in the label, and that is ADR 0014's rule rather than an
+   * omission: the copy on this computer is the permanent default target and the
+   * named controls are the *other* machines' — "Run on Hostinger" beside it.
+   * `start_here` below carries the machine into the sentence under the button,
+   * where there is room to say it in words.
+   */
+  start_and_run: "Start and run",
+  /**
+   * Under the button, because a press that spawns a process is a fact about one
+   * machine, and ADR 0014 says a control that starts a run names the one it will
+   * use. It also answers the question the two-verb label raises — *why does this
+   * one say something different from Run now* — in the place a person is already
+   * looking.
+   */
+  start_here: "This agent is not running. DASH will start it on this computer, then ask it to run.",
+  /**
+   * The start worked and the agent offered nothing to run.
+   *
+   * Deliberately not worded as a failure. An agent built with DASH's kit
+   * publishes a task the moment it starts; one written by hand or brought from
+   * another toolchain has never been obliged to, and telling that person their
+   * agent is broken would be DASH inventing a fault to explain its own silence.
+   * The process is up, which is the part that is worth saying.
+   */
+  start_nothing_offered:
+    "It started on this computer and is running now, but it has not offered anything to run.",
+  /**
+   * The start itself was refused and the runner said nothing about why.
+   *
+   * A fallback and rarely the sentence anybody sees: `runner.start` refuses with
+   * its own detail — an unregistered agent, a manifest that does not validate, a
+   * process that would not spawn — and that detail is better than this one every
+   * time it exists.
+   */
+  start_failed: "DASH could not start this agent on this computer.",
+  /**
    * What the panel says when there is nothing to press, per reason.
    *
    * Every one of these is a state the old page rendered as *empty space*:

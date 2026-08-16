@@ -598,6 +598,24 @@ const dashShell = {
   retireRunnerStore: () => send("runner.retireStore", {}),
 
   /**
+   * Start one registered agent's process on this computer (MAR-657).
+   *
+   * `runner.start` is not new — it has been in `COMMANDS` since MAR-415 and
+   * reaches `POST /agents/{id}/lifecycle` — and until now the only thing in the
+   * product that called it was the add-agent flow. So an agent was started on
+   * the day it was installed and by nothing afterwards, which is why every agent
+   * in a real store reads `offline` with nothing waiting. This is the method
+   * that gives a person the verb DASH already had.
+   *
+   * It grants no reach the catalogue had not already granted: main forwards it
+   * to the runner's lifecycle route, the runner starts a *registration* and
+   * never a command line, and `runner/supervisor.ts` refuses a second start
+   * rather than spawning a second process. The renderer names an agent id and
+   * nothing else — it cannot say what runs, only which registration to run.
+   */
+  startAgent: (args: { agent_id: string }) => send("runner.start", { ...args }),
+
+  /**
    * DASH's two removal actions (MAR-595 finding 18).
    *
    * `removeAgent` also deletes DASH's own copy of the agent's files;

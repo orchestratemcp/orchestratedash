@@ -103,6 +103,81 @@ describe("an agent that has reported", () => {
     expect(control.run).toEqual({ kind: "idle", reason: "nothing_waiting" });
   });
 
+  /**
+   * MAR-657. The sentence survives, and this is the test that says so.
+   *
+   * The fix adds a way to start; it does not delete the explanation MAR-609
+   * built. A *running* agent with nothing pending still gets `nothing_waiting`
+   * and no button, which is the case the one above covers — this asserts the
+   * distinction the new branch could have destroyed by widening.
+   */
+  it("keeps nothing_waiting for a live agent and does not offer to start it again", () => {
+    for (const status of ["ready", "running", "paused", "inactive", "needs_attention"] as const) {
+      const control = buildAgentControl(
+        snapshot({ overview: { ...snapshot().overview, status } }),
+        true,
+      );
+
+      expect(control.run).toEqual({ kind: "idle", reason: "nothing_waiting" });
+    }
+  });
+
+  it.each(["offline", "error"] as const)("offers a start for %s", (status) => {
+    const control = buildAgentControl(
+      snapshot({ overview: { ...snapshot().overview, status } }),
+      true,
+    );
+
+    expect(control.run).toEqual({ kind: "start", observed_at: OBSERVED });
+  });
+
+  /**
+   * The regression this branch's *placement* exists for.
+   *
+   * `runner/state.ts` gates `runs`, `choices`, `actions` and
+   * `approval_requests` on the process being live. `tasks` is the one array it
+   * does not — a dead agent's last self-report keeps them verbatim. So an agent
+   * that ran and then exited still carries its pending `waiting-to-be-run`, and
+   * a `run_now` decided from that would draw a button whose `retry` the
+   * supervisor answers with `not_running`: the after-the-press refusal this
+   * module refuses to create, arriving by a different road.
+   */
+  it("offers a start rather than a Run now the supervisor would refuse", () => {
+    const control = buildAgentControl(
+      snapshot({
+        overview: { ...snapshot().overview, status: "offline" },
+        // Exactly what a stopped kit agent's stale report looks like.
+        tasks: [
+          {
+            id: "waiting-to-be-run",
+            label: "Waiting to be run",
+            status: "pending",
+            run_id: null,
+            detail: null,
+            created_at: OBSERVED,
+          },
+        ],
+      }),
+      true,
+    );
+
+    expect(control.run).toEqual({ kind: "start", observed_at: OBSERVED });
+  });
+
+  /**
+   * A browser tab must not be offered a spawn. `read_only` outranks every
+   * branch below it and this keeps it that way — the one refusal that is about
+   * the window rather than the agent.
+   */
+  it("offers nothing to a window that cannot act", () => {
+    const control = buildAgentControl(
+      snapshot({ overview: { ...snapshot().overview, status: "offline" } }),
+      false,
+    );
+
+    expect(control.run).toEqual({ kind: "idle", reason: "read_only" });
+  });
+
   it("hoists a live run's own controls instead of a second Run now", () => {
     const control = buildAgentControl(
       snapshot({
