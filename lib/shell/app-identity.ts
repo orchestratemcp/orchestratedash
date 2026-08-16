@@ -123,6 +123,43 @@ export function appDirectoryFor(entry: string): string | null {
 }
 
 /**
+ * Did somebody choose this process's store on purpose?
+ *
+ * `electron/data-dir.ts` already asked this of `DASH_DATA_DIR`, to tell "someone
+ * chose a different directory deliberately" apart from "the import ordering
+ * broke" — two situations that look identical from the outside and need opposite
+ * responses. MAR-656's identity check made the question wider, because there is
+ * a **second** way to choose deliberately and this repository uses it.
+ *
+ * Electron's own `--user-data-dir` switch moves `app.getPath("userData")`, and
+ * `useUserDataDirectory()` then derives `DASH_DATA_DIR` from it. A capture
+ * harness launched that way — `--user-data-dir=…\scratch-final\profile`, which
+ * is how runs in parallel worktrees stop colliding — would reach
+ * `assertStoreLocation` with both sides agreeing on a directory called
+ * `profile`, and an identity check that did not know about the switch would
+ * crash a harness whose store was exactly where its operator put it.
+ *
+ * The switch is read from `argv` rather than from `app.getPath`, because by the
+ * time the path can be compared the derivation has already happened and the two
+ * cases are indistinguishable again.
+ */
+export function storeLocationChosen(
+  // An index signature rather than one named field: the caller is
+  // `process.env`, whose `ProcessEnv` shares no declared properties with a
+  // one-field object type and is rejected outright by TypeScript's
+  // weak-type check.
+  env: Readonly<Record<string, string | undefined>>,
+  argv: readonly string[],
+): boolean {
+  if (env.DASH_DATA_DIR !== undefined) {
+    return true;
+  }
+  return argv.some(
+    (argument) => argument === "--user-data-dir" || argument.startsWith("--user-data-dir="),
+  );
+}
+
+/**
  * The last segment of a path, without `node:path`.
  *
  * `path.basename` follows the platform it runs on, and the bug this guards

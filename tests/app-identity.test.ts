@@ -18,7 +18,12 @@
 
 import { describe, expect, it } from "vitest";
 
-import { APP_NAME, storeBasename, storeIdentityProblem } from "../lib/shell/app-identity";
+import {
+  APP_NAME,
+  storeBasename,
+  storeIdentityProblem,
+  storeLocationChosen,
+} from "../lib/shell/app-identity";
 
 describe("storeBasename", () => {
   it("splits a Windows path on a posix runner", () => {
@@ -43,6 +48,40 @@ describe("storeBasename", () => {
   it("has an answer for a path with no segments at all", () => {
     expect(storeBasename("")).toBe("");
     expect(storeBasename("/")).toBe("");
+  });
+});
+
+/**
+ * The identity check only applies to a store nobody chose, and there are two
+ * ways to choose. Missing the second one would have crashed a capture harness
+ * whose store was exactly where its operator put it — a real one was running in
+ * a parallel worktree at the moment this was written, launched as
+ * `--user-data-dir=…\dash-mar660-scratch-final\profile` with no `DASH_DATA_DIR`
+ * at all.
+ */
+describe("storeLocationChosen", () => {
+  it("counts DASH_DATA_DIR", () => {
+    expect(storeLocationChosen({ DASH_DATA_DIR: "C:\\scratch" }, [])).toBe(true);
+  });
+
+  it("counts Electron's own --user-data-dir, in both spellings", () => {
+    expect(
+      storeLocationChosen({}, ["electron.exe", "--user-data-dir=C:\\scratch\\profile", "run.mjs"]),
+    ).toBe(true);
+    expect(storeLocationChosen({}, ["electron.exe", "--user-data-dir", "C:\\scratch"])).toBe(true);
+  });
+
+  it("is false for an ordinary launch, which is the case the check is for", () => {
+    expect(storeLocationChosen({}, ["electron.exe", "C:\\repo"])).toBe(false);
+    expect(storeLocationChosen({ DASH_DATA_DIR: undefined }, ["electron.exe"])).toBe(false);
+  });
+
+  it("is not fooled by a switch that merely starts the same way", () => {
+    // `--user-data-dir-something` is not the switch, and neither is a path that
+    // happens to mention it.
+    expect(storeLocationChosen({}, ["electron.exe", "C:\\repo\\--user-data-dir\\main.mjs"])).toBe(
+      false,
+    );
   });
 });
 

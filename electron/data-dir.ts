@@ -65,7 +65,12 @@
 
 import { app } from "electron";
 
-import { APP_NAME, isAppEntryPoint, storeIdentityProblem } from "../lib/shell/app-identity";
+import {
+  APP_NAME,
+  isAppEntryPoint,
+  storeIdentityProblem,
+  storeLocationChosen,
+} from "../lib/shell/app-identity";
 import { useUserDataDirectory } from "./secure-store";
 
 // BEFORE `useUserDataDirectory()`, which is the first thing to read
@@ -88,8 +93,15 @@ if (isAppEntryPoint(process.argv[1] ?? "")) {
  * what lets `assertStoreLocation` tell "someone chose a different directory on
  * purpose" apart from "the ordering broke", which look identical from the
  * outside and need opposite responses.
+ *
+ * **Read before `useUserDataDirectory()` runs**, because that call is what makes
+ * the two indistinguishable. `storeLocationChosen` also counts Electron's own
+ * `--user-data-dir` switch, which is a second way of choosing on purpose and one
+ * this repository's capture harnesses use to keep parallel worktrees from
+ * colliding — see that function for why the identity check would otherwise crash
+ * a run whose store was exactly where its operator put it.
  */
-const overridden = process.env.DASH_DATA_DIR !== undefined;
+const overridden = storeLocationChosen(process.env, process.argv);
 
 useUserDataDirectory();
 
