@@ -6,6 +6,7 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AgentHosting, FleetCard, describeRunCount } from "./fleet-card";
+import { ChiefChat } from "./chief-chat";
 import { OpenAgentButton } from "./glance-chips";
 import { InfoNote } from "./info-note";
 import { useFleetFilterSync } from "./fleet-rail";
@@ -305,8 +306,28 @@ export function FleetList({
     list
   );
 
+  /*
+   * MAR-648. Whether the chief's room is open over the cards.
+   *
+   * Held here rather than inside `ChiefChat` because it is a fact about the
+   * *stage*: the band grows and the cards give up their two thirds, which is a
+   * decision only the element that owns both tracks can take. `ChiefChat` says
+   * when it should change and this decides what that looks like.
+   *
+   * React state and not the address, which is the opposite of the call
+   * `lib/views/agent-stage.ts` made for the agent page's stages — and the
+   * reasons that module gives are what decide it. A stage is in the address
+   * because Back should return to it, because `lib/open-link.ts` needs to name
+   * it, and because the capture harnesses photograph a route. None of the three
+   * applies to a composer somebody put a cursor in: nothing links to "the fleet
+   * page with the chief's box focused", Back should leave the fleet rather than
+   * close a panel, and the harness that photographs this focuses the box, which
+   * is what a person does.
+   */
+  const [chiefOpen, setChiefOpen] = useState(false);
+
   return (
-    <div className="fleet-stage">
+    <div className={chiefOpen ? "fleet-stage chief-is-open" : "fleet-stage"}>
       <div className="fleet-cards">
         {/*
           MAR-640. A filter that hides everybody says so rather than leaving a
@@ -323,7 +344,18 @@ export function FleetList({
           cardsPane
         )}
       </div>
-      <ChiefBand agent={visible[current] ?? null} agents={visible} log={log} />
+      <ChiefBand
+        agent={visible[current] ?? null}
+        agents={visible}
+        chatOpen={chiefOpen}
+        log={log}
+        onCloseChat={() => {
+          setChiefOpen(false);
+        }}
+        onOpenChat={() => {
+          setChiefOpen(true);
+        }}
+      />
     </div>
   );
 }
@@ -360,13 +392,25 @@ export function spotlightPosition(index: number, centred: number): string | unde
  * agent, given without being asked. Opening the agent lives here too, because
  * the card above is now a portrait.
  *
- * **The asking is MAR-419 and it is not built.** It is blocked on a fleet-wide
- * selection over MAR-545's completion layer, per `docs/mar-545-handoff.md`, and
- * this band deliberately does not draw a box a person could type into and get
- * nothing back from — `app/_components/ask.tsx` states that rule and its own
- * view union has no arm for one. So the chief's action is the truest thing in
- * reach: the per-agent Ask that MAR-545 already shipped, on the agent's own
- * workspace, named after the agent the chief is talking about.
+ * ## The asking is built now (MAR-648)
+ *
+ * This paragraph used to say MAR-419 was blocked on a fleet-wide selection over
+ * MAR-545's completion layer. The selection was never the hard part. What is
+ * actually in the way is narrower and is recorded in `lib/chief/route.ts`: the
+ * broker resolves a manifest per agent and the fleet principal has none, and
+ * `connectionSecretName` only ever emits `dash.connection.`, so the fleet's own
+ * key cannot be reached from the spend path by construction.
+ *
+ * So the chief asks nothing of anybody and still answers, which is MAR-648's own
+ * scope for it — *"answers scoped to facts the chief can already speak (glance
+ * chips, fleet facts)"*. `ChiefChat` is the box and `lib/chief/reply.ts` is what
+ * comes back. The old rule this band was written under still holds and is why
+ * that box is safe to draw: it is not a dead input, because every press produces
+ * a real answer out of records this component already has in its props.
+ *
+ * The per-agent Ask has not gone anywhere. It is what a routed reply links to,
+ * which is the same destination this band's action always pointed at — reached
+ * now by asking a question rather than by knowing in advance which agent to ask.
  *
  * ## The chief is not one of the O's
  *
@@ -392,7 +436,10 @@ export function spotlightPosition(index: number, centred: number): string | unde
 export function ChiefBand({
   agent,
   agents = [],
+  chatOpen = false,
   log = {},
+  onCloseChat,
+  onOpenChat,
 }: {
   agent: AgentRow | null;
   /**
@@ -400,9 +447,17 @@ export function ChiefBand({
    * for anything about the selected agent, which stays `agent`'s alone.
    * Optional and defaulting to empty so a caller (this file's own render
    * tests included) that only ever had one agent to hand keeps working.
+   *
+   * MAR-648 gave it a second reader: `ChiefChat` routes over the same list,
+   * which is what makes "ask the chief" a question about the fleet in front of
+   * you rather than about a fleet somebody else filtered.
    */
   agents?: readonly AgentRow[];
+  /** Whether the room is open. Optional, for the render tests that predate it. */
+  chatOpen?: boolean;
   log?: SightingLog;
+  onCloseChat?: () => void;
+  onOpenChat?: () => void;
 }): ReactNode {
   const line =
     agent === null
@@ -414,9 +469,19 @@ export function ChiefBand({
         });
 
   return (
-    <aside className="chief-band">
+    <aside className={chatOpen ? "chief-band is-chatting" : "chief-band"}>
       <ChiefGlyph />
-      {line === null || agent === null ? (
+      {/*
+        MAR-648. The unprompted line steps aside while the room is open.
+
+        Both are the chief talking, and leaving them on screen together would put
+        a sentence about the agent in the middle of the cards directly above a
+        conversation about something the person actually asked — one speaker
+        saying two unrelated things at once, which is the duplication MAR-646 was
+        filed on rather than a second opinion. The glyph stays: it is who is
+        speaking, and that has not changed.
+      */}
+      {chatOpen ? null : line === null || agent === null ? (
         <p className="chief-says muted">
           {describeFleetSummary(
             agents.map(
@@ -463,8 +528,36 @@ export function ChiefBand({
           </div>
         </>
       )}
+
+      {/*
+        MAR-648. The composer, docked, and the room it opens above itself.
+
+        Last in the band and therefore last in the tab order, which is the right
+        order for it: somebody arriving here with a keyboard reaches the chief's
+        sentence and the two controls about the agent in the middle before they
+        reach a box that asks them to compose something.
+      */}
+      <ChiefChat
+        agents={agents}
+        open={chatOpen}
+        onClose={onCloseChat ?? noop}
+        onOpen={onOpenChat ?? noop}
+      />
     </aside>
   );
+}
+
+/**
+ * For a `ChiefBand` rendered without the handlers.
+ *
+ * `ChiefBand` is exported for the render tests, which drive it directly because
+ * every test here is `renderToStaticMarkup` and the spotlight is unreachable
+ * through `FleetList` — see this component's header. Those callers hold no open
+ * state, and a composer that throws on focus would make the band untestable to
+ * keep a prop required that only one caller in the application can supply.
+ */
+function noop(): void {
+  /* nothing to do */
 }
 
 /** x, y, width, height on the 12×12 grid, matching `sidebar-icons.tsx`. */

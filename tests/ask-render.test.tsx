@@ -20,12 +20,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { AskComposer, AskThread } from "../app/_components/ask";
 import {
+  ASK_ACTIVITY_LABEL,
   ASK_CUSTODY,
   ASK_HEADING,
+  ASK_MODEL_CHANGE,
+  ASK_MODEL_LABEL,
   ASK_PLACEHOLDER,
   ASK_SOURCES_HEADING,
   ASK_SUBMIT,
   ASK_WORKING,
+  describeAskActivity,
+  describeAskModel,
   describeAskPurpose,
   describeUnavailable,
 } from "../lib/copy/ask";
@@ -89,6 +94,16 @@ function askable(over: Partial<Extract<AgentAskView, { can_ask: true }>> = {}): 
     working: ASK_WORKING,
     sources_heading: ASK_SOURCES_HEADING,
     provider_label: "OpenRouter",
+    /* MAR-648. The settings row's indicator. `from_default: false` is the
+       commoner state — an agent whose owner picked a model — so it is the
+       fixture's default and the fleet-default arm is overridden explicitly by
+       the case that tests it. */
+    model: {
+      model_id: "anthropic/claude-sonnet-5",
+      from_default: false,
+      note: describeAskModel(false),
+      change_label: ASK_MODEL_CHANGE,
+    },
     estimate: {
       headline: "Up to 12 saved things of the 40 this agent has saved go with your question, whichever ones match it.",
       detail: "A question here has usually cost $0.0031.",
@@ -302,5 +317,87 @@ describe("somebody who has never heard the word", () => {
       view.estimate.headline,
       view.estimate.detail,
     ]);
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * The composer's settings row, and the wait (MAR-648)
+ * ---------------------------------------------------------------------- */
+
+describe("the settings row", () => {
+  it("names the model this question will be asked under", () => {
+    const html = draw(askable());
+    expect(html).toContain(ASK_MODEL_LABEL);
+    expect(html).toContain("anthropic/claude-sonnet-5");
+  });
+
+  /*
+   * `AskModelView` states why: DASH holds no table mapping a model id to a
+   * friendlier name, and inventing one is ADR 0012's refused price table in
+   * another costume. So the id is set as a value, in monospace, the way every
+   * other identifier in DASH is.
+   */
+  it("sets the model id as a value rather than writing it into a sentence", () => {
+    const html = draw(askable());
+    expect(/<code class="value"[^>]*>anthropic\/claude-sonnet-5<\/code>/.test(html)).toBe(true);
+  });
+
+  it("says whose decision the model was, in text rather than only on hover", () => {
+    const mine = draw(askable());
+    expect(mine).toContain(describeAskModel(false));
+
+    const theirs = draw(
+      askable({
+        model: {
+          model_id: "anthropic/claude-sonnet-5",
+          from_default: true,
+          note: describeAskModel(true),
+          change_label: ASK_MODEL_CHANGE,
+        },
+      }),
+    );
+    expect(theirs).toContain(describeAskModel(true));
+    // The two are different claims about the same id — see `describeAskModel`.
+    expect(describeAskModel(true)).not.toBe(describeAskModel(false));
+  });
+
+  it("offers the way to change it", () => {
+    expect(draw(askable())).toContain(ASK_MODEL_CHANGE);
+  });
+
+  /* A settings row on a blocked composer would be a setting for a conversation
+     that cannot happen. `AskComposer` renders nothing at all in that state. */
+  it("is absent when there is nothing to ask with", () => {
+    const html = draw(blocked("no_key", true));
+    expect(html).not.toContain(ASK_MODEL_LABEL);
+  });
+});
+
+describe("what DASH says while a question is running", () => {
+  /*
+   * The honesty rule MAR-648 states, tested where it is decided.
+   * `describeAskActivity`'s own header carries the argument: the renderer
+   * cannot see the four real steps inside `performAskAction`, so it names the
+   * operation in flight and counts its own clock, and claims nothing else.
+   */
+  it("names no step DASH cannot observe", () => {
+    for (const seconds of [0, 1, 7, 42]) {
+      const line = describeAskActivity(seconds);
+      expect(line.toLowerCase()).not.toContain("reading");
+      expect(line.toLowerCase()).not.toContain("thinking");
+      expect(line.toLowerCase()).not.toContain("choosing");
+      expect(line.toLowerCase()).not.toContain("saving");
+    }
+  });
+
+  it("counts the wait in whole seconds once there is one to count", () => {
+    expect(describeAskActivity(0)).toBe("Asking…");
+    expect(describeAskActivity(0.4)).toBe("Asking…");
+    expect(describeAskActivity(1)).toBe("Asking… 1s");
+    expect(describeAskActivity(7.9)).toBe("Asking… 7s");
+  });
+
+  it("holds the waiting line to the identifier rule", () => {
+    expectPlainLanguage([describeAskActivity(0), describeAskActivity(12), ASK_ACTIVITY_LABEL]);
   });
 });

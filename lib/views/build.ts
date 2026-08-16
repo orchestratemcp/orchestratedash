@@ -252,6 +252,14 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
       // own and disagreeing with the one that just handled a rename.
       title: agent.title,
       goal: agent.goal,
+      // MAR-648. What the author declared this agent does, for the chief to
+      // route on. Off the manifest the store row already holds — `deploy` below
+      // reads the same document, and the fleet list must not open a file per
+      // card to answer a question about a plan it is already holding.
+      capabilities: ((store.agents[agent.name]?.manifest?.planned_route ?? []) as
+        readonly { component_id?: unknown }[]).flatMap((entry) =>
+        typeof entry.component_id === "string" ? [entry.component_id] : [],
+      ),
       plan_source: agent.plan_source,
       build_target: agent.build_target,
       planned_steps: agent.planned_steps,

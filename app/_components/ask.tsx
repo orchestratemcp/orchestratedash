@@ -1,12 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
 import { AGENT_COCKPIT_COPY } from "../../lib/copy/agent-page";
+import {
+  ASK_ACTIVITY_LABEL,
+  ASK_MODEL_LABEL,
+  describeAskActivity,
+} from "../../lib/copy/ask";
+import type { OName } from "../../lib/brand/o-cast";
 import type { AgentAskView, AskExchangeView } from "../../lib/views/types";
 import { agentStageHref } from "../_data/routes";
 import { askAgentQuestion, submitConnectionCommand } from "../_data/source";
+import { OAvatar } from "./o-avatar";
 
 /**
  * The conversation with one agent (MAR-545).
@@ -172,32 +179,89 @@ export function AskThread({
  * the dead input this component's own header refuses.
  */
 export function AskComposer({
+  agentAvatar = null,
   ask,
   canAct,
   onAsked,
+  onEscape,
   onFocus,
   setFeedback,
 }: {
+  /**
+   * The character this agent wears, for the loader (MAR-648, MAR-615).
+   *
+   * Null draws no portrait beside the activity line and nothing else changes —
+   * the reserved silence `AgentPortrait` already keeps for an agent whose row
+   * DASH could not read, and for its reason: an invented character would be a
+   * costume this agent might not be wearing on the card it came from.
+   */
+  agentAvatar?: OName | null;
   ask: AgentAskView;
   canAct: boolean;
   onAsked: () => void;
+  /**
+   * Called on Escape, so the cockpit can put back the stage somebody was on
+   * (MAR-648).
+   *
+   * This component's own header refused to bind this key: *"`Escape` is
+   * deliberately not bound: this box holds a question somebody typed, and a key
+   * that discarded it would be a destructive control with no confirmation."*
+   * That reasoning is right, and it is exactly why the binding is safe now —
+   * **Escape does not touch the box.** It changes which stage is on screen and
+   * leaves the question, the cursor and the scrollback where they are, so there
+   * is nothing discarded and nothing to confirm.
+   */
+  onEscape?: () => void;
   /** Called when the box takes focus, so the cockpit can show the thread. */
   onFocus?: () => void;
   setFeedback: Dispatch<SetStateAction<{ ok: boolean; message: string } | null>>;
 }): ReactNode {
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
+  /*
+   * Whole seconds since the press — the one number on this surface the renderer
+   * measured first-hand, which is why it is the one number MAR-648's honesty
+   * rule lets it show while a question is in flight. `describeAskActivity` is
+   * where that argument is written down.
+   *
+   * A second is the right resolution rather than a compromise: this is a person
+   * waiting, not a profiler, and a tenth-of-a-second counter under a loader
+   * reads as instrumentation. It is also one repaint per second, which is the
+   * cheapest honest way to show the surface is still alive.
+   */
+  const [elapsed, setElapsed] = useState(0);
+
+  /*
+   * Started on the press and cleared with it. Reading the clock rather than
+   * counting ticks, because a browser throttles an interval in a background tab
+   * and a counter that incremented per tick would under-report exactly when
+   * somebody switched away and came back to check.
+   */
+  useEffect(() => {
+    if (!busy) {
+      return;
+    }
+    const started = Date.now();
+    const tick = window.setInterval(() => {
+      setElapsed((Date.now() - started) / 1000);
+    }, 1000);
+    return () => {
+      window.clearInterval(tick);
+    };
+  }, [busy]);
 
   if (!ask.can_ask) {
     return null;
   }
 
   const flow = ask.ask;
+  const model = ask.model;
 
   async function submit(): Promise<void> {
     if (question.trim().length === 0) {
       return;
     }
+    setElapsed(0);
     setBusy(true);
     setFeedback(null);
     const result = await askAgentQuestion({
@@ -250,11 +314,19 @@ export function AskComposer({
           /*
            * Enter sends, Shift+Enter is a new line — the wireframe's own
            * sentence for the pinned bar, and the convention of every chat box a
-           * person has used. `Escape` is deliberately not bound: this box holds
-           * a question somebody typed, and a key that discarded it would be a
-           * destructive control with no confirmation.
+           * person has used.
+           *
+           * Escape puts back the stage somebody was on and **does not touch what
+           * they typed** (MAR-648). See `onEscape`, which carries the argument
+           * for why the refusal this comment used to record does not apply to a
+           * key that discards nothing.
            */
           onKeyDown={(event) => {
+            if (event.key === "Escape" && onEscape !== undefined) {
+              event.preventDefault();
+              onEscape();
+              return;
+            }
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
               void submit();
@@ -273,6 +345,110 @@ export function AskComposer({
       >
         {busy ? ask.working : ask.submit}
       </button>
+
+      {/*
+        The settings row (MAR-648), and the activity line in its place while a
+        question is in flight.
+
+        One band rather than two stacked, because they answer the same question
+        at two moments — *what is about to happen* and *what is happening* — and
+        a row that stayed put underneath a second row appearing above it would
+        move the box a person is typing in. The composer never moves; that is
+        the whole shape MAR-648 asked for.
+      */}
+      {busy ? (
+        <AskActivity avatar={agentAvatar} elapsed={elapsed} model={model.model_id} />
+      ) : (
+        <div className="ask-settings">
+          <span className="ask-setting">
+            <span className="muted">{ASK_MODEL_LABEL}</span>{" "}
+            {/* The provider's own id, as a value. `AskModelView` states why
+                there is no friendlier name to give it and why inventing one
+                would be ADR 0012's refused price table in another costume. */}
+            <code className="value" title={model.note}>
+              {model.model_id}
+            </code>
+            {/* Said, not only shown in a tooltip: whose decision this was is the
+                fact that predicts what changing the fleet default will do here,
+                and `BrokerCapabilityView.consequence` records what a hover costs
+                — a fact somebody has to point at is a fact most people never
+                read. */}
+            <span className="visually-hidden">. {model.note}</span>
+          </span>
+          <Link className="ask-setting-change" href={agentStageHref(flow.agent_id, "settings")}>
+            {model.change_label}
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * What DASH is doing while a question is in flight (MAR-648).
+ *
+ * Henrik asked for this twice: *"We always have some feedback while the model
+ * thinks. It could be in text, currently reading xxx and/or a loader (maybe an O
+ * doing some stuff)."*
+ *
+ * ## The line says one thing because DASH can only see one thing
+ *
+ * `describeAskActivity` carries the whole argument and it is the load-bearing
+ * decision in this feature: the preload bridge is `invoke`-only, so a question
+ * is one awaited round trip and the four real steps inside `performAskAction`
+ * are invisible from here. A component that animated through their names would
+ * be reciting a script — right about the order, wrong about the timing, every
+ * time — which is what MAR-648 calls *a lie with a spinner on it*.
+ *
+ * So: the operation genuinely in flight, the model it is in flight against, and
+ * a clock this component read itself. Nothing else is knowable and nothing else
+ * is claimed.
+ *
+ * ## The O is at work, and `action` is a literal because it must be
+ *
+ * `scripts/brand-rules.mjs` fails `action={anything}` that is not `true` or
+ * `false`, and the rule behind it is `lib/brand/o-actions.ts`': **an idle action
+ * is costume flavour, never status.** This surface only exists while a question
+ * is running, so the literal `true` is a decision about the surface — taken once,
+ * in the source — rather than a fact about the agent, which is exactly the
+ * distinction that rule protects.
+ *
+ * Eight of the eleven characters have no sheet vendored yet (MAR-615's DASH half
+ * lands three of twelve). Those draw their audited still, which is what
+ * `OAvatar` already does everywhere else and is deliberately not papered over
+ * with a stand-in loop — see `actionFor`'s own note on why a borrowed animation
+ * would be worse than none.
+ */
+function AskActivity({
+  avatar,
+  elapsed,
+  model,
+}: {
+  avatar: OName | null;
+  elapsed: number;
+  model: string;
+}): ReactNode {
+  return (
+    <div className="ask-activity">
+      {avatar === null ? null : (
+        <span className="ask-activity-o">
+          <OAvatar name={avatar} size={50} action />
+        </span>
+      )}
+      {/*
+        `role="status"` so the wait is announced rather than only seen — the
+        design brief's *"nothing moves or refreshes without saying it did"*
+        applied to the one place DASH makes somebody wait. Polite by default, so
+        it does not interrupt a screen reader mid-sentence.
+
+        The model id is inside the live region and the seconds are not: a counter
+        in a live region would announce itself once a second forever, which is
+        the accessibility failure that makes people turn the feature off.
+      */}
+      <p className="ask-activity-line" role="status">
+        <span className="visually-hidden">{ASK_ACTIVITY_LABEL}. </span>
+        {describeAskActivity(elapsed)} <code className="value">{model}</code>
+      </p>
     </div>
   );
 }
@@ -294,17 +470,23 @@ export function AskComposer({
  */
 export function AgentChatBar({
   agent,
+  agentAvatar = null,
   ask,
   canAct,
   onAsked,
+  onEscape,
   onFocus,
   onChatStage = false,
   setFeedback,
 }: {
   agent: string;
+  /** This agent's character, for the loader on the composer (MAR-648). */
+  agentAvatar?: OName | null;
   ask: AgentAskView;
   canAct: boolean;
   onAsked: () => void;
+  /** Escape, which changes the stage and never the box (MAR-648). */
+  onEscape?: () => void;
   onFocus?: () => void;
   /**
    * Whether the thread is already the stage.
@@ -325,9 +507,11 @@ export function AgentChatBar({
     <div className="cockpit-chat" aria-label={AGENT_COCKPIT_COPY.chat_label}>
       {ask.can_ask ? (
         <AskComposer
+          agentAvatar={agentAvatar}
           ask={ask}
           canAct={canAct}
           onAsked={onAsked}
+          onEscape={onEscape}
           onFocus={onFocus}
           setFeedback={setFeedback}
         />

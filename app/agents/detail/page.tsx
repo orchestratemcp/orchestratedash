@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   Suspense,
   useEffect,
+  useRef,
   useState,
   type Dispatch,
   type ReactNode,
@@ -203,6 +204,28 @@ function AgentWorkspace(): ReactNode {
   const [fragment, setFragment] = useState(() =>
     typeof window === "undefined" ? "" : window.location.hash.slice(1),
   );
+  /*
+   * MAR-648. The stage the chat composer was focused from, for Escape.
+   *
+   * A ref and not state, deliberately: nothing renders differently because of
+   * it, and making it state would repaint the whole cockpit the moment somebody
+   * put a cursor in the box. Null until the composer is focused from another
+   * stage, which is also the honest answer for somebody who arrived on the chat
+   * stage directly — there is nothing underneath to put back.
+   *
+   * **Declared up here with the other hooks, and that placement is the bug this
+   * line was written wrong once.** It first sat beside `stage`, three hundred
+   * lines down, which reads better and is after three early returns — the
+   * loading, failed and not-found branches. So the first render of this page
+   * (loading) ran one fewer hook than the second, and React threw *Rendered
+   * more hooks than during the previous render* the instant a view arrived.
+   *
+   * Nothing caught it. Every render test here is `renderToStaticMarkup`, which
+   * renders once and can never see a hook count change between two renders; the
+   * whole suite, the typecheck and the brand gate were all green. Two capture
+   * harnesses photographing Next's error boundary are what found it.
+   */
+  const returnStage = useRef<AgentStage | null>(null);
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
@@ -989,12 +1012,35 @@ function AgentWorkspace(): ReactNode {
           directly above the box before a word is typed. */}
       <AgentChatBar
         agent={view.agent}
+        /* MAR-648. The same stored character the header's portrait draws, so
+           the O that animates while a question runs is recognisably this
+           agent rather than a second opinion about which costume it wears. */
+        agentAvatar={view.avatar}
         ask={view.ask}
         canAct={canAct}
         onChatStage={stage === "chat"}
         onAsked={() => setRefreshKey((value) => value + 1)}
+        /*
+         * MAR-648. Escape puts back the stage the composer was focused from.
+         *
+         * Not `router.back()`, which would be one line and is wrong for the
+         * case that matters: an address that named the chat stage directly —
+         * MAR-586's chips and `lib/open-link.ts` both produce those — has no
+         * earlier stage of this agent behind it, so Back would leave the agent
+         * altogether. Escape on a surface that expanded means "put back what
+         * was underneath", and where nothing was underneath it correctly does
+         * nothing.
+         */
+        onEscape={() => {
+          const back = returnStage.current;
+          if (back !== null && back !== "chat") {
+            returnStage.current = null;
+            goToStage(back);
+          }
+        }}
         onFocus={() => {
           if (stage !== "chat") {
+            returnStage.current = stage;
             goToStage("chat");
           }
         }}

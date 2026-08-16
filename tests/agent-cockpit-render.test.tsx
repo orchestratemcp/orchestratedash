@@ -23,7 +23,13 @@ import { AgentStageView } from "../app/_components/agent-stage";
 import { AgentChatBar } from "../app/_components/ask";
 import { OutputsPanel } from "../app/_components/outputs";
 import { AGENT_COCKPIT_COPY } from "../lib/copy/agent-page";
-import { ASK_HEADING, ASK_PLACEHOLDER, describeUnavailable } from "../lib/copy/ask";
+import {
+  ASK_HEADING,
+  ASK_MODEL_CHANGE,
+  ASK_PLACEHOLDER,
+  describeAskModel,
+  describeUnavailable,
+} from "../lib/copy/ask";
 import { buildArtifactCards } from "../lib/views/artifacts";
 import { AGENT_STAGES, type AgentStage } from "../lib/views/agent-stage";
 import type { AgentControlView } from "../lib/views/agent-control";
@@ -398,6 +404,13 @@ const ASKABLE: AgentAskView = {
   working: "Asking…",
   sources_heading: "Where this came from",
   provider_label: "OpenRouter",
+  /* MAR-648. What the composer's settings row draws. */
+  model: {
+    model_id: "anthropic/claude-sonnet-5",
+    from_default: false,
+    note: describeAskModel(false),
+    change_label: ASK_MODEL_CHANGE,
+  },
   estimate: { headline: "Up to 12 saved things go with your question.", detail: "About $0.003." },
   ask: { agent_id: AGENT, connection_id: "models", field_id: "key" },
   history: [],
