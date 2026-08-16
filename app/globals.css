@@ -6705,12 +6705,6 @@ main:has(.agent-cockpit) {
   margin: 0;
 }
 
-.cockpit-goal {
-  margin: var(--space-1) 0 0;
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
-}
-
 /* Where this agent lives, and a way to the stage that owns it. A link, so it
    reads as one; the value is the word the fleet card uses. */
 .place-chip {
@@ -6928,6 +6922,115 @@ main:has(.agent-cockpit) {
   padding: var(--space-3);
   border: 1px solid var(--line-strong);
   background: var(--surface-1);
+}
+
+/*
+ * MAR-664. The goal moved here from a permanent line under the name; the
+ * control that reveals it is a chip, `.place-chip`'s own shape, so it reads as
+ * one more fact about identity rather than a fourth action grid cell.
+ */
+.cockpit-about {
+  position: relative;
+}
+
+.cockpit-about > summary {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  list-style: none;
+}
+
+.cockpit-about > summary::-webkit-details-marker {
+  display: none;
+}
+
+.cockpit-about > summary:hover,
+.cockpit-about > summary:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/*
+ * A read-only disclosure of manifest facts, not a menu — wider than
+ * `.cockpit-overflow-menu` and scrollable, because six steps and a paragraph
+ * of goal prose do not fit a 12rem column. Anchored left rather than right:
+ * this control sits early in a row that wraps, and a panel opening off the
+ * left edge of a narrow window is worse than one that opens wide.
+ */
+.cockpit-about-panel {
+  position: absolute;
+  left: 0;
+  top: calc(100% + var(--space-1));
+  z-index: 5;
+  display: grid;
+  gap: var(--space-4);
+  width: min(30rem, calc(100vw - var(--space-6) * 2));
+  max-height: min(70vh, 34rem);
+  overflow-y: auto;
+  padding: var(--space-4);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-1);
+}
+
+.cockpit-about-panel section {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.cockpit-about-heading {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 700;
+}
+
+.cockpit-about-panel > section > p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.plan-step-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-step {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--density-card-p);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.plan-step-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.plan-step-number {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.plan-step p {
+  margin: 0;
+  color: var(--text-muted);
 }
 
 .live-note {

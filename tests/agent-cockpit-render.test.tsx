@@ -76,6 +76,7 @@ function header(over: Partial<Parameters<typeof AgentCockpitHeader>[0]> = {}): s
         onRefresh={() => undefined}
         onTriggerRun={() => undefined}
         places={[]}
+        plan={[]}
         stage="overview"
         title="News Scout"
         {...over}

@@ -1118,6 +1118,7 @@ function AgentWorkspace(): ReactNode {
             })();
           }}
           places={view.deploy_targets}
+          plan={view.plan}
           stage={stage}
           title={view.title}
         />
