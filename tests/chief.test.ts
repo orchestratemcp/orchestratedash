@@ -259,16 +259,27 @@ describe("the chief is not the Chief chat", () => {
     expect(BAND).not.toMatch(/<form\b/);
   });
 
-  it("draws no character from the cast", () => {
+  it("draws no avatar inline, delegating the portrait to its own glyph function", () => {
     /*
-     * The cast lives in orchestrateweb and DASH vendors it against a per-file
-     * sha256 (`lib/brand/o-cast.ts`); a chief *character* is a sprite that repo
-     * has to draw and audit first. MAR-544's boot glyph settles the interim: DASH's
-     * own things are drawn as `currentColor` rects on the sidebar's 12×12 grid,
-     * because "the cast are the agents' characters, and the thing booting here is
-     * DASH."
+     * `ChiefBand` itself never reaches for `OAvatar` — it renders `<ChiefGlyph
+     * />` and stops, so a reviewer asking "does this component draw a costume
+     * from state" gets a complete answer without also having to read the glyph.
      */
-    expect(BAND).not.toContain("OAvatar");
+    expect(BAND).not.toContain("<OAvatar");
+    expect(BAND).toContain("<ChiefGlyph");
+  });
+
+  it("draws the vendored chief, never an ordinary agent's costume (MAR-615)", () => {
+    /*
+     * Until MAR-615 the chief had no art of its own and this settled for
+     * `currentColor` rects on the sidebar's 12×12 grid — MAR-544's boot glyph
+     * idiom. He is cast now (`lib/brand/o-cast.ts`'s `O_NAMES`) but still not
+     * fleet: `O_FLEET` excludes him (`tests/o-cast.test.ts`), so no ordinary
+     * agent's `oFor()` seed can ever land in his costume, and a literal
+     * `name="chief"` here — never an expression — is what keeps
+     * `scripts/brand-rules.mjs`'s `checkCostume` able to prove that statically.
+     */
+    expect(listSource).toContain('name="chief"');
   });
 
   it("names the speaker, which is the one avatar-ish thing in DASH that is named", () => {
@@ -276,10 +287,13 @@ describe("the chief is not the Chief chat", () => {
      * The inverse of `OAvatarProps.label`'s argument. A costume must be silent
      * because it is an agent's recognition and never a fact about it; the chief is
      * not a costume, it is who is talking, and a sentence attributed to nobody is
-     * read as the page's own voice.
+     * read as the page's own voice. `label=`, not a raw `aria-label=`, since
+     * MAR-615: `OAvatar` is what turns a passed `label` into the accessible name,
+     * and `scripts/brand-check.mjs`'s `LABEL_ALLOWLIST` is what lets this one file
+     * pass it at all.
      */
     expect(CHIEF_NAME.length).toBeGreaterThan(0);
-    expect(listSource).toContain("aria-label={CHIEF_NAME}");
+    expect(listSource).toContain("label={CHIEF_NAME}");
   });
 
   it("has a quiet state that does not become a second empty state", () => {

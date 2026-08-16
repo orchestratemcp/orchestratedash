@@ -34,10 +34,14 @@
 /**
  * The cast, in its canonical order.
  *
- * **The order is load-bearing**: `oFor` indexes into it, so reordering this
- * array re-costumes every agent whose character has not yet been persisted, and
- * silently disagrees with SITE for every one that has. Append only, and only
- * alongside a new audited PNG.
+ * **The order is load-bearing**: `oFor` indexes into `O_FLEET`, so reordering
+ * this array re-costumes every agent whose character has not yet been
+ * persisted, and silently disagrees with SITE for every one that has. Append
+ * only, and only alongside a new audited PNG.
+ *
+ * Twelve since MAR-615: the original eleven fleet costumes plus the chief,
+ * appended last so `O_FLEET`'s indices — and therefore every existing `oFor()`
+ * assignment — are unchanged by his arrival.
  */
 export const O_NAMES = [
   "ninja",
@@ -51,9 +55,22 @@ export const O_NAMES = [
   "medic",
   "explorer",
   "robot",
+  "chief",
 ] as const;
 
 export type OName = (typeof O_NAMES)[number];
+
+/**
+ * The eleven fleet costumes — what `oFor` deals from and what an avatar
+ * picker offers (MAR-615).
+ *
+ * The chief is audited cast but not fleet: it is the orchestrator's own
+ * character, the one the spotlight band names, and no ordinary agent wears
+ * it — no picker may offer it, and no `oFor()` seed may land on it. Excluding
+ * it here rather than filtering call sites means that rule holds by
+ * construction rather than by every caller remembering it.
+ */
+export const O_FLEET = O_NAMES.filter((name): name is Exclude<OName, "chief"> => name !== "chief");
 
 /**
  * The rendered sizes DASH offers, in whole multiples of the 50px source.
@@ -94,16 +111,20 @@ export type OSize = 50 | 100 | 200;
  * runtime state — and a function of the name is not independent of the name.
  * Calling this on a render path would quietly reintroduce that dependency.
  *
- * Twelve or more agents reuse costumes. That is the documented fallback rather
+ * Eleven or more agents reuse costumes. That is the documented fallback rather
  * than a defect: recognition degrades gracefully, and nothing in DASH depends on
  * a character being unique.
+ *
+ * Indexes `O_FLEET`, not `O_NAMES`, since MAR-615 — the chief joining the cast
+ * must not reshuffle a single existing assignment, which indexing the full
+ * twelve would have done for every agent whose hash landed past "explorer".
  */
 export function oFor(seed: string): OName {
   let hash = 0;
   for (let index = 0; index < seed.length; index += 1) {
     hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
   }
-  return O_NAMES[hash % O_NAMES.length] as OName;
+  return O_FLEET[hash % O_FLEET.length];
 }
 
 /**

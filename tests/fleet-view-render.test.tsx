@@ -293,11 +293,16 @@ describe("the chief, under the cards", () => {
     expect(markup).not.toContain("button-link");
   });
 
-  it("is drawn as DASH rather than as one of the agents' characters", () => {
-    // The cast is vendored artwork audited against orchestrateweb's manifest;
-    // this is a glyph DASH owns. MAR-544's boot sequence settled the distinction.
+  it("is drawn from the vendored cast, but never as one of the agents' own costumes (MAR-615)", () => {
+    // The chief is audited cast art since MAR-615 — no longer the placeholder
+    // glyph MAR-544's boot sequence distinguished from the O's. It still is
+    // not an ordinary agent's costume: it animates through its own vendored
+    // sheet rather than the still-image path a fleet avatar without `action`
+    // would use, and `O_FLEET` (asserted in tests/o-cast.test.ts) is what keeps
+    // `oFor()` from ever landing an agent in it.
     const markup = renderToStaticMarkup(<ChiefBand agent={agent()} />);
-    expect(markup).toContain('class="chief-glyph"');
+    expect(markup).toContain("chief-glyph");
+    expect(markup).toContain("/o/actions/chief-baton-wave.png");
     expect(markup).not.toContain("/o/1x/");
   });
 });

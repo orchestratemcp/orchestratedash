@@ -52,10 +52,18 @@ import type { AgentRow } from "../../lib/views/types";
  * last event. Nothing is random, nothing fidgets to look busy, and an idle
  * quiet agent's honest animation is none — it sleeps by standing still.
  *
- * The sprites stay the vendored single frames; what moves is the box they are
- * drawn in, on `--motion-*` tokens, so `prefers-reduced-motion` stills the
- * whole fleet for free and the strip degrades to exactly the strip MAR-503
- * shipped.
+ * The characters stay vendored frames drawn in a box that moves on
+ * `--motion-*` tokens, so `prefers-reduced-motion` stills the whole fleet for
+ * free and the strip degrades to exactly the strip MAR-503 shipped.
+ *
+ * Since MAR-615 the O's also carry `action` (Henrik: *"I want the bottom line
+ * avatars to be moving dashing, jumping doing stuff"*), so a quiet agent's O
+ * plays its own idle costume loop rather than standing dead still. That loop
+ * never outranks a real signal: `app/globals.css` gives `.is-working`,
+ * `.is-waiting` and `.is-walking` higher specificity than `.o-avatar.is-action`,
+ * so the moment there is state to show, the costume loop is overridden and the
+ * character hops, beckons or paces instead — see `OAvatar`'s own docblock for
+ * why that is safe rather than "two motions in one sprite."
  *
  * The caption is the disclosure half: the same facts the motion draws, in
  * words ("3 agents · 1 working"), so the ambient signal is never the only
@@ -227,7 +235,7 @@ function FleetStripBand(): ReactNode {
                 position: the control stays exactly where it was, keeps its
                 name, and still opens the agent's workspace.
               */}
-              <OAvatar name={agent.avatar} size={50} />
+              <OAvatar name={agent.avatar} size={50} action />
               <span className="visually-hidden">Open {agent.name}</span>
             </Link>
           </li>

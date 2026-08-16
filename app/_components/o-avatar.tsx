@@ -40,14 +40,32 @@ import type { OName, OSize } from "../../lib/brand/o-cast";
  * never status: the brand check fails a `name={…}` that reads as a condition or
  * a status word.
  *
- * ## Motion arrived in MAR-587, and only where a surface asks for it
+ * ## Motion arrived in MAR-587, and is opt-in per surface
  *
  * `action` opts a surface into the character's vendored idle loop — the ninja
- * tosses a shuriken, the knight swings, the wizard throws a fireball. It is
- * **opt-in per surface and never a default**, because the bottom-edge fleet
- * strip already animates and its animation means something: MAR-544 moves those
- * O's from real signals, and a costume loop running underneath a state loop
- * would be two motions in one sprite with only one of them true.
+ * tosses a shuriken, the knight swings, the wizard throws a fireball. Still
+ * opt-in and never a default: a surface with nothing to say about an agent's
+ * state (the header, the settings drawer, a picker option) has to ask for the
+ * loop by name.
+ *
+ * ## Why the fleet strip can carry both loops (MAR-615)
+ *
+ * The bottom-edge strip is the one surface where a second motion system
+ * already exists — `app/_components/fleet-strip.tsx` sets `.is-working`,
+ * `.is-waiting` or `.is-walking` from real signals (MAR-544), and each of
+ * those rules sets `animation` on `.o-avatar` directly. That used to be the
+ * whole argument against opting the strip in here too: two rules writing the
+ * same CSS property sounds like "one of them is lying."
+ *
+ * It is not, because of *which* rule wins. `.fleet-strip-o.is-working .o-avatar`
+ * carries three classes of specificity against `.o-avatar.is-action`'s two, so
+ * real state always overrides the costume loop the moment there is state to
+ * show — the agent hops, beckons or paces on its still frame, exactly as
+ * before MAR-615. Only `.is-sleeping`, which MAR-544 deliberately gives no
+ * rule of its own, leaves nothing overriding `.is-action`, so a quiet agent
+ * breathes its idle loop instead of standing dead still. `tests/fleet-motion.
+ * test.tsx` pins the specificity ordering so a future stylesheet edit cannot
+ * invert it without a test failing first.
  *
  * The loop rides `var(--motion-idle)` from `app/tokens.css`, which is zeroed
  * under `prefers-reduced-motion: reduce` — so stillness needs no per-surface
@@ -79,7 +97,10 @@ export interface OAvatarProps {
    * reader announcing "wizard" there adds a costume nobody asked about — worse,
    * it is the one place where the costume could be mistaken for information
    * about the agent. Pass it only where the character genuinely *is* the
-   * information, which no surface in DASH is today.
+   * information — the fleet's chief band (MAR-615) is the one surface in DASH
+   * that does, since nothing else there names who is speaking.
+   * `scripts/brand-check.mjs`'s `LABEL_ALLOWLIST` names that one file, and
+   * everywhere else the rule holds with no exceptions.
    */
   label?: string;
   className?: string;

@@ -154,8 +154,9 @@ describe("the band that never scrolls", () => {
       control: { ...READY, status: { ...READY.status, tone: "attention" } },
     });
     expect(html).toContain("cockpit-portrait tone-attention");
-    // The costume is the same picture in every state.
-    expect(html).toContain("/o/1x/wizard.png");
+    // The costume is the same picture — the same idle loop, since MAR-615
+    // opted this portrait into it — in every state.
+    expect(html).toContain("--o-action:url(/o/actions/wizard-fireball.png)");
   });
 
   it("says nothing about a poll when no run is being followed", () => {

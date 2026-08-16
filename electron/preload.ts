@@ -633,6 +633,18 @@ const dashShell = {
   setAgentFavourite: (args: { agent_id: string; favourite: boolean }) =>
     sendFavourite(args.agent_id, args.favourite),
 
+  /**
+   * Swap the character DASH draws for one agent, from `O_FLEET`'s eleven
+   * (MAR-615).
+   *
+   * `send`, not `sendFavourite`: the payload is a string, the same shape
+   * `renameAgent` already sends, so no boolean-only helper is needed. The
+   * chief is refused, but on the other side of this call — `lib/store.ts`'s
+   * `setAgentAvatar` is the gate, the same division `renameAgent` draws
+   * between "a string arrived" and "a name DASH will accept."
+   */
+  setAgentAvatar: (args: { agent_id: string; avatar: string }) => send("identity.avatar", { ...args }),
+
   approve: (args: AgentCommandArgs) => send("agent.approve", fields(args, APPROVAL_FIELDS)),
   reject: (args: AgentCommandArgs) => send("agent.reject", fields(args, APPROVAL_FIELDS)),
   choose: (args: AgentCommandArgs) => send("agent.choose", fields(args, CHOICE_FIELDS)),

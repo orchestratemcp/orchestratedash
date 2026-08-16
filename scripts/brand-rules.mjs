@@ -773,10 +773,12 @@ export function checkEmerald({ file, source, css }) {
  * The stylesheet's own half of the rules.
  *
  * `image-rendering: pixelated` must survive; `--o-size` literals must be whole
- * multiples of 50; no avatar rule may reference `--ok`; and any duration on an
- * avatar rule must be a `--motion-*` token, because `app/tokens.css` zeroes
- * those under `prefers-reduced-motion: reduce` and a literal `200ms` would be a
- * sprite that keeps moving for somebody who asked it not to.
+ * multiples of 50, or its one exact half-step of 25 — see the note on that loop
+ * for why the stylesheet is allowed a reduction the component API is not; no
+ * avatar rule may reference `--ok`; and any duration on an avatar rule must be
+ * a `--motion-*` token, because `app/tokens.css` zeroes those under
+ * `prefers-reduced-motion: reduce` and a literal `200ms` would be a sprite that
+ * keeps moving for somebody who asked it not to.
  */
 export function checkAvatarCss(css) {
   const failures = [];
@@ -814,10 +816,39 @@ export function checkAvatarCss(css) {
     }
   }
 
+  /*
+   * Whole multiples of the source, and the one exact half-step (MAR-615).
+   *
+   * `checkSizeApi` above still refuses 25 outright, and that difference is the
+   * rule rather than a gap between two checks that drifted. The *component API*
+   * offers sizes a surface asks for, and every surface that asks is asking to
+   * draw a character — upscales only. The *stylesheet* is the only place that
+   * can say "smaller, because this band has no room at this width", which is
+   * not a size anybody chooses so much as one a layout imposes.
+   *
+   * DASH had no such surface until MAR-648 put a composer on the chief's band.
+   * That rule's own note said so — *"SITE allows 25 as well … DASH has no
+   * surface that small"* — and the premise is what changed: at 375px the band
+   * has about 230px for a portrait, a sentence, two buttons and a box, and the
+   * portrait had been shrunk for exactly that reason since MAR-648. When
+   * MAR-615 made it a sprite, holding the line at 50 would not have been
+   * strictness, it would have been a 26px regression against the shipped
+   * layout, paid for by the composer.
+   *
+   * 25 and nothing else below 50, because the reason behind the whole rule is
+   * unchanged and 25 is the only value that keeps it: `image-rendering:
+   * pixelated` resamples by nearest neighbour, which is exact at a 1:2 halving
+   * of a 50px source and at no other reduction. 30px would drop some source
+   * rows and keep others.
+   */
+  const SOURCE_PX = 50;
+  const EXACT_HALF_STEP_PX = SOURCE_PX / 2;
   for (const size of withoutComments.matchAll(/--o-size:\s*(\d+)px/g)) {
     const px = Number(size[1]);
-    if (px % 50 !== 0) {
-      failures.push(`css: --o-size: ${px}px is not a whole multiple of the 50px source`);
+    if (px !== EXACT_HALF_STEP_PX && px % SOURCE_PX !== 0) {
+      failures.push(
+        `css: --o-size: ${px}px is neither a whole multiple of the ${SOURCE_PX}px source nor its one exact half-step (${EXACT_HALF_STEP_PX}px)`,
+      );
     }
   }
 

@@ -286,6 +286,22 @@ await Promise.all([
     format: "esm",
   }),
 
+  // The bottom strip, the chief's spotlight and the avatar picker (MAR-615),
+  // on `capture-settings-polish.ts`'s exact terms — no `smoke-identity.ts`, so
+  // it runs beside a live DASH without claiming its lock or its store. Its own
+  // harness rather than a scene on `capture-actions.ts` because that one's
+  // subject is the fleet *cards*, and this one's is a question that did not
+  // exist when it was written: MAR-648 put a composer on the same band MAR-615
+  // gave a portrait, and whether those two overlap is a fact about layout that
+  // no `renderToStaticMarkup` test in this repository can reach. See
+  // `electron/capture-mar615.ts`.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-mar615.ts")],
+    outfile: path.join(outDir, "capture-mar615.mjs"),
+    format: "esm",
+  }),
+
   // Add agent (MAR-598), on `capture-settings-polish.ts`'s exact terms — no
   // `smoke-identity.ts`, so it runs beside a live DASH without claiming its lock
   // or its store. A harness of its own rather than a fourth page on that one,

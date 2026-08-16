@@ -38,6 +38,7 @@ import {
   emeraldClasses,
   readCastModule,
 } from "../scripts/brand-rules.mjs";
+import { O_NAMES } from "../lib/brand/o-cast";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -136,7 +137,7 @@ describe("violation 2 — a rendered size that is not a whole multiple of 50", (
     const source = readFileSync(path.join(repoRoot, "lib", "brand", "o-cast.ts"), "utf8");
     const { names, sizes, failures } = readCastModule(source);
     expect(failures).toEqual([]);
-    expect(names).toHaveLength(11);
+    expect(names).toHaveLength(12);
     // 200 arrived with MAR-587's character-select tile. 150 is a legal whole
     // multiple and is deliberately absent: a size is in the union because a
     // surface draws at it.
@@ -283,6 +284,31 @@ describe("the stylesheet's own half", () => {
       `.o-avatar { image-rendering: pixelated; } .o-avatar--tiny { --o-size: 30px; }`,
     );
     expect(failures.some((failure: string) => failure.includes("--o-size: 30px"))).toBe(true);
+  });
+
+  it("accepts the one exact half-step, and only that one (MAR-615)", () => {
+    /*
+     * The stylesheet may reduce where the component API may not, and 25 is the
+     * only reduction it may make. `checkSizeApi` still refuses 25 for the
+     * `OSize` union two describes above — that is the intended difference, not
+     * a gap: a surface asking to draw a character asks to draw it at size, and
+     * only a layout with no room imposes a smaller one. MAR-648's composer on
+     * the chief's band at 375px is the first such layout DASH has had.
+     *
+     * 25 is exact because nearest-neighbour halving of a 50px source lands
+     * every source pixel the same way. 30 is the neighbour that proves the rule
+     * did not simply get looser: it is still refused, above.
+     */
+    expect(
+      checkAvatarCss(`.o-avatar { image-rendering: pixelated; } .chief-glyph { --o-size: 25px; }`),
+    ).toEqual([]);
+
+    for (const size of [10, 20, 30, 40, 75]) {
+      const failures = checkAvatarCss(
+        `.o-avatar { image-rendering: pixelated; } .chief-glyph { --o-size: ${String(size)}px; }`,
+      );
+      expect(failures.some((failure: string) => failure.includes(`--o-size: ${String(size)}px`)), `${String(size)}px`).toBe(true);
+    }
   });
 });
 
@@ -654,16 +680,19 @@ describe("violation 8 — an idle action that is decided by something (MAR-587 P
     const actions = JSON.parse(
       readFileSync(path.join(repoRoot, "lib", "brand", "o-actions.json"), "utf8"),
     ) as { sheets: Record<string, { character: string; action: string; frameCount: number }> };
-    const names = ["ninja", "knight", "wizard"];
+    // The real cast, not a fixture that has to be remembered to grow —
+    // `readCastModule`'s own lesson about trusting a copy of the module,
+    // applied to this list too.
+    const names = [...O_NAMES];
 
     it("passes on the module as it stands", () => {
       expect(checkActionModule({ source, manifest: actions, names })).toEqual([]);
     });
 
-    it("reads the three sheets out of the module rather than trusting a copy", () => {
+    it("reads all twelve sheets out of the module rather than trusting a copy", () => {
       // A parser that quietly found nothing would report "no drift" for a file
       // it had not read — `readCastModule`'s lesson, one module over.
-      expect(checkActionModule({ source, manifest: { sheets: {} }, names }).length).toBe(3);
+      expect(checkActionModule({ source, manifest: { sheets: {} }, names }).length).toBe(12);
     });
 
     it("fails on a sheet that is audited and unreachable", () => {
@@ -672,7 +701,7 @@ describe("violation 8 — an idle action that is decided by something (MAR-587 P
       const failures = checkActionModule({
         source,
         manifest: { sheets: { ...actions.sheets, "chef-pan-flip": { character: "chef", action: "pan-flip", frameCount: 8 } } },
-        names: [...names, "chef"],
+        names,
       });
       expect(failures.some((failure: string) => failure.includes("no surface can reach it"))).toBe(true);
     });
@@ -682,7 +711,7 @@ describe("violation 8 — an idle action that is decided by something (MAR-587 P
         '{ key: "wizard-fireball", character: "wizard", action: "fireball" },',
         '{ key: "wizard-fireball", character: "wizard", action: "fireball" },\n  { key: "king-crown-polish", character: "king", action: "crown-polish" },',
       );
-      const failures = checkActionModule({ source: invented, manifest: actions, names: [...names, "king"] });
+      const failures = checkActionModule({ source: invented, manifest: actions, names });
       expect(failures.some((failure: string) => failure.includes("nothing has audited"))).toBe(true);
     });
 
@@ -700,7 +729,7 @@ describe("violation 8 — an idle action that is decided by something (MAR-587 P
       // three quarters of every loop and a ten runs off the end into blank.
       const miscounted = source.replace("O_ACTION_FRAMES = 8", "O_ACTION_FRAMES = 6");
       const failures = checkActionModule({ source: miscounted, manifest: actions, names });
-      expect(failures.length).toBe(3);
+      expect(failures.length).toBe(12);
       expect(failures[0]).toContain("run off the end");
     });
 

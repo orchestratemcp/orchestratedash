@@ -103,7 +103,22 @@ describe("the chief's band grows a composer", () => {
   it("draws no loader, because it never waits", () => {
     const html = band({ agent: row(), agents: [row()] });
     expect(html).not.toContain("ask-activity");
-    expect(html).not.toContain("is-action");
+    /*
+     * This line used to read `not.toContain("is-action")`, and MAR-615 made
+     * that assertion mean something it was never written to mean. `is-action`
+     * was a fair proxy for the loader when the only animated O on this band
+     * would have been one put there by work in flight; the chief was inline
+     * rects and could not carry it. The chief now has a vendored baton-wave
+     * idle sheet, so the class is on this band every time it draws, and the
+     * bare assertion would forbid the portrait rather than the loader.
+     *
+     * What still says what this test means is *how many* O's animate here and
+     * *which*: exactly one, and it is the chief's own portrait. An animating O
+     * belonging to an agent — the shape a loader would take, whether or not it
+     * came wrapped in `.ask-activity` — still fails.
+     */
+    expect(html.match(/is-action/g)).toHaveLength(1);
+    expect(html).toContain('class="o-avatar chief-glyph is-action"');
   });
 });
 

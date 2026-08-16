@@ -227,6 +227,663 @@
           "colors": 17
         }
       ]
+    },
+    "chef-pancake-flip": {
+      "character": "chef",
+      "action": "pancake-flip",
+      "file": "o/actions/chef-pancake-flip.png",
+      "still": {
+        "sha256": "a26b808aa3857fc33eac588f737bdb545dc33e52a2491f6d58c7e27bb4565e38",
+        "palette": 9
+      },
+      "frameCount": 8,
+      "frameWidth": 50,
+      "frameHeight": 50,
+      "layout": "horizontal-strip",
+      "loops": true,
+      "region": {
+        "x": 37,
+        "y": 16,
+        "w": 13,
+        "h": 19
+      },
+      "erases": null,
+      "bytes": 826,
+      "sha256": "1d120e055e4d7a3c67d02782fb5c0209e10021389f02bb0c85e590e3d986ff97",
+      "frames": [
+        {
+          "index": 0,
+          "changedFromStill": 41,
+          "opaquePixels": 638,
+          "colors": 9
+        },
+        {
+          "index": 1,
+          "changedFromStill": 41,
+          "opaquePixels": 638,
+          "colors": 9
+        },
+        {
+          "index": 2,
+          "changedFromStill": 37,
+          "opaquePixels": 634,
+          "colors": 9
+        },
+        {
+          "index": 3,
+          "changedFromStill": 41,
+          "opaquePixels": 638,
+          "colors": 9
+        },
+        {
+          "index": 4,
+          "changedFromStill": 41,
+          "opaquePixels": 638,
+          "colors": 9
+        },
+        {
+          "index": 5,
+          "changedFromStill": 37,
+          "opaquePixels": 634,
+          "colors": 9
+        },
+        {
+          "index": 6,
+          "changedFromStill": 41,
+          "opaquePixels": 638,
+          "colors": 9
+        },
+        {
+          "index": 7,
+          "changedFromStill": 41,
+          "opaquePixels": 638,
+          "colors": 9
+        }
+      ]
+    },
+    "cowboy-lasso-spin": {
+      "character": "cowboy",
+      "action": "lasso-spin",
+      "file": "o/actions/cowboy-lasso-spin.png",
+      "still": {
+        "sha256": "8146ef20d18b27e3978c7eb78ce36b12090851c9998badf64cc015963803d0a7",
+        "palette": 10
+      },
+      "frameCount": 8,
+      "frameWidth": 50,
+      "frameHeight": 50,
+      "layout": "horizontal-strip",
+      "loops": true,
+      "region": {
+        "x": 37,
+        "y": 17,
+        "w": 10,
+        "h": 14
+      },
+      "erases": null,
+      "bytes": 925,
+      "sha256": "d6e53d5c4e4e1854f9db5779a5433446d3d54ca4f8690262dac6e324e3daf9b5",
+      "frames": [
+        {
+          "index": 0,
+          "changedFromStill": 31,
+          "opaquePixels": 619,
+          "colors": 10
+        },
+        {
+          "index": 1,
+          "changedFromStill": 23,
+          "opaquePixels": 611,
+          "colors": 10
+        },
+        {
+          "index": 2,
+          "changedFromStill": 31,
+          "opaquePixels": 619,
+          "colors": 10
+        },
+        {
+          "index": 3,
+          "changedFromStill": 23,
+          "opaquePixels": 611,
+          "colors": 10
+        },
+        {
+          "index": 4,
+          "changedFromStill": 31,
+          "opaquePixels": 619,
+          "colors": 10
+        },
+        {
+          "index": 5,
+          "changedFromStill": 23,
+          "opaquePixels": 611,
+          "colors": 10
+        },
+        {
+          "index": 6,
+          "changedFromStill": 31,
+          "opaquePixels": 619,
+          "colors": 10
+        },
+        {
+          "index": 7,
+          "changedFromStill": 23,
+          "opaquePixels": 611,
+          "colors": 10
+        }
+      ]
+    },
+    "explorer-flag-wave": {
+      "character": "explorer",
+      "action": "flag-wave",
+      "file": "o/actions/explorer-flag-wave.png",
+      "still": {
+        "sha256": "6c6a59dfe40180b783ca0bea9cf3251b6ba48f38dc3ac1769b8dd0fe1603ffd6",
+        "palette": 10
+      },
+      "frameCount": 8,
+      "frameWidth": 50,
+      "frameHeight": 50,
+      "layout": "horizontal-strip",
+      "loops": true,
+      "region": {
+        "x": 40,
+        "y": 21,
+        "w": 7,
+        "h": 18
+      },
+      "erases": null,
+      "bytes": 766,
+      "sha256": "7cd022f8a465da7e3ce5bc4ed03de17997ba68f7e935df40398511cfa09f0a0c",
+      "frames": [
+        {
+          "index": 0,
+          "changedFromStill": 30,
+          "opaquePixels": 604,
+          "colors": 10
+        },
+        {
+          "index": 1,
+          "changedFromStill": 27,
+          "opaquePixels": 601,
+          "colors": 10
+        },
+        {
+          "index": 2,
+          "changedFromStill": 25,
+          "opaquePixels": 599,
+          "colors": 10
+        },
+        {
+          "index": 3,
+          "changedFromStill": 27,
+          "opaquePixels": 601,
+          "colors": 10
+        },
+        {
+          "index": 4,
+          "changedFromStill": 30,
+          "opaquePixels": 604,
+          "colors": 10
+        },
+        {
+          "index": 5,
+          "changedFromStill": 27,
+          "opaquePixels": 601,
+          "colors": 10
+        },
+        {
+          "index": 6,
+          "changedFromStill": 25,
+          "opaquePixels": 599,
+          "colors": 10
+        },
+        {
+          "index": 7,
+          "changedFromStill": 27,
+          "opaquePixels": 601,
+          "colors": 10
+        }
+      ]
+    },
+    "king-coin-flip": {
+      "character": "king",
+      "action": "coin-flip",
+      "file": "o/actions/king-coin-flip.png",
+      "still": {
+        "sha256": "74cec3a6f589406d05c804791914c316a4220ec23f4267ff1014adbfa921cc54",
+        "palette": 9
+      },
+      "frameCount": 8,
+      "frameWidth": 50,
+      "frameHeight": 50,
+      "layout": "horizontal-strip",
+      "loops": true,
+      "region": {
+        "x": 36,
+        "y": 10,
+        "w": 9,
+        "h": 22
+      },
+      "erases": null,
+      "bytes": 885,
+      "sha256": "41e4c80054055901b7de948a8f8112ad5bed06d2cd7d9613168be35af198aa68",
+      "frames": [
+        {
+          "index": 0,
+          "changedFromStill": 16,
+          "opaquePixels": 585,
+          "colors": 9
+        },
+        {
+          "index": 1,
+          "changedFromStill": 8,
+          "opaquePixels": 577,
+          "colors": 9
+        },
+        {
+          "index": 2,
+          "changedFromStill": 16,
+          "opaquePixels": 585,
+          "colors": 9
+        },
+        {
+          "index": 3,
+          "changedFromStill": 8,
+          "opaquePixels": 577,
+          "colors": 9
+        },
+        {
+          "index": 4,
+          "changedFromStill": 16,
+          "opaquePixels": 585,
+          "colors": 9
+        },
+        {
+          "index": 5,
+          "changedFromStill": 8,
+          "opaquePixels": 577,
+          "colors": 9
+        },
+        {
+          "index": 6,
+          "changedFromStill": 16,
+          "opaquePixels": 585,
+          "colors": 9
+        },
+        {
+          "index": 7,
+          "changedFromStill": 8,
+          "opaquePixels": 577,
+          "colors": 9
+        }
+      ]
+    },
+    "medic-cross-bob": {
+      "character": "medic",
+      "action": "cross-bob",
+      "file": "o/actions/medic-cross-bob.png",
+      "still": {
+        "sha256": "8910d0146df0a1fda8d30b20f7eda8f7b3d50fa917f55a90a9d54c0d5f6368ad",
+        "palette": 10
+      },
+      "frameCount": 8,
+      "frameWidth": 50,
+      "frameHeight": 50,
+      "layout": "horizontal-strip",
+      "loops": true,
+      "region": {
+        "x": 38,
+        "y": 15,
+        "w": 7,
+        "h": 14
+      },
+      "erases": null,
+      "bytes": 930,
+      "sha256": "f09fc360b40f9c90d24a47135e37c2f2185eca45919aa461e7fac06e53afdc86",
+      "frames": [
+        {
+          "index": 0,
+          "changedFromStill": 33,
+          "opaquePixels": 586,
+          "colors": 10
+        },
+        {
+          "index": 1,
+          "changedFromStill": 33,
+          "opaquePixels": 586,
+          "colors": 10
+        },
+        {
+          "index": 2,
+          "changedFromStill": 33,
+          "opaquePixels": 586,
+          "colors": 10
+        },
+        {
+          "index": 3,
+          "changedFromStill": 33,
+          "opaquePixels": 586,
+          "colors": 10
+        },
+        {
+          "index": 4,
+          "changedFromStill": 33,
+          "opaquePixels": 586,
+          "colors": 10
+        },
+        {
+          "index": 5,
+          "changedFromStill": 33,
+          "opaquePixels": 586,
+          "colors": 10
+        },
+        {
+          "index": 6,
+          "changedFromStill": 33,
+          "opaquePixels": 586,
+          "colors": 10
+        },
+        {
+          "index": 7,
+          "changedFromStill": 33,
+          "opaquePixels": 586,
+          "colors": 10
+        }
+      ]
+    },
+    "nerd-book-flip": {
+      "character": "nerd",
+      "action": "book-flip",
+      "file": "o/actions/nerd-book-flip.png",
+      "still": {
+        "sha256": "6960fbc105610c95ae6bdb92d23e6705685de46a2f1faca74f8f4f1c75abfbf0",
+        "palette": 32
+      },
+      "frameCount": 8,
+      "frameWidth": 50,
+      "frameHeight": 50,
+      "layout": "horizontal-strip",
+      "loops": true,
+      "region": {
+        "x": 38,
+        "y": 22,
+        "w": 9,
+        "h": 9
+      },
+      "erases": null,
+      "bytes": 996,
+      "sha256": "ad94cec38c1ade3a3c52433cbc91d4d249a81f881360ae52519794bbd306adc6",
+      "frames": [
+        {
+          "index": 0,
+          "changedFromStill": 32,
+          "opaquePixels": 504,
+          "colors": 32
+        },
+        {
+          "index": 1,
+          "changedFromStill": 39,
+          "opaquePixels": 511,
+          "colors": 32
+        },
+        {
+          "index": 2,
+          "changedFromStill": 40,
+          "opaquePixels": 512,
+          "colors": 32
+        },
+        {
+          "index": 3,
+          "changedFromStill": 39,
+          "opaquePixels": 511,
+          "colors": 32
+        },
+        {
+          "index": 4,
+          "changedFromStill": 32,
+          "opaquePixels": 504,
+          "colors": 32
+        },
+        {
+          "index": 5,
+          "changedFromStill": 39,
+          "opaquePixels": 511,
+          "colors": 32
+        },
+        {
+          "index": 6,
+          "changedFromStill": 40,
+          "opaquePixels": 512,
+          "colors": 32
+        },
+        {
+          "index": 7,
+          "changedFromStill": 39,
+          "opaquePixels": 511,
+          "colors": 32
+        }
+      ]
+    },
+    "robot-gear-turn": {
+      "character": "robot",
+      "action": "gear-turn",
+      "file": "o/actions/robot-gear-turn.png",
+      "still": {
+        "sha256": "2ec0d8e414bc206fae54ffca86021f484d43f79c07e0cf6e3f5977b6ebddc9a4",
+        "palette": 10
+      },
+      "frameCount": 8,
+      "frameWidth": 50,
+      "frameHeight": 50,
+      "layout": "horizontal-strip",
+      "loops": true,
+      "region": {
+        "x": 38,
+        "y": 18,
+        "w": 9,
+        "h": 11
+      },
+      "erases": null,
+      "bytes": 864,
+      "sha256": "4a9e92d00f6e717fc4379e6753755007f44d680a165f08b45a2a6ccb074f7d9a",
+      "frames": [
+        {
+          "index": 0,
+          "changedFromStill": 40,
+          "opaquePixels": 559,
+          "colors": 10
+        },
+        {
+          "index": 1,
+          "changedFromStill": 36,
+          "opaquePixels": 555,
+          "colors": 10
+        },
+        {
+          "index": 2,
+          "changedFromStill": 40,
+          "opaquePixels": 559,
+          "colors": 10
+        },
+        {
+          "index": 3,
+          "changedFromStill": 36,
+          "opaquePixels": 555,
+          "colors": 10
+        },
+        {
+          "index": 4,
+          "changedFromStill": 40,
+          "opaquePixels": 559,
+          "colors": 10
+        },
+        {
+          "index": 5,
+          "changedFromStill": 36,
+          "opaquePixels": 555,
+          "colors": 10
+        },
+        {
+          "index": 6,
+          "changedFromStill": 40,
+          "opaquePixels": 559,
+          "colors": 10
+        },
+        {
+          "index": 7,
+          "changedFromStill": 36,
+          "opaquePixels": 555,
+          "colors": 10
+        }
+      ]
+    },
+    "viking-axe-chop": {
+      "character": "viking",
+      "action": "axe-chop",
+      "file": "o/actions/viking-axe-chop.png",
+      "still": {
+        "sha256": "004b3df049c4f23d33f029ee6bea036ec9cfda91c32faaf5d715e3490ee8fe1d",
+        "palette": 10
+      },
+      "frameCount": 8,
+      "frameWidth": 50,
+      "frameHeight": 50,
+      "layout": "horizontal-strip",
+      "loops": true,
+      "region": {
+        "x": 38,
+        "y": 17,
+        "w": 12,
+        "h": 20
+      },
+      "erases": null,
+      "bytes": 998,
+      "sha256": "18aa42f1f841a896d33c4e8e5d7e0785e11715bae64d9abbd0b8889445bf51ce",
+      "frames": [
+        {
+          "index": 0,
+          "changedFromStill": 50,
+          "opaquePixels": 592,
+          "colors": 10
+        },
+        {
+          "index": 1,
+          "changedFromStill": 50,
+          "opaquePixels": 592,
+          "colors": 10
+        },
+        {
+          "index": 2,
+          "changedFromStill": 50,
+          "opaquePixels": 592,
+          "colors": 10
+        },
+        {
+          "index": 3,
+          "changedFromStill": 50,
+          "opaquePixels": 592,
+          "colors": 10
+        },
+        {
+          "index": 4,
+          "changedFromStill": 36,
+          "opaquePixels": 578,
+          "colors": 10
+        },
+        {
+          "index": 5,
+          "changedFromStill": 36,
+          "opaquePixels": 578,
+          "colors": 10
+        },
+        {
+          "index": 6,
+          "changedFromStill": 36,
+          "opaquePixels": 578,
+          "colors": 10
+        },
+        {
+          "index": 7,
+          "changedFromStill": 50,
+          "opaquePixels": 592,
+          "colors": 10
+        }
+      ]
+    },
+    "chief-baton-wave": {
+      "character": "chief",
+      "action": "baton-wave",
+      "file": "o/actions/chief-baton-wave.png",
+      "still": {
+        "sha256": "0aebcd822572ab612dfbcd806da32fc6fef405d2b43263f200a68d506369c7f9",
+        "palette": 9
+      },
+      "frameCount": 8,
+      "frameWidth": 50,
+      "frameHeight": 50,
+      "layout": "horizontal-strip",
+      "loops": true,
+      "region": {
+        "x": 38,
+        "y": 21,
+        "w": 11,
+        "h": 11
+      },
+      "erases": null,
+      "bytes": 788,
+      "sha256": "8a477c7148f127388587bc18a75dfd5516abcfbd4f8e88c19f5a9a9896376644",
+      "frames": [
+        {
+          "index": 0,
+          "changedFromStill": 8,
+          "opaquePixels": 571,
+          "colors": 9
+        },
+        {
+          "index": 1,
+          "changedFromStill": 8,
+          "opaquePixels": 571,
+          "colors": 9
+        },
+        {
+          "index": 2,
+          "changedFromStill": 6,
+          "opaquePixels": 569,
+          "colors": 9
+        },
+        {
+          "index": 3,
+          "changedFromStill": 8,
+          "opaquePixels": 571,
+          "colors": 9
+        },
+        {
+          "index": 4,
+          "changedFromStill": 6,
+          "opaquePixels": 569,
+          "colors": 9
+        },
+        {
+          "index": 5,
+          "changedFromStill": 8,
+          "opaquePixels": 571,
+          "colors": 9
+        },
+        {
+          "index": 6,
+          "changedFromStill": 8,
+          "opaquePixels": 571,
+          "colors": 9
+        },
+        {
+          "index": 7,
+          "changedFromStill": 8,
+          "opaquePixels": 571,
+          "colors": 9
+        }
+      ]
     }
   }
 }

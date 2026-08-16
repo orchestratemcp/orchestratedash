@@ -545,5 +545,5 @@ export function AgentPortrait({
   if (avatar === null) {
     return <span className="o-portrait-empty" aria-hidden="true" />;
   }
-  return <OAvatar name={avatar} size={size} />;
+  return <OAvatar name={avatar} size={size} action />;
 }

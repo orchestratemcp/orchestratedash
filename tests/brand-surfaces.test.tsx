@@ -215,13 +215,18 @@ describe("the projections carry the stored character (MAR-501, MAR-502)", () => 
 });
 
 describe("the workspace portrait (MAR-502)", () => {
-  it("draws the persisted character at exactly 2x, decoratively", () => {
+  it("draws the persisted character at exactly 2x, animated, decoratively", () => {
+    // MAR-615 opted the header's portrait into the character's idle loop
+    // (`app/_components/agent-header.tsx`'s `AgentPortrait`), so the still
+    // `<img src="/o/1x/wizard.png">` this surface used to draw is now the
+    // sheet-painted span every other animated surface uses.
     const markup = renderToStaticMarkup(<AgentPortrait avatar="wizard" />);
-    expect(markup).toContain('src="/o/1x/wizard.png"');
+    expect(markup).toContain("--o-action:url(/o/actions/wizard-fireball.png)");
     expect(markup).toContain("--o-size:100px");
+    expect(markup).toContain('class="o-avatar is-action"');
     // Decorative: the agent's name is the heading beside it, and a screen
     // reader announcing "wizard" there would add a costume nobody asked about.
-    expect(markup).toContain('alt=""');
+    expect(markup).not.toContain("role=");
     expect(markup).toContain('aria-hidden="true"');
   });
 
