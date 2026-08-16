@@ -217,6 +217,44 @@ export function explainImportFailure(errors: string[]): ImportFailureExplanation
 }
 
 /**
+ * How many of the validator's own lines are worth putting in front of a person.
+ *
+ * A failed `oneOf` produces eleven errors for one mistake — Ajv narrating every
+ * branch it tried — and the useful one is somewhere in the middle. Showing all
+ * of them buries it; showing none is what the handoff dialog used to do.
+ */
+const RAW_ERROR_LIMIT = 4;
+
+/**
+ * An explanation as one block of text, for a surface that has no room for a list.
+ *
+ * The three renderers of `ImportFailureExplanation` are pages, and pages can lay
+ * its parts out. A native message box cannot: it has a message and a detail, and
+ * the detail is a string. Before MAR-655/656 the handoff path answered that by
+ * relaying **none** of this — an agent whose panel note was three characters too
+ * long was refused with "Building the agent again with a current Agent Kit
+ * usually fixes this", which is advice that cannot work on a hand-edited
+ * manifest and names nothing to edit. That is the same dead end
+ * `explainImportFailure` was written to end everywhere else.
+ *
+ * The raw lines go last and capped. They are the validator's, not DASH's, and
+ * an author who has read the two sentences above them is exactly the person who
+ * wants a JSON pointer next.
+ */
+export function formatExplanationDetail(explanation: ImportFailureExplanation): string {
+  const shown = explanation.raw.slice(0, RAW_ERROR_LIMIT).map((error) => `• ${error}`);
+  const hidden = explanation.raw.length - shown.length;
+  if (hidden > 0) {
+    shown.push(`• …and ${String(hidden)} more.`);
+  }
+  // Bullets to each other by one newline, blocks to each other by two: a list
+  // double-spaced into a message box reads as four unrelated failures.
+  return [explanation.headline, explanation.suggestion, shown.join("\n")]
+    .filter((part) => part.length > 0)
+    .join("\n\n");
+}
+
+/**
  * The other case that never reaches a schema: there is no agent in that folder
  * at all (MAR-598).
  *
