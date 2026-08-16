@@ -1,4 +1,4 @@
-# ADR 0022: The chief is a principal, and it is not an agent
+# ADR 0023: The chief is a principal, and it is not an agent
 
 **Status:** proposed
 **Date:** 2026-08-16
