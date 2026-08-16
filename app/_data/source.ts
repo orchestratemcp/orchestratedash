@@ -262,6 +262,17 @@ interface DashShellClient {
   runnerStatus?(): Promise<CommandResult>;
   retireRunnerStore?(): Promise<CommandResult>;
   /**
+   * Start one registered agent's process on this computer (MAR-657).
+   *
+   * Optional for the reason everything around it is: an installed shell built
+   * before this feature has a `dashShell` without it, and a page that assumed
+   * otherwise would throw where a refusal is the honest answer. That case is
+   * real here rather than theoretical — this method is the only way the control
+   * MAR-657 adds can do anything, so an older shell has to be told it cannot
+   * rather than shown a button that throws.
+   */
+  startAgent?(args: { agent_id: string }): Promise<CommandResult>;
+  /**
    * DASH's two removal actions (MAR-595 finding 18).
    *
    * Optional for the same reason as everything above: a shell built before
@@ -1072,15 +1083,29 @@ export async function retireRunnerStore(): Promise<CommandResult> {
  * not to have the method yet — the same shape as `retireRunnerStore` above.
  */
 export async function removeAgent(args: { agent_id: string }): Promise<CommandResult> {
-  return removeCommand("removeAgent", args, "remove an agent");
+  return agentIdCommand("removeAgent", args, "remove an agent");
 }
 
 export async function removeAgentKeepFiles(args: { agent_id: string }): Promise<CommandResult> {
-  return removeCommand("removeAgentKeepFiles", args, "remove an agent");
+  return agentIdCommand("removeAgentKeepFiles", args, "remove an agent");
 }
 
-async function removeCommand(
-  method: "removeAgent" | "removeAgentKeepFiles",
+/**
+ * Start one registered agent's process on this computer (MAR-657).
+ *
+ * `agentIdCommand`'s shape and its refusals, which is the point: this is the
+ * same family of act — DASH operating on something it launched — reaching the
+ * same lifecycle route through the same audited channel. The two refusals below
+ * are the ones that matter, and the second is not hypothetical: an installed
+ * shell older than this feature has a `dashShell` with no `startAgent`, and it
+ * is better told so than left with a button that throws.
+ */
+export async function startAgent(args: { agent_id: string }): Promise<CommandResult> {
+  return agentIdCommand("startAgent", args, "start an agent");
+}
+
+async function agentIdCommand(
+  method: "removeAgent" | "removeAgentKeepFiles" | "startAgent",
   args: { agent_id: string },
   cannot: string,
 ): Promise<CommandResult> {
@@ -1108,7 +1133,7 @@ async function removeCommand(
 /**
  * Set — or clear — the name DASH shows for one agent (MAR-589).
  *
- * `removeCommand`'s shape, and its own function rather than a third case
+ * `agentIdCommand`'s shape, and its own function rather than a third case
  * added there: the argument carries an optional `display_name` the two
  * removal methods have no equivalent of.
  */
