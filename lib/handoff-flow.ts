@@ -63,6 +63,7 @@ import { readSourceNames } from "./agent-sources";
 import { resolveConnectionRequirements } from "./connection-spec";
 import { STORED_SOURCES_PATH } from "./folder-changes";
 import type { HandoffOutcome, HandoffRecord } from "./handoff-ledger";
+import { explainImportFailure, formatExplanationDetail } from "./import-feedback";
 import { checkManifestConstraints } from "./manifest-constraints";
 import {
   parseHandoffUrl,
@@ -294,7 +295,9 @@ function readManifestFor(
     return {
       ok: false,
       headline: `“${handoff.display_name}” does not match what DASH knows how to run.`,
-      detail: "Building the agent again with a current Agent Kit usually fixes this.",
+      // The fourth door, finally saying what the other three say. See
+      // `formatExplanationDetail`.
+      detail: formatExplanationDetail(explainImportFailure(validation.errors)),
     };
   }
   if (!isManifestV2(validation.value)) {
@@ -325,7 +328,7 @@ function readManifestFor(
     return {
       ok: false,
       headline: `“${handoff.display_name}” has a name or runtime declaration DASH cannot import.`,
-      detail: "Build the agent again with a current Agent Kit.",
+      detail: formatExplanationDetail(explainImportFailure(constraintErrors)),
     };
   }
   return { ok: true, value: validation.value, json: declared.contents };
@@ -372,7 +375,7 @@ function readManifestFromProject(
     return {
       ok: false,
       headline: `“${handoff.display_name}” does not match what DASH knows how to run.`,
-      detail: "Building the agent again with a current Agent Kit usually fixes this.",
+      detail: formatExplanationDetail(explainImportFailure(validation.errors)),
     };
   }
   if (!isManifestV2(validation.value)) {

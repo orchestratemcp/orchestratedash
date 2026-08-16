@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { explainImportFailure, explainNotJson } from "../lib/import-feedback";
+import {
+  explainImportFailure,
+  explainNotJson,
+  formatExplanationDetail,
+} from "../lib/import-feedback";
 import { validateManifest } from "../lib/contracts";
 
 /**
@@ -76,6 +80,45 @@ describe("explaining a failed import", () => {
     expect(explanation.kind).toBe("not_json");
     expect(explanation.headline).toContain("not valid JSON");
     expect(explanation.suggestion).toContain("agent.manifest.json");
+  });
+
+  /**
+   * The handoff dialog's version of the same explanation (MAR-655/656).
+   *
+   * A native message box has one string for its detail, so before this the deep
+   * link relayed none of the above and said "Building the agent again with a
+   * current Agent Kit usually fixes this" instead. That cost a session: the real
+   * fault was a panel note three characters over the schema's cap, in a manifest
+   * the author had edited by hand, and no rebuild was ever going to shorten it.
+   */
+  describe("formatExplanationDetail", () => {
+    it("puts the validator's own line in front of the person", () => {
+      const detail = formatExplanationDetail(
+        explainImportFailure([
+          "/agent_dom/panel/sections/4 must have required property 'artifact_role'",
+          "/agent_dom/panel/sections/4/text must NOT have more than 400 characters",
+        ]),
+      );
+      expect(detail).toContain("400 characters");
+      // And DASH's own sentence still leads, as it does on the three pages.
+      expect(detail.startsWith("This agent declares a panel DASH cannot draw.")).toBe(true);
+    });
+
+    it("caps the list rather than pasting a failed oneOf into a dialog", () => {
+      // Ajv narrates every branch it tried: eleven lines for one mistake. All
+      // eleven in a message box buries the one that matters.
+      const raw = Array.from({ length: 11 }, (_, index) => `/agent_dom/panel/sections/${String(index)} bad`);
+      const detail = formatExplanationDetail(explainImportFailure(raw));
+      expect(detail).toContain("and 7 more.");
+      expect(detail.split("\n").filter((line) => line.startsWith("• "))).toHaveLength(5);
+    });
+
+    it("omits an empty suggestion instead of leaving a hole in the dialog", () => {
+      const explanation = explainImportFailure(["/agent must be object"]);
+      expect(explanation.suggestion).toBe("");
+      const detail = formatExplanationDetail(explanation);
+      expect(detail).not.toContain("\n\n\n");
+    });
   });
 
   /** No explanation may leak the raw schema vocabulary into the headline. */
