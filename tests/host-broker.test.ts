@@ -38,6 +38,7 @@ import {
   HOST_BROKER_OPERATIONS,
   isHostBrokerOperation,
 } from "../lib/broker/host-operations";
+import { BROKER_CALLS_PER_WINDOW, BROKER_WINDOW_MS } from "../lib/broker/execute";
 import { SPEND_ALLOWANCE_CALLS, SPEND_ALLOWANCE_MS } from "../lib/broker/spend-allowance";
 import type { ConnectionSourceManifest } from "../lib/connections";
 import {
@@ -608,6 +609,33 @@ describe("what the host writes down about its own decisions", () => {
       "duplicate_request",
     );
     expect(kit.calls).toHaveLength(1);
+  });
+
+  it("does not burn a request id on a rate-limited attempt", async () => {
+    /*
+     * The ordering `lib/broker/execute.ts` uses, pinned because a rewrite gets
+     * it wrong silently and the symptom appears only on a host.
+     *
+     * A rate-limited request is one the agent is told to try again, and the
+     * natural retry carries the same request id because it is the same logical
+     * request. Remembering the id before the rate check would burn it — the
+     * retry would come back `duplicate_request` forever, and an agent would be
+     * permanently refused for having obeyed the first refusal. That request
+     * succeeds locally, so it would be a divergence an agent can observe, which
+     * ADR 0021 rule 2 forbids.
+     */
+    const kit = harness();
+    for (let call = 0; call < BROKER_CALLS_PER_WINDOW; call += 1) {
+      await ask(kit.broker, "openrouter.models.list", {}, `filler-${String(call)}`);
+    }
+    expect(refusalOf(await ask(kit.broker, "openrouter.models.list", {}, "req-retried"))).toBe(
+      "rate_limited",
+    );
+
+    // The window rolls over; the same id is served rather than refused.
+    kit.at.value += BROKER_WINDOW_MS + 1;
+    const retried = await ask(kit.broker, "openrouter.models.list", {}, "req-retried");
+    expect((retried as { ok: boolean }).ok).toBe(true);
   });
 
   it("puts the key in exactly one place: the authorization header of the call it authorises", async () => {

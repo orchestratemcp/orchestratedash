@@ -333,18 +333,35 @@ export function createHostBroker(deps: HostBrokerDeps): HostBroker {
       if (budget.seen.includes(request.request_id)) {
         return decide("duplicate_request");
       }
-      budget.seen.push(request.request_id);
-      if (budget.seen.length > BROKER_REPLAY_MEMORY) {
-        budget.seen.shift();
-      }
 
-      /* 2. Rate, before the operation is resolved, so a flood costs a counter. */
+      /* 2. Rate, before the operation is resolved, so a flood costs a counter.
+         Recorded on the attempt rather than on success, for the reason the
+         allowance below is: a refused call still cost the broker work, and not
+         counting refusals leaves a way to probe the boundary as fast as the pipe
+         allows. */
       const windowStart = startedAt - BROKER_WINDOW_MS;
       budget.calls = budget.calls.filter((at) => at > windowStart);
       if (budget.calls.length >= BROKER_CALLS_PER_WINDOW) {
         return decide("rate_limited");
       }
       budget.calls.push(startedAt);
+
+      /*
+       * The id is remembered **after** the rate check and not before, which is
+       * `lib/broker/execute.ts`'s order and matters more than it looks.
+       *
+       * A rate-limited request is one the agent is expected to try again, and
+       * the natural retry carries the same request id because it is the same
+       * logical request. Remembering the id before the rate check would burn it:
+       * the retry would come back `duplicate_request` forever, and the agent
+       * would be permanently refused for having obeyed the first refusal. The
+       * two brokers would then disagree about a request that succeeds locally,
+       * which is exactly the divergence ADR 0021 rule 2 forbids.
+       */
+      budget.seen.push(request.request_id);
+      if (budget.seen.length > BROKER_REPLAY_MEMORY) {
+        budget.seen.shift();
+      }
 
       /* 3. The closed set — the whole of ADR 0021's narrowing, in one call.
 
