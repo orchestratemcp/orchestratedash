@@ -181,7 +181,10 @@ export function ChiefChat({
             <ol className="chief-turns" aria-label={CHIEF_CHAT_COPY.thread_heading}>
               {turns.map((turn) => (
                 <li key={turn.id} className="chief-turn">
-                  <p className="chief-asked wrap">{turn.question}</p>
+                  <p className="chief-asked wrap">
+                    <span className="chief-speaker">{CHIEF_CHAT_COPY.you}</span>
+                    {turn.question}
+                  </p>
                   <ChiefReplyBody reply={turn.reply} />
                 </li>
               ))}
@@ -192,7 +195,14 @@ export function ChiefChat({
 
       <div className="chief-compose">
         <label className="chief-field">
-          <span className="visually-hidden">{CHIEF_CHAT_COPY.label}</span>
+          {/*
+            MAR-659. Visible rather than `visually-hidden`, so the subject of
+            this room — the whole fleet, never one agent — is a fact a person
+            reads rather than one this component just happens to be wired for.
+            `CHIEF_CHAT_COPY.label` already names it ("about your fleet"); it
+            only had to stop being announcement-only.
+          */}
+          <span className="chief-subject">{CHIEF_CHAT_COPY.label}</span>
           <textarea
             className="chief-input"
             rows={2}
@@ -321,7 +331,9 @@ function Says({ sentence }: { sentence: ChiefSentence }): ReactNode {
   return (
     <>
       <p className="chief-says wrap">
-        <span className="visually-hidden">{CHIEF_NAME}: </span>
+        {/* MAR-659. Visible, and the one accent on this room's turns: it marks
+            whose paragraph this is without a bar or a box around it. */}
+        <span className="chief-speaker">{CHIEF_NAME}</span>
         {sentence.sentence}
       </p>
       {sentence.quoted === null ? null : (

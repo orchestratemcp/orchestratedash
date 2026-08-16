@@ -583,12 +583,11 @@ export const AGENT_COCKPIT_COPY = {
   /**
    * The chat bar, pinned to the bottom of the frame.
    *
-   * `ask` owns every word of the conversation itself (`lib/copy/ask.ts`); these
-   * are the two strings the *bar* needs and the thread does not — the label on
-   * a box that is one line tall, and the way into the thread when a person
-   * cannot type in it yet.
+   * `ask` owns every word of the conversation itself (`lib/copy/ask.ts`),
+   * including the bar's own visible name now (`describeChatSubject`, MAR-659)
+   * — this is the one string the bar needs that is not about the conversation
+   * at all: the way into the thread when a person cannot type in it yet.
    */
-  chat_label: "Message this agent",
   chat_open: "Open chat",
   /**
    * The stage names, for the region's accessible name.

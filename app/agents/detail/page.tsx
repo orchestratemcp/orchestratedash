@@ -1153,6 +1153,9 @@ function AgentWorkspace(): ReactNode {
            the O that animates while a question runs is recognisably this
            agent rather than a second opinion about which costume it wears. */
         agentAvatar={view.avatar}
+        /* MAR-659. The header's own name for this agent, so the composer's
+           visible label and the page it is pinned to agree on what to call it. */
+        agentTitle={view.title}
         ask={view.ask}
         canAct={canAct}
         onChatStage={stage === "chat"}

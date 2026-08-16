@@ -513,6 +513,25 @@ export const ASK_WORKING = "Asking…";
 /** The heading over the list of saved things an answer was built from. */
 export const ASK_SOURCES_HEADING = "What this answer used";
 
+/**
+ * The composer's own visible name (MAR-659).
+ *
+ * MAR-646 tried `describeAskPurpose`'s full sentence here once and reverted it
+ * — "one sentence in two places on one screen" — because the thread already
+ * draws that sentence directly above this bar on the Chat stage. This is
+ * shorter and says a different thing: not what the conversation is for, but
+ * who it is with, which is the fact the fleet's own composer (MAR-659, beside
+ * this one) needed to start saying out loud too. Two composers share a
+ * grammar; neither said its subject before this.
+ *
+ * `agent` is `null` for the one caller that has not resolved a display name
+ * yet — the render tests that compose `AskComposer` directly — and falls back
+ * to the bar's own former label rather than rendering nothing.
+ */
+export function describeChatSubject(agent: string | null): string {
+  return agent === null ? "Message this agent" : `Message ${agent}`;
+}
+
 /* ---------------------------------------------------------------------- *
  * The composer's settings row (MAR-648)
  * ---------------------------------------------------------------------- */
