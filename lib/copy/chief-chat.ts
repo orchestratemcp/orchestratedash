@@ -122,7 +122,7 @@ export const CHIEF_CHAT_COPY = {
  *
  * Henrik hit the consequence of the paragraph above directly: he asked the chief
  * something, navigated away and came back to a thread with nothing in it, and it
- * read as broken. ADR 0022 decision 6 is the argument that the session-only
+ * read as broken. ADR 0023 decision 6 is the argument that the session-only
  * choice was against undated re-presentation, not against storage, and that this
  * packet — the shape half — owes the emptiness a plain reason rather than a fix
  * to what MAR-648 decided. So the sentence a returning reader lands on says the
