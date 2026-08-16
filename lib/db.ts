@@ -1225,6 +1225,8 @@ const MIGRATIONS: readonly Migration[] = [
     -- The briefing rows that were sent, frozen. See the note above.
     receipt_json TEXT NOT NULL
   );
+  `,
+
   // MAR-628, ADR 0019: what DASH asked its own browser to do, and what it
   // stopped a page from doing.
   //

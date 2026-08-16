@@ -603,11 +603,21 @@ export function createBroker(deps: BrokerDeps): Broker {
 
          `needs_a_person` and not a new code, for `lib/mcp/reach.ts`'s reason:
          its docblock already says what this means, and the agent's move is
-         identical — stop, and let the person decide. */
+         identical — stop, and let the person decide.
+
+         Asked only about an **agent**, and that narrowing is the rule rather
+         than a gap left by MAR-659's principal union. The chief has no browser:
+         `lib/browser/session.ts` keys every session by an agent id, and no code
+         path opens one for a principal that is not an agent. So there is no run
+         in which the chief could have read a web page, and a `hasReadUntrusted`
+         call for it would be a question about a session that cannot exist.
+         Narrowing here also means the predicate keeps taking an agent id, which
+         is what `BrowserController` actually indexes by. */
       if (
         origin !== "person" &&
         operation.access !== "read" &&
-        deps.hasReadUntrusted?.(agentId) === true
+        principal.kind === "agent" &&
+        deps.hasReadUntrusted?.(principal.agent_id) === true
       ) {
         return no("needs_a_person");
       }

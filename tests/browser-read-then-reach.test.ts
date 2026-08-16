@@ -17,6 +17,11 @@
 import { describe, expect, it } from "vitest";
 
 import { createBroker, type BrokerDeps } from "../lib/broker/execute";
+// MAR-659 turned the broker's first parameter from an agent id into a
+// `BrokerPrincipal`, so that `dash.fleet` — a legal agent id — cannot claim the
+// chief's standing by being spelled. Nothing about read-then-reach changes: the
+// rule is asked about an agent, and this is how an agent is named now.
+import { agentPrincipal } from "../lib/broker/principal";
 import { credential, example } from "./fakes/broker-harness";
 
 const AGENT = "synthetic-gmail-meeting-assistant";
@@ -61,7 +66,7 @@ describe("after a browsed read", () => {
   it("refuses a write with needs_a_person", async () => {
     const calls: string[] = [];
     const broker = brokerWith(true, calls);
-    const answer = await broker.handle(AGENT, draft("r1"), "agent");
+    const answer = await broker.handle(agentPrincipal(AGENT), draft("r1"), "agent");
 
     expect(answer).toMatchObject({ ok: false, refusal: "needs_a_person" });
     // Refused before the vault and before the network — the check is step 3a,
@@ -72,7 +77,7 @@ describe("after a browsed read", () => {
   it("still allows a read, because the rule is read-then-*reach*", async () => {
     // A browsed article followed by a second read is not the chain the rule is
     // about. Gating reads too would stop an agent doing its job for no gain.
-    const answer = await brokerWith(true).handle(AGENT, search("r1"), "agent");
+    const answer = await brokerWith(true).handle(agentPrincipal(AGENT), search("r1"), "agent");
     expect(answer).toMatchObject({ ok: true });
   });
 
@@ -80,14 +85,14 @@ describe("after a browsed read", () => {
     // `person` means somebody at the keyboard asked for this specific call with
     // its inputs in front of them — exactly the approval the rule demands. A
     // second one would be asking one person the same question twice.
-    const answer = await brokerWith(true).handle(AGENT, draft("r1"), "person");
+    const answer = await brokerWith(true).handle(agentPrincipal(AGENT), draft("r1"), "person");
     expect(answer).toMatchObject({ ok: true });
   });
 });
 
 describe("before a browsed read", () => {
   it("allows the same write it would have refused afterwards", async () => {
-    const answer = await brokerWith(false).handle(AGENT, draft("r1"), "agent");
+    const answer = await brokerWith(false).handle(agentPrincipal(AGENT), draft("r1"), "agent");
     expect(answer).toMatchObject({ ok: true });
   });
 
@@ -108,6 +113,6 @@ describe("before a browsed read", () => {
       audit: () => undefined,
       now: () => new Date("2026-08-16T10:00:00.000Z"),
     });
-    expect(await broker.handle(AGENT, draft("r1"), "agent")).toMatchObject({ ok: true });
+    expect(await broker.handle(agentPrincipal(AGENT), draft("r1"), "agent")).toMatchObject({ ok: true });
   });
 });
