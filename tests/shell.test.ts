@@ -483,6 +483,41 @@ describe("the renderer's half of an agent command", () => {
     }
   });
 
+  /*
+   * MAR-659, ADR 0023 decision 8. *"Fleet page → the chief principal, the fleet
+   * briefing, no agent's saved material. Agent page → that agent's principal and
+   * that agent's saved reports."*
+   *
+   * Semantically **and** structurally, and this is the structural half at the
+   * IPC boundary: `{ kind: "chief" }` carries no agent id, so there is no value
+   * a chief question could be aimed at an agent with. That is only true while
+   * the catalogue declares no key one could travel in — a `payload_keys`
+   * entry added here would put the value back and no other test would notice.
+   *
+   * `chief.clear` is asserted separately and to a stronger standard: an empty
+   * payload, because there is one thread and a page able to name which one to
+   * delete would be a page able to delete a different one.
+   */
+  it("gives the chief no way to name an agent, a connection or a model", () => {
+    expect(COMMANDS["chief.ask"].payload_keys).toEqual(["question"]);
+    expect(COMMANDS["chief.ask"].required_keys).toEqual(["question"]);
+    expect(COMMANDS["chief.clear"].payload_keys).toEqual([]);
+    // Both spend or destroy, so both say so — `irreversible` describes the worst
+    // thing a command can do rather than the commonest, and a standing question
+    // being free does not make a charged one reversible.
+    expect(COMMANDS["chief.ask"].irreversible).toBe(true);
+    expect(COMMANDS["chief.clear"].irreversible).toBe(true);
+  });
+
+  it("denies a chief question that tries to name an agent", () => {
+    const review = reviewCommand({
+      command: "chief.ask",
+      request_id: "req-chief-1",
+      payload: { question: "what needs me", agent_id: "ai-agent-news" },
+    });
+    expect(review).toMatchObject({ decision: "denied", reason: "unexpected_payload_field" });
+  });
+
   it("denies an attempt to name the actor, because the key is not declared", () => {
     const review = reviewCommand({
       ...approve,
