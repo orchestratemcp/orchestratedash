@@ -33,6 +33,14 @@ const STEPS: ModelStepView[] = [
     declared: "cheap",
     declared_label: levelLabel("cheap"),
     overridden: false,
+    // MAR-654, A1.6. This step falls back to DASH's default; the one below is
+    // answered by a row the person mapped. Two rungs in one fixture, so the
+    // render test sees both sentences rather than one repeated.
+    resolved_model_id: "meta-llama/llama-3.3-70b-instruct:free",
+    resolved_by: "fleet_default",
+    resolved_note:
+      "Runs on meta-llama/llama-3.3-70b-instruct:free, DASH's default model. " +
+      "Nothing is set for small and cheap steps yet.",
   },
   {
     step: 3,
@@ -43,6 +51,10 @@ const STEPS: ModelStepView[] = [
     declared: "standard",
     declared_label: levelLabel("standard"),
     overridden: true,
+    resolved_model_id: "anthropic/claude-opus-5",
+    resolved_by: "level_map",
+    resolved_note:
+      "Runs on anthropic/claude-opus-5, which you chose for the best available steps.",
   },
 ];
 
@@ -66,6 +78,7 @@ function choosable(over: Partial<AgentModelSettingsView> = {}): AgentModelSettin
     steps: STEPS,
     steps_in_force: true,
     steps_note: null,
+    steps_link_label: "Choose what each kind of step runs on",
     ...over,
   } as AgentModelSettingsView;
 }

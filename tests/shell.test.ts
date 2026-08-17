@@ -230,6 +230,15 @@ describe("the audited command chokepoint", () => {
       // changes what DASH may reach, which is what the fleet verbs are for.
       "model.default",
       "model.catalogue",
+      // MAR-654, ADR 0011 amendment 1. A third in that family naming no agent:
+      // what one *strength* of step runs on, fleet-wide. It reaches no provider
+      // at all — the catalogue it is picked from arrives through
+      // `model.catalogue` — so it opens no vault, and what it widens is stated
+      // in its own catalogue entry: a row written here is one an agent's own
+      // step can be resolved to, bounded by the levels that agent's plan
+      // declares.
+      "model.level",
+
       // MAR-545. The tenth family, one member, and the first command in this
       // catalogue that costs the person money. The renderer names an agent, a
       // connection, a field and a question — never a model, because which model

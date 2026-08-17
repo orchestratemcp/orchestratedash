@@ -23,11 +23,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { AiKeys, AiSettings } from "../app/settings/ai/page";
 import { ServiceList } from "../app/settings/page";
 import { ModelDefault } from "../app/_components/model-default";
-import { describeFleetDefault } from "../lib/ai/model-choice";
+import {
+  describeFleetDefault,
+  describeLevelModelRow,
+  describeLevelModels,
+} from "../lib/ai/model-choice";
+import { DEFAULT_MODEL_LEVELS, levelLabel, levelMeaning } from "../lib/ai/model-levels";
 import type {
   AgentConnections,
   ConnectionsView,
   FleetConnectorView,
+  FleetLevelModelsView,
   FleetModelDefaultView,
 } from "../lib/views/types";
 
@@ -96,6 +102,39 @@ function defaultView(over: Partial<FleetModelDefaultView> = {}): FleetModelDefau
   };
 }
 
+/**
+ * The level rows for one provider, at their shipped values (MAR-654, A1.6).
+ *
+ * Every row empty and every sentence the no-default one, which is the state
+ * every DASH ships in: nothing is seeded and no existing DASH changes behaviour
+ * until a person writes a row. `levelsFor` takes a map so a test can write one.
+ */
+function levelsFor(
+  providerIds: readonly string[],
+  mapped: Readonly<Record<string, string>> = {},
+  fleetDefaultModelId: string | null = null,
+): FleetLevelModelsView {
+  const copy = describeLevelModels(providerIds.length === 0 ? null : "OpenRouter");
+  return {
+    headline: copy.headline,
+    detail: copy.detail,
+    in_force: copy.in_force,
+    by_provider: providerIds.map((provider_id) => ({
+      provider_id,
+      rows: DEFAULT_MODEL_LEVELS.map((level) => {
+        const modelId = mapped[level] ?? null;
+        return {
+          level,
+          label: levelLabel(level),
+          meaning: levelMeaning(level),
+          model_id: modelId,
+          in_force: describeLevelModelRow(modelId, fleetDefaultModelId),
+        };
+      }),
+    })),
+  };
+}
+
 const KEYS = [
   key("openrouter", "OpenRouter"),
   key("anthropic", "Anthropic"),
@@ -106,6 +145,7 @@ function view(over: Partial<ConnectionsView> = {}): ConnectionsView {
   return {
     fleet: [connector(), ...KEYS],
     model_default: defaultView(),
+    level_models: levelsFor([]),
     agents: [],
     older_agent_names: [],
     ...over,
@@ -227,9 +267,20 @@ describe("the keys, and the + that reveals the rest", () => {
 });
 
 describe("the default model", () => {
-  const draw = (setting: FleetModelDefaultView, keys: readonly FleetConnectorView[], canAct = true): string =>
+  const draw = (
+    setting: FleetModelDefaultView,
+    keys: readonly FleetConnectorView[],
+    canAct = true,
+    levels: FleetLevelModelsView = levelsFor([]),
+  ): string =>
     renderToStaticMarkup(
-      <ModelDefault setting={setting} keys={keys} canAct={canAct} onChanged={() => undefined} />,
+      <ModelDefault
+        setting={setting}
+        levels={levels}
+        keys={keys}
+        canAct={canAct}
+        onChanged={() => undefined}
+      />,
     );
 
   it("draws no control at all until a key is held", () => {

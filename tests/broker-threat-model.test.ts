@@ -28,8 +28,16 @@
 
 import { describe, expect, it } from "vitest";
 
+import {
+  applyFleetDefault,
+  matchEachStep,
+  resolveModelSteps,
+  type LevelModelMap,
+} from "../lib/ai/model-choice";
+import { stepsNeedingAModel } from "../lib/ai/model-levels";
 import { operationById, allOperations, planCall, writePaths } from "../lib/broker/operations";
 import { parseBrokerRequest } from "../lib/broker/protocol";
+import type { ConnectionSourceManifest } from "../lib/connections";
 import { OAuthError } from "../lib/oauth/flow";
 import {
   composedMessage,
@@ -37,6 +45,7 @@ import {
   harness,
   credential,
   example,
+  keyCredential,
   GMAIL_COMPOSE,
   GMAIL_READONLY,
   PLANTED_ACCESS_TOKEN,
@@ -1072,5 +1081,204 @@ describe("the request envelope", () => {
         expect(operation.required_scopes).toEqual([GMAIL_COMPOSE]);
       }
     }
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * A step an agent names (MAR-654, ADR 0011 amendment 1, A1.4)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * A `step` an agent invents reaches a level its own plan declares, or nothing.
+ *
+ * The amendment states its widening rather than designing around it: before it,
+ * an agent-origin spend could reach exactly one model; after it, up to three. So
+ * the bound is the thing to prove, and it has two halves that fail differently.
+ *
+ * 1. **What the request may say is a step number and nothing else.** The level is
+ *    resolved on DASH's side of the seam, from the manifest DASH imported joined
+ *    to the person's own overrides. The tests below drive the *real* resolution
+ *    functions — `stepsNeedingAModel`, `resolveModelSteps`, `applyFleetDefault` —
+ *    which is exactly what `agentStepLevel` and `readEffectiveStepModel` compose
+ *    in `electron/broker-host.ts`. A stub that simply returned "the right model"
+ *    would prove this file's own opinion rather than the resolver's.
+ * 2. **A lying step is a step the plan does not have**, and it resolves to null:
+ *    past the level map entirely, to the default and then to a refusal. An agent
+ *    whose plan declares only `cheap` cannot reach the model a person mapped to
+ *    `frontier` by claiming a step number that would be frontier in somebody
+ *    else's plan.
+ */
+describe("a step an agent names", () => {
+  /** The scout's shape: one cheap step, and no frontier step at all. */
+  const PLAN = [
+    { step: 2, component_id: "digest_curate", model_tier: "small", default_model_level: "cheap" },
+    { step: 3, component_id: "write_file", model_tier: "none" },
+  ];
+  const DEFAULT_MODEL = { provider_id: "openrouter", model_id: "cheap/default" };
+  /** What the person mapped. `frontier` is the expensive one to keep away from. */
+  const MAPPED: LevelModelMap = new Map([
+    ["cheap", { provider_id: "openrouter", model_id: "mapped/cheap" }],
+    ["frontier", { provider_id: "openrouter", model_id: "mapped/frontier" }],
+  ]);
+
+  /** A manifest declaring one model-provider key, in `broker-curate`'s shape. */
+  function keyManifest(): ConnectionSourceManifest {
+    return {
+      agent_dom: {
+        connections: [
+          {
+            id: "model_provider",
+            provider: "openrouter",
+            label: "Your model provider",
+            purpose: "Summarise what this agent found",
+            ownership: "dash_managed",
+            capabilities: [
+              { id: "openrouter.digest.curate", label: "Summarise", access: "spend" },
+            ],
+            fields: [
+              {
+                id: "api_key",
+                label: "API key",
+                purpose: "So DASH can reach the provider for this agent",
+                kind: "secret",
+                required: true,
+              },
+            ],
+            validation_action: { id: "test", label: "Check the key", behavior: "test" },
+          },
+        ],
+      },
+    } as unknown as ConnectionSourceManifest;
+  }
+
+  /** The host seam, composed from the real functions it composes. */
+  function resolve(step: number | null): string | null {
+    const declared = resolveModelSteps(stepsNeedingAModel(PLAN), new Map());
+    const level = step === null ? null : (declared.find((one) => one.step === step)?.level ?? null);
+    const choice = applyFleetDefault(matchEachStep(), DEFAULT_MODEL, "openrouter", {
+      level,
+      level_models: MAPPED,
+    }).choice;
+    return choice.kind === "one_model" ? choice.model_id : null;
+  }
+
+  function curate(input: Record<string, unknown>) {
+    return {
+      request_id: `req-${Math.random().toString(36).slice(2)}`,
+      connection_id: "model_provider",
+      operation: "openrouter.digest.curate",
+      input: {
+        material: "[1] Something happened",
+        max_output_tokens: 700,
+        ...input,
+      },
+    };
+  }
+
+  function spendHarness(
+    resolveModelChoice: (agentId: string, step: number | null) => string | null = (_agent, step) =>
+      resolve(step),
+  ): ReturnType<typeof harness> {
+    const broker = harness({
+      manifest: keyManifest(),
+      credential: { kind: "found", credential: keyCredential({ provider: "openrouter" }) },
+      respond: () => ({
+        status: 200,
+        body: {
+          choices: [
+            { message: { content: "OVERVIEW: One thing.\nGROUP: A\nSUMMARY: B\nITEMS: 1" } },
+          ],
+          model: "openrouter/whatever",
+        },
+      }),
+      resolveModelChoice,
+    });
+    broker.allowRunSpend(AGENT);
+    return broker;
+  }
+
+  /** The model id DASH actually put on the wire. */
+  function sentModel(broker: ReturnType<typeof harness>): unknown {
+    return (JSON.parse(broker.calls[0]?.body ?? "{}") as { model?: unknown }).model;
+  }
+
+  it("uses the level that step really declares", async () => {
+    const broker = spendHarness();
+    const answer = (await broker.handle(AGENT, curate({ step: 2 }), "agent")) as { ok: boolean };
+    expect(answer.ok).toBe(true);
+    // Step 2 declares `cheap` and the person mapped `cheap`, so the level map
+    // answered above the default. Rule 2 doing its job.
+    expect(sentModel(broker)).toBe("mapped/cheap");
+  });
+
+  it("cannot reach a level its own plan never declares", async () => {
+    const broker = spendHarness();
+    // `frontier` is mapped and expensive, and this plan has no frontier step. A
+    // step number that would be frontier in somebody else's plan is, here, a
+    // step this manifest does not have — so the ladder skips rule 2 entirely and
+    // lands on the default the person already chose.
+    const answer = (await broker.handle(AGENT, curate({ step: 9 }), "agent")) as { ok: boolean };
+    expect(answer.ok).toBe(true);
+    expect(sentModel(broker)).toBe("cheap/default");
+    expect(sentModel(broker)).not.toBe("mapped/frontier");
+  });
+
+  it("treats a step that needs no model as no step at all", async () => {
+    const broker = spendHarness();
+    // Step 3 exists and declares no level, so `stepsNeedingAModel` drops it and
+    // it resolves exactly as a request naming no step does.
+    const answer = (await broker.handle(AGENT, curate({ step: 3 }), "agent")) as { ok: boolean };
+    expect(answer.ok).toBe(true);
+    expect(sentModel(broker)).toBe("cheap/default");
+  });
+
+  it.each([
+    ["a string", "2"],
+    ["a float", 2.5],
+    ["zero", 0],
+    ["a negative", -2],
+    ["a boolean", true],
+    ["an object with a valueOf", { valueOf: () => 2 }],
+    ["nothing at all", undefined],
+  ])("reads %s as no step rather than coercing it", async (_label, step) => {
+    const broker = spendHarness();
+    const answer = (await broker.handle(
+      AGENT,
+      curate(step === undefined ? {} : { step }),
+      "agent",
+    )) as { ok: boolean };
+    expect(answer.ok).toBe(true);
+    // Never `mapped/cheap`: a value that is not a whole number of at least one is
+    // not a step, and a request that could choose how it is parsed is a request
+    // that could choose its own model one indirection away.
+    expect(sentModel(broker)).toBe("cheap/default");
+  });
+
+  it("cannot name a model, whatever else it puts in the request", async () => {
+    const broker = spendHarness();
+    const answer = (await broker.handle(
+      AGENT,
+      curate({ step: 2, model: "expensive/model", level: "frontier" }),
+      "agent",
+    )) as { ok: boolean };
+    expect(answer.ok).toBe(true);
+    // ADR 0011 decision 1, unchanged by the amendment: `model` is overwritten
+    // before `planCall` sees it, and `level` is read by nothing at all.
+    expect(sentModel(broker)).toBe("mapped/cheap");
+    expect(String(broker.calls[0]?.body)).not.toContain("expensive/model");
+  });
+
+  it("is refused when nothing on the ladder answers", async () => {
+    // No pin, no row for this level, no default: `no_model_chosen`, now
+    // reachable per step rather than only per agent.
+    const broker = spendHarness(() => null);
+    const answer = (await broker.handle(AGENT, curate({ step: 2 }), "agent")) as {
+      ok: boolean;
+      refusal?: string;
+    };
+    expect(answer.ok).toBe(false);
+    expect(answer.refusal).toBe("no_model_chosen");
+    // And refused before anything reached a provider.
+    expect(broker.calls).toEqual([]);
   });
 });

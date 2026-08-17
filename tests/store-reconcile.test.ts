@@ -173,7 +173,7 @@ describe("a store a pre-renumber build migrated", () => {
     const next = await reopen(first.dataDir);
     const handle = next.db();
 
-    expect(version(handle)).toBe(27);
+    expect(version(handle)).toBe(28);
     for (const table of MASTER_24_TO_26_TABLES) {
       expect(tableNames(handle)).toContain(table);
     }
@@ -349,7 +349,7 @@ describe("stores the repair must never touch", () => {
   it("leaves a fresh store alone", async () => {
     const { dataDir, db } = await freshStore();
 
-    expect(version(db.db())).toBe(27);
+    expect(version(db.db())).toBe(28);
     expect(db.describeStoreReconciliation()).toBeNull();
     expect(backupsIn(dataDir)).toEqual([]);
   });
@@ -360,7 +360,7 @@ describe("stores the repair must never touch", () => {
     first.db.closeDb();
 
     const next = await reopen(first.dataDir);
-    expect(version(next.db())).toBe(27);
+    expect(version(next.db())).toBe(28);
     expect(next.describeStoreReconciliation()).toBeNull();
     expect(backupsIn(first.dataDir)).toEqual([]);
   });
@@ -405,7 +405,7 @@ describe("stores the repair must never touch", () => {
 
     expect(next.describeStoreReconciliation()).toBeNull();
     expect(backupsIn(first.dataDir)).toEqual([]);
-    expect(version(handle)).toBe(27);
+    expect(version(handle)).toBe(28);
     // Migration 27 ran, so the row is `account-1` and the default — which is the
     // ordinary upgrade this store was always going to get.
     expect(handle.prepare("SELECT account_id, is_default FROM fleet_connections").get()).toEqual({
@@ -428,7 +428,7 @@ describe("stores the repair must never touch", () => {
     const next = await reopen(first.dataDir);
     expect(next.describeStoreReconciliation()).toBeNull();
     expect(backupsIn(first.dataDir)).toEqual([]);
-    expect(version(next.db())).toBe(27);
+    expect(version(next.db())).toBe(28);
   });
 
   it("leaves a store below the range alone even with the shape present", async () => {
@@ -443,7 +443,7 @@ describe("stores the repair must never touch", () => {
     const next = await reopen(first.dataDir);
     expect(next.describeStoreReconciliation()).toBeNull();
     expect(backupsIn(first.dataDir)).toEqual([]);
-    expect(version(next.db())).toBe(27);
+    expect(version(next.db())).toBe(28);
   });
 });
 
@@ -474,8 +474,23 @@ function chiefMessagesDdl(database: DatabaseSync): string {
   return String(row["sql"]);
 }
 
+/**
+ * The one table away, and `user_version` back to what that store recorded.
+ *
+ * The rewind is not cosmetic and it is not a fixture convenience: MAR-682's
+ * signature is a store recording **exactly 27** with `chief_messages` absent,
+ * and it stays 27 forever, because it describes a store a build one merge behind
+ * MAR-676 left on one machine. The head moves — MAR-654 took it to 28 — and this
+ * signature does not follow it, which is the whole reason `RECONCILED_VERSION`
+ * is a constant rather than `MIGRATIONS.length`. So a fixture built by migrating
+ * a fresh store has to put the number back to the one the real store held.
+ */
 function dropChiefMessages(database: DatabaseSync): void {
   database.exec("DROP TABLE chief_messages");
+  // The literal rather than `RECONCILED_VERSION`, for `divergeToPreRenumber`'s
+  // reason one signature along: a fixture that read the constant would follow it
+  // if somebody ever moved it, and the number is the fact under test.
+  database.exec("PRAGMA user_version = 27");
 }
 
 describe("the store one boot before MAR-676's repair could see it (MAR-682)", () => {
@@ -546,6 +561,10 @@ describe("reconcileChieflessStore", () => {
     // The table is back, byte-identical to what dropping it took away — proof
     // this ran the store's own step and not a hand-written guess at its DDL.
     expect(chiefMessagesDdl(handle)).toEqual(ddl);
+    // Still 27, because this drives the repair directly rather than through a
+    // boot: it leaves `user_version` exactly where it found it, and the ordinary
+    // loop is what carries the store on to the head. `migrate()`'s own test
+    // below is the one that sees the number move.
     expect(version(handle)).toBe(27);
 
     const backups = backupsIn(dataDir);
@@ -607,7 +626,7 @@ describe("migrate() wires MAR-682 at boot, beside MAR-676's own call", () => {
     const next = await reopen(first.dataDir);
     const handle = next.db();
 
-    expect(version(handle)).toBe(27);
+    expect(version(handle)).toBe(28);
     expect(tableNames(handle)).toContain("chief_messages");
 
     const backups = backupsIn(first.dataDir);
@@ -631,7 +650,7 @@ describe("migrate() wires MAR-682 at boot, beside MAR-676's own call", () => {
     first.db.closeDb();
 
     const next = await reopen(first.dataDir);
-    expect(version(next.db())).toBe(27);
+    expect(version(next.db())).toBe(28);
     expect(next.describeStoreReconciliation()).toBeNull();
     expect(backupsIn(first.dataDir)).toEqual([]);
   });
@@ -648,7 +667,7 @@ describe("migrate() wires MAR-682 at boot, beside MAR-676's own call", () => {
     // this boot's MAR-682 call finds it present and returns null -- the one
     // reconciliation record on the store is MAR-676's, not a second one that
     // overwrote it.
-    expect(version(handle)).toBe(27);
+    expect(version(handle)).toBe(28);
     expect(tableNames(handle)).toContain("chief_messages");
     expect(next.describeStoreReconciliation()).toMatchObject({
       recorded_version: 24,

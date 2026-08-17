@@ -5859,6 +5859,80 @@ button:disabled {
 }
 
 /*
+ * What this step's level resolves to right now (MAR-654, A1.6).
+ *
+ * Set in the same weight as `.model-in-force` and without its accent bar: it is
+ * the same *kind* of fact one scale smaller — what will actually run — and a
+ * second bar inside a card that already has a border would make each step look
+ * like a section of its own.
+ */
+.model-step-resolved {
+  margin: 0;
+  max-width: 60ch;
+  font-weight: 600;
+}
+
+/*
+ * Where a level becomes a model, from the step that depends on it.
+ *
+ * A plain link and not a button, because it goes somewhere rather than doing
+ * something — and it is at the top of the disclosure rather than the bottom, so
+ * a person who opens this looking for "where do I change what balanced means"
+ * finds the answer before scrolling past three steps to look for it.
+ */
+.model-steps-link {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+
+/* ── What each kind of step runs on (MAR-654, A1.6) ─────────────────────── */
+
+/*
+ * Inside `.model-default`'s picker, under the default it falls back to, so the
+ * two read as one setting with a general case and three specific ones. The rule
+ * `.model-default` states for itself applies here for its reason: reusing
+ * `.field` and `.row-list` means the more specific control cannot start looking
+ * like a different kind of setting from the one it overrides.
+ */
+.level-models {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.level-models > h3 {
+  margin: 0;
+}
+
+.level-models > .muted {
+  margin: 0;
+  max-width: 60ch;
+}
+
+.level-model-list {
+  margin-top: var(--space-2);
+}
+
+.level-model {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--density-card-p);
+  border: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.level-model p {
+  margin: 0;
+  max-width: 60ch;
+}
+
+/* `.model-step .field`'s cap, measured the same way and for the same reason:
+   a native select truncates rather than wraps, and these hold model ids. */
+.level-model .field {
+  max-width: 46ch;
+}
+
+/*
  * What a run started under. Not a status and not a verdict, so it carries no
  * colour from the green/amber/red system — it is a fact about a setting, and a
  * fleet of coloured model lines would dilute the one colour vocabulary on this

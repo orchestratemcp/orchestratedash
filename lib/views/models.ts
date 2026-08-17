@@ -14,17 +14,23 @@
  */
 
 import {
+  applyFleetDefault,
   describeChoiceAvailable,
   describeInForce,
   describeNoChoice,
   describeRunModel,
   describeRunModelDetail,
+  describeStepModel,
   describeStepsNotInForce,
   describeUnpinnedOption,
+  matchEachStep,
   resolveModelSteps,
+  resolveStepModels,
+  LEVEL_MAP_LINK_LABEL,
   type NoModelChoiceReason,
   type ResolvedModelStep,
   type RunModelStanding,
+  type StepModelResolution,
 } from "../ai/model-choice";
 import { isModelId } from "../broker/operations";
 import {
@@ -38,7 +44,7 @@ import {
 import { aiKeyConnections, pickAiKeyCard } from "../ai/connection-view";
 import {
   readAgentModelChoice,
-  readEffectiveModelChoice,
+  readFleetLevelModels,
   readFleetModelDefault,
   readStepLevelOverrides,
   readRunModel,
@@ -74,40 +80,54 @@ export function buildAgentModelSettings(
   const declared = stepsNeedingAModel(route);
   const overrides = readStepLevelOverrides(agent);
   const resolved = resolveModelSteps(declared, overrides);
-  const steps = resolved.map(toStepView);
 
   if (declared.length === 0 && !planNeedsAModel(route)) {
-    return noChoice("no_model_needed", null, steps);
+    return noChoice("no_model_needed", null, resolved);
   }
 
   const card = pickAiKeyCard(aiKeyConnections(agent, manifest));
   if (card === null) {
-    return noChoice("no_provider_key", null, steps);
+    return noChoice("no_provider_key", null, resolved);
   }
   if (!card.held) {
-    return noChoice("no_key_held", card.provider_label, steps);
+    return noChoice("no_key_held", card.provider_label, resolved);
   }
 
   /*
-   * MAR-642. What this agent runs on, DASH's default included.
+   * MAR-642, widened by MAR-654. What this agent runs on: its own pin, then the
+   * person's level map, then DASH's default.
    *
    * `card.provider_id` is the provider DASH would actually ask for this agent —
-   * the one `pickCard` just resolved from its manifest — so a default naming a
-   * different service does not reach it. That check is `applyFleetDefault`'s and
-   * is not repeated here.
+   * the one `pickAiKeyCard` just resolved from its manifest — so neither a
+   * default nor a level row naming a different service reaches it. That check is
+   * `applyFleetDefault`'s, applied once to both, and is not repeated here.
+   *
+   * The three rows are read here and the ladder applied twice from them: once
+   * with no step, for the whole-agent question the picker is bound to, and once
+   * per step. Two reads of one row set rather than two resolutions — the
+   * precedence itself is expressed exactly once, in `applyFleetDefault`.
    */
-  const effective = readEffectiveModelChoice(agent, card.provider_id);
-  const choice = effective.choice;
+  const pinned = readAgentModelChoice(agent);
+  const fleetDefault = readFleetModelDefault();
+  const levelModels = readFleetLevelModels(card.provider_id);
+  const effective = applyFleetDefault(pinned, fleetDefault, card.provider_id);
+  const fromDefault = effective.resolved_by === "fleet_default";
+  const resolutions = resolveStepModels(
+    resolved,
+    pinned,
+    fleetDefault,
+    card.provider_id,
+    levelModels,
+  );
   const sentence = describeChoiceAvailable(card.provider_label, declared.length);
-  const named = choice.kind === "one_model" ? choice.model_id : null;
   /*
    * The agent's own row, separately, because two fields below mean two
    * different things. `chosen_model_id` is what *this agent* was pinned to and
    * drives the picker's value; `in_force` is what will run, which may be the
-   * default. Reading one from the other would either show the default as a
-   * choice nobody made or hide the fact that a model is in force at all.
+   * default or a level's own model. Reading one from the other would either show
+   * the default as a choice nobody made or hide the fact that a model is in
+   * force at all.
    */
-  const pinned = readAgentModelChoice(agent);
   const pinnedModel = pinned.kind === "one_model" ? pinned.model_id : null;
 
   return {
@@ -119,40 +139,67 @@ export function buildAgentModelSettings(
     headline: sentence.headline,
     detail: sentence.detail,
     chosen_model_id: pinnedModel,
-    in_force: describeInForce(choice, resolved, effective.from_default),
-    from_default: effective.from_default,
+    in_force: describeInForce(effective, resolved, resolutions),
+    from_default: fromDefault,
     // Read again rather than carried off `effective`: what the option should say
     // depends on whether a default *exists*, not on whether it reached this
     // agent. An agent on another provider still needs the option to promise the
     // per-step matching it will actually get.
-    unpinned_option: describeUnpinnedOption(readFleetModelDefault()),
-    steps,
-    // The step controls are drawn either way and said to be set aside, rather
-    // than hidden: a control whose stored settings still exist but which nothing
-    // on screen mentions is how somebody comes back in a month to an agent
-    // behaving in a way the page does not explain.
-    steps_in_force: named === null,
-    steps_note: named === null ? null : describeStepsNotInForce(named, effective.from_default),
+    unpinned_option: describeUnpinnedOption(fleetDefault),
+    steps: resolved.map((step, index) => toStepView(step, resolutions[index] ?? null)),
+    /*
+     * MAR-654, A1.6. Live unless *this agent* is pinned.
+     *
+     * It used to be `named === null` over the **effective** choice, so DASH's
+     * default greyed the levels out on every agent that had not chosen — which
+     * is the control Henrik found greyed on the scout and the defect this
+     * amendment exists to end. A level now beats the default, so an unpinned
+     * agent's levels decide something and the control is real.
+     */
+    steps_in_force: pinnedModel === null,
+    steps_note: pinnedModel === null ? null : describeStepsNotInForce(pinnedModel),
+    steps_link_label: LEVEL_MAP_LINK_LABEL,
   };
 }
 
+/**
+ * The arm for every agent there is nothing to choose for.
+ *
+ * The steps are still drawn — an agent's declared levels are worth reading even
+ * when DASH cannot offer a model — and every one of them resolves to `none`,
+ * which is the truth: there is no key, no provider, or no model in the plan, so
+ * nothing on the ladder can answer. `resolveStepModels` says that rather than
+ * this function inventing a row, and a null provider is what makes it say it.
+ */
 function noChoice(
   reason: NoModelChoiceReason,
   providerLabel: string | null,
-  steps: ModelStepView[],
+  steps: readonly ResolvedModelStep[],
 ): AgentModelSettingsView {
   const sentence = describeNoChoice(reason, providerLabel);
+  const resolutions = resolveStepModels(steps, matchEachStep(), null, null, new Map());
   return {
     can_choose: false,
     reason: sentence.reason,
     headline: sentence.headline,
     detail: sentence.detail,
     next_action: sentence.next_action,
-    steps,
+    steps: steps.map((step, index) => toStepView(step, resolutions[index] ?? null)),
   };
 }
 
-function toStepView(step: ResolvedModelStep): ModelStepView {
+function toStepView(
+  step: ResolvedModelStep,
+  resolution: StepModelResolution | null,
+): ModelStepView {
+  const answer: StepModelResolution = resolution ?? {
+    step: step.step,
+    component_id: step.component_id,
+    level: step.level,
+    provider_id: null,
+    model_id: null,
+    resolved_by: "none",
+  };
   return {
     step: step.step,
     component_id: step.component_id,
@@ -162,6 +209,9 @@ function toStepView(step: ResolvedModelStep): ModelStepView {
     declared: step.declared,
     declared_label: levelLabel(step.declared),
     overridden: step.overridden,
+    resolved_model_id: answer.model_id,
+    resolved_by: answer.resolved_by,
+    resolved_note: describeStepModel(answer),
   };
 }
 

@@ -20,10 +20,20 @@ import { declarationDiff } from "./fleet/decisions";
 import { fileDecision } from "./fleet/decisions-store";
 import { aiKeyConnections, pickAiKeyCard } from "./ai/connection-view";
 import type { ConnectionSourceManifest } from "./connections";
-import { applyFleetDefault, type AgentModelChoice } from "./ai/model-choice";
 import {
+  applyFleetDefault,
+  resolveModelSteps,
+  resolveStepModels,
+  type FleetModelDefault,
+  type RunModelSetting,
+} from "./ai/model-choice";
+import { stepsNeedingAModel, type DefaultModelLevel, type PlannedRouteStep } from "./ai/model-levels";
+import {
+  hasFleetLevelModels,
   readAgentModelChoice,
+  readFleetLevelModels,
   readFleetModelDefault,
+  readStepLevelOverrides,
   recordRunModel,
 } from "./ai/model-store";
 import {
@@ -570,19 +580,102 @@ export function readAgentManifest(name: string): AnyAgentManifest | null {
 }
 
 /**
- * Which model provider DASH would ask for one agent, or null (MAR-642).
+ * What DASH would ask for one agent, and what its plan's steps declare (MAR-642,
+ * widened by MAR-654).
  *
- * Read only where the answer changes something: on the ingest path, and only
- * once a default model exists to be matched against. Null — no manifest, an
- * older manifest, or a plan that reaches no provider DASH brokers — is a
- * complete answer rather than a failure, and means the default does not apply.
+ * Read only where the answer changes something: on the ingest path, and only once
+ * a default model or a level row exists to be matched against. One manifest read
+ * answering both halves rather than two, because the two are needed together and
+ * a second read here would double the cost of the honesty MAR-642 already
+ * accepted.
+ *
+ * A null `provider_id` — no manifest, an older manifest, or a plan that reaches
+ * no provider DASH brokers — is a complete answer rather than a failure, and means
+ * neither the default nor any level row applies.
  */
-function modelProviderForAgent(name: string): string | null {
-  const manifest = readAgentManifest(name) as ConnectionSourceManifest | null;
+function modelPlanForAgent(name: string): {
+  provider_id: string | null;
+  route: readonly PlannedRouteStep[];
+} {
+  const manifest = readAgentManifest(name) as
+    | (ConnectionSourceManifest & { planned_route?: readonly PlannedRouteStep[] })
+    | null;
   if (manifest === null) {
-    return null;
+    return { provider_id: null, route: [] };
   }
-  return pickAiKeyCard(aiKeyConnections(name, manifest))?.provider_id ?? null;
+  return {
+    provider_id: pickAiKeyCard(aiKeyConnections(name, manifest))?.provider_id ?? null,
+    route: manifest.planned_route ?? [],
+  };
+}
+
+/**
+ * What DASH's setting was for one agent, at this instant (MAR-654, A1.5).
+ *
+ * `run_models`' left column, and the whole of what A1.5 changed about it: it
+ * stops being one model when a level map is what answered.
+ *
+ * **Every state that existed before this returns exactly what it returned
+ * before**, by construction rather than by promise — the two early exits are the
+ * pinned agent and the DASH nobody has configured, and the third exit is
+ * `applyFleetDefault`'s own answer for a resolution no level row touched. Only a
+ * plan with a step whose level a person actually mapped reaches `matched`.
+ *
+ * The manifest read is guarded the way MAR-642 guarded it. On a DASH with no
+ * default and no level rows, not one manifest is opened when events arrive, and
+ * the ingest path is exactly what it was.
+ */
+function runModelSettingFor(
+  agent: string,
+  fleetDefault: FleetModelDefault | null,
+  anyLevelModels: boolean,
+): RunModelSetting {
+  const own = readAgentModelChoice(agent);
+  if (own.kind === "one_model" || (fleetDefault === null && !anyLevelModels)) {
+    return own;
+  }
+
+  const plan = modelPlanForAgent(agent);
+  const levelModels =
+    anyLevelModels && plan.provider_id !== null
+      ? readFleetLevelModels(plan.provider_id)
+      : new Map<DefaultModelLevel, FleetModelDefault>();
+  const steps = resolveModelSteps(
+    stepsNeedingAModel(plan.route),
+    readStepLevelOverrides(agent),
+  );
+  const resolutions = resolveStepModels(steps, own, fleetDefault, plan.provider_id, levelModels);
+
+  const mapped = resolutions.filter((one) => one.resolved_by === "level_map");
+  if (mapped.length === 0 || plan.provider_id === null) {
+    /*
+     * Nothing a person mapped reached this agent, so the setting is one model or
+     * it is nothing — which is what `run_models` has recorded since MAR-583 and
+     * what every reader of that column already understands. A `matched` row here
+     * would be a new shape carrying one old fact.
+     */
+    return applyFleetDefault(own, fleetDefault, plan.provider_id).choice;
+  }
+  return {
+    kind: "matched",
+    provider_id: plan.provider_id,
+    // Only the steps that resolved to something. A step the ladder answered
+    // `none` for has no row, which is what keeps `run_step_models`' NOT NULLs
+    // honest: an absence is not a resolution.
+    steps: resolutions.flatMap((one) =>
+      one.model_id === null || one.provider_id === null
+        ? []
+        : [
+            {
+              step: one.step,
+              level: one.level,
+              provider_id: one.provider_id,
+              model_id: one.model_id,
+              resolved_by: one.resolved_by,
+            },
+          ],
+    ),
+  };
 }
 
 /**
@@ -1030,18 +1123,22 @@ export function ingestEvents(input: unknown, options: IngestOptions = {}): Inges
      * who has set a default has said which model their unconfigured agents run
      * on, and a row recording that they ran on something else would be false; one
      * manifest read per distinct agent per batch is what that honesty costs.
+     *
+     * ## MAR-654: the level map is a third row it can come from, on the same terms
+     *
+     * `hasFleetLevelModels` is one query and it is asked once per batch beside the
+     * default, so the guard above holds unchanged: a DASH with neither reads no
+     * manifest at all. A person who has mapped a level has said which model
+     * *that kind of step* runs on, and `runModelSettingFor` records `matched` —
+     * with a `run_step_models` row per step — only where such a row actually
+     * reached this agent.
      */
     const fleetDefault = readFleetModelDefault();
-    const choices = new Map<string, AgentModelChoice>();
+    const anyLevelModels = hasFleetLevelModels();
+    const choices = new Map<string, RunModelSetting>();
     for (const event of accepted) {
       if (!choices.has(event.agent)) {
-        const own = readAgentModelChoice(event.agent);
-        choices.set(
-          event.agent,
-          fleetDefault === null || own.kind === "one_model"
-            ? own
-            : applyFleetDefault(own, fleetDefault, modelProviderForAgent(event.agent)).choice,
-        );
+        choices.set(event.agent, runModelSettingFor(event.agent, fleetDefault, anyLevelModels));
       }
     }
     transact(database, () => {

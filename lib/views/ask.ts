@@ -188,8 +188,15 @@ export function buildAgentAsk(
      */
     model: {
       model_id: choice.model_id,
-      from_default: effective.from_default,
-      note: describeAskModel(effective.from_default),
+      /*
+       * MAR-654. `resolved_by` replaced the boolean on `EffectiveModelChoice`,
+       * and the boolean stays right here rather than being widened: this call
+       * asks about no step — the chat answers from saved reports, which are not
+       * one of an agent's steps — so `level_map` is unreachable on this path and
+       * the two facts the indicator distinguishes are still exactly two.
+       */
+      from_default: effective.resolved_by === "fleet_default",
+      note: describeAskModel(effective.resolved_by === "fleet_default"),
       change_label: ASK_MODEL_CHANGE,
     },
     estimate: describeEstimate({

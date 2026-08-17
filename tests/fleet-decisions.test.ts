@@ -51,6 +51,12 @@ describe("the closed kind list", () => {
       "declared_route",
       "agent_model",
       "fleet_model_default",
+      // MAR-654. What one level means, set or cleared. A kind of its own rather
+      // than a topic on the default's, because the two are separate standing
+      // states: the default is read only where a level row is absent, and a view
+      // resolving one against the other's current value would report a setting
+      // nobody made.
+      "fleet_level_model",
       "connection_grant",
       "fleet_connection",
       "fleet_grant",

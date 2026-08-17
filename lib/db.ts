@@ -1512,6 +1512,84 @@ const MIGRATIONS: readonly Migration[] = [
       DELETE FROM connection_secrets WHERE agent = 'dash.fleet';
     `);
   },
+
+  // MAR-654, ADR 0011 amendment 1. A person may map a level to a model, and
+  // DASH still maps none. (Migration 28: master records 27 — MAR-643's
+  // multi-account replacement — so this is the next free index, and an installed
+  // store that has recorded 0 to 27 runs exactly one more.)
+  //
+  // ## `fleet_level_models` — three rows per provider, every one the person's
+  //
+  // The table decision 1 declined to keep, reopened by A1.1 on the distinction
+  // the refusal itself names: what was refused is **a ranking DASH invents** over
+  // somebody else's catalogue, and a second copy of the emitter's `model_tier`
+  // table. Every row here was written by the person, out of a catalogue their own
+  // key returned. DASH ranks nothing, ships nothing and seeds nothing.
+  //
+  // **Keyed by provider**, for `fleet_model_default`'s reason exactly: a model id
+  // means nothing without one, and `moonshotai/kimi-k2` presented to Anthropic
+  // would be DASH asking a provider for something it never offered.
+  //
+  // **Fleet-wide and not per agent.** The level vocabulary is fleet-wide by
+  // construction — `cheap` means the same thing in every manifest DASH holds,
+  // because the emitter writes it against one closed set — so a per-agent copy
+  // would be N copies of one answer, and a fourth rung in the precedence rule
+  // `applyFleetDefault` is the single expression of. The per-agent escape already
+  // exists and already wins: an agent that must run its standard steps on
+  // something else gets pinned in `agent_model_choice`.
+  //
+  // **Zero rows ship and none is ever seeded.** Absence is the recommended state
+  // — `fleet_model_default`'s rule one level along — and clearing a level deletes
+  // its row rather than writing a sentinel. That is what makes this amendment
+  // safe to land: no existing DASH changes behaviour until a person writes a row.
+  //
+  // `level` is one of the three in `DEFAULT_MODEL_LEVELS` and `model_id` is
+  // provider content, so both are checked on the way in and again on the way back
+  // out (`isDefaultModelLevel`, `isModelId`). There is no key here and no column
+  // one could go in.
+  //
+  // ## `run_step_models` — what DASH resolved for each step, frozen
+  //
+  // ADR 0011 decision 4's table survives whole; what changes is that its left
+  // column — DASH's own setting at first sight of the run — stops being one
+  // model. `run_models` keeps its columns and its write-once rule and gains a
+  // third `choice` value, `matched`, with `provider_id` set and `model_id` NULL,
+  // because "the setting was a table" is not a model id and must not be squeezed
+  // into a column shaped for one.
+  //
+  // **Keyed by step rather than by level**, for the reason the deploy bundle
+  // freezes levels rather than re-reading them: a person's `agent_step_levels`
+  // overrides participate in the resolution and the manifest does not know about
+  // them, and a plan re-imported next week may have different steps.
+  //
+  // Written in the same transaction as the `run_models` row, so a run has both or
+  // neither. Never revised, for `recordRunModel`'s reason: somebody who changes a
+  // level map halfway through a run must not thereby change what an
+  // already-started run reports it began under.
+  //
+  // A step that resolved to nothing gets **no row**, which is what keeps the NOT
+  // NULLs honest: `no_model_chosen` is an absence, and a row of empty strings
+  // would be a record of a resolution that never happened.
+  `
+  CREATE TABLE IF NOT EXISTS fleet_level_models (
+    provider_id TEXT NOT NULL,
+    level       TEXT NOT NULL,
+    model_id    TEXT NOT NULL,
+    chosen_at   TEXT NOT NULL,
+    PRIMARY KEY (provider_id, level)
+  );
+
+  CREATE TABLE IF NOT EXISTS run_step_models (
+    agent       TEXT NOT NULL,
+    run_id      TEXT NOT NULL,
+    step        INTEGER NOT NULL,
+    level       TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    model_id    TEXT NOT NULL,
+    resolved_by TEXT NOT NULL,
+    PRIMARY KEY (agent, run_id, step)
+  );
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

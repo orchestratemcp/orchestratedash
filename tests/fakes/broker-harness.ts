@@ -137,6 +137,17 @@ export interface HarnessOptions {
    * get past it. A test about the substitution passes `null` and says so.
    */
   modelChoice?: string | null;
+  /**
+   * The whole seam, for a test that cares which step it was asked about
+   * (MAR-654, A1.4).
+   *
+   * `modelChoice` above stays the short form — a fixed answer for a test that is
+   * about the allowance rather than the resolution. This one receives the `step`
+   * the broker read out of the request, which is what lets
+   * `tests/broker-threat-model.test.ts` assert on a **lying** step: what the
+   * agent claimed, and what the level join on the other side made of it.
+   */
+  resolveModelChoice?: (agentId: string, step: number | null) => string | null;
   /** A fixed clock, advanced by `advance`. */
   startedAt?: number;
 }
@@ -234,8 +245,15 @@ export function harness(options: HarnessOptions = {}): Harness {
     },
     fetchImpl,
     hasHandledRequest: options.hasHandledRequest,
-    readModelChoice: () =>
-      options.modelChoice === undefined ? "a-model" : options.modelChoice,
+    // Presence rather than `??`, because null is an answer here — it is
+    // `no_model_chosen`, and a fallback that treated it as "not supplied" would
+    // make the refusal untestable through this seam.
+    readModelChoice: (agentId, step) =>
+      options.resolveModelChoice !== undefined
+        ? options.resolveModelChoice(agentId, step)
+        : options.modelChoice === undefined
+          ? "a-model"
+          : options.modelChoice,
     audit: (row) => {
       audit.push(row);
     },

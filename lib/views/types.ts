@@ -647,6 +647,28 @@ export interface ModelStepView {
   declared: string;
   declared_label: string;
   overridden: boolean;
+  /**
+   * The model this step's level resolves to right now, or null (MAR-654, A1.6).
+   *
+   * The value rather than a sentence containing it, `AskModelView.model_id`'s
+   * rule: a provider's own model id is set as a value and never written into
+   * prose. Null exactly when the ladder answered `none`, which is a real state —
+   * a step whose level nothing is mapped to, on a DASH with no default, cannot
+   * run, and `resolved_note` says so rather than the row going quiet.
+   */
+  resolved_model_id: string | null;
+  /**
+   * Which rung answered, as `ModelResolvedBy`'s value.
+   *
+   * Carried rather than re-derived, for `AskModelView.from_default`'s reason one
+   * rung longer: "you pinned this agent", "you chose this for balanced steps" and
+   * "this is what everything unmapped falls back to" are three different facts
+   * about the same model id, and a person who cannot tell them apart cannot
+   * predict what changing any of the three will do to this step.
+   */
+  resolved_by: string;
+  /** The line under the declared strength. `describeStepModel`'s sentence. */
+  resolved_note: string;
 }
 
 /**
@@ -706,10 +728,27 @@ export type AgentModelSettingsView =
        */
       unpinned_option: string;
       steps: ModelStepView[];
-      /** False while one named model overrides every step's own level. */
+      /**
+       * False while this agent's **own pin** overrides every step's level.
+       *
+       * MAR-654 narrowed it from "one named model" to "this agent's pin", which
+       * is the whole of A1.6's *the control stops being greyed*: DASH's default
+       * used to set the levels aside too, so every fresh agent's per-step control
+       * was dead. A level now decides something under the default — it wins over
+       * it — so the levels are live for every unpinned agent.
+       */
       steps_in_force: boolean;
       /** Why the step controls are set aside. Null when they are in force. */
       steps_note: string | null;
+      /**
+       * Where a level is turned into a model, in words (MAR-654, A1.6).
+       *
+       * The label of the link on this section, worded on the trusted side like
+       * every other sentence here. It is the answer to *unfindable is the same as
+       * missing*: the map is in one place, on the AI tab, and every step that
+       * depends on it says where that is.
+       */
+      steps_link_label: string;
     };
 
 /**
@@ -1204,6 +1243,58 @@ export interface FleetModelDefaultView {
   in_force: string;
 }
 
+/** One level's row on the AI tab (MAR-654, A1.6). */
+export interface FleetLevelModelRowView {
+  /** The stored level. Travels back on the command; never rendered. */
+  level: string;
+  label: string;
+  /** `levelMeaning`'s sentence — what asking for this strength means. */
+  meaning: string;
+  /**
+   * The model mapped to it, or null.
+   *
+   * The value rather than a sentence containing it, `AskModelView.model_id`'s
+   * rule: a provider's own model id is set as a value and never written into
+   * prose. Null is the shipped state of every row.
+   */
+  model_id: string | null;
+  /**
+   * What the row says instead. Null exactly when `model_id` is set.
+   *
+   * Two sentences, and neither reports an absence: a level nobody has mapped is
+   * answered by the default above, and when there is no default either the
+   * consequence is a step that cannot run — said in those words rather than left
+   * for somebody to discover at the end of a run.
+   */
+  in_force: string | null;
+}
+
+/**
+ * What each kind of step runs on, per provider (MAR-654, A1.6).
+ *
+ * **Per provider rather than one set of three**, because the rows are keyed by
+ * `(provider, level)` and the section shares the default's service dropdown: a
+ * person switching from OpenRouter to Anthropic is looking at a different three
+ * rows, and a view that carried one set would show one provider's models under
+ * another's name.
+ *
+ * Only providers DASH holds a key for appear, because a row is picked from a
+ * catalogue that key returned. **Which models a key can reach is still never
+ * stored** — nothing here is a list of models, only the one id per row a person
+ * chose out of a list that lived in a page.
+ */
+export interface FleetLevelModelsView {
+  headline: string;
+  detail: string;
+  in_force: string;
+  by_provider: Array<{
+    /** The registry id. Travels back on the command; never rendered. */
+    provider_id: string;
+    /** Three rows, weakest first, always. Absence is a state, not a missing row. */
+    rows: FleetLevelModelRowView[];
+  }>;
+}
+
 export interface ConnectionsView {
   /**
    * What DASH can connect, before and regardless of any agent (MAR-593).
@@ -1227,6 +1318,15 @@ export interface ConnectionsView {
    * screen, and a person setting one is looking at the other.
    */
   model_default: FleetModelDefaultView;
+  /**
+   * What each kind of step runs on (MAR-654, A1.6).
+   *
+   * Beside `model_default` and read by the same section, because they are two
+   * halves of one question: the default answers every step nobody has said
+   * anything more specific about, and these say the more specific thing. A person
+   * setting one is looking at the other.
+   */
+  level_models: FleetLevelModelsView;
   agents: AgentConnections[];
   /**
    * Names of imported agents whose manifest is too old to declare connections.

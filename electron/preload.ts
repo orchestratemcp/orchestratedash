@@ -588,6 +588,18 @@ const dashShell = {
     send("model.default", dropUnset(args)),
   listProviderModels: (args: { provider_id: string }) =>
     send("model.catalogue", { ...args }),
+  /**
+   * What one level means, fleet-wide (MAR-654, ADR 0011 amendment 1).
+   *
+   * A third method carrying no agent id, on the two above's terms. Omitting
+   * `model_id` is how one row is cleared — `setDefaultModel`'s shape, and the
+   * absent field is the instruction, never a magic value main would have to
+   * recognise. The provider stays required either way, because the row's key is
+   * (provider, level) and "clear Balanced" alone would mean two things on a DASH
+   * holding two keys.
+   */
+  setLevelModel: (args: { provider_id: string; level: string; model_id?: string }) =>
+    send("model.level", dropUnset(args)),
 
   /**
    * Ask this agent's model a question about what it has saved (MAR-545).

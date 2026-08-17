@@ -33,7 +33,17 @@
 import { localRunnerChannel } from "../lib/agent-dom/runner-channel";
 import { parseAiKeyCredential } from "../lib/ai/credential";
 import { aiKeyConnections, pickAiKeyCard } from "../lib/ai/connection-view";
-import { readEffectiveModelChoice, readFleetModelDefault } from "../lib/ai/model-store";
+import { resolveModelSteps } from "../lib/ai/model-choice";
+import {
+  readEffectiveStepModel,
+  readFleetModelDefault,
+  readStepLevelOverrides,
+} from "../lib/ai/model-store";
+import {
+  stepsNeedingAModel,
+  type DefaultModelLevel,
+  type PlannedRouteStep,
+} from "../lib/ai/model-levels";
 import { aiAuthHeaders, aiProviderById } from "../lib/ai/providers";
 import { chiefManifest } from "../lib/chief/manifest";
 import { isKeyCredential, type BrokerCredential } from "../lib/broker/grant";
@@ -273,8 +283,21 @@ export function hostBroker(): Broker {
     // default naming one service must not put its model id into a request bound
     // for another — `applyFleetDefault` is where that is decided, and this is
     // the one seam where the manifest has to be opened to answer it.
-    readModelChoice: (agentId: string) => {
-      const choice = readEffectiveModelChoice(agentId, agentProviderId(agentId)).choice;
+    //
+    // MAR-654, A1.4: the same rows plus the person's level map, resolved for the
+    // step the agent named. **The level is read here and never carried in the
+    // request.** `agentStepLevel` joins DASH's own copy of the manifest to the
+    // person's per-step overrides, so a `step` an agent invented reaches at most
+    // a level that agent's own author declared — and a step the manifest does not
+    // have reaches nothing at all. That is the bound A1.4 states and
+    // `tests/broker-threat-model.test.ts` proves.
+    readModelChoice: (agentId: string, step: number | null) => {
+      const provider = agentProviderId(agentId);
+      const choice = readEffectiveStepModel(
+        agentId,
+        provider,
+        step === null ? null : agentStepLevel(agentId, step),
+      ).choice;
       return choice.kind === "one_model" ? choice.model_id : null;
     },
     // MAR-628, ADR 0019. Whether this agent has read a web page through DASH's
@@ -315,6 +338,44 @@ function agentProviderId(agentId: string): string | null {
     return null;
   }
   return pickAiKeyCard(aiKeyConnections(agentId, manifest))?.provider_id ?? null;
+}
+
+/**
+ * What level one of an agent's steps asks for, or null (MAR-654, A1.4).
+ *
+ * **The join that makes a named step safe.** The agent said a number; this reads
+ * DASH's own copy of that agent's manifest, takes the steps that declare a level,
+ * folds the person's own `agent_step_levels` overrides onto them exactly as the
+ * screen does, and returns the level for that number. Nothing from the request
+ * reaches any of it except the number itself.
+ *
+ * Null for three different things, all of which resolve the same way — pin, then
+ * default, then refusal:
+ *
+ * - an agent DASH holds no manifest for;
+ * - a step number that plan does not have, which is what a lying `step` is;
+ * - a step that declares no level, which is a step that needs no model.
+ *
+ * So an agent's ceiling is the strongest level **its own author declared**, which
+ * is exactly what an author writing `frontier` is already asking the person to
+ * pay for. A step number is not a capability.
+ *
+ * The manifest read is the one `createBroker` already does through
+ * `readManifest`, repeated here rather than threaded through the seam for
+ * `agentProviderId`'s stated reason: widening `readModelChoice` would put an
+ * agent's plan vocabulary inside `lib/broker/execute.ts`, which must stay a pure
+ * function of what it is handed.
+ */
+function agentStepLevel(agentId: string, step: number): DefaultModelLevel | null {
+  const manifest = readAgentManifest(agentId) as
+    | (ConnectionSourceManifest & { planned_route?: readonly PlannedRouteStep[] })
+    | null;
+  if (manifest === null) {
+    return null;
+  }
+  const declared = stepsNeedingAModel(manifest.planned_route ?? []);
+  const resolved = resolveModelSteps(declared, readStepLevelOverrides(agentId));
+  return resolved.find((one) => one.step === step)?.level ?? null;
 }
 
 export function startBroker(

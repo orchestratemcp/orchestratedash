@@ -32,6 +32,8 @@ const CHOSEN: AgentModelSettingsView = {
   steps: [],
   steps_in_force: false,
   steps_note: null,
+  // MAR-654. Where a level becomes a model, for the link this section draws.
+  steps_link_label: "Choose what each kind of step runs on",
 };
 
 function unavailable(reason: string, next: string | null = null): AgentModelSettingsView {

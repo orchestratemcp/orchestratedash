@@ -289,6 +289,16 @@ describe("the folder bundle producer", () => {
       provider_id: "openrouter",
       model_id: "anthropic/claude-sonnet-5",
       steps: [{ step: 3, level: "frontier" as const }],
+      // MAR-654. The person's level map, frozen beside the frozen levels and for
+      // its reason: the far side has the manifest and could recompute a level,
+      // and has nothing at all that could recompute a person's map.
+      level_models: [
+        {
+          level: "frontier" as const,
+          provider_id: "openrouter",
+          model_id: "anthropic/claude-opus-5",
+        },
+      ],
     };
     const produced = produceAgentFolderBundle({
       data_dir: dataDir,

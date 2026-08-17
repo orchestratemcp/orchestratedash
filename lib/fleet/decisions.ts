@@ -75,6 +75,18 @@ export const DECISION_KINDS = [
   "agent_model",
   /** DASH's fleet-wide default model set or cleared. Subject is the fleet. */
   "fleet_model_default",
+  /**
+   * What one level means, set or cleared (MAR-654, ADR 0011 amendment 1).
+   *
+   * Subject is the fleet; topic is `{provider}/{level}`, which is that table's
+   * own primary key — so a chain lookup answers "what have my Balanced steps
+   * been on?" for one provider rather than mixing three levels into one
+   * history. A separate kind from `fleet_model_default` because the two are
+   * separate standing states: `applyFleetDefault` reads the default only where
+   * a level row is absent, and a view resolving one against the other's current
+   * value would report a setting nobody made.
+   */
+  "fleet_level_model",
   /** An agent's own connection granted or revoked. Filed by `lib/broker/store.ts`. */
   "connection_grant",
   /** A fleet connection made or disconnected. Subject is the provider. */
