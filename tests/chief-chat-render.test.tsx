@@ -86,17 +86,15 @@ describe("the chief's band grows a composer", () => {
     expect(/<textarea[^>]*\sdisabled/.test(html)).toBe(false);
   });
 
-  it("says what it answers from, where a model indicator would be", () => {
-    // MAR-648's rule for this row: affordances as they become real, never as
-    // dead chrome. This band is rendered with no `chief` prop, which is the
-    // no-fleet-default state every DASH is in today — so there is still no model
-    // chip, and what is true is where the answers come from.
-    //
-    // The sentence changed with ADR 0023 and the old one is refused by name.
-    // "Nothing said here is saved" was true until this packet and is now the
-    // worst thing this row could claim, because the conversation is kept.
+  it("draws no standing scope note or model line — MAR-683 moved that to per-turn provenance", () => {
+    // MAR-683. The closed band used to carry `.chief-settings`, a scope
+    // headline and (once a model was set) its id, on screen whether or not the
+    // room was even open. That line is gone: what model answered, and what it
+    // read, is now said once per turn, in the receipt beside the answer it
+    // belongs to — never as a standing indicator nobody asked to see yet.
     const html = band({ agent: row(), agents: [row()] });
-    expect(html).toContain("I read your own records");
+    expect(html).not.toContain("chief-settings");
+    expect(html).not.toContain("I read your own records");
     expect(html).not.toContain("Nothing said here is saved");
     expect(html).not.toContain("Asking under");
   });
@@ -141,10 +139,16 @@ describe("the chief's band grows a composer", () => {
 });
 
 describe("the room opens above the composer", () => {
-  it("shows the scope note and the composer when it is open and nothing is asked", () => {
+  it("shows the composer, named for a screen reader, when it is open and nothing is asked", () => {
     const html = band({ agent: row(), agents: [row()], chatOpen: true });
-    expect(html).toContain(CHIEF_CHAT_COPY.heading);
-    expect(html).toContain(CHIEF_CHAT_COPY.close);
+    // MAR-683 dropped the visible `<h2>` and the Clear/Close button-links —
+    // Escape already closes the room, from anywhere in it, not only from the
+    // composer (see the component's own header). What survives is the
+    // accessible name, now carried as an `aria-label` rather than a heading a
+    // sighted reader had to read past on every open.
+    expect(html).toContain(`aria-label="${CHIEF_CHAT_COPY.heading}"`);
+    expect(html).not.toContain("chief-room-head");
+    expect(html).not.toContain("chief-room-actions");
     // The composer is still there, and after the room in the document — which
     // is what "the room appears above it" means in a source order.
     expect(html.indexOf("chief-room")).toBeLessThan(html.indexOf("chief-compose"));
@@ -154,38 +158,34 @@ describe("the room opens above the composer", () => {
    * MAR-659, ADR 0023. Henrik's own report: he changed view, came back, and the
    * thread was blank.
    *
-   * The shape half of this issue answered that by explaining the emptiness —
+   * The shape half of that issue answered it by explaining the emptiness —
    * *"leaving this page clears this chat"* — which was the honest thing to say
-   * about a chief that really did forget. This packet removes the cause instead,
-   * so the explanation has to go with it: a thread that survives must not carry
-   * a sentence telling a reader it does not.
-   *
-   * What replaces it is the scope note for a room nobody has asked anything in
-   * yet, which is a different claim: not *this was cleared* but *here is what I
-   * am for*.
+   * about a chief that really did forget. MAR-659 removed the cause; MAR-683
+   * then removed the scope note itself as standing chrome. Both wordings stay
+   * refused: a thread that survives must not carry a sentence telling a reader
+   * it does not, whether or not anything else replaces it.
    */
   it("no longer tells a returning reader their conversation was cleared", () => {
     const html = band({ agent: row(), agents: [row()], chatOpen: true });
     expect(html).not.toContain("Nothing said here is saved");
     expect(html).not.toContain("is expected, not a lost conversation");
-    expect(html).toContain("I read your own records");
-    expect(html).toContain("kept on this computer until you clear it");
   });
 
   /*
-   * MAR-659, ADR 0023 decision 4. The state every DASH is in today.
-   *
-   * Rendered with no `chief` prop, which is `EMPTY_CHIEF_ROOM` — no model, no
-   * turns. Three things have to be true at once and the third is the one worth
-   * a test: the notice appears, it points at the tab, and the **box is still
-   * live**, because the standing question is answered from records whatever the
-   * notice says. A composer greyed out here would be a dead input where a
-   * working one is.
+   * MAR-683. The always-on "I can read your records, but I cannot write you a
+   * sentence yet" block is gone — `performChiefAction` already puts the same
+   * headline in a turn's own feedback line on the one path that needs it (a
+   * question that would have gone to a model), which `describeChiefNoModel`'s
+   * own unit test in `chief-chat-copy.test.ts` still covers. What a static
+   * render can still prove, and what actually matters here, is the standing
+   * half of MAR-659's rule: with no model configured and nothing asked yet, the
+   * box is not greyed out. A composer disabled here would be a dead input where
+   * the records-only question still works.
    */
-  it("says why it has no model, and leaves the box working anyway", () => {
+  it("leaves the box working with no model configured and nothing asked", () => {
     const html = band({ agent: row(), agents: [row()], chatOpen: true });
-    expect(html).toContain("no default model set");
-    expect(html).toContain("AI tab");
+    expect(html).not.toContain("chief-blocked");
+    expect(html).not.toContain("chief-scope");
     expect(html).toContain('<textarea class="chief-input"');
     expect(/<textarea[^>]*\sdisabled/.test(html)).toBe(false);
   });
