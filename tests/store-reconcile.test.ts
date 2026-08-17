@@ -597,6 +597,73 @@ describe("reconcileChieflessStore", () => {
   });
 });
 
+describe("migrate() wires MAR-682 at boot, beside MAR-676's own call", () => {
+  it("repairs a chief-less store on the next boot, backs it up, and records the receipt", async () => {
+    const first = await freshStore();
+    dropChiefMessages(first.db.db());
+    first.db.closeDb();
+    expect(backupsIn(first.dataDir)).toEqual([]);
+
+    const next = await reopen(first.dataDir);
+    const handle = next.db();
+
+    expect(version(handle)).toBe(27);
+    expect(tableNames(handle)).toContain("chief_messages");
+
+    const backups = backupsIn(first.dataDir);
+    expect(backups.length).toBeGreaterThan(0);
+    expect(backups.every((name) => name.startsWith("dash.sqlite.before-reconcile-"))).toBe(true);
+
+    const reconciliation = next.describeStoreReconciliation();
+    expect(reconciliation).toMatchObject({
+      recorded_version: 27,
+      final_version: 27,
+      applied_versions: [24],
+      created_tables: ["chief_messages"],
+      created_indexes: [],
+      removed_fleet_secret_rows: 0,
+    });
+    expect(reconciliation?.backup.copied).toBeGreaterThan(0);
+  });
+
+  it("leaves a healthy store, and MAR-676's own diverged store, untouched by the MAR-682 call", async () => {
+    const first = await freshStore();
+    first.db.closeDb();
+
+    const next = await reopen(first.dataDir);
+    expect(version(next.db())).toBe(27);
+    expect(next.describeStoreReconciliation()).toBeNull();
+    expect(backupsIn(first.dataDir)).toEqual([]);
+  });
+
+  it("does not double-fire MAR-682 on a store MAR-676's own call just repaired", async () => {
+    const first = await freshStore();
+    divergeToPreRenumber(first.db.db());
+    first.db.closeDb();
+
+    const next = await reopen(first.dataDir);
+    const handle = next.db();
+
+    // MAR-676's own call already created chief_messages as its first step, so
+    // this boot's MAR-682 call finds it present and returns null -- the one
+    // reconciliation record on the store is MAR-676's, not a second one that
+    // overwrote it.
+    expect(version(handle)).toBe(27);
+    expect(tableNames(handle)).toContain("chief_messages");
+    expect(next.describeStoreReconciliation()).toMatchObject({
+      recorded_version: 24,
+      applied_versions: [24, 25, 26],
+    });
+    // One reconciliation event, not two: every backup file (the database and
+    // whichever siblings existed) carries the same stamp, which is MAR-676's
+    // own backup and not a second one MAR-682 took after it.
+    const stamps = new Set(
+      backupsIn(first.dataDir).map((name) => name.replace(/-wal$|-shm$/, "")),
+    );
+    expect(stamps.size).toBe(1);
+  });
+});
+
 describe("backupStoreBeside", () => {
   it("refuses rather than overwriting a copy that is already there", async () => {
     const { dataDir } = await freshStore();

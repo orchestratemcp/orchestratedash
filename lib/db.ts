@@ -42,6 +42,8 @@ import {
 import { listRegistrations, manifestDigest } from "./registration";
 import {
   applyMigrationStep,
+  CHIEFLESS_SLICE,
+  reconcileChieflessStore,
   reconcileRenumberedStore,
   RENUMBERED_SLICE,
   type StoreMigrationStep,
@@ -1953,6 +1955,30 @@ function migrate(database: DatabaseSync): void {
     // The console line is in `reconcileRenumberedStore`. This one is the record
     // a surface can read back afterwards, which is what makes "verify together"
     // possible without re-deriving anything from the schema.
+    console.warn(`[dash-store] reconciliation recorded as store_meta.${STORE_RECONCILIATION_KEY}`);
+  }
+
+  /*
+   * MAR-682, immediately beside MAR-676's own call and for the same two
+   * reasons: it must run before `user_version` is read for the loop below,
+   * and it is not a step in `MIGRATIONS` — it fires on one store on one
+   * machine and costs a pragma and two lookups everywhere else.
+   *
+   * It cannot fire on a store `reconcileRenumberedStore` just repaired: that
+   * repair's first step is master's migration 24, `chief_messages` itself, so
+   * a store leaving it above already has the table this one looks for.
+   * `inspectChieflessStore` only recognises `user_version` = 27 with
+   * `chief_messages` absent, which the two signatures' own version ranges
+   * (24-26 versus 27) keep disjoint regardless.
+   */
+  const chieflessReconciliation = reconcileChieflessStore(database, {
+    storePath: databasePath,
+    steps: MIGRATIONS.slice(CHIEFLESS_SLICE.from, CHIEFLESS_SLICE.to),
+    record: (handle, done) => {
+      setMeta(handle, STORE_RECONCILIATION_KEY, JSON.stringify(done));
+    },
+  });
+  if (chieflessReconciliation !== null) {
     console.warn(`[dash-store] reconciliation recorded as store_meta.${STORE_RECONCILIATION_KEY}`);
   }
 
