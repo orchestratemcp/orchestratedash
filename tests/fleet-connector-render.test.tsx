@@ -28,7 +28,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { FleetConnectorCard } from "../app/_components/fleet-connector";
+import { FleetConnectorCard, recoveryToShow } from "../app/_components/fleet-connector";
 import { describeFleetSecretUnreadable } from "../lib/copy/fleet-standing";
 import type { FleetConnectorView } from "../lib/views/types";
 
@@ -250,6 +250,74 @@ describe("a connector DASH holds and cannot read", () => {
     // The row is not wrong. Only the claim about it was, and taking the account off
     // the card would lose the true half along with the false one.
     expect(draw(unreadable)).toContain("since 10 August 2026");
+  });
+
+  /**
+   * MAR-684. The press Henrik made, and the downgrade it must never render
+   * again: CHECK IT STILL WORKS on a held-but-unreadable key came back with the
+   * `not_found` recovery — "not connected yet. Connect it." — two paragraphs
+   * under a card that knew the key was held. A failed read-only press confirms
+   * the standing; it does not contradict it.
+   *
+   * Driven through `recoveryToShow` because the repo renders components
+   * statically and a post-press decision has to be a pure function to be held
+   * to anything — the same reason `fleetStanding` is one.
+   */
+  describe("a failed press on the card (MAR-684)", () => {
+    const standing = unreadable.held;
+    const downgrade = {
+      headline: "Gmail is not connected yet.",
+      meaning: "The agent cannot do the parts of its job that need Gmail until it is.",
+      next_action: "Connect Gmail.",
+      actor: "user" as const,
+    };
+
+    it("a failed check on an unreadable-held row shows the standing's sentence, not the downgrade", () => {
+      const shown = recoveryToShow(
+        { ok: false, action: "test", recovery: downgrade },
+        standing,
+      );
+      expect(shown?.headline).toContain("DASH holds Gmail but could not read it");
+    });
+
+    it("a failed share is confirmed the same way", () => {
+      const shown = recoveryToShow({ ok: false, action: "share" }, standing);
+      expect(shown?.headline).toContain("DASH holds Gmail but could not read it");
+    });
+
+    it("a failed connect keeps its own recovery — it is about the write that just happened", () => {
+      const shown = recoveryToShow(
+        { ok: false, action: "connect", recovery: downgrade },
+        standing,
+      );
+      expect(shown).toBe(downgrade);
+    });
+
+    it("a failed check on a READABLE row is the provider talking, and passes through", () => {
+      const refused = {
+        headline: "OpenRouter no longer accepts this key.",
+        meaning: "The provider turned it down.",
+        next_action: "Replace the key.",
+        actor: "user" as const,
+      };
+      const shown = recoveryToShow(
+        { ok: false, action: "test", recovery: refused },
+        {
+          masked_hint: "••••abcd",
+          account_hint: null,
+          since: null,
+          permissions: [],
+          secret_readable: true,
+          unreadable: null,
+        },
+      );
+      expect(shown).toBe(refused);
+    });
+
+    it("a successful press is never rewritten", () => {
+      const shown = recoveryToShow({ ok: true, action: "test" }, standing);
+      expect(shown).toBeUndefined();
+    });
   });
 });
 

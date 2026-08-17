@@ -105,20 +105,41 @@ export function fleetStandingChip(standing: FleetStanding): FleetStandingChip {
 }
 
 /**
+ * Which of the three ways a held credential can fail to read this is (MAR-684).
+ *
+ * Three kinds because they are three different recoveries, which is the whole
+ * of MAR-684's third finding: "held but locked, re-paste" and "the stored copy
+ * is gone, give it again" and "this machine has no vault right now" each name a
+ * different next act, and one blanket sentence had a person restarting DASH
+ * over a credential that a restart cannot bring back.
+ *
+ * - `locked` — the vault would not open or would not decrypt. The credential is
+ *   still on disk; MAR-684 proved exactly this case against a blob that was
+ *   intact and decryptable the whole time.
+ * - `missing` — `lib/vault.ts` reported `not_found`: the record points at a
+ *   stored credential that is not there (or not readable by any version) any
+ *   more. Re-connecting is the only path and costs nothing.
+ * - `unavailable` — no OS vault at all right now.
+ */
+export type FleetSecretUnreadableKind = "locked" | "missing" | "unavailable";
+
+/**
  * The one sentence about a credential DASH holds and cannot read.
  *
- * Henrik's own wording, kept: *"DASH holds OpenRouter but could not read it from
- * windows credential manager (dpapi) just now"*. `vaultLabel` arrives from
- * `describeBacking().label` and is lowered here rather than by each caller, so the
- * two places this appears cannot disagree about the casing of the one clause a
- * person would recognise from having read it before.
+ * Henrik's own wording, kept for the `locked` kind: *"DASH holds OpenRouter but
+ * could not read it from windows credential manager (dpapi) just now"*.
+ * `vaultLabel` arrives from `describeBacking().label` and is lowered here rather
+ * than by each caller, so the two places this appears cannot disagree about the
+ * casing of the one clause a person would recognise from having read it before.
  *
  * **The second sentence is the one that had to be checked rather than assumed.**
- * The credential is *not* usually gone. DASH keeps one encrypted file per secret
- * and asks the OS to decrypt it; an envelope that is intact and will not decrypt
- * is reported as `vault_locked` by `lib/vault.ts` precisely so that nobody is told
- * to re-enter a key they already gave — because being told that, and doing it,
- * overwrites the good one. So this says the key is still there.
+ * For `locked`, the credential is *not* usually gone. DASH keeps one encrypted
+ * file per secret and asks the OS to decrypt it; an envelope that is intact and
+ * will not decrypt is reported as `vault_locked` by `lib/vault.ts` precisely so
+ * that nobody is told to re-enter a key they already gave — because being told
+ * that, and doing it, used to overwrite the good one. (Since MAR-684, replacing
+ * is safe even then: `Vault.set` proves the new copy reads back before the old
+ * one is touched.)
  *
  * **And the third names a remedy that exists.** `describeBrokerRefusal`'s
  * `vault_unavailable` says "unlock your keyring", which is true on Linux and
@@ -127,18 +148,47 @@ export function fleetStandingChip(standing: FleetStanding): FleetStandingChip {
  * everywhere, and connecting again is the honest fallback rather than the first
  * suggestion.
  */
-export function describeFleetSecretUnreadable(service: string, vaultLabel: string): Recovery {
-  return {
-    headline: `DASH holds ${service} but could not read it from ${vaultLabel.toLowerCase()} just now.`,
-    meaning:
-      "The key itself is almost certainly still there — DASH could not open the place it keeps " +
-      "it, so nothing can use it until it can. Nothing was sent and nothing was charged.",
-    // No possessive in front of `service`, which is a rule rather than a
-    // preference: callers pass a brand name or a description, and "your OpenRouter"
-    // reads while "your its model provider" does not. See `describeNotCurated`.
-    next_action: `Close DASH and start it again. If it says this a second time, connect ${service} again.`,
-    actor: "user",
-  };
+export function describeFleetSecretUnreadable(
+  service: string,
+  vaultLabel: string,
+  kind: FleetSecretUnreadableKind = "locked",
+): Recovery {
+  // No possessive in front of `service` anywhere here, which is a rule rather
+  // than a preference: callers pass a brand name or a description, and "your
+  // OpenRouter" reads while "your its model provider" does not. See
+  // `describeNotCurated`.
+  switch (kind) {
+    case "locked":
+      return {
+        headline: `DASH holds ${service} but could not read it from ${vaultLabel.toLowerCase()} just now.`,
+        meaning:
+          "The key itself is almost certainly still there — DASH could not open the place it keeps " +
+          "it, so nothing can use it until it can. Nothing was sent and nothing was charged.",
+        next_action:
+          `Close DASH and start it again. If it says this a second time, connect ${service} again — ` +
+          "that writes a fresh copy DASH can read, and what was stored before stays put until the " +
+          "new one is proven readable.",
+        actor: "user",
+      };
+    case "missing":
+      return {
+        headline: `DASH remembers ${service} being connected, but what was stored for it is gone.`,
+        meaning:
+          "The record is intact and points at a stored credential that is not there any more, so " +
+          `nothing can use ${service} until it is given again. Nothing was sent and nothing was charged.`,
+        next_action: `Connect ${service} again.`,
+        actor: "user",
+      };
+    case "unavailable":
+      return {
+        headline: `DASH holds ${service}, but this computer has no place to read it from right now.`,
+        meaning:
+          "What was stored is untouched — DASH keeps credentials in the system's secure storage, " +
+          "and that storage is not answering, so nothing can be read or written until it is.",
+        next_action: "Close DASH and start it again. If it keeps happening, this computer's secure storage needs attention.",
+        actor: "user",
+      };
+  }
 }
 
 /* ---------------------------------------------------------------------- *
@@ -165,12 +215,16 @@ export const VAULT_LABELS = [
 export const FLEET_STANDINGS = ["connected", "unreadable", "not_connected"] as const satisfies
   readonly FleetStanding[];
 
+export const FLEET_UNREADABLE_KINDS = ["locked", "missing", "unavailable"] as const satisfies
+  readonly FleetSecretUnreadableKind[];
+
 /**
  * Every sentence this module can produce, for the plain-language check.
  *
- * Derived from the two unions rather than written out, so a standing or a vault
- * label added without being added here is one the copy gate never sees — the
- * shape `everyCurationSentence` established and `everyConnectSentence` before it.
+ * Derived from the three unions rather than written out, so a standing, a kind
+ * or a vault label added without being added here is one the copy gate never
+ * sees — the shape `everyCurationSentence` established and
+ * `everyConnectSentence` before it.
  */
 export function everyFleetStandingSentence(): string[] {
   const sentences: string[] = FLEET_STANDINGS.map((standing) => fleetStandingChip(standing).label);
@@ -181,8 +235,10 @@ export function everyFleetStandingSentence(): string[] {
    */
   for (const service of ["OpenRouter", "its model provider"]) {
     for (const label of VAULT_LABELS) {
-      const said = describeFleetSecretUnreadable(service, label);
-      sentences.push(said.headline, said.meaning, said.next_action);
+      for (const kind of FLEET_UNREADABLE_KINDS) {
+        const said = describeFleetSecretUnreadable(service, label, kind);
+        sentences.push(said.headline, said.meaning, said.next_action);
+      }
     }
   }
   return sentences;

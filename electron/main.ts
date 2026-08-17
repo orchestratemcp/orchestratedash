@@ -82,13 +82,14 @@ import {
 import { fleetCredentialTarget } from "../lib/fleet/actions";
 import { fleetConnectorFor } from "../lib/fleet/catalogue";
 import { withFleetSecretStandings } from "../lib/fleet/secret-read";
-import { readFleetConnection } from "../lib/fleet/store";
+import { listFleetConnections, readFleetConnection } from "../lib/fleet/store";
+import { isSecureStoreError } from "../lib/secure-store";
 import {
   readDashLastAlive,
   recordClosedWindow,
   writeDashLastAlive,
 } from "../lib/broker/store";
-import { closeDb, dataDir } from "../lib/db";
+import { closeDb, dataDir, db, setMeta } from "../lib/db";
 import {
   checkHostRecord,
   describeDuplicateHost,
@@ -1510,7 +1511,15 @@ export function registerReadChannel(): void {
          */
         return {
           ok: true,
-          data: await withFleetSecretStandings(connectionsView(), { store: secureStore() }),
+          data: await withFleetSecretStandings(connectionsView(), {
+            store: secureStore(),
+            // MAR-684: the mechanism goes to the shell log. The chip and the
+            // sentence stay plain; the code and cause are what a diagnosis
+            // needs and what the UI must never show.
+            log: (line) => {
+              console.warn(line);
+            },
+          }),
         } satisfies ReadResponse<ReadResults["view.connections"]>;
       case "view.inbox":
         return {
@@ -2558,6 +2567,91 @@ function reportSecureStoreBacking(): void {
 }
 
 /**
+ * Prove the vault works in THIS process, at startup, and write down what failed
+ * when it does not (MAR-684).
+ *
+ * MAR-684's diagnosis stalled on exactly this gap: every out-of-process probe
+ * of Henrik's vault succeeded — the blob decrypted, the envelope parsed, the
+ * store rows were intact — while the running DASH went on refusing every read,
+ * and nothing anywhere recorded *what* the running process actually hit. The
+ * failure was reconstructed backwards from which recovery sentence the UI chose,
+ * which is how a healthy credential spent a day being called locked.
+ *
+ * So: one canary round-trip through the live `safeStorage`, then one `get` per
+ * fleet connection's `secret_name` — the same reads the standing chip and the
+ * broker make. Results go to the console and to `store_meta.vault_self_check`,
+ * so the evidence survives the console being nobody's to watch. Names, codes
+ * and causes only; the seam guarantees those are log-safe, and no value or
+ * anything derived from one is bound here.
+ *
+ * Failures are recorded, never thrown: a broken vault already has honest
+ * surfaces (the standing chip, the broker's refusal) — this exists so the next
+ * investigator reads the mechanism out of the store instead of guessing it.
+ */
+async function vaultSelfCheck(): Promise<void> {
+  const store = secureStore();
+  const results: Array<Record<string, unknown>> = [];
+
+  let canary: string;
+  try {
+    // A constant, not a secret: the round trip is the test.
+    const value = "dash-vault-self-check";
+    await store.set("dash.self-check.canary", value);
+    canary = (await store.get("dash.self-check.canary")) === value ? "ok" : "mismatch";
+  } catch (error: unknown) {
+    canary = isSecureStoreError(error)
+      ? `${error.code}${error.cause_code ? `:${error.cause_code}` : ""}`
+      : "unexpected_error";
+  }
+  try {
+    // Removed so nothing that lists vault names ever shows a self-check beside
+    // a person's credentials. Best effort: a leftover canary is noise, not risk.
+    await store.delete("dash.self-check.canary");
+  } catch {
+    // Nothing to do — the check already has its answer.
+  }
+
+  for (const row of listFleetConnections()) {
+    try {
+      // Awaited and discarded, `resolves`' discipline: no local ever holds it.
+      await store.get(row.secret_name);
+      results.push({ name: row.secret_name, ok: true });
+    } catch (error: unknown) {
+      results.push({
+        name: row.secret_name,
+        ok: false,
+        code: isSecureStoreError(error) ? error.code : "unexpected_error",
+        cause: isSecureStoreError(error) ? error.cause_code ?? null : null,
+      });
+    }
+  }
+
+  const failed = results.filter((entry) => entry["ok"] !== true);
+  console.warn(
+    `[dash-shell] vault self-check: canary=${canary}, ` +
+      `${String(results.length - failed.length)}/${String(results.length)} fleet reads ok` +
+      (failed.length === 0
+        ? ""
+        : ` — failed: ${failed
+            .map((entry) => `${String(entry["name"])} (${String(entry["code"])}${entry["cause"] ? `:${String(entry["cause"])}` : ""})`)
+            .join(", ")}`),
+  );
+  try {
+    setMeta(
+      db(),
+      "vault_self_check",
+      JSON.stringify({ checked_at: new Date().toISOString(), canary, reads: results }),
+    );
+  } catch (error: unknown) {
+    // A store that cannot take the record is its own, separately-surfaced
+    // problem; the console line above already carries the vault's answer.
+    console.warn(
+      `[dash-shell] vault self-check could not be recorded: ${error instanceof Error ? error.message : "unknown"}`,
+    );
+  }
+}
+
+/**
  * Report where the store actually is, once, at startup.
  *
  * The companion to `assertStoreLocation`: the assertion proves the location is
@@ -2792,6 +2886,11 @@ if (typeof app !== "undefined") {
     // arrived before this — including the one that started the process — has
     // been waiting rather than being dropped.
     drainHandoffQueue(handoffPorts(dataDir, runner));
+
+    // MAR-684. After everything above, because it is evidence rather than a
+    // gate: startup must not wait on it and must not fail on it. See the
+    // function for why this exists at all.
+    void vaultSelfCheck();
 
     app.on("activate", () => {
       // macOS convention: clicking the dock icon with no windows open reopens one.

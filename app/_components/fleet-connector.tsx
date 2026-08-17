@@ -42,6 +42,50 @@ interface CardOutcome {
   recovery?: Recovery;
 }
 
+/** A press's outcome plus which press it was, kept together for the render. */
+interface PressedOutcome extends CardOutcome {
+  action: "connect" | "test" | "disconnect" | "share";
+}
+
+/**
+ * The recovery a failed press renders (MAR-684).
+ *
+ * A failed "Check it still works" or "Give it to…" on a credential the standing
+ * already calls unreadable must CONFIRM the standing, not contradict it. Henrik
+ * pressed check on a held-but-unreadable key and the outcome box said "not
+ * connected yet. Connect it." two paragraphs under a card that knew the key was
+ * held — the MAR-676 false chip in reverse, arrived at through a press. The
+ * standing's own sentence (composed by `describeFleetSecretUnreadable`, which
+ * says which of the three situations this is) is the truer answer, so a failed
+ * read-only press on an unreadable-held row shows it.
+ *
+ * Only the read-only presses. A failed *connect* is about the write that just
+ * happened and its own recovery is the accurate one; a failed disconnect
+ * likewise. And only while the standing actually is unreadable — a green
+ * standing with a failed check is the provider talking, and that recovery
+ * passes through untouched.
+ *
+ * Exported for `tests/fleet-connector-render.test.tsx`: the repo renders
+ * components statically, so a decision made after a press has to be a pure
+ * function to be held to anything.
+ */
+export function recoveryToShow(
+  outcome: PressedOutcome,
+  held: FleetConnectorView["held"],
+): Recovery | undefined {
+  const readOnlyPress = outcome.action === "test" || outcome.action === "share";
+  if (
+    !outcome.ok &&
+    readOnlyPress &&
+    held !== null &&
+    !held.secret_readable &&
+    held.unreadable != null
+  ) {
+    return held.unreadable;
+  }
+  return outcome.recovery;
+}
+
 export type FleetAct = (
   action: "connect" | "test" | "disconnect" | "share" | "default" | "assign",
   provider: string,
@@ -59,7 +103,7 @@ export function FleetConnectorCard({
   canAct: boolean;
 }): ReactNode {
   const [busy, setBusy] = useState<string | null>(null);
-  const [outcome, setOutcome] = useState<CardOutcome | null>(null);
+  const [outcome, setOutcome] = useState<PressedOutcome | null>(null);
 
   /*
    * MAR-676. `held !== null` is *the row*, and the row is not the standing.
@@ -90,8 +134,12 @@ export function FleetConnectorCard({
     const defaultAccount = connector.accounts?.find((account) => account.is_default);
     const result = await act(action, connector.provider, defaultAccount?.id);
     setBusy(null);
-    setOutcome(result);
+    setOutcome({ ...result, action });
   }
+
+  // See `recoveryToShow` — the MAR-684 rule that a failed read-only press on an
+  // unreadable-held row confirms the standing instead of contradicting it.
+  const shownRecovery = outcome === null ? undefined : recoveryToShow(outcome, connector.held);
 
   return (
     <article className="row-card fleet-connector">
@@ -238,13 +286,13 @@ export function FleetConnectorCard({
           className={outcome.ok ? "notice notice-ok" : "notice notice-err"}
           role={outcome.ok ? "status" : "alert"}
         >
-          {outcome.recovery !== undefined ? (
+          {shownRecovery !== undefined ? (
             <>
               <p>
-                <strong>{outcome.recovery.headline}</strong>
+                <strong>{shownRecovery.headline}</strong>
               </p>
-              <p>{outcome.recovery.meaning}</p>
-              <p>{outcome.recovery.next_action}</p>
+              <p>{shownRecovery.meaning}</p>
+              <p>{shownRecovery.next_action}</p>
             </>
           ) : (
             <p>{outcome.detail}</p>

@@ -38,8 +38,11 @@
  * screen rather than after.
  */
 
-import { describeFleetSecretUnreadable } from "../copy/fleet-standing";
-import type { SecureStore } from "../secure-store";
+import {
+  describeFleetSecretUnreadable,
+  type FleetSecretUnreadableKind,
+} from "../copy/fleet-standing";
+import { isSecureStoreError, type SecureStore } from "../secure-store";
 import type { ConnectionsView } from "../views/types";
 import { readFleetConnection } from "./store";
 
@@ -58,25 +61,65 @@ export interface FleetSecretReadDeps {
    * is the same function rather than an equivalent one.
    */
   readDefaultAccount?: (provider: string) => { secret_name: string } | null;
+  /**
+   * Where a failed read's mechanism goes, if anywhere (MAR-684).
+   *
+   * The chip and the sentence stay in plain language, and the code and cause
+   * would otherwise be dropped on the floor — which is how a broken read spent a
+   * day being diagnosed from which recovery sentence happened to render.
+   * `electron/main.ts` passes its shell log; tests and the developer GET routes
+   * pass nothing and stay silent. Never a value; names, codes and causes are the
+   * seam's documented log-safe set.
+   */
+  log?: (line: string) => void;
+}
+
+/** How one read failed, in `lib/copy/fleet-standing.ts`'s vocabulary. */
+function unreadableKind(error: unknown): FleetSecretUnreadableKind {
+  if (isSecureStoreError(error)) {
+    if (error.code === "not_found") {
+      return "missing";
+    }
+    if (error.code === "backend_unavailable") {
+      return "unavailable";
+    }
+  }
+  // `vault_locked`, `invalid_name`, and anything unrecognised: the reading whose
+  // wrong answer destroys nothing, same tie-break as `lib/vault.ts` `get`.
+  return "locked";
 }
 
 /**
- * Whether one connection's secret comes back, with every failure reading false.
+ * Whether one connection's secret comes back — and, when it does not, which of
+ * the three situations the person is in (MAR-676, refined by MAR-684).
  *
- * Every `SecureStoreErrorCode` lands here as the same answer, and that is
- * deliberate: `not_found`, `vault_locked` and `backend_unavailable` are three
- * different recoveries for the *broker*, and for a chip they are one fact — DASH
- * cannot use this right now. The sentence under the chip says which situation the
- * person is in without the chip having to carry three states nobody asked for.
+ * The chip still reads one boolean: `not_found`, `vault_locked` and
+ * `backend_unavailable` are one fact for a chip — DASH cannot use this right
+ * now. What MAR-684 added is that the *sentence* under the chip must not
+ * collapse them, because "restart, then re-paste" and "connect it again" and
+ * "this machine has no vault" are different next acts — a person restarted DASH
+ * twice over a credential a restart could never bring back.
  */
-async function resolves(store: Pick<SecureStore, "get">, secretName: string): Promise<boolean> {
+async function resolves(
+  store: Pick<SecureStore, "get">,
+  secretName: string,
+  log?: (line: string) => void,
+): Promise<{ readable: boolean; kind: FleetSecretUnreadableKind | null }> {
   try {
     // Awaited and discarded. Not assigned, so there is no local holding a
     // credential for the rest of this function's frame.
     await store.get(secretName);
-    return true;
-  } catch {
-    return false;
+    return { readable: true, kind: null };
+  } catch (error: unknown) {
+    if (log !== undefined) {
+      const code = isSecureStoreError(error) ? error.code : "unexpected_error";
+      const cause = isSecureStoreError(error) ? error.cause_code ?? null : null;
+      log(
+        `[dash-shell] vault read failed for "${secretName}": ${code}` +
+          (cause === null ? "" : ` (${cause})`),
+      );
+    }
+    return { readable: false, kind: unreadableKind(error) };
   }
 }
 
@@ -106,17 +149,24 @@ export async function withFleetSecretStandings(
       const account = readAccount(connector.provider);
       // A row that went away between the projection and this read is not a
       // successful read of anything, so it falls in with the failures rather than
-      // getting the reassuring answer by default.
-      const readable = account === null ? false : await resolves(deps.store, account.secret_name);
+      // getting the reassuring answer by default — as `missing`, because a
+      // pointer to nothing and a pointer to a vanished entry have the same
+      // recovery.
+      const read =
+        account === null
+          ? { readable: false, kind: "missing" as const }
+          : await resolves(deps.store, account.secret_name, deps.log);
       return {
         ...connector,
         held: {
           ...connector.held,
-          // Set together, from this one boolean. The chip reads the first and the
+          // Set together, from this one read. The chip reads the first and the
           // paragraph reads the second, and there is no path here on which they
           // can describe different situations.
-          secret_readable: readable,
-          unreadable: readable ? null : describeFleetSecretUnreadable(connector.service, vaultLabel),
+          secret_readable: read.readable,
+          unreadable: read.readable
+            ? null
+            : describeFleetSecretUnreadable(connector.service, vaultLabel, read.kind ?? "locked"),
         },
       };
     }),

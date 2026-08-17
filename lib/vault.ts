@@ -96,6 +96,23 @@ interface VaultEntry {
   backend: string;
   created_at: string;
   ciphertext_b64: string;
+  /**
+   * Which app identity encrypted this, e.g. `orchestratedash` (MAR-684).
+   *
+   * `safeStorage`'s master key lives in the `Local State` of the *userData*
+   * directory, and userData is derived from the app's name — so the same
+   * repository can run as two differently-named Electrons whose blobs are
+   * mutually undecryptable while every file involved is intact. That family of
+   * traps has hit this project repeatedly ("which Electron entry point holds
+   * the lock", "capture harnesses must not be orchestratedash"). Recording the
+   * writer's identity does not prevent the mismatch — nothing at read time can —
+   * but it turns the resulting decrypt failure from a guess into a named
+   * diagnosis: *this key was written by a DASH running as X*.
+   *
+   * Optional, because entries written before MAR-684 do not carry it and must
+   * go on reading.
+   */
+  written_by?: string;
 }
 
 /* ---------------------------------------------------------------------- *
@@ -226,14 +243,47 @@ export class Vault implements SecureStore {
     return path.join(this.directory, `${FILE_PREFIX}${name}${FILE_SUFFIX}`);
   }
 
+  /**
+   * The app identity this vault belongs to, read off its own path.
+   *
+   * The directory is `<userData>/vault` and userData's last segment *is* the
+   * app's name — the fact `storeIdentityProblem` checks against a constant.
+   * Derived here rather than injected because `lib/` must not import
+   * `electron`, and the path already carries the answer.
+   */
+  private identity(): string {
+    const segments = this.directory.split(/[\\/]/).filter((segment) => segment.length > 0);
+    return segments[segments.length - 2] ?? "unknown";
+  }
+
   async get(name: string): Promise<string> {
     this.guard(name);
 
     let raw: string;
     try {
       raw = readFileSync(this.fileFor(name), "utf8");
-    } catch {
-      throw new SecureStoreError("not_found", `No secret stored as "${name}".`, name);
+    } catch (error: unknown) {
+      const errno = (error as NodeJS.ErrnoException | null)?.code ?? "read_failed";
+      if (errno === "ENOENT") {
+        throw new SecureStoreError("not_found", `No secret stored as "${name}".`, name, errno);
+      }
+      /*
+       * MAR-684. Any other failure to read the file is NOT `not_found`. The
+       * file may be there and locked by another process, refused by a
+       * permission, or unopenable because this process is out of descriptors —
+       * and every one of those used to be reported as "never stored", which
+       * told the UI to say "connect it again" over a credential that provably
+       * still existed. `vault_locked` is the code whose recovery destroys
+       * nothing, which is the same tie-break `decryptString`'s catch below has
+       * always made.
+       */
+      throw new SecureStoreError(
+        "vault_locked",
+        `The stored entry for "${name}" could not be read just now (${errno}). ` +
+          `It is still on disk; close anything else using DASH's folder and try again.`,
+        name,
+        errno,
+      );
     }
 
     let entry: VaultEntry;
@@ -252,6 +302,7 @@ export class Vault implements SecureStore {
         "not_found",
         `The stored entry for "${name}" is unreadable and must be set again.`,
         name,
+        "envelope_unreadable",
       );
     }
 
@@ -265,11 +316,22 @@ export class Vault implements SecureStore {
       // the user already gave us and then overwrite the good one, so when the
       // evidence is ambiguous this takes the reading whose wrong answer
       // destroys nothing.
+      //
+      // MAR-684: when the entry names the identity that wrote it and it is not
+      // this one, that is the whole diagnosis — the master key that can decrypt
+      // this blob belongs to a differently-named Electron — and the cause code
+      // says so instead of leaving the next investigator to re-derive it.
+      const writtenBy = typeof entry.written_by === "string" ? entry.written_by : null;
+      const foreign = writtenBy !== null && writtenBy !== this.identity();
       throw new SecureStoreError(
         "vault_locked",
         `The OS vault would not release "${name}". It may be locked; unlock it and try again. ` +
-          `(${error instanceof Error ? error.message : "decryption failed"})`,
+          (foreign
+            ? `(It was stored by a DASH running as "${writtenBy}", and this one is "${this.identity()}" — ` +
+              `the two encrypt under different keys, so this copy cannot be read here. Replacing the key fixes it.)`
+            : `(${error instanceof Error ? error.message : "decryption failed"})`),
         name,
+        foreign ? `decrypt_failed_foreign_identity:${writtenBy}` : "decrypt_failed",
       );
     }
   }
@@ -298,6 +360,7 @@ export class Vault implements SecureStore {
       backend: backing.backend,
       created_at: new Date().toISOString(),
       ciphertext_b64: Buffer.from(ciphertext).toString("base64"),
+      written_by: this.identity(),
     };
 
     mkdirSync(this.directory, { recursive: true });
@@ -308,6 +371,39 @@ export class Vault implements SecureStore {
     const target = this.fileFor(name);
     const temporary = `${target}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(entry)}\n`, "utf8");
+
+    /*
+     * Read the temporary file back and decrypt it BEFORE the rename (MAR-684
+     * requirement 2: a re-pasted key must read back under the same running
+     * identity). Before, not after — the name may hold the only surviving copy
+     * of a credential, and a replacement that cannot be read must not be the
+     * thing that destroys it. A verify failure leaves the previous entry
+     * exactly as it was.
+     */
+    try {
+      const persisted = JSON.parse(readFileSync(temporary, "utf8")) as VaultEntry;
+      const roundTripped = this.safeStorage.decryptString(
+        Buffer.from(persisted.ciphertext_b64, "base64"),
+      );
+      if (roundTripped !== secret) {
+        throw new Error("round-trip mismatch");
+      }
+    } catch {
+      try {
+        unlinkSync(temporary);
+      } catch {
+        // The unverified bytes are already outside the read path — nothing
+        // resolves a `.tmp` name — so a leftover file is untidy, not unsafe.
+      }
+      throw new SecureStoreError(
+        "vault_locked",
+        `"${name}" was encrypted but could not be read back, so it was not stored. ` +
+          `Whatever DASH previously held under that name is untouched. Try again.`,
+        name,
+        "readback_failed",
+      );
+    }
+
     renameSync(temporary, target);
   }
 
