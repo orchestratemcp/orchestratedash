@@ -137,12 +137,16 @@ describe("schema", () => {
     // in a blocking gate, rather than in an installed store that silently
     // skipped somebody's step.
     //
-    // 26 is MAR-643's multi-account replacement of `fleet_connections` and the
-    // non-null per-agent account-assignment table beside it. It was also
-    // authored as 24; both 24 and 25 reached master first, so this incoming step
-    // moves after them and neither installed version is renumbered.
+    // 26 is MAR-673's `fleet_decisions` (ADR 0024) — the decisions half of the
+    // fleet's memory, appended on the standing terms: an installed store that
+    // has recorded 0 to 25 runs exactly one more.
+    //
+    // 27 is MAR-643's multi-account replacement of `fleet_connections` and the
+    // non-null per-agent account-assignment table beside it. Authored as 24,
+    // renumbered twice — 24, 25 and 26 each reached master first — and the one
+    // master already has keeps its number, every time.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(26);
+    expect(version.user_version).toBe(27);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -291,7 +295,7 @@ describe("schema", () => {
     ).toEqual({ count: 0 });
     expect(
       (nextDb.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(26);
+    ).toBe(27);
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -651,7 +655,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(26);
+    ).toBe(27);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

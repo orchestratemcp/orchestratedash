@@ -10,6 +10,14 @@ import {
 } from "./contracts";
 import { O_FLEET, isOName, oFor, type OName } from "./brand/o-cast";
 import { agentDisplayName } from "./copy/agent-name";
+import {
+  describeAgentAdded,
+  describeAgentRemoved,
+  describeDeclaredConnection,
+  describeDeclaredRoute,
+} from "./copy/decisions";
+import { declarationDiff } from "./fleet/decisions";
+import { fileDecision } from "./fleet/decisions-store";
 import { aiKeyConnections, pickAiKeyCard } from "./ai/connection-view";
 import type { ConnectionSourceManifest } from "./connections";
 import { applyFleetDefault, type AgentModelChoice } from "./ai/model-choice";
@@ -513,6 +521,29 @@ export function forgetAgent(
     database.prepare("DELETE FROM broker_grants WHERE agent = ?").run(name);
     database.prepare("DELETE FROM broker_audit WHERE agent = ?").run(name);
     clearAgentFolderIssue(database, name);
+    // One decision, one row (ADR 0024 decision 1). The deletes above are this
+    // decision's cascade and file nothing — as `forgetAgentModelChoice` and
+    // `forgetAgentFleetGrants` file nothing when the callers run them next.
+    // The decision rows about this agent stay: `fleet_decisions` has no
+    // foreign key precisely so the memory outlives its subject.
+    if (existed) {
+      fileDecision(
+        {
+          decided_at: new Date().toISOString(),
+          subject_kind: "agent",
+          subject_id: name,
+          kind: "agent_removed",
+          topic: "",
+          summary: describeAgentRemoved(),
+          outcome: { state: "removed" },
+          decided_by: "person",
+          rule: null,
+          reason: null,
+          receipts: [`agents ${name}`],
+        },
+        database,
+      );
+    }
     return { existed: existed || folderExisted };
   });
 }
@@ -688,7 +719,10 @@ export function importManifest(input: unknown, options: ImportManifestOptions = 
   }
 
   return transact(database, () => {
-    const existing = database.prepare("SELECT 1 FROM agents WHERE name = ?").get(name);
+    const existing = database.prepare("SELECT manifest_json FROM agents WHERE name = ?").get(name) as
+      | { manifest_json?: unknown }
+      | undefined;
+    const importedAt = new Date().toISOString();
     database
       .prepare(
         "INSERT INTO agents (name, manifest_version, manifest_json, imported_at, avatar, display_name) " +
@@ -701,7 +735,7 @@ export function importManifest(input: unknown, options: ImportManifestOptions = 
         name,
         manifest.manifest_version,
         manifestJson,
-        new Date().toISOString(),
+        importedAt,
         // MAR-500. The insert assigns; the update clause above deliberately
         // omits `avatar`, so re-importing a manifest never re-costumes an agent
         // that already exists. That is the case worth protecting: `display_name`
@@ -719,6 +753,38 @@ export function importManifest(input: unknown, options: ImportManifestOptions = 
         // must not silently rename an agent the user already renamed.
         null,
       );
+    // ADR 0024 decision 1: the transition is filed by the hand that made it,
+    // inside this transaction, so the change and its record land together or
+    // not at all. A fresh import files `agent_added`; a re-import files one
+    // row per declaration that changed — the diff computed at the only moment
+    // both documents exist, because the upsert above just discarded the old
+    // one. A re-import that changed nothing declared files nothing.
+    if (existing === undefined) {
+      fileDecision(
+        {
+          decided_at: importedAt,
+          subject_kind: "agent",
+          subject_id: name,
+          kind: "agent_added",
+          topic: "",
+          summary: describeAgentAdded(),
+          outcome: { state: "added", manifest_version: manifest.manifest_version },
+          decided_by: "person",
+          rule: null,
+          reason: null,
+          receipts: [`agents.imported_at ${importedAt}`],
+        },
+        database,
+      );
+    } else if (typeof existing.manifest_json === "string") {
+      const drafts = declarationDiff(name, existing.manifest_json, manifestJson, importedAt, {
+        connection: describeDeclaredConnection,
+        route: describeDeclaredRoute,
+      });
+      for (const draft of drafts) {
+        fileDecision(draft, database);
+      }
+    }
     clearAgentFolderIssue(database, name);
     return { ok: true as const, agent: name, replaced: existing !== undefined };
   });

@@ -8003,3 +8003,52 @@ main:has(.agent-cockpit) {
     margin-left: 0;
   }
 }
+
+/* ----------------------------------------------------------------------
+ * The decisions log (MAR-673, ADR 0024)
+ *
+ * A dated list under the fleet, on `.row-list` like every record surface.
+ * One accent on the page stays the rule: the drift marker takes `--warn`
+ * because it is a warning about a record, and nothing here touches
+ * `--accent`. Corners stay square; the system's exception ledger is
+ * `app/tokens.css` and this earns no entry in it.
+ * ---------------------------------------------------------------------- */
+
+.fleet-decisions {
+  margin-top: var(--space-6);
+}
+
+.fleet-decisions-row {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.fleet-decisions-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+
+.fleet-decisions-when {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.fleet-decisions-subject {
+  font-weight: 600;
+}
+
+.fleet-decisions-reason q {
+  font-style: italic;
+}
+
+.fleet-decisions-note {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.fleet-decisions-drift {
+  font-size: var(--text-sm);
+  color: var(--warn);
+}

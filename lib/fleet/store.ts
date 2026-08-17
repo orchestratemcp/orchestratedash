@@ -27,10 +27,12 @@
  * kept rather than re-argued.
  */
 
+import { describeFleetConnected, describeFleetDisconnected } from "../copy/decisions";
 import { db } from "../db";
 import { isDisplayableHint } from "../secret-refs";
 import { assertValidSecretName } from "../secure-store";
 import type { ConnectorKindV1 } from "../connection-spec";
+import { fileDecision } from "./decisions-store";
 
 /* ---------------------------------------------------------------------- *
  * The connection
@@ -110,6 +112,13 @@ export function recordFleetConnection(input: FleetConnectionInput, at: string): 
       .prepare("SELECT COUNT(*) AS count FROM fleet_connections WHERE provider = ?")
       .get(input.provider) as { count?: number } | undefined)?.count ?? 0,
   );
+  // Computed before the write, so the decisions log records the connection
+  // being *made* and not every re-key — `connected_at` surviving the update is
+  // the same fact kept for the same reason (ADR 0024 decision 1). Provider-level
+  // on purpose, now that a provider can hold several accounts: adding a second
+  // account re-keys the person's standing decision to have this provider
+  // connected rather than making a new one.
+  const isNew = existingCount === 0;
   const isDefault = input.is_default ?? existingCount === 0;
 
   database.exec("BEGIN IMMEDIATE");
@@ -146,6 +155,23 @@ export function recordFleetConnection(input: FleetConnectionInput, at: string): 
         at,
         at,
       );
+    if (isNew) {
+      // Inside the same transaction, which is ADR 0024's write-site rule:
+      // the decision is filed where it is made, or neither happens.
+      fileDecision({
+        decided_at: at,
+        subject_kind: "connection",
+        subject_id: input.provider,
+        kind: "fleet_connection",
+        topic: "",
+        summary: describeFleetConnected(input.provider),
+        outcome: { state: "connected", provider: input.provider },
+        decided_by: "person",
+        rule: null,
+        reason: null,
+        receipts: [`fleet_connections ${input.provider}`],
+      });
+    }
     database.exec("COMMIT");
   } catch (error: unknown) {
     database.exec("ROLLBACK");
@@ -210,9 +236,17 @@ export function listFleetConnections(provider?: string): FleetConnectionRow[] {
 export function forgetFleetConnection(provider: string, accountId?: string): void {
   const database = db();
   if (accountId === undefined) {
-    database.prepare("DELETE FROM fleet_connections WHERE provider = ?").run(provider);
+    const result = database
+      .prepare("DELETE FROM fleet_connections WHERE provider = ?")
+      .run(provider);
     database.prepare("DELETE FROM fleet_account_assignments WHERE provider = ?").run(provider);
+    // The grants go unfiled: they are this one decision's cascade, and the
+    // withheld rows going with the connection is what the docblock above
+    // already argues — one decision, one row (ADR 0024 decision 1).
     database.prepare("DELETE FROM fleet_grants WHERE provider = ?").run(provider);
+    if (Number(result.changes) > 0) {
+      fileFleetDisconnected(provider);
+    }
     return;
   }
   database
@@ -223,7 +257,29 @@ export function forgetFleetConnection(provider: string, accountId?: string): voi
     .run(provider, accountId);
   if (listFleetConnections(provider).length === 0) {
     database.prepare("DELETE FROM fleet_grants WHERE provider = ?").run(provider);
+    // Removing one account while others remain re-keys the person's standing
+    // decision to have this provider connected; removing the last one is the
+    // provider ceasing to be connected, and that is the decision (ADR 0024
+    // decision 1, provider-level for saveFleetConnection's own reason).
+    fileFleetDisconnected(provider);
   }
+}
+
+/** The disconnect decision, filed once per provider from either removal path. */
+function fileFleetDisconnected(provider: string): void {
+  fileDecision({
+    decided_at: new Date().toISOString(),
+    subject_kind: "connection",
+    subject_id: provider,
+    kind: "fleet_connection",
+    topic: "",
+    summary: describeFleetDisconnected(provider),
+    outcome: { state: "disconnected", provider },
+    decided_by: "person",
+    rule: null,
+    reason: null,
+    receipts: [`fleet_connections ${provider}`],
+  });
 }
 
 /** Make one existing account the fallback. Existing explicit assignments do not move. */

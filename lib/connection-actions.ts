@@ -37,7 +37,9 @@
 import { performAiKeyAction, type AiKeyOperations } from "./ai/actions";
 import type { CredentialTarget, CredentialTargetRefusal } from "./connection-credentials";
 import { resolveCredentialTarget } from "./connection-credentials";
-import { recordReceipt, forgetReceipt } from "./broker/store";
+import { recordReceipt, forgetReceipt, hasReceipt } from "./broker/store";
+import { describeConnectionGranted, describeConnectionRevoked } from "./copy/decisions";
+import { fileDecision } from "./fleet/decisions-store";
 import { resolveGrant, resolveKeyGrantWithoutCredential } from "./broker/grant";
 import type { ConnectionSourceManifest, ManifestConnection } from "./connections";
 import {
@@ -656,6 +658,40 @@ async function performDeclaredAction(
  * manifest alone — and writing the receipt from it means the capability list a
  * person approves is the list a request will actually be allowed to use.
  */
+/**
+ * File one agent's connect or disconnect in the decisions log (ADR 0024).
+ *
+ * Called from the per-agent action paths and **never** from a fan-out:
+ * `shareGrant` writes N receipts while executing one consent, and
+ * `withdrawEverywhere` deletes N while executing one disconnect — those are
+ * one decision each, filed (as `fleet_connection` / `fleet_grant`) where that
+ * one decision is made. What is filed here is the decision a person took
+ * about *this* agent's own connection, on *this* page.
+ */
+function fileGrantDecision(
+  agent: string,
+  connectionId: string,
+  state: "granted" | "revoked",
+  at: string,
+): void {
+  fileDecision({
+    decided_at: at,
+    subject_kind: "agent",
+    subject_id: agent,
+    kind: "connection_grant",
+    topic: connectionId,
+    summary:
+      state === "granted"
+        ? describeConnectionGranted(connectionId)
+        : describeConnectionRevoked(connectionId),
+    outcome: { state, connection: connectionId },
+    decided_by: "person",
+    rule: null,
+    reason: null,
+    receipts: [`broker_grants ${agent} ${connectionId}`],
+  });
+}
+
 async function performProviderKeyAction(
   action: Exclude<ConnectionActionName, "share">,
   credential: CredentialTarget,
@@ -688,11 +724,21 @@ async function performProviderKeyAction(
     // After the credential is gone, and for `forgetReceipt`'s reason: a receipt
     // describing access DASH no longer holds would outlive the thing it is a
     // receipt for. The brokered-call audit rows deliberately stay.
+    const wasConnected = hasReceipt(credential.agent_id, credential.connection_id);
     forgetReceipt(credential.agent_id, credential.connection_id);
+    if (wasConnected) {
+      fileGrantDecision(
+        credential.agent_id,
+        credential.connection_id,
+        "revoked",
+        new Date().toISOString(),
+      );
+    }
   } else if (action === "connect" && result.masked_hint !== null) {
     // A hint means a key was stored — a cancel returns the previous hint, and a
     // vault failure returns before this line. `granted_at` survives an update,
-    // so re-pasting a key does not make an old approval look like a new one.
+    // so re-pasting a key does not make an old approval look like a new one —
+    // and, for the same reason, re-pasting files no decision.
     const grant = resolveKeyGrantWithoutCredential(
       credential.agent_id,
       manifestForGrant,
@@ -700,7 +746,12 @@ async function performProviderKeyAction(
       credential.secret_name,
     );
     if (grant.ok) {
-      recordReceipt(grant.grant, new Date().toISOString());
+      const at = new Date().toISOString();
+      const firstGrant = !hasReceipt(credential.agent_id, credential.connection_id);
+      recordReceipt(grant.grant, at);
+      if (firstGrant) {
+        fileGrantDecision(credential.agent_id, credential.connection_id, "granted", at);
+      }
     }
   }
 
@@ -824,7 +875,11 @@ async function performOAuthAction(
     // receipt for. The audit rows deliberately stay — they are the record of
     // what was done while the access existed, and a disconnect that erased them
     // would delete exactly the history a suspicious user disconnected to check.
+    const wasConnected = hasReceipt(target.agent_id, target.connection_id);
     forgetReceipt(target.agent_id, target.connection_id);
+    if (wasConnected) {
+      fileGrantDecision(target.agent_id, target.connection_id, "revoked", new Date().toISOString());
+    }
 
     return {
       ok: true,
@@ -985,7 +1040,12 @@ async function performOAuthAction(
     credential.secret_name,
   );
   if (resolvedGrant.ok) {
-    recordReceipt(resolvedGrant.grant, new Date().toISOString());
+    const grantedAt = new Date().toISOString();
+    const firstGrant = !hasReceipt(target.agent_id, target.connection_id);
+    recordReceipt(resolvedGrant.grant, grantedAt);
+    if (firstGrant) {
+      fileGrantDecision(target.agent_id, target.connection_id, "granted", grantedAt);
+    }
   }
 
   /*

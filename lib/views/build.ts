@@ -42,6 +42,7 @@ import { describeStoreDamage } from "../copy/recovery";
 import { deriveConnectionRequirements, type ConnectionSourceManifest } from "../connections";
 import { describeFleetDefault } from "../ai/model-choice";
 import { readFleetModelDefault } from "../ai/model-store";
+import { decisionsView } from "./decisions";
 import { fleetCatalogue } from "../fleet/catalogue";
 import { describeFleetReach, fleetReach } from "../fleet/grants";
 import {
@@ -329,6 +330,10 @@ export function agentsView(store: StoreShape = readStore()): AgentsView {
      * against a state the page never displays.
      */
     chief: chiefRoomView(agents),
+    // MAR-673, ADR 0024. The decisions log, on `chief`'s terms exactly: its
+    // supersession and drift markers are computed against this same store
+    // read, so a marker cannot disagree with the cards beside it.
+    decisions: decisionsView(store, agents),
   };
 }
 

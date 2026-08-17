@@ -1323,10 +1323,85 @@ const MIGRATIONS: readonly Migration[] = [
     ON browser_blocked (session_id, blocked_at);
   `,
 
+  // MAR-673, ADR 0024: the decisions half of the fleet's memory.
+  //
+  // A row is a *transition* in standing state — what may the fleet do, or with
+  // what — filed by the write-site that committed the change, in the same
+  // transaction. The tables this sits beside answer "what is the setting";
+  // this one answers "when did it change, from what, decided by whom, and
+  // why". Activity is deliberately NOT here and never will be: runs, events
+  // and audits are already DASH's account of what the fleet did, and a second
+  // summarized copy would be the cached projection the `runs` table's own
+  // comment refuses.
+  //
+  // Append-only. Supersession is computed at read time from the chain key
+  // (subject_kind, subject_id, kind, topic) by ordering — there is no
+  // `superseded` column to mutate, because editing history is exactly what a
+  // memory must never do. Staleness is likewise computed: `outcome_json`
+  // froze the standing state this decision produced, and a reader compares it
+  // with the same state now (ADR 0024 decision 3, `fleetChangedSince`'s
+  // discipline applied to a decision's outcome).
+  //
+  // `reason` is the person's own words, verbatim, or NULL — never composed by
+  // DASH, never by a model, never by an agent (ADR 0024 decision 2). NULL is
+  // the ordinary value and renders as "no reason was recorded", which is the
+  // true sentence. `reason_added_at` is set only when the reason arrived
+  // after the decision, so a recollection cannot impersonate a
+  // contemporaneous note.
+  //
+  // No foreign keys, for `command_audit`'s stated reason: a decision about an
+  // agent that is later removed must remain insertable and readable, and the
+  // rows most worth keeping are exactly the ones whose subject is gone.
+  `
+  CREATE TABLE IF NOT EXISTS fleet_decisions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    -- DASH's own clock at the moment the change was committed.
+    decided_at      TEXT NOT NULL,
+    -- 'agent' | 'connection' | 'fleet'. What the decision is about.
+    subject_kind    TEXT NOT NULL,
+    -- The agent id or provider. NULL exactly when subject_kind is 'fleet'.
+    subject_id      TEXT,
+    -- One of DECISION_KINDS in lib/fleet/decisions.ts — a closed list, on
+    -- WRITE_PATHS' terms: the complete answer to "what can appear in my
+    -- decisions log", short enough to read in ten seconds.
+    kind            TEXT NOT NULL,
+    -- The chain key within a kind — a connection id, a provider, a command
+    -- name. Empty string when the kind needs none, so the chain key is never
+    -- NULL and (subject, kind, topic) always compares.
+    topic           TEXT NOT NULL,
+    -- DASH's own sentence of what changed, composed by the write-site from
+    -- the copy it already renders. Frozen phrasing: re-rendering from
+    -- outcome_json with today's copy would quietly rewrite what was said.
+    summary         TEXT NOT NULL,
+    -- The resulting standing state, frozen — including, for a re-import, the
+    -- declared diff itself, because the agents table keeps only the latest
+    -- document and the delta exists nowhere else the moment after.
+    outcome_json    TEXT NOT NULL,
+    -- 'person' or 'dash-rule'. Who committed the change — never asserted by
+    -- a request, always decided by which write-site filed.
+    decided_by      TEXT NOT NULL,
+    -- The rule's name when decided_by is 'dash-rule', NULL otherwise.
+    rule            TEXT,
+    reason          TEXT,
+    reason_added_at TEXT,
+    -- JSON array of record references this row was filed from — a
+    -- command_audit id, an import timestamp, run ids. References, never
+    -- prose: AskCitation's discipline at the write end.
+    receipts_json   TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS fleet_decisions_by_chain
+    ON fleet_decisions (subject_kind, subject_id, kind, topic, id);
+  CREATE INDEX IF NOT EXISTS fleet_decisions_by_time
+    ON fleet_decisions (decided_at);
+  `,
+
   // MAR-643. A service may hold more than one account, with one default for
-  // agents that have not been assigned yet. Migration 26: MAR-659's chief
-  // transcript and MAR-628's browser ledger reached master first as 24 and 25,
-  // so this incoming step moves to the end without renumbering either of them.
+  // agents that have not been assigned yet. Migration 27: MAR-659's chief
+  // transcript, MAR-628's browser ledger and MAR-673's decisions log reached
+  // master first as 24, 25 and 26, so this incoming step moves to the end
+  // without renumbering any of them. (It was authored as 24 and renumbered
+  // twice; the one master already has keeps its number, every time.)
   //
   // This is a table replacement rather than ALTER TABLE additions because the
   // shipped primary key is `provider`. SQLite cannot widen that key in place.

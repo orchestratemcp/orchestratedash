@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { FleetDecisions } from "./_components/fleet-decisions";
 import { FleetList } from "./_components/fleet-list";
 import { FleetRail } from "./_components/fleet-rail";
 import { OAvatar } from "./_components/o-avatar";
@@ -160,6 +161,14 @@ export default function AgentsPage(): ReactNode {
           onToggleFavourite={toggleFavourite}
         />
           )}
+          {/*
+            MAR-673, ADR 0024. The decisions log, under the fleet it is about.
+            Outside the agents-length branch on purpose: decisions outlive
+            their subjects — the log has no foreign key precisely so the
+            memory survives a removed agent — so an emptied fleet with
+            history still shows what was decided about it.
+          */}
+          <FleetDecisions view={state.data.decisions} />
         </>
       )}
       </div>
