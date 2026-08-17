@@ -23,11 +23,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { AiKeys, AiSettings } from "../app/settings/ai/page";
 import { ServiceList } from "../app/settings/page";
 import { ModelDefault } from "../app/_components/model-default";
-import { describeFleetDefault } from "../lib/ai/model-choice";
+import {
+  describeFleetDefault,
+  describeLevelModelRow,
+  describeLevelModels,
+} from "../lib/ai/model-choice";
+import { DEFAULT_MODEL_LEVELS, levelLabel, levelMeaning } from "../lib/ai/model-levels";
 import type {
   AgentConnections,
   ConnectionsView,
   FleetConnectorView,
+  FleetLevelModelsView,
   FleetModelDefaultView,
 } from "../lib/views/types";
 
@@ -96,6 +102,39 @@ function defaultView(over: Partial<FleetModelDefaultView> = {}): FleetModelDefau
   };
 }
 
+/**
+ * The level rows for one provider, at their shipped values (MAR-654, A1.6).
+ *
+ * Every row empty and every sentence the no-default one, which is the state
+ * every DASH ships in: nothing is seeded and no existing DASH changes behaviour
+ * until a person writes a row. `levelsFor` takes a map so a test can write one.
+ */
+function levelsFor(
+  providerIds: readonly string[],
+  mapped: Readonly<Record<string, string>> = {},
+  fleetDefaultModelId: string | null = null,
+): FleetLevelModelsView {
+  const copy = describeLevelModels(providerIds.length === 0 ? null : "OpenRouter");
+  return {
+    headline: copy.headline,
+    detail: copy.detail,
+    in_force: copy.in_force,
+    by_provider: providerIds.map((provider_id) => ({
+      provider_id,
+      rows: DEFAULT_MODEL_LEVELS.map((level) => {
+        const modelId = mapped[level] ?? null;
+        return {
+          level,
+          label: levelLabel(level),
+          meaning: levelMeaning(level),
+          model_id: modelId,
+          in_force: describeLevelModelRow(modelId, fleetDefaultModelId),
+        };
+      }),
+    })),
+  };
+}
+
 const KEYS = [
   key("openrouter", "OpenRouter"),
   key("anthropic", "Anthropic"),
@@ -106,6 +145,7 @@ function view(over: Partial<ConnectionsView> = {}): ConnectionsView {
   return {
     fleet: [connector(), ...KEYS],
     model_default: defaultView(),
+    level_models: levelsFor([]),
     agents: [],
     older_agent_names: [],
     ...over,
@@ -227,9 +267,20 @@ describe("the keys, and the + that reveals the rest", () => {
 });
 
 describe("the default model", () => {
-  const draw = (setting: FleetModelDefaultView, keys: readonly FleetConnectorView[], canAct = true): string =>
+  const draw = (
+    setting: FleetModelDefaultView,
+    keys: readonly FleetConnectorView[],
+    canAct = true,
+    levels: FleetLevelModelsView = levelsFor([]),
+  ): string =>
     renderToStaticMarkup(
-      <ModelDefault setting={setting} keys={keys} canAct={canAct} onChanged={() => undefined} />,
+      <ModelDefault
+        setting={setting}
+        levels={levels}
+        keys={keys}
+        canAct={canAct}
+        onChanged={() => undefined}
+      />,
     );
 
   it("draws no control at all until a key is held", () => {
@@ -279,5 +330,77 @@ describe("the default model", () => {
     const html = draw(defaultView(), [key("openrouter", "OpenRouter", { held: HELD })], false);
     expect(html).toContain("Open the installed DASH app");
     expect(html).not.toContain("<select");
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * What each kind of step runs on (MAR-654, A1.6)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The three level rows, in all three states.
+ *
+ * A1.6's own table is the thing being checked: a row says the model id when it
+ * has one, and when it has none it says what happens *instead* — the default
+ * above, or that a step asking for this cannot run. Absence is a state here, not
+ * a missing row, and the failure worth catching is a row going quiet.
+ */
+describe("what each kind of step runs on", () => {
+  const HELD_KEYS = [key("openrouter", "OpenRouter", { held: HELD }), ...KEYS.slice(1)];
+
+  const draw = (levels: FleetLevelModelsView, setting = defaultView()): string =>
+    renderToStaticMarkup(
+      <ModelDefault
+        setting={setting}
+        levels={levels}
+        keys={HELD_KEYS}
+        canAct
+        onChanged={() => undefined}
+      />,
+    );
+
+  it("draws all three levels, weakest first, with what each one means", () => {
+    const html = draw(levelsFor(["openrouter"]));
+    expect(html).toContain("What each kind of step runs on");
+    for (const level of DEFAULT_MODEL_LEVELS) {
+      expect(html).toContain(`level-model-${level}`);
+      expect(html).toContain(levelLabel(level));
+    }
+    // Weakest first, so the column reads the way the plan's levels are ordered.
+    expect(html.indexOf("level-model-cheap")).toBeLessThan(html.indexOf("level-model-standard"));
+    expect(html.indexOf("level-model-standard")).toBeLessThan(html.indexOf("level-model-frontier"));
+  });
+
+  it("says a step cannot run when nothing is mapped and there is no default", () => {
+    const html = draw(levelsFor(["openrouter"]));
+    expect(html).toContain("No model chosen, and no default either.");
+    expect(html).toContain("cannot run");
+  });
+
+  it("names the default a level falls back to, when there is one", () => {
+    const html = draw(
+      levelsFor(["openrouter"], {}, "openai/gpt-5-mini"),
+      defaultView({ provider_id: "openrouter", model_id: "openai/gpt-5-mini" }),
+    );
+    expect(html).toContain("Steps that ask for this use openai/gpt-5-mini");
+    expect(html).not.toContain("cannot run");
+  });
+
+  it("keeps a mapped model selected before the catalogue has been asked for", () => {
+    // `ModelPicker`'s rule, one row along: a `select` whose value matches no
+    // option silently shows the first one, and a person would read "no model" on
+    // a level that has one.
+    const html = draw(levelsFor(["openrouter"], { standard: "mapped/model" }, "openai/gpt-5-mini"));
+    expect(html).toContain('value="mapped/model" selected');
+    // And the row with a model says nothing about falling back, because it does
+    // not fall back.
+    expect(html).not.toContain("Steps that ask for this use openai/gpt-5-mini, DASH's default");
+  });
+
+  it("draws nothing for a provider DASH holds no key for", () => {
+    // A row is picked from a catalogue a key returned, so a section offering
+    // rows for a service DASH cannot ask would be three dropdowns with nothing
+    // to put in them.
+    expect(draw(levelsFor([]))).not.toContain("What each kind of step runs on");
   });
 });

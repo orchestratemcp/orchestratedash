@@ -2,8 +2,13 @@
 
 import { useState, type ReactNode } from "react";
 
-import { listProviderModels, setDefaultModel } from "../_data/source";
-import type { FleetConnectorView, FleetModelDefaultView } from "../../lib/views/types";
+import { listProviderModels, setDefaultModel, setLevelModel } from "../_data/source";
+import type {
+  FleetConnectorView,
+  FleetLevelModelRowView,
+  FleetLevelModelsView,
+  FleetModelDefaultView,
+} from "../../lib/views/types";
 
 /**
  * The model DASH gives an agent that has not been given one (MAR-642).
@@ -41,11 +46,22 @@ import type { FleetConnectorView, FleetModelDefaultView } from "../../lib/views/
  */
 export function ModelDefault({
   setting,
+  levels,
   keys,
   canAct,
   onChanged,
 }: {
   setting: FleetModelDefaultView;
+  /**
+   * What each kind of step runs on (MAR-654, A1.6).
+   *
+   * In this component rather than a section of its own, which is the whole of
+   * why the three rows are cheap: they share this one's service dropdown, its
+   * catalogue state and its *See what {provider} offers* button. A second
+   * section would ask the same provider for the same list a second time, and a
+   * person would have two places to press before they could choose anything.
+   */
+  levels: FleetLevelModelsView;
   /** The key connectors on this tab, in the order the page drew them. */
   keys: readonly FleetConnectorView[];
   canAct: boolean;
@@ -106,6 +122,22 @@ export function ModelDefault({
       modelId === ""
         ? await setDefaultModel()
         : await setDefaultModel({ provider_id: provider, model_id: modelId });
+    setBusy(false);
+    setOutcome({ ok: result.ok, detail: result.detail ?? "" });
+    if (result.ok) {
+      onChanged();
+    }
+  }
+
+  /** MAR-654. The same shape one row along: an empty value clears that level. */
+  async function chooseLevel(level: string, modelId: string): Promise<void> {
+    setBusy(true);
+    setOutcome(null);
+    const result = await setLevelModel({
+      provider_id: provider,
+      level,
+      model_id: modelId === "" ? undefined : modelId,
+    });
     setBusy(false);
     setOutcome({ ok: result.ok, detail: result.detail ?? "" });
     if (result.ok) {
@@ -216,6 +248,14 @@ export function ModelDefault({
             </p>
           </div>
 
+          <LevelRows
+            levels={levels}
+            rows={levels.by_provider.find((one) => one.provider_id === provider)?.rows ?? []}
+            listed={listed}
+            busy={busy}
+            onChoose={(level, modelId) => void chooseLevel(level, modelId)}
+          />
+
           {outcome === null ? null : (
             <p className={outcome.ok ? "notice-ok" : "notice-warn"} role="status">
               {outcome.detail}
@@ -224,6 +264,96 @@ export function ModelDefault({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * What each kind of step runs on — the three rows (MAR-654, A1.6).
+ *
+ * ## Why they are rows and not a second picker
+ *
+ * The greyed control Henrik found on the scout's plan panel offered a *level*,
+ * and nothing in DASH turned a level into a model. These are that turning, and
+ * they are here — fleet-wide, three of them — rather than three per agent,
+ * because the level vocabulary is fleet-wide by construction: `cheap` means the
+ * same thing in every manifest DASH holds. An agent that must run its balanced
+ * steps on something else is pinned on its own page, which always wins.
+ *
+ * ## Empty is a state, not a gap
+ *
+ * Every row draws whether or not it has a model, and an empty one says what
+ * happens instead — the default above, or, when there is no default either, that
+ * a step asking for that strength cannot run. Both sentences come from
+ * `lib/ai/model-choice.ts` on this module's standing rule, so the page cannot
+ * describe a setting differently from the process that resolves it.
+ *
+ * ## Nothing here is a catalogue
+ *
+ * The options are `listed` — the same list the button above fetched, living in
+ * this page's state — and one model id per row, which is what the person chose.
+ * ADR 0011's refusal to store which models a key can reach survives intact:
+ * there is no place in this component, this view or the store where a list could
+ * be kept.
+ */
+function LevelRows({
+  levels,
+  rows,
+  listed,
+  busy,
+  onChoose,
+}: {
+  levels: FleetLevelModelsView;
+  rows: readonly FleetLevelModelRowView[];
+  listed: readonly string[] | null;
+  busy: boolean;
+  onChoose: (level: string, modelId: string) => void;
+}): ReactNode {
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="level-models">
+      {/* An `h3` under this section's `h2`, so the hierarchy reads the way the
+          page looks — the same call `ModelChoice` had to make when it moved
+          inside the agent page's Settings drawer. */}
+      <h3 id="level-models">{levels.headline}</h3>
+      <p className="muted wrap">{levels.detail}</p>
+
+      <ul className="row-list level-model-list">
+        {rows.map((row) => (
+          <li key={row.level} className="level-model">
+            <label className="field-label" htmlFor={`level-model-${row.level}`}>
+              {row.label}
+            </label>
+            <p className="muted wrap">{row.meaning}</p>
+            <select
+              id={`level-model-${row.level}`}
+              className="field"
+              value={row.model_id ?? ""}
+              disabled={busy}
+              onChange={(event) => {
+                onChoose(row.level, event.target.value);
+              }}
+            >
+              <option value="">No model — use the default above</option>
+              {/*
+                Whatever is already mapped stays in the list before anything has
+                been asked for, `ModelPicker`'s rule: a `select` whose value
+                matches no option silently shows the first one, and a person
+                would see "no model" on a level that has one.
+              */}
+              {optionsFor(listed, row.model_id).map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </select>
+            {row.in_force === null ? null : <p className="muted wrap">{row.in_force}</p>}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

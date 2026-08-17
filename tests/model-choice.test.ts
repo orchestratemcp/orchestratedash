@@ -29,7 +29,9 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  LEVEL_MAP_LINK_LABEL,
   MODEL_KEY_STAYS_HOME_REFUSAL,
+  applyFleetDefault,
   bundledModelChoice,
   describeRunModel,
   describeRunModelDetail,
@@ -37,7 +39,11 @@ import {
   everyModelChoiceSentence,
   matchEachStep,
   resolveModelSteps,
+  resolveStepModels,
+  type FleetModelDefault,
+  type LevelModelMap,
 } from "../lib/ai/model-choice";
+import type { DefaultModelLevel } from "../lib/ai/model-levels";
 import { classifyProbe } from "../lib/ai/liveness";
 import type { ConnectionSourceManifest } from "../lib/connections";
 import { Vault } from "../lib/vault";
@@ -58,16 +64,20 @@ const { closeDb, db } = await import("../lib/db");
 const { importManifest, ingestEvents, resetStore } = await import("../lib/store");
 const {
   clearAgentModelChoice,
+  clearFleetLevelModel,
   clearFleetModelDefault,
   clearStepLevelOverride,
   forgetAgentModelChoice,
+  hasFleetLevelModels,
   readAgentModelChoice,
   readEffectiveModelChoice,
+  readFleetLevelModels,
   readFleetModelDefault,
   readRunModel,
   readRunModels,
   readStepLevelOverrides,
   writeAgentModelChoice,
+  writeFleetLevelModel,
   writeFleetModelDefault,
   writeStepLevelOverride,
 } = await import("../lib/ai/model-store");
@@ -742,6 +752,10 @@ describe("the choice in a deploy bundle", () => {
       AGENT,
       { kind: "one_model", provider_id: "openrouter", model_id: "anthropic/claude-sonnet-5" },
       steps,
+      // MAR-654. The person's level map, frozen for the reason the levels are:
+      // the far side has the manifest and could recompute a level, and has
+      // nothing at all that could recompute a person's map.
+      new Map([["frontier", { provider_id: "openrouter", model_id: "mapped/frontier" }]]),
     );
 
     expect(document).toEqual({
@@ -754,6 +768,9 @@ describe("the choice in a deploy bundle", () => {
       steps: [
         { step: 2, level: "standard" },
         { step: 3, level: "frontier" },
+      ],
+      level_models: [
+        { level: "frontier", provider_id: "openrouter", model_id: "mapped/frontier" },
       ],
     });
     // There is no field a key could go in, and this says so over the serialised
@@ -839,7 +856,8 @@ describe("the model DASH falls back to", () => {
 
   it("never overrides an agent that has chosen", () => {
     // The ruling, as an assertion. Both rows exist and disagree; the agent's
-    // wins, and `from_default` says whose decision the caller is looking at.
+    // wins, and `resolved_by` says which rung the caller is looking at —
+    // MAR-654 replaced the boolean that could only express two of the four.
     expect(writeAgentModelChoice(AGENT, "openrouter", "anthropic/claude-sonnet-5", AT)).toBe(true);
     expect(writeFleetModelDefault("openrouter", "openai/gpt-5-mini", LATER)).toBe(true);
 
@@ -849,7 +867,7 @@ describe("the model DASH falls back to", () => {
       provider_id: "openrouter",
       model_id: "anthropic/claude-sonnet-5",
     });
-    expect(effective.from_default).toBe(false);
+    expect(effective.resolved_by).toBe("agent_pin");
   });
 
   it("answers for an agent that has chosen nothing", () => {
@@ -860,7 +878,7 @@ describe("the model DASH falls back to", () => {
       provider_id: "openrouter",
       model_id: "openai/gpt-5-mini",
     });
-    expect(effective.from_default).toBe(true);
+    expect(effective.resolved_by).toBe("fleet_default");
   });
 
   it("does not answer for an agent whose plan reaches another provider", () => {
@@ -888,7 +906,7 @@ describe("the model DASH falls back to", () => {
 
   it("puts an agent back where it was when the default is cleared", () => {
     expect(writeFleetModelDefault("openrouter", "openai/gpt-5-mini", AT)).toBe(true);
-    expect(readEffectiveModelChoice(AGENT, "openrouter").from_default).toBe(true);
+    expect(readEffectiveModelChoice(AGENT, "openrouter").resolved_by).toBe("fleet_default");
 
     clearFleetModelDefault();
     expect(readEffectiveModelChoice(AGENT, "openrouter").choice).toEqual({
@@ -958,6 +976,317 @@ describe("the model DASH falls back to", () => {
     ingestEvents([event("run-unknown", 0)] as never);
 
     expect(readRunModel(AGENT, "run-unknown")?.choice).toEqual({ kind: "match_each_step" });
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * The ladder (MAR-654, ADR 0011 amendment 1)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * A person may map a level to a model, and DASH still maps none.
+ *
+ * The amendment's own list of what is provable once built, in order:
+ *
+ * 1. **the ladder, as a pure test over the four rules and the four
+ *    `resolved_by` values, including the negative** — an agent whose plan
+ *    declares no level for a step cannot reach a level row;
+ * 2. that `match_each_step` resolves rather than refusing, with every state that
+ *    existed before this amendment behaving identically;
+ * 3. that the run record freezes the resolution per step and never revises it.
+ *
+ * The fourth — a lying `step` reaching only a level that agent's own plan
+ * declares — is `tests/broker-threat-model.test.ts`, where the seam is.
+ */
+describe("what each level means", () => {
+  const OPENROUTER = { provider_id: "openrouter", model_id: "openai/gpt-5-mini" };
+
+  beforeEach(() => {
+    clearFleetModelDefault();
+    for (const level of ["cheap", "standard", "frontier"]) {
+      clearFleetLevelModel("openrouter", level);
+      clearFleetLevelModel("anthropic", level);
+    }
+  });
+
+  it("is absent until somebody writes a row, and clearing deletes rather than storing", () => {
+    // Zero rows ship and none is ever seeded, which is what makes this
+    // amendment safe to land: no existing DASH changes behaviour until a person
+    // writes a row.
+    expect(readFleetLevelModels("openrouter").size).toBe(0);
+    expect(hasFleetLevelModels()).toBe(false);
+
+    expect(writeFleetLevelModel("openrouter", "standard", "openai/gpt-5-mini", AT)).toBe(true);
+    expect(hasFleetLevelModels()).toBe(true);
+    expect(readFleetLevelModels("openrouter").get("standard")).toEqual(OPENROUTER);
+
+    clearFleetLevelModel("openrouter", "standard");
+    expect(readFleetLevelModels("openrouter").size).toBe(0);
+    const rows = db().prepare("SELECT count(*) AS n FROM fleet_level_models").get() as { n: number };
+    expect(rows.n).toBe(0);
+  });
+
+  it("refuses a provider DASH does not broker, a level it does not know, and a bad id", () => {
+    // `writeFleetModelDefault`'s three refusals, on the row one level down. The
+    // same predicates, imported rather than restated.
+    expect(writeFleetLevelModel("some-other-service", "standard", "a-model", AT)).toBe(false);
+    expect(writeFleetLevelModel("openrouter", "enormous", "a-model", AT)).toBe(false);
+    expect(writeFleetLevelModel("openrouter", "standard", "../../etc/passwd", AT)).toBe(false);
+    expect(readFleetLevelModels("openrouter").size).toBe(0);
+  });
+
+  it("answers all four rungs, and each one names itself", () => {
+    const levelModels: LevelModelMap = new Map([
+      ["standard", { provider_id: "openrouter", model_id: "mapped/model" }],
+    ]);
+    const unpinned = matchEachStep();
+    const pinned = {
+      kind: "one_model" as const,
+      provider_id: "openrouter",
+      model_id: "pinned/model",
+    };
+    const ladder = (level: "cheap" | "standard" | "frontier" | null) => ({
+      level,
+      level_models: levelModels,
+    });
+
+    // 1. The agent's own pin wins, whatever anything else says, and it is first
+    //    so it cannot be reached around.
+    expect(applyFleetDefault(pinned, OPENROUTER, "openrouter", ladder("standard"))).toEqual({
+      choice: pinned,
+      resolved_by: "agent_pin",
+    });
+
+    // 2. The person's row for this step's level, above the default.
+    expect(applyFleetDefault(unpinned, OPENROUTER, "openrouter", ladder("standard"))).toEqual({
+      choice: { kind: "one_model", provider_id: "openrouter", model_id: "mapped/model" },
+      resolved_by: "level_map",
+    });
+
+    // 3. A level with no row falls to the default, and is not silent about it.
+    expect(applyFleetDefault(unpinned, OPENROUTER, "openrouter", ladder("cheap"))).toEqual({
+      choice: { kind: "one_model", ...OPENROUTER },
+      resolved_by: "fleet_default",
+    });
+
+    // 4. Nothing. `no_model_chosen`, now reachable per step.
+    expect(applyFleetDefault(unpinned, null, "openrouter", ladder("frontier"))).toEqual({
+      choice: unpinned,
+      resolved_by: "none",
+    });
+  });
+
+  it("cannot be reached by a step whose plan declares no level", () => {
+    // The negative the amendment names. A null level is a step that needs no
+    // model, a step the manifest does not have, and a request that named no step
+    // at all — three different facts, all of which resolve the same way: past
+    // rule 2 entirely, to the default and then to nothing.
+    const levelModels: LevelModelMap = new Map([
+      ["standard", { provider_id: "openrouter", model_id: "mapped/model" }],
+    ]);
+    expect(
+      applyFleetDefault(matchEachStep(), OPENROUTER, "openrouter", {
+        level: null,
+        level_models: levelModels,
+      }),
+    ).toEqual({ choice: { kind: "one_model", ...OPENROUTER }, resolved_by: "fleet_default" });
+
+    // And with no default either, a step with no level reaches no model at all.
+    expect(
+      applyFleetDefault(matchEachStep(), null, "openrouter", {
+        level: null,
+        level_models: levelModels,
+      }).resolved_by,
+    ).toBe("none");
+  });
+
+  it("does not answer for an agent whose plan reaches another provider", () => {
+    // `applyFleetDefault` rule 2's established reason, applied to the new rung:
+    // a model id means nothing without a provider, and `openai/gpt-5-mini`
+    // presented to Anthropic would be DASH asking for something never offered.
+    const levelModels: LevelModelMap = new Map([
+      ["standard", { provider_id: "openrouter", model_id: "mapped/model" }],
+    ]);
+    const answer = applyFleetDefault(matchEachStep(), null, "anthropic", {
+      level: "standard",
+      level_models: levelModels,
+    });
+    expect(answer).toEqual({ choice: { kind: "match_each_step" }, resolved_by: "none" });
+  });
+
+  it("resolves each step through the ladder instead of refusing", () => {
+    // A1.3's table, as one assertion. `match_each_step` used to be the state
+    // every fresh agent sat in and the one state under which nothing could
+    // spend; the name promised per-step matching and the behaviour delivered a
+    // refusal. This is the promise being kept.
+    const steps = resolveModelSteps(
+      [
+        { step: 2, component_id: "digest_curate", level: "cheap" },
+        { step: 3, component_id: "deep_dive_synthesis", level: "standard" },
+      ],
+      new Map(),
+    );
+    const resolutions = resolveStepModels(
+      steps,
+      matchEachStep(),
+      { provider_id: "openrouter", model_id: "meta-llama/llama-3.3-70b-instruct:free" },
+      "openrouter",
+      new Map<DefaultModelLevel, FleetModelDefault>([
+        ["standard", { provider_id: "openrouter", model_id: "mapped/model" }],
+      ]),
+    );
+    // The scout, worked through: the extraction step keeps the free model and
+    // the synthesis step gets the one its author said that step needs.
+    expect(resolutions).toEqual([
+      {
+        step: 2,
+        component_id: "digest_curate",
+        level: "cheap",
+        provider_id: "openrouter",
+        model_id: "meta-llama/llama-3.3-70b-instruct:free",
+        resolved_by: "fleet_default",
+      },
+      {
+        step: 3,
+        component_id: "deep_dive_synthesis",
+        level: "standard",
+        provider_id: "openrouter",
+        model_id: "mapped/model",
+        resolved_by: "level_map",
+      },
+    ]);
+  });
+
+  it("records a run's per-step resolution once, and never revises it", async () => {
+    // A1.5. `run_models` records `matched` with a provider and no model id,
+    // because "the setting was a table" is not a model id — and the models are
+    // the `run_step_models` rows beside it, written in the same transaction.
+    const source = manifestWith(MIXED_ROUTE);
+    await connectKey(vault(), source);
+    importManifest(storedManifest());
+    expect(writeFleetModelDefault("openrouter", "openai/gpt-5-mini", AT)).toBe(true);
+    expect(writeFleetLevelModel("openrouter", "frontier", "mapped/frontier", AT)).toBe(true);
+
+    ingestEvents([event("run-matched", 0)] as never);
+
+    const record = readRunModel(AGENT, "run-matched");
+    expect(record?.choice).toEqual({
+      kind: "matched",
+      provider_id: "openrouter",
+      steps: [
+        {
+          step: 2,
+          level: "cheap",
+          provider_id: "openrouter",
+          model_id: "openai/gpt-5-mini",
+          resolved_by: "fleet_default",
+        },
+        {
+          step: 3,
+          level: "frontier",
+          provider_id: "openrouter",
+          model_id: "mapped/frontier",
+          resolved_by: "level_map",
+        },
+      ],
+    });
+
+    // `run_models`' write-once rule, extended to the rows beside it: somebody
+    // changing what a level means halfway through a run must not thereby change
+    // what an already-started run reports it began under.
+    expect(writeFleetLevelModel("openrouter", "frontier", "changed/frontier", LATER)).toBe(true);
+    ingestEvents([event("run-matched", 1)] as never);
+    const again = readRunModel(AGENT, "run-matched");
+    expect(again?.choice.kind === "matched" && again.choice.steps[1]?.model_id).toBe(
+      "mapped/frontier",
+    );
+  });
+
+  it("leaves every state that existed before it exactly as it was", async () => {
+    // A1.3's compatibility table, mechanically. The two rows that matter are the
+    // ones a person could already be in: a default set with an empty map still
+    // records one model, and no default with an empty map still records nothing.
+    const source = manifestWith(MIXED_ROUTE);
+    await connectKey(vault(), source);
+    importManifest(storedManifest());
+
+    expect(writeFleetModelDefault("openrouter", "openai/gpt-5-mini", AT)).toBe(true);
+    ingestEvents([event("run-empty-map", 0)] as never);
+    expect(readRunModel(AGENT, "run-empty-map")?.choice).toEqual({
+      kind: "one_model",
+      provider_id: "openrouter",
+      model_id: "openai/gpt-5-mini",
+    });
+    const stepRows = db()
+      .prepare("SELECT count(*) AS n FROM run_step_models WHERE run_id = 'run-empty-map'")
+      .get() as { n: number };
+    expect(stepRows.n).toBe(0);
+
+    clearFleetModelDefault();
+    ingestEvents([event("run-nothing-set", 0)] as never);
+    expect(readRunModel(AGENT, "run-nothing-set")?.choice).toEqual({ kind: "match_each_step" });
+  });
+
+  it("says on the agent's page what each step resolves to, and stops greying the control", async () => {
+    // A1.6, and the defect it closes. The control Henrik found greyed was greyed
+    // because DASH's default set the levels aside; a level now beats the
+    // default, so an unpinned agent's levels decide something and are live.
+    const source = manifestWith(MIXED_ROUTE);
+    await connectKey(vault(), source);
+    expect(writeFleetModelDefault("openrouter", "openai/gpt-5-mini", AT)).toBe(true);
+    expect(writeFleetLevelModel("openrouter", "frontier", "mapped/frontier", AT)).toBe(true);
+
+    const settings = buildAgentModelSettings(AGENT, source);
+    expect(settings.can_choose).toBe(true);
+    if (!settings.can_choose) {
+      return;
+    }
+    expect(settings.steps_in_force).toBe(true);
+    expect(settings.steps_note).toBeNull();
+    expect(settings.steps.map((one) => one.resolved_model_id)).toEqual([
+      "openai/gpt-5-mini",
+      "mapped/frontier",
+    ]);
+    expect(settings.steps.map((one) => one.resolved_by)).toEqual(["fleet_default", "level_map"]);
+    // Two models across the steps, so the one sentence at the top says so rather
+    // than naming one of them as though it answered both.
+    expect(settings.in_force).toContain("2 models");
+    // And it says where a level becomes a model, because the map is one place
+    // and every step that depends on it has to name it.
+    expect(settings.steps_link_label).toBe(LEVEL_MAP_LINK_LABEL);
+  });
+
+  it("still greys the control for an agent pinned to one model", async () => {
+    // The one reason left, and the sentence under it now names only that reason.
+    const source = manifestWith(MIXED_ROUTE);
+    await connectKey(vault(), source);
+    expect(writeAgentModelChoice(AGENT, "openrouter", "pinned/model", AT)).toBe(true);
+
+    const settings = buildAgentModelSettings(AGENT, source);
+    expect(settings.can_choose).toBe(true);
+    if (!settings.can_choose) {
+      return;
+    }
+    expect(settings.steps_in_force).toBe(false);
+    expect(settings.steps_note).toBe(describeStepsNotInForce("pinned/model"));
+    expect(settings.steps.every((one) => one.resolved_by === "agent_pin")).toBe(true);
+    clearAgentModelChoice(AGENT);
+  });
+
+  it("keeps no list of models anywhere, still", async () => {
+    // ADR 0011's standing constraint, re-asserted over the new table: this
+    // amendment adds a place a *chosen* model id lives and no place a catalogue
+    // could. The store is searched for an id the fake provider offers that
+    // nobody chose.
+    const source = manifestWith(MIXED_ROUTE);
+    await connectKey(vault(), source);
+    expect(writeFleetLevelModel("openrouter", "cheap", "openai/gpt-5-mini", AT)).toBe(true);
+
+    const bytes = readStoreBytes(dataDir);
+    expect(bytes).toContain("openai/gpt-5-mini");
+    // Offered by the fake catalogue and chosen by nobody: it must not be in the
+    // store, because DASH keeps no copy of what a key can reach.
+    expect(bytes).not.toContain("moonshotai/kimi-k2");
   });
 });
 

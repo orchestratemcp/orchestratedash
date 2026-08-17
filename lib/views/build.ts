@@ -40,8 +40,13 @@ import { describeEvidenceRecord } from "../copy/evidence";
 import { describeRunOrigin } from "../copy/where-it-ran";
 import { describeStoreDamage } from "../copy/recovery";
 import { deriveConnectionRequirements, type ConnectionSourceManifest } from "../connections";
-import { describeFleetDefault } from "../ai/model-choice";
-import { readFleetModelDefault } from "../ai/model-store";
+import {
+  describeFleetDefault,
+  describeLevelModelRow,
+  describeLevelModels,
+} from "../ai/model-choice";
+import { DEFAULT_MODEL_LEVELS, levelLabel, levelMeaning } from "../ai/model-levels";
+import { readFleetLevelModels, readFleetModelDefault } from "../ai/model-store";
 import { decisionsView } from "./decisions";
 import { fleetCatalogue } from "../fleet/catalogue";
 import { describeFleetReach, fleetReach } from "../fleet/grants";
@@ -135,6 +140,7 @@ import type {
   ConnectionRowWithCredential,
   ConnectionsView,
   FleetConnectorView,
+  FleetLevelModelsView,
   FleetModelDefaultView,
   HostsView,
   NotificationsView,
@@ -1007,6 +1013,8 @@ export function connectionsView(store: StoreShape = readStore()): ConnectionsVie
     // to the section under it, and it should say that only while that section
     // really is empty.
     model_default: fleetModelDefaultView(fleet),
+    // MAR-654. The other half of the same question, read by the same section.
+    level_models: fleetLevelModelsView(fleet),
     agents: capable.map(({ name, manifest }) => {
       const rows = connectionRowsFor(name, manifest, agentsByProvider);
 
@@ -1191,6 +1199,56 @@ function fleetModelDefaultView(fleet: readonly FleetConnectorView[]): FleetModel
     headline: copy.headline,
     detail: copy.detail,
     in_force: copy.in_force,
+  };
+}
+
+/**
+ * What each kind of step runs on, ready to draw (MAR-654, A1.6).
+ *
+ * One entry per provider DASH **holds a key for**, and three rows in each,
+ * always. A level nobody has mapped is not a missing row: it is a row whose
+ * sentence says what happens instead, which is the difference between a control
+ * a person can predict and a gap they have to test.
+ *
+ * The default's model id reaches a row's sentence **only when the default names
+ * that row's provider**, `applyFleetDefault`'s own check applied to the copy: a
+ * sentence promising that unmapped OpenRouter steps fall back to an Anthropic
+ * model would describe a fallback that cannot happen.
+ *
+ * Providers with no key are left out rather than drawn empty. A row is picked
+ * from a catalogue a key returned, so a section offering rows for a service DASH
+ * cannot ask would be three dropdowns with nothing to put in them — the call
+ * `ModelDefault` already makes about its own picker, one section along.
+ */
+function fleetLevelModelsView(fleet: readonly FleetConnectorView[]): FleetLevelModelsView {
+  const held = fleet.filter(
+    (connector) => connector.ai_provider_id !== null && connector.held !== null,
+  );
+  const stored = readFleetModelDefault();
+  const copy = describeLevelModels(held[0]?.service ?? null);
+
+  return {
+    headline: copy.headline,
+    detail: copy.detail,
+    in_force: copy.in_force,
+    by_provider: held.map((connector) => {
+      const providerId = String(connector.ai_provider_id);
+      const mapped = readFleetLevelModels(providerId);
+      const fallback = stored?.provider_id === providerId ? stored.model_id : null;
+      return {
+        provider_id: providerId,
+        rows: DEFAULT_MODEL_LEVELS.map((level) => {
+          const modelId = mapped.get(level)?.model_id ?? null;
+          return {
+            level,
+            label: levelLabel(level),
+            meaning: levelMeaning(level),
+            model_id: modelId,
+            in_force: describeLevelModelRow(modelId, fallback),
+          };
+        }),
+      };
+    }),
   };
 }
 

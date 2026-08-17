@@ -145,8 +145,15 @@ describe("schema", () => {
     // non-null per-agent account-assignment table beside it. Authored as 24,
     // renumbered twice — 24, 25 and 26 each reached master first — and the one
     // master already has keeps its number, every time.
+    //
+    // 28 is MAR-654's `fleet_level_models` and `run_step_models` (ADR 0011
+    // amendment 1) — what each level means to this person, and what DASH
+    // resolved for each step of a run. Appended on the standing terms: an
+    // installed store that has recorded 0 to 27 runs exactly one more, and the
+    // amendment's own "the migration index is not decidable yet" is what this
+    // number resolves.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(27);
+    expect(version.user_version).toBe(28);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -295,7 +302,7 @@ describe("schema", () => {
     ).toEqual({ count: 0 });
     expect(
       (nextDb.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(27);
+    ).toBe(28);
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -655,7 +662,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(27);
+    ).toBe(28);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

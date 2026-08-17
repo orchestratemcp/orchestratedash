@@ -37,7 +37,12 @@ import {
 } from "../fleet/decisions";
 import { readDecisions } from "../fleet/decisions-store";
 import { readFleetConnection, readFleetGrants } from "../fleet/store";
-import { readAgentModelChoice, readFleetModelDefault } from "../ai/model-store";
+import {
+  readAgentModelChoice,
+  readFleetLevelModels,
+  readFleetModelDefault,
+} from "../ai/model-store";
+import type { DefaultModelLevel } from "../ai/model-levels";
 import type { StoreShape } from "../store";
 import type { AgentRow, FleetDecisionsView } from "./types";
 
@@ -142,6 +147,27 @@ function currentOutcomeFor(
     }
     case "fleet_model_default": {
       const current = readFleetModelDefault();
+      return current === null
+        ? { state: "cleared" }
+        : { state: "set", provider_id: current.provider_id, model_id: current.model_id };
+    }
+    case "fleet_level_model": {
+      /*
+       * MAR-654. The topic is `{provider}/{level}`, which is `fleet_level_models`'
+       * own primary key — so one chain is one level of one provider and the
+       * comparison below is against the row that decision actually wrote. Split
+       * at the last separator rather than the first: neither an `AI_PROVIDER_IDS`
+       * member nor a `DEFAULT_MODEL_LEVELS` member contains one, so either works
+       * today, and the last is the one that stays right if a provider id ever
+       * does.
+       */
+      const cut = row.topic.lastIndexOf("/");
+      if (cut < 0) {
+        return null;
+      }
+      const providerId = row.topic.slice(0, cut);
+      const level = row.topic.slice(cut + 1);
+      const current = readFleetLevelModels(providerId).get(level as DefaultModelLevel) ?? null;
       return current === null
         ? { state: "cleared" }
         : { state: "set", provider_id: current.provider_id, model_id: current.model_id };

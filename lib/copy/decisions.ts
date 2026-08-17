@@ -81,6 +81,15 @@ export function describeFleetDefaultCleared(): string {
   return "Fleet default model cleared.";
 }
 
+/** MAR-654. What one level means, in the log's frozen phrasing. */
+export function describeLevelModelSet(levelLabel: string, modelId: string): string {
+  return `Level model set — ${levelLabel}: ${modelId}.`;
+}
+
+export function describeLevelModelCleared(levelLabel: string): string {
+  return `Level model cleared — ${levelLabel}; steps of that kind fall back to the default.`;
+}
+
 export function describeConnectionGranted(connectionId: string): string {
   return `Connection granted: ${connectionId}.`;
 }

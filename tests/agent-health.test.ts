@@ -40,6 +40,8 @@ const MODEL: AgentModelSettingsView = {
   steps: [],
   steps_in_force: false,
   steps_note: "One model overrides step levels.",
+  // MAR-654. Where a level becomes a model, for the link this section draws.
+  steps_link_label: "Choose what each kind of step runs on",
 };
 
 const TARGET: AgentDeployTarget = {

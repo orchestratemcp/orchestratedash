@@ -59,6 +59,7 @@ import {
   resolveCredentialTarget,
   type CredentialTarget,
 } from "../lib/connection-credentials";
+import { aiKeyConnections, pickAiKeyCard } from "../lib/ai/connection-view";
 import type { ConnectionSourceManifest } from "../lib/connections";
 import { listAiKeyModels } from "../lib/ai/actions";
 import { performAskAction } from "./ask-host";
@@ -71,11 +72,14 @@ import {
 import { stepsNeedingAModel } from "../lib/ai/model-levels";
 import {
   clearAgentModelChoice,
+  clearFleetLevelModel,
   clearFleetModelDefault,
   clearStepLevelOverride,
   readAgentModelChoice,
+  readFleetLevelModels,
   readStepLevelOverrides,
   writeAgentModelChoice,
+  writeFleetLevelModel,
   writeFleetModelDefault,
   writeStepLevelOverride,
 } from "../lib/ai/model-store";
@@ -1134,9 +1138,14 @@ async function pushNotifyConfiguration(runner: RunnerHandle | null): Promise<voi
  * Both return **before** the manifest read below. That is what makes an empty
  * `agent_id` correct rather than merely tolerated: nothing on their path reads
  * it, and the three members that do read it still refuse an empty one.
+ *
+ * MAR-654 makes it three: `level` says what one strength means, fleet-wide, and
+ * belongs to no agent for the same reason. It reaches no provider at all — the
+ * catalogue it is picked from arrives through `catalogue` — so it opens no
+ * vault, and it returns above the manifest read with the other two.
  */
 async function performModelAction(
-  action: "choose" | "step" | "list" | "default" | "catalogue",
+  action: "choose" | "step" | "list" | "default" | "catalogue" | "level",
   target: {
     agent_id: string;
     connection_id?: string;
@@ -1169,6 +1178,40 @@ async function performModelAction(
       : {
           ok: false,
           detail: "DASH does not recognise that provider or that model name.",
+        };
+  }
+
+  if (action === "level") {
+    /*
+     * MAR-654, A1.1. What one level means, for one provider.
+     *
+     * The clearing shape is `default`'s, and the reason it takes a provider even
+     * to clear is that the row's key is (provider, level): "clear Balanced" with
+     * no provider would be a command with two possible meanings on a DASH holding
+     * two keys.
+     *
+     * Both writes refuse anything that is not one of `AI_PROVIDER_IDS`, one of
+     * `DEFAULT_MODEL_LEVELS` and a model id `isModelId` accepts — in the store,
+     * beside the write, on `refreshSampleAgent`'s rule: a check stated at the
+     * seam is a check a second implementation could forget.
+     */
+    if (target.provider_id === undefined || target.level === undefined) {
+      return { ok: false, detail: "DASH was not told which strength to change." };
+    }
+    if (target.model_id === undefined) {
+      clearFleetLevelModel(target.provider_id, target.level);
+      return {
+        ok: true,
+        detail:
+          "Cleared. Steps of that strength go back to using DASH's default model, if you have " +
+          "one set.",
+      };
+    }
+    return writeFleetLevelModel(target.provider_id, target.level, target.model_id, now)
+      ? { ok: true, detail: "Saved." }
+      : {
+          ok: false,
+          detail: "DASH does not recognise that provider, that strength, or that model name.",
         };
   }
 
@@ -1285,10 +1328,21 @@ function bundledModelChoiceFor(agentId: string): BundledModelChoice | undefined 
   if (declared.length === 0 && choice.kind === "match_each_step") {
     return undefined;
   }
+  /*
+   * MAR-654. The person's level map travels frozen beside the frozen levels, and
+   * only the rows for the provider this agent's own plan reaches: a row for
+   * another provider is not part of this agent's answer, and putting it in the
+   * bundle would be a fact about the person's other keys sitting in a file on
+   * somebody's server.
+   */
+  const providerId = pickAiKeyCard(
+    aiKeyConnections(agentId, manifest as ConnectionSourceManifest),
+  )?.provider_id;
   return bundledModelChoice(
     agentId,
     choice,
     resolveModelSteps(declared, readStepLevelOverrides(agentId)),
+    providerId === undefined ? new Map() : readFleetLevelModels(providerId),
   );
 }
 

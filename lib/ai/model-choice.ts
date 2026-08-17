@@ -41,6 +41,7 @@
  */
 
 import {
+  DEFAULT_MODEL_LEVELS,
   strongestLevel,
   levelLabel,
   type DefaultModelLevel,
@@ -102,70 +103,164 @@ export interface FleetModelDefault {
   model_id: string;
 }
 
+/* ---------------------------------------------------------------------- *
+ * The level map (MAR-654, ADR 0011 amendment 1)
+ * ---------------------------------------------------------------------- */
+
 /**
- * What is in force for one agent, and whose decision it was.
+ * The person's answer to *which model does this level mean*, per provider.
  *
- * `from_default` exists so a surface can say *which* — "you chose this" and
- * "this is what DASH uses unless you say otherwise" are different facts about
- * the same model id, and a person who cannot tell them apart cannot predict
- * what changing the default will do to this agent.
+ * Three rows at most per provider, and zero on a DASH nobody has configured. The
+ * value is a `FleetModelDefault` rather than a bare model id so that every entry
+ * carries the provider it came from, which lets `applyFleetDefault` apply one
+ * provider check to rules 2 and 3 instead of two — see `sameProvider`. A model id
+ * that arrived beside one provider cannot be presented to another by accident,
+ * because nothing here ever separates the pair.
  *
- * Nothing persists this pair. `run_models` records the resolved `choice`,
- * because what a run started under is a model and not a provenance — a run that
- * ran on the default ran on that model, and by the time anybody reads the row
- * the default may be something else.
+ * **DASH writes no row into this and ships none.** ADR 0011 decision 1 refuses a
+ * ranking DASH invents over somebody else's catalogue, and a second copy of the
+ * emitter's `model_tier` table; a map whose every row was chosen by the person
+ * out of a list their own key returned is neither of those things.
  */
-export interface EffectiveModelChoice {
-  choice: AgentModelChoice;
-  /** True exactly when `choice` names a model this agent did not choose itself. */
-  from_default: boolean;
+export type LevelModelMap = ReadonlyMap<DefaultModelLevel, FleetModelDefault>;
+
+/**
+ * Which rung of the ladder answered.
+ *
+ * A **value** rather than a comment, and it replaces
+ * `EffectiveModelChoice.from_default` — a boolean that could only ever express
+ * two of the four. Every sentence about a resolved model is worded from this, the
+ * AI tab's level rows are worded from it, and `run_step_models.resolved_by` stores
+ * it. So a fall back to the fleet default is something a person can read rather
+ * than something they would have to infer from a model id being the same on two
+ * screens.
+ */
+export type ModelResolvedBy =
+  /** The agent's own pin. Rule 1, and it can never be reached around. */
+  | "agent_pin"
+  /** The person's row for (this agent's provider, this step's level). Rule 2. */
+  | "level_map"
+  /** DASH's default model, when it is the same provider. Rule 3. */
+  | "fleet_default"
+  /** Nothing answered. `no_model_chosen`, now reachable per step. Rule 4. */
+  | "none";
+
+/**
+ * What the ladder needs to know about one step, when it is asked about a step.
+ *
+ * Null everywhere the question is not about one — the chat answers from saved
+ * reports and is *not one of an agent's steps* — and a null `level` for a step
+ * whose plan declared none. Both resolve identically: the ladder skips rule 2 and
+ * lands on the default or on nothing, which is the behaviour every caller had
+ * before this amendment.
+ */
+export interface StepLadder {
+  /** The level in force: the plan's declaration, or the person's override. */
+  level: DefaultModelLevel | null;
+  /** The person's rows. Only an entry naming this agent's provider can match. */
+  level_models: LevelModelMap;
 }
 
 /**
- * Fold the fleet default onto one agent's own choice.
+ * What is in force, and which rung said so.
  *
- * The whole precedence rule, in one pure function, so that the five places that
- * read a model — the agent's Settings stage, the chat, the broker's spend path,
- * the run record and the deploy bundle — cannot each have their own idea of it.
+ * `resolved_by` exists so a surface can say *which* — "you chose this", "this is
+ * what your Balanced steps run on" and "this is what DASH uses unless an agent
+ * says otherwise" are three different facts about the same model id, and a person
+ * who cannot tell them apart cannot predict what changing any of the three will
+ * do to this agent.
  *
- * Three rules, in order:
+ * Nothing persists this pair as a pair. `run_models` records the resolved
+ * `choice` and `run_step_models` records `resolved_by` per step, because what a
+ * run started under is a model *and*, since A1.5, the rule that produced it — by
+ * the time anybody reads those rows the map and the default may both be something
+ * else.
+ */
+export interface EffectiveModelChoice {
+  choice: AgentModelChoice;
+  resolved_by: ModelResolvedBy;
+}
+
+/**
+ * Fold the person's level map and DASH's default onto one agent's own choice, for
+ * one step.
  *
- * 1. **An agent that chose wins.** Always, whatever the default says. This is
+ * The whole precedence rule, in one pure function, so that the six places that
+ * read a model — the agent's Settings stage, the AI tab, the chat, the broker's
+ * spend path, the run record and the deploy bundle — cannot each have their own
+ * idea of it. A1.2 names a fourth rung as this amendment's standing cost and
+ * mitigates it the way this module already does: one function, six callers, no
+ * second opinion.
+ *
+ * Four rules, in order, per step:
+ *
+ * 1. **An agent that chose wins.** Always, whatever anything else says. This is
  *    the half Henrik stated twice, and it is first here so it cannot be reached
  *    around.
- * 2. **A default of another provider does not apply.** `agentProviderId` is the
- *    provider DASH would actually ask for this agent, resolved from its
- *    manifest. A default naming OpenRouter cannot answer an agent whose plan
- *    reaches Anthropic — the request would carry a model id that provider never
- *    published — so the honest answer for that agent is the one it had before a
- *    default existed. Null means the caller does not know which provider this
- *    agent uses, and an unknown provider is not a match: DASH does not guess
- *    which account gets billed.
- * 3. **Otherwise the default is what runs.**
+ * 2. **The person's row for (this agent's provider, this step's level).** New in
+ *    A1.1. The level is `resolveModelSteps`' answer, so a person's
+ *    `agent_step_levels` override participates exactly as it does today — and the
+ *    agent's own request never names it, which is the whole safety argument of
+ *    `BrokerDeps.readModelChoice`.
+ * 3. **DASH's default**, when it is the same provider. MAR-642, unchanged.
+ * 4. **Nothing.** `no_model_chosen`, and now reachable per step: a plan declaring
+ *    `frontier`, no row for it and no default, is an agent whose synthesis step
+ *    cannot spend — said in those words, on that step's own row.
+ *
+ * Rule 2 sits above rule 3 because it is the more specific statement about this
+ * step, and rule 3 describes itself as the whole-agent answer ("the model new
+ * agents use… unless an agent says otherwise").
+ *
+ * **A gap is filled by the default and is never silent.** A person who maps only
+ * `frontier` gets their frontier steps on that model and everything else on the
+ * default they already chose — which is what they meant, and refusing a level
+ * with no row would take a freshly imported agent back to the state MAR-642 was
+ * built to end. What makes it not-silent is `resolved_by`.
+ *
+ * **A provider DASH cannot name matches nothing.** `agentProviderId` is the
+ * provider DASH would actually ask for this agent, resolved from its manifest. A
+ * row naming OpenRouter cannot answer an agent whose plan reaches Anthropic — the
+ * request would carry a model id that provider never published — and null means
+ * the caller does not know which provider this agent uses. DASH does not guess
+ * which account gets billed. One check, applied to rules 2 and 3 alike.
  */
 export function applyFleetDefault(
   agentChoice: AgentModelChoice,
   fleetDefault: FleetModelDefault | null,
   agentProviderId: string | null,
+  step: StepLadder | null = null,
 ): EffectiveModelChoice {
   if (agentChoice.kind === "one_model") {
-    return { choice: agentChoice, from_default: false };
+    return { choice: agentChoice, resolved_by: "agent_pin" };
   }
-  if (
-    fleetDefault === null ||
-    agentProviderId === null ||
-    fleetDefault.provider_id !== agentProviderId
-  ) {
-    return { choice: agentChoice, from_default: false };
+
+  const mapped =
+    step === null || step.level === null
+      ? null
+      : sameProvider(step.level_models.get(step.level) ?? null, agentProviderId);
+  if (mapped !== null) {
+    return { choice: named(mapped), resolved_by: "level_map" };
   }
-  return {
-    choice: {
-      kind: "one_model",
-      provider_id: fleetDefault.provider_id,
-      model_id: fleetDefault.model_id,
-    },
-    from_default: true,
-  };
+
+  const fallback = sameProvider(fleetDefault, agentProviderId);
+  if (fallback !== null) {
+    return { choice: named(fallback), resolved_by: "fleet_default" };
+  }
+  return { choice: agentChoice, resolved_by: "none" };
+}
+
+/** The row, but only when it names the provider DASH would ask for this agent. */
+function sameProvider(
+  row: FleetModelDefault | null,
+  agentProviderId: string | null,
+): FleetModelDefault | null {
+  return row === null || agentProviderId === null || row.provider_id !== agentProviderId
+    ? null
+    : row;
+}
+
+function named(row: FleetModelDefault): AgentModelChoice {
+  return { kind: "one_model", provider_id: row.provider_id, model_id: row.model_id };
 }
 
 /**
@@ -202,6 +297,57 @@ export function resolveModelSteps(
       declared: step.level,
       level: override ?? step.level,
       overridden: override !== undefined && override !== step.level,
+    };
+  });
+}
+
+/**
+ * One step, and what it resolves to right now (MAR-654).
+ *
+ * The shape the run record freezes, the agent page's per-step sentence is worded
+ * from, and the deploy bundle carries. It is `applyFleetDefault` run once per
+ * step and never a second resolution, which is the point: a page showing a
+ * different model from the one the broker hands out would be worse than no page.
+ */
+export interface StepModelResolution {
+  step: number;
+  component_id: string;
+  /** The level in force: the plan's declaration, or the person's override. */
+  level: DefaultModelLevel;
+  /** Both null exactly when `resolved_by` is `none`. */
+  provider_id: string | null;
+  model_id: string | null;
+  resolved_by: ModelResolvedBy;
+}
+
+/**
+ * Every step of a plan, run through the ladder.
+ *
+ * Takes the already-resolved steps rather than a manifest and a map of
+ * overrides, so the one place a *level* is decided stays `resolveModelSteps` — a
+ * second resolution here would be free to disagree with the one the person is
+ * looking at on screen. `bundledModelChoice` takes them for the same reason.
+ */
+export function resolveStepModels(
+  steps: readonly ResolvedModelStep[],
+  agentChoice: AgentModelChoice,
+  fleetDefault: FleetModelDefault | null,
+  agentProviderId: string | null,
+  levelModels: LevelModelMap,
+): StepModelResolution[] {
+  return steps.map((step) => {
+    const effective = applyFleetDefault(agentChoice, fleetDefault, agentProviderId, {
+      level: step.level,
+      level_models: levelModels,
+    });
+    const choice = effective.choice;
+    return {
+      step: step.step,
+      component_id: step.component_id,
+      level: step.level,
+      provider_id: choice.kind === "one_model" ? choice.provider_id : null,
+      model_id: choice.kind === "one_model" ? choice.model_id : null,
+      resolved_by: effective.resolved_by,
     };
   });
 }
@@ -353,29 +499,67 @@ export function describeChoiceAvailable(
  * is that no model has been picked yet.
  */
 export function describeInForce(
-  choice: AgentModelChoice,
+  effective: EffectiveModelChoice,
   steps: readonly ResolvedModelStep[],
-  fromDefault = false,
+  /** The same steps run through the ladder. Empty exactly when `steps` is. */
+  resolutions: readonly StepModelResolution[] = [],
 ): string {
-  if (choice.kind === "one_model") {
+  const choice = effective.choice;
+  if (effective.resolved_by === "agent_pin" && choice.kind === "one_model") {
+    return `Every step that needs a model uses ${choice.model_id}.`;
+  }
+
+  if (steps.length === 0) {
     /*
-     * MAR-642. The same model, and whose decision it was.
-     *
-     * Said here rather than left to the page, because the two sentences differ
-     * in what they predict: a person reading the first can change this agent
-     * and nothing else, and a person reading the second is looking at a
-     * setting that moves when they change the default on the AI tab. A surface
-     * that printed one sentence for both states would make the second
+     * MAR-642's second sentence, and it survives here and only here: an agent
+     * whose plan declares no levels has nothing per-step to say, so what it runs
+     * on really is one whole-agent setting that moves when the default moves. A
+     * person reading it is looking at something they change on the AI tab, and a
+     * surface that printed the pinned sentence for this state would make that
      * invisible until it surprised somebody.
      */
-    return fromDefault
+    return choice.kind === "one_model"
       ? `Every step that needs a model uses ${choice.model_id}, which is the model DASH uses ` +
           "unless an agent says otherwise. Pick one below to pin this agent to it."
-      : `Every step that needs a model uses ${choice.model_id}.`;
+      : "DASH has no per-step answer for this agent, so nothing here is set.";
   }
-  if (steps.length === 0) {
-    return "DASH has no per-step answer for this agent, so nothing here is set.";
+
+  /*
+   * MAR-654. The sentence names models rather than levels as soon as any level
+   * resolves to one, because that is what the person is now able to decide. The
+   * level sentences below are what is left when nothing resolves — which is
+   * every DASH before somebody mapped a row or set a default, unchanged.
+   */
+  const models = [
+    ...new Set(
+      resolutions.flatMap((one) => (one.model_id === null ? [] : [one.model_id])),
+    ),
+  ];
+  const unanswered = resolutions.filter((one) => one.resolved_by === "none").length;
+  const answered = resolutions.length - unanswered;
+
+  if (models.length === 1) {
+    const only = String(models[0]);
+    if (unanswered === 0) {
+      return steps.length === 1
+        ? `The one step that needs a model uses ${only}.`
+        : `All ${String(steps.length)} steps that need a model use ${only}.`;
+    }
+    return (
+      `${String(answered)} of this agent's ${String(steps.length)} steps use ${only}, and ` +
+      `${unanswered === 1 ? "one has" : `${String(unanswered)} have`} no model at all. Each ` +
+      "step below says which."
+    );
   }
+  if (models.length > 1) {
+    return (
+      `${String(steps.length)} steps need a model and they do not all get the same one — ` +
+      `${String(models.length)} models between them` +
+      `${unanswered === 0 ? "" : `, and ${String(unanswered)} with none at all`}. ` +
+      "Each step below says which."
+    );
+  }
+
   const strongest = strongestLevel(steps.map((step) => step.level));
   const distinct = new Set(steps.map((step) => step.level));
   if (distinct.size === 1 && strongest !== null) {
@@ -396,20 +580,33 @@ export function describeInForce(
  * whose settings still exist is how somebody comes back in a month and finds an
  * agent behaving in a way nothing on screen explains.
  */
-export function describeStepsNotInForce(modelId: string, fromDefault = false): string {
+export function describeStepsNotInForce(modelId: string): string {
   /*
-   * MAR-642. The second sentence is a promise about a control, so it has to be
-   * true of the control it is under. "Go back to matching each step" is what
-   * the picker's first option did before a default existed; with one set, that
-   * option lands on the default and these stay set aside — so the escape it
-   * names is the AI tab rather than this dropdown.
+   * MAR-654 took the second branch away, and the removal is the point.
+   *
+   * MAR-642 needed two sentences here because DASH's default *also* set the
+   * levels aside — every step ran on one model whatever any level declared — so
+   * the escape had to name the AI tab rather than this dropdown. A1.6 ends that:
+   * a level with a row now beats the default, so an unpinned agent's levels are
+   * live and decide something. This sentence is now reachable for exactly one
+   * reason, which is the one it names.
    */
-  return fromDefault
-    ? `These are set aside while every step uses ${modelId}, DASH's default model. They come ` +
-        "back into force if you clear the default on the AI tab."
-    : `These are set aside while every step uses ${modelId}. They come back into force if you ` +
-        "go back to matching each step.";
+  return (
+    `These are set aside while every step uses ${modelId}. They come back into force if you ` +
+    "go back to matching each step."
+  );
 }
+
+/**
+ * Where a level is turned into a model (MAR-654, A1.6).
+ *
+ * A constant rather than a sentence composed on the page, for this module's own
+ * rule — every sentence a person can reach here comes from the trusted side — and
+ * because it is a promise about a control: it has to name the surface that
+ * actually holds the map, and one place holding the words is one place to change
+ * if that ever moves.
+ */
+export const LEVEL_MAP_LINK_LABEL = "Choose what each kind of step runs on";
 
 /**
  * The picker's first option, which is the one almost nobody should change.
@@ -483,6 +680,90 @@ export function describeFleetDefault(
   };
 }
 
+/* ---------------------------------------------------------------------- *
+ * The level map on the AI tab (MAR-654, A1.6)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What the three rows sit under.
+ *
+ * The section exists because the greyed per-step control on an agent's page was
+ * honest and useless: it offered a *level*, and nothing in DASH turned a level
+ * into a model. This is where that turning happens, and the detail says whose
+ * decision it is — because the whole of the amendment is that the map is the
+ * person's and DASH still ranks nothing.
+ *
+ * **Three rows and not three per agent.** Said here rather than left implicit:
+ * the level vocabulary is fleet-wide by construction, so a person who maps
+ * `Balanced` once has answered it for every agent whose plan asks for it, and the
+ * per-agent escape is pinning that agent — which the detail points at.
+ */
+export function describeLevelModels(providerLabel: string | null): FleetDefaultCopy {
+  return {
+    headline: "What each kind of step runs on",
+    detail:
+      "Every agent's plan says how hard each of its steps is, and DASH does not decide what " +
+      "that means — you do, here, once, for all of them. Leave a row empty and steps of that " +
+      "kind use the default above. An agent that must run on something else can be pinned to " +
+      "one model on its own page, which always wins.",
+    in_force:
+      providerLabel === null
+        ? "Add a key below and DASH can offer you the models it reaches."
+        : `Rows you set here are asked for through your ${providerLabel} key.`,
+  };
+}
+
+/**
+ * What one level row says when it has no model, or null when it has one.
+ *
+ * A1.6's three states, and the two written here are the ones that are not simply
+ * a model id. Both name what actually happens rather than reporting an absence:
+ * a level nobody has mapped is not broken, it is a level answered by the setting
+ * one section up — and when there is no setting one section up either, the
+ * consequence is a step that cannot run, said in those words rather than left for
+ * somebody to discover at the end of a run.
+ */
+export function describeLevelModelRow(
+  modelId: string | null,
+  fleetDefaultModelId: string | null,
+): string | null {
+  if (modelId !== null) {
+    return null;
+  }
+  return fleetDefaultModelId === null
+    ? "No model chosen, and no default either. A step that asks for this cannot run."
+    : `No model chosen. Steps that ask for this use ${fleetDefaultModelId}, DASH's default model.`;
+}
+
+/**
+ * The line under one step's declared strength on the agent's own page (A1.6).
+ *
+ * The answer to *unfindable is the same as missing*: the map is in one place, and
+ * every step that depends on it says which rung answered and where that rung is
+ * set. Four sentences for the ladder's four rules, so a person can tell "you
+ * chose this for Balanced steps" from "this is what everything unmapped falls
+ * back to" without comparing two model ids on two screens.
+ */
+export function describeStepModel(resolution: StepModelResolution): string {
+  const level = levelLabel(resolution.level).toLowerCase();
+  switch (resolution.resolved_by) {
+    case "agent_pin":
+      return `Runs on ${String(resolution.model_id)}, the model this agent is pinned to.`;
+    case "level_map":
+      return `Runs on ${String(resolution.model_id)}, which you chose for ${level} steps.`;
+    case "fleet_default":
+      return (
+        `Runs on ${String(resolution.model_id)}, DASH's default model. Nothing is set for ` +
+        `${level} steps yet.`
+      );
+    case "none":
+      return (
+        `Nothing answers this step: no model is set for ${level} steps and DASH has no ` +
+        "default. It cannot run until one of those is chosen."
+      );
+  }
+}
+
 /** What the keys section of the AI tab says, per how many are connected. */
 export function describeKeysHeld(held: number, offered: number): string {
   if (held === 0) {
@@ -526,6 +807,21 @@ export interface BundledModelChoice {
   provider_id: string | null;
   model_id: string | null;
   steps: Array<{ step: number; level: DefaultModelLevel }>;
+  /**
+   * What each level means to this person, frozen (MAR-654).
+   *
+   * Carried for the reason `steps` is carried rather than re-read: the far side
+   * has the manifest and could recompute a level, and it has nothing at all that
+   * could recompute a person's map. Only rows naming this agent's own provider
+   * travel, because a row for another provider is not part of this agent's
+   * answer and would be a fact about the person's other keys sitting in a file on
+   * somebody's server.
+   *
+   * Still configuration and still never a credential: `MODEL_KEY_STAYS_HOME_REFUSAL`
+   * is what fires when the arrangement means these names could not be reached
+   * anyway, and it now names three models it could not reach instead of one.
+   */
+  level_models: Array<{ level: DefaultModelLevel; provider_id: string; model_id: string }>;
 }
 
 /**
@@ -539,6 +835,8 @@ export function bundledModelChoice(
   agentId: string,
   choice: AgentModelChoice,
   steps: readonly ResolvedModelStep[],
+  /** The person's rows for this agent's provider. Empty on an unconfigured DASH. */
+  levelModels: LevelModelMap = new Map(),
 ): BundledModelChoice {
   return {
     agent_id: agentId,
@@ -546,6 +844,13 @@ export function bundledModelChoice(
     provider_id: choice.kind === "one_model" ? choice.provider_id : null,
     model_id: choice.kind === "one_model" ? choice.model_id : null,
     steps: steps.map((step) => ({ step: step.step, level: step.level })),
+    level_models: [...levelModels.entries()]
+      .map(([level, row]) => ({
+        level,
+        provider_id: row.provider_id,
+        model_id: row.model_id,
+      }))
+      .sort((a, b) => DEFAULT_MODEL_LEVELS.indexOf(a.level) - DEFAULT_MODEL_LEVELS.indexOf(b.level)),
   };
 }
 
@@ -573,6 +878,38 @@ export const MODEL_KEY_STAYS_HOME_REFUSAL =
  * ---------------------------------------------------------------------- */
 
 /**
+ * One step of one run, as DASH resolved it at first sight of that run (A1.5).
+ *
+ * A `run_step_models` row. Frozen with the `run_models` row beside it and never
+ * revised, so somebody who changes a level map halfway through a run cannot
+ * change what an already-started run reports it began under.
+ */
+export interface RunStepModel {
+  step: number;
+  level: DefaultModelLevel;
+  provider_id: string;
+  model_id: string;
+  resolved_by: ModelResolvedBy;
+}
+
+/**
+ * What DASH's setting was, as one of three things (MAR-654).
+ *
+ * `AgentModelChoice` plus one member, and the member is what A1.5 adds: a
+ * setting that was a **table** rather than a model. `matched` names its provider
+ * and no model id, because "the setting was a table" is not a model id and must
+ * not be squeezed into a column shaped for one; the models are the `steps`
+ * beside it, one row per step that resolved to something.
+ *
+ * No new member joins `AgentModelChoice` itself — A1.3's rule. That type is what
+ * a *person chose*, and a person still chooses between two things. This one is
+ * what DASH *resolved*, which is a different question with a third answer.
+ */
+export type RunModelSetting =
+  | AgentModelChoice
+  | { kind: "matched"; provider_id: string; steps: readonly RunStepModel[] };
+
+/**
  * What DASH's setting was when one run started.
  *
  * Stored per run and never revised — see `lib/ai/model-store.ts` for why the
@@ -580,8 +917,19 @@ export const MODEL_KEY_STAYS_HOME_REFUSAL =
  * DASH witnessed rather than one an agent reported.
  */
 export interface RunModelRecord {
-  choice: AgentModelChoice;
+  choice: RunModelSetting;
   recorded_at: string;
+}
+
+/** Distinct models a setting names, in step order. Empty for `match_each_step`. */
+export function settingModels(setting: RunModelSetting): string[] {
+  if (setting.kind === "one_model") {
+    return [setting.model_id];
+  }
+  if (setting.kind !== "matched") {
+    return [];
+  }
+  return [...new Set(setting.steps.map((step) => step.model_id))];
 }
 
 /**
@@ -644,9 +992,17 @@ export function describeRunModel(standing: RunModelStanding): string | null {
   if (standing.setting === null) {
     return null;
   }
-  return standing.setting.choice.kind === "one_model"
-    ? standing.setting.choice.model_id
-    : "Matched to each step";
+  /*
+   * MAR-654. The `"N models"` branch above was written for the reported side and
+   * had nothing to draw on this one, because a setting was one model or it was
+   * nothing. A1.5 makes it reachable from both: a setting that was a table names
+   * as many models as the person's map and DASH's default between them resolved.
+   */
+  const models = settingModels(standing.setting.choice);
+  if (models.length === 1) {
+    return models[0] ?? null;
+  }
+  return models.length > 1 ? `${String(models.length)} models` : "Matched to each step";
 }
 
 /**
@@ -664,17 +1020,28 @@ export function describeRunModel(standing: RunModelStanding): string | null {
  */
 export function describeRunModelDetail(standing: RunModelStanding): string | null {
   const setting = standing.setting;
-  const named = setting?.choice.kind === "one_model" ? setting.choice.model_id : null;
+  const resolved = setting === null ? [] : settingModels(setting.choice);
 
   if (standing.reported.length > 0) {
     const said =
       standing.reported.length === 1
         ? `used ${String(standing.reported[0])}`
         : `used ${String(standing.reported.length)} different models across its steps`;
+    /*
+     * MAR-654. An equality became a comparison, because the left side stopped
+     * being one model. A model DASH resolved that the run never named is the
+     * interesting case either way — an agent ignoring its configuration, or a
+     * configuration changed after the run — and it is reported rather than
+     * resolved, which is decision 4's rule and is unchanged.
+     */
+    const unmet = resolved.filter((id) => !standing.reported.includes(id));
     const mismatch =
-      named !== null && !standing.reported.includes(named)
-        ? ` DASH was set to give it ${named}, so the two do not agree.`
-        : "";
+      unmet.length === 0
+        ? ""
+        : resolved.length === 1
+          ? ` DASH was set to give it ${String(unmet[0])}, so the two do not agree.`
+          : ` DASH had resolved ${listModels(resolved)} for its steps, and it did not name ` +
+            `${listModels(unmet)}, so the two do not agree.`;
     return (
       `This run reported that it ${said}. That is the agent's own account of its work — DASH ` +
       `does not sit between this agent and its provider, so it is repeating what it was told ` +
@@ -685,11 +1052,24 @@ export function describeRunModelDetail(standing: RunModelStanding): string | nul
   if (setting === null) {
     return null;
   }
-  if (named !== null) {
+  if (resolved.length === 1) {
     return (
-      `When this run started, this agent was set to use ${named}. The run itself said nothing ` +
-      "about which model it used, and DASH does not sit between this agent and its provider — " +
-      "so this is DASH's record of the setting and not a report of what happened."
+      `When this run started, this agent was set to use ${String(resolved[0])}. The run itself ` +
+      "said nothing about which model it used, and DASH does not sit between this agent and " +
+      "its provider — so this is DASH's record of the setting and not a report of what happened."
+    );
+  }
+  if (resolved.length > 1) {
+    /*
+     * MAR-654. The setting was a table, so the sentence names what each kind of
+     * step was resolved to rather than one model. Still DASH's own record of its
+     * own setting, and still not a report of what happened.
+     */
+    return (
+      `When this run started, DASH had a model for each kind of step this agent's plan asks ` +
+      `for: ${listModels(resolved)}. The run itself said nothing about which of them it used, ` +
+      "and DASH does not sit between this agent and its provider — so this is DASH's record of " +
+      "the setting and not a report of what happened."
     );
   }
   return (
@@ -697,6 +1077,14 @@ export function describeRunModelDetail(standing: RunModelStanding): string | nul
     "for. The run itself said nothing about which model it used, and DASH holds no record of " +
     "it: DASH does not sit between this agent and its provider."
   );
+}
+
+/** Model ids in a sentence, as a list a person reads rather than a JSON array. */
+function listModels(models: readonly string[]): string {
+  if (models.length <= 1) {
+    return String(models[0] ?? "");
+  }
+  return `${models.slice(0, -1).join(", ")} and ${String(models[models.length - 1])}`;
 }
 
 /* ---------------------------------------------------------------------- *
@@ -715,6 +1103,41 @@ export function everyModelChoiceSentence(): string[] {
     provider_id: "openrouter",
     model_id: "a-model",
   };
+  /** The unpinned, unanswered agent every DASH ships with. */
+  const unresolved: EffectiveModelChoice = { choice: matchEachStep(), resolved_by: "none" };
+  const resolution = (
+    step: number,
+    modelId: string | null,
+    resolvedBy: ModelResolvedBy,
+  ): StepModelResolution => ({
+    step,
+    component_id: `c${String(step)}`,
+    level: "standard",
+    provider_id: modelId === null ? null : "openrouter",
+    model_id: modelId,
+    resolved_by: resolvedBy,
+  });
+  /** MAR-654. A setting that was a table: two steps, two models. */
+  const matchedSetting: RunModelSetting = {
+    kind: "matched",
+    provider_id: "openrouter",
+    steps: [
+      {
+        step: 3,
+        level: "cheap",
+        provider_id: "openrouter",
+        model_id: "a-model",
+        resolved_by: "fleet_default",
+      },
+      {
+        step: 4,
+        level: "standard",
+        provider_id: "openrouter",
+        model_id: "b-model",
+        resolved_by: "level_map",
+      },
+    ],
+  };
 
   return [
     ...reasons.flatMap((reason) => {
@@ -729,20 +1152,44 @@ export function everyModelChoiceSentence(): string[] {
       const sentence = describeChoiceAvailable("OpenRouter", count);
       return [sentence.headline, sentence.detail];
     }),
-    describeInForce(matchEachStep(), []),
-    describeInForce(matchEachStep(), steps.slice(0, 1)),
-    describeInForce(matchEachStep(), steps),
-    describeInForce(matchEachStep(), [{ ...steps[1]!, level: "frontier" }]),
+    describeInForce(unresolved, []),
+    describeInForce(unresolved, steps.slice(0, 1)),
+    describeInForce(unresolved, steps),
+    describeInForce(unresolved, [{ ...steps[1]!, level: "frontier" }]),
     describeStepsNotInForce("a-model"),
     /*
-     * MAR-642's branches, every one of them. The gate only ever sees a string a
-     * fixture reaches — the lesson MAR-620 wrote down about an optional field no
-     * fixture populated — and each of these is a *second* branch of a function
-     * whose first branch was already swept, which is precisely the shape that
-     * ships unchecked.
+     * MAR-642's branches, every one of them, and MAR-654's beside them. The gate
+     * only ever sees a string a fixture reaches — the lesson MAR-620 wrote down
+     * about an optional field no fixture populated — and each of these is a
+     * *second* branch of a function whose first branch was already swept, which
+     * is precisely the shape that ships unchecked.
      */
-    describeInForce(named, steps, true),
-    describeStepsNotInForce("a-model", true),
+    describeInForce({ choice: named, resolved_by: "agent_pin" }, steps),
+    describeInForce({ choice: named, resolved_by: "fleet_default" }, []),
+    // One model for every step, two models across them, and each of those with a
+    // step the ladder could not answer at all.
+    ...[
+      [resolution(3, "a-model", "fleet_default"), resolution(4, "a-model", "fleet_default")],
+      [resolution(3, "a-model", "fleet_default"), resolution(4, "b-model", "level_map")],
+      [resolution(3, "a-model", "fleet_default"), resolution(4, null, "none")],
+      [
+        resolution(3, "a-model", "fleet_default"),
+        resolution(4, "b-model", "level_map"),
+        resolution(5, null, "none"),
+      ],
+    ].map((resolutions) =>
+      describeInForce(
+        { choice: named, resolved_by: "fleet_default" },
+        resolutions.map((one) => ({
+          step: one.step,
+          component_id: one.component_id,
+          level: one.level,
+          declared: one.level,
+          overridden: false,
+        })),
+        resolutions,
+      ),
+    ),
     describeUnpinnedOption(null),
     describeUnpinnedOption({ provider_id: "openrouter", model_id: "a-model" }),
     ...[
@@ -758,6 +1205,36 @@ export function everyModelChoiceSentence(): string[] {
       [1, 3],
       [2, 3],
     ].map(([held, offered]) => describeKeysHeld(held as number, offered as number)),
+    /*
+     * MAR-654's own branches, every one of them, on MAR-620's terms: the gate
+     * only ever sees a string a fixture reaches, and each of these is a branch of
+     * a function whose other branches were already swept — precisely the shape
+     * that ships unchecked.
+     */
+    ...[describeLevelModels(null), describeLevelModels("OpenRouter")].flatMap((copy) => [
+      copy.headline,
+      copy.detail,
+      copy.in_force,
+    ]),
+    describeLevelModelRow(null, null) ?? "",
+    describeLevelModelRow(null, "a-model") ?? "",
+    ...(
+      [
+        { resolved_by: "agent_pin", model_id: "a-model" },
+        { resolved_by: "level_map", model_id: "a-model" },
+        { resolved_by: "fleet_default", model_id: "a-model" },
+        { resolved_by: "none", model_id: null },
+      ] as const
+    ).map((rung) =>
+      describeStepModel({
+        step: 3,
+        component_id: "c",
+        level: "standard",
+        provider_id: rung.model_id === null ? null : "openrouter",
+        model_id: rung.model_id,
+        resolved_by: rung.resolved_by,
+      }),
+    ),
     ...(
       [
         { setting: { choice: named, recorded_at: "2026-08-10T09:00:00Z" }, reported: [] },
@@ -772,6 +1249,19 @@ export function everyModelChoiceSentence(): string[] {
         {
           setting: { choice: named, recorded_at: "2026-08-10T09:00:00Z" },
           reported: ["b-model"],
+        },
+        // MAR-654. The setting was a table — the `"N models"` branch, now
+        // reachable from the left column — reported and unreported, agreeing and
+        // not. The last is the case A1.5 calls the interesting one: DASH resolved
+        // two models for two steps and the run named neither.
+        { setting: { choice: matchedSetting, recorded_at: "2026-08-10T09:00:00Z" }, reported: [] },
+        {
+          setting: { choice: matchedSetting, recorded_at: "2026-08-10T09:00:00Z" },
+          reported: ["a-model", "b-model"],
+        },
+        {
+          setting: { choice: matchedSetting, recorded_at: "2026-08-10T09:00:00Z" },
+          reported: ["c-model"],
         },
       ] satisfies RunModelStanding[]
     ).flatMap((standing) => [

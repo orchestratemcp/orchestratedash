@@ -439,11 +439,13 @@ synthesis step gets the one its author said that step needs.
 - **Two new tables and one changed column value.** `run_models.choice` gains a
   third member, so every reader of that column needs the branch; a row written
   before this amendment reads exactly as it does today.
-- **The migration index is not decidable yet.** Master is at `user_version` 25
-  and PR #203 (MAR-643) carries a migration 24 that renumbers on merge. These
-  tables take the next free index **after** that PR lands, which is the sequencing
-  MAR-654 already carries and the reason this amendment is written before
-  anything is built.
+- **~~The migration index is not decidable yet.~~ Resolved: migration 28.**
+  Written while master was at `user_version` 25 with PR #203 (MAR-643) carrying a
+  migration 24 that renumbered on merge. That landed as 27, so these two tables
+  take 28, the next free index. `tests/store-sqlite.test.ts` pins it, and
+  `RECONCILED_VERSION` deliberately stays 27: MAR-676's and MAR-682's repair
+  signatures describe stores that exist on one machine and must not follow the
+  head.
 
 ### What is unchanged
 
@@ -483,20 +485,29 @@ have watched a model work.
 
 ### What is proven
 
-**Nothing.** No code has been written against this amendment. It proposes two
-tables, one signature change on `BrokerDeps`, a rewrite of `applyFleetDefault`
-into a per-step resolver, three pickers and a per-step sentence, and none of it
-has been typechecked or run.
+**Was: nothing.** That was written before anything was built and is superseded by
+the build (MAR-654). What the list below promised, and where each item now
+stands:
 
-Provable once built:
+- ✅ **the ladder**, as a pure test over the four rules and the four
+  `resolved_by` values, including the negative — an agent whose plan declares no
+  level for a step cannot reach a level row. `tests/model-choice.test.ts`, in the
+  *what each level means* block, which also holds A1.3's compatibility table
+  (every state that existed before this behaves identically) and A1.5's
+  write-once rule over `run_step_models`.
+- ✅ **that a lying `step` reaches only a model the person mapped for a level
+  that agent's own plan declares**, in `tests/broker-threat-model.test.ts`, which
+  drives the real resolution functions rather than a stub and also pins that a
+  string, a float, a zero, a negative and an object with a `valueOf` are each read
+  as *no step* rather than coerced into one.
+- ⬜ **one real charged run of the competitor scout in which two steps report two
+  different models**, against a real key, attended. Still the only thing that
+  closes MAR-654, and deliberately not attempted by the build session.
+- ⬜ **the AI tab's three rows in all three states, and the agent page's per-step
+  sentence, by capture.** The states are covered by render tests
+  (`tests/ai-tab-render.test.tsx`, `tests/model-render.test.tsx`); the
+  photographs are not taken.
 
-- the ladder, as a pure test over the four rules and the four `resolved_by`
-  values, including the negative — an agent whose plan declares no level for a
-  step cannot reach a level row;
-- that a lying `step` reaches only a model the person mapped for a level that
-  agent's own plan declares, in `tests/broker-threat-model.test.ts`' shape;
-- one real charged run of the competitor scout in which two steps report two
-  different models, against a real key, attended — which is the only thing that
-  would actually close MAR-654;
-- the AI tab's three rows in all three states, and the agent page's per-step
-  sentence, by capture.
+Merged is not proven. What the build establishes is that the ladder is one
+function with six callers, that the widening is bounded where A1.4 says it is,
+and that no DASH changes behaviour until a person writes a row.

@@ -30,6 +30,8 @@ import { isModelId } from "../broker/operations";
 import {
   describeFleetDefaultCleared,
   describeFleetDefaultSet,
+  describeLevelModelCleared,
+  describeLevelModelSet,
   describeModelPinned,
   describeModelUnpinned,
 } from "../copy/decisions";
@@ -42,9 +44,13 @@ import {
   type AgentModelChoice,
   type EffectiveModelChoice,
   type FleetModelDefault,
+  type LevelModelMap,
+  type ModelResolvedBy,
   type RunModelRecord,
+  type RunModelSetting,
+  type RunStepModel,
 } from "./model-choice";
-import { isDefaultModelLevel, type DefaultModelLevel } from "./model-levels";
+import { isDefaultModelLevel, levelLabel, type DefaultModelLevel } from "./model-levels";
 
 /* ---------------------------------------------------------------------- *
  * One agent's choice
@@ -310,6 +316,192 @@ export function readEffectiveModelChoice(
 }
 
 /* ---------------------------------------------------------------------- *
+ * The level map (MAR-654, ADR 0011 amendment 1)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What each level means to this person, for one provider.
+ *
+ * Zero rows is the shipped state and the ordinary one: nothing seeds this table
+ * and DASH never writes a row into it on somebody's behalf. A row naming a
+ * provider this build no longer has, a level this build does not know, or a model
+ * id that no longer passes is dropped — `readFleetModelDefault`'s rule applied one
+ * table along: a record this build cannot interpret should read as the absence of
+ * a record.
+ *
+ * **One provider, always, and no all-providers form.** A model id means nothing
+ * without one, and a map that merged three providers' rows into three level keys
+ * would have to pick a winner per level — an answer to a question nobody asked
+ * that some caller would eventually resolve a model from. The AI tab draws one
+ * set of rows per provider and asks once for each.
+ *
+ * The value keeps its provider beside it (`FleetModelDefault`) rather than being
+ * flattened to a model id, so `applyFleetDefault` can apply to a level row the
+ * same provider check it applies to the default.
+ */
+export function readFleetLevelModels(providerId: string): LevelModelMap {
+  const map = new Map<DefaultModelLevel, FleetModelDefault>();
+  let rows: unknown[];
+  try {
+    rows = db()
+      .prepare("SELECT provider_id, level, model_id FROM fleet_level_models WHERE provider_id = ?")
+      .all(providerId) as unknown[];
+  } catch (error: unknown) {
+    console.warn(`[dash] could not read the level map: ${message(error)}`);
+    return map;
+  }
+
+  for (const row of rows) {
+    const record = row as Record<string, unknown>;
+    const rowProvider = String(record["provider_id"]);
+    const level = record["level"];
+    const modelId = String(record["model_id"]);
+    if (aiProviderById(rowProvider) === null || !isDefaultModelLevel(level) || !isModelId(modelId)) {
+      continue;
+    }
+    map.set(level, { provider_id: rowProvider, model_id: modelId });
+  }
+  return map;
+}
+
+/**
+ * Whether anybody has mapped anything at all.
+ *
+ * One cheap query, so the ingest path can keep the promise MAR-642 made about
+ * itself: on a DASH nobody has configured, not one manifest is opened when events
+ * arrive. See `ingestEvents`.
+ */
+export function hasFleetLevelModels(): boolean {
+  try {
+    const row = db().prepare("SELECT 1 AS present FROM fleet_level_models LIMIT 1").get();
+    return row !== undefined && row !== null;
+  } catch (error: unknown) {
+    console.warn(`[dash] could not read the level map: ${message(error)}`);
+    return false;
+  }
+}
+
+/**
+ * Say what one level means, for one provider.
+ *
+ * Returns whether it was stored, in `writeFleetModelDefault`'s shape and for its
+ * reason: false is a refusal — a provider DASH does not broker, a level this
+ * build does not know, or an id DASH is not willing to write down — and the
+ * caller renders a sentence rather than a fault.
+ *
+ * **It writes nothing to any agent and nothing to the default.** There is no code
+ * path here that could, which is the mechanical half of "the per-agent escape
+ * already exists and already wins": an agent with a pin keeps it, because
+ * `applyFleetDefault` reads this only where that row is absent.
+ */
+export function writeFleetLevelModel(
+  providerId: string,
+  level: string,
+  modelId: string,
+  at: string,
+): boolean {
+  if (aiProviderById(providerId) === null || !isDefaultModelLevel(level) || !isModelId(modelId)) {
+    return false;
+  }
+  // `writeFleetModelDefault`'s read-before-write, for its reason: the decisions
+  // log records transitions, and re-saving the same row is not one.
+  const before = readFleetLevelModels(providerId).get(level) ?? null;
+  try {
+    db()
+      .prepare(
+        "INSERT INTO fleet_level_models (provider_id, level, model_id, chosen_at) " +
+          "VALUES (?, ?, ?, ?) " +
+          "ON CONFLICT (provider_id, level) DO UPDATE SET " +
+          "model_id = excluded.model_id, chosen_at = excluded.chosen_at",
+      )
+      .run(providerId, level, modelId, at);
+  } catch (error: unknown) {
+    console.warn(`[dash] could not record a level's model: ${message(error)}`);
+    return false;
+  }
+  if (before === null || before.model_id !== modelId) {
+    fileDecision({
+      decided_at: at,
+      subject_kind: "fleet",
+      subject_id: null,
+      kind: "fleet_level_model",
+      // The table's own primary key, so the log threads one level of one
+      // provider together: `topic` is what `fleet_decisions_by_chain` groups by,
+      // and three levels sharing one empty topic would read as a single setting
+      // changed nine times.
+      topic: `${providerId}/${level}`,
+      summary: describeLevelModelSet(levelLabel(level), modelId),
+      outcome: { state: "set", provider_id: providerId, model_id: modelId },
+      decided_by: "person",
+      rule: null,
+      reason: null,
+      receipts: [`fleet_level_models ${providerId} ${level}`],
+    });
+  }
+  return true;
+}
+
+/**
+ * Go back to having nothing mapped for one level.
+ *
+ * Deletes rather than writing a sentinel, `clearFleetModelDefault`'s rule: "no
+ * model for this level" and "a level whose model nothing can read" would be two
+ * states meaning one thing, and only one of them is the state DASH ships in.
+ * Steps that asked for it go back to the default, which is what they were on
+ * before anybody mapped anything.
+ */
+export function clearFleetLevelModel(providerId: string, level: string): void {
+  if (!isDefaultModelLevel(level)) {
+    return;
+  }
+  try {
+    const result = db()
+      .prepare("DELETE FROM fleet_level_models WHERE provider_id = ? AND level = ?")
+      .run(providerId, level);
+    if (Number(result.changes) > 0) {
+      fileDecision({
+        decided_at: new Date().toISOString(),
+        subject_kind: "fleet",
+        subject_id: null,
+        kind: "fleet_level_model",
+        topic: `${providerId}/${level}`,
+        summary: describeLevelModelCleared(levelLabel(level)),
+        outcome: { state: "cleared" },
+        decided_by: "person",
+        rule: null,
+        reason: null,
+        receipts: [`fleet_level_models ${providerId} ${level}`],
+      });
+    }
+  } catch (error: unknown) {
+    console.warn(`[dash] could not clear a level's model: ${message(error)}`);
+  }
+}
+
+/**
+ * What one agent runs one step on, the whole ladder applied (MAR-654).
+ *
+ * `readEffectiveModelChoice` with a step, and the reader every per-step consumer
+ * should use for the reason that one exists: the precedence between a pin, the
+ * person's map and DASH's default is a product decision, it lives in
+ * `applyFleetDefault`, and six surfaces reading three rows separately is six
+ * chances to disagree about which wins.
+ *
+ * A null `level` is a step whose plan declared none, and it resolves exactly as
+ * the whole-agent question does — pin, then default, then nothing.
+ */
+export function readEffectiveStepModel(
+  agent: string,
+  agentProviderId: string | null,
+  level: DefaultModelLevel | null,
+): EffectiveModelChoice {
+  return applyFleetDefault(readAgentModelChoice(agent), readFleetModelDefault(), agentProviderId, {
+    level,
+    level_models: agentProviderId === null ? new Map() : readFleetLevelModels(agentProviderId),
+  });
+}
+
+/* ---------------------------------------------------------------------- *
  * Per-step overrides
  * ---------------------------------------------------------------------- */
 
@@ -391,7 +583,7 @@ export function recordRunModel(
   database: DatabaseSync,
   agent: string,
   runId: string,
-  choice: AgentModelChoice,
+  choice: RunModelSetting,
   at: string,
 ): void {
   try {
@@ -404,10 +596,39 @@ export function recordRunModel(
         agent,
         runId,
         choice.kind,
-        choice.kind === "one_model" ? choice.provider_id : null,
+        // MAR-654. `matched` names its provider and no model, because "the
+        // setting was a table" is not a model id and must not be squeezed into a
+        // column shaped for one. The models are the rows written below.
+        choice.kind === "match_each_step" ? null : choice.provider_id,
         choice.kind === "one_model" ? choice.model_id : null,
         at,
       );
+    if (choice.kind !== "matched") {
+      return;
+    }
+    /*
+     * A1.5. The per-step resolution, in the caller's transaction beside the row
+     * above, so a run has both or neither. `ON CONFLICT DO NOTHING` for
+     * `run_models`' own reason: a later batch for the same run must not revise
+     * what an already-started run reports it began under, and somebody changing
+     * a level map mid-run must not reach backwards through this.
+     */
+    const insert = database.prepare(
+      "INSERT INTO run_step_models " +
+        "(agent, run_id, step, level, provider_id, model_id, resolved_by) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
+    );
+    for (const step of choice.steps) {
+      insert.run(
+        agent,
+        runId,
+        step.step,
+        step.level,
+        step.provider_id,
+        step.model_id,
+        step.resolved_by,
+      );
+    }
   } catch (error: unknown) {
     console.warn(`[dash] could not record a run's model setting: ${message(error)}`);
   }
@@ -434,7 +655,67 @@ export function readRunModel(agent: string, runId: string): RunModelRecord | nul
     console.warn(`[dash] could not read a run's model setting: ${message(error)}`);
     return null;
   }
-  return row === undefined || row === null ? null : projectRunModel(row);
+  if (row === undefined || row === null) {
+    return null;
+  }
+  return projectRunModel(row, () => readRunStepModels(agent, runId));
+}
+
+/**
+ * What DASH resolved for each step of one run, in step order (MAR-654).
+ *
+ * Read lazily by `projectRunModel` — only a `matched` row has any — so a store
+ * full of runs recorded before this amendment costs exactly what it did.
+ *
+ * A row this build cannot interpret is dropped rather than downgraded, which is
+ * this module's standing rule: an unreadable level or model id is the absence of
+ * a resolution for that step, and a run whose every row is unreadable reads as a
+ * setting DASH cannot describe rather than as one it invents.
+ */
+function readRunStepModels(agent: string, runId: string): RunStepModel[] {
+  let rows: unknown[];
+  try {
+    rows = db()
+      .prepare(
+        "SELECT step, level, provider_id, model_id, resolved_by FROM run_step_models " +
+          "WHERE agent = ? AND run_id = ? ORDER BY step",
+      )
+      .all(agent, runId) as unknown[];
+  } catch (error: unknown) {
+    console.warn(`[dash] could not read a run's step models: ${message(error)}`);
+    return [];
+  }
+
+  const steps: RunStepModel[] = [];
+  for (const row of rows) {
+    const record = row as Record<string, unknown>;
+    const step = Number(record["step"]);
+    const level = record["level"];
+    const providerId = String(record["provider_id"]);
+    const modelId = String(record["model_id"]);
+    const resolvedBy = String(record["resolved_by"]);
+    if (
+      !Number.isInteger(step) ||
+      !isDefaultModelLevel(level) ||
+      aiProviderById(providerId) === null ||
+      !isModelId(modelId) ||
+      !isModelResolvedBy(resolvedBy)
+    ) {
+      continue;
+    }
+    steps.push({ step, level, provider_id: providerId, model_id: modelId, resolved_by: resolvedBy });
+  }
+  return steps;
+}
+
+/** Whether a stored string is one of the ladder's four rungs. */
+function isModelResolvedBy(value: string): value is ModelResolvedBy {
+  return (
+    value === "agent_pin" ||
+    value === "level_map" ||
+    value === "fleet_default" ||
+    value === "none"
+  );
 }
 
 /** Every recorded run setting, keyed `${agent} ${run_id}`, for the runs list. */
@@ -451,12 +732,14 @@ export function readRunModels(): Map<string, RunModelRecord> {
   }
 
   for (const row of rows) {
-    const record = projectRunModel(row);
+    const fields = row as Record<string, unknown>;
+    const agent = String(fields["agent"]);
+    const runId = String(fields["run_id"]);
+    const record = projectRunModel(row, () => readRunStepModels(agent, runId));
     if (record === null) {
       continue;
     }
-    const fields = row as Record<string, unknown>;
-    byRun.set(`${String(fields["agent"])} ${String(fields["run_id"])}`, record);
+    byRun.set(`${agent} ${runId}`, record);
   }
   return byRun;
 }
@@ -469,7 +752,7 @@ export function readRunModels(): Map<string, RunModelRecord> {
  * what happened, and quietly reporting the second for a row that meant the first
  * would put a sentence on a run page that nobody's setting ever produced.
  */
-function projectRunModel(row: unknown): RunModelRecord | null {
+function projectRunModel(row: unknown, steps: () => RunStepModel[]): RunModelRecord | null {
   const record = row as Record<string, unknown>;
   const recordedAt = String(record["recorded_at"]);
   const choice = record["choice"];
@@ -477,12 +760,35 @@ function projectRunModel(row: unknown): RunModelRecord | null {
   if (choice === "match_each_step") {
     return { choice: matchEachStep(), recorded_at: recordedAt };
   }
+  const providerId = String(record["provider_id"]);
+  if (aiProviderById(providerId) === null) {
+    return null;
+  }
+  if (choice === "matched") {
+    /*
+     * MAR-654. The step rows are the models, so they are read here rather than
+     * by every caller — and only here, which is why they arrive as a thunk: a
+     * store full of runs recorded before this amendment never touches the table.
+     *
+     * A `matched` row with no readable step rows is null rather than
+     * `match_each_step`, on `one_model`'s rule below: the two say different
+     * things about what happened, and reporting "DASH had no model for this
+     * agent" for a run whose setting was a table would be a sentence nobody's
+     * setting ever produced.
+     */
+    const resolved = steps();
+    return resolved.length === 0
+      ? null
+      : {
+          choice: { kind: "matched", provider_id: providerId, steps: resolved },
+          recorded_at: recordedAt,
+        };
+  }
   if (choice !== "one_model") {
     return null;
   }
-  const providerId = String(record["provider_id"]);
   const modelId = String(record["model_id"]);
-  if (aiProviderById(providerId) === null || !isModelId(modelId)) {
+  if (!isModelId(modelId)) {
     return null;
   }
   return {

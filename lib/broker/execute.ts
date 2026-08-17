@@ -239,16 +239,40 @@ export interface BrokerDeps {
    * sees it. An agent that could name its own model would be an agent that
    * could name an expensive one.
    *
-   * Null means the owner has left the agent on *match each step*, which is not
-   * something DASH can ask a provider under — the same gap
-   * `describeUnavailable`'s `no_model_chosen` words for the chat — and the
-   * request is refused rather than run against a model DASH picked.
+   * Null means nothing on the ladder answered — no pin, no level row, no default
+   * — which is not something DASH can ask a provider under. The same gap
+   * `describeUnavailable`'s `no_model_chosen` words for the chat, and the request
+   * is refused rather than run against a model DASH picked.
+   *
+   * ## The agent names a step, and only a step (MAR-654, A1.4)
+   *
+   * `step` is the number the agent put in its request, narrowed by
+   * `requestedStep` and passed through untouched. **It does not name the level
+   * and it cannot name a model**, and that difference is the whole safety
+   * argument: the level is resolved on the other side of this seam, from DASH's
+   * own copy of the manifest joined to the person's own overrides, and never from
+   * anything the request carried. A `step` that is absent, malformed, unknown to
+   * the manifest, or declares no level resolves as null — pin, then default, then
+   * refusal, which is exactly what every request got before this amendment.
+   *
+   * **This is a widening and it is stated rather than designed around.** Before
+   * it, an agent-origin spend could reach exactly one model. After it, up to
+   * three. What bounds it: every one of the three was written by the person out
+   * of their own catalogue; an agent can only reach levels **its own plan
+   * declares**, so its ceiling is the strongest level its author asked for; ADR
+   * 0016's run allowance is untouched and so is the origin gate; and A1.5 records
+   * which step DASH resolved under, so an agent that claimed its synthesis step
+   * while doing cheap work leaves a row a person can read.
+   *
+   * DASH inferring the step from the operation is the alternative, and it does
+   * not work: two steps of one plan can both be `{provider}.chat.completion`, and
+   * `digest_curate` and `deep_dive_synthesis` are exactly that pair.
    *
    * Optional so the pure tests can leave it out; absent behaves as null, so a
    * broker built without it simply cannot spend on an agent's behalf.
    * `electron/broker-host.ts` supplies it.
    */
-  readModelChoice?(agentId: string): string | null;
+  readModelChoice?(agentId: string, step: number | null): string | null;
   /**
    * Has this agent read a web page through DASH's controlled browser, in the run
    * it is in now (MAR-628, ADR 0019, ADR 0020's rule)?
@@ -696,8 +720,16 @@ export function createBroker(deps: BrokerDeps): Broker {
            * into a model name is the exact mapping ADR 0011 refuses to keep a
            * second copy of, and picking one anyway would be DASH choosing what
            * somebody's account gets billed for.
+           *
+           * MAR-654: the agent may now say **which step** it is on, and that is
+           * the only thing about the resolution it may say. The step travels as
+           * a number; the level it implies is read on the other side of this
+           * seam, from the manifest DASH imported. See
+           * `BrokerDeps.readModelChoice` for what that bounds and what it does
+           * not.
            */
-          const chosen = deps.readModelChoice?.(principal.agent_id) ?? null;
+          const chosen =
+            deps.readModelChoice?.(principal.agent_id, requestedStep(request.input)) ?? null;
           if (chosen === null) {
             return no("no_model_chosen");
           }
@@ -964,6 +996,29 @@ export function createBroker(deps: BrokerDeps): Broker {
       return fulfil(request.request_id, result);
     },
   };
+}
+
+/**
+ * Which step of its own plan an agent says it is on (MAR-654, A1.4).
+ *
+ * A whole number of at least 1, or null. Everything else — a string, a float, a
+ * negative, an absent field, an object with a `valueOf` — is null, which resolves
+ * exactly as a request that named no step at all: pin, then default, then
+ * refusal.
+ *
+ * Narrow on purpose, and narrow **here** rather than at the seam that reads a
+ * manifest. This is the one function in DASH that turns a value an agent wrote
+ * into the number a resolution is keyed by, so the coercion has one home and
+ * `tests/broker-threat-model.test.ts` has one place to aim at. A string `"4"`
+ * that quietly became step 4 would be a request choosing how it is parsed.
+ *
+ * It reads `request.input` and never `plannedInput`: what the agent supplied is
+ * the question being asked, and DASH's own substitutions must not be able to
+ * become the answer to it.
+ */
+function requestedStep(input: Record<string, unknown>): number | null {
+  const value = input["step"];
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : null;
 }
 
 /**

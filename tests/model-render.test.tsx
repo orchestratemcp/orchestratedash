@@ -33,6 +33,14 @@ const STEPS: ModelStepView[] = [
     declared: "cheap",
     declared_label: levelLabel("cheap"),
     overridden: false,
+    // MAR-654, A1.6. This step falls back to DASH's default; the one below is
+    // answered by a row the person mapped. Two rungs in one fixture, so the
+    // render test sees both sentences rather than one repeated.
+    resolved_model_id: "meta-llama/llama-3.3-70b-instruct:free",
+    resolved_by: "fleet_default",
+    resolved_note:
+      "Runs on meta-llama/llama-3.3-70b-instruct:free, DASH's default model. " +
+      "Nothing is set for small and cheap steps yet.",
   },
   {
     step: 3,
@@ -43,6 +51,10 @@ const STEPS: ModelStepView[] = [
     declared: "standard",
     declared_label: levelLabel("standard"),
     overridden: true,
+    resolved_model_id: "anthropic/claude-opus-5",
+    resolved_by: "level_map",
+    resolved_note:
+      "Runs on anthropic/claude-opus-5, which you chose for the best available steps.",
   },
 ];
 
@@ -66,6 +78,7 @@ function choosable(over: Partial<AgentModelSettingsView> = {}): AgentModelSettin
     steps: STEPS,
     steps_in_force: true,
     steps_note: null,
+    steps_link_label: "Choose what each kind of step runs on",
     ...over,
   } as AgentModelSettingsView;
 }
@@ -162,6 +175,58 @@ describe("the model section", () => {
     const html = section(choosable());
     expect(html).toContain("You changed this");
     expect(html).toContain(`What the plan asked for — ${levelLabel("standard").toLowerCase()}`);
+  });
+
+  it("says what each step resolves to and which rung answered (MAR-654)", () => {
+    // A1.6. The control Henrik found greyed is live for an unpinned agent, and
+    // each step names the model its level currently buys *and where that was
+    // decided* — "this is what everything unmapped falls back to" and "you chose
+    // this for balanced steps" are different facts about the same id.
+    const html = section(choosable());
+    expect(text(html)).toContain("DASH's default model");
+    expect(text(html)).toContain("which you chose for the best available steps");
+    expect(html).toContain("meta-llama/llama-3.3-70b-instruct:free");
+    expect(html).toContain("anthropic/claude-opus-5");
+    // And the link to where the map is set. Unfindable is the same as missing:
+    // the map is one place, and every step depending on it says where.
+    expect(html).toContain('href="/settings/ai"');
+    expect(text(html)).toContain("Choose what each kind of step runs on");
+  });
+
+  it("drops the resolved line, and the link, when there is nothing to resolve", () => {
+    // The section's own headline already says DASH does not choose this agent's
+    // model. A second, differently-worded reason under every step would
+    // contradict it, so `buildAgentModelSettings` leaves `resolved_note` null on
+    // that arm — which is what these steps carry.
+    const html = section(
+      noChoice(
+        "no_provider_key",
+        STEPS.map((step) => ({
+          ...step,
+          resolved_model_id: null,
+          resolved_by: "none",
+          resolved_note: null,
+        })),
+      ),
+    );
+    expect(html).not.toContain("model-step-resolved");
+    expect(html).not.toContain('href="/settings/ai"');
+    // The declared strength is still drawn: it comes off the manifest and needs
+    // no key.
+    expect(html).toContain(levelLabel("cheap"));
+  });
+
+  it("drops the link while a pin has set the levels aside", () => {
+    // A promise about a control has to be true of the control it is under: with
+    // a model pinned, changing what a level means changes nothing here.
+    const html = section(
+      choosable({
+        chosen_model_id: "anthropic/claude-sonnet-5",
+        steps_in_force: false,
+        steps_note: "These are set aside while every step uses anthropic/claude-sonnet-5.",
+      }),
+    );
+    expect(html).not.toContain('href="/settings/ai"');
   });
 
   it("tells a browser tab which window can act instead of drawing a dead control", () => {

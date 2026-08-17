@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
 import { DEFAULT_MODEL_LEVELS, levelLabel } from "../../lib/ai/model-levels";
@@ -184,6 +185,7 @@ export function ModelChoice({
         canAct={canAct && settings.can_choose}
         inForce={!settings.can_choose || settings.steps_in_force}
         note={settings.can_choose ? settings.steps_note : null}
+        linkLabel={settings.can_choose ? settings.steps_link_label : null}
         busy={busy}
         onSetLevel={(step, level) => void setLevel(step, level)}
       />
@@ -294,6 +296,7 @@ function ModelSteps({
   canAct,
   inForce,
   note,
+  linkLabel,
   busy,
   onSetLevel,
 }: {
@@ -301,6 +304,16 @@ function ModelSteps({
   canAct: boolean;
   inForce: boolean;
   note: string | null;
+  /**
+   * Where a level becomes a model, in words (MAR-654, A1.6).
+   *
+   * Null on the arm where there is nothing to choose. The link it labels is the
+   * answer to *unfindable is the same as missing*: the map lives on the AI tab,
+   * one place for the whole fleet, and every step whose model comes from it says
+   * where that is rather than leaving somebody to find a setting they have never
+   * seen.
+   */
+  linkLabel: string | null;
   busy: boolean;
   onSetLevel: (step: number, level: string) => void;
 }): ReactNode {
@@ -317,6 +330,11 @@ function ModelSteps({
       </summary>
 
       {note === null ? null : <p className="muted wrap">{note}</p>}
+      {linkLabel === null || !inForce ? null : (
+        <p className="model-steps-link">
+          <Link href="/settings/ai">{linkLabel}</Link>
+        </p>
+      )}
 
       <ul className="row-list model-step-list">
         {steps.map((step) => (
@@ -326,6 +344,19 @@ function ModelSteps({
               {step.overridden ? <span className="chip">You changed this</span> : null}
             </div>
             <p className="muted wrap">{step.meaning}</p>
+            {/*
+              MAR-654, A1.6. What this step's level resolves to right now, with
+              which rung answered said in words.
+
+              Under the meaning rather than above it, because the order is the
+              question then the answer: the plan says how hard this step is, and
+              this says what that currently buys. The sentence is
+              `describeStepModel`'s — a page that worded it here could describe a
+              resolution differently from the process that performs it.
+            */}
+            {step.resolved_note === null ? null : (
+              <p className="model-step-resolved wrap">{step.resolved_note}</p>
+            )}
             {canAct ? (
               <>
                 <label className="field-label" htmlFor={`model-step-${String(step.step)}`}>

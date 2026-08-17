@@ -582,6 +582,42 @@ export const COMMANDS = {
   },
 
   /*
+   * MAR-654, ADR 0011 amendment 1. A third member about no agent.
+   *
+   * Appended rather than slotted beside `model.default`, on this catalogue's
+   * standing rule: `tests/shell.test.ts` pins the whole list in order, so a new
+   * command goes at the end of its family and the diff a reviewer reads is one
+   * added line rather than a reordering.
+   *
+   * It names a provider and a level, on `model.default`'s terms and for its
+   * reason: there is no agent here to resolve a provider from, so the renderer
+   * names one of the three ids in `AI_PROVIDER_IDS` and one of the three levels
+   * in `DEFAULT_MODEL_LEVELS`, and main refuses anything else. What it still
+   * cannot name is an origin, a path, a header or a key.
+   *
+   * **It widens what an agent-origin spend can reach**, from one model to three,
+   * and that is said here rather than left in the ADR: a row written through
+   * this command is one an agent's own step can be resolved to. What bounds it is
+   * that an agent reaches only levels its own plan declares — see
+   * `BrokerDeps.readModelChoice`.
+   */
+  "model.level": {
+    effect:
+      "Say which model steps of one strength run on, or clear it. Never changes an agent that " +
+      "has been given a model of its own. Contacts nobody.",
+    payload_keys: ["provider_id", "level", "model_id"],
+    // The model is not required: a provider and a level with no model is how one
+    // row is cleared, in `model.default`'s shape — an absent field means "put it
+    // back", so removing a setting needs no second command.
+    required_keys: ["provider_id", "level"],
+    mutates: true,
+    // Nothing in the world changes and the previous setting is one press away.
+    // What it affects is which model a *later* run resolves a step to; runs
+    // already recorded are never revised.
+    irreversible: false,
+  },
+
+  /*
    * MAR-545. Asking an agent a question about what it has found.
    *
    * **A tenth family with one member, and the first command in this file that
@@ -1445,6 +1481,12 @@ export function isFolderCommandName(value: CommandName): value is FolderCommandN
  * the map itself buys is the same thing every other one does — the trusted-side
  * switch and the named preload methods are both exhaustive over it, so a fourth
  * member cannot be added without both of them stopping compiling.
+ *
+ * MAR-642 made it five and MAR-654 six. Every addition since the third has been
+ * about no agent — DASH's default model, the catalogue behind it, and what one
+ * *level* means — and each one stayed here rather than starting a family for the
+ * reason `model.default`'s own entry gives: what they change is which model DASH
+ * asks for, which is a setting, in the family whose name is a setting.
  */
 export const MODEL_ACTIONS = {
   "model.choose": "choose",
@@ -1454,6 +1496,8 @@ export const MODEL_ACTIONS = {
   // they are in this family and what naming a provider does and does not widen.
   "model.default": "default",
   "model.catalogue": "catalogue",
+  // MAR-654. A third, on the same terms: what one *level* means, fleet-wide.
+  "model.level": "level",
 } as const;
 
 export type ModelCommandName = keyof typeof MODEL_ACTIONS;

@@ -95,7 +95,13 @@ export function AiSettings({
 
   return (
     <>
-      <ModelDefault setting={view.model_default} keys={keys} canAct={canAct} onChanged={onChanged} />
+      <ModelDefault
+        setting={view.model_default}
+        levels={view.level_models}
+        keys={keys}
+        canAct={canAct}
+        onChanged={onChanged}
+      />
       <AiKeys connectors={keys} canAct={canAct} onChanged={onChanged} />
     </>
   );

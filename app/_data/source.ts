@@ -266,6 +266,18 @@ interface DashShellClient {
   setDefaultModel?(args: { provider_id?: string; model_id?: string }): Promise<CommandResult>;
   listProviderModels?(args: { provider_id: string }): Promise<CommandResult>;
   /**
+   * What one level means, fleet-wide (MAR-654).
+   *
+   * Optional for the reason the two above are, and the degradation is the same
+   * shape: a shell older than this draws the level rows and whatever is mapped —
+   * both come through the view — and cannot change them. Reads, refuses to act.
+   */
+  setLevelModel?(args: {
+    provider_id: string;
+    level: string;
+    model_id?: string;
+  }): Promise<CommandResult>;
+  /**
    * Asking an agent a question (MAR-545).
    *
    * Optional for the reason every method here is, and this is the one where the
@@ -905,7 +917,13 @@ export async function setNotificationKind(args: {
  * could take as "DASH does not know".
  */
 async function modelCommand(
-  method: "chooseModel" | "setStepLevel" | "listModels" | "setDefaultModel" | "listProviderModels",
+  method:
+    | "chooseModel"
+    | "setStepLevel"
+    | "listModels"
+    | "setDefaultModel"
+    | "listProviderModels"
+    | "setLevelModel",
   args: Record<string, unknown>,
   cannot: string,
 ): Promise<CommandResult> {
@@ -977,6 +995,21 @@ export async function listProviderModels(args: {
   provider_id: string;
 }): Promise<CommandResult> {
   return modelCommand("listProviderModels", args, "ask that provider which models it offers");
+}
+
+/**
+ * Say what one level means, or clear it (MAR-654).
+ *
+ * An absent `model_id` clears, which is `setDefaultModel`'s rule one row along:
+ * the absent field is the instruction, so there is no second command and no
+ * magic value.
+ */
+export async function setLevelModel(args: {
+  provider_id: string;
+  level: string;
+  model_id?: string;
+}): Promise<CommandResult> {
+  return modelCommand("setLevelModel", args, "change what one kind of step runs on");
 }
 
 /**
