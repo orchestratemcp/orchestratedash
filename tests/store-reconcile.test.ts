@@ -451,6 +451,152 @@ describe("stores the repair must never touch", () => {
  * The backup, on its own terms
  * ---------------------------------------------------------------------- */
 
+/* ---------------------------------------------------------------------- *
+ * MAR-682: the store one boot before the repair could see it
+ *
+ * The fixture is one `DROP TABLE chief_messages` on an otherwise ordinary,
+ * fully-migrated store — the shape a build one merge behind MAR-676 leaves:
+ * `user_version` already at 27, MAR-643's multi-account tables built in
+ * full, and only the one table the loop believed it had already created
+ * still missing. The step this repair runs is extracted from that same
+ * store's own `sqlite_master` before the table is dropped, for the same
+ * reason `divergeToPreRenumber`'s fixtures are built from SQL rather than
+ * copied: it is master's own migration, not somebody's recollection of it.
+ * ---------------------------------------------------------------------- */
+
+function chiefMessagesDdl(database: DatabaseSync): string {
+  const row = database
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'chief_messages'")
+    .get();
+  if (row === undefined || row["sql"] === null) {
+    throw new Error("chief_messages should exist on a freshly migrated store.");
+  }
+  return String(row["sql"]);
+}
+
+function dropChiefMessages(database: DatabaseSync): void {
+  database.exec("DROP TABLE chief_messages");
+}
+
+describe("the store one boot before MAR-676's repair could see it (MAR-682)", () => {
+  it("recognises user_version 27 with chief_messages missing and multi-account built", async () => {
+    const { db } = await freshStore();
+    const handle = db.db();
+    dropChiefMessages(handle);
+
+    const { inspectChieflessStore } = await import("../lib/store-reconcile");
+    expect(inspectChieflessStore(handle)).toEqual({ chiefless: true, recorded_version: 27 });
+  });
+
+  it("leaves a healthy store at 27 alone", async () => {
+    const { db } = await freshStore();
+    const { inspectChieflessStore } = await import("../lib/store-reconcile");
+
+    expect(inspectChieflessStore(db.db())).toEqual({ chiefless: false });
+  });
+
+  it("leaves MAR-676's own diverged store alone -- it has not reached 27 yet", async () => {
+    const { db } = await freshStore();
+    divergeToPreRenumber(db.db());
+    const { inspectChieflessStore } = await import("../lib/store-reconcile");
+
+    expect(inspectChieflessStore(db.db())).toEqual({ chiefless: false });
+  });
+
+  it("names the one-entry window CHIEFLESS_SLICE points at", async () => {
+    const { CHIEFLESS_SLICE } = await import("../lib/store-reconcile");
+    expect(CHIEFLESS_SLICE).toEqual({ from: 23, to: 24 });
+  });
+});
+
+describe("reconcileChieflessStore", () => {
+  it("creates chief_messages from the store's own step, backs up first, and leaves user_version at 27", async () => {
+    const { dataDir, db } = await freshStore();
+    const handle = db.db();
+    const ddl = chiefMessagesDdl(handle);
+    dropChiefMessages(handle);
+    expect(tableNames(handle)).not.toContain("chief_messages");
+    expect(backupsIn(dataDir)).toEqual([]);
+
+    const { reconcileChieflessStore } = await import("../lib/store-reconcile");
+    const at = new Date("2026-08-17T10:00:00.000Z");
+    let recorded: unknown = null;
+
+    const reconciliation = reconcileChieflessStore(handle, {
+      storePath: path.join(dataDir, "dash.sqlite"),
+      steps: [ddl],
+      now: () => at,
+      log: () => {},
+      record: (_handle, done) => {
+        recorded = done;
+      },
+    });
+
+    expect(reconciliation).toMatchObject({
+      recorded_version: 27,
+      final_version: 27,
+      applied_versions: [24],
+      created_tables: ["chief_messages"],
+      created_indexes: [],
+      removed_fleet_secret_rows: 0,
+    });
+    expect(reconciliation?.backup.copied).toBeGreaterThan(0);
+    expect(recorded).toEqual(reconciliation);
+
+    // The table is back, byte-identical to what dropping it took away — proof
+    // this ran the store's own step and not a hand-written guess at its DDL.
+    expect(chiefMessagesDdl(handle)).toEqual(ddl);
+    expect(version(handle)).toBe(27);
+
+    const backups = backupsIn(dataDir);
+    expect(backups.length).toBeGreaterThan(0);
+    expect(backups.every((name) => name.startsWith("dash.sqlite.before-reconcile-"))).toBe(true);
+  });
+
+  it("refuses by name, changes nothing, and leaves no backup behind, on a shape it does not recognise", async () => {
+    const { dataDir, db } = await freshStore();
+    const handle = db.db();
+    const ddl = chiefMessagesDdl(handle);
+    dropChiefMessages(handle);
+    // A column migration 27 does not produce, same as MAR-676's own refusal
+    // test -- SQLite cannot put it back without rebuilding the table.
+    handle.exec("ALTER TABLE fleet_connections DROP COLUMN account_hint");
+
+    const { reconcileChieflessStore } = await import("../lib/store-reconcile");
+    const options = { storePath: path.join(dataDir, "dash.sqlite"), steps: [ddl] };
+
+    expect(() => reconcileChieflessStore(handle, options)).toThrow(/fleet_connections has columns/);
+    expect(() => reconcileChieflessStore(handle, options)).toThrow(/What was found, in full/);
+
+    expect(backupsIn(dataDir)).toEqual([]);
+    expect(tableNames(handle)).not.toContain("chief_messages");
+  });
+
+  it("leaves a healthy store at 27 alone", async () => {
+    const { dataDir, db } = await freshStore();
+    const handle = db.db();
+    const ddl = chiefMessagesDdl(handle);
+
+    const { reconcileChieflessStore } = await import("../lib/store-reconcile");
+    expect(
+      reconcileChieflessStore(handle, { storePath: path.join(dataDir, "dash.sqlite"), steps: [ddl] }),
+    ).toBeNull();
+    expect(backupsIn(dataDir)).toEqual([]);
+  });
+
+  it("leaves MAR-676's own diverged store alone -- it has not reached 27 yet", async () => {
+    const { dataDir, db } = await freshStore();
+    const handle = db.db();
+    divergeToPreRenumber(handle);
+
+    const { reconcileChieflessStore } = await import("../lib/store-reconcile");
+    expect(
+      reconcileChieflessStore(handle, { storePath: path.join(dataDir, "dash.sqlite"), steps: [] }),
+    ).toBeNull();
+    expect(backupsIn(dataDir)).toEqual([]);
+  });
+});
+
 describe("backupStoreBeside", () => {
   it("refuses rather than overwriting a copy that is already there", async () => {
     const { dataDir } = await freshStore();

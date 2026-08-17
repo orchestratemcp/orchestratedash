@@ -900,3 +900,215 @@ function describeShapeDifference(shape: FleetShape): string | null {
 
   return problems.length === 0 ? null : problems.join("\n");
 }
+
+/* ---------------------------------------------------------------------- *
+ * MAR-682: the store one boot before the repair could see it
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The store MAR-676's own repair cannot reach.
+ *
+ * A build compiled one merge behind MAR-676 carried the *renumbered*
+ * multi-account migration — authored correctly as step 27, no off-by-one —
+ * but not the reconciliation itself. Run against a store already sitting at
+ * a pre-renumber `user_version` of 24 (MAR-676's own signature, before its
+ * repair existed to catch it), that build's ordinary loop read "24 applied"
+ * and ran the steps master ships as 25, 26 and 27 — never 24 again, which is
+ * the one that creates `chief_messages` and the one the loop believed
+ * already ran. The result records `user_version` = 27, MAR-643's
+ * multi-account shape complete (27's own DELETE included), and
+ * `chief_messages` alone absent: the one table skipped, not three, because
+ * everything after it in the loop ran in full.
+ *
+ * `DIVERGED_VERSION_RANGE` stops at 26 on purpose — a store already at 27 was
+ * "finished" as far as MAR-676 could tell, and firing MAR-676's own repair
+ * there finds nothing in its three-table window missing and correctly does
+ * nothing. This is a narrower, later signature: not a range of versions but
+ * the single version multi-account's own step produces, with exactly the one
+ * table the loop that thought it already ran it never ran.
+ *
+ * Recognised by shape for the same reason MAR-676 is: master's loop runs
+ * every step in order from zero on a fresh store, and MAR-676's own repair —
+ * wherever it does fire — asserts `chief_messages` exists before it will ever
+ * claim 27. No honest boot produces `user_version` = 27 without it.
+ */
+export type ChieflessStore =
+  | { chiefless: false }
+  | {
+      chiefless: true;
+      /** Always 27 — the version this signature is defined at. */
+      recorded_version: number;
+    };
+
+/** The single step this repairs: master's own migration 24, `chief_messages`. */
+const CHIEF_STEP = RENUMBERED_STEPS[0];
+const CHIEF_MESSAGES_TABLE = CHIEF_STEP?.tables[0] ?? "chief_messages";
+
+/**
+ * The window of `MIGRATIONS` this repair needs, for a caller to slice with —
+ * `RENUMBERED_SLICE`'s own convention, one entry wide.
+ */
+export const CHIEFLESS_SLICE = {
+  from: CHIEF_STEP?.index ?? 0,
+  to: (CHIEF_STEP?.index ?? 0) + 1,
+} as const;
+
+/**
+ * Is this the store MAR-682 describes?
+ *
+ * Cheap on the common path, same as `inspectDivergedStore`: a pragma and two
+ * `sqlite_master` lookups before it can say no, which every store but the one
+ * that matters does.
+ */
+export function inspectChieflessStore(database: DatabaseSync): ChieflessStore {
+  const recorded = Number(
+    (database.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined)
+      ?.user_version ?? 0,
+  );
+  if (recorded !== RECONCILED_VERSION) {
+    return { chiefless: false };
+  }
+  if (
+    !tableExists(database, "fleet_connections") ||
+    !tableExists(database, "fleet_account_assignments") ||
+    !columnNames(database, "fleet_connections").includes("account_id")
+  ) {
+    // 27 with the multi-account shape missing is not a store an honest boot
+    // or MAR-676's own repair could produce, and it is not this signature
+    // either — MAR-682 only ever fires beside the shape, never instead of it.
+    return { chiefless: false };
+  }
+  if (tableExists(database, CHIEF_MESSAGES_TABLE)) {
+    return { chiefless: false };
+  }
+  return { chiefless: true, recorded_version: recorded };
+}
+
+/**
+ * Repair the store MAR-682 describes, or do nothing at all.
+ *
+ * Same shape as `reconcileRenumberedStore`, narrowed to what this signature
+ * actually needs: back up, run the one step that was skipped, verify it
+ * worked, record it — and leave `user_version` exactly where it was, because
+ * this store had already reached 27 honestly. Nothing here re-runs 27's own
+ * work; the multi-account shape is verified, never rebuilt.
+ *
+ * @throws when the multi-account shape beside the missing table is not one
+ * this recognises — the same refusal machinery `reconcileRenumberedStore`
+ * uses, on the same argument: a repair that guessed would be worse than a
+ * message naming exactly what was found.
+ */
+export function reconcileChieflessStore(
+  database: DatabaseSync,
+  options: ReconcileOptions,
+): StoreReconciliation | null {
+  const found = inspectChieflessStore(database);
+  if (!found.chiefless) {
+    return null;
+  }
+
+  const at = (options.now ?? ((): Date => new Date()))();
+  const log = options.log ?? ((message: string): void => console.warn(message));
+
+  if (options.steps.length !== 1) {
+    // Same defence `reconcileRenumberedStore` takes on its own window: a
+    // caller that sliced the wrong span would create the wrong table under
+    // the right name.
+    throw new Error(
+      `[dash-store] The MAR-682 repair needs the one step master shipped as ` +
+        `${String(CHIEF_STEP?.version ?? 24)} and was given ${String(options.steps.length)}.`,
+    );
+  }
+
+  /*
+   * Same ordering as MAR-676, and for the same reason: a refusal must not
+   * leave a backup file behind for a repair that never started.
+   */
+  const shape = inspectFleetShape(database);
+  const unrecognised = describeShapeDifference(shape);
+  if (unrecognised !== null) {
+    throw new Error(
+      `[dash-store] DASH will not start, and nothing has been changed.\n\n` +
+        `This store records migration ${String(RECONCILED_VERSION)} with MAR-643's multi-account ` +
+        `tables built and ${CHIEF_MESSAGES_TABLE} missing — the MAR-682 signature, one boot before ` +
+        `MAR-676's own repair could have reached this store. The repair for it is built in, but the ` +
+        `multi-account shape here is not one it recognises, and a repair that guessed would be worse ` +
+        `than this message:\n\n${unrecognised}\n\n` +
+        `What was found, in full:\n${JSON.stringify(shape, null, 2)}\n\n` +
+        `Send that to whoever maintains DASH. Your store is untouched and there is no backup to ` +
+        `clean up. Nothing here is lost.`,
+    );
+  }
+
+  const directory = path.dirname(options.storePath);
+  const backup = backupStoreBeside(directory, path.basename(options.storePath), at);
+  if (!backup.ok) {
+    throw new Error(
+      `[dash-store] DASH will not start, and nothing has been changed.\n\n` +
+        `This store needs MAR-682's one-time repair, and that repair copies your store beside itself ` +
+        `first. The copy could not be made: ${backup.detail}\n\n` +
+        `Free some disk space or close whatever is holding the file, then start DASH again.`,
+    );
+  }
+
+  const reconciliation: StoreReconciliation = {
+    reconciled_at: at.toISOString(),
+    recorded_version: found.recorded_version,
+    final_version: RECONCILED_VERSION,
+    applied_versions: [],
+    created_tables: [],
+    created_indexes: [],
+    removed_fleet_secret_rows: 0,
+    backup: backup.backup,
+  };
+
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const definition = options.steps[0];
+    if (definition !== undefined && CHIEF_STEP !== undefined) {
+      applyMigrationStep(database, definition);
+      reconciliation.applied_versions.push(CHIEF_STEP.version);
+      reconciliation.created_tables.push(...CHIEF_STEP.tables);
+    }
+
+    /*
+     * Did the step do what this claims it did? Same caution as
+     * `reconcileRenumberedStore` over the same mistake: an off-by-one into
+     * `MIGRATIONS` is silent otherwise — `user_version` never moves here, so
+     * there is no version to expose it, which makes this assertion the only
+     * thing standing between a wrong index and a store that looks repaired
+     * and is not.
+     */
+    const stillMissing = reconciliation.created_tables.filter((table) => !tableExists(database, table));
+    if (stillMissing.length > 0) {
+      throw new Error(
+        `[dash-store] The MAR-682 repair ran the step it was given and ` +
+          `${stillMissing.join(", ")} still ${stillMissing.length === 1 ? "does" : "do"} not exist. ` +
+          `Nothing has been changed. Your store is as it was and a copy of it is beside it as ` +
+          `${backup.backup.copied_to}.`,
+      );
+    }
+
+    options.record?.(database, reconciliation);
+
+    // `user_version` is left exactly where it was: this store reached 27
+    // honestly, and the only thing wrong with it was the one table the loop
+    // that thought it already ran skipped.
+    database.exec("COMMIT");
+  } catch (error: unknown) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+
+  log(
+    `[dash-store] MAR-682 reconciliation: this store recorded migration ${String(RECONCILED_VERSION)} ` +
+      `with MAR-643's multi-account tables built and ${CHIEF_MESSAGES_TABLE} missing, which only a ` +
+      `build one merge behind MAR-676's own repair produces. Copied the store to ` +
+      `${backup.backup.copied_to} (${String(backup.backup.copied)} files), ran the step master ` +
+      `shipped as ${reconciliation.applied_versions.map((version) => String(version)).join(", ")} to ` +
+      `create ${reconciliation.created_tables.join(", ")}, and left user_version at ` +
+      `${String(RECONCILED_VERSION)}.`,
+  );
+
+  return reconciliation;
+}
