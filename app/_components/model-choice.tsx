@@ -354,7 +354,9 @@ function ModelSteps({
               `describeStepModel`'s — a page that worded it here could describe a
               resolution differently from the process that performs it.
             */}
-            <p className="model-step-resolved wrap">{step.resolved_note}</p>
+            {step.resolved_note === null ? null : (
+              <p className="model-step-resolved wrap">{step.resolved_note}</p>
+            )}
             {canAct ? (
               <>
                 <label className="field-label" htmlFor={`model-step-${String(step.step)}`}>

@@ -320,7 +320,7 @@ export function readEffectiveModelChoice(
  * ---------------------------------------------------------------------- */
 
 /**
- * What each level means to this person, for one provider or for all of them.
+ * What each level means to this person, for one provider.
  *
  * Zero rows is the shipped state and the ordinary one: nothing seeds this table
  * and DASH never writes a row into it on somebody's behalf. A row naming a
@@ -329,24 +329,23 @@ export function readEffectiveModelChoice(
  * table along: a record this build cannot interpret should read as the absence of
  * a record.
  *
+ * **One provider, always, and no all-providers form.** A model id means nothing
+ * without one, and a map that merged three providers' rows into three level keys
+ * would have to pick a winner per level — an answer to a question nobody asked
+ * that some caller would eventually resolve a model from. The AI tab draws one
+ * set of rows per provider and asks once for each.
+ *
  * The value keeps its provider beside it (`FleetModelDefault`) rather than being
  * flattened to a model id, so `applyFleetDefault` can apply to a level row the
- * same provider check it applies to the default. Reading *every* provider's rows
- * is what the AI tab does when somebody switches the service dropdown; passing a
- * provider is what everything that resolves a model does.
+ * same provider check it applies to the default.
  */
-export function readFleetLevelModels(providerId?: string): LevelModelMap {
+export function readFleetLevelModels(providerId: string): LevelModelMap {
   const map = new Map<DefaultModelLevel, FleetModelDefault>();
   let rows: unknown[];
   try {
-    rows =
-      providerId === undefined
-        ? (db().prepare("SELECT provider_id, level, model_id FROM fleet_level_models").all() as unknown[])
-        : (db()
-            .prepare(
-              "SELECT provider_id, level, model_id FROM fleet_level_models WHERE provider_id = ?",
-            )
-            .all(providerId) as unknown[]);
+    rows = db()
+      .prepare("SELECT provider_id, level, model_id FROM fleet_level_models WHERE provider_id = ?")
+      .all(providerId) as unknown[];
   } catch (error: unknown) {
     console.warn(`[dash] could not read the level map: ${message(error)}`);
     return map;
@@ -360,17 +359,7 @@ export function readFleetLevelModels(providerId?: string): LevelModelMap {
     if (aiProviderById(rowProvider) === null || !isDefaultModelLevel(level) || !isModelId(modelId)) {
       continue;
     }
-    /*
-     * Read for one provider, a later row cannot displace an earlier one: the
-     * primary key is (provider, level). Read for all of them it could, and the
-     * first wins rather than the last — an arbitrary but *stable* answer to a
-     * question with no single one. Every caller that resolves a model passes a
-     * provider; this branch exists for the tab that is drawing rows, and it
-     * groups them itself.
-     */
-    if (!map.has(level)) {
-      map.set(level, { provider_id: rowProvider, model_id: modelId });
-    }
+    map.set(level, { provider_id: rowProvider, model_id: modelId });
   }
   return map;
 }

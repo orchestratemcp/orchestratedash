@@ -667,8 +667,14 @@ export interface ModelStepView {
    * predict what changing any of the three will do to this step.
    */
   resolved_by: string;
-  /** The line under the declared strength. `describeStepModel`'s sentence. */
-  resolved_note: string;
+  /**
+   * The line under the declared strength. `describeStepModel`'s sentence.
+   *
+   * Null on the arm where there is nothing to choose — the section's own
+   * headline already says why DASH has no model for this agent, and a second,
+   * differently-worded reason under every step would contradict it.
+   */
+  resolved_note: string | null;
 }
 
 /**

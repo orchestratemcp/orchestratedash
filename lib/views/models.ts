@@ -23,7 +23,6 @@ import {
   describeStepModel,
   describeStepsNotInForce,
   describeUnpinnedOption,
-  matchEachStep,
   resolveModelSteps,
   resolveStepModels,
   LEVEL_MAP_LINK_LABEL,
@@ -166,10 +165,12 @@ export function buildAgentModelSettings(
  * The arm for every agent there is nothing to choose for.
  *
  * The steps are still drawn — an agent's declared levels are worth reading even
- * when DASH cannot offer a model — and every one of them resolves to `none`,
- * which is the truth: there is no key, no provider, or no model in the plan, so
- * nothing on the ladder can answer. `resolveStepModels` says that rather than
- * this function inventing a row, and a null provider is what makes it say it.
+ * when DASH cannot offer a model — and none of them carries a resolution, which
+ * is the honest answer rather than an absent one. `describeStepModel`'s `none`
+ * sentence blames the level map and the default; here the reason is one section
+ * up, in the headline that says DASH holds no key for this agent or does not
+ * decide its model at all, and repeating a different reason under every step
+ * would contradict it.
  */
 function noChoice(
   reason: NoModelChoiceReason,
@@ -177,14 +178,13 @@ function noChoice(
   steps: readonly ResolvedModelStep[],
 ): AgentModelSettingsView {
   const sentence = describeNoChoice(reason, providerLabel);
-  const resolutions = resolveStepModels(steps, matchEachStep(), null, null, new Map());
   return {
     can_choose: false,
     reason: sentence.reason,
     headline: sentence.headline,
     detail: sentence.detail,
     next_action: sentence.next_action,
-    steps: steps.map((step, index) => toStepView(step, resolutions[index] ?? null)),
+    steps: steps.map((step) => toStepView(step, null)),
   };
 }
 
@@ -192,14 +192,6 @@ function toStepView(
   step: ResolvedModelStep,
   resolution: StepModelResolution | null,
 ): ModelStepView {
-  const answer: StepModelResolution = resolution ?? {
-    step: step.step,
-    component_id: step.component_id,
-    level: step.level,
-    provider_id: null,
-    model_id: null,
-    resolved_by: "none",
-  };
   return {
     step: step.step,
     component_id: step.component_id,
@@ -209,9 +201,9 @@ function toStepView(
     declared: step.declared,
     declared_label: levelLabel(step.declared),
     overridden: step.overridden,
-    resolved_model_id: answer.model_id,
-    resolved_by: answer.resolved_by,
-    resolved_note: describeStepModel(answer),
+    resolved_model_id: resolution?.model_id ?? null,
+    resolved_by: resolution?.resolved_by ?? "none",
+    resolved_note: resolution === null ? null : describeStepModel(resolution),
   };
 }
 
