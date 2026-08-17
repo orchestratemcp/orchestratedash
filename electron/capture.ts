@@ -87,6 +87,7 @@ import path from "node:path";
 import { FLEET_STRIP_ATTRIBUTE, FLEET_STRIP_STORAGE_KEY } from "../lib/views/fleet-strip";
 import { importManifest } from "../lib/store";
 import { recordSecretReference } from "../lib/secret-refs";
+import { secureStore } from "./secure-store.js";
 import {
   recordFleetAccountAssignment,
   recordFleetConnection,
@@ -120,7 +121,7 @@ const THEMES = ["light", "dark"] as const;
  * scratch store the state the issue is about. The guard prevents an accidental
  * run from writing fixtures into the person's ordinary DASH store.
  */
-function seedMar643Scene(): void {
+async function seedMar643Scene(): Promise<void> {
   if (process.env.DASH_CAPTURE_SCENE !== "mar643-multi-account") {
     return;
   }
@@ -189,7 +190,32 @@ function seedMar643Scene(): void {
     });
   }
 
-  console.log("[capture] seeded MAR-643: two Gmail accounts assigned to two agents");
+  /*
+   * The vault entries the two rows point at (MAR-676).
+   *
+   * Before this, the scene wrote two `fleet_connections` rows naming two secrets
+   * and stored neither — which was invisible while the chip was drawn from the row
+   * alone, and is now exactly the state Henrik's store was in. The honest chip for
+   * a row pointing at nothing is "DASH cannot read this", so a scene that meant to
+   * photograph two connected accounts has to actually connect them.
+   *
+   * A real `safeStorage` write into the scratch `DASH_DATA_DIR`'s own vault, not a
+   * stub: the capture is only worth anything if the page it photographs reached its
+   * conclusion the way the shipped one does.
+   */
+  for (const account of ["account-1", "account-2"]) {
+    await secureStore().set(
+      `dash.fleet.google-gmail.${account}.sign_in`,
+      JSON.stringify({
+        format_version: 1,
+        refresh_token: `capture-fixture-${account}`,
+        scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+        obtained_at: at,
+      }),
+    );
+  }
+
+  console.log("[capture] seeded MAR-643: two Gmail accounts assigned to two agents, both readable");
 }
 
 /**
@@ -1194,7 +1220,7 @@ async function densityNow(target: BrowserWindow): Promise<string> {
 async function run(): Promise<void> {
   await app.whenReady();
   mkdirSync(OUT, { recursive: true });
-  seedMar643Scene();
+  await seedMar643Scene();
 
   /*
    * The splash first, and immediately — its lifetime ends when the app window

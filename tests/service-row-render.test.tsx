@@ -390,6 +390,10 @@ describe("one service, once", () => {
             account_hint: "he••••@example.com",
             since: "10 August 2026",
             permissions: [],
+            // Readable, so this stays the connected surface it is asserting about
+            // (MAR-676).
+            secret_readable: true,
+            unreadable: null,
           },
           waiting: ["news-scout"],
         }),
@@ -425,7 +429,17 @@ describe("one service, once", () => {
     const { html } = merged(
       [
         connector({
-          held: accounts[0] as FleetConnectorView["held"],
+          // Built from the default account rather than cast from it: an account
+          // and a `held` were never the same shape, and MAR-676's two fields made
+          // the cast a lie the compiler could finally see.
+          held: {
+            masked_hint: accounts[0]?.masked_hint ?? null,
+            account_hint: accounts[0]?.account_hint ?? null,
+            since: accounts[0]?.since ?? null,
+            permissions: [],
+            secret_readable: true,
+            unreadable: null,
+          },
           accounts,
           agents: [
             { agent: "News Scout", title: "News Scout", connected: true, account_id: "account-1" },

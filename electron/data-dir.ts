@@ -63,13 +63,18 @@
  * second DASH's worth of agents.
  */
 
+import { existsSync, statSync } from "node:fs";
+import path from "node:path";
+
 import { app } from "electron";
 
 import {
   APP_NAME,
+  foreignCheckoutProblem,
   isAppEntryPoint,
   storeIdentityProblem,
   storeLocationChosen,
+  type GitEntryKind,
 } from "../lib/shell/app-identity";
 import { useUserDataDirectory } from "./secure-store";
 
@@ -106,6 +111,31 @@ const overridden = storeLocationChosen(process.env, process.argv);
 useUserDataDirectory();
 
 /**
+ * What `<app path>/.git` is, which is how git itself tells a worktree apart.
+ *
+ * A linked worktree's `.git` is a file holding `gitdir: …`; the main working
+ * tree's is a directory. Read here rather than in `lib/shell/app-identity.ts` so
+ * that the decision stays pure and testable — the same split
+ * `lib/shell/install-layout.ts` argues for and this module's header repeats.
+ *
+ * An unreadable entry is `absent` rather than a throw. This runs on every launch
+ * before anything else, and a permission error on a `.git` is not a reason to
+ * refuse to start; it is a reason to fall through to the refusal that names the
+ * remedy, which is the same answer.
+ */
+function gitEntryKind(): GitEntryKind {
+  const entry = path.join(app.getAppPath(), ".git");
+  try {
+    if (!existsSync(entry)) {
+      return "absent";
+    }
+    return statSync(entry).isDirectory() ? "directory" : "file";
+  } catch {
+    return "absent";
+  }
+}
+
+/**
  * Prove the ordering held, at startup, on every launch.
  *
  * The failure this catches is silent and expensive: a shell that works
@@ -134,6 +164,38 @@ export function assertStoreLocation(resolved: string): void {
   if (overridden) {
     console.warn(`[dash-shell] DASH_DATA_DIR override in effect: ${resolved}`);
     return;
+  }
+
+  /*
+   * MAR-676. Whose store is this, and is this build allowed to open it?
+   *
+   * First among the checks below, because the other two are about DASH's own
+   * wiring being sound and this one is about whether this process should be here
+   * at all — a message about import order would be noise on top of it.
+   *
+   * **Gated on the entry point, for `app.setName`'s reason and the same one.**
+   * `foreignCheckoutProblem` asks about an *app-directory* launch: the form that
+   * reads a `package.json`, takes the name `orchestratedash` from it and lands on
+   * the installed userData. `electron dist/electron/smoke.mjs` and the capture
+   * harnesses beside it are not that form and must not be caught by it — the
+   * smoke's whole third acceptance criterion (MAR-424) is that it writes to the
+   * real user-data directory, and `electron/smoke-identity.ts`' header records why
+   * that is deliberate rather than an oversight.
+   *
+   * That leaves the smoke able to open the real store from a worktree, which is a
+   * narrower hole than the one this closes and a separate decision from it: it is
+   * reached only by somebody running `pnpm verify:shell`, and changing it means
+   * changing what that proof is about.
+   */
+  if (isAppEntryPoint(process.argv[1] ?? "")) {
+    const foreign = foreignCheckoutProblem(
+      { app_path: app.getAppPath(), packaged: app.isPackaged, git_entry: gitEntryKind() },
+      resolved,
+      process.env,
+    );
+    if (foreign !== null) {
+      throw new Error(foreign);
+    }
   }
 
   const expected = app.getPath("userData");

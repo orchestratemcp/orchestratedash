@@ -81,6 +81,7 @@ import {
 } from "../lib/ai/model-store";
 import { fleetCredentialTarget } from "../lib/fleet/actions";
 import { fleetConnectorFor } from "../lib/fleet/catalogue";
+import { withFleetSecretStandings } from "../lib/fleet/secret-read";
 import { readFleetConnection } from "../lib/fleet/store";
 import {
   readDashLastAlive,
@@ -1474,7 +1475,7 @@ async function workspaceAction(
  * than the one it was reporting.
  */
 export function registerReadChannel(): void {
-  ipcMain.handle(SHELL_READ_CHANNEL, (_event, request: unknown) => {
+  ipcMain.handle(SHELL_READ_CHANNEL, async (_event, request: unknown) => {
     const review = reviewRead(request);
     if (review.decision === "denied") {
       return { ok: false, reason: review.reason } satisfies ReadResponse<never>;
@@ -1493,9 +1494,23 @@ export function registerReadChannel(): void {
           data: runView(review.params["agent"] ?? "", review.params["run_id"] ?? ""),
         } satisfies ReadResponse<ReadResults["view.run"]>;
       case "view.connections":
+        /*
+         * The one read that touches the vault, and the reason this handler is
+         * async (MAR-676).
+         *
+         * `connectionsView()` projects SQLite and stays synchronous. But a fleet
+         * row holds a `secret_name`, and a name is a pointer: Henrik's pointed at
+         * an entry the OS would not decrypt, and this page reported CONNECTED from
+         * the pointer. `withFleetSecretStandings` follows it, here rather than in
+         * the projection, because this is where a vault exists.
+         *
+         * It returns whether the read succeeded and never what came back. The view
+         * carries no secret name and no secret value, which is why the vault could
+         * be consulted for a chip at all.
+         */
         return {
           ok: true,
-          data: connectionsView(),
+          data: await withFleetSecretStandings(connectionsView(), { store: secureStore() }),
         } satisfies ReadResponse<ReadResults["view.connections"]>;
       case "view.inbox":
         return {

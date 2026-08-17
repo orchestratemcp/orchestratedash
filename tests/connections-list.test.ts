@@ -76,11 +76,14 @@ function agent(name: string, rows: ConnectionRowWithCredential[]): AgentConnecti
   return { name, title: name, avatar: "ninja", rows, lapses: [] };
 }
 
+/** Held, and readable — see `tests/ai-tab-render.test.tsx` on why that is stated. */
 const HELD = {
   masked_hint: "••••abcd",
   account_hint: "he••••@example.com",
   since: "10 August 2026",
   permissions: [],
+  secret_readable: true,
+  unreadable: null,
 };
 
 describe("the join", () => {
@@ -152,6 +155,27 @@ describe("the one chip", () => {
   it("is what DASH holds when nothing needs it", () => {
     expect(serviceRows([connector({ held: HELD })], [])[0]?.chip.label).toBe("connected");
     expect(serviceRows([connector()], [])[0]?.chip.label).toBe("not connected");
+  });
+
+  it("does not say connected over a credential DASH cannot read (MAR-676)", () => {
+    /*
+     * The second of the two components that drew this chip from the row alone.
+     * Fixing the fleet card and not this one would have left the Connections page
+     * saying "connected" about the same store the AI tab had just stopped saying
+     * it about — which is the two-renderers trap, and the reason both now call
+     * `fleetStanding`.
+     */
+    const rows = serviceRows(
+      [connector({ held: { ...HELD, secret_readable: false, unreadable: null } })],
+      [],
+    );
+    expect(rows[0]?.chip.label).toBe("dash cannot read this");
+    expect(rows[0]?.chip.tone).toBe("chip-warn");
+    // And the account is still listed, because DASH does still hold it. The row
+    // is not wrong; the claim about it was.
+    expect(rows[0]?.accounts).toEqual([
+      { hint: "he••••@example.com", since: "10 August 2026" },
+    ]);
   });
 });
 

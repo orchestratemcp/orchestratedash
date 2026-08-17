@@ -41,6 +41,7 @@
 import { performAiKeyAction, type AiKeyOperations } from "../ai/actions";
 import { forgetReceipt, recordReceipt } from "../broker/store";
 import { describeFleetGrant } from "../copy/decisions";
+import { describeFleetSecretUnreadable } from "../copy/fleet-standing";
 import { fileDecision } from "./decisions-store";
 import { resolveGrant, resolveKeyGrantWithoutCredential } from "../broker/grant";
 import type { CredentialTarget } from "../connection-credentials";
@@ -305,13 +306,17 @@ async function shareFleetConnection(
   if (spread.unreadable) {
     // DASH holds the credential in name only, right now — the store could not
     // be read, so nothing was attempted and nothing else may be said about it.
+    //
+    // MAR-676: the first sentence is no longer written here. It is
+    // `describeFleetSecretUnreadable`'s, which is also what the AI tab's standing
+    // renders — the fix for three surfaces describing one fact three ways is that
+    // two of them now say the same words, and these were the better words. What
+    // stays local is the clause only a press can claim.
     return {
       ok: false,
       state: "connected",
       masked_hint: stored.masked_hint,
-      detail: `DASH holds ${connector.service} but could not read it from ${deps.store
-        .describeBacking()
-        .label.toLowerCase()} just now, so nothing was given out.`,
+      detail: `${describeFleetSecretUnreadable(connector.service, deps.store.describeBacking().label).headline} Nothing was given out.`,
     };
   }
 

@@ -1114,6 +1114,27 @@ export function fleetConnectorViews(
               // an empty list for a key is the true answer rather than a gap —
               // ADR 0002 amendment 5: there is nothing to intersect.
               permissions: flow === null ? [] : describePermissions(flow, stored.scopes),
+              /*
+               * False here, and filled in afterwards by
+               * `withFleetSecretStandings` (MAR-676).
+               *
+               * This function reads SQLite and is synchronous, and a vault read is
+               * neither. So the projection states the only thing it can actually
+               * prove — nothing has looked — and the one step that follows the
+               * row's `secret_name` into the vault runs after it, where a vault
+               * exists.
+               *
+               * **False rather than true is the load-bearing half.** A default of
+               * true would make every path that skips the decoration claim a
+               * successful read it never made, which is the defect this field was
+               * added for wearing a new costume. False makes a skipped decoration
+               * surface as an honest chip nobody expected, instead of the cheerful
+               * one everybody believed.
+               */
+              secret_readable: false,
+              // No sentence, because nothing looked. The store's own name for the
+              // credential vault is not a fact this function has.
+              unreadable: null,
             },
       accounts: storedAccounts.map((account) => ({
         id: account.account_id,

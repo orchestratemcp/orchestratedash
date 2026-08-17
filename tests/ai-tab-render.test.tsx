@@ -66,11 +66,22 @@ function key(
   });
 }
 
+/**
+ * A key DASH holds **and can read**.
+ *
+ * `secret_readable: true` is not boilerplate: MAR-676 made it the difference
+ * between the Connected chip and an honest one, so a fixture that left it out
+ * would be describing Henrik's broken store rather than a working DASH. Every
+ * assertion below that expects a connected surface depends on it, which is the
+ * point — the fixture now has to say which of the two situations it is.
+ */
 const HELD = {
   masked_hint: "••••abcd",
   account_hint: null,
   since: "15 August 2026",
   permissions: [],
+  secret_readable: true,
+  unreadable: null,
 };
 
 function defaultView(over: Partial<FleetModelDefaultView> = {}): FleetModelDefaultView {

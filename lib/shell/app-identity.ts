@@ -177,6 +177,116 @@ export function storeBasename(resolved: string): string {
   return segments[segments.length - 1] ?? "";
 }
 
+/* ---------------------------------------------------------------------- *
+ * Which checkout is allowed to open the installed store (MAR-676)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The one way to say "yes, this build really may open the installed store".
+ *
+ * Distinct from `DASH_DATA_DIR`, and the difference is the whole reason there are
+ * two. `DASH_DATA_DIR` sends a build **somewhere else**, which is what a capture
+ * harness and a scratch run want. This one says *use the real one anyway*, which
+ * is what somebody reproducing a fault in the actual store needs — MAR-676's own
+ * repair being the example, since the store it repairs is the only store that has
+ * the shape it repairs.
+ */
+export const ALLOW_INSTALLED_STORE_ENV = "DASH_ALLOW_INSTALLED_STORE";
+
+/** What `<app path>/.git` turned out to be. Classified by the caller, which has fs. */
+export type GitEntryKind = "directory" | "file" | "absent";
+
+export interface AppCheckout {
+  /** `app.getAppPath()` — the directory Electron read `package.json` from. */
+  app_path: string;
+  /** `app.isPackaged`. */
+  packaged: boolean;
+  git_entry: GitEntryKind;
+}
+
+/**
+ * May this app path own the installed user-data directory?
+ *
+ * ## The failure, which is MAR-656's twin
+ *
+ * `userData` is `<appData>/<app name>` and Electron reads the name from the
+ * package.json of the **app directory**. Every checkout of this repository has
+ * the same package.json, so `electron <any worktree>` is app name
+ * `orchestratedash` and resolves the **real** store — the one with the person's
+ * agents, connections and history in it. On 2026-08-16 a build of the MAR-643
+ * branch did exactly that and ran its own migration 24 over Henrik's store, which
+ * is the whole of MAR-676: a schema history no commit of master can produce, and
+ * three shipped features permanently unreachable on the one store that mattered.
+ *
+ * MAR-656 was the same trap reached through a deep link, and `app.setName` fixed
+ * the identity. Nothing asked the second question: *this process knows who it is,
+ * but should it be here at all?*
+ *
+ * ## Why git decides it, and not a marker file
+ *
+ * A linked worktree's `.git` is a **file** containing `gitdir: …`; the main
+ * working tree's is a **directory**. That is not a heuristic — it is how git
+ * distinguishes the two, it costs one `statSync`, and it is exactly the
+ * distinction that produced the bug. A marker file would need creating,
+ * documenting and remembering, and the first checkout somebody copied instead of
+ * cloned would carry it.
+ *
+ * A packaged app is always blessed: it *is* the install, it has no `.git`, and it
+ * is the thing the store belongs to.
+ *
+ * Everything else — a worktree, a copied tree, an export with no git at all — is
+ * refused, because none of them can show they are the checkout the store belongs
+ * to and the reassuring answer is the one that cost a day.
+ */
+export function isBlessedCheckout(checkout: AppCheckout): boolean {
+  if (checkout.packaged) {
+    return true;
+  }
+  return checkout.git_entry === "directory";
+}
+
+/**
+ * Why this launch may not use the installed store, or null when it may.
+ *
+ * The message has to name the remedy and not merely the rule, because the person
+ * reading it is mid-task and has three legitimate intentions — look at my branch,
+ * work on the real store, run the shell properly — and the refusal is useless if
+ * it does not say which switch belongs to which.
+ *
+ * `env` is the whole environment rather than one flag, matching
+ * `storeLocationChosen`: `ProcessEnv` shares no declared property with a
+ * one-field object type and TypeScript rejects the narrower parameter outright.
+ */
+export function foreignCheckoutProblem(
+  checkout: AppCheckout,
+  resolved: string,
+  env: Readonly<Record<string, string | undefined>>,
+): string | null {
+  if (isBlessedCheckout(checkout)) {
+    return null;
+  }
+  if (env[ALLOW_INSTALLED_STORE_ENV] !== undefined) {
+    return null;
+  }
+  const what =
+    checkout.git_entry === "file"
+      ? "a linked git worktree"
+      : "not a git working tree at all, so it cannot show it is the checkout DASH is installed from";
+  return (
+    `This DASH was launched from "${checkout.app_path}", which is ${what}, and it was about to ` +
+    `open the installed store at "${resolved}".\n\n` +
+    `That is refused. Every checkout of this repository carries the same package.json, so ` +
+    `Electron gives them all the app name "${APP_NAME}" and they all resolve the same ` +
+    `userData — the real one, with the real agents and the real history in it. A branch build ` +
+    `that opens it runs that branch's migrations over it, and on 2026-08-16 one did: it left a ` +
+    `schema history no released DASH can produce (MAR-676).\n\n` +
+    `Pick the one you meant:\n` +
+    `  - to look at this branch, give it a store of its own: DASH_DATA_DIR=<some empty folder>\n` +
+    `  - to work on the real store on purpose, say so: ${ALLOW_INSTALLED_STORE_ENV}=1\n` +
+    `  - to just use DASH, launch it from the main checkout instead of this worktree.`
+  );
+}
+
 /**
  * What is wrong with this store's identity, or null if nothing is.
  *

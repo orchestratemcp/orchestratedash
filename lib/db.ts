@@ -40,6 +40,13 @@ import {
   recoverAgentFolderSwaps,
 } from "./agent-folders";
 import { listRegistrations, manifestDigest } from "./registration";
+import {
+  applyMigrationStep,
+  reconcileRenumberedStore,
+  RENUMBERED_SLICE,
+  type StoreMigrationStep,
+  type StoreReconciliation,
+} from "./store-reconcile";
 
 /* ---------------------------------------------------------------------- *
  * Location
@@ -60,6 +67,8 @@ export const legacyJsonPath = path.join(dataDir, "dash.json");
 
 const AGENT_FOLDER_MIGRATION_KEY = "agent_folder_migration";
 const AGENT_FOLDER_RECONCILIATION_KEY = "agent_folder_reconciliation";
+/** What MAR-676's one-time repair did, on the one store that needed it. */
+const STORE_RECONCILIATION_KEY = "store_reconciliation";
 
 export interface AgentFolderMigrationResult {
   materialized_agents: string[];
@@ -109,7 +118,15 @@ export interface AgentFolderReconciliationResult {
  * Same rules either way — ordered, append-only, one transaction each, never
  * edited after shipping.
  */
-type Migration = string | ((database: DatabaseSync) => void);
+/**
+ * Declared in `lib/store-reconcile.ts` and aliased here.
+ *
+ * That module is the one place either form is executed (`applyMigrationStep`),
+ * because MAR-676's repair runs three of these steps too and two copies of the
+ * `typeof step === "function"` branch would be two places a step form could be
+ * treated differently.
+ */
+type Migration = StoreMigrationStep;
 
 const MIGRATIONS: readonly Migration[] = [
   `
@@ -1525,9 +1542,29 @@ export function db(): DatabaseSync {
   database.exec("PRAGMA synchronous = FULL");
   database.exec("PRAGMA foreign_keys = ON");
 
-  migrate(database);
-  importLegacyJson(database);
-  reconcileAgentFolders(database);
+  /*
+   * A failed open must not leave the file open (MAR-676).
+   *
+   * `migrate` can now refuse — it does when it meets a store whose history it
+   * cannot honestly reconcile — and before this the thrown error left an open
+   * `DatabaseSync` that no longer had a reference anywhere. `handle` stays null,
+   * so `closeDb` cannot reach it and the next attempt opens a second one. On
+   * Windows that is also a handle holding its own directory, which is why the
+   * refusal tests could not clean up after themselves.
+   */
+  try {
+    migrate(database);
+    importLegacyJson(database);
+    reconcileAgentFolders(database);
+  } catch (error: unknown) {
+    try {
+      database.close();
+    } catch {
+      // The open failed and the close failed with it. The original error is the
+      // one worth reporting; a close error on top of it would bury the reason.
+    }
+    throw error;
+  }
 
   handle = database;
   return handle;
@@ -1886,6 +1923,39 @@ export function reconcileAgentFolders(
 }
 
 function migrate(database: DatabaseSync): void {
+  /*
+   * MAR-676, and it runs **before** `user_version` is read rather than inside the
+   * loop below, for two reasons.
+   *
+   * It has to be before, because it *changes* `user_version`: a store it repairs
+   * records 24, 25 or 26 and comes out of it recording 27, and the loop must read
+   * the number after the repair rather than the number that made the repair
+   * necessary. Reading first and reconciling second would run steps 25 to 27 over
+   * tables the repair had just built.
+   *
+   * And it is here rather than as a step in `MIGRATIONS`, because it is not one.
+   * Every entry in that array runs on every store exactly once, in order, forever.
+   * This runs on one store on one machine and is a no-op everywhere else, and
+   * `inspectDivergedStore` costs three pragmas to say so.
+   */
+  const reconciliation = reconcileRenumberedStore(database, {
+    storePath: databasePath,
+    // Sliced here rather than imported there: the repair runs *these definitions*
+    // and holds no copy of their SQL. The window is named by the module that
+    // knows why those indexes are not the numbers the version pin uses — an index
+    // into this array is one less than the `user_version` its step produces.
+    steps: MIGRATIONS.slice(RENUMBERED_SLICE.from, RENUMBERED_SLICE.to),
+    record: (handle, done) => {
+      setMeta(handle, STORE_RECONCILIATION_KEY, JSON.stringify(done));
+    },
+  });
+  if (reconciliation !== null) {
+    // The console line is in `reconcileRenumberedStore`. This one is the record
+    // a surface can read back afterwards, which is what makes "verify together"
+    // possible without re-deriving anything from the schema.
+    console.warn(`[dash-store] reconciliation recorded as store_meta.${STORE_RECONCILIATION_KEY}`);
+  }
+
   const row = database.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined;
   const applied = Number(row?.user_version ?? 0);
 
@@ -1895,11 +1965,7 @@ function migrate(database: DatabaseSync): void {
       continue;
     }
     transact(database, () => {
-      if (typeof step === "function") {
-        step(database);
-      } else {
-        database.exec(step);
-      }
+      applyMigrationStep(database, step);
       // Interpolated because SQLite does not accept a parameter in a PRAGMA.
       // The value is a loop index over a module constant, never caller input.
       database.exec(`PRAGMA user_version = ${version + 1}`);
@@ -2133,6 +2199,21 @@ export function describeLegacyImport(): LegacyImportResult | null {
 export function describeAgentFolderMigration(): AgentFolderMigrationResult | null {
   const raw = getMeta(db(), AGENT_FOLDER_MIGRATION_KEY);
   return raw === null ? null : (JSON.parse(raw) as AgentFolderMigrationResult);
+}
+
+/**
+ * What MAR-676's one-time repair did, or null on every store that never needed it.
+ *
+ * Kept rather than only logged, and that is the difference between "the log said
+ * something last Tuesday" and a fact the store itself can be asked for. The
+ * attended verification MAR-676 ends with — `user_version` 27, the tables
+ * present, the backup beside the store — reads this instead of re-deriving the
+ * story from the schema, which is the same reason `describeAgentFolderMigration`
+ * exists beside migration 10 rather than a line in a console.
+ */
+export function describeStoreReconciliation(): StoreReconciliation | null {
+  const raw = getMeta(db(), STORE_RECONCILIATION_KEY);
+  return raw === null ? null : (JSON.parse(raw) as StoreReconciliation);
 }
 
 /** The drift or folder damage found at this process's startup. */

@@ -1098,6 +1098,45 @@ export interface FleetConnectorView {
     since: string | null;
     /** What the consent actually issued, in DASH's own sentences. Empty for a key. */
     permissions: string[];
+    /**
+     * Whether the vault gave the secret back when this view was built (MAR-676).
+     *
+     * **The rest of this object describes the row; this describes the
+     * credential.** Every field above says what the person gave DASH. This one
+     * says whether DASH can still read it, and until MAR-676 nothing on the AI
+     * tab was asking — so a row pointing at a vault entry the OS would not
+     * decrypt drew a CONNECTED chip while the scout's own briefing said the
+     * provider was not connected. `fleetStanding` in `lib/copy/fleet-standing.ts`
+     * is the only place the two are combined.
+     *
+     * Not optional, and false rather than absent when nothing looked: a
+     * projection that could not reach a vault has not established that the
+     * secret resolves, and the reassuring answer is the wrong one here. It is
+     * filled by `withFleetSecretStandings`, which the read channel runs and the
+     * developer GET route does not — see that module.
+     *
+     * There is no `secret_name` here and there never will be. The renderer has
+     * never been told where a credential lives, and this field exists precisely
+     * so it does not have to be.
+     */
+    secret_readable: boolean;
+    /**
+     * The failed read, in words, or null when there was none (MAR-676).
+     *
+     * Composed by `withFleetSecretStandings` rather than by the card, because the
+     * sentence names the credential store — "windows credential manager (dpapi)"
+     * — and that label is `describeBacking().label`, a fact only the process with
+     * a vault in it has. Arriving already worded is `AgentRow.glance`'s shape and
+     * for its reason: a component that built this from `secret_readable` would be
+     * a second author of a sentence `lib/copy/fleet-standing.ts` already owns.
+     *
+     * **`secret_readable` decides the chip and this decides the paragraph**, and
+     * they are set together from one read so they cannot disagree. Null with
+     * `secret_readable: false` is the honest state of a projection nothing
+     * decorated: the chip says DASH cannot read this and there is no explanation
+     * to offer, because nothing looked. Only the developer GET routes produce it.
+     */
+    unreadable: Recovery | null;
   } | null;
   /** Every connected account for this service, oldest first. */
   accounts?: Array<{

@@ -46,6 +46,7 @@
  */
 
 import { connectorChip, type ConnectorTile } from "./connectors";
+import { fleetStanding, fleetStandingChip } from "./copy/fleet-standing";
 import type { FleetConnectorView } from "./views/types";
 
 /* ---------------------------------------------------------------------- *
@@ -220,9 +221,22 @@ function chipOf(
     const chip = connectorChip(tile.standing);
     return { label: chip.label, tone: `chip-${chip.tone}` };
   }
-  return fleet?.held != null
-    ? { label: "connected", tone: "chip-ok" }
-    : { label: "not connected", tone: "chip-muted" };
+  /*
+   * MAR-676. This was `fleet?.held != null ? connected : not connected`, which is
+   * the row and not the standing — the same two lines the fleet card had, in a
+   * second component, which is how the two came to be able to disagree.
+   *
+   * `fleetStanding` is now the one decision and both call it. The label is lowered
+   * because this list styles its chips in lower case where the card does not; that
+   * is a typography difference and the only one, and taking the words from the
+   * shared function is what stops it becoming a wording difference as well.
+   */
+  const standing = fleetStanding({
+    held: fleet?.held != null,
+    secret_readable: fleet?.held?.secret_readable ?? false,
+  });
+  const chip = fleetStandingChip(standing);
+  return { label: chip.label.toLowerCase(), tone: `chip-${chip.tone}` };
 }
 
 /* ---------------------------------------------------------------------- *
