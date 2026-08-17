@@ -35,7 +35,7 @@ import { SecureStoreError, type SecureStore } from "../lib/secure-store";
 import type { BrokerCapabilityView } from "../lib/views/types";
 import { Vault } from "../lib/vault";
 import { FakeSafeStorage } from "./fakes/fake-safe-storage";
-import { scriptedOAuth } from "./fakes/oauth-operations";
+import { oauthCredential, scriptedOAuth } from "./fakes/oauth-operations";
 import { refusingAi, scriptedAi } from "./fakes/ai-operations";
 import { expectPlainLanguage } from "./helpers/plain-language";
 
@@ -73,6 +73,7 @@ const OPENROUTER = "openrouter";
 const SCOUT = "news-scout";
 /** A second api-key agent, for the tests that need two to tell reached from not. */
 const OTHER_SCOUT = "news-scout-two";
+const THIRD_SCOUT = "news-scout-three";
 
 function example(name: string): ConnectionSourceManifest {
   return JSON.parse(
@@ -117,6 +118,14 @@ function scout(over: { ownership?: string; scopes?: string[] | null } = {}): Con
     }
   }
   return clone as unknown as ConnectionSourceManifest;
+}
+
+function namedGmailScout(name: string): ConnectionSourceManifest {
+  const manifest = JSON.parse(JSON.stringify(scout())) as {
+    agent: { name: string };
+  };
+  manifest.agent.name = name;
+  return manifest as unknown as ConnectionSourceManifest;
 }
 
 /**
@@ -261,10 +270,10 @@ function refusingOneWrite(store: SecureStore, refuseName: string): SecureStore {
 }
 
 /** A fleet connect, as the dispatcher builds the target. */
-const fleetTarget = (provider: string) => ({
+const fleetTarget = (provider: string, accountId = "") => ({
   agent_id: FLEET_PRINCIPAL,
   connection_id: provider,
-  field_id: "",
+  field_id: accountId,
 });
 
 afterAll(() => {
@@ -275,12 +284,18 @@ afterAll(() => {
 beforeEach(async () => {
   const store = vault();
   await store.delete(fleetSecretName(GMAIL, "sign_in")).catch(() => undefined);
+  await store.delete(fleetSecretName(GMAIL, "sign_in", "account-1")).catch(() => undefined);
+  await store.delete(fleetSecretName(GMAIL, "sign_in", "account-2")).catch(() => undefined);
   await store.delete(connectionSecretName(SCOUT, "mail", "gmail-account")).catch(() => undefined);
   await store.delete(fleetSecretName(OPENROUTER, "api_key")).catch(() => undefined);
+  await store.delete(fleetSecretName(OPENROUTER, "api_key", "account-1")).catch(() => undefined);
   await store.delete(connectionSecretName(SCOUT, "model_provider", "api_key")).catch(() => undefined);
   await store.delete(connectionSecretName(OTHER_SCOUT, "model_provider", "api_key")).catch(() => undefined);
+  await store.delete(connectionSecretName(OTHER_SCOUT, "mail", "gmail-account")).catch(() => undefined);
+  await store.delete(connectionSecretName(THIRD_SCOUT, "mail", "gmail-account")).catch(() => undefined);
   db().exec("DELETE FROM fleet_connections");
   db().exec("DELETE FROM fleet_grants");
+  db().exec("DELETE FROM fleet_account_assignments");
   db().exec("DELETE FROM connection_secrets");
   db().exec("DELETE FROM broker_grants");
 });
@@ -436,7 +451,7 @@ describe("configuring DASH before importing anything", () => {
     const result = await performConnectionAction("connect", fleetTarget(GMAIL), deps(store));
 
     expect(result.ok).toBe(true);
-    await expect(store.get(fleetSecretName(GMAIL, "sign_in"))).resolves.toContain(
+    await expect(store.get(fleetSecretName(GMAIL, "sign_in", "account-1"))).resolves.toContain(
       "1//refresh-token",
     );
 
@@ -651,36 +666,132 @@ describe("which agents a fleet connection reaches", () => {
  * Revoking everywhere
  * ---------------------------------------------------------------------- */
 
-describe("disconnecting a fleet connection", () => {
-  it("takes it away from every agent it reached", async () => {
+describe("disconnecting a fleet account", () => {
+  it("refuses while an agent still uses that account", async () => {
     const store = vault();
     const world = { [SCOUT]: scout() };
     await performConnectionAction("connect", fleetTarget(GMAIL), deps(store, world));
 
     const result = await performConnectionAction(
       "disconnect",
-      fleetTarget(GMAIL),
+      fleetTarget(GMAIL, "account-1"),
       deps(store, world),
     );
 
-    expect(result.ok).toBe(true);
-    await expect(store.get(fleetSecretName(GMAIL, "sign_in"))).rejects.toThrow();
-    await expect(store.get(connectionSecretName(SCOUT, "mail", "gmail-account"))).rejects.toThrow();
-    expect(readFleetConnection(GMAIL)).toBeNull();
-    expect(listReceipts(SCOUT)).toEqual([]);
-    expect(listSecretReferences(SCOUT)).toEqual([]);
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain("Choose another Gmail account");
+    await expect(
+      store.get(fleetSecretName(GMAIL, "sign_in", "account-1")),
+    ).resolves.toContain("refresh-token");
+    await expect(store.get(connectionSecretName(SCOUT, "mail", "gmail-account"))).resolves.toContain(
+      "refresh-token",
+    );
+    expect(readFleetConnection(GMAIL)).not.toBeNull();
+    expect(listReceipts(SCOUT)).toHaveLength(1);
+    expect(listSecretReferences(SCOUT)).toHaveLength(1);
   });
 
-  it("says that it reached further than this card", async () => {
+  it("names the agent that must move first", async () => {
     const store = vault();
     const world = { [SCOUT]: scout() };
     await performConnectionAction("connect", fleetTarget(GMAIL), deps(store, world));
     const result = await performConnectionAction(
       "disconnect",
-      fleetTarget(GMAIL),
+      fleetTarget(GMAIL, "account-1"),
       deps(store, world),
     );
-    expect(result.detail).toContain("everywhere");
+    expect(result.detail).toContain(SCOUT);
+  });
+});
+
+describe("more than one account for one service", () => {
+  it("keeps two Gmail grants apart and assigns one to each agent", async () => {
+    const store = vault();
+    const world = {
+      [SCOUT]: namedGmailScout(SCOUT),
+      [OTHER_SCOUT]: namedGmailScout(OTHER_SCOUT),
+    };
+    const first = scriptedOAuth({
+      authorize: {
+        ok: true,
+        credential: oauthCredential({
+          account: "first@example.com",
+          refresh_token: "1//first-account-refresh-token",
+        }),
+      },
+    });
+    const second = scriptedOAuth({
+      authorize: {
+        ok: true,
+        credential: oauthCredential({
+          account: "second@example.com",
+          refresh_token: "1//second-account-refresh-token",
+        }),
+      },
+    });
+
+    expect((await performConnectionAction("connect", fleetTarget(GMAIL), deps(store, world, first))).ok).toBe(true);
+    expect((await performConnectionAction("connect", fleetTarget(GMAIL), deps(store, world, second))).ok).toBe(true);
+
+    expect(listFleetConnections(GMAIL).map((one) => ({ id: one.account_id, default: one.is_default }))).toEqual([
+      { id: "account-1", default: true },
+      { id: "account-2", default: false },
+    ]);
+    await expect(store.get(fleetSecretName(GMAIL, "sign_in", "account-1"))).resolves.toContain("first-account");
+    await expect(store.get(fleetSecretName(GMAIL, "sign_in", "account-2"))).resolves.toContain("second-account");
+
+    const assigned = await performConnectionAction(
+      "assign",
+      { agent_id: OTHER_SCOUT, connection_id: GMAIL, field_id: "account-2" },
+      deps(store, world, second),
+    );
+    expect(assigned.ok).toBe(true);
+    await expect(store.get(connectionSecretName(SCOUT, "mail", "gmail-account"))).resolves.toContain("first-account");
+    await expect(store.get(connectionSecretName(OTHER_SCOUT, "mail", "gmail-account"))).resolves.toContain("second-account");
+
+    const view = fleetConnectorViews(Object.entries(world).map(([name, manifest]) => ({ name, manifest })))
+      .find((one) => one.provider === GMAIL);
+    expect(view?.accounts).toHaveLength(2);
+    expect(view?.agents.map((one) => [one.agent, one.account_id])).toEqual([
+      [SCOUT, "account-1"],
+      [OTHER_SCOUT, "account-2"],
+    ]);
+
+    expect((await performConnectionAction(
+      "default",
+      fleetTarget(GMAIL, "account-2"),
+      deps(store, world, second),
+    )).ok).toBe(true);
+    expect(listFleetConnections(GMAIL).map((one) => [one.account_id, one.is_default])).toEqual([
+      ["account-2", true],
+      ["account-1", false],
+    ]);
+    const withNewAgent = { ...world, [THIRD_SCOUT]: namedGmailScout(THIRD_SCOUT) };
+    expect((await performConnectionAction(
+      "share",
+      fleetTarget(GMAIL),
+      deps(store, withNewAgent, second),
+    )).ok).toBe(true);
+    await expect(store.get(connectionSecretName(THIRD_SCOUT, "mail", "gmail-account"))).resolves.toContain("second-account");
+
+    expect((await performConnectionAction(
+      "assign",
+      { agent_id: OTHER_SCOUT, connection_id: GMAIL, field_id: "account-1" },
+      deps(store, world, first),
+    )).ok).toBe(true);
+    expect((await performConnectionAction(
+      "assign",
+      { agent_id: THIRD_SCOUT, connection_id: GMAIL, field_id: "account-1" },
+      deps(store, withNewAgent, first),
+    )).ok).toBe(true);
+    expect((await performConnectionAction(
+      "disconnect",
+      fleetTarget(GMAIL, "account-2"),
+      deps(store, world, second),
+    )).ok).toBe(true);
+    expect(listFleetConnections(GMAIL).map((one) => one.account_id)).toEqual(["account-1"]);
+    await expect(store.get(fleetSecretName(GMAIL, "sign_in", "account-1"))).resolves.toContain("first-account");
+    await expect(store.get(fleetSecretName(GMAIL, "sign_in", "account-2"))).rejects.toThrow();
   });
 });
 

@@ -185,8 +185,12 @@ export function ServiceList({
               <ServiceRow
                 row={row}
                 canAct={canAct}
-                fleetAct={async (action, provider) => {
-                  const result = await submitFleetCommand(action, { provider });
+                fleetAct={async (action, provider, accountId, agentId) => {
+                  const result = await submitFleetCommand(action, {
+                    provider,
+                    ...(accountId === undefined ? {} : { account_id: accountId }),
+                    ...(agentId === undefined ? {} : { agent_id: agentId }),
+                  });
                   if (result.ok) {
                     onChanged();
                   }

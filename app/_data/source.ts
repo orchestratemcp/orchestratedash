@@ -85,6 +85,12 @@ export interface ConnectionCommandArgs {
  */
 export interface FleetCommandArgs {
   provider: string;
+  account_id?: string;
+}
+
+export interface FleetAssignmentCommandArgs extends FleetCommandArgs {
+  account_id: string;
+  agent_id: string;
 }
 
 /**
@@ -367,6 +373,8 @@ interface DashShellClient {
   testFleet?(args: FleetCommandArgs): Promise<CommandResult>;
   disconnectFleet?(args: FleetCommandArgs): Promise<CommandResult>;
   shareFleet?(args: FleetCommandArgs): Promise<CommandResult>;
+  defaultFleet?(args: FleetCommandArgs & { account_id: string }): Promise<CommandResult>;
+  assignFleet?(args: FleetAssignmentCommandArgs): Promise<CommandResult>;
   /**
    * Optional for the same reason as the workspace and runner methods: a shell
    * built before the host command family has a bridge, but cannot make, check
@@ -1374,8 +1382,8 @@ export async function submitConnectionCommand(
  * person just pressed.
  */
 export async function submitFleetCommand(
-  action: "connect" | "test" | "disconnect" | "share",
-  args: FleetCommandArgs,
+  action: "connect" | "test" | "disconnect" | "share" | "default" | "assign",
+  args: FleetCommandArgs | FleetAssignmentCommandArgs,
 ): Promise<CommandResult> {
   const bridge = typeof window === "undefined" ? undefined : window.dashShell;
   const method =
@@ -1385,7 +1393,11 @@ export async function submitFleetCommand(
         ? bridge?.testFleet
         : action === "disconnect"
           ? bridge?.disconnectFleet
-          : bridge?.shareFleet;
+      : action === "share"
+        ? bridge?.shareFleet
+        : action === "default"
+          ? bridge?.defaultFleet
+          : bridge?.assignFleet;
 
   if (bridge === undefined || method === undefined) {
     return {

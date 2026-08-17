@@ -85,7 +85,6 @@
 import { AI_AUTH_HEADERS } from "../ai/providers";
 import type { ConnectionSourceManifest } from "../connections";
 import { connectionSecretName } from "../connection-credentials";
-import { fleetSecretName } from "../fleet/catalogue";
 import { FLEET_PRINCIPAL } from "../fleet/principal";
 import { isOAuthError } from "../oauth/flow";
 import { maskAccount } from "../secret-refs";
@@ -178,6 +177,16 @@ export interface BrokerDeps {
    * two answers are actually chosen.
    */
   readManifest(principal: BrokerPrincipal): ConnectionSourceManifest | null;
+  /**
+   * The authoritative vault name for a provider's default fleet account.
+   *
+   * MAR-643 makes `fleet_connections.secret_name` the sole readable reference
+   * for fleet vault entries. The chief therefore reads that row through this
+   * injected seam instead of recomputing a name that would omit the selected
+   * account segment. Optional for agent-only pure tests; a chief with no answer
+   * is not connected and never falls back to an agent-computable name.
+   */
+  readFleetSecretName?(provider: string): string | null;
   readCredential(secretName: string): Promise<CredentialRead>;
   /**
    * Turn a stored credential into the headers that authorize one request.
@@ -773,34 +782,22 @@ export function createBroker(deps: BrokerDeps): Broker {
          now true for two independent reasons rather than one — the namespaces
          still cannot meet, and the chief principal is not a name.
 
-         `fleetSecretName` is the key ADR 0013 already writes on connect and on
-         re-key, so nothing is copied into a second place and re-key still writes
-         N+1 vault entries rather than N+2.
-
-         ## One overlap, recorded rather than pre-solved (MAR-643, PR #203)
-
-         That PR gives a fleet connection more than one account and grows
-         `fleetSecretName` an optional third segment, so a key connected *after*
-         it lands stands under `dash.fleet.{provider}.{account}.{field}`. Its
-         migration keeps the existing row's `secret_name` verbatim, so the
-         two-argument call below goes on resolving the account every store today
-         actually holds — which is why this is an overlap and not a defect.
-
-         Whichever of the two merges second owns the fix, and it is one line:
-         read the name off the `fleet_connections` row that PR makes the sole
-         reference for fleet vault entries, rather than recomputing it here.
-         Doing that now would mean this file reading a store, which it must not,
-         so the seam would have to be a new `BrokerDeps` member — and adding one
-         to dodge a merge conflict with an unmerged branch is speculative
-         coupling. Named here so the resolver finds it at the site. */
+         MAR-643 makes the selected default account's stored `secret_name` the
+         authority. Reading it through `BrokerDeps` keeps this module store-free
+         while preserving aliases migrated from the old two-segment name and the
+         account segment on every newly connected key. Nothing is copied into a
+         second place and re-key still writes N+1 vault entries rather than N+2. */
       const secretName =
         principal.kind === "chief"
-          ? fleetSecretName(field.field.connection.provider, field.field.field_id)
+          ? (deps.readFleetSecretName?.(field.field.connection.provider) ?? null)
           : connectionSecretName(
               principal.agent_id,
               request.connection_id,
               field.field.field_id,
             );
+      if (secretName === null) {
+        return no("not_connected");
+      }
       const read = await deps.readCredential(secretName);
       if (read.kind === "vault_error") {
         return no("vault_unavailable");

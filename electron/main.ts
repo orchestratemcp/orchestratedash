@@ -81,6 +81,7 @@ import {
 } from "../lib/ai/model-store";
 import { fleetCredentialTarget } from "../lib/fleet/actions";
 import { fleetConnectorFor } from "../lib/fleet/catalogue";
+import { readFleetConnection } from "../lib/fleet/store";
 import {
   readDashLastAlive,
   recordClosedWindow,
@@ -1097,7 +1098,7 @@ async function performModelAction(
       // The same target the fleet's own connect and check use, built by the same
       // function from the same catalogue entry — so the key this presents is the
       // one that page stored, under a vault name no agent can resolve to.
-      fleetCredentialTarget(connector),
+      fleetCredentialTarget(connector, readFleetConnection(connector.provider) ?? undefined),
       secureStore().describeBacking().label,
       aiKeyDeps(),
     );

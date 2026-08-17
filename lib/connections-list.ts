@@ -25,22 +25,21 @@
  * `describeDependents`, `describeSharedGrant`, `describeProof` — and a merged
  * super-shape would be a third place those facts could be worded.
  *
- * ## Room for two things that do not exist yet
+ * ## Room for an MCP server, and the account list MAR-643 now fills
  *
  * MAR-642 asks for a list an **MCP server row** (MAR-633, ADR 0020) fits into
  * without a new section, and one that holds **more than one account per
- * service** (MAR-643) without a redesign. Both are shaped for here rather than
- * promised:
+ * service** (MAR-643) without a redesign. The server remains shaped rather than
+ * promised; the account list is now live:
  *
  * - `ServiceKind` is a closed union with a third member DASH does not yet
  *   produce. Nothing switches on it beyond the glyph and one noun, so the day a
  *   catalogue entry says `server` the list draws it — and until then
  *   `tests/connections-list.test.ts` pins that no row can claim to be one.
- * - `accounts` is an **array**, always, and is empty or single today. Every
- *   sentence about it is written from the count rather than from "the account",
- *   so a second one is a longer list rather than a rewritten row. What DASH
- *   cannot do yet is *hold* two — `connection_secrets` is keyed one per
- *   (agent, connection, field) — and this file does not pretend otherwise.
+ * - `accounts` is an **array**, always. Every sentence about it is written from
+ *   the count rather than from "the account", so a second one is a longer list
+ *   rather than a rewritten row. Migration 24 gives each fleet account an opaque
+ *   identity while each agent still receives one ordinary broker credential.
  *
  * Pure, and it renders nothing: the shape `lib/connectors.ts` and
  * `lib/fleet/catalogue.ts` both keep.
@@ -69,16 +68,20 @@ export type ServiceKind = (typeof SERVICE_KINDS)[number];
 /**
  * One thing DASH holds for a service.
  *
- * A list on the row rather than a field, which is MAR-643's whole shape: today
- * a service has zero or one, and the sentence above it is built from the count.
+ * A list on the row rather than a field, which is MAR-643's whole shape: a
+ * service may have zero, one, or several, and the sentence above it is built
+ * from the count.
  * `hint` is masked at the source — `lib/secret-refs.ts` — and is the only part
  * of a credential that has ever existed outside the vault.
  */
 export interface ServiceAccount {
+  /** Opaque local id used by controls, never rendered as an account name. */
+  id?: string;
   /** Which of the person's accounts, masked, or null when the provider named none. */
   hint: string | null;
   /** "since 10 August 2026", or null when the stored date cannot be read. */
   since: string | null;
+  is_default?: boolean;
 }
 
 export interface ServiceRow {
@@ -91,7 +94,7 @@ export interface ServiceRow {
   fleet: FleetConnectorView | null;
   /** The agents' half, or null for a catalogue entry nobody has asked for. */
   tile: ConnectorTile | null;
-  /** What DASH holds. Empty or one today; MAR-643 makes it many. */
+  /** What DASH holds. Empty, one, or many. */
   accounts: ServiceAccount[];
   /** The one status chip, and the tone the page colours it with. */
   chip: { label: string; tone: string };
@@ -183,6 +186,14 @@ function accountsOf(
   fleet: FleetConnectorView | null,
   tile: ConnectorTile | null,
 ): ServiceAccount[] {
+  if ((fleet?.accounts?.length ?? 0) > 0) {
+    return (fleet?.accounts ?? []).map((account) => ({
+      id: account.id,
+      hint: account.account_hint ?? account.masked_hint,
+      since: account.since,
+      is_default: account.is_default,
+    }));
+  }
   if (fleet?.held != null) {
     return [{ hint: fleet.held.account_hint ?? fleet.held.masked_hint, since: fleet.held.since }];
   }

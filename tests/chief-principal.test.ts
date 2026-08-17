@@ -42,6 +42,7 @@ import { keyCredential, PLANTED_PROVIDER_KEY, everyString } from "./fakes/broker
 
 const PROVIDER = "openrouter";
 const MODEL = "openai/gpt-5-mini";
+const FLEET_SECRET = fleetSecretName(PROVIDER, "api_key", "account-2");
 
 const ANSWER_BODY = {
   choices: [{ message: { content: "Two of your agents run on this computer." } }],
@@ -79,6 +80,7 @@ function driven(agentManifest: unknown = null): Driven {
       principal.kind === "chief"
         ? chiefManifest(PROVIDER)
         : (agentManifest as ReturnType<typeof chiefManifest>),
+    readFleetSecretName: () => FLEET_SECRET,
     readCredential: (secretName: string): Promise<CredentialRead> => {
       reads.push(secretName);
       return Promise.resolve({ kind: "found", credential: keyCredential({ provider: PROVIDER }) });
@@ -149,7 +151,7 @@ describe("who is asking is a type", () => {
     const asAgent = connectionSecretName(FLEET_PRINCIPAL, "models", "api_key");
     expect(asAgent.startsWith("dash.connection.")).toBe(true);
     expect(asAgent.startsWith("dash.fleet.")).toBe(false);
-    expect(asAgent).not.toBe(fleetSecretName(PROVIDER, "api_key"));
+    expect(asAgent).not.toBe(FLEET_SECRET);
   });
 });
 
@@ -199,7 +201,7 @@ describe("which vault name the broker computes", () => {
     )) as { ok: boolean };
 
     expect(answer.ok).toBe(true);
-    expect(broker.reads).toEqual([fleetSecretName(PROVIDER, "api_key")]);
+    expect(broker.reads).toEqual([FLEET_SECRET]);
     expect(broker.reads[0]?.startsWith("dash.fleet.")).toBe(true);
     // The sentence `lib/fleet/principal.ts` protects, asserted from the broker
     // side: nothing this path computed is in the agents' namespace.

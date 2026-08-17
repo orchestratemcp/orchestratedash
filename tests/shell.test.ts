@@ -320,6 +320,11 @@ describe("the audited command chokepoint", () => {
       // no window and contacting nobody: it hands agents a consent DASH already
       // holds, rather than asking for a second one.
       "fleet.share",
+      // MAR-643. One chooses the fallback account without moving an existing
+      // assignment; the other names one agent and one opaque account id, never
+      // an account name or credential.
+      "fleet.default",
+      "fleet.assign",
       "agent.approve",
       "agent.reject",
       "agent.choose",
@@ -1444,6 +1449,77 @@ describe("dispatch", () => {
         /must go through dispatchCommand/,
       );
     });
+  });
+
+  describe("multi-account fleet commands", () => {
+    it("binds a default to the fleet principal and an assignment to the named agent", async () => {
+      const ctx = context();
+      await dispatchCommand(
+        {
+          command: "fleet.default",
+          request_id: "req-fleet-default",
+          payload: { provider: "google-gmail", account_id: "account-2" },
+        },
+        ctx,
+      );
+      await dispatchCommand(
+        {
+          command: "fleet.assign",
+          request_id: "req-fleet-assign",
+          payload: {
+            provider: "google-gmail",
+            account_id: "account-2",
+            agent_id: "news-scout",
+          },
+        },
+        ctx,
+      );
+
+      expect(ctx.connections).toEqual([
+        {
+          action: "default",
+          target: {
+            agent_id: "dash.fleet",
+            connection_id: "google-gmail",
+            field_id: "account-2",
+          },
+        },
+        {
+          action: "assign",
+          target: {
+            agent_id: "news-scout",
+            connection_id: "google-gmail",
+            field_id: "account-2",
+          },
+        },
+      ]);
+      expect(ctx.audited.map((one) => one.payload_keys)).toEqual([
+        ["provider", "account_id"],
+        ["provider", "account_id", "agent_id"],
+      ]);
+    });
+
+    it.each(["account", "email", "token", "secret"])(
+      "refuses an assignment carrying a %s value",
+      async (key) => {
+        const ctx = context();
+        const result = await dispatchCommand(
+          {
+            command: "fleet.assign",
+            request_id: "req-fleet-secret",
+            payload: {
+              provider: "google-gmail",
+              account_id: "account-2",
+              agent_id: "news-scout",
+              [key]: "person@example.com",
+            },
+          },
+          ctx,
+        );
+        expect(result).toMatchObject({ ok: false, reason: "unexpected_payload_field" });
+        expect(ctx.connections).toHaveLength(0);
+      },
+    );
   });
 
   /**

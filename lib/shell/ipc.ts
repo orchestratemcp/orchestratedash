@@ -1075,7 +1075,7 @@ export const COMMANDS = {
     effect:
       "Ask for an account sign-in or a key for one service, store it in this computer's vault, and " +
       "give it to every agent that already asked for that service.",
-    payload_keys: ["provider"],
+    payload_keys: ["provider", "account_id"],
     required_keys: ["provider"],
     mutates: true,
     irreversible: false,
@@ -1083,7 +1083,7 @@ export const COMMANDS = {
   "fleet.test": {
     effect:
       "Check that the sign-in or key DASH holds for one service still works, by asking that service.",
-    payload_keys: ["provider"],
+    payload_keys: ["provider", "account_id"],
     required_keys: ["provider"],
     // Reads the vault and writes down what the provider said, which is state.
     // Marked honestly rather than conveniently, as `connection.test` is.
@@ -1094,7 +1094,7 @@ export const COMMANDS = {
     effect:
       "Delete the sign-in or key for one service from this computer's vault, and take it away from " +
       "every agent DASH gave it to.",
-    payload_keys: ["provider"],
+    payload_keys: ["provider", "account_id"],
     required_keys: ["provider"],
     mutates: true,
     // Not `irreversible` in this catalogue's sense — no message is sent, no
@@ -1108,8 +1108,24 @@ export const COMMANDS = {
     effect:
       "Give agents that asked for one service the sign-in or key DASH already holds. Asks for " +
       "nothing and contacts no service.",
-    payload_keys: ["provider"],
+    payload_keys: ["provider", "account_id"],
     required_keys: ["provider"],
+    mutates: true,
+    irreversible: false,
+  },
+  "fleet.default": {
+    effect:
+      "Choose which connected account a new agent uses for one service when no account was assigned yet.",
+    payload_keys: ["provider", "account_id"],
+    required_keys: ["provider", "account_id"],
+    mutates: true,
+    irreversible: false,
+  },
+  "fleet.assign": {
+    effect:
+      "Choose which connected account one agent uses for one service, and replace that agent's materialized credential.",
+    payload_keys: ["provider", "account_id", "agent_id"],
+    required_keys: ["provider", "account_id", "agent_id"],
     mutates: true,
     irreversible: false,
   },
@@ -1555,6 +1571,8 @@ export const FLEET_ACTIONS = {
   "fleet.test": "test",
   "fleet.disconnect": "disconnect",
   "fleet.share": "share",
+  "fleet.default": "default",
+  "fleet.assign": "assign",
 } as const;
 
 export type FleetCommandName = keyof typeof FLEET_ACTIONS;
@@ -2683,9 +2701,15 @@ export async function dispatchCommand(
      * this side does not make.
      */
     const result = await context.connectionAction(FLEET_ACTIONS[review.command], {
-      agent_id: FLEET_PRINCIPAL,
+      agent_id:
+        review.command === "fleet.assign"
+          ? String(review.payload["agent_id"])
+          : FLEET_PRINCIPAL,
       connection_id: String(review.payload["provider"]),
-      field_id: "",
+      field_id:
+        typeof review.payload["account_id"] === "string"
+          ? review.payload["account_id"]
+          : "",
     });
     return {
       ok: result.ok,

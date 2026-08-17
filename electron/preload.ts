@@ -344,10 +344,18 @@ const dashShell = {
    * reason — a reviewer counting the ways page script can cause a sign-in should
    * find them by name.
    */
-  connectFleet: (args: { provider: string }) => send("fleet.connect", { ...args }),
-  testFleet: (args: { provider: string }) => send("fleet.test", { ...args }),
-  disconnectFleet: (args: { provider: string }) => send("fleet.disconnect", { ...args }),
-  shareFleet: (args: { provider: string }) => send("fleet.share", { ...args }),
+  connectFleet: (args: { provider: string; account_id?: string }) =>
+    send("fleet.connect", { ...args }),
+  testFleet: (args: { provider: string; account_id?: string }) =>
+    send("fleet.test", { ...args }),
+  disconnectFleet: (args: { provider: string; account_id?: string }) =>
+    send("fleet.disconnect", { ...args }),
+  shareFleet: (args: { provider: string; account_id?: string }) =>
+    send("fleet.share", { ...args }),
+  defaultFleet: (args: { provider: string; account_id: string }) =>
+    send("fleet.default", { ...args }),
+  assignFleet: (args: { provider: string; account_id: string; agent_id: string }) =>
+    send("fleet.assign", { ...args }),
 
   /**
    * The host actions (MAR-536/MAR-556), one named method each.

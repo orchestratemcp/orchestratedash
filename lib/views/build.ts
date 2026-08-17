@@ -45,7 +45,12 @@ import { readFleetModelDefault } from "../ai/model-store";
 import { decisionsView } from "./decisions";
 import { fleetCatalogue } from "../fleet/catalogue";
 import { describeFleetReach, fleetReach } from "../fleet/grants";
-import { readFleetConnection, withheldAgents } from "../fleet/store";
+import {
+  assignedFleetConnection,
+  listFleetConnections,
+  readFleetConnection,
+  withheldAgents,
+} from "../fleet/store";
 import { describePermissions, oauthProviderById } from "../oauth/providers";
 import { sameHostIdentity } from "../hosts";
 import {
@@ -1058,11 +1063,14 @@ export function fleetConnectorViews(
 
   return fleetCatalogue().map((connector) => {
     const stored = readFleetConnection(connector.provider);
+    const storedAccounts = listFleetConnections(connector.provider);
     const reach = fleetReach(connector, candidates, withheldAgents(connector.provider));
     const flow =
       connector.oauth === null ? null : oauthProviderById(connector.oauth.provider_id);
 
-    const agents = reach.materializes.map((one) => ({
+    const agents = reach.materializes.map((one) => {
+      const assigned = assignedFleetConnection(connector.provider, one.agent_id);
+      return {
       agent: one.agent_id,
       title: titleByAgent.get(one.agent_id) ?? one.agent_id,
       // Whether this agent holds it *now*, from the same reference table
@@ -1072,9 +1080,11 @@ export function fleetConnectorViews(
         (entry) =>
           entry.connection_id === one.target.connection_id &&
           entry.field_id === one.target.field_id &&
-          entry.masked_hint !== null,
+          entry.masked_hint !== null &&
+          (assigned === null || assigned.masked_hint === null || entry.masked_hint === assigned.masked_hint),
       ),
-    }));
+      account_id: assigned?.account_id ?? null,
+    };});
 
     return {
       provider: connector.provider,
@@ -1105,6 +1115,14 @@ export function fleetConnectorViews(
               // ADR 0002 amendment 5: there is nothing to intersect.
               permissions: flow === null ? [] : describePermissions(flow, stored.scopes),
             },
+      accounts: storedAccounts.map((account) => ({
+        id: account.account_id,
+        masked_hint: account.masked_hint,
+        account_hint: account.account_hint,
+        since: plainDay(account.connected_at) ?? null,
+        permissions: flow === null ? [] : describePermissions(flow, account.scopes),
+        is_default: account.is_default,
+      })),
       agents,
       skipped: reach.skipped.map((one) => ({
         agent: one.agent_id,

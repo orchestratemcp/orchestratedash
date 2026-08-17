@@ -1099,13 +1099,28 @@ export interface FleetConnectorView {
     /** What the consent actually issued, in DASH's own sentences. Empty for a key. */
     permissions: string[];
   } | null;
+  /** Every connected account for this service, oldest first. */
+  accounts?: Array<{
+    id: string;
+    masked_hint: string | null;
+    account_hint: string | null;
+    since: string | null;
+    permissions: string[];
+    is_default: boolean;
+  }>;
   /**
    * Every agent this connection reaches, and whether it has it yet.
    *
    * `agent` is the id — a value, never a label (MAR-589's ruling). `title` is
    * `agentDisplayName`'s answer and the one this card is allowed to print.
    */
-  agents: Array<{ agent: string; title: string; connected: boolean }>;
+  agents: Array<{
+    agent: string;
+    title: string;
+    connected: boolean;
+    /** The explicit or default account currently materialized for this agent. */
+    account_id?: string | null;
+  }>;
   /**
    * Agents that name this service and are not reached, each with why.
    *

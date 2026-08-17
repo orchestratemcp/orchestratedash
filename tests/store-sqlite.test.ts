@@ -140,8 +140,13 @@ describe("schema", () => {
     // 26 is MAR-673's `fleet_decisions` (ADR 0024) — the decisions half of the
     // fleet's memory, appended on the standing terms: an installed store that
     // has recorded 0 to 25 runs exactly one more.
+    //
+    // 27 is MAR-643's multi-account replacement of `fleet_connections` and the
+    // non-null per-agent account-assignment table beside it. Authored as 24,
+    // renumbered twice — 24, 25 and 26 each reached master first — and the one
+    // master already has keeps its number, every time.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(26);
+    expect(version.user_version).toBe(27);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -192,6 +197,7 @@ describe("schema", () => {
     // above is untouched and still means what it always did.
     expect(tables).toContain("fleet_connections");
     expect(tables).toContain("fleet_grants");
+    expect(tables).toContain("fleet_account_assignments");
     // MAR-642. One row, holding the model DASH gives an agent nobody has given
     // one. Beside the fleet tables above because it is the same kind of fact —
     // a decision the person made about their whole DASH rather than about one
@@ -203,6 +209,93 @@ describe("schema", () => {
     // the fleet room and an agent's room are two threads with nothing shared,
     // because `{ kind: "chief" }` carries no agent id to key one by.
     expect(tables).toContain("chief_messages");
+  });
+
+  it("migrates a copied real-shape v25 fleet row without re-entering its vault key", async () => {
+    const first = await freshStore();
+    const handle = first.db.db();
+    handle.prepare(
+      "INSERT INTO fleet_connections " +
+        "(provider, account_id, connector_kind, field_id, secret_name, masked_hint, account_hint, " +
+        "scopes, backend, is_default, connected_at, updated_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      "google-gmail",
+      "account-1",
+      "google_oauth_broker",
+      "sign_in",
+      "dash.fleet.google-gmail.sign_in",
+      "heâ€¢â€¢@example.com",
+      "heâ€¢â€¢@example.com",
+      "[]",
+      "windows_credential_manager",
+      1,
+      "2026-08-01T00:00:00.000Z",
+      "2026-08-01T00:00:00.000Z",
+    );
+    handle.prepare(
+      "INSERT INTO connection_secrets " +
+        "(agent, connection_id, field_id, secret_name, masked_hint, backend, created_at, updated_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      "dash.fleet",
+      "google-gmail",
+      "sign_in",
+      "dash.fleet.google-gmail.sign_in",
+      "heâ€¢â€¢@example.com",
+      "windows_credential_manager",
+      "2026-08-01T00:00:00.000Z",
+      "2026-08-01T00:00:00.000Z",
+    );
+
+    // Turn only the two tables this migration owns back into the exact v25
+    // shape. Every other table and row stays from a current, real schema: this
+    // is the copied-store case rather than a miniature fixture database.
+    handle.exec(`
+      ALTER TABLE fleet_connections RENAME TO fleet_connections_v26;
+      CREATE TABLE fleet_connections (
+        provider TEXT PRIMARY KEY,
+        connector_kind TEXT NOT NULL,
+        field_id TEXT NOT NULL,
+        secret_name TEXT NOT NULL,
+        masked_hint TEXT,
+        account_hint TEXT,
+        scopes TEXT NOT NULL,
+        backend TEXT NOT NULL,
+        connected_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO fleet_connections
+        SELECT provider, connector_kind, field_id, secret_name, masked_hint,
+               account_hint, scopes, backend, connected_at, updated_at
+        FROM fleet_connections_v26;
+      DROP TABLE fleet_connections_v26;
+      DROP TABLE fleet_account_assignments;
+      PRAGMA user_version = 25;
+    `);
+    first.db.closeDb();
+
+    process.env.DASH_DATA_DIR = first.dataDir;
+    vi.resetModules();
+    const nextDb = await import("../lib/db");
+    const fleet = await import("../lib/fleet/store");
+    opened.push({ dataDir: first.dataDir, closeDb: nextDb.closeDb });
+
+    const migrated = fleet.readFleetConnection("google-gmail");
+    expect(migrated).toMatchObject({
+      account_id: "account-1",
+      is_default: true,
+      secret_name: "dash.fleet.google-gmail.sign_in",
+    });
+    expect(fleet.listFleetConnections("google-gmail")).toHaveLength(1);
+    expect(
+      nextDb.db().prepare(
+        "SELECT COUNT(*) AS count FROM connection_secrets WHERE agent = 'dash.fleet'",
+      ).get(),
+    ).toEqual({ count: 0 });
+    expect(
+      (nextDb.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
+    ).toBe(27);
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -562,7 +655,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(26);
+    ).toBe(27);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

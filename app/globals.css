@@ -3325,6 +3325,38 @@ a.plain:hover {
   font-size: var(--text-sm);
 }
 
+.service-account-choice select {
+  min-width: 11rem;
+  max-width: 100%;
+}
+
+.service-account-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.service-account-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.service-account-row > p,
+.service-account-actions {
+  margin: 0;
+}
+
+.service-account-actions {
+  grid-column: 1 / -1;
+}
+
 .service-head > .chip {
   margin-inline-start: auto;
 }

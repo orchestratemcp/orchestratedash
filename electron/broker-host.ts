@@ -55,6 +55,7 @@ import {
 import type { ConnectionSourceManifest } from "../lib/connections";
 import { parseOAuthCredential } from "../lib/oauth/credential";
 import { isSecureStoreError } from "../lib/secure-store";
+import { readFleetConnection } from "../lib/fleet/store";
 import { readAgentManifest } from "../lib/store";
 import { hostBrowserController } from "./browser-host";
 import { mintAccessToken } from "./oauth-session";
@@ -252,6 +253,7 @@ export function hostBroker(): Broker {
       principal.kind === "chief"
         ? chiefManifest(readFleetModelDefault()?.provider_id ?? "")
         : (readAgentManifest(principal.agent_id) as ConnectionSourceManifest | null),
+    readFleetSecretName: (provider) => readFleetConnection(provider)?.secret_name ?? null,
     readCredential,
     mintAuthorization,
     fetchImpl: fetch,
