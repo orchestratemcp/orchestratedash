@@ -11,7 +11,25 @@
  * ssh host connect    <- joins the runner's socket to stdio; not JSON
  * ssh host channel    <- hands back the credential that pipe is spoken with
  * ssh host uninstall  <- takes one bundle off this machine
+ * ssh host pack       <- which host pack these bytes carry
  * ```
+ *
+ * ## The pack, and why this program lays it down (MAR-629, ADR 0021)
+ *
+ * A host stopped being a bare runner: it is now a small DASH runtime, and the
+ * runtime arrives with these bytes. `runHelper` calls `ensureHostPack` before it
+ * looks at the verb, so **every** invocation of a helper that knows about packs
+ * leaves a pack behind — which is what makes ADR 0021's *"re-running setup
+ * replaces the helper and lays down the empty pack as one step"* true without a
+ * second install path, a second snippet, or a partial state anybody has to
+ * reason about.
+ *
+ * The store it creates is **empty**. Keys arrive one at a time through ADR
+ * 0018's ceremony and its `install-key` verb, which is not in this file and is
+ * not this pack's to write. A pack that shipped the vault's contents would grant
+ * every credential to a machine in one action; ADR 0021 rule 6 forbids it, and
+ * `runner/host-pack.ts` is where that refusal is implemented rather than
+ * remembered.
  *
  * ## What this is a boundary against, said plainly
  *
@@ -75,6 +93,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 
+import { PACK_UNPROVED } from "../../lib/deploy/host-pack";
 import {
   MAX_COLLECT_LINES,
   checkDeployRequest,
@@ -83,6 +102,7 @@ import {
   type HostBundleStatus,
   type InstallRequest,
 } from "../../lib/deploy/verbs";
+import { ensureHostPack, proveHostPack } from "../../runner/host-pack";
 import { containedIn, inspectComponent } from "../../runner/path-guard";
 
 /* ---------------------------------------------------------------------- *
@@ -297,6 +317,30 @@ function start(root: string, bundleId: string): DeployAnswer {
     env: {
       ...process.env,
       DASH_RUNNER_DATA_DIR: dataDir,
+      /*
+       * Where the host broker reads keys from, and which bundle's keys it may
+       * read (MAR-629, ADR 0021).
+       *
+       * **This program chooses both**, exactly as it chooses `node start.mjs`.
+       * Neither value came from a request, and there is no verb that can set
+       * them — ADR 0018 refuses caller-supplied environment by name, and this is
+       * the same rule seen from the side that is allowed to write one: the
+       * helper owns the filesystem, so the helper says where the secrets are.
+       *
+       * The bundle id is the isolation. `runner/host-pack.ts` explains why it
+       * cannot be the account: the helper and every runner share one uid, so
+       * `0600` does not separate two agents on one host. What separates them is
+       * that this runner is told one bundle id and can name no other.
+       *
+       * `DASH_HOST_ROOT` is written explicitly rather than left to the inherited
+       * environment. It is often unset on a real host — `hostRoot()` falls back
+       * to the home directory — so a runner relying on inheritance would find
+       * nothing on exactly the machines this is for, and would find the right
+       * value under test. That is the failure shape `forcedCommandHelper` exists
+       * to catch, and it is cheaper to not write it.
+       */
+      DASH_HOST_ROOT: root,
+      DASH_HOST_BUNDLE_ID: bundleId,
     },
   });
   child.unref();
@@ -658,6 +702,39 @@ function channel(root: string, bundleId: string): DeployAnswer {
 }
 
 /* ---------------------------------------------------------------------- *
+ * pack — which runtime these bytes carry (MAR-629, ADR 0021)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Answer with this host's pack version, or refuse.
+ *
+ * **The refusal is what the verb is for.** A helper that predates the pack never
+ * reaches this function at all: `checkDeployRequest` does not list `pack` in its
+ * bytes, so it answers `unknown_verb` without anybody having written that
+ * branch. This function's job is the *other* too-old case — bytes that know the
+ * question and a tree beneath them that cannot answer it, which is a failed
+ * install rather than an old one.
+ *
+ * Both are `host_pack_too_old` by the time a person reads them, and
+ * `lib/deploy/host-pack.ts` is the single place that mapping lives. Two problem
+ * strings on the wire so the host's own log and DASH's can still tell "these
+ * bytes are old" from "these bytes are current and the tree is wrong" — two
+ * different repairs for whoever ends up on the machine, one exit offered.
+ *
+ * It carries nothing else. Not a key count, not a slot name, not the secrets
+ * path, not the wrapping key's digest. `DeployAnswer`'s `pack` member has
+ * nowhere to put any of them, which is how that stays true rather than being
+ * remembered by the next person to edit this function.
+ */
+function pack(root: string): DeployAnswer {
+  const proved = proveHostPack(root);
+  if (!proved.ok) {
+    return { ok: false, problem: PACK_UNPROVED, detail: proved.detail };
+  }
+  return { ok: true, verb: "pack", pack_version: proved.pack_version };
+}
+
+/* ---------------------------------------------------------------------- *
  * Small mechanics
  * ---------------------------------------------------------------------- */
 
@@ -760,6 +837,25 @@ export async function runHelper(argv: string[]): Promise<number> {
   const root = hostRoot();
   mkdirSync(root, { recursive: true, mode: 0o700 });
 
+  /*
+   * The pack, laid down before the verb is read (MAR-629, ADR 0021).
+   *
+   * Unconditional, and it is the whole install path. There is no "install just
+   * the broker", no second snippet and no verb that installs a pack, because
+   * every one of those would be a way for a host to end up with some of the
+   * runtime — and ADR 0021 is explicit that a half-written pack is a failed
+   * install rather than a version.
+   *
+   * The result is deliberately not checked here. A pack that could not be
+   * written is reported by `pack`, which proves the tree rather than trusting
+   * this call, and every other verb goes on working: `status`, `collect` and
+   * `uninstall` have nothing to do with secrets, and a host whose disk is full
+   * should still be able to answer what is installed and take an agent off.
+   * Refusing every verb because the secrets tree is unwritable would turn one
+   * broken thing into a server DASH cannot talk to at all.
+   */
+  ensureHostPack(root);
+
   const verb = argv[0];
   if (verb === undefined) {
     answer({ ok: false, problem: "unknown_verb", detail: "No operation was named." });
@@ -850,6 +946,9 @@ export async function runHelper(argv: string[]): Promise<number> {
       return 0;
     case "uninstall":
       answer(uninstall(root, request.bundle_id));
+      return 0;
+    case "pack":
+      answer(pack(root));
       return 0;
     case "connect":
       // Unreachable: handled above, before stdin was read. Checked rather than

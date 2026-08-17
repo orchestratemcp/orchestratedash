@@ -121,6 +121,20 @@ export interface RunnerServerOptions {
   /** Graceful process shutdown, supplied only by the standalone runner. */
   shutdown?: () => void;
   /**
+   * A person pressed Run on this host, so the host broker may spend (MAR-629,
+   * ADR 0016 via ADR 0021).
+   *
+   * Supplied only when this runner has a host broker, which is only on a machine
+   * enrolled with a pack. Absent means there is nothing on this machine that
+   * could spend, so there is nothing to open.
+   *
+   * The mirror of `electron/main.ts`'s one line, and it exists because that line
+   * opens the *local* allowance — which is the one the host cannot spend. ADR
+   * 0021 section 2: *"The host broker needs its own allowance, opened by the
+   * same press, on the machine that will spend."*
+   */
+  allowRunSpend?: (agentId: string, at: Date) => void;
+  /**
    * Whether the runner's own store is unusable, asked on every request
    * (MAR-506).
    *
@@ -703,6 +717,38 @@ async function handle(
     if (database === null) {
       sendStoreDamaged(response, { kind: "unreadable", detail: "The runner has no open store." });
       return;
+    }
+
+    /*
+     * The press that pays for a model call on this machine (MAR-629, ADR 0021).
+     *
+     * `electron/main.ts` does exactly this, on the same verb, before the same
+     * call, with the same comment about ordering — and what it opens is DASH's
+     * allowance, on DASH's machine, which a runner on a server cannot spend
+     * against. This is the same press arriving where the money will actually be
+     * spent.
+     *
+     * **Why the agent id comes from the URL and not the envelope.** The route
+     * already resolved `/agents/{id}/commands`, and that segment is what every
+     * other branch in this handler is about. Reading `target.agent_id` out of an
+     * unvalidated body would let one agent's press open another agent's
+     * allowance — which is the mistake `BufferedBrokerRequest`'s own docblock
+     * calls the single most load-bearing field in the broker's transport.
+     *
+     * **Why before adjudication.** The agent begins working the instant the
+     * runner writes the line, so an allowance opened on the way back would race
+     * it. The cost is a refused command that opened an allowance nothing spends;
+     * it expires on its own, and the opposite ordering is a run whose curation
+     * step is refused for a reason nobody can see. `electron/main.ts` weighed
+     * these the same way.
+     *
+     * **What does not open one.** `POST /agents/{id}/lifecycle` with `start` is
+     * next door and calls nothing: starting a runner is not a Run. Nor is a
+     * schedule — scheduled spending stays refused, and stays ADR 0014's deferred
+     * decision, blocked on restart-on-boot.
+     */
+    if ((envelope as { command?: unknown } | null)?.command === "retry") {
+      options.allowRunSpend?.(agentId, options.now?.() ?? new Date());
     }
 
     const result = await executeCommand(envelope, {

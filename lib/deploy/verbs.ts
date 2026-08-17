@@ -67,6 +67,9 @@
  *   (MAR-602). See below; it is the seventh, and the set is closed again.
  * - `uninstall` — take one bundle off the host. The eighth (MAR-611, ADR 0017),
  *   and the only verb that removes anything. See below.
+ * - `pack` — which host pack this helper carries. The ninth (MAR-629, ADR 0021),
+ *   and the only verb that asks about the machine rather than about a bundle.
+ *   See below.
  *
  * ## The seventh, and why the set opened once (MAR-602, ADR 0014 amendment 1)
  *
@@ -151,6 +154,47 @@
  * `not_installed` — unlike `stop`, where a missing bundle means the caller is
  * confused. Here "it is not there" is the outcome being asked for, and a
  * bring-home that failed at its last step must be safe to press again.
+ *
+ * ## The ninth, and the first verb that asks about the machine (MAR-629, ADR 0021)
+ *
+ * Every verb above names a bundle, because until now a host was a place bundles
+ * sat. ADR 0021 makes it a small DASH runtime — a broker, a secret store and a
+ * spool, installed at enrolment — and a runtime has a version. `pack` reads it.
+ *
+ * **Why a verb rather than a field on `status`.** `status` already answers, on
+ * every host ever enrolled, including the ones that predate the pack. A version
+ * carried there would be missing rather than refused on an old helper, and a
+ * missing field read as zero — or as "assume current" — is how
+ * `186.240.156.166` would look upgraded forever. The too-old probe has to be a
+ * question the old bytes cannot answer, and a verb is the only thing on this
+ * plane with that property: `checkDeployRequest` refuses an unknown verb by
+ * construction, so an old helper answers `unknown_verb` without anybody having
+ * written the refusal. ADR 0021 section 4 rejects the `status` field by name.
+ *
+ * `status` may still carry `pack_version` later as a convenience. It may not
+ * become the probe.
+ *
+ * **Held to ADR 0014's three questions, like the seventh and the eighth.**
+ * (1) *Does it carry a credential in either direction?* No, and this is the one
+ * verb where that is worth checking twice, because it is the verb that stands
+ * next to the secret store. A verb out; an integer back. Not a key, not a key's
+ * digest, not a count of keys, not a slot name, not the wrapping key, not a
+ * path. The answer type below is the enforcement — there is no member on it a
+ * secret could travel in.
+ * (2) *Does it choose what runs, or only which?* Neither. It reads an identity
+ * file the helper wrote under a root the helper chose, and the request carries
+ * no identifier at all — not even an optional one, unlike `status`. There is
+ * nothing in it to validate because there is nothing in it.
+ * (3) *Can DASH describe the result honestly afterwards?* Yes, in two sentences
+ * and no third: this helper's pack version at the time DASH asked, or that the
+ * helper is too old to know the question. `lib/deploy/host-pack.ts` is where
+ * those two become one verdict, and it deliberately cannot produce a third.
+ *
+ * **What it is not.** It is not `install-key` (ADR 0018's verb, and still
+ * unimplemented), and it is not a way to reach the host broker. The host broker
+ * answers the agent beside it, on that machine, and has no route on this plane
+ * or on the control plane — see ADR 0021 section 5, and the test at the bottom
+ * of `tests/deploy-bridge.test.ts` that checks no verb is broker-shaped.
  */
 export const DEPLOY_VERBS = [
   "install",
@@ -161,6 +205,7 @@ export const DEPLOY_VERBS = [
   "connect",
   "channel",
   "uninstall",
+  "pack",
 ] as const;
 
 export type DeployVerb = (typeof DEPLOY_VERBS)[number];
@@ -268,6 +313,21 @@ export interface UninstallRequest {
   verb: "uninstall";
   bundle_id: string;
 }
+/**
+ * Which host pack this helper carries (MAR-629, ADR 0021).
+ *
+ * The only request in this union with no fields but its verb, and the emptiness
+ * is the design rather than an omission. `status` takes an *optional* bundle id
+ * because a Connection Center row asks about a host and an agent row asks about
+ * a bundle; this asks about the machine only, and there is no second question it
+ * could be pointed at. A `bundle_id` here would be a field the helper had to
+ * decide to ignore, and `checkDeployRequest` refuses one rather than ignoring
+ * it — for `runHelper`'s stated reason about a surplus argument, which applies
+ * with more force to the verb that stands beside the secret store.
+ */
+export interface PackRequest {
+  verb: "pack";
+}
 
 export type DeployRequest =
   | InstallRequest
@@ -277,7 +337,8 @@ export type DeployRequest =
   | CollectRequest
   | ConnectRequest
   | ChannelRequest
-  | UninstallRequest;
+  | UninstallRequest
+  | PackRequest;
 
 /* ---------------------------------------------------------------------- *
  * The check, run on both ends
@@ -331,8 +392,22 @@ export function checkDeployRequest(candidate: unknown): DeployRequestCheck {
 
   // `status` is the one verb whose identifier is optional, because a
   // Connection Center row asks about a host rather than about a bundle.
+  //
+  // `pack` is the one verb that takes no identifier at all (MAR-629). Refused
+  // rather than ignored when one arrives, because a caller that sent one has a
+  // different model of this verb than this file does — the argument `runHelper`
+  // makes about a surplus argv token, and the reason `PackRequest` has no
+  // fields.
   const bundleId = request["bundle_id"];
-  if (verb === "status") {
+  if (verb === "pack") {
+    if (bundleId !== undefined) {
+      return {
+        ok: false,
+        problem: "malformed_identifier",
+        detail: "The pack question is about the server itself and names no agent.",
+      };
+    }
+  } else if (verb === "status") {
     if (bundleId !== undefined && !isIdentifier(bundleId)) {
       return identifierProblem("bundle_id");
     }
@@ -492,4 +567,23 @@ export type DeployAnswer =
       removed: boolean;
       detail: string;
     }
+  /**
+   * Which host pack this helper carries (MAR-629, ADR 0021).
+   *
+   * **One integer, and the shape is the guarantee.** This answer comes back from
+   * the machine that holds the host secret store, so the interesting property is
+   * what it has no room for: there is no member here a key, a wrapping key, a
+   * key's digest, a slot name, a bundle id, a count of placed keys or a path
+   * could travel in. `channel` is the only member of this union that carries a
+   * credential and it had to be argued for at length; this one is stated as
+   * carrying none, and the type is what makes that a fact rather than a promise
+   * somebody keeps.
+   *
+   * A helper too old to know the verb answers `unknown_verb` instead, and a
+   * helper whose pack cannot be proved answers `pack_unproved`. Both are
+   * `host_pack_too_old` by the time a person reads them —
+   * `lib/deploy/host-pack.ts` is the one place that mapping lives, so that a
+   * caller cannot accidentally treat a missing pack as a present one.
+   */
+  | { ok: true; verb: "pack"; pack_version: number }
   | { ok: false; problem: string; detail: string };
