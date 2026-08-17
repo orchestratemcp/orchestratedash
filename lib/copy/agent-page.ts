@@ -341,6 +341,21 @@ export const AGENT_SETTINGS_COPY = {
     scope: "DASH sends notifications for every agent to one channel, not one channel per agent.",
     link: "Open notification settings",
   },
+  /**
+   * The Settings stage's list of "always answer this way" rows (MAR-681).
+   *
+   * Renders nothing at all for an agent with none — the ordinary state, and
+   * `identity`'s own reason for showing what is genuinely absent rather than
+   * a heading over an empty sentence.
+   */
+  standing_answers: {
+    heading: "Standing answers",
+    /** Above the list, when there is at least one row. */
+    detail: "DASH will not ask these questions again until you forget the answer.",
+    forget: "Forget",
+    /** On the day this was set, under the question and the chosen option. */
+    set_on: (date: string): string => `Set ${date}`,
+  },
   danger: {
     heading: "Remove this agent",
     /**
@@ -740,6 +755,13 @@ export const AGENT_COCKPIT_COPY = {
    * in it and no list to be consistent with.
    */
   work_kind: { approval: "Guarded action", choice: "Choice" },
+  /**
+   * The checkbox beside a choice's options (MAR-681): "I want both all the
+   * time," Henrik's own words about the competitor scout's question. Answers
+   * one occurrence and remembers the answer in the same press; revocable on
+   * the Settings stage, `AGENT_SETTINGS_COPY.standing_answers`.
+   */
+  remember_choice: "Always answer this way",
   /**
    * The chat bar, pinned to the bottom of the frame.
    *

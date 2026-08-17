@@ -1502,6 +1502,24 @@ export interface WorkspaceMemoryView {
   updated_at: string;
 }
 
+/**
+ * One remembered answer to one of an agent's runtime questions (MAR-681).
+ *
+ * `question_key` is what a Forget press names — the same key
+ * `standingAnswerQuestionKey` computed when this row was written, and the one
+ * value that round-trips a "which question" identity back to main. `question_label`
+ * and `option_label` are that question's and that option's own words, kept
+ * verbatim for the reason every receipt in DASH is verbatim: a paraphrase a
+ * person did not write is not something they can check their own memory
+ * against.
+ */
+export interface StandingAnswerView {
+  question_key: string;
+  question_label: string;
+  option_label: string;
+  chosen_at: string;
+}
+
 export interface WorkspaceApprovalDecisionView {
   id: string;
   request_id: string;
@@ -1688,6 +1706,18 @@ export type WorkspaceView =
        * agent whose plan uses no model at all.
        */
       models: AgentModelSettingsView;
+      /**
+       * Every question this agent has asked that a person told DASH to stop
+       * asking (MAR-681), newest first.
+       *
+       * Empty rather than absent when there are none, `outputs`' reason: an
+       * agent nobody has answered "always this" for is the ordinary state and
+       * not a fact the Settings stage has to render differently from one whose
+       * list DASH could not read. Each row carries the question and the chosen
+       * option's own words, verbatim — a receipt in ADR 0012's sense, not
+       * DASH's paraphrase of what was asked or chosen.
+       */
+      standing_answers: StandingAnswerView[];
       /**
        * The Health stage's stored-record verdicts (MAR-645).
        *

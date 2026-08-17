@@ -472,6 +472,47 @@ export const COMMANDS = {
   },
 
   /*
+   * MAR-681. A person's own record that an agent's runtime question should
+   * stop being asked. `identity.*`'s reason exactly: this is the reader's own
+   * record about an agent, not anything the agent or its runner does, and it
+   * is not `agent.choose` — that command answers *one* occurrence of a choice
+   * through the Agent DOM envelope and reaches the runner; this writes a
+   * standing rule DASH consults *before* the next occurrence is ever offered,
+   * and contacts nobody.
+   *
+   * `question_label` and `option_label` are the choice's and the chosen
+   * option's own `label`, verbatim — main derives the storage key from the
+   * question label rather than accepting one, so a caller cannot send a key
+   * that disagrees with what `standingAnswerQuestionKey` would compute for
+   * the words beside it.
+   *
+   * `mutates` is true — a row is written. `irreversible` is false: forgetting
+   * it is `standing_answer.clear`, one press away, and neither command ever
+   * touches the choice it describes.
+   */
+  "standing_answer.set": {
+    effect:
+      "Remember this agent's answer to one runtime question, so DASH does not ask again. Contacts nobody.",
+    payload_keys: ["agent_id", "question_label", "option_id", "option_label"],
+    required_keys: ["agent_id", "question_label", "option_id", "option_label"],
+    mutates: true,
+    irreversible: false,
+  },
+  /**
+   * `standing_answer.set`'s undo. `question_key` rather than `question_label`:
+   * the renderer already holds the key from the row it is showing a Forget
+   * button beside, and re-deriving it from a label here would be a second
+   * place that decides what "the same question" means.
+   */
+  "standing_answer.clear": {
+    effect: "Forget a remembered answer, so DASH asks again next time. Contacts nobody.",
+    payload_keys: ["agent_id", "question_key"],
+    required_keys: ["agent_id", "question_key"],
+    mutates: true,
+    irreversible: false,
+  },
+
+  /*
    * MAR-583. Which model an agent uses.
    *
    * **An eighth family, and it is one because the question it answers is one.**
@@ -1444,6 +1485,27 @@ export function isIdentityCommandName(value: CommandName): value is IdentityComm
 }
 
 /**
+ * A person's standing answers to an agent's runtime questions (MAR-681).
+ *
+ * Its own map rather than a fourth member of `IDENTITY_ACTIONS`: that map's
+ * three facts are about *identifying* an agent to the reader, and a standing
+ * answer is about a *question* the agent asked, keyed by the question's own
+ * words rather than by nothing at all. Both are DASH's own record and both
+ * contact nobody, which is as far as the resemblance goes.
+ */
+export const STANDING_ANSWER_ACTIONS = {
+  "standing_answer.set": "set",
+  "standing_answer.clear": "clear",
+} as const;
+
+export type StandingAnswerCommandName = keyof typeof STANDING_ANSWER_ACTIONS;
+export type StandingAnswerAction = (typeof STANDING_ANSWER_ACTIONS)[StandingAnswerCommandName];
+
+export function isStandingAnswerCommandName(value: CommandName): value is StandingAnswerCommandName {
+  return Object.hasOwn(STANDING_ANSWER_ACTIONS, value);
+}
+
+/**
  * An agent's folder, as edited from outside DASH (MAR-584).
  *
  * A seventh family with three members, and the reason it is a family rather
@@ -1718,6 +1780,7 @@ type UnroutedCommand = Exclude<
   | SampleCommandName
   | GlanceCommandName
   | IdentityCommandName
+  | StandingAnswerCommandName
   | FolderCommandName
   | ModelCommandName
   | NotifyCommandName
@@ -2030,6 +2093,11 @@ export function executeCommand(review: CommandReview): CommandResult {
     // the entry immediately above: succeeding here would report a rename or a
     // star that never touched the store.
     isIdentityCommandName(review.command) ||
+    // MAR-681. Writes a row through `node:sqlite`, the same reason as the entry
+    // immediately above: succeeding here would report a standing answer
+    // remembered or forgotten that never touched the store, and the next run
+    // would show the popup this feature exists to suppress.
+    isStandingAnswerCommandName(review.command) ||
     // MAR-584. Two of the three read the folder off disk and the third opens a
     // window on it, none of which a sandboxed preload may do. `folder.check`
     // matters most here despite changing nothing: succeeding without looking
@@ -2536,6 +2604,27 @@ export interface DispatchContext {
   agentAction(
     action: IdentityAction,
     target: { agent_id: string; display_name?: string; favourite?: boolean; avatar?: string },
+  ): Promise<{ ok: boolean; refusal?: string }>;
+  /**
+   * Remember — or forget — this agent's answer to one runtime question
+   * (MAR-681).
+   *
+   * Injected for `agentAction`'s own reason immediately above: the real
+   * implementation reaches `node:sqlite`, and this module has to stay
+   * importable from a sandboxed preload. `question_label`, `option_id` and
+   * `option_label` are read only on `set`; `question_key` only on `clear` —
+   * `reviewCommand`'s payload rules keep the two members' fields from
+   * crossing, `agentAction`'s own note for `favourite` and `avatar`.
+   */
+  standingAnswerAction(
+    action: StandingAnswerAction,
+    target: {
+      agent_id: string;
+      question_key?: string;
+      question_label?: string;
+      option_id?: string;
+      option_label?: string;
+    },
   ): Promise<{ ok: boolean; refusal?: string }>;
   /**
    * Choose a model, set one step's level, or ask what models there are (MAR-583).
@@ -3179,6 +3268,29 @@ export async function dispatchCommand(
         review.payload["favourite"] === undefined ? undefined : review.payload["favourite"] === true,
       avatar:
         review.payload["avatar"] === undefined ? undefined : String(review.payload["avatar"]),
+    });
+    return { ok: result.ok, request_id: review.audit.request_id, reason: result.refusal };
+  }
+
+  if (isStandingAnswerCommandName(review.command)) {
+    /*
+     * MAR-681. `question_key` is absent from `review.payload` on `set` and
+     * `question_label`/`option_id`/`option_label` are absent on `clear` — the
+     * payload rules require each field only on the member that names it, the
+     * same division `isIdentityCommandName` draws above.
+     */
+    const result = await context.standingAnswerAction(STANDING_ANSWER_ACTIONS[review.command], {
+      agent_id: String(review.payload["agent_id"]),
+      question_key:
+        review.payload["question_key"] === undefined ? undefined : String(review.payload["question_key"]),
+      question_label:
+        review.payload["question_label"] === undefined
+          ? undefined
+          : String(review.payload["question_label"]),
+      option_id:
+        review.payload["option_id"] === undefined ? undefined : String(review.payload["option_id"]),
+      option_label:
+        review.payload["option_label"] === undefined ? undefined : String(review.payload["option_label"]),
     });
     return { ok: result.ok, request_id: review.audit.request_id, reason: result.refusal };
   }

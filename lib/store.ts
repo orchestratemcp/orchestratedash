@@ -520,6 +520,11 @@ export function forgetAgent(
     const existed = database.prepare("SELECT 1 FROM agents WHERE name = ?").get(name) !== undefined;
     database.prepare("DELETE FROM agents WHERE name = ?").run(name);
     database.prepare("DELETE FROM agent_dom_state WHERE agent = ?").run(name);
+    // MAR-681. This agent's standing answers describe questions this agent no
+    // longer exists to ask; a stale row would sit in the Settings drawer of an
+    // agent that was never re-added, or silently answer the same-worded
+    // question of an unrelated agent added under the same name later.
+    database.prepare("DELETE FROM standing_answers WHERE agent = ?").run(name);
     // MAR-458. A receipt and a call history for an agent DASH no longer knows
     // are orphans: nothing renders them, nothing can act on them, and they name
     // an account.

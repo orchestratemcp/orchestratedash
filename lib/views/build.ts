@@ -62,6 +62,7 @@ import {
   readAgentDomState,
   readCommandAudit,
 } from "../agent-dom/store";
+import { readStandingAnswers } from "../agent-dom/standing-answers";
 import { dataDir } from "../db";
 import {
   analysisForRun,
@@ -1554,6 +1555,16 @@ export function workspaceView(
     // because it reads the vault's reference table and the choice rows, and
     // because every sentence on it belongs to `lib/ai/model-choice.ts`.
     models: modelSettings,
+    // MAR-681. DASH's own record of which of this agent's questions a person
+    // has already answered "always this" for — read once here, alongside
+    // every other setting on this page, rather than fetched by the Settings
+    // drawer on its own round trip.
+    standing_answers: readStandingAnswers(agent).map((answer) => ({
+      question_key: answer.question_key,
+      question_label: answer.question_label,
+      option_label: answer.option_label,
+      chosen_at: answer.chosen_at,
+    })),
     // MAR-645. A projection of records already read or stored, with no probe
     // and no provider call. The page draws it only on the Health stage.
     health,

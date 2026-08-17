@@ -729,6 +729,27 @@ const dashShell = {
    */
   setAgentAvatar: (args: { agent_id: string; avatar: string }) => send("identity.avatar", { ...args }),
 
+  /**
+   * Remember an agent's answer to one runtime question: "always this"
+   * (MAR-681).
+   *
+   * `question_label` and `option_label` are the choice's and the chosen
+   * option's own `label`, verbatim — the same words the Work Inbox already
+   * showed. Main derives the storage key from `question_label` rather than
+   * this bridge computing one, `renameAgent`'s division between "a string
+   * arrived" and "a value DASH will accept."
+   */
+  setStandingAnswer: (args: {
+    agent_id: string;
+    question_label: string;
+    option_id: string;
+    option_label: string;
+  }) => send("standing_answer.set", { ...args }),
+
+  /** `setStandingAnswer`'s undo. `question_key` names the row to forget. */
+  clearStandingAnswer: (args: { agent_id: string; question_key: string }) =>
+    send("standing_answer.clear", { ...args }),
+
   approve: (args: AgentCommandArgs) => send("agent.approve", fields(args, APPROVAL_FIELDS)),
   reject: (args: AgentCommandArgs) => send("agent.reject", fields(args, APPROVAL_FIELDS)),
   choose: (args: AgentCommandArgs) => send("agent.choose", fields(args, CHOICE_FIELDS)),
