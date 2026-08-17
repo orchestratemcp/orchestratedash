@@ -4,14 +4,13 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { agentStageHref } from "../_data/routes";
-import { askChief, clearChiefThread } from "../_data/source";
+import { askChief } from "../_data/source";
 import { OAvatar } from "./o-avatar";
 import { answeredFromRecords } from "../../lib/chief/records-answer";
 import {
   CHIEF_CHAT_COPY,
   describeAmbiguous,
   describeChiefActivity,
-  describeChiefScope,
   describeMatch,
   describeRouted,
   type ChiefSentence,
@@ -21,7 +20,7 @@ import type { AgentRow, ChiefRoomView, ChiefTurnView } from "../../lib/views/typ
 
 /**
  * The chief's composer, and the room it opens (MAR-648; given a model and a
- * memory by MAR-659, ADR 0023).
+ * memory by MAR-659, ADR 0023; reduced to a plain chat by MAR-683).
  *
  * Henrik, with a screenshot of Claude Code's composer: *"Can we just dedicate a
  * space at the bottom that looks like the screenshot… When you click the chat
@@ -33,26 +32,55 @@ import type { AgentRow, ChiefRoomView, ChiefTurnView } from "../../lib/views/typ
  * along: a composer docked at the bottom of the chief's band, and a room that
  * opens above it on focus without the composer moving a pixel.
  *
- * ## What changed, and what did not
+ * ## MAR-683: a thread of turns and a composer, nothing standing between them
  *
- * **Changed.** The answers no longer come from a pure function in this file.
- * Every question goes to Electron main, which decides between DASH's own records
- * and the model, writes a row, and returns whether it was asked. The
- * conversation arrives in `view.turns` with the rest of the fleet document and
- * is still there tomorrow, which is what Henrik's station-11 walk asked for: he
- * changed view, came back, and the thread was blank.
+ * The room used to carry three pieces of chrome that were on screen whether or
+ * not anybody had asked anything: a scope note explaining what the chief could
+ * answer and what it cost, a no-model notice that could never be dismissed, and
+ * a settings line repeating the scope headline under the composer. Henrik's own
+ * words: *"No buttons. Just like your chat here — it's all that is needed."*
  *
- * **Not changed.** Every sentence still comes from `lib/copy/chief-chat.ts`,
- * except the one the model wrote — and that one is `turn.answer`, rendered as
- * plain text, with the exact records DASH read listed underneath it. MAR-547's
- * ruling applies hardest in a speech position, and the answer to a model
- * speaking there is not to forbid it but to show its sources beside it and mark
- * them when they go out of date.
+ * All three are gone rather than demoted, and none of the information they
+ * carried is lost — it moved from *standing* to *reactive*:
  *
- * The one exception still proves the rule. An agent's `goal` is **its author's**
- * sentence, so it is rendered quoted and attributed rather than folded into
- * anybody's words — `ChiefSentence.quoted` exists for that, and the stored
- * answer text can never contain one because `recordsAnswer` never puts one in.
+ * - The no-model notice only ever mattered to a question that needed a model.
+ *   `performChiefAction` already puts its headline in `result.detail` on that
+ *   exact path (`electron/chief-host.ts`'s `fromRecords`), which this component
+ *   already surfaces as `feedback` after a press. Removing the standing block
+ *   loses nothing a person asking such a question would not see anyway, and it
+ *   is silent for everyone who never asks one — which is every DASH with no
+ *   default model, all the time, today.
+ * - The scope note's cost explanation is what `describeChiefReceipt` and the
+ *   per-turn charge line already say, turn by turn, as soon as there is a turn
+ *   to say it about.
+ *
+ * The room header's Clear and Close controls are gone too. Escape already
+ * closed the room; it now does so from anywhere in the room, not only while the
+ * composer has focus (see the effect below), so removing the visible Close
+ * control loses no capability a keyboard already had. Clear has no keyboard
+ * equivalent and nowhere else in DASH to live yet, so removing its button here
+ * is a real gap — flagged rather than quietly dropped, for a later surface (most
+ * likely Settings) to pick up.
+ *
+ * ## What MAR-648/659 built and MAR-683 did not touch
+ *
+ * Every question still goes to Electron main, which decides between DASH's own
+ * records and the model, writes a row, and returns whether it was asked. The
+ * conversation still arrives in `view.turns` with the rest of the fleet document
+ * and is still there tomorrow.
+ *
+ * Every sentence still comes from `lib/copy/chief-chat.ts`, except the one the
+ * model wrote — and that one is `turn.answer`, rendered as plain text, with the
+ * exact records DASH read available beside it. MAR-547's ruling applies hardest
+ * in a speech position, and the answer to a model speaking there is still not to
+ * forbid it but to show its sources beside it — **`ChiefReceipt` below is now a
+ * disclosure a person opens, never a table forced open on every turn, but it is
+ * still there on every turn with an answer.** The receipt, not the prompt, is
+ * the guarantee (ADR 0023 decision 5), and a plain chat does not get to mean a
+ * chat with its sources hidden.
+ *
+ * An agent's `goal` is still **its author's** sentence, rendered quoted and
+ * attributed rather than folded into anybody's words.
  *
  * ## The loader, and the one thing this component predicts
  *
@@ -130,6 +158,28 @@ export function ChiefChat({
     thread.current?.scrollTo({ top: thread.current.scrollHeight, behavior: reduce ? "auto" : "smooth" });
   }, [open, view.turns.length]);
 
+  /*
+   * MAR-683. Escape closes the room from anywhere in it, not only from the
+   * composer — the reason the visible Close control could come off without
+   * losing the way out. Bound only while the room is open, on `document` rather
+   * than a single element, because a person reading a turn has not necessarily
+   * left focus in the textarea.
+   */
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    function onDocumentKeyDown(event: globalThis.KeyboardEvent): void {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+    document.addEventListener("keydown", onDocumentKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onDocumentKeyDown);
+    };
+  }, [open, onClose]);
+
   async function ask(): Promise<void> {
     const asked = question.trim();
     if (asked.length === 0) {
@@ -148,6 +198,11 @@ export function ChiefChat({
       // still in the box, so retrying is one press rather than typing it again.
       setQuestion("");
     }
+    // The one place the room's old standing "no model" notice still reaches the
+    // screen: `performChiefAction` puts its headline here on the exact question
+    // that needed one (`fromRecords`'s `blocked` argument), so removing the
+    // standing block lost no information a person who asked such a question
+    // would not see anyway.
     setFeedback(result.detail ?? null);
     // The answer is not in `result`. It is in the store, and it reaches this
     // component when the page re-reads the view — one path by which an answer
@@ -156,70 +211,23 @@ export function ChiefChat({
     onAsked();
   }
 
-  async function clear(): Promise<void> {
-    const result = await clearChiefThread();
-    setFeedback(result.ok ? null : (result.detail ?? null));
-    onAsked();
-  }
-
-  /*
-   * Escape closes the room and never touches the box.
-   *
-   * `AskComposer` declined to bind this key at all, and its reason is right and
-   * still holds: *"a key that discarded it would be a destructive control with
-   * no confirmation."* Closing the room discards nothing — the question stays
-   * typed, the conversation stays in the store, and re-focusing the box brings
-   * both back.
-   */
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onClose();
-      return;
-    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void ask();
     }
   }
 
-  const scope = describeChiefScope();
-
   return (
     <div className="chief-chat">
       {open ? (
-        <div className="chief-room" ref={thread}>
-          <div className="chief-room-head">
-            <h2>{CHIEF_CHAT_COPY.heading}</h2>
-            <div className="chief-room-actions">
-              {view.turns.length === 0 || !canAct ? null : (
-                /* The person's own control over their own transcript, and the
-                   reason `describeChiefScope` can promise the conversation is
-                   kept: something kept until you say otherwise needs an
-                   otherwise. Absent when there is nothing to clear rather than
-                   drawn disabled — `ModelChoice`'s rule. */
-                <button type="button" className="button-link" onClick={() => void clear()}>
-                  {CHIEF_CHAT_COPY.clear}
-                </button>
-              )}
-              <button type="button" className="button-link" onClick={onClose}>
-                {CHIEF_CHAT_COPY.close}
-              </button>
-            </div>
-          </div>
-
-          {view.turns.length === 0 ? (
-            /* The scope note is the room's empty state rather than a line that
-               is always on screen. It answers the two questions somebody has the
-               first time they meet this box — what can it tell me, and what does
-               it cost — and then gets out of the way of the conversation. */
-            <div className="chief-scope">
-              <p className="wrap">
-                <strong>{scope.headline}</strong>
-              </p>
-              <p className="muted wrap">{scope.meaning}</p>
-            </div>
-          ) : (
+        /*
+         * No heading and no actions row (MAR-683) — `aria-label` carries the
+         * same name a visible `<h2>` used to, for a screen reader, without a
+         * line of chrome a sighted reader has to read past on every open.
+         */
+        <div className="chief-room" ref={thread} aria-label={CHIEF_CHAT_COPY.heading}>
+          {view.turns.length === 0 ? null : (
             <ol className="chief-turns" aria-label={CHIEF_CHAT_COPY.thread_kept_heading}>
               {view.turns.map((turn) => (
                 <li key={turn.id} className="chief-turn">
@@ -235,26 +243,6 @@ export function ChiefChat({
 
           {busy ? <ChiefActivity elapsed={elapsed} model={view.model_id} /> : null}
           {feedback === null ? null : <p className="chief-feedback wrap">{feedback}</p>}
-
-          {view.blocked === null ? null : (
-            /*
-               The chief with no model to ask (ADR 0023 decision 4).
-
-               Last in the room, which puts it directly above the composer it is
-               about — `ask-terms`' rule, that a sentence about what a control
-               will do belongs where it is read *before* the decision rather than
-               under the button. It is a standing fact about this DASH rather
-               than about any one question, so it stays on screen with a full
-               thread above it, and the box under it still works: the standing
-               question is answered from records whatever this says.
-            */
-            <div className="chief-blocked">
-              <p className="wrap">
-                <strong>{view.blocked.headline}</strong>
-              </p>
-              <p className="muted wrap">{view.blocked.meaning}</p>
-            </div>
-          )}
         </div>
       ) : null}
 
@@ -285,28 +273,6 @@ export function ChiefChat({
           {CHIEF_CHAT_COPY.submit}
         </button>
       </div>
-
-      {/*
-        The settings row, and it carries what is true rather than what the
-        screenshot had.
-
-        MAR-648's own words about this row: affordances *"as they become real,
-        never as dead chrome"*. There is a model now, so the row names it — the
-        id as a value, `lib/copy/identifiers.ts`' rule and `AskModelView`'s note
-        on why DASH holds no friendlier name to give. On a DASH with no default
-        there is still no chip, because there is still nothing true to put in
-        one; the blocked notice inside the room says why, where there is room
-        for the sentence.
-      */}
-      <p className="chief-settings muted">
-        {scope.headline}
-        {view.model_id === null ? null : (
-          <>
-            {" "}
-            <code className="value">{view.model_id}</code>
-          </>
-        )}
-      </p>
     </div>
   );
 }
@@ -479,15 +445,38 @@ function ChiefHandoff({
  *
  * `stale` is DASH comparing two of its own records — the frozen rows against the
  * fleet now — and it says the fleet changed, never that the answer is wrong.
+ *
+ * ## A disclosure, not a table always open (MAR-683)
+ *
+ * What has to stay visible without a click is what a person needs before they
+ * trust or spend on the next question: whether this one was free or charged,
+ * under which model, and whether the fleet has moved since. What can wait for a
+ * click is the detail that backs a check somebody was not necessarily about to
+ * make — which agents, which fields, in what words. `<details>` is a native
+ * disclosure rather than a component: no script decides whether it opens, and
+ * nothing about "no buttons" is in tension with a control the browser itself
+ * draws for exactly this. The empty-receipt case skips the disclosure
+ * altogether — one reassuring sentence is not the table this is about.
  */
 function ChiefReceipt({ turn }: { turn: ChiefTurnView }): ReactNode {
   return (
     <div className="chief-receipt">
       {turn.stale ? <p className="chief-stale wrap">{CHIEF_CHAT_COPY.stale}</p> : null}
-      <p className="muted wrap">{turn.receipt_note}</p>
-      {turn.receipt.length === 0 ? null : (
-        <>
-          <h3 className="chief-receipt-heading">{CHIEF_CHAT_COPY.receipt_heading}</h3>
+      <p className="muted chief-charge">
+        {turn.charge ?? CHIEF_CHAT_COPY.free}
+        {turn.model === null ? null : (
+          <>
+            {" "}
+            <code className="value">{turn.model}</code>
+          </>
+        )}
+      </p>
+      {turn.receipt.length === 0 ? (
+        <p className="muted wrap">{turn.receipt_note}</p>
+      ) : (
+        <details className="chief-sources">
+          <summary>{CHIEF_CHAT_COPY.receipt_heading}</summary>
+          <p className="muted wrap">{turn.receipt_note}</p>
           <ul className="chief-receipt-rows">
             {turn.receipt.map((row) => (
               <li key={row.agent}>
@@ -505,17 +494,8 @@ function ChiefReceipt({ turn }: { turn: ChiefTurnView }): ReactNode {
               </li>
             ))}
           </ul>
-        </>
+        </details>
       )}
-      <p className="muted chief-charge">
-        {turn.charge ?? CHIEF_CHAT_COPY.free}
-        {turn.model === null ? null : (
-          <>
-            {" "}
-            <code className="value">{turn.model}</code>
-          </>
-        )}
-      </p>
       <p className="muted chief-when">{turn.asked}</p>
     </div>
   );
