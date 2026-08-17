@@ -359,6 +359,60 @@ export interface AgentsView {
    * beside it had not caught up with yet.
    */
   chief: ChiefRoomView;
+  /**
+   * The decisions log, marked and worded (MAR-673, ADR 0024).
+   *
+   * On this view for `chief`'s reason exactly: the supersession and drift
+   * markers are computed against the same store read the cards are drawn
+   * from, so a marker can never disagree with the fleet on the same screen.
+   */
+  decisions: FleetDecisionsView;
+}
+
+/* ---------------------------------------------------------------------- *
+ * The decisions log (MAR-673, ADR 0024)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * One decision, worded and marked, ready to render.
+ *
+ * Defined here — the client boundary — and imported type-only by the builder
+ * in `lib/views/decisions.ts`, so `tests/client-bundle.test.ts`'s walk never
+ * reaches a store through this file. Strings and booleans only: the
+ * sentences for a drifted row, an absent reason and a superseded row live in
+ * `lib/copy/decisions.ts`, so the wording exists in exactly one place.
+ */
+export interface DecisionRowView {
+  id: number;
+  /** The date, as every card prints one, or null when unreadable. */
+  when: string | null;
+  /**
+   * Who or what this is about — an agent's display title, a provider, or the
+   * fleet — already resolved, so the renderer never maps an id to a name.
+   */
+  subject: string;
+  /** The frozen summary sentence, exactly as filed. */
+  summary: string;
+  decided_by: "person" | "dash-rule";
+  /** The rule's name when `decided_by` is `dash-rule`. */
+  rule: string | null;
+  /** The person's own words, verbatim, or null. */
+  reason: string | null;
+  /** The date a late reason arrived, or null for one written at decide time. */
+  reason_added_on: string | null;
+  /** The superseding decision's date, or null for a chain head. */
+  superseded_on: string | null;
+  /** The chain head no longer matches the fleet, and no decision says why. */
+  drifted: boolean;
+  /** Record references, rendered as values. */
+  receipts: string[];
+}
+
+export interface FleetDecisionsView {
+  /** Newest first, at most the builder's page limit. */
+  rows: DecisionRowView[];
+  /** How many the log holds in full, so truncation is visible on the page. */
+  total: number;
 }
 
 /* ---------------------------------------------------------------------- *

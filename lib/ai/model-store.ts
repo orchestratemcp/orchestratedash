@@ -27,7 +27,14 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { isModelId } from "../broker/operations";
+import {
+  describeFleetDefaultCleared,
+  describeFleetDefaultSet,
+  describeModelPinned,
+  describeModelUnpinned,
+} from "../copy/decisions";
 import { db } from "../db";
+import { fileDecision } from "../fleet/decisions-store";
 import { aiProviderById } from "./providers";
 import {
   applyFleetDefault,
@@ -92,6 +99,10 @@ export function writeAgentModelChoice(
   if (aiProviderById(providerId) === null || !isModelId(modelId)) {
     return false;
   }
+  // Read before write, so the decision log records transitions and not
+  // re-saves: pressing the same choice twice is one decision, not two
+  // (ADR 0024 decision 1 — a decision is a change to standing state).
+  const before = readAgentModelChoice(agent);
   try {
     db()
       .prepare(
@@ -102,17 +113,54 @@ export function writeAgentModelChoice(
           "chosen_at = excluded.chosen_at",
       )
       .run(agent, providerId, modelId, at);
-    return true;
   } catch (error: unknown) {
     console.warn(`[dash] could not record a model choice: ${message(error)}`);
     return false;
   }
+  const unchanged =
+    before.kind === "one_model" &&
+    before.provider_id === providerId &&
+    before.model_id === modelId;
+  if (!unchanged) {
+    fileDecision({
+      decided_at: at,
+      subject_kind: "agent",
+      subject_id: agent,
+      kind: "agent_model",
+      topic: "",
+      summary: describeModelPinned(modelId),
+      outcome: { state: "pinned", provider_id: providerId, model_id: modelId },
+      decided_by: "person",
+      rule: null,
+      reason: null,
+      receipts: [`agent_model_choice ${agent}`],
+    });
+  }
+  return true;
 }
 
 /** Go back to matching each step. Deletes rather than storing the default. */
 export function clearAgentModelChoice(agent: string): void {
   try {
-    db().prepare("DELETE FROM agent_model_choice WHERE agent = ?").run(agent);
+    const result = db().prepare("DELETE FROM agent_model_choice WHERE agent = ?").run(agent);
+    // Filed only when a row actually went: clearing a pin that was never set
+    // is not a transition, and a decision row for it would say something
+    // happened that did not.
+    if (Number(result.changes) > 0) {
+      fileDecision({
+        decided_at: new Date().toISOString(),
+        subject_kind: "agent",
+        subject_id: agent,
+        kind: "agent_model",
+        topic: "",
+        summary: describeModelUnpinned(),
+        outcome: { state: "match_each_step" },
+        decided_by: "person",
+        rule: null,
+        reason: null,
+        receipts: [`agent_model_choice ${agent}`],
+      });
+    }
   } catch (error: unknown) {
     console.warn(`[dash] could not clear a model choice: ${message(error)}`);
   }
@@ -168,6 +216,9 @@ export function writeFleetModelDefault(providerId: string, modelId: string, at: 
   if (aiProviderById(providerId) === null || !isModelId(modelId)) {
     return false;
   }
+  // `writeAgentModelChoice`'s read-before-write, for its reason: the log
+  // records transitions, and re-saving the same default is not one.
+  const before = readFleetModelDefault();
   try {
     db()
       .prepare(
@@ -178,11 +229,26 @@ export function writeFleetModelDefault(providerId: string, modelId: string, at: 
           "chosen_at = excluded.chosen_at",
       )
       .run(providerId, modelId, at);
-    return true;
   } catch (error: unknown) {
     console.warn(`[dash] could not record the default model: ${message(error)}`);
     return false;
   }
+  if (before === null || before.provider_id !== providerId || before.model_id !== modelId) {
+    fileDecision({
+      decided_at: at,
+      subject_kind: "fleet",
+      subject_id: null,
+      kind: "fleet_model_default",
+      topic: "",
+      summary: describeFleetDefaultSet(modelId),
+      outcome: { state: "set", provider_id: providerId, model_id: modelId },
+      decided_by: "person",
+      rule: null,
+      reason: null,
+      receipts: ["fleet_model_default 1"],
+    });
+  }
+  return true;
 }
 
 /**
@@ -198,7 +264,22 @@ export function writeFleetModelDefault(providerId: string, modelId: string, at: 
  */
 export function clearFleetModelDefault(): void {
   try {
-    db().prepare("DELETE FROM fleet_model_default WHERE id = 1").run();
+    const result = db().prepare("DELETE FROM fleet_model_default WHERE id = 1").run();
+    if (Number(result.changes) > 0) {
+      fileDecision({
+        decided_at: new Date().toISOString(),
+        subject_kind: "fleet",
+        subject_id: null,
+        kind: "fleet_model_default",
+        topic: "",
+        summary: describeFleetDefaultCleared(),
+        outcome: { state: "cleared" },
+        decided_by: "person",
+        rule: null,
+        reason: null,
+        receipts: ["fleet_model_default 1"],
+      });
+    }
   } catch (error: unknown) {
     console.warn(`[dash] could not clear the default model: ${message(error)}`);
   }
@@ -420,7 +501,15 @@ function projectRunModel(row: unknown): RunModelRecord | null {
  * to configure.
  */
 export function forgetAgentModelChoice(agent: string): void {
-  clearAgentModelChoice(agent);
+  // The deletes inline rather than through `clearAgentModelChoice`, because
+  // this is the cascade of removing the agent, not a decision about its
+  // model: `agent_removed` is the decision row (ADR 0024), and a second row
+  // saying somebody cleared a pin would record a choice nobody made.
+  try {
+    db().prepare("DELETE FROM agent_model_choice WHERE agent = ?").run(agent);
+  } catch (error: unknown) {
+    console.warn(`[dash] could not clear a model choice: ${message(error)}`);
+  }
   try {
     db().prepare("DELETE FROM agent_step_levels WHERE agent = ?").run(agent);
   } catch (error: unknown) {

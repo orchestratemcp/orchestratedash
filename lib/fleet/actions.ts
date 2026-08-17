@@ -41,6 +41,8 @@
 
 import { performAiKeyAction, type AiKeyOperations } from "../ai/actions";
 import { recordReceipt, forgetReceipt } from "../broker/store";
+import { describeFleetGrant } from "../copy/decisions";
+import { fileDecision } from "./decisions-store";
 import { resolveGrant, resolveKeyGrantWithoutCredential } from "../broker/grant";
 import type { CredentialTarget } from "../connection-credentials";
 import type { ConnectionSourceManifest } from "../connections";
@@ -793,7 +795,30 @@ export function noteAgentDecision(
   if (readFleetConnection(provider) === null) {
     return;
   }
+  // This function's own docblock is why the decision is filed *here* and not
+  // in `recordFleetGrant`: this is where "the person meant it" is known.
+  // `adoptFleetCredential` writes the same row provisionally and repairs it
+  // when materialization produces nothing — filing at the store level would
+  // record that provisional write as a decision nobody made (ADR 0024
+  // decision 1). Filed only on an actual transition, so re-pressing an
+  // already-decided standing is one decision, not two.
+  const previous = readFleetGrants(provider).find((row) => row.agent === agentId) ?? null;
   recordFleetGrant(provider, agentId, standing, at);
+  if (previous === null || previous.standing !== standing) {
+    fileDecision({
+      decided_at: at,
+      subject_kind: "agent",
+      subject_id: agentId,
+      kind: "fleet_grant",
+      topic: provider,
+      summary: describeFleetGrant(provider, standing),
+      outcome: { state: standing, provider },
+      decided_by: "person",
+      rule: null,
+      reason: null,
+      receipts: [`fleet_grants ${provider} ${agentId}`],
+    });
+  }
 }
 
 /**
@@ -851,6 +876,26 @@ export async function adoptFleetCredential(
       recordFleetGrant(provider, agentId, previousGrant.standing, previousGrant.decided_at);
     }
     return null;
+  }
+
+  // Filed only past the repair above, so a press whose materialization
+  // produced nothing leaves no decision row behind it — and only on a
+  // transition, so re-adopting an already-granted agent files nothing
+  // (ADR 0024 decision 1).
+  if (previousGrant === null || previousGrant.standing !== "granted") {
+    fileDecision({
+      decided_at: at,
+      subject_kind: "agent",
+      subject_id: agentId,
+      kind: "fleet_grant",
+      topic: provider,
+      summary: describeFleetGrant(provider, "granted"),
+      outcome: { state: "granted", provider },
+      decided_by: "person",
+      rule: null,
+      reason: null,
+      receipts: [`fleet_grants ${provider} ${agentId}`],
+    });
   }
 
   return {
