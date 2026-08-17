@@ -1,7 +1,7 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { FleetDecisions } from "./_components/fleet-decisions";
 import { FleetList } from "./_components/fleet-list";
 import { FleetRail } from "./_components/fleet-rail";
 import { OAvatar } from "./_components/o-avatar";
@@ -162,13 +162,30 @@ export default function AgentsPage(): ReactNode {
         />
           )}
           {/*
-            MAR-673, ADR 0024. The decisions log, under the fleet it is about.
-            Outside the agents-length branch on purpose: decisions outlive
-            their subjects — the log has no foreign key precisely so the
-            memory survives a removed agent — so an emptied fleet with
-            history still shows what was decided about it.
+            MAR-679 interim. The decisions log used to mount here — a full-width
+            `<FleetDecisions>` section, sometimes five screens of it, sitting
+            directly under the fleet it describes. Henrik: *"the fleet view is
+            so cluttered now I can't even see the fleet."* This link is the
+            interim fix: a surface you visit deliberately (`/decisions`) rather
+            than one stacked on top of the thing people actually opened this
+            page for. The indicator-on-the-card, popups-on-interaction shape he
+            asked for is MAR-679's next slice; this only moves the log off this
+            page without losing the way to it — *unfindable is the same as
+            missing*.
+
+            Outside the agents-length branch, `<FleetDecisions>`'s own mount
+            was too: decisions outlive their subjects, so an emptied fleet with
+            history still needs a way to it.
           */}
-          <FleetDecisions view={state.data.decisions} />
+          {state.data.decisions.total === 0 ? null : (
+            <p className="fleet-decisions-note">
+              <Link href="/decisions">
+                {state.data.decisions.total === 1
+                  ? "1 decision recorded — see the log"
+                  : `${String(state.data.decisions.total)} decisions recorded — see the log`}
+              </Link>
+            </p>
+          )}
         </>
       )}
       </div>

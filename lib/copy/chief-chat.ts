@@ -94,8 +94,6 @@ export const CHIEF_CHAT_COPY = {
   you: "You",
   /** The link out of a hand-off, into the one surface that can answer. */
   open_chat: "Ask it there",
-  /** Closes the room and puts the fleet back. Never clears the box. */
-  close: "Back to the fleet",
 
   /* -------------------------------------------------------------------- *
    * MAR-659, ADR 0023: the chief can now ask a model, and keeps what it said
@@ -129,8 +127,6 @@ export const CHIEF_CHAT_COPY = {
    * not attempt.
    */
   stale: "Your fleet has changed since this was written.",
-  /** The person's own control over their own transcript. */
-  clear: "Clear this conversation",
   /** The scrollback's heading, once it survives leaving the page. */
   thread_kept_heading: "This conversation",
   /**
