@@ -43,6 +43,8 @@ import {
   describeDeployReceipt,
   type SourceFile,
 } from "../lib/deploy/bundle";
+import { PACK_UNPROVED, readHostPack } from "../lib/deploy/host-pack";
+import { describeHostPack } from "../lib/copy/host-pack";
 import {
   DEPLOY_VERBS,
   checkDeployRequest,
@@ -184,12 +186,13 @@ function contradictoryManifest(): Record<string, unknown> {
  * ---------------------------------------------------------------------- */
 
 describe("the closed verb set", () => {
-  it("is exactly ADR 0007's six plus MAR-602's one plus MAR-611's one, and nothing composes a command line", () => {
+  it("is exactly ADR 0007's six plus MAR-602's, MAR-611's and MAR-629's one each, and nothing composes a command line", () => {
     /*
-     * Pinned by value, and this pin has now fired three times — which is the
+     * Pinned by value, and this pin has now fired four times — which is the
      * whole reason it is written this way. ADR 0007 named six and MAR-487 wrote
-     * them; MAR-602 added `channel`; MAR-611 added `uninstall`. None of them
-     * could be added without changing this line and saying why.
+     * them; MAR-602 added `channel`; MAR-611 added `uninstall`; MAR-629 added
+     * `pack`. None of them could be added without changing this line and saying
+     * why.
      *
      * The seventh is the only member of either plane that carries a credential,
      * and `lib/deploy/verbs.ts` holds its argument against ADR 0014's three
@@ -207,7 +210,16 @@ describe("the closed verb set", () => {
      * back. What makes that safe is not in this list — it is the order in
      * `lib/deploy/bring-home.ts` and the running-runner refusal in the helper.
      *
-     * A ninth arriving without a line here is a verb nobody decided to add.
+     * The ninth is the first verb that asks about the **machine** rather than
+     * about a bundle, and the argument worth restating here is why it is a verb
+     * at all: `status` already answers on every host ever enrolled, so a pack
+     * version carried there would be *missing* rather than refused on an old
+     * helper — and a missing field read as "assume current" is how a host that
+     * predates the pack looks upgraded forever. The too-old probe has to be a
+     * question the old bytes cannot answer, and an unknown verb is the only
+     * thing on this plane with that property.
+     *
+     * A tenth arriving without a line here is a verb nobody decided to add.
      */
     expect([...DEPLOY_VERBS]).toEqual([
       "install",
@@ -218,6 +230,7 @@ describe("the closed verb set", () => {
       "connect",
       "channel",
       "uninstall",
+      "pack",
     ]);
   });
 
@@ -305,6 +318,170 @@ describe("the closed verb set", () => {
       expect(checkDeployRequest({ verb: "start", bundle_id: bad }).ok).toBe(false);
     }
     expect(checkDeployRequest({ verb: "start", bundle_id: "news-scout" }).ok).toBe(true);
+  });
+
+  it("will not let the pack question name an agent", () => {
+    /*
+     * `pack` asks about the machine, and `PackRequest` has no fields. A
+     * `bundle_id` is refused rather than ignored, for `runHelper`'s reason about
+     * a surplus argv token: a caller sending one has a different model of this
+     * verb than the helper does, and quietly dropping it hides that.
+     */
+    expect(checkDeployRequest({ verb: "pack" }).ok).toBe(true);
+    expect(checkDeployRequest({ verb: "pack", bundle_id: "news-scout" }).ok).toBe(false);
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * The host pack, against the real helper (MAR-629, ADR 0021)
+ * ---------------------------------------------------------------------- */
+
+describe("the host pack", () => {
+  async function send(hostRoot: string, request: DeployRequest): Promise<DeployAnswer> {
+    return await runDeployVerb(localHelper(hostRoot), request);
+  }
+
+  it("lays down an empty pack on any invocation, and writes no key", async () => {
+    /*
+     * ADR 0021's first blocking proof, and the two halves are equally
+     * load-bearing.
+     *
+     * **The pack arrives.** `runHelper` calls `ensureHostPack` before it reads
+     * the verb, so the setup step that installs these bytes is the same step
+     * that lays the runtime down — there is no "install just the broker", no
+     * second snippet, and no partial state. This drives `status`, which is the
+     * verb least related to secrets, precisely to show the pack does not depend
+     * on being asked for.
+     *
+     * **It arrives empty.** ADR 0021 rule 6: a pack that shipped the vault's
+     * contents would grant every credential to a machine in one action and
+     * destroy ADR 0018's per-key consent. So `keys/` exists and holds nothing,
+     * and the assertion is on the directory listing rather than on a flag,
+     * because a flag is a claim and a listing is the thing itself.
+     */
+    const hostRoot = freshDir("host");
+    expect(await send(hostRoot, { verb: "status" })).toMatchObject({ ok: true, verb: "status" });
+
+    const secrets = path.join(hostRoot, "secrets");
+    expect(statSync(secrets).isDirectory()).toBe(true);
+    expect(JSON.parse(readFileSync(path.join(secrets, "pack.json"), "utf8"))).toEqual({
+      pack_version: 1,
+    });
+    expect(readFileSync(path.join(secrets, "wrap.key")).byteLength).toBe(32);
+    expect(readdirSync(path.join(secrets, "keys"))).toEqual([]);
+
+    /*
+     * Owner-only, where the platform has owners. The host is Linux and CI runs
+     * on Linux, so this assertion is real on both machines that matter; Node on
+     * Windows reports a mode that means nothing, and claiming a proof there
+     * would be worse than skipping it. ADR 0004's shape, one directory down.
+     */
+    if (process.platform !== "win32") {
+      expect(statSync(secrets).mode & 0o777).toBe(0o700);
+      expect(statSync(path.join(secrets, "keys")).mode & 0o777).toBe(0o700);
+      expect(statSync(path.join(secrets, "pack.json")).mode & 0o777).toBe(0o600);
+      expect(statSync(path.join(secrets, "wrap.key")).mode & 0o777).toBe(0o600);
+    }
+  }, 30_000);
+
+  it("answers `pack` with a version and carries nothing else", async () => {
+    /*
+     * The answer comes back from the machine that holds the secret store, so
+     * the interesting assertion is `toEqual` rather than `toMatchObject`: an
+     * extra field somebody adds later — a key count, a slot name, the secrets
+     * path, a digest of the wrapping key — fails this line rather than shipping.
+     */
+    const hostRoot = freshDir("host");
+    const answered = await send(hostRoot, { verb: "pack" });
+    expect(answered).toEqual({ ok: true, verb: "pack", pack_version: 1 });
+
+    // And the whole serialised answer holds neither the wrapping key nor a path
+    // on that machine. Checked against the real bytes rather than the type,
+    // because the type is what a future edit changes.
+    const serialised = JSON.stringify(answered);
+    expect(serialised).not.toContain(readFileSync(path.join(hostRoot, "secrets", "wrap.key")).toString("base64"));
+    expect(serialised).not.toContain("secrets");
+    expect(serialised).not.toContain(hostRoot);
+  }, 30_000);
+
+  it("refuses a pack it cannot prove, and DASH reads that as too old", async () => {
+    /*
+     * The second too-old case, driven against the real helper.
+     *
+     * The first — a helper whose bytes predate the pack — needs no branch
+     * anywhere: `checkDeployRequest` refuses a verb its own array does not hold,
+     * so those bytes answer `unknown_verb` for free. That mechanism is asserted
+     * just below, on the mapping, because building a second helper from an older
+     * source tree would prove esbuild rather than DASH.
+     *
+     * This is the other one: current bytes, and a tree beneath them that cannot
+     * answer. A file where the secrets directory belongs is the cheapest way to
+     * make `ensureHostPack` fail on every platform, and it is not contrived —
+     * it is what a half-finished install, a failed disk or a hostile `touch`
+     * leaves behind. The helper self-heals a pack it *can* repair, so reaching
+     * this refusal means the machine really cannot hold one.
+     */
+    const hostRoot = freshDir("host");
+    writeFileSync(path.join(hostRoot, "secrets"), "not a directory", "utf8");
+
+    const answered = await send(hostRoot, { verb: "pack" });
+    expect(answered.ok).toBe(false);
+    if (!answered.ok) {
+      expect(answered.problem).toBe(PACK_UNPROVED);
+    }
+    expect(readHostPack(answered)).toEqual({ ok: false, stop: "host_pack_too_old" });
+  }, 30_000);
+
+  it("maps an old helper, an unproved pack and an unreachable server to three different standings", () => {
+    /*
+     * ADR 0021 section 4, as one function rather than as a comparison somebody
+     * writes at each call site. The default is `host_pack_too_old`, and the
+     * ordering is the safe one: the cost of being wrong here is an unnecessary
+     * setup re-run, and the cost of the other direction is DASH offering to
+     * place a key on a machine that cannot use it.
+     */
+    expect(
+      readHostPack({ ok: false, problem: "unknown_verb", detail: "not an operation" }),
+    ).toEqual({ ok: false, stop: "host_pack_too_old" });
+    expect(readHostPack({ ok: false, problem: PACK_UNPROVED, detail: "no pack" })).toEqual({
+      ok: false,
+      stop: "host_pack_too_old",
+    });
+    expect(readHostPack({ ok: true, verb: "pack", pack_version: 1 })).toEqual({
+      ok: true,
+      pack_version: 1,
+    });
+
+    /*
+     * A server DASH could not sign in to has said nothing about its pack.
+     * Reporting "run setup again" about a box that is merely asleep would be the
+     * generic refusal ADR 0017 refused to write, one layer up — so it is its own
+     * standing and `describeHostPack` renders nothing for it.
+     */
+    const unreachable = readHostPack({
+      ok: false,
+      problem: "unreachable",
+      detail: "The server did not answer.",
+    });
+    expect(unreachable).toMatchObject({ ok: false, stop: "unreachable" });
+    expect(describeHostPack(unreachable, "Hostinger")).toBeNull();
+
+    /*
+     * The named stop's sentence, pinned by value. ADR 0021 gave it its own words
+     * rather than reusing `helper_too_old`, whose shipped sentence is about not
+     * being able to *remove* an agent — and the two must not converge, because
+     * they send a person to look for different things on their own machine.
+     */
+    const tooOld = describeHostPack(
+      { ok: false, stop: "host_pack_too_old" },
+      "Hostinger",
+    );
+    expect(tooOld).toBe(
+      "Hostinger was set up with an older copy of DASH's setup step, which cannot run the host " +
+        "broker — so a key placed there could not be used yet. Run the setup step for this server " +
+        "again.",
+    );
+    expect(tooOld).not.toContain("remove");
   });
 });
 
