@@ -26,6 +26,7 @@ import {
   AGENT_FEED_COPY,
   AGENT_HEADER_COPY,
   AGENT_OUTPUTS_COPY,
+  AGENT_RUN_PROGRESS_COPY,
   AGENT_SETTINGS_COPY,
   AGENT_TELEMETRY_COPY,
   AGENT_TILE_COPY,
@@ -43,6 +44,10 @@ const MODULES = {
   AGENT_OUTPUTS_COPY,
   AGENT_FEED_COPY,
   AGENT_TELEMETRY_COPY,
+  /* MAR-680. Added the moment the export existed, which is the whole argument
+     of this file's own docblock: a gate only sees the fields somebody
+     remembered to list, and this one is nine strings deep in a nested object. */
+  AGENT_RUN_PROGRESS_COPY,
 };
 
 /**

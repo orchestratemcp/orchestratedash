@@ -38,6 +38,7 @@ import { LiveBrowserPanel } from "../../_components/browser-panel";
 import { OutputsPanel } from "../../_components/outputs";
 import { AgentPanel } from "../../_components/panel";
 import { RemoveAgent } from "../../_components/remove-agent";
+import { RunProgress } from "../../_components/run-progress";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import { WorkingLine } from "../../_components/working";
 import { AGENT_WORKSPACE_PARAMS, agentStageHref, runDetailHref } from "../../_data/routes";
@@ -83,8 +84,8 @@ import {
 import { buildAgentControl } from "../../../lib/views/agent-control";
 import { resolveAgentStage, type AgentStage } from "../../../lib/views/agent-stage";
 import type { InputRoleView } from "../../../lib/views/inputs";
-import type { ArtifactCardView } from "../../../lib/views/artifacts";
-import type { InboxItem } from "../../../lib/workspace";
+import { resolveOpenCard, type ArtifactCardView } from "../../../lib/views/artifacts";
+import { isRunInFlight, type InboxItem } from "../../../lib/workspace";
 import type {
   AgentDeployTarget,
   WorkspaceRunView,
@@ -92,6 +93,34 @@ import type {
 } from "../../../lib/views/types";
 
 type CommandFeedback = { ok: boolean; message: string } | null;
+
+/**
+ * How long the page keeps following after a press that asked for a run
+ * (MAR-680).
+ *
+ * Twenty seconds is four of `electron/agent-adapters.ts`'s five-second drains,
+ * which is the thing being waited for: DASH does not learn that a run started
+ * from the press, it learns it from the next snapshot the runner hands over.
+ * One drain would be the theoretical minimum and would lose a race with a
+ * runner that is busy; a minute would leave a refused press polling long after
+ * the refusal is on screen.
+ *
+ * It bounds a hopeful state and nothing else. The moment a run actually
+ * appears, `running` takes over and this stops mattering.
+ */
+const RUN_APPEARS_WITHIN_MS = 20_000;
+
+/**
+ * The one extra read after a run leaves flight (MAR-680).
+ *
+ * Long enough for the artifact write that trails the last telemetry event to
+ * have landed, short enough that a person watching sees the output arrive
+ * rather than wondering whether it will. Two seconds is a guess about two
+ * writes on two channels and is deliberately a small one: being early costs a
+ * read that shows the same bytes, and the next natural refresh — a stage
+ * change, a window focus — still corrects it.
+ */
+const RUN_SETTLE_MS = 2_000;
 
 export default function AgentWorkspacePage(): ReactNode {
   return (
@@ -126,6 +155,29 @@ function AgentWorkspace(): ReactNode {
   const [taskId, setTaskId] = useState<string | null>(null);
   const [selectedInputs, setSelectedInputs] = useState<SelectedInput[]>([]);
   const [busyRole, setBusyRole] = useState<string | null>(null);
+  /*
+   * MAR-680. Keep following for a moment after a press that starts a run.
+   *
+   * The snapshot below is the *agent's* account of itself, drained from the
+   * runner every five seconds by `electron/agent-adapters.ts`. So for up to a
+   * poll after Run now, DASH holds a snapshot that still says idle — and the
+   * old `running` predicate, reading only that, left the page still. One
+   * re-read fired by `issue`, nothing after it, and the person is looking at
+   * "Started a new run." and a page that never changes again. That is Henrik's
+   * sentence exactly: *"The only information we get is that it has started a
+   * new run."*
+   *
+   * A press counter rather than a deadline, because a deadline read during
+   * render needs a clock that ticks and this needs none: it goes up on a press,
+   * and whichever comes first — a run appearing or the grace expiring — puts it
+   * back to nought. See the two effects below.
+   *
+   * A counter rather than a boolean for one case a boolean gets wrong: a second
+   * press while the first grace is still open sets the same value, so the
+   * effect below does not re-run and the second press inherits whatever is left
+   * of the first one's timer. Counting means every press restarts the window.
+   */
+  const [asked, setAsked] = useState(0);
   const state = useLiveView(
     (source) => source.workspace(agent),
     `${agent}:${String(refreshKey)}`,
@@ -134,15 +186,84 @@ function AgentWorkspace(): ReactNode {
   const canAct = useCanAct();
   const host = useHost();
 
-  // Follow a run only while one is actually going. `useLiveView` stops the
-  // moment this turns false, so an idle agent's page is as still as every other
-  // page in DASH.
+  /*
+   * Whether a run of this agent could change what is on screen without anybody
+   * pressing anything here.
+   *
+   * `isRunInFlight` and not `status === "running"`, which is what this was.
+   * A run parked at an approval is not running and the page must still follow
+   * it: the approval arrives in a *separate window*, the runner carries on the
+   * moment it is answered, and a page frozen at the moment the popup opened is
+   * the hang Henrik described — *"the approval popup arrived ~5 minutes in with
+   * no preceding feedback, so it felt like a hang rather than a step reaching a
+   * gate."* `lib/workspace.ts` says why `paused` is not in the set.
+   */
   const running =
     state.status === "ready" &&
     state.data.found &&
-    (state.data.snapshot?.runs ?? []).some((run) => run.status === "running");
+    (state.data.snapshot?.runs ?? []).some((run) => isRunInFlight(run.status));
+  const following = running || asked > 0;
   useEffect(() => {
-    setLive(running);
+    setLive(following);
+  }, [following]);
+
+  /*
+   * The grace window, and the two ways out of it.
+   *
+   * A run appearing is the good exit: `running` is now the reason to poll and
+   * is a fact rather than an assumption, so this state stops claiming
+   * anything. The timer is the other: a press that started nothing — a refusal,
+   * an agent that publishes no run — must not leave the page polling forever,
+   * which would be the "nothing refreshes without saying it did" rule broken by
+   * a hopeful boolean.
+   */
+  useEffect(() => {
+    if (running) {
+      setAsked(0);
+    }
+  }, [running]);
+  useEffect(() => {
+    if (asked === 0 || typeof window === "undefined") {
+      return;
+    }
+    const timer = window.setTimeout(() => setAsked(0), RUN_APPEARS_WITHIN_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [asked]);
+
+  /*
+   * MAR-680's second ask, in one effect: *"It should trigger a reload so a new
+   * output lands."*
+   *
+   * A run's last telemetry event and the artifact it produced are two separate
+   * writes on two separate channels, and the poll that observes the run leaving
+   * flight may land between them. Stopping there would leave a page that says
+   * *Finished* above the output from the run before — which is a smaller
+   * version of the same stale render MAR-685 is about.
+   *
+   * So one more read, once, a beat after the run ends. A ref rather than state
+   * because nothing renders differently for having been running a moment ago,
+   * and the effect must fire on the *edge* rather than on every subsequent
+   * still frame.
+   */
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (running) {
+      wasRunning.current = true;
+      return;
+    }
+    if (!wasRunning.current || typeof window === "undefined") {
+      return;
+    }
+    wasRunning.current = false;
+    const timer = window.setTimeout(
+      () => setRefreshKey((value) => value + 1),
+      RUN_SETTLE_MS,
+    );
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [running]);
 
   /*
@@ -279,6 +400,19 @@ function AgentWorkspace(): ReactNode {
             ? "The runner accepted the request."
             : `The runner refused the request${result.reason === undefined ? "." : `: ${result.reason}.`}`),
       });
+      /*
+       * MAR-680. The two verbs that put work in flight, followed rather than
+       * assumed to have started.
+       *
+       * Only on `ok`: a refused command changes nothing, and following a
+       * refusal for twenty seconds would be the page looking busy on behalf of
+       * something that did not happen. `pause` and `cancel` are deliberately
+       * absent — they take work *out* of flight, and the snapshot they produce
+       * arrives on the refresh directly below.
+       */
+      if (result.ok && (command === "retry" || command === "resume")) {
+        setAsked((value) => value + 1);
+      }
       // One explicit refresh after a command. This is not background polling:
       // the UI shows the loading state and the user action is what caused it.
       setRefreshKey((value) => value + 1);
@@ -437,6 +571,13 @@ function AgentWorkspace(): ReactNode {
   async function startAndRunHere(): Promise<void> {
     setPending("start");
     setFeedback(null);
+    /* MAR-680. Follow from the press rather than from the first snapshot that
+       admits a run exists. Set here and not on the outcome because a start
+       spawns a process before it asks for anything, and the interesting
+       feedback — a status moving off `offline` — happens during that window
+       whether or not the run half succeeds. `issue`'s own note says why the
+       ordinary commands set it only on `ok`. */
+    setAsked((value) => value + 1);
     /*
      * Whether the files step already put its own, more specific sentence on
      * screen. A flag rather than a distinguishable `CommandResult`, because
@@ -684,6 +825,17 @@ function AgentWorkspace(): ReactNode {
     has_output: view.outputs.length > 0,
   });
   const openOutput = params.get(AGENT_WORKSPACE_PARAMS.output);
+  /*
+   * MAR-668. The one artifact the Output stage draws in full, by id.
+   *
+   * A set of one, because the stage draws one card — MAR-646's rule, and the
+   * rail beside it is the index of the rest. It is a set rather than a string
+   * so the author's panel takes the same shape of answer if a later surface
+   * ever draws two, which is the change that would otherwise reintroduce the
+   * duplication one card at a time.
+   */
+  const openCard = resolveOpenCard(view.outputs, openOutput);
+  const drawnOutputs = new Set(openCard === null ? [] : [openCard.reference.artifact_id]);
   const checklistFacts = {
     models: view.models,
     run_count: view.snapshot?.runs.length ?? 0,
@@ -837,6 +989,21 @@ function AgentWorkspace(): ReactNode {
       <>
         {runControls}
 
+        {/* MAR-680. Directly under the controls, because it is the answer to
+            the press directly above it: which step, whether it is over, and
+            whether you may walk away. Above the feed rather than beside it —
+            the position is what a person reads first and the log is what they
+            read when the position is not enough. Renders nothing at all for an
+            agent that has never run. */}
+        <RunProgress
+          outputHref={
+            view.outputs.length === 0
+              ? undefined
+              : agentStageHref(view.agent, "output")
+          }
+          progress={view.run_progress}
+        />
+
         <div className="agent-command-grid">
           <LiveFeed
             feed={view.feed}
@@ -905,6 +1072,20 @@ function AgentWorkspace(): ReactNode {
      * somebody else's box is below it rather than in the position a person has
      * learned to read as DASH's own voice. It renders nothing at all for the
      * agents that declare no panel, which is most of them and every empty one.
+     *
+     * ## And it draws the briefing once (MAR-668)
+     *
+     * MAR-641's placement and ADR 0008's protection of the author's region are
+     * both right, and together they put the same briefing on the screen twice —
+     * three times on the competitor scout, whose manifest declares a `report`
+     * *and* an `outputs` section both resolving the newest digest. `tests/agent-
+     * one-home.test.tsx` did not catch it, because its rule is about what a
+     * *stage* draws and the second rendering arrives from a manifest.
+     *
+     * So the stage tells the panel which artifact it has already drawn, and the
+     * panel yields the body for exactly that one. `resolveOpenCard` is the same
+     * function `OutputsPanel` chooses the card with — see its own note on why
+     * the page may not work it out a second way.
      */
     output: (
       <>
@@ -916,7 +1097,7 @@ function AgentWorkspace(): ReactNode {
           openId={openOutput}
           setFeedback={setFeedback}
         />
-        <AgentPanel view={view.panel} />
+        <AgentPanel alreadyShown={drawnOutputs} view={view.panel} />
       </>
     ),
 
@@ -1076,57 +1257,26 @@ function AgentWorkspace(): ReactNode {
           agent={view.agent}
           avatar={view.avatar}
           busy={pending}
-          /* MAR-657. A stopped agent can be acted on from here too, and the
-             cell says so: before this, the one agent state a person is most
-             likely to arrive in — nothing running, nothing waiting — got the
-             cell's passive label and a press that only changed stage. */
-          canTrigger={control.run.kind === "run_now" || control.run.kind === "start"}
           control={control}
           goal={view.goal}
           hasFolder={view.folder_checkable && canAct}
-          live={running ? timeOnly(state.last_read_at) : null}
+          live={following ? timeOnly(state.last_read_at) : null}
           onOpenFolder={() => void openFolder()}
           onRefresh={() => setRefreshKey((value) => value + 1)}
-          onTriggerRun={() => {
-            /*
-             * Both halves of "acts and switches the stage", in that order.
-             *
-             * The stage moves first and unconditionally: whatever this press
-             * does or refuses to do, the Run stage is where the answer is
-             * — the live feed if it started, `AGENT_CONTROL_COPY.idle`'s
-             * sentence if there was nothing to start. Starting a run while
-             * leaving the person on the Output stage is the silence MAR-609
-             * was filed about wearing a different shape.
-             */
-            goToStage("run");
-            /* MAR-657. The same press, for an agent whose process is not
-               running: start it here, then ask it to run. Routed to the one
-               function that owns that sequence rather than repeated, so the
-               cell and the panel's own button cannot come to disagree about
-               what a start does. */
-            if (control.run.kind === "start") {
-              void startAndRunHere();
-              return;
-            }
-            if (control.run.kind !== "run_now") {
-              return;
-            }
-            const { task_id: taskId_, observed_at: observedAt } = control.run;
-            void (async () => {
-              /*
-               * MAR-507. The files go first, and a refusal here stops the run.
-               * The order is the whole point — see `dispatchTask`.
-               */
-              if (!(await dispatchTask())) {
-                return;
-              }
-              await issue(`run:${taskId_}`, "retry", {
-                agent_id: view.agent,
-                observed_at: observedAt,
-                task_id: taskId_,
-              });
-            })();
-          }}
+          /*
+           * MAR-687. There is no `onTriggerRun` and there was one until this
+           * packet.
+           *
+           * It did both halves of "acts and switches the stage" — `goToStage`
+           * and then `startAndRunHere` or a `retry` — and the acting half is
+           * what Henrik asked to be taken out: *"Clicked Trigger run in the
+           * header. It swapped to the page and automatically triggered a run.
+           * There is a button on that page. Let's make that the actual
+           * trigger."* Nothing is unreachable by the loss: `AgentControls` on
+           * the Run stage draws Run now and Start and run from the same
+           * `control` this header is handed, and both go through the same two
+           * functions this handler called.
+           */
           places={view.deploy_targets}
           plan={view.plan}
           stage={stage}

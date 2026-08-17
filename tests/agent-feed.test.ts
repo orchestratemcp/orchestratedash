@@ -66,6 +66,63 @@ describe("the live feed", () => {
     expect(feed.lines[1]?.tone).toBe("live");
   });
 
+  /**
+   * MAR-685, from `broker_audit` rather than from reasoning.
+   *
+   * On 2026-08-17 this feed drew a 15:10 run whose Digest curate and Deep dive
+   * steps read *"the model provider is not connected"* — the refused run — while
+   * the artifact on the same page was the 18:33 curated one. Five hours apart,
+   * one screen.
+   *
+   * The cause was the selection preferring **any run with no `run_completed`
+   * and no `run_failed`** over every finished run. A run that dies without
+   * writing a terminal event has exactly that shape, so it outranked every
+   * later run forever. An absence is not evidence of life, and the newest run
+   * is what a person means by "this run".
+   */
+  it("shows the newest run, not an older one that never said how it ended", () => {
+    const feed = buildAgentFeed([
+      // The refused run: started, two steps, and then nothing. No terminal event.
+      event(0, "run_started", { run_id: EARLIER, ts: "2026-08-17T13:10:20Z" }),
+      event(1, "step_started", {
+        run_id: EARLIER,
+        component_id: "digest_curate",
+        ts: "2026-08-17T13:10:24Z",
+      }),
+      // The run that actually produced the briefing on screen.
+      event(0, "run_started", { ts: "2026-08-17T18:33:21Z" }),
+      event(1, "run_completed", { ts: "2026-08-17T18:36:02Z" }),
+    ]);
+    expect(feed.kind).toBe("past");
+    if (feed.kind === "empty") {
+      return;
+    }
+    expect(feed.run_id).toBe(RUN);
+    // And nothing at all from the run it used to be stuck on.
+    expect(feed.lines.map((line) => line.verb)).toEqual(["Started", "Finished"]);
+  });
+
+  /**
+   * The same ordering, decided by parsing rather than by string comparison.
+   *
+   * Telemetry v1 says date-time and does not say UTC, so a run stamped
+   * `+02:00` and a run stamped `Z` are both legal. Compared as strings, the
+   * later instant here sorts first on its hour digits — which is a selection
+   * defect nobody would find until two runs on one machine disagreed about
+   * their offset.
+   */
+  it("orders two runs by the instant, not by the spelling of the instant", () => {
+    const feed = buildAgentFeed([
+      event(0, "run_started", { ts: "2026-08-17T21:30:00+02:00" }),
+      event(0, "run_started", { run_id: EARLIER, ts: "2026-08-17T19:45:00Z" }),
+    ]);
+    if (feed.kind === "empty") {
+      throw new Error("the feed found no run");
+    }
+    // 21:30+02:00 is 19:30Z, which is *earlier* than 19:45Z.
+    expect(feed.run_id).toBe(EARLIER);
+  });
+
   it("words every telemetry v1 event type and never prints the type itself", () => {
     const types: RunEventType[] = [
       "run_started",

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import type { GroundingAnalysis } from "../../lib/analyze";
 import { AGENT_OUTPUTS_COPY } from "../../lib/copy/agent-page";
 import { OUTPUTS_PANEL_COPY as COPY } from "../../lib/copy/artifacts";
-import { canPreview, type ArtifactCardView } from "../../lib/views/artifacts";
+import { canPreview, resolveOpenCard, type ArtifactCardView } from "../../lib/views/artifacts";
 import { DigestBody, DraftBody, DraftPlacementChip, GroundingChip } from "./digest";
 import { OutputHistory } from "./output-history";
 
@@ -125,17 +125,16 @@ export function OutputsPanel({
   runHref?: (card: ArtifactCardView) => string;
 }): ReactNode {
   /*
-   * Which card the stage is reading (MAR-646).
+   * Which card the stage is reading (MAR-646, moved out by MAR-668).
    *
-   * Resolved here rather than inside a wrapper, because with the list gone
-   * there is no list for the decision to be a property of — there is one card,
-   * and this is the only thing that chooses it.
+   * The decision used to be two lines here. It is `resolveOpenCard` now, in
+   * `lib/views/artifacts.ts`, because the page needs the same answer: the
+   * author's declared panel renders under this one and must not redraw the
+   * body of whatever card this drew. Two `findIndex` calls deciding "the open
+   * output" is how the briefing comes back twice.
    */
-  const named =
-    openId === undefined || openId === null
-      ? -1
-      : cards.findIndex((entry) => entry.reference.artifact_id === openId);
-  const open = named === -1 ? 0 : named;
+  const openCard = resolveOpenCard(cards, openId);
+  const open = openCard === null ? 0 : cards.indexOf(openCard);
 
   function drawCard(index: number): ReactNode {
     const entry = cards[index];

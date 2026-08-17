@@ -250,6 +250,48 @@ export function hasActiveRun(state: AgentDomState): boolean {
 }
 
 /**
+ * Run statuses that mean the page should keep re-reading itself (MAR-680,
+ * MAR-685).
+ *
+ * ## Why this is a wider set than `hasActiveRun`'s and must stay a separate one
+ *
+ * `hasActiveRun` answers *is this agent doing something*, and the answer for a
+ * run sitting at an approval is honestly **no** — a person is doing something,
+ * or nothing is. That reading is right where it is used: a fleet card must not
+ * call an agent overdue while it works, and an agent waiting on a human is not
+ * working.
+ *
+ * This answers a different question: *could what is on this screen change
+ * without anybody pressing anything here*. For a run at a gate the answer is
+ * yes — the approval popup is a separate window, the runner resumes the moment
+ * it is answered, and the agent page underneath must not be frozen at the
+ * moment the popup opened. That freeze is precisely what Henrik hit: *"the
+ * approval popup arrived ~5 minutes in with no preceding feedback, so it felt
+ * like a hang."*
+ *
+ * `paused` is deliberately **not** here. Nothing about a paused run changes
+ * until somebody resumes it, and polling a still thing every five seconds is
+ * the "nothing moves or refreshes without saying it did" rule broken for no
+ * information at all.
+ *
+ * Taken as `string` rather than `RunStatus` because it is asked about
+ * `WorkspaceRunView.status`, which crossed an IPC boundary as a string. A
+ * status from a newer agent falls through to `false` — the page stops
+ * following rather than following forever, which is the safer way for this to
+ * be wrong.
+ */
+const IN_FLIGHT: ReadonlySet<string> = new Set<RunStatus>([
+  "queued",
+  "running",
+  "waiting_for_choice",
+  "waiting_for_approval",
+]);
+
+export function isRunInFlight(status: string): boolean {
+  return IN_FLIGHT.has(status);
+}
+
+/**
  * Whether a schedule's own expectation has gone by (MAR-441's arithmetic,
  * MAR-586's second caller).
  *

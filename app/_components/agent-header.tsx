@@ -41,12 +41,20 @@ import { OAvatar } from "./o-avatar";
  * page out from under it: the header is now one band of a fixed frame, and the
  * things it used to sit on top of are stages it switches between.
  *
- * So every control here does two jobs, which is the wireframe's own sentence
- * about the action grid — *"each both acts and switches the stage"*. Trigger
- * run starts a run and puts the run on screen. Settings and Logs are
- * destinations, and destinations are links: a person may open the Logs of an
- * agent in a second window, and a `<button>` that navigated would take that
- * away for no gain.
+ * The wireframe's own sentence about the action grid was *"each both acts and
+ * switches the stage"*, and MAR-687 is Henrik withdrawing the first half of it
+ * for the one cell that had it. Trigger run started a run *and* moved the
+ * stage, which meant the Run stage — the surface that shows what a run is
+ * doing — could not be reached without starting another one. Every cell here
+ * is now a destination, and destinations are links: a person may open the Logs
+ * of an agent in a second window, and a `<button>` that navigated would take
+ * that away for no gain.
+ *
+ * **Nothing in this band acts any more, and that is the claim worth holding
+ * on to.** The one press in DASH that starts a run is `Run now` on the Run
+ * stage, beside the sentence saying what it will spend. A header that could
+ * start one from five stages away was a control whose consequence a person met
+ * after the press rather than before it.
  *
  * ## The id, under MAR-589's ruling
  *
@@ -69,14 +77,12 @@ export function AgentCockpitHeader({
   agent,
   avatar,
   busy,
-  canTrigger,
   control,
   goal,
   hasFolder,
   live,
   onOpenFolder,
   onRefresh,
-  onTriggerRun,
   places,
   plan,
   stage,
@@ -85,17 +91,16 @@ export function AgentCockpitHeader({
   /** The agent's id, for the stage links. A value, never a label (MAR-589). */
   agent: string;
   avatar: OName | null;
-  /** The pending command key, or null. Disables the acting controls. */
-  busy: string | null;
   /**
-   * Whether pressing the first cell would actually start something.
+   * The pending command key, or null. Disables the two buttons left in the
+   * band — Refresh and Open folder — while a command is in flight.
    *
-   * False for a run already in flight, an agent that has reported no state, and
-   * a window that cannot act — three different reasons, all of which leave the
-   * cell as a way *to* the Run stage, where `AGENT_CONTROL_COPY.idle` has the
-   * sentence for each.
+   * The action grid is not among them since MAR-687: a link to a stage of this
+   * agent is as safe to follow mid-command as it is at rest, and disabling
+   * navigation because something is running is what made the Run stage
+   * unreachable in the first place.
    */
-  canTrigger: boolean;
+  busy: string | null;
   control: AgentControlView;
   /** The author's own sentence about what this agent is for. Read inside About. */
   goal: string;
@@ -105,7 +110,6 @@ export function AgentCockpitHeader({
   live: string | null;
   onOpenFolder: () => void;
   onRefresh: () => void;
-  onTriggerRun: () => void;
   /** Every server this agent has been sent to. Empty means it lives here. */
   places: readonly AgentDeployTarget[];
   /** Every step this agent's plan declares, in order (MAR-664). Read inside About. */
@@ -174,19 +178,21 @@ export function AgentCockpitHeader({
       <div className="cockpit-header-actions">
         <div className="cockpit-action-grid" role="group" aria-label={AGENT_COCKPIT_COPY.actions_label}>
           {/*
-            The one cell that acts. It is a `<button>` and not a link because
-            pressing it starts a run; the page moves the stage itself, so the
-            two halves of "acts and switches" cannot come apart in a browser
-            that follows the link before the handler runs.
+            MAR-687. The cell that used to act, and is now the same kind of
+            thing as the four beside it.
+
+            It keeps `is-primary`, which is the whole of what is left of its
+            old standing: the Run stage is where a person goes to make this
+            agent work, and the grid should say so. What it no longer does is
+            make them work on the way there.
           */}
-          <button
-            className="cockpit-action is-primary"
-            disabled={busy !== null}
-            onClick={onTriggerRun}
-            type="button"
-          >
-            {canTrigger ? AGENT_COCKPIT_COPY.trigger_run : AGENT_COCKPIT_COPY.open_run}
-          </button>
+          <StageAction
+            agent={agent}
+            current={stage}
+            emphasis
+            label={AGENT_COCKPIT_COPY.run}
+            target="run"
+          />
           <StageAction
             agent={agent}
             current={stage}
@@ -346,19 +352,29 @@ function AgentPlanSection({ plan }: { plan: readonly AgentPlanStep[] }): ReactNo
 function StageAction({
   agent,
   current,
+  emphasis = false,
   label,
   target,
 }: {
   agent: string;
   current: AgentStage;
+  /**
+   * Draw this cell as the grid's primary one (MAR-687).
+   *
+   * One cell has it, and it is the Run stage's. `is-active` still wins when a
+   * person is standing on it, so the marking that says *where you are* is never
+   * overwritten by the marking that says *where to go first*.
+   */
+  emphasis?: boolean;
   label: string;
   target: AgentStage;
 }): ReactNode {
   const active = current === target;
+  const weight = active ? "is-active" : emphasis ? "is-primary" : "";
   return (
     <Link
       aria-current={active ? "page" : undefined}
-      className={active ? "cockpit-action is-active" : "cockpit-action"}
+      className={weight === "" ? "cockpit-action" : `cockpit-action ${weight}`}
       href={agentStageHref(agent, target)}
     >
       {label}

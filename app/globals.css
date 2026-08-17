@@ -4881,6 +4881,36 @@ button:disabled {
   border-style: dashed;
 }
 
+/* MAR-668. An output whose body is on the same page already: the author's
+   section keeps its place in their layout and says what is in it, and the
+   briefing is drawn once, above.
+
+   No border and no padding, which a capture decided. Drawn as a card, two of
+   these — the scout declares both a `report` and an `outputs` section over one
+   role — read as two more output cards a few hundred pixels apart, which is the
+   echo this issue is about at a smaller size. A pointer should look like a
+   pointer. */
+.output-card.is-elsewhere {
+  display: grid;
+  gap: var(--space-1);
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+
+.output-card.is-elsewhere .agent-panel-output-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  min-width: 0;
+}
+
+.output-card.is-elsewhere .output-when {
+  margin: 0;
+}
+
 .output-card h3 {
   margin: 0;
 }
@@ -6471,6 +6501,145 @@ button:disabled {
   }
 }
 
+/* MAR-680. Where the run has got to — position, not log.
+
+   Above `.agent-command-grid` on the Run stage and full width, because it is
+   the thing a person who has just pressed Run is standing there to read. The
+   feed underneath keeps the clock times; nothing in here carries one. */
+.run-progress {
+  min-width: 0;
+  padding: var(--space-4);
+  margin-bottom: var(--density-stack);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.run-progress .section-heading {
+  margin-bottom: var(--space-3);
+}
+
+.run-progress-position {
+  margin: 0;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.run-progress-state {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-md);
+}
+
+/* The one phase that is allowed to be loud, on the same rule the status pill
+   follows: `attention` is earned rather than assigned per state. */
+.run-progress-state.is-running {
+  color: var(--accent);
+}
+
+.run-progress-state.is-waiting {
+  color: var(--warn);
+}
+
+.run-progress-state.is-failed,
+.run-progress-state.is-unfinished {
+  color: var(--err);
+}
+
+.run-progress-state.is-finished {
+  color: var(--ok);
+}
+
+.run-progress-steps {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.run-progress-step {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--line);
+}
+
+.run-progress-step:first-child {
+  border-top: 0;
+}
+
+.run-progress-mark {
+  font-weight: 700;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.run-progress-step.is-done .run-progress-mark {
+  color: var(--ok);
+}
+
+.run-progress-step.is-failed .run-progress-mark {
+  color: var(--err);
+}
+
+.run-progress-step.is-waiting .run-progress-mark {
+  color: var(--warn);
+}
+
+/* A step that stopped in the middle is not a failed one, and must not read as
+   one — the same distinction `markCurrent` refuses to collapse in words. */
+.run-progress-step.is-unfinished .run-progress-mark {
+  color: var(--text-muted);
+}
+
+.run-progress-step-body {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* The number and the name read as one line at any width that fits them and
+   wrap rather than scroll when they do not — MAR-491's rule, and a step name
+   is exactly the population it was found on. */
+.run-progress-step-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.run-progress-step-number {
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.run-progress-step-name {
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.run-progress-step-state {
+  font-size: var(--text-sm);
+}
+
+/* A step still to come is present and quiet. Hiding it would take away the
+   only thing this panel has that the log has not: what is left. */
+.run-progress-step.is-todo .run-progress-step-name,
+.run-progress-step.is-todo .run-progress-step-state {
+  color: var(--text-muted);
+}
+
+.run-progress-leave {
+  margin-top: var(--space-3);
+}
+
 .live-feed {
   min-width: 0;
   padding: var(--space-4);
@@ -6837,10 +7006,11 @@ main:has(.agent-cockpit) {
   color: var(--accent-contrast);
 }
 
-.cockpit-action.is-primary:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
+/* There is no `.cockpit-action.is-primary:disabled` rule and there was one
+   until MAR-687. Every cell in the grid is an anchor now, and `:disabled` does
+   not match an anchor — the rule went dead the moment the button became a
+   link, and a dead rule for a state that cannot occur is how somebody later
+   concludes the grid is disableable. */
 
 /* The stage you are on, marked in the grid as well as announced by
    `aria-current`. The bar rather than a fill, so the active cell does not

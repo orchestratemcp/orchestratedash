@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { OUTPUTS_PANEL_COPY } from "../../lib/copy/artifacts";
 import {
+  PANEL_ALREADY_SHOWN,
   PANEL_CELL_ABSENT,
   PANEL_COPY,
   PANEL_EMPTY_DISCLOSURE,
@@ -84,7 +85,29 @@ import { OutputHistory } from "./output-history";
  * which is what a person moving by heading is looking for; the cards under one
  * are records in an ordered list, and the list is what says so.
  */
-export function AgentPanel({ view }: { view: PanelView }): ReactNode {
+export function AgentPanel({
+  view,
+  alreadyShown,
+}: {
+  view: PanelView;
+  /**
+   * Artifact ids the surface above this one has already drawn in full
+   * (MAR-668).
+   *
+   * A prop rather than a field on `PanelView`, and the reason is that this is
+   * not a fact about the panel. Which artifact is on the stage depends on the
+   * address — `?output=…` — which `lib/views/build.ts` does not read and must
+   * not: a view builder that took the query string would be answering a
+   * question about the browser. The page knows, through `resolveOpenCard`, and
+   * hands the answer down.
+   *
+   * Absent means nothing above has been drawn, which is the run detail page's
+   * situation and every test that renders this component on its own. The
+   * default is therefore "draw everything", so a caller that forgets is a
+   * caller that gets today's behaviour rather than a silently emptied panel.
+   */
+  alreadyShown?: ReadonlySet<string>;
+}): ReactNode {
   /*
    * Absence renders nothing. Not an empty frame, not a "this agent declared no
    * panel" placeholder — the rule `task_inputs` shipped with, restated because
@@ -94,6 +117,8 @@ export function AgentPanel({ view }: { view: PanelView }): ReactNode {
   if (view.kind === "none") {
     return null;
   }
+
+  const shown = alreadyShown ?? EMPTY;
 
   return (
     <section className="section agent-panel" aria-labelledby="agent-panel-heading">
@@ -108,7 +133,7 @@ export function AgentPanel({ view }: { view: PanelView }): ReactNode {
       {view.kind === "declared" ? (
         <div className="agent-panel-sections">
           {view.sections.map((section) => (
-            <PanelSection key={String(section.at)} section={section} />
+            <PanelSection key={String(section.at)} section={section} shown={shown} />
           ))}
         </div>
       ) : (
@@ -134,23 +159,39 @@ export function AgentPanel({ view }: { view: PanelView }): ReactNode {
  * `HOST_VERBS` discipline applied to a renderer: widening what agent-authored
  * data can make DASH draw has to be a change somebody defends in one place.
  */
-function PanelSection({ section }: { section: PanelSectionView }): ReactNode {
+function PanelSection({
+  section,
+  shown,
+}: {
+  section: PanelSectionView;
+  shown: ReadonlySet<string>;
+}): ReactNode {
   return (
     <article className="agent-panel-section">
       {/* The author's own label, and never the section's id. */}
       <h3>{section.label}</h3>
-      <SectionBody section={section} />
+      <SectionBody section={section} shown={shown} />
     </article>
   );
 }
 
-function SectionBody({ section }: { section: PanelSectionView }): ReactNode {
+function SectionBody({
+  section,
+  shown,
+}: {
+  section: PanelSectionView;
+  shown: ReadonlySet<string>;
+}): ReactNode {
   switch (section.kind) {
     case "report":
-      return <ReportSection section={section} />;
+      return <ReportSection section={section} shown={shown} />;
     case "outputs":
-      return <OutputsSection section={section} />;
+      return <OutputsSection section={section} shown={shown} />;
     case "table":
+      /* MAR-668 stops at the two section types that draw an artifact *body*.
+         A table of the same digest's headlines is a different reading of the
+         same record — it is what the author declared the table for, and it is
+         not the thing that was on screen three times. */
       return <TableSection section={section} />;
     case "metrics":
       return <MetricsSection section={section} />;
@@ -158,6 +199,9 @@ function SectionBody({ section }: { section: PanelSectionView }): ReactNode {
       return <NoteSection section={section} />;
   }
 }
+
+/** No caller passed a set, so nothing above has been drawn. */
+const EMPTY: ReadonlySet<string> = new Set<string>();
 
 /**
  * The newest output of one role, with its receipt.
@@ -168,11 +212,17 @@ function SectionBody({ section }: { section: PanelSectionView }): ReactNode {
  * purpose, the two-clock receipt, and the thing itself when DASH knows how to
  * lay it out.
  */
-function ReportSection({ section }: { section: PanelReportView }): ReactNode {
+function ReportSection({
+  section,
+  shown,
+}: {
+  section: PanelReportView;
+  shown: ReadonlySet<string>;
+}): ReactNode {
   if (section.card === null) {
     return <StatedEmpty empty={section.empty} />;
   }
-  return <PanelArtifactCard card={section.card} />;
+  return <PanelArtifactCard card={section.card} shown={shown} />;
 }
 
 /**
@@ -182,7 +232,13 @@ function ReportSection({ section }: { section: PanelReportView }): ReactNode {
  * was found: every table in DASH became a 1425px horizontal scroller at 375px
  * wide, and a list of records is exactly the population that happened to.
  */
-function OutputsSection({ section }: { section: PanelOutputsView }): ReactNode {
+function OutputsSection({
+  section,
+  shown,
+}: {
+  section: PanelOutputsView;
+  shown: ReadonlySet<string>;
+}): ReactNode {
   if (section.cards.length === 0) {
     return <StatedEmpty empty={section.empty} />;
   }
@@ -191,7 +247,7 @@ function OutputsSection({ section }: { section: PanelOutputsView }): ReactNode {
       <OutputHistory
         cards={section.cards}
         collapsed
-        renderCard={(card) => <PanelArtifactCard card={card} />}
+        renderCard={(card) => <PanelArtifactCard card={card} shown={shown} />}
       />
       {/* The author's own display choice, said rather than left to be noticed. */}
       {section.capped === null ? null : <p className="muted">{section.capped}</p>}
@@ -337,8 +393,56 @@ function NoteSection({ section }: { section: PanelNoteView }): ReactNode {
  * receipt, and the body — because those are what make an output a thing a person
  * owns rather than a filename, which was MAR-434's whole argument.
  */
-function PanelArtifactCard({ card }: { card: ArtifactCardView }): ReactNode {
+function PanelArtifactCard({
+  card,
+  shown,
+}: {
+  card: ArtifactCardView;
+  shown: ReadonlySet<string>;
+}): ReactNode {
   const { artifact, role, receipt, recovery } = card;
+  /*
+   * MAR-668. The body yields when the stage above has already drawn this exact
+   * artifact, and only the body.
+   *
+   * The identity of the thing stays — role, title, when — so the author's
+   * section still says *what* it is presenting and where it sits in their
+   * layout. What goes is the second copy of a briefing the reader scrolled past
+   * a moment ago, and the receipt with it: a two-clock provenance record under
+   * a pointer is paperwork about a card that is not here.
+   */
+  const elsewhere = shown.has(card.reference.artifact_id);
+
+  if (elsewhere) {
+    /*
+     * Two lines and no card, which the screenshot decided rather than the
+     * reasoning.
+     *
+     * The first draft kept the card's shape — a bordered box with the role, the
+     * title and the date stacked inside it — and the capture of the real
+     * two-section panel showed why that is wrong: the scout declares a `report`
+     * *and* an `outputs` section over the same role, so the page drew two
+     * identical four-line boxes two hundred pixels apart. Not three briefings
+     * any more, but the same echo at a smaller size, which is the shape MAR-646
+     * spent a packet removing from this page.
+     *
+     * A pointer should look like a pointer. The title and the moment share a
+     * line, DASH's sentence sits under it, and there is no border, because
+     * there is no card here — the card is at the top of the page.
+     */
+    return (
+      <article className="output-card is-elsewhere">
+        <p className="agent-panel-output-title">
+          <span className="eyebrow">{role.label}</span>
+          <span className="value">{artifact.title}</span>
+          <span className="output-when muted">{receipt.stated_at}</span>
+        </p>
+        {/* DASH's fixed sentence, naming DASH's own heading. See
+            `PANEL_ALREADY_SHOWN` for why it is allowed inside this region. */}
+        <p className="muted wrap">{PANEL_ALREADY_SHOWN}</p>
+      </article>
+    );
+  }
 
   return (
     <article className={recovery === null ? "output-card" : "output-card is-unavailable"}>
