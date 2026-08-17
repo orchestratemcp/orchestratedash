@@ -157,7 +157,14 @@ resolves it is a later one, and it needs the cost story too.
 
 ## Amendment 1 (MAR-654): a person may map a level to a model, and DASH still maps none
 
-Status: Proposed
+Status: Accepted — signed off by Henrik on 2026-08-17 during the attended AI-flow
+walk, after seeing the per-step control greyed on competitor-scout and asking for
+per-step model choice directly. The build (MAR-654) is unblocked. One thing the
+amendment left open is now resolved: the migration index in "What this costs" was
+written when master was at `user_version` 25; master is now at 27, so the two new
+tables (`fleet_level_models`, `run_step_models`) take **migration 28**, the next
+free index. "What is proven" stays literally true — acceptance is a decision, not
+an implementation; nothing here has been built yet.
 
 Date: 2026-08-16
 
