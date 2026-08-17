@@ -7593,36 +7593,6 @@ main:has(.agent-cockpit) {
   overflow: auto;
 }
 
-.chief-room-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.chief-room-head h2 {
-  margin: 0;
-  font-size: var(--text-base);
-}
-
-.chief-scope,
-/*
- * MAR-659, ADR 0023. Why one half of this composer is off, said above the
- * composer it is about. Same measure and rhythm as the scope note it sits below
- * — this is the second standing sentence in the room, not a different kind of
- * thing, and giving it its own treatment would make a fixable gap look like a
- * fault.
- */
-.chief-blocked {
-  margin-top: var(--space-2);
-  max-width: 70ch;
-}
-
-.chief-scope p,
-.chief-blocked p {
-  margin: 0 0 var(--space-1);
-}
-
 /*
  * MAR-659. Generous rather than `--space-4`: no chrome marks where one turn
  * ends and the next begins any more, so the gap itself is what does — the
@@ -7752,13 +7722,32 @@ main:has(.agent-cockpit) {
   font-size: var(--text-sm);
 }
 
-.chief-receipt-heading {
-  margin: 0;
+/*
+ * MAR-683. The receipt rows, folded away — `.ask-sources`' own pattern,
+ * restated for this room: the platform's own disclosure, stateful without a
+ * hook, reachable from a keyboard without anything being wired. What stays
+ * outside it (`.chief-charge`, `.chief-when`, `.chief-stale`) is what a person
+ * needs before trusting or spending on the next question; this is the detail
+ * that backs a check they were not necessarily about to make.
+ */
+.chief-sources > summary {
+  cursor: pointer;
+  padding: var(--space-1) 0;
+  color: var(--text-muted);
   font-size: var(--text-sm);
   font-weight: 600;
-  color: var(--text-muted);
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
+}
+
+.chief-sources > summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.chief-sources p,
+.chief-sources ul {
+  margin-top: var(--space-2);
 }
 
 .chief-receipt-rows {
@@ -7806,12 +7795,6 @@ main:has(.agent-cockpit) {
   color: var(--warn);
 }
 
-.chief-room-actions {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-}
-
 .chief-compose {
   display: flex;
   align-items: flex-end;
@@ -7853,11 +7836,6 @@ main:has(.agent-cockpit) {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-color: var(--accent);
-}
-
-.chief-settings {
-  margin: 0;
-  font-size: var(--text-sm);
 }
 
 @media (max-width: 760px) {
