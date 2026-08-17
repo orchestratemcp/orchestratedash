@@ -177,6 +177,58 @@ describe("the model section", () => {
     expect(html).toContain(`What the plan asked for — ${levelLabel("standard").toLowerCase()}`);
   });
 
+  it("says what each step resolves to and which rung answered (MAR-654)", () => {
+    // A1.6. The control Henrik found greyed is live for an unpinned agent, and
+    // each step names the model its level currently buys *and where that was
+    // decided* — "this is what everything unmapped falls back to" and "you chose
+    // this for balanced steps" are different facts about the same id.
+    const html = section(choosable());
+    expect(text(html)).toContain("DASH's default model");
+    expect(text(html)).toContain("which you chose for the best available steps");
+    expect(html).toContain("meta-llama/llama-3.3-70b-instruct:free");
+    expect(html).toContain("anthropic/claude-opus-5");
+    // And the link to where the map is set. Unfindable is the same as missing:
+    // the map is one place, and every step depending on it says where.
+    expect(html).toContain('href="/settings/ai"');
+    expect(text(html)).toContain("Choose what each kind of step runs on");
+  });
+
+  it("drops the resolved line, and the link, when there is nothing to resolve", () => {
+    // The section's own headline already says DASH does not choose this agent's
+    // model. A second, differently-worded reason under every step would
+    // contradict it, so `buildAgentModelSettings` leaves `resolved_note` null on
+    // that arm — which is what these steps carry.
+    const html = section(
+      noChoice(
+        "no_provider_key",
+        STEPS.map((step) => ({
+          ...step,
+          resolved_model_id: null,
+          resolved_by: "none",
+          resolved_note: null,
+        })),
+      ),
+    );
+    expect(html).not.toContain("model-step-resolved");
+    expect(html).not.toContain('href="/settings/ai"');
+    // The declared strength is still drawn: it comes off the manifest and needs
+    // no key.
+    expect(html).toContain(levelLabel("cheap"));
+  });
+
+  it("drops the link while a pin has set the levels aside", () => {
+    // A promise about a control has to be true of the control it is under: with
+    // a model pinned, changing what a level means changes nothing here.
+    const html = section(
+      choosable({
+        chosen_model_id: "anthropic/claude-sonnet-5",
+        steps_in_force: false,
+        steps_note: "These are set aside while every step uses anthropic/claude-sonnet-5.",
+      }),
+    );
+    expect(html).not.toContain('href="/settings/ai"');
+  });
+
   it("tells a browser tab which window can act instead of drawing a dead control", () => {
     const html = section(choosable(), false);
     expect(html).toContain("Open the installed DASH app");
