@@ -1,0 +1,15 @@
+{
+  "scene": "plain",
+  "runner": "stop",
+  "quit": true,
+  "survivors": [],
+  "stages": [
+    "+2800ms app window ready (\"OrchestrateDASH\")",
+    "+3127ms runner stopped: yes",
+    "+3128ms closing the app window (\"OrchestrateDASH\")",
+    "+3181ms window-all-closed (no windows)",
+    "+3182ms before-quit",
+    "+3187ms will-quit",
+    "+3193ms quit"
+  ]
+}

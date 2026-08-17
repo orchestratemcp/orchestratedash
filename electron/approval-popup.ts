@@ -16,8 +16,19 @@
  *
  * This module owns at most one such window and only ever shows or hides it —
  * `startApprovalNotifier`'s tick decides *when*, this module decides *how*.
- * The window is never destroyed while DASH runs, so hiding and reshowing it
- * costs nothing and the page inside never has to re-mount.
+ * Hiding rather than destroying is what makes reshowing it free and keeps the
+ * page inside from having to re-mount.
+ *
+ * **It is destroyed with the DASH window, and that is not optional (MAR-678).**
+ * This docblock used to say the window was never destroyed while DASH ran, and
+ * it was true in a way nobody had followed through: `window-all-closed` counts
+ * open windows, hidden or not, so a single popup left hidden behind a decided
+ * approval meant closing the DASH window quit nothing at all. The app went on
+ * living with no window, holding the store, until Windows was restarted.
+ * `createWindow`'s `closed` handler now calls `closeApprovalPopup`, and
+ * `before-quit` still does too for a quit that starts somewhere else. This
+ * window may be reshown for free any number of times; it may not outlive the
+ * window it belongs to.
  */
 
 import { BrowserWindow, screen } from "electron";

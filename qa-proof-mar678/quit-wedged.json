@@ -1,0 +1,13 @@
+{
+  "scene": "wedged",
+  "runner": "stop",
+  "quit": true,
+  "survivors": [],
+  "stages": [
+    "+2777ms app window ready (\"OrchestrateDASH\")",
+    "+2828ms stray window opened (\"prove-quit stray window\" (hidden), \"OrchestrateDASH\")",
+    "+3167ms runner stopped: yes",
+    "+3167ms closing the app window (\"prove-quit stray window\" (hidden), \"OrchestrateDASH\")",
+    "+8234ms quit"
+  ]
+}

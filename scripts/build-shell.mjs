@@ -252,6 +252,19 @@ await Promise.all([
     format: "esm",
   }),
 
+  // MAR-678's quit chain, on `prove-start.ts`'s exact terms. The one harness
+  // here that photographs nothing: it closes the app window and reports whether
+  // the process actually ended. Necessary because the smoke cannot make that
+  // claim — `electron/smoke.ts` finishes with `app.exit`, which skips the whole
+  // `before-quit`/`will-quit` chain this one exists to walk. See
+  // `electron/prove-quit.ts` for its two scenes and why the control matters.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "prove-quit.ts")],
+    outfile: path.join(outDir, "prove-quit.mjs"),
+    format: "esm",
+  }),
+
   // The panel's own screenshot harness (MAR-554), on exactly the terms above.
   // Separate from `capture.ts` because that one walks routes and the declarative
   // panel has none yet — a real manifest declaring one arrives with MAR-548. See
