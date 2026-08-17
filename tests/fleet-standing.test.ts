@@ -241,10 +241,13 @@ describe("withFleetSecretStandings", () => {
     expect(decorated.model_default).not.toBeUndefined();
   });
 
-  it("marks Henrik's exact situation unreadable, with the sentence attached", async () => {
-    // A row naming a vault entry that does not answer. The store is telling the
-    // truth about what he gave DASH and the vault is telling the truth about what
-    // it can hand back, and until MAR-676 the page only listened to the first.
+  it("marks a held row whose stored entry is gone unreadable, and says it is gone", async () => {
+    // A row naming a vault entry that is not there. The store is telling the
+    // truth about what the person gave DASH and the vault is telling the truth
+    // about what it can hand back, and until MAR-676 the page only listened to
+    // the first. MAR-684 refined the sentence: a `not_found` read is the
+    // "stored copy is gone, give it again" situation, not the locked one — a
+    // restart cannot bring the entry back and the copy must not suggest it can.
     const decorated = await withFleetSecretStandings(view([connector()]), {
       store: vault({}),
       readDefaultAccount: () => ({ secret_name: "dash.fleet.openrouter.api_key" }),
@@ -252,10 +255,39 @@ describe("withFleetSecretStandings", () => {
 
     const held = decorated.fleet[0]?.held;
     expect(held?.secret_readable).toBe(false);
-    expect(held?.unreadable?.headline).toContain("DASH holds OpenRouter but could not read it");
+    expect(held?.unreadable?.headline).toContain(
+      "DASH remembers OpenRouter being connected, but what was stored for it is gone",
+    );
     // And the row itself is untouched: what the person gave DASH is still recorded.
     expect(held?.masked_hint).toBe("••••abcd");
     expect(held?.since).toBe("10 August 2026");
+  });
+
+  it("marks Henrik's exact situation unreadable, with the locked sentence attached", async () => {
+    // The vault holds the entry and will not release it — `vault_locked`, which
+    // is what MAR-684 proved his situation actually was: blob intact,
+    // decryptable, and the running process's reads failing anyway. The sentence
+    // is his own wording from the walk, and it must not be the "connect it
+    // again as if it were never there" one.
+    const decorated = await withFleetSecretStandings(view([connector()]), {
+      store: {
+        get: async (name: string): Promise<string> => {
+          throw new SecureStoreError(
+            "vault_locked",
+            `The OS vault would not release "${name}".`,
+            name,
+            "decrypt_failed",
+          );
+        },
+        describeBacking: () => backing,
+      },
+      readDefaultAccount: () => ({ secret_name: "dash.fleet.openrouter.api_key" }),
+    });
+
+    const held = decorated.fleet[0]?.held;
+    expect(held?.secret_readable).toBe(false);
+    expect(held?.unreadable?.headline).toContain("DASH holds OpenRouter but could not read it");
+    expect(held?.masked_hint).toBe("••••abcd");
   });
 
   it("sets the boolean and the sentence together, so they cannot disagree", async () => {

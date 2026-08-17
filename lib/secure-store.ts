@@ -95,12 +95,27 @@ export class SecureStoreError extends Error {
   readonly code: SecureStoreErrorCode;
   /** The secret's name. Safe: names are validated to be non-sensitive. */
   readonly secret_name?: string;
+  /**
+   * The mechanism, when the implementation knows it (MAR-684): an fs errno
+   * (`EPERM`), `decrypt_failed`, `envelope_unreadable`, `readback_failed`, or
+   * `decrypt_failed_foreign_identity:<name>`. Never a value and never part of
+   * the sentence a user reads — it exists so a diagnosis can name what actually
+   * happened instead of inferring it back from which recovery was shown, which
+   * is how a healthy vault spent a day being called locked.
+   */
+  readonly cause_code?: string;
 
-  constructor(code: SecureStoreErrorCode, message: string, secretName?: string) {
+  constructor(
+    code: SecureStoreErrorCode,
+    message: string,
+    secretName?: string,
+    causeCode?: string,
+  ) {
     super(message);
     this.name = "SecureStoreError";
     this.code = code;
     this.secret_name = secretName;
+    this.cause_code = causeCode;
   }
 }
 
