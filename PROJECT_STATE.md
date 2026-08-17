@@ -5248,6 +5248,132 @@ fail; the harness does not press it. The list path is driven in
 loopback server in MAR-582's own suite. Nothing here may be described as proven
 against OpenRouter, Anthropic or OpenAI.
 
+
+## A pre-renumber build migrated the installed store (MAR-676)
+
+**Planned, not merged and not proven.** Branch
+`000henrik/mar-676-store-reconciliation`, cut from `origin/master` `d346c7e`
+after confirming that was master's tip. Every command in this session ran in the
+worktree with an explicit scratch `DASH_DATA_DIR`, because the whole issue exists
+because a worktree build once resolved the real store.
+
+`user_version` = 24 with MAR-643's multi-account tables already built and
+`chief_messages`, the three browser tables and `fleet_decisions` all absent. **No
+commit of master produces that combination at any version**, and that is what
+makes it safe to recognise by shape: a master store at 24 has the chief's
+transcript and no `account_id`; a master store at 27 has `account_id` and all
+three. The ordinary runner could not fix it — it read "24 applied" and ran 25, 26
+and 27, where 27 is idempotent against the shape and returns early — so the
+chief's transcript, the browser trail and the decisions log were permanently
+unreachable on the one store that mattered, with every test green.
+
+### The reconciliation, and the mistake its own tests caught
+
+`lib/store-reconcile.ts`, run by `migrate()` **before** it reads
+`user_version`, because it changes that number. On the signature it copies
+`dash.sqlite` and its `-wal`/`-shm` siblings beside themselves as
+`dash.sqlite.before-reconcile-<stamp>` on `retireDamagedStore`'s conventions,
+runs `MIGRATIONS[23..25]` — sliced by the caller, so this module holds no copy of
+their SQL — creates any of migration 27's declared indexes that is missing, runs
+27's own `DELETE` of the superseded `dash.fleet` reference, and sets
+`user_version` to 27 in the same transaction.
+
+**The first draft sliced at 24 and was wrong, and the way it was wrong is the
+lesson.** `tests/store-sqlite.test.ts`' version pin numbers a step by the
+`user_version` it *produces*, so master's "migration 24" is the entry at index
+**23**. Slicing at 24 created the browser tables and the decisions log and
+silently left `chief_messages` out — the original defect, reproduced by the code
+written to repair it, reporting success the whole time. The indexes were then
+measured rather than counted, and the repair now asserts inside its own
+transaction that every table it claims to have created exists.
+
+**What it refuses.** Any difference from migration 27 in columns, primary key,
+`secret_name` uniqueness or the `is_default` CHECK; an index present with
+different columns, uniqueness or partiality; and a `fleet_connections_v%` table
+left behind by a replacement that did not finish. A refusal throws and DASH does
+not start. The shape check runs **before** the backup, so a refusal writes
+nothing at all, and the message prints the entire shape it found — one attempt
+yields the answer instead of another guess. `EXPECTED_FLEET_SHAPE` is pinned
+against a real freshly-migrated store by a test, so a change to migration 27
+fails there rather than as a refusal on somebody's machine.
+
+`db()` now closes the handle when `migrate()` throws. Before this a failed open
+leaked an open database nothing could reach, which on Windows also held its own
+directory.
+
+### Standing reads the vault
+
+The AI tab said CONNECTED while the vault read failed, because the chip was drawn
+from `held !== null` — *the row*. A row says what the person gave DASH; whether
+DASH can still read it is a different question and nothing was asking it.
+
+`FleetConnectorView.held` gains `secret_readable` (which decides the chip) and
+`unreadable` (the sentence). Both are set together by `withFleetSecretStandings`,
+which the IPC read channel runs — `view.connections` is async now. It follows the
+row's `secret_name` into the vault and returns only whether the read succeeded:
+neither the name nor the value reaches the view, which is asserted rather than
+asserted-about. `lib/views/build.ts` defaults `secret_readable` to **false**
+deliberately, so a path that skips the decoration cannot claim a read it never
+made.
+
+`lib/copy/fleet-standing.ts` owns the decision and the words, and
+`describeFleetSecretUnreadable` is now the single author of the sentence Henrik
+read — `shareFleetConnection` calls it and appends only "Nothing was given out."
+**Both chip renderers changed**: the fleet card and `chipOf` in
+`lib/connections-list.ts` each had their own two lines deriving "connected" from
+the row, which is how two components came to disagree about one store. The
+MAR-643 capture scene now writes the two vault entries its rows point at; without
+them it was seeding this exact broken state and would have photographed the
+honest failed chip.
+
+### A worktree shell must not resolve the real store
+
+`foreignCheckoutProblem` refuses the installed userData when the app path is
+neither the packaged app nor the **main** git working tree — distinguished by
+whether `<app path>/.git` is a directory or a file holding `gitdir:`, which is
+git's own distinction, costs one `statSync`, and needs no marker file anybody has
+to create or remember. `DASH_ALLOW_INSTALLED_STORE=1` is the explicit opt-in and
+the refusal names all three remedies. Gated on `isAppEntryPoint` — the same
+question `app.setName` asks — so the smoke and a dozen capture harnesses,
+launched as a *file*, are outside it by construction. Henrik's desktop shortcut
+runs `electron` against the main checkout, so it is permitted.
+
+**The residual hole is named rather than hidden.** The smoke still opens the real
+installed store from a worktree, so `pnpm verify:shell` in a worktree is still a
+write to Henrik's store — and that is a far more ordinary act than a manual
+`electron .`, so it is very likely how MAR-676 happened at all. Closing it means
+changing what MAR-424's third acceptance criterion is about, and that is a
+separate decision.
+
+### A correction to the issue's own diagnosis
+
+**The OpenRouter credential is not gone.** DASH does not use Windows Credential
+Manager as a store: `lib/vault.ts` keeps one `safeStorage`-encrypted file per
+secret under `<userData>/vault` and only *labels* the backing "Windows Credential
+Manager (DPAPI)". `dash-secret-dash.fleet.openrouter.api_key.enc` is present, 393
+bytes, created 2026-08-10T20:02:17.642Z, `format_version` 1, backend
+`os_keychain`, with 288 characters of intact base64 ciphertext. The envelope
+parses, so `get()` reaches `decryptString` and the failure is `vault_locked`
+rather than `not_found` — which is why the new copy says the key is still there
+instead of asking for it again. `lib/vault.ts` refuses to risk that suggestion
+precisely because acting on it overwrites the good credential.
+
+### What is not proven
+
+`pnpm typecheck` clean, `pnpm brand:check` green, the full suite 208 files /
+3942 passed / 11 skipped, `pnpm state:check` valid. The reconciliation is driven
+in both directions: it fires on a fixture built from SQL to the diverged shape
+and refuses a fresh store, an already-27 store, a 24-with-master's-shape store, a
+24-with-nothing-missing store and a 23-with-the-shape store.
+
+`pnpm verify:shell` was **not run** — DASH is live from the main checkout on the
+installed-style path and AGENTS.md forbids force-killing it — so CI's Windows
+shell-smoke is this branch's installed witness. **The named store has not been
+executed against.** Henrik's store's diverged shape was never read here either:
+a copy to scratch was declined by the permission classifier, so the repair
+verifies the shape at boot and prints what it finds rather than assuming it. The
+attended boot is the only thing that can promote this, and it has not happened.
+
 `pnpm verify:shell` was **not** run locally — several worktrees' Electron
 instances were live on this machine and AGENTS.md forbids force-killing them.
 CI's Windows `shell-smoke` is the installed witness for this branch. Nothing in

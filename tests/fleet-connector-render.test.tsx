@@ -29,6 +29,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { FleetConnectorCard } from "../app/_components/fleet-connector";
+import { describeFleetSecretUnreadable } from "../lib/copy/fleet-standing";
 import type { FleetConnectorView } from "../lib/views/types";
 
 function connector(over: Partial<FleetConnectorView> = {}): FleetConnectorView {
@@ -130,6 +131,10 @@ describe("a connector the person has connected", () => {
       account_hint: "he••••@example.com",
       since: "10 August 2026",
       permissions: ["Read your mail", "Save drafts"],
+      // Held *and* readable (MAR-676). The fixture has to say which, because the
+      // chip is now the answer to both questions rather than only the first.
+      secret_readable: true,
+      unreadable: null,
     },
     agents: [
       { agent: "news-scout", title: "News scout", connected: true },
@@ -160,11 +165,24 @@ describe("a connector the person has connected", () => {
     expect(draw(held)).toContain("Disconnect everywhere");
   });
 
+  it("says Connected only because the secret resolves (MAR-676)", () => {
+    const html = draw(held);
+    expect(html).toContain(">Connected<");
+    expect(html).not.toContain("DASH cannot read this");
+  });
+
   it("draws Disconnect without the everywhere when it reaches nobody", () => {
     // Precision rather than a stock label: on a DASH with no agents this really
     // does only disconnect the one thing in front of the person.
     const alone = connector({
-      held: { masked_hint: "••••abcd", account_hint: null, since: null, permissions: [] },
+      held: {
+        masked_hint: "••••abcd",
+        account_hint: null,
+        since: null,
+        permissions: [],
+        secret_readable: true,
+        unreadable: null,
+      },
     });
     const html = draw(alone);
     expect(html).toContain(">Disconnect<");
@@ -172,11 +190,81 @@ describe("a connector the person has connected", () => {
   });
 });
 
+/**
+ * MAR-676. The card Henrik was looking at, with the fact it was missing.
+ *
+ * It said CONNECTED because it asked one question — has this person ever given
+ * DASH a credential — and the answer was truthfully yes. The question it did not
+ * ask was whether the credential still comes back out of the vault, and the answer
+ * to that was no, and the page was already saying so two paragraphs further down
+ * in the outcome box after he pressed a button.
+ */
+describe("a connector DASH holds and cannot read", () => {
+  const unreadable = connector({
+    held: {
+      masked_hint: "••••abcd",
+      account_hint: null,
+      since: "10 August 2026",
+      permissions: [],
+      secret_readable: false,
+      unreadable: describeFleetSecretUnreadable("Gmail", "Windows Credential Manager (DPAPI)"),
+    },
+  });
+
+  it("does not say Connected", () => {
+    const html = draw(unreadable);
+    expect(html).not.toContain(">Connected<");
+    expect(html).toContain("DASH cannot read this");
+  });
+
+  it("puts the explanation under the chip and not in the outcome box", () => {
+    /*
+     * It is true on arrival rather than the result of a press, and the outcome box
+     * is empty until somebody clicks something. Henrik read this sentence *after*
+     * pressing "give it to the waiting agents", while the chip above it still said
+     * CONNECTED — the fact was on the page, two paragraphs from its own
+     * contradiction.
+     */
+    const html = draw(unreadable);
+    expect(html).toContain("could not read it from windows credential manager (dpapi) just now");
+    expect(html.indexOf("could not read it from")).toBeLessThan(
+      html.indexOf("Sign in to Gmail again"),
+    );
+    // A note, not an alert: nothing is broken, nothing was lost, and interrupting a
+    // screen reader for a state the page arrived in would be the wrong urgency.
+    expect(html).toContain("notice notice-warn");
+    expect(html).not.toContain('role="alert"');
+  });
+
+  it("still offers the presses that would fix or confirm it", () => {
+    // A credential DASH cannot read is still one it holds, so the button offers to
+    // sign in *again* rather than for a first time, and the check that would confirm
+    // what the chip says stays available. A card that hid both would leave somebody
+    // reading a warning with nothing on it to press.
+    const html = draw(unreadable);
+    expect(html).toContain("Sign in to Gmail again");
+    expect(html).toContain("Check it still works");
+  });
+
+  it("still names the account it holds", () => {
+    // The row is not wrong. Only the claim about it was, and taking the account off
+    // the card would lose the true half along with the false one.
+    expect(draw(unreadable)).toContain("since 10 August 2026");
+  });
+});
+
 describe("agents that are waiting, and agents that are not coming", () => {
   it("offers one button when an agent was imported after the connect", () => {
     const html = draw(
       connector({
-        held: { masked_hint: "••••abcd", account_hint: null, since: null, permissions: [] },
+        held: {
+        masked_hint: "••••abcd",
+        account_hint: null,
+        since: null,
+        permissions: [],
+        secret_readable: true,
+        unreadable: null,
+      },
         agents: [{ agent: "news-scout", title: "News scout", connected: false }],
         waiting: ["news-scout"],
       }),

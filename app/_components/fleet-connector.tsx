@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 
 import { describeSkip, type FleetSkip } from "../../lib/fleet/grants";
+import { fleetStanding, fleetStandingChip } from "../../lib/copy/fleet-standing";
 import type { Recovery } from "../../lib/copy/recovery";
 import type { FleetConnectorView } from "../../lib/views/types";
 
@@ -60,6 +61,26 @@ export function FleetConnectorCard({
   const [busy, setBusy] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<CardOutcome | null>(null);
 
+  /*
+   * MAR-676. `held !== null` is *the row*, and the row is not the standing.
+   *
+   * This card said CONNECTED over a vault read that had failed, because the only
+   * question it asked was whether the person had ever given DASH a credential. The
+   * standing now takes both facts and the decision is made in one pure function,
+   * shared with the service row in `lib/connections-list.ts` — two components
+   * deciding "is this connected?" separately is how they came to disagree in the
+   * first place.
+   *
+   * `connected` below still drives the *buttons*, and deliberately: a credential
+   * DASH cannot read is still one it holds, so the control offers to replace it
+   * rather than to add a first one, and "Check it still works" stays available —
+   * which is the press that would confirm what the chip is now saying.
+   */
+  const standing = fleetStanding({
+    held: connector.held !== null,
+    secret_readable: connector.held?.secret_readable ?? false,
+  });
+  const chip = fleetStandingChip(standing);
   const connected = connector.held !== null;
   const signIn = connector.connector_kind === "google_oauth_broker";
 
@@ -76,9 +97,7 @@ export function FleetConnectorCard({
     <article className="row-card fleet-connector">
       <div className="card-head">
         <h3>{connector.service}</h3>
-        <span className={connected ? "chip chip-ok" : "chip chip-muted"}>
-          {connected ? "Connected" : "Not connected"}
-        </span>
+        <span className={`chip chip-${chip.tone}`}>{chip.label}</span>
       </div>
 
       <p className="wrap">{connector.purpose}</p>
@@ -91,6 +110,31 @@ export function FleetConnectorCard({
           {connector.held.account_hint ?? connector.held.masked_hint ?? "An account the provider did not name"}
           {connector.held.since === null ? "" : `, since ${connector.held.since}`}.
         </p>
+      )}
+
+      {/*
+        The failed vault read, said where the chip is (MAR-676).
+
+        Directly under the standing rather than in the outcome box below, because
+        it is not the result of a press: it is true on arrival, and the outcome box
+        is empty until somebody clicks something. Henrik read this exact sentence
+        *after* pressing "give it to the waiting agents" while the chip above it
+        still said CONNECTED — the fact was available and the page was showing it
+        two paragraphs apart from its own contradiction.
+
+        Amber and announced as a note rather than an alert. Nothing is broken and
+        nothing was lost; a credential DASH cannot read right now is a situation
+        with a next step, and `role="alert"` would interrupt a screen reader for a
+        state the page arrived in.
+      */}
+      {connector.held?.unreadable == null ? null : (
+        <div className="notice notice-warn wrap">
+          <p role="note">
+            <strong>{connector.held.unreadable.headline}</strong>
+          </p>
+          <p role="note">{connector.held.unreadable.meaning}</p>
+          <p role="note">{connector.held.unreadable.next_action}</p>
+        </div>
       )}
 
       {/*
