@@ -76,14 +76,12 @@ function header(plan: PlannedRouteStepFull[] = ROUTE): string {
         agent={AGENT}
         avatar="wizard"
         busy={null}
-        canTrigger
         control={READY}
         goal={GOAL}
         hasFolder={false}
         live={null}
         onOpenFolder={() => undefined}
         onRefresh={() => undefined}
-        onTriggerRun={() => undefined}
         places={[]}
         plan={describeAgentPlan(plan)}
         stage="overview"

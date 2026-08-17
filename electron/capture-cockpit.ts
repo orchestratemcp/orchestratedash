@@ -167,11 +167,50 @@ function daysAgo(days: number): string {
  * beside the rail's list of the same four.
  */
 function seed(): void {
-  const manifest = example("agent.manifest.example.json") as {
+  const manifest = example("agent.manifest.example.json") as Record<string, unknown> & {
     agent: { name: string; display_name?: string };
   };
   manifest.agent.name = AGENT;
   manifest.agent.display_name = "News Scout";
+  /*
+   * MAR-668. A declared panel, because the duplication this issue is about
+   * cannot be photographed without one.
+   *
+   * The shipped example declares none, so before this the Output stage's frame
+   * showed DASH's card and nothing under it — a picture that looks identical
+   * whether the fix is in or out. These two sections are the exact pair the
+   * real competitor scout declares, and they are what drew the briefing a
+   * second and a third time: a `report` bound to the digest role and an
+   * `outputs` section over the same role. The `note` is the control — a section
+   * that draws no artifact body must be untouched by the fix.
+   */
+  manifest["agent_dom"] = {
+    ...((manifest["agent_dom"] as Record<string, unknown> | undefined) ?? {}),
+    panel: {
+      panel_version: 1,
+      title: "What the scout found",
+      sections: [
+        {
+          id: "latest_briefing",
+          type: "report",
+          label: "Latest briefing",
+          artifact_role: "digest",
+        },
+        {
+          id: "everything",
+          type: "outputs",
+          label: "Everything it produced",
+          artifact_role: "digest",
+        },
+        {
+          id: "about",
+          type: "note",
+          label: "About this scout",
+          text: "It only runs when you ask it to. Nothing happens on a timer.",
+        },
+      ],
+    },
+  };
   const imported = importManifest(manifest);
   if (!imported.ok) {
     throw new Error(`the seeded manifest was refused: ${JSON.stringify(imported)}`);
@@ -221,11 +260,19 @@ function seed(): void {
   console.log(`[cockpit] ${String(accepted.accepted)} artifact(s) accepted`);
 
   /*
-   * Telemetry for the newest run, so the Run stage has a feed and meters rather
-   * than its two empty sentences. `cost_usd` and the token counts are on the
-   * step events because that is where telemetry v1 puts them — see
+   * Telemetry for the newest run, so the Run stage has a feed, meters and a
+   * step list rather than its empty sentences. `cost_usd` and the token counts
+   * are on the step events because that is where telemetry v1 puts them — see
    * `lib/views/agent-feed.ts`, which omits any meter whose field never arrived
    * rather than drawing a zero.
+   *
+   * **The steps are named with `component_id` and the names come from this
+   * manifest's own `planned_route`** (MAR-680). They were `step_id` and
+   * `step_label` — two fields telemetry v1 does not define and nothing reads —
+   * so every step line in the feed rendered as the run-level verb, and the
+   * progress panel this issue added would have photographed eight declared
+   * steps all reading "Not started" beside a finished run. A seed whose fields
+   * no renderer reads produces a picture of the wrong page.
    */
   const startedAt = daysAgo(0);
   const reported = ingestEvents([
@@ -244,8 +291,7 @@ function seed(): void {
       seq: 1,
       ts: startedAt,
       type: "step_started",
-      step_id: "fetch",
-      step_label: "Public feed fetch",
+      component_id: "email_read",
     },
     {
       event_version: 1,
@@ -254,8 +300,7 @@ function seed(): void {
       seq: 2,
       ts: startedAt,
       type: "step_completed",
-      step_id: "fetch",
-      step_label: "Public feed fetch",
+      component_id: "email_read",
       status: "ok",
     },
     {
@@ -265,8 +310,7 @@ function seed(): void {
       seq: 3,
       ts: startedAt,
       type: "step_started",
-      step_id: "write",
-      step_label: "Write the digest",
+      component_id: "schema_validation",
     },
     {
       event_version: 1,
@@ -275,8 +319,26 @@ function seed(): void {
       seq: 4,
       ts: startedAt,
       type: "step_completed",
-      step_id: "write",
-      step_label: "Write the digest",
+      component_id: "schema_validation",
+      status: "ok",
+    },
+    {
+      event_version: 1,
+      agent: AGENT,
+      run_id: "run-scout-0",
+      seq: 5,
+      ts: startedAt,
+      type: "step_started",
+      component_id: "intent_classifier",
+    },
+    {
+      event_version: 1,
+      agent: AGENT,
+      run_id: "run-scout-0",
+      seq: 6,
+      ts: startedAt,
+      type: "step_completed",
+      component_id: "intent_classifier",
       status: "ok",
       model: "openai/gpt-5-mini",
       tokens_in: 1420,
@@ -287,7 +349,7 @@ function seed(): void {
       event_version: 1,
       agent: AGENT,
       run_id: "run-scout-0",
-      seq: 5,
+      seq: 7,
       ts: startedAt,
       type: "run_completed",
       status: "ok",
@@ -561,9 +623,36 @@ async function measure(target: BrowserWindow): Promise<unknown> {
           * heading and the summary of a dated disclosure alike. A query that
           * looked only at open cards would have reported the defect as absent
           * while it was on the screen.
+          *
+          * **Scoped to DASH's own part of the stage** (MAR-668). MAR-646's rule
+          * is about what DASH's components draw beside a rail DASH also draws;
+          * the author's declared region is somebody else's box, and an
+          * \`outputs\` section in it is the author asking to present their whole
+          * history. Counting theirs here would make this number fire on a
+          * manifest rather than on a DASH regression, and the alarm would be
+          * read as the second and ignored. MAR-668's own number is
+          * \`panel_bodies\` below.
           */
-         const stageText = stage === null ? "" : stage.textContent || "";
+         const own = stage === null ? null : stage.cloneNode(true);
+         if (own !== null) {
+           for (const box of own.querySelectorAll(".agent-panel")) box.remove();
+         }
+         const stageText = own === null ? "" : own.textContent || "";
          const repeated = railTitles.filter((title) => stageText.includes(title));
+
+         /*
+          * MAR-668's number: how many artifact **bodies** the author's declared
+          * region draws. Henrik's report was *"Now it renders the output 3
+          * times"* — one card from DASH and two from the manifest — and the
+          * body is the thing that was three times, not the title.
+          *
+          * Zero is the fixed state for an artifact the stage already drew. A
+          * digest the stage did *not* draw still renders in full here, which is
+          * the author keeping their ability to present.
+          */
+         const panelBodies = stage === null
+           ? 0
+           : [...stage.querySelectorAll(".agent-panel .digest-items")].filter(readable).length;
 
          /*
           * MAR-658. The fifth header cell, scoped to the action grid so the
@@ -596,6 +685,12 @@ async function measure(target: BrowserWindow): Promise<unknown> {
             */
            repeated_titles: repeated.length,
            repeated: repeated,
+           /*
+            * MAR-668's number, beside MAR-646's. Zero on the Output stage means
+            * the briefing is drawn once, by DASH, and the author's sections
+            * that resolve the same artifact are pointers to it.
+            */
+           panel_bodies: panelBodies,
            stage_headings: stage === null
              ? []
              : [...stage.querySelectorAll("h2, h3")].filter(readable).map(text),
@@ -705,6 +800,32 @@ async function run(): Promise<void> {
   }
 
   /*
+   * MAR-668's scene: the author's region, which is below the fold.
+   *
+   * `panel_bodies` already counts the thing that matters and the loop above
+   * records it on every frame. What a number cannot answer is whether the card
+   * left behind *reads* as a pointer — a three-line box with a dashed edge, or
+   * an output that failed to load. That distinction has no measurement and is
+   * the whole reason this repository takes screenshots; four DASH defects in a
+   * row have had no overflow to measure.
+   *
+   * Scrolled rather than resized, because the panel's position under DASH's own
+   * card is MAR-641's placement and is the thing being photographed.
+   */
+  nativeTheme.themeSource = "light";
+  await settle(300);
+  await go(window, `/agents/detail?agent=${encodeURIComponent(AGENT)}&stage=output`);
+  await within(
+    "scroll the Output stage to the author's region",
+    5_000,
+    window.webContents.executeJavaScript(
+      `document.querySelector(".agent-panel")?.scrollIntoView({ block: "start" })`,
+    ),
+  );
+  await settle(400);
+  await shoot(window, "agent-output-author-panel");
+
+  /*
    * MAR-664's scene: the About disclosure, closed and then open, on the
    * scout with the richest plan DASH holds. One viewport, one theme — this
    * is not asking whether the frame's layout survives every width the way
@@ -798,6 +919,19 @@ async function run(): Promise<void> {
   const doubled = measurements.filter(
     (entry) => ((entry as Record<string, number>)["repeated_titles"] ?? 0) > 1,
   );
+  /*
+   * MAR-668's own claim, checked the same way and for the same reason: a
+   * screenshot of a page that draws one briefing looks exactly like a
+   * screenshot of a page that draws three, until you hold them up together.
+   *
+   * The author's region may draw a body — an artifact the stage did not show is
+   * theirs to present in full. What it may not do is draw the body of the one
+   * the stage is already showing, and on this seed the stage always shows the
+   * newest, so the fixed number here is zero on every frame.
+   */
+  const restated = measurements.filter(
+    (entry) => ((entry as Record<string, number>)["panel_bodies"] ?? 0) > 0,
+  );
   const overflowed = measurements.filter(
     (entry) => (entry as { page_overflows: boolean }).page_overflows,
   );
@@ -824,6 +958,7 @@ async function run(): Promise<void> {
   console.log(
     `[cockpit] wrote ${String(written.length)} image(s) to ${OUT}; ` +
       `${String(doubled.length)} frame(s) draw the rail's list twice; ` +
+      `${String(restated.length)} frame(s) draw a briefing DASH already drew; ` +
       `${String(overflowed.length)} frame(s) overflowed sideways; ` +
       `${String(missingOverviewAction.length)} frame(s) had no visible way back to Overview`,
   );

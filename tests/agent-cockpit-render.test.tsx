@@ -67,14 +67,12 @@ function header(over: Partial<Parameters<typeof AgentCockpitHeader>[0]> = {}): s
         agent={AGENT}
         avatar="wizard"
         busy={null}
-        canTrigger
         control={READY}
         goal="Reads the news and writes you a digest."
         hasFolder
         live={null}
         onOpenFolder={() => undefined}
         onRefresh={() => undefined}
-        onTriggerRun={() => undefined}
         places={[]}
         plan={[]}
         stage="overview"
@@ -116,7 +114,7 @@ describe("the band that never scrolls", () => {
 
   it("offers the five actions, with Health leading to its stage", () => {
     const html = header();
-    expect(html).toContain(AGENT_COCKPIT_COPY.trigger_run);
+    expect(html).toContain(AGENT_COCKPIT_COPY.run);
     expect(html).toContain(AGENT_COCKPIT_COPY.health);
     expect(html).toContain(AGENT_COCKPIT_COPY.settings);
     expect(html).toContain(AGENT_COCKPIT_COPY.logs);
@@ -143,11 +141,48 @@ describe("the band that never scrolls", () => {
     );
   });
 
-  it("promises to start a run only when there is one to start", () => {
-    expect(header({ canTrigger: true })).toContain(AGENT_COCKPIT_COPY.trigger_run);
-    const idle = header({ canTrigger: false, control: IDLE });
-    expect(idle).toContain(`>${AGENT_COCKPIT_COPY.open_run}<`);
-    expect(idle).not.toContain(AGENT_COCKPIT_COPY.trigger_run);
+  /**
+   * MAR-687. The band navigates and never acts.
+   *
+   * This test used to assert the opposite half — *"promises to start a run only
+   * when there is one to start"* — because the first cell both started a run
+   * and moved the stage, and its label switched between two words to stay
+   * truthful about which. Henrik asked for the verb to go: *"It swapped to the
+   * page and automatically triggered a run… Let's make that \[Run now\] the
+   * actual trigger. So we can reach that page and then start."*
+   *
+   * So the claim is now structural rather than about a label. There is **no
+   * `<button>` in the action grid at all**, in either control state, which is
+   * what makes the Run stage reachable while a run is going — the thing that
+   * was impossible before.
+   */
+  it("navigates to the run stage rather than starting a run", () => {
+    for (const control of [READY, IDLE]) {
+      const html = header({ control });
+      expect(html).toContain(`href="/agents/detail?agent=${AGENT}&stage=run"`);
+      expect(html).toContain(`>${AGENT_COCKPIT_COPY.run}<`);
+      const grid = html.slice(
+        html.indexOf('class="cockpit-action-grid"'),
+        html.indexOf('class="cockpit-overflow"'),
+      );
+      expect(grid.length).toBeGreaterThan(0);
+      expect(grid).not.toContain("<button");
+    }
+  });
+
+  /**
+   * And the emphasis survives, because the Run stage is still where a person
+   * goes to make their agent work — it is just not where the working starts
+   * from any more.
+   */
+  it("keeps the run cell as the primary one, until you are standing on it", () => {
+    expect(header({ stage: "overview" })).toMatch(
+      /<a[^>]*class="cockpit-action is-primary"[^>]*stage=run/,
+    );
+    // `is-active` wins on the stage itself: where you are outranks where to go.
+    const onRun = header({ stage: "run" });
+    expect(onRun).toMatch(/<a[^>]*class="cockpit-action is-active"[^>]*stage=run/);
+    expect(onRun).not.toContain("cockpit-action is-primary");
   });
 
   it("marks the stage you are on for a reader who is not looking at a colour", () => {
@@ -188,8 +223,7 @@ describe("the band that never scrolls", () => {
 
   it("speaks plain language", () => {
     expectPlainLanguage([
-      AGENT_COCKPIT_COPY.trigger_run,
-      AGENT_COCKPIT_COPY.open_run,
+      AGENT_COCKPIT_COPY.run,
       AGENT_COCKPIT_COPY.health,
       AGENT_COCKPIT_COPY.settings,
       AGENT_COCKPIT_COPY.logs,

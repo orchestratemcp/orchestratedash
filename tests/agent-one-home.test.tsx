@@ -27,6 +27,23 @@
  *
  * So the invariant is a count rather than a set difference: **a stage may draw
  * at most one of the outputs the rail indexes.** Two is a list.
+ *
+ * ## The second rendering that arrived from outside DASH (MAR-668)
+ *
+ * That invariant held and the briefing still appeared three times. The rule
+ * above is about what *DASH's own components* draw on a stage, and the extra
+ * copies came from the **manifest**: the author's declared panel sits below the
+ * Output stage's card by MAR-641's deliberate placement, and a well-formed
+ * manifest is encouraged to declare a `report` section bound to the role its
+ * agent produces. Henrik, looking at the real scout: *"Now it renders the
+ * output 3 times 😜"* — the card, a `report` section, and an `outputs` section,
+ * all resolving the same newest digest.
+ *
+ * Two correct rules meeting is still a defect on the screen, so the last
+ * describe below extends the invariant to the one surface it could not see:
+ * **a manifest-declared section may not draw the body of an artifact the stage
+ * has already drawn.** It keeps its label, its place and its title; what it
+ * loses is the second copy.
  */
 
 import { describe, expect, it } from "vitest";
@@ -37,8 +54,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { AgentRail } from "../app/_components/agent-rail";
 import { OutputsPanel } from "../app/_components/outputs";
+import { AgentPanel } from "../app/_components/panel";
 import { AGENT_COCKPIT_COPY } from "../lib/copy/agent-page";
-import { buildArtifactCards } from "../lib/views/artifacts";
+import { PANEL_ALREADY_SHOWN } from "../lib/copy/panel";
+import { buildArtifactCards, resolveOpenCard } from "../lib/views/artifacts";
+import { buildPanelView } from "../lib/views/panel";
 import type { DigestArtifact } from "../lib/contracts";
 import type { RunArtifactRecord } from "../lib/store";
 import type { InboxItem } from "../lib/workspace";
@@ -69,21 +89,43 @@ function digest(over: Partial<DigestArtifact> = {}): DigestArtifact {
   };
 }
 
-/** Four outputs, because two can look like a coincidence and four is a list. */
+/**
+ * Four outputs, because two can look like a coincidence and four is a list.
+ *
+ * Each carries a **different headline**, and that is load-bearing for MAR-668
+ * rather than decoration: the assertions below count how many times one
+ * briefing's body appears on one screen, and four digests sharing a headline
+ * would make every count report the fixture rather than the page.
+ */
 const RECORDS: RunArtifactRecord[] = [
   { artifact: digest(), received_at: "2026-08-13T09:15:08.000Z", stored_bytes: 1200 },
   {
-    artifact: digest({ run_id: "run-b", artifact_id: "digest-b", title: "Monday digest" }),
+    artifact: digest({
+      run_id: "run-b",
+      artifact_id: "digest-b",
+      title: "Monday digest",
+      items: [{ headline: "Fab capacity sold out into next year", summary: "A body." }],
+    }),
     received_at: "2026-08-12T09:15:08.000Z",
     stored_bytes: 1100,
   },
   {
-    artifact: digest({ run_id: "run-c", artifact_id: "digest-c", title: "Sunday digest" }),
+    artifact: digest({
+      run_id: "run-c",
+      artifact_id: "digest-c",
+      title: "Sunday digest",
+      items: [{ headline: "A rival opens a second data centre", summary: "A body." }],
+    }),
     received_at: "2026-08-11T09:15:08.000Z",
     stored_bytes: 1000,
   },
   {
-    artifact: digest({ run_id: "run-d", artifact_id: "digest-d", title: "Saturday digest" }),
+    artifact: digest({
+      run_id: "run-d",
+      artifact_id: "digest-d",
+      title: "Saturday digest",
+      items: [{ headline: "Export rules tighten on memory parts", summary: "A body." }],
+    }),
     received_at: "2026-08-10T09:15:08.000Z",
     stored_bytes: 900,
   },
@@ -233,6 +275,26 @@ describe("the page mounts one outputs list, on one stage", () => {
     expect(output).toContain("<OutputsArea");
   });
 
+  /**
+   * MAR-668's own wiring, checked in the source for `<OutputsArea>`'s reason.
+   *
+   * The rendering assertions below prove the panel yields when it is told what
+   * has been drawn. They cannot prove the page still tells it — a stage that
+   * dropped `alreadyShown` would pass every one of them while putting three
+   * briefings back on the screen.
+   */
+  it("tells the author's panel which output the stage already drew", () => {
+    const output = pageSource.slice(
+      pageSource.indexOf("\n    output: ("),
+      pageSource.indexOf("\n    chat: ("),
+    );
+    expect(output).toContain("<AgentPanel");
+    expect(output).toContain("alreadyShown={drawnOutputs}");
+    /* And that the set is resolved by the same function `OutputsPanel` picks
+       the card with, rather than by a second `findIndex` free to disagree. */
+    expect(pageSource).toContain("resolveOpenCard(view.outputs, openOutput)");
+  });
+
   it("asks that panel for one output rather than a list", () => {
     /*
      * `single` is what replaced MAR-622's `history` here, and dropping it is
@@ -248,5 +310,109 @@ describe("the page mounts one outputs list, on one stage", () => {
     expect(area.length).toBeGreaterThan(0);
     expect(area).toContain("<OutputsPanel");
     expect(area).toMatch(/\n\s+single\n/);
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * MAR-668: the copies that arrive from a manifest
+ * ---------------------------------------------------------------------- */
+
+/** The scout's own shape: a `report` and an `outputs` section on one role. */
+const DECLARED = [
+  { id: "latest_briefing", type: "report", label: "Latest briefing", artifact_role: "digest" },
+  {
+    id: "everything",
+    type: "outputs",
+    label: "Everything it produced",
+    artifact_role: "digest",
+  },
+  {
+    id: "about",
+    type: "note",
+    label: "About this scout",
+    text: "It only runs when you ask it to.",
+  },
+];
+
+/** The body of the briefing, which must be on the page exactly once. */
+const BODY = "Chip makers brace for new tariffs";
+
+function authorPanel(openId: string | null, sections: unknown[] = DECLARED): string {
+  const drawn = resolveOpenCard(CARDS, openId);
+  return renderToStaticMarkup(
+    <AgentPanel
+      alreadyShown={new Set(drawn === null ? [] : [drawn.reference.artifact_id])}
+      view={buildPanelView(
+        { agent: { name: AGENT }, agent_dom: { panel: { panel_version: 1, sections } } },
+        {
+          artifacts: RECORDS,
+          facts: { run_count: 4, last_run_at: null, last_run_status: null },
+        },
+      )}
+    />,
+  );
+}
+
+describe("a manifest cannot draw the briefing a second time", () => {
+  it("puts the body on the stage once and never in the author's region", () => {
+    /*
+     * The whole issue, in two counts. The stage draws the open card in full;
+     * the author's two sections resolve the same artifact and draw a pointer
+     * each. Before MAR-668 this page carried three copies of `BODY`.
+     */
+    const stage = outputStage(null);
+    const panel = authorPanel(null);
+    expect(stage.split(BODY)).toHaveLength(2);
+    expect(panel).not.toContain(BODY);
+  });
+
+  it("keeps the author's label, and says where the briefing went", () => {
+    const panel = authorPanel(null);
+    // Their layout survives. What they lose is a duplicate, not a section.
+    expect(panel).toContain("Latest briefing");
+    expect(panel).toContain("Everything it produced");
+    expect(panel).toContain("Tuesday digest");
+    // DASH's own fixed sentence, naming DASH's own heading.
+    expect(panel).toContain(PANEL_ALREADY_SHOWN);
+  });
+
+  it("still draws the outputs the stage did not", () => {
+    /*
+     * The yield is per artifact and not per section. With Sunday's digest open
+     * on the stage, the author's `outputs` section still has Tuesday, Monday
+     * and Saturday to present in full — the section is not switched off, one
+     * card in it is.
+     */
+    const panel = authorPanel("digest-c");
+    expect(panel).toContain(BODY);
+    expect(panel).not.toContain("A rival opens a second data centre");
+    expect(panel).toContain(PANEL_ALREADY_SHOWN);
+  });
+
+  it("leaves every section that is not an artifact body alone", () => {
+    // ADR 0008's region is narrowed by exactly one thing here. A note, a table
+    // and a metric are the author presenting their work and are untouched.
+    expect(authorPanel(null)).toContain("It only runs when you ask it to.");
+  });
+
+  it("draws everything when nothing above it has been drawn", () => {
+    /*
+     * The run detail page and every test that renders this component alone pass
+     * no set. The default has to be today's behaviour, or a caller that forgets
+     * gets a silently emptied panel rather than a duplicated one.
+     */
+    const alone = renderToStaticMarkup(
+      <AgentPanel
+        view={buildPanelView(
+          { agent: { name: AGENT }, agent_dom: { panel: { panel_version: 1, sections: DECLARED } } },
+          {
+            artifacts: RECORDS,
+            facts: { run_count: 4, last_run_at: null, last_run_status: null },
+          },
+        )}
+      />,
+    );
+    expect(alone).toContain(BODY);
+    expect(alone).not.toContain(PANEL_ALREADY_SHOWN);
   });
 });

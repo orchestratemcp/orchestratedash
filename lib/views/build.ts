@@ -109,6 +109,7 @@ import {
 } from "../store";
 import { describeAgentPlan } from "../agent-plan";
 import { buildAgentFeed, buildAgentTelemetry } from "./agent-feed";
+import { buildRunProgress } from "./run-progress";
 import { buildAgentHealth } from "./agent-health-build";
 import { buildArtifactCards, type ArtifactCardView } from "./artifacts";
 import { buildInputRoles } from "./inputs";
@@ -1418,6 +1419,16 @@ export function workspaceView(
     display_name: storedDisplayName ?? workspaceManifest.agent.display_name,
   });
   const agentEvents = store.events.filter((event) => event.agent === agent);
+  /*
+   * Built once and read twice (MAR-680).
+   *
+   * It was inline on `snapshot:` below, and `buildRunProgress` needs the same
+   * object to tell a paused run from a slow one. Calling `workspaceSnapshot`
+   * a second time would re-derive the whole overview, inbox and audit slice on
+   * every five-second poll, and would let the run the progress panel describes
+   * differ from the one the record below it lists.
+   */
+  const snapshot = stored === null ? null : workspaceSnapshot(workspaceManifest, stored, now);
 
   return {
     found: true,
@@ -1437,7 +1448,7 @@ export function workspaceView(
      * the portrait from anything on this manifest would undo that in one line.
      */
     avatar: readAgentAvatar(agent),
-    snapshot: stored === null ? null : workspaceSnapshot(workspaceManifest, stored, now),
+    snapshot,
     latest_digest: digest,
     latest_digest_grounding:
       digest === null || !isDigestArtifact(digest) ? null : analyzeGrounding(digest),
@@ -1450,6 +1461,25 @@ export function workspaceView(
      */
     feed: buildAgentFeed(agentEvents),
     telemetry: buildAgentTelemetry(agentEvents),
+    /*
+     * MAR-680, MAR-685. The same events again, asked the question the feed
+     * cannot answer: not *what happened* but *where is this now*.
+     *
+     * It is handed three things the feed is not, and each one buys a sentence
+     * DASH could not otherwise say honestly. The **plan** supplies the steps
+     * that have not run yet, which is what makes "Step 2 of 6" sayable. The
+     * **snapshot's runs** are the agent's own state machine, which is the only
+     * record that can tell a paused run from a slow one. And `now` decides the
+     * one question neither can: whether a run that stopped reporting and never
+     * wrote a terminal event is working or over — the exact state the run this
+     * page displayed for five hours was in.
+     */
+    run_progress: buildRunProgress({
+      events: agentEvents,
+      now,
+      plan: manifest.planned_route,
+      runs: snapshot?.runs ?? [],
+    }),
     permissions: declaredPermissions(manifest),
     // MAR-507. From the manifest, like `permissions` directly above and for the
     // same reason: this is what the agent's author declared, and a projection

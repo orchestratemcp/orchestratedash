@@ -152,6 +152,34 @@ export function buildArtifactCards(
 }
 
 /**
+ * Which card a surface with a rail beside it is reading (MAR-646, MAR-668).
+ *
+ * ## Why a two-line function is worth exporting
+ *
+ * `OutputsPanel` has resolved this inline since MAR-646, and MAR-668 gave the
+ * page a reason to know the same answer: the author's declared panel sits
+ * directly under the Output stage's card, and it must not draw the body of the
+ * artifact that card is already drawing. Working that out on the page with a
+ * second `findIndex` would be two functions deciding what "the open output" is
+ * — and the moment they disagree, either the briefing renders twice again or a
+ * card DASH did not draw goes silently missing from the author's box.
+ *
+ * The fallback is the newest and not nothing: a link that has outlived its
+ * artifact should land on the page it named rather than on an empty one.
+ * Null only when there are no cards at all.
+ */
+export function resolveOpenCard(
+  cards: readonly ArtifactCardView[],
+  openId: string | null | undefined,
+): ArtifactCardView | null {
+  const named =
+    openId === undefined || openId === null
+      ? -1
+      : cards.findIndex((entry) => entry.reference.artifact_id === openId);
+  return (named === -1 ? cards[0] : cards[named]) ?? null;
+}
+
+/**
  * Whether the thing itself can be shown right now.
  *
  * Two conditions and they are different questions: DASH has to know the shape

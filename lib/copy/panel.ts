@@ -252,6 +252,48 @@ export interface PanelEmptyState {
 export const PANEL_EMPTY_DISCLOSURE = "DASH explains this empty section";
 
 /**
+ * What the author's section says about an output DASH has already drawn in
+ * full on the same stage (MAR-668).
+ *
+ * ## The duplication two correct rules produced
+ *
+ * MAR-641 put the author's panel *below* DASH's own record of the same
+ * artifacts deliberately — the author gets to present their work — and ADR 0008
+ * protects that region from DASH adding controls to it. A well-formed manifest
+ * is encouraged to declare a `report` section bound to the role its agent
+ * produces. Both of those are right, and together they draw the same briefing
+ * twice. On the competitor scout it was three times, because an `outputs`
+ * section resolves the same newest artifact a third time: *"Now it renders the
+ * output 3 times 😜"*, and Henrik's want is the narrow one — *"I would only
+ * want the curated (by AI) newsletter style brief we ask for."*
+ *
+ * ## Which surface yields, and why it is this one
+ *
+ * MAR-668 offered three answers. DASH's card yielding was tempting and costs
+ * four things the author's region does not have and may not have: the grounding
+ * verdict, Save a copy, the developer reference and the link to the producing
+ * run. Deleting DASH's own record of an artifact to resolve a duplication would
+ * take away the half a person needs in order to *check* the thing they are
+ * reading.
+ *
+ * So the author's section yields the **body** and keeps everything else: its
+ * own label, its position, its role and title, and — for anything DASH is not
+ * already drawing — the whole card exactly as before. A `metrics`, `table` or
+ * `note` section is untouched in every case. What a reader loses is a second
+ * copy of a briefing they have just scrolled past.
+ *
+ * ## Why this sentence may sit inside the author's region
+ *
+ * It is DASH's, in DASH's own words, naming DASH's own heading. ADR 0008
+ * amendment 1 already admits `PANEL_EMPTY_DISCLOSURE` on exactly that footing —
+ * a fixed string no manifest can replace, saying something about what DASH is
+ * doing rather than about the agent. This is the same kind of thing, and like
+ * that one it is read-only: it submits no command and navigates nowhere.
+ */
+export const PANEL_ALREADY_SHOWN =
+  "Shown in full at the top of this page, under Generated assets.";
+
+/**
  * What a `report` or an `outputs` section says when nothing has arrived.
  *
  * Said about the agent, never about the person reading it: an agent that has not

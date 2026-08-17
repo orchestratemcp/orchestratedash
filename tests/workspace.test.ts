@@ -6,9 +6,11 @@ import {
   availableControls,
   buildOverview,
   buildWorkInbox,
+  hasActiveRun,
+  isRunInFlight,
   retryIsSafe,
 } from "../lib/workspace";
-import type { AgentDomState, WorkspaceManifest } from "../lib/workspace";
+import type { AgentDomState, RunStatus, WorkspaceManifest } from "../lib/workspace";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -27,6 +29,57 @@ const BEFORE_EXPIRY = new Date("2026-07-16T10:00:00Z");
 const AFTER_EXPIRY = new Date("2026-07-18T10:00:00Z");
 
 const RUN_ID = "run-synthetic-20260716-01";
+
+/**
+ * Two questions that sound like one (MAR-680).
+ *
+ * `hasActiveRun` asks *is this agent doing something*, and it is right to say
+ * no about a run parked at an approval — a fleet card must not call an agent
+ * overdue while it works, and an agent waiting on a human is not working.
+ *
+ * `isRunInFlight` asks *could this screen change without anybody pressing
+ * anything here*, and for the same run the answer is yes: the approval arrives
+ * in a separate window and the runner carries on the moment it is answered. The
+ * agent page followed only `running`, so it froze at the instant the popup
+ * opened — Henrik's *"it felt like a hang rather than a step reaching a gate."*
+ *
+ * They must not be collapsed into one predicate, and this is the file that says
+ * so out loud.
+ */
+describe("what counts as a run in flight", () => {
+  function withRun(status: RunStatus): AgentDomState {
+    return { ...state, runs: [{ id: RUN_ID, status }] };
+  }
+
+  it("follows a run that is waiting on a person, without calling the agent busy", () => {
+    for (const status of ["waiting_for_approval", "waiting_for_choice"] as const) {
+      expect(isRunInFlight(status), status).toBe(true);
+      expect(hasActiveRun(withRun(status)), status).toBe(false);
+    }
+  });
+
+  it("follows the two statuses both predicates agree on", () => {
+    for (const status of ["running", "queued"] as const) {
+      expect(isRunInFlight(status), status).toBe(true);
+      expect(hasActiveRun(withRun(status)), status).toBe(true);
+    }
+  });
+
+  it("stops following a run nothing will move on its own", () => {
+    // `paused` is the interesting one: nothing about it changes until somebody
+    // resumes it, so polling it every five seconds buys no information at all.
+    for (const status of ["paused", "completed", "failed", "cancelled"] as const) {
+      expect(isRunInFlight(status), status).toBe(false);
+    }
+  });
+
+  it("stops following a status it has never heard of", () => {
+    // A status from a newer agent crosses IPC as a string. Falling through to
+    // false means the page stops following rather than following forever, which
+    // is the safer way for this to be wrong.
+    expect(isRunInFlight("some_future_status")).toBe(false);
+  });
+});
 
 describe("buildOverview", () => {
   const overview = buildOverview(manifest, state, BEFORE_EXPIRY);
