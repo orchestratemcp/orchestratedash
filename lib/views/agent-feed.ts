@@ -7,13 +7,23 @@
  * the run detail page already holds — telemetry v1, per step — and word
  * them here rather than in the renderer.
  *
- * ## What is selected
+ * ## What is selected, and why this module no longer decides
  *
- * A running run, if one is in flight; otherwise the latest run by start
- * time. The feed follows what the agent is doing *now*, and when it is
- * doing nothing it shows the last thing it did. An agent that has never
- * posted an event gets the empty arm, which is the state every new user
- * meets.
+ * The newest run by start time, chosen by `selectCurrentRun` in
+ * `lib/views/run-progress.ts` and imported rather than decided here.
+ *
+ * It used to be decided here, and it was decided wrongly: *a running run, if
+ * one is in flight; otherwise the latest run by start time* — with "in flight"
+ * meaning **no `run_completed` and no `run_failed` event**. So one run that
+ * died without writing a terminal event outranked every later run forever.
+ * MAR-685 caught it from `broker_audit`: this feed drew a 15:10 refused run's
+ * step log beside the 18:33 run's artifact, on one screen, five hours later.
+ *
+ * The selection is shared rather than corrected in place because the step
+ * list, the meters and this feed all draw *the current run*, and three
+ * functions answering that question is how they come to answer it differently.
+ * An agent that has never posted an event still gets the empty arm, which is
+ * the state every new user meets.
  *
  * ## MAR-547, applied to numbers
  *
@@ -32,6 +42,7 @@ import {
 } from "../copy/agent-page";
 import { describeAmount } from "../copy/ask";
 import { plainClock } from "../copy/when";
+import { selectCurrentRun } from "./run-progress";
 
 export type AgentFeedLineTone = "ok" | "error" | "live" | "wait" | "neutral";
 
@@ -84,17 +95,24 @@ export interface AgentTelemetryView {
  * builder, and silently dropping the foreign ones here would hide it.
  */
 export function buildAgentFeed(events: readonly RunEvent[]): AgentFeedView {
-  const selected = selectFeedRun(events);
+  const selected = selectCurrentRun(events);
   if (selected === null) {
     return { kind: "empty" };
   }
+  /*
+   * `live` here means *this run has not written its last line yet*, which is a
+   * claim about the log rather than about the agent. Whether the run is
+   * actually still going is `buildRunProgress`'s question and it needs the
+   * snapshot and the clock to answer it honestly — see `resolvePhase`. The feed
+   * uses the weaker reading on purpose: it decides a tone on the tail line and
+   * an `aria-live` region, and both are right for a log that may still grow.
+   */
+  const live = !selected.ended_in_events;
   const lastSeq = selected.events[selected.events.length - 1]?.seq;
   return {
-    kind: selected.live ? "live" : "past",
+    kind: live ? "live" : "past",
     run_id: selected.run_id,
-    lines: selected.events.map((event) =>
-      toFeedLine(event, selected.live && event.seq === lastSeq),
-    ),
+    lines: selected.events.map((event) => toFeedLine(event, live && event.seq === lastSeq)),
   };
 }
 
@@ -106,56 +124,14 @@ export function buildAgentFeed(events: readonly RunEvent[]): AgentFeedView {
  * as "draw nothing", not "draw zeros".
  */
 export function buildAgentTelemetry(events: readonly RunEvent[]): AgentTelemetryView {
-  const selected = selectFeedRun(events);
+  const selected = selectCurrentRun(events);
   if (selected === null) {
     return { meters: [], sparkline: null };
   }
   return {
-    meters: metersFor(selected.events, selected.live),
+    meters: metersFor(selected.events, !selected.ended_in_events),
     sparkline: sparklineFor(selected.events),
   };
-}
-
-interface SelectedRun {
-  run_id: string;
-  events: RunEvent[];
-  live: boolean;
-}
-
-function selectFeedRun(events: readonly RunEvent[]): SelectedRun | null {
-  const grouped = new Map<string, RunEvent[]>();
-  for (const event of events) {
-    const bucket = grouped.get(event.run_id) ?? [];
-    bucket.push(event);
-    grouped.set(event.run_id, bucket);
-  }
-  let chosen: SelectedRun | null = null;
-  let chosenStarted = "";
-  for (const [runId, bucket] of grouped) {
-    const ordered = [...bucket].sort((a, b) => a.seq - b.seq);
-    const types = new Set(ordered.map((event) => event.type));
-    const live = !types.has("run_completed") && !types.has("run_failed");
-    const started = ordered.reduce(
-      (earliest, event) => (event.ts < earliest ? event.ts : earliest),
-      ordered[0]?.ts ?? "",
-    );
-    const candidate: SelectedRun = { run_id: runId, events: ordered, live };
-    if (chosen === null) {
-      chosen = candidate;
-      chosenStarted = started;
-      continue;
-    }
-    if (candidate.live && !chosen.live) {
-      chosen = candidate;
-      chosenStarted = started;
-      continue;
-    }
-    if (candidate.live === chosen.live && started > chosenStarted) {
-      chosen = candidate;
-      chosenStarted = started;
-    }
-  }
-  return chosen;
 }
 
 function toFeedLine(event: RunEvent, tailOfLiveRun: boolean): AgentFeedLine {

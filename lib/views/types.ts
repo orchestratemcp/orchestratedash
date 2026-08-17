@@ -33,6 +33,7 @@ import type { RunOriginNotice } from "../copy/where-it-ran";
 import type { GlanceChip } from "../copy/glance";
 import type { AiKeyFlow } from "../ai/connection-view";
 import type { AgentFeedView, AgentTelemetryView } from "./agent-feed";
+import type { RunProgressView } from "./run-progress";
 import type { ArtifactCardView } from "./artifacts";
 import type { InputRoleView } from "./inputs";
 import type { PanelView } from "./panel";
@@ -1640,6 +1641,20 @@ export type WorkspaceView =
        * nothing at all: a zero would claim a fact the store does not have.
        */
       telemetry: AgentTelemetryView;
+      /**
+       * Where the current run has got to, and whether it is still going
+       * (MAR-680, MAR-685).
+       *
+       * The same run `feed` and `telemetry` are projected from — one selection,
+       * shared, because a step list drawn from a different run than the log
+       * beside it is the defect MAR-685 was filed on and it went unnoticed for
+       * five hours on a real screen.
+       *
+       * Unlike those two it also reads the agent's own snapshot and DASH's
+       * clock, which is what lets it tell "working" from "stopped and never
+       * said so". `{ kind: "none" }` for an agent that has never run.
+       */
+      run_progress: RunProgressView;
       /** What the manifest declares it may do without an account. */
       permissions: PermissionGrant[];
       /**

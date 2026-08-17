@@ -41,8 +41,21 @@ export const AGENT_HEADER_COPY = {
    * beside a name reads as a second name.
    */
   id_label: "ID",
-  /** Announced while DASH is following a run. `{time}` is a clock time. */
-  following: (time: string): string => `Following this run. Updated ${time}.`,
+  /**
+   * Announced while DASH is re-reading this agent. `{time}` is a clock time.
+   *
+   * It read *"Following this run"* until MAR-680 widened what DASH follows.
+   * The line is driven by whether anything about the agent could change on its
+   * own — a queued run, a gate waiting on a person, a press that has not
+   * produced a run yet — and on an agent with an older run parked at an
+   * approval it appeared beside a Run stage describing a *different*, finished
+   * run. Two sentences about two runs, both true, reading as a contradiction.
+   *
+   * So it names what DASH is doing rather than what the agent is doing. Which
+   * run is on the stage, and what state it is in, is
+   * `AGENT_RUN_PROGRESS_COPY`'s to say, once, where the run is.
+   */
+  following: (time: string): string => `Watching for changes. Updated ${time}.`,
 } as const;
 
 /**
@@ -406,6 +419,138 @@ export const AGENT_FEED_COPY = {
 } as const;
 
 /**
+ * Where a run has got to, said in words (MAR-680).
+ *
+ * ## The three things Henrik could not find out
+ *
+ * *"The only information we get is that it has started a new run. Not if it
+ * finished, or if we can leave the page, or if we have to stand still here for
+ * it not to break."* Three questions, and the page answered none of them: the
+ * banner said a run had started, `AGENT_FEED_COPY` listed the events that had
+ * happened, and nothing anywhere said which step was happening **now**, whether
+ * the run was **over**, or whether walking away would **break** it.
+ *
+ * So there is a word per phase and a sentence per phase, and both come from
+ * here rather than from the component — `lib/copy/`'s standing rule, and it
+ * earns its keep on this surface in particular: seven phases each needing two
+ * strings is exactly the population that ends up half-written inline.
+ *
+ * ## Why the safe-to-leave sentence is about the page and not about DASH
+ *
+ * A run happens in the runner's own process, and the renderer only reads it. So
+ * *"you can leave this page"* is true by construction — there is no navigation
+ * in DASH that could interrupt a run — and it is the question that was actually
+ * asked. **Closing DASH is a different question with a different answer**, it
+ * varies per agent (`WorkspaceOverview.continues_when_dash_closed`), and the
+ * Logs stage's State facts already carry it. Saying both here would mean
+ * composing a claim about the second from a field this sentence does not read,
+ * which is how a reassurance becomes a false one.
+ */
+export const AGENT_RUN_PROGRESS_COPY = {
+  heading: "Where this run is",
+  /*
+   * There is no empty state in this object, and that is deliberate.
+   *
+   * `AGENT_FEED_COPY.empty_headline` already says "Nothing has run yet" under
+   * the log on the same stage. This panel renders nothing at all for an agent
+   * with no run — see `RunProgress` — so the stage has one empty state rather
+   * than two saying the same thing a few hundred pixels apart, which is the
+   * shape MAR-646 spent a packet removing from this page.
+   */
+  step_label: "Step",
+  /** On the row that is happening now, for a reader who cannot see the pips. */
+  step_running: "Happening now",
+  /** On a row the plan declares and the run has not reached. */
+  step_todo: "Not started",
+  step_done: "Done",
+  step_failed: "Did not work",
+  step_skipped: "Skipped",
+  step_waiting: "Waiting for you",
+  /**
+   * A step that started and never reported an outcome, on a run that is over.
+   *
+   * Neither "Not started", which would be a flat untruth about a step that
+   * visibly began, nor "Did not work", which is a verdict DASH did not observe.
+   * See `markCurrent` in `lib/views/run-progress.ts`.
+   */
+  step_unfinished: "Did not finish",
+  /**
+   * The answer to *"can we leave the page?"*, said only while a run is going.
+   *
+   * See this module's note above for why the claim stops at the page.
+   */
+  safe_to_leave:
+    "You can leave this page. The run keeps going, and what it makes will be here when you come back.",
+  /** Under a finished run, when the agent produced something to read. */
+  open_output: "See what it made",
+  phase: {
+    running: {
+      headline: "Working",
+      detail: "The agent is running its plan now.",
+    },
+    waiting: {
+      headline: "Waiting for you",
+      detail: "It has asked you something and cannot go on until you answer.",
+    },
+    paused: {
+      headline: "Paused",
+      detail: "It will not go on until you resume it.",
+    },
+    finished: {
+      headline: "Finished",
+      detail: "The run is over and nothing is running now.",
+    },
+    failed: {
+      headline: "Stopped with a problem",
+      detail: "The run ended early. The steps below say how far it got.",
+    },
+    stopped: {
+      headline: "Cancelled",
+      detail: "Somebody stopped this run before it finished.",
+    },
+    /**
+     * The state MAR-685's stale run was in, worded as the absence it is.
+     *
+     * DASH observed a silence, not a failure. "Stopped with a problem" would be
+     * a verdict on evidence DASH has not got, and the surface said "working"
+     * about this exact run for five hours — which is the other wrong answer.
+     */
+    unfinished: {
+      headline: "Stopped without finishing",
+      detail:
+        "It stopped reporting and never said how it ended. Running it again is the way to find out whether it works now.",
+    },
+  },
+} as const;
+
+/**
+ * How far through the run this is, in the only two forms the record supports.
+ *
+ * "Step 3 of 6" needs a declared plan, and most agents have one — the manifest's
+ * `planned_route` is what supplies the steps that have not happened yet. An
+ * agent that declares none still gets a count of what it actually did, because
+ * an agent brought from another toolchain is not one DASH should go quiet
+ * about.
+ *
+ * The two tenses matter more than they look. While a run is going, the number a
+ * person wants is *which step is happening*, which is one past the ones that are
+ * done; once it is over, the number they want is *how many ran*. Using one form
+ * for both would either overcount a finished run by one or describe a working
+ * agent as being on the step it has already left.
+ */
+export function describeRunPosition(done: number, total: number, ongoing: boolean): string {
+  if (total === 0) {
+    return ongoing ? "Starting" : "No steps were reported";
+  }
+  if (!ongoing) {
+    return done === total
+      ? `All ${String(total)} steps ran`
+      : `${String(done)} of ${String(total)} steps ran`;
+  }
+  return `Step ${String(Math.min(done + 1, total))} of ${String(total)}`;
+}
+
+/**
  * Performance numbers, only where a record backs them (MAR-635, MAR-547).
  *
  * Latency is a difference of two recorded timestamps. Tokens and cost are
@@ -492,24 +637,39 @@ export function describeFeedDuration(fromIso: string, untilIso: string): string 
  * The wireframe's grid is *Trigger run · Health check · Settings · Logs*.
  * Health joined only when MAR-645 supplied a real stage behind the cell; the
  * two-column grid now reads as the intended square.
+ *
+ * MAR-687 took the verb out of the first cell and left the destination. Every
+ * cell in the grid is now a link to a stage of this agent and nothing in the
+ * band acts — see `run` below for why that is a fix rather than a loss.
  */
 export const AGENT_COCKPIT_COPY = {
   /** The accessible name of the frame's action grid. */
   actions_label: "Agent actions",
   /**
-   * The first cell, in its two truthful states.
+   * The first cell, which is now one word and one destination (MAR-687).
    *
-   * `trigger_run` starts a run **and** moves the stage to it, which is what the
-   * wireframe means by a button that both acts and switches. `open_run` is what
-   * the same cell says when there is nothing to start — a run already in
-   * flight, an agent that has reported no state, a window that cannot act. It
-   * names a destination rather than promising an action, because the Run stage
-   * carries `AGENT_CONTROL_COPY.idle`'s sentence for each of those and a button
-   * reading "Trigger run" that triggers nothing is the exact defect MAR-609 was
-   * filed on.
+   * ## Why the pair of labels went, and the press with them
+   *
+   * This cell read `trigger_run` — *Trigger run* — and it both started a run and
+   * moved the stage to it, which is what MAR-641's wireframe meant by a button
+   * that acts and switches. Henrik, on the 2026-08-17 walk: *"Clicked Trigger
+   * run in the header. It swapped to the page and automatically triggered a run.
+   * There is a button on that page. Let's make that the actual trigger. So we
+   * can reach that page and then start."*
+   *
+   * Two triggers for one act is the same duplication `buildAgentControl` was
+   * built to end, and the header's copy was the worse of the two: it fires
+   * before the person has read anything, and it made the Run stage unreachable
+   * without starting a run — so the one surface that shows what a run is doing
+   * could not be revisited while one was going. The `open_run` half of the old
+   * pair already existed for exactly the states where the cell was a destination
+   * only; MAR-687 makes every state that one.
+   *
+   * So the cell names the stage, in the company of four other cells that name
+   * stages, and `AGENT_CONTROL_COPY.run_now` on the far side of the press is the
+   * only thing in DASH that starts a run.
    */
-  trigger_run: "Trigger run",
-  open_run: "Run",
+  run: "Run",
   health: "Health check",
   settings: "Settings",
   logs: "Logs",
@@ -658,7 +818,10 @@ export const AGENT_COCKPIT_COPY = {
     },
     first_run: {
       label: "It has run once",
-      detail: "Press Trigger run. It runs only when you ask.",
+      /* MAR-687. The header cell no longer starts anything, so the sentence
+         that told a first-time reader to press it would send them somewhere
+         that does nothing on arrival. Two presses, named in order. */
+      detail: "Open Run and press Run now. It runs only when you ask.",
       action: "Go to Run",
     },
   },
