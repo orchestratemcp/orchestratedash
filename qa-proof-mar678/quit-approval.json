@@ -1,0 +1,17 @@
+{
+  "scene": "approval",
+  "runner": "stop",
+  "quit": true,
+  "survivors": [],
+  "stages": [
+    "+2760ms app window ready (\"OrchestrateDASH\")",
+    "+4856ms approval shown (\"OrchestrateDASH\", \"OrchestrateDASH\")",
+    "+5879ms approval resolved (\"OrchestrateDASH\" (hidden), \"OrchestrateDASH\")",
+    "+6203ms runner stopped: yes",
+    "+6203ms closing the app window (\"OrchestrateDASH\" (hidden), \"OrchestrateDASH\")",
+    "+6263ms window-all-closed (no windows)",
+    "+6264ms before-quit",
+    "+6267ms will-quit",
+    "+6271ms quit"
+  ]
+}

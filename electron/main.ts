@@ -153,6 +153,7 @@ import {
   serveRenderer,
 } from "./renderer-host";
 import { RENDERER_ENTRY_URL, RENDERER_ORIGIN } from "../lib/shell/renderer-scheme";
+import { describeShutdown, runShutdownSteps } from "../lib/shell/shutdown";
 import {
   findHostByConnection,
   forgetHost,
@@ -587,6 +588,67 @@ function changeUiScale(direction: 1 | -1): UiScale {
   return applyUiScale(UI_SCALES[Math.max(0, Math.min(UI_SCALES.length - 1, index + direction))]);
 }
 
+/**
+ * How long DASH gets to finish disappearing after its window is gone (MAR-678).
+ *
+ * Generous by two orders of magnitude on purpose. A healthy quit measures about
+ * thirteen milliseconds end to end — `window-all-closed`, the whole of
+ * `before-quit`, the checkpoint in `will-quit` — so anything still running after
+ * five seconds is not slow, it is stuck.
+ */
+const QUIT_DEADLINE_MS = 5_000;
+
+let quitDeadline: NodeJS.Timeout | null = null;
+
+/**
+ * The backstop for a quit that does not happen (MAR-678).
+ *
+ * The specific reason it did not happen is fixed in `createWindow`'s `closed`
+ * handler below, and the steps the quit runs through can no longer cancel it by
+ * throwing. This exists for the *next* one.
+ * The failure mode is uniquely expensive: DASH holds the store, `AGENTS.md`
+ * forbids killing it, so a shell that will not exit costs a Windows restart and
+ * takes every "close DASH and open it again" recovery path down with it —
+ * including the one the vault banner recommends.
+ *
+ * Against that, exiting a few seconds after the user asked DASH to close costs
+ * nothing they did not already ask for. The store is in WAL mode and every
+ * commit is `synchronous = FULL`, so nothing acknowledged is at risk; the
+ * checkpoint is attempted here anyway, because the point of `will-quit` is that
+ * the file left behind needs no recovery.
+ *
+ * It says which windows were still open when it fired. A future window that
+ * makes this necessary again should be named by the log rather than found by
+ * enumerating HWNDs of a process nobody can kill.
+ */
+function watchForAQuitThatNeverHappens(): void {
+  // macOS keeps the app running with no windows by design — see
+  // `window-all-closed`, which does not quit there either.
+  if (process.platform === "darwin" || quitDeadline !== null) {
+    return;
+  }
+  quitDeadline = setTimeout(() => {
+    quitDeadline = null;
+    if (appWindow() !== null) {
+      // DASH has a window again. Nothing to rescue.
+      return;
+    }
+    const open = BrowserWindow.getAllWindows();
+    console.error(
+      `[dash-shell] the quit did not complete within ${String(QUIT_DEADLINE_MS)}ms — exiting. ` +
+        `Still open: ${
+          open.length === 0
+            ? "no windows"
+            : open.map((each) => JSON.stringify(each.getTitle())).join(", ")
+        }`,
+    );
+    runShutdownSteps([{ name: "store", run: closeDb }], (line) => {
+      console.warn(line);
+    });
+    app.exit(0);
+  }, QUIT_DEADLINE_MS);
+}
+
 export function createWindow(): BrowserWindow {
   // Re-assert the posture at the point of use. `SHELL_WEB_PREFERENCES` is
   // frozen, so this can only fail if someone edits the constant — which is
@@ -686,6 +748,25 @@ export function createWindow(): BrowserWindow {
   window.on("closed", () => {
     nativeTheme.off("updated", followTheme);
     clearAppWindow(window);
+    /*
+     * MAR-678, and this line is the whole bug.
+     *
+     * Nothing of DASH's may outlive the window the user just closed, because
+     * `window-all-closed` counts *open* windows and a hidden window is an open
+     * one. The approval popup is hidden rather than closed whenever there is
+     * nothing pending — by design, so that reshowing it costs nothing — so any
+     * session that ever had one live approval was left holding a window Electron
+     * was still waiting on. `window-all-closed` never fired, `app.quit()` was
+     * never called, and the entire quit chain below never ran: DASH stayed alive
+     * with no window, holding the store, until Windows was restarted. That
+     * happened twice on 2026-08-17 and cost two restarts.
+     *
+     * `electron/prove-quit.ts` reproduces it in both directions — its `plain`
+     * scene passed throughout, which is what makes the `approval` scene mean
+     * something.
+     */
+    closeApprovalPopup();
+    watchForAQuitThatNeverHappens();
   });
 
   setAppWindow(window);
@@ -2957,35 +3038,77 @@ if (typeof app !== "undefined") {
   });
 
   app.on("before-quit", () => {
-    // Stop polling a runner we are about to stop talking to. The runner itself
-    // is deliberately left alone.
-    stopPolling?.();
-    stopPolling = null;
-    // The broker stops with DASH, which is the honest behaviour rather than a
-    // limitation: a process that could reach a user's mailbox after they closed
-    // the app they granted it through is exactly what ADR 0002 is about.
-    stopBroker?.();
-    stopBroker = null;
-    // MAR-628. The loop stops, and then every open session is destroyed — the
-    // second half is not optional and is not the same as the first. A quit that
-    // stopped answering requests but left a `WebContentsView` alive would be a
-    // browser outliving the supervision surface that justified it, which is the
-    // one shape ADR 0019 does not permit. This runs before the window is torn
-    // down, so the views are removed from a window that still exists.
-    stopBrowser?.();
-    stopBrowser = null;
-    void hostBrowserController().revokeEverything("run_ended");
-    // MAR-467. One last heartbeat on the way out, so a clean quit starts the
-    // next launch's closed window at the moment DASH actually stopped rather
-    // than up to thirty seconds before it.
-    stopHeartbeat?.();
-    stopHeartbeat = null;
-    writeDashLastAlive(new Date().toISOString());
-    // MAR-421. Stop watching before the popup window it controls is torn
-    // down, so a tick cannot land against a window that is already gone.
-    stopApprovalNotifier?.();
-    stopApprovalNotifier = null;
-    closeApprovalPopup();
+    /*
+     * MAR-678. One boundary per step, and the order below is the order they run
+     * in — see `lib/shell/shutdown.ts` for why this is not written as plain
+     * statements any more. Short version: this is an event listener, a throw
+     * here comes back out of `app.quit()`, and a quit that throws is a DASH the
+     * user cannot close without restarting Windows.
+     */
+    const outcome = runShutdownSteps(
+      [
+        {
+          // Stop polling a runner we are about to stop talking to. The runner
+          // itself is deliberately left alone.
+          name: "polling",
+          run: () => {
+            stopPolling?.();
+            stopPolling = null;
+          },
+        },
+        {
+          // The broker stops with DASH, which is the honest behaviour rather
+          // than a limitation: a process that could reach a user's mailbox after
+          // they closed the app they granted it through is exactly what ADR 0002
+          // is about.
+          name: "broker",
+          run: () => {
+            stopBroker?.();
+            stopBroker = null;
+          },
+        },
+        {
+          // MAR-628. The loop stops, and then every open session is destroyed —
+          // the second half is not optional and is not the same as the first. A
+          // quit that stopped answering requests but left a `WebContentsView`
+          // alive would be a browser outliving the supervision surface that
+          // justified it, which is the one shape ADR 0019 does not permit. This
+          // runs before the window is torn down, so the views are removed from a
+          // window that still exists.
+          name: "browser",
+          run: () => {
+            stopBrowser?.();
+            stopBrowser = null;
+            void hostBrowserController().revokeEverything("run_ended");
+          },
+        },
+        {
+          // MAR-467. One last heartbeat on the way out, so a clean quit starts
+          // the next launch's closed window at the moment DASH actually stopped
+          // rather than up to thirty seconds before it.
+          name: "heartbeat",
+          run: () => {
+            stopHeartbeat?.();
+            stopHeartbeat = null;
+            writeDashLastAlive(new Date().toISOString());
+          },
+        },
+        {
+          // MAR-421. Stop watching before the popup window it controls is torn
+          // down, so a tick cannot land against a window that is already gone.
+          name: "approvals",
+          run: () => {
+            stopApprovalNotifier?.();
+            stopApprovalNotifier = null;
+            closeApprovalPopup();
+          },
+        },
+      ],
+      (line) => {
+        console.warn(line);
+      },
+    );
+    console.warn(`[dash-shell] quitting: ${describeShutdown(outcome)}`);
   });
 
   app.on("will-quit", () => {
@@ -3007,7 +3130,16 @@ if (typeof app !== "undefined") {
      * `will-quit` rather than `before-quit` because `before-quit` can be
      * cancelled, and closing the handle out from under a quit that then does not
      * happen would leave the app running with a store it has to reopen.
+     *
+     * MAR-678. Inside a step for the same reason as everything in `before-quit`,
+     * and this is the one where it matters most: a store another process has
+     * locked is a plausible throw, and `will-quit` is the last event before the
+     * process ends. An exception here would trade one unwritten checkpoint for a
+     * DASH that never exits at all.
      */
-    closeDb();
+    const outcome = runShutdownSteps([{ name: "store", run: closeDb }], (line) => {
+      console.warn(line);
+    });
+    console.warn(`[dash-shell] quit: ${describeShutdown(outcome)}`);
   });
 }

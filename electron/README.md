@@ -15,6 +15,7 @@ that had never executed.
 | `ssh-host.ts` | The key DASH holds for a host, and the `ssh` it holds it for (MAR-484). |
 | `smoke.ts` | The MAR-424 proof harness. Not part of the shipped shell. |
 | `smoke-identity.ts` | Gives the harness the app name a real launch would have. |
+| `prove-quit.ts` | Closes the window and reports whether the process actually ended (MAR-678). The one path `smoke.ts` cannot walk: it finishes with `app.exit`, which skips the quit chain. |
 
 ## Running it
 
