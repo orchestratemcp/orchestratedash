@@ -1,7 +1,9 @@
 # ADR 0025: A brief is a document bound to its evidence by index, and the list folds without disappearing
 
-**Status:** proposed — Henrik rules on this before any build session starts.
-Nothing here is built and nothing here is a schema edit.
+**Status:** accepted in part — Henrik ruled on decisions 2, 4 and 5 on
+2026-08-18 and deferred 1 and 3 ("I trust you here"). Decision 4 was **changed
+by his ruling**: the export is a PDF, not a Markdown file, and it opens after it
+is saved. Nothing here is built and nothing here is a schema edit.
 **Date:** 2026-08-18
 **Issue:** MAR-674 (DASH — the brief is the product). Depends on nothing;
 unblocks MAR-691 (`deep_dive.text` is dropped), and MAR-670 / MAR-671 / MAR-667
@@ -327,12 +329,18 @@ untouched: no control, no button, no affordance in that region.
 
 ---
 
-## Decision 4 — export is a fifth workspace command that renders Markdown in main
+## Decision 4 — export is a PDF, printed from a route in DASH's own renderer, and it opens after it is saved
 
-> **`workspace.exportBrief`, in the `WORKSPACE_ACTIONS` family, rendering
-> Markdown from the artifact DASH already holds, through the same
-> `dialog.showSaveDialog` in main. One format. No path crosses the IPC boundary
-> in either direction.**
+> **`workspace.exportBrief`, in the `WORKSPACE_ACTIONS` family. Main opens an
+> offscreen window on a print-only route in DASH's own static export, calls
+> `webContents.printToPDF`, saves through the same `dialog.showSaveDialog`, and
+> then hands the file to the operating system. One format. No path crosses the
+> IPC boundary in either direction.**
+
+**Ruled by Henrik on 2026-08-18**, against this ADR's first draft, which
+proposed a Markdown file. His reasoning — *"text files should download as
+html->PDF"* — is right, and it makes the design **smaller** rather than larger.
+The draft is corrected here rather than defended.
 
 ### What is actually walled, checked rather than assumed
 
@@ -348,55 +356,94 @@ untouched: no control, no button, no affordance in that region.
   `lib/shell/ipc.ts:3111-3125` states that a path never crosses this boundary in
   either direction, and a blob `<a download>` would hand Electron's own download
   machinery a destination nobody audited.
-- **The proven mechanism already exists and does not fit.** `workspaceDownload`
-  (`electron/main.ts:1884`) asks first and fetches second, raises the OS dialog
-  in main, writes the bytes there and returns a sentence and a folder — never a
-  path, never the bytes. But it fetches from the **runner**
-  (`GET /artifacts/{id}/download`), so what it exports is a file the agent wrote.
-  **A brief composed into a stored artifact has no bytes at the runner.**
+- **The proven save mechanism already exists and its plumbing does not fit.**
+  `workspaceDownload` (`electron/main.ts:1884`) asks first and fetches second,
+  raises the OS dialog in main, writes the bytes there and returns a sentence
+  and a folder — never a path, never the bytes. But it fetches from the
+  **runner** (`GET /artifacts/{id}/download`), so what it exports is a file the
+  agent wrote. **A brief composed into a stored artifact has no bytes at the
+  runner.** The shape is `workspace.download`'s; the plumbing is new.
 
-So the shape is `workspace.download`'s and the plumbing is not.
+### Why a PDF is cheaper than the Markdown file this ADR first proposed
 
-### The command
+The first draft rejected HTML export in one line: *it would mean escaping
+untrusted text into markup at a second site.* **A print route removes that
+objection entirely, and with it the whole reason Markdown looked safer.**
 
-A fifth member of `WORKSPACE_ACTIONS` (`lib/shell/ipc.ts:1397`), in that family
-for the family's own stated reason — it touches a file a person chose. It
-carries `agent_id` and `artifact_id`, exactly what `download` carries, and
-returns `WorkspaceActionResult`. Two differences, both stated:
+DASH already opens hidden windows on **routes in its own renderer** —
+`electron/approval-popup.ts:93` loads `${rendererOrigin}${APPROVAL_POPUP_ROUTE}`
+under `SHELL_WEB_PREFERENCES` (`lib/shell/window.ts:37`), and
+`electron/credential-prompt.ts:240` does the same. A print route is a third
+window of a shape that is already built, already hardened and already reviewed.
 
-- **No runner is involved.** The "no bundled runner on this machine" refusal does
-  not apply, and the five availability states do not gate it — DASH holds the
-  bytes it is about to write, so a stored artifact is always exportable even
-  when the workspace file it was made alongside has moved.
-- **The bytes are composed, not fetched.** `lib/export/brief.ts` is a **pure
-  function** from `RunArtifact` to a string, testable with no Electron, on
-  `readCuration`'s argument. Main calls it; the renderer never sees the string.
+The consequence that decides it: **the PDF is drawn by the same React components
+as the screen.** React escapes text by construction — the property `DigestBody`
+already depends on — so model-authored prose is escaped once, by the framework,
+in the one renderer. The Markdown plan would have needed a hand-written escaper
+that no other DASH surface has, protecting against an attack (`[click
+here](http://evil.example)` becoming a live link in a file) that the PDF path
+simply does not have.
 
-### Markdown, one format, and not a picker
+So the count of places DASH escapes untrusted text into markup goes from "one,
+plus a new hand-written one" to **one**. That is the argument, and it is
+Henrik's, not this document's first draft's.
 
-DASH has no Markdown dependency and must not gain one. Rendering model-authored
-text as markup is precisely what this codebase has spent several decisions
-avoiding — `overview` is *"rendered as text and never as markup"* today.
+### The print route, and the three things it must do differently from the screen
 
-Writing Markdown is the opposite direction and is safe, with one attack that must
-be named because the in-app renderer does not have it: **a model that emits
-`[click here](http://evil.example)` produces a live link in an exported file even
-though it renders as literal text on screen.** So `lib/export/brief.ts` escapes
-every model-authored run before writing it, and the only live links in the
-exported document are built from `items[].item_url` — DASH's own collected list.
-The export inherits decision 1's property rather than leaking around it, and that
-is a test rather than a comment.
+`PRINT_BRIEF_ROUTE`, a constant beside `APPROVAL_POPUP_ROUTE`
+(`lib/shell/approval-popup.ts:23`), rendering the same `DigestBody`. Three
+deliberate differences, each of which is a defect if it is forgotten:
 
-HTML is rejected as a second format for the same reason: it would mean escaping
-untrusted text into markup at a second site, and the value over Markdown is
-styling nobody asked for.
+1. **The fold is forced open.** A closed `<details>` prints collapsed, so a PDF
+   of decision 3's page would be a document with its evidence deleted — the
+   exhaustive-list rule broken by a rendering accident rather than by a
+   decision. The print route renders with the list open, always.
+2. **The theme is forced light.** `app/tokens.css:100` sets
+   `color-scheme: light dark` and every token is a `light-dark()` pair, so a PDF
+   printed while DASH is in dark mode is a black page. The route pins
+   `data-theme="light"`, which that file's own `[data-theme]` override already
+   supports.
+3. **No control renders.** *Save a copy*, the developer disclosure and the run
+   link are DASH's affordances and mean nothing on paper.
 
-The document's own honesty layer travels with it: the exported file carries
-`sources_fetched` with statuses and `set_aside` with reasons, because a brief
-that is honest on screen and flattering in the file somebody forwards is worse
-than one that is neither.
+### The hazard, named, with its harness already built
 
----
+**An offscreen window that is not destroyed blocks the quit.**
+`window-all-closed` counts open windows whether or not anybody can see them, and
+`electron/prove-quit.ts:219-221` already exists to reproduce exactly this shape
+— a `show: false` window nobody can see, keeping a process alive nobody may
+kill. So the print window is destroyed in a `finally`, on success, on a
+`printToPDF` rejection and on a cancelled dialog alike, and **`prove-quit.ts`
+gains a third scene** rather than this being left to a code comment.
+
+### The order of operations, and what comes back
+
+Ask, print, save, open — and the dialog comes **first**, on `workspaceDownload`'s
+own stated reason: a cancelled dialog should cost nothing, and a print that had
+to choose a location on its own is a file the person has to go and find.
+
+`shell.openPath` on the file DASH just wrote, per Henrik's ruling. Two things
+make that admissible and both are worth stating rather than assuming:
+
+- **DASH composed these bytes.** This is not opening a file of unknown
+  provenance; it is opening the PDF this command produced a moment ago, at the
+  path the person chose in the OS's own dialog.
+- **`shell` is a new import in `electron/main.ts`** (`:37` imports `app`,
+  `BrowserWindow`, `dialog`, `ipcMain`, `Menu`, `nativeTheme` and no more), so
+  the ability to hand a path to another application arrives with this command
+  and should be reviewed as such. It is reachable from exactly one call site and
+  only with a path `dialog.showSaveDialog` returned.
+
+What crosses back to the renderer is unchanged from `workspace.download`: a
+`WorkspaceActionResult` carrying `ok`, a sentence and the folder. Not the path,
+not the bytes.
+
+### Markdown is not kept as a second format
+
+Rejected on the same principle that chose the PDF: a second format is a second
+writer, and the Markdown writer is the one with the hand-rolled escaper. A
+person who wants the text can select it on screen. If a `.md` is ever asked for,
+it is a separate decision with its own reason.
 
 ## Decision 5 — the run allowance is two calls, and this is the collision nobody has named
 
@@ -413,9 +460,9 @@ Do the arithmetic on the scout with a compose step added:
 | curate + compose | 2 | fits, with **zero** retry budget |
 | curate + compose + deep dive | 3 | the third call is **refused**, on every second-and-later run |
 
-**Recommendation: compose replaces curate in the scout's plan.** One call, one
-document, and the grouping falls out of the document's sections. This is not a
-budget dodge — it is the better architecture:
+**Ruled by Henrik on 2026-08-18: compose replaces curate in the scout's
+plan.** One call, one document, and the grouping falls out of the document's
+sections. This is not a budget dodge — it is the better architecture:
 
 - `curation.groups` and `document.sections` would otherwise be two model-authored
   groupings of one list that can disagree, which is exactly what decision 2's
@@ -427,10 +474,15 @@ budget dodge — it is the better architecture:
 - Spend does not widen. One press still buys two calls, and the scout still has
   its retry.
 
-The alternative — raising `SPEND_ALLOWANCE_CALLS` to 3 — is available and is what
-Henrik may prefer if he wants curation and composition to coexist. It is a real
-widening of what one press can cost and its own constant argues against it, so it
-should be a decision he takes rather than one a build session discovers.
+The alternative — raising `SPEND_ALLOWANCE_CALLS` to 3 — was put to Henrik with
+its cost stated (one press of Run now costing 50% more, on every run, forever)
+and **declined**. The constant stays at 2 and `tests/broker-spend.test.ts` goes
+on pinning it by value.
+
+**What this does not decide:** `curation` stays in the contract, stays valid and
+stays rendered. What changes is the sample agent's plan. An agent that wants a
+grouped digest and no document is unaffected, and every digest already written
+renders as it does today.
 
 ---
 
@@ -493,8 +545,14 @@ and may never fold the first.
   alternative is a renderer guessing between two groupings.
 - **One copy string becomes false and must be rewritten in the same change.**
   `PANEL_ALREADY_SHOWN`.
-- **A second place model-authored text is escaped.** The Markdown writer, which
-  has an injection surface the on-screen renderer does not.
+- **A third hidden window, and the quit hazard that comes with one.** Bounded
+  by a `finally` that destroys it on every path and by a new `prove-quit.ts`
+  scene, rather than by a comment asking the next person to remember.
+- **`shell.openPath` enters `electron/main.ts`.** The ability to hand a path to
+  another application did not exist in that file before this command.
+- **A print-only route in the renderer**, which must keep three deliberate
+  differences from the screen (fold open, theme light, no controls) and will
+  silently produce a wrong PDF if any of them regresses.
 - **A plan change to the sample agent**, if decision 5's recommendation is taken:
   the scout drops `digest_curate` for `brief_compose`, and that is a manifest
   edit with its own import evidence.
@@ -528,8 +586,12 @@ either direction.
 - **Per-item model-authored text.** Rejected: an item carrying both the source's
   words and a model's words with nothing distinguishing them is the
   misattribution risk moved inside the evidence list.
-- **HTML export, or a format picker.** Rejected: a second escaping site for
-  untrusted text, in exchange for styling nobody asked for.
+- **A Markdown file, which is what this ADR first proposed.** Overturned by
+  Henrik's ruling, and he was right: a print route renders the PDF through the
+  same React components as the screen, so the "second escaping site" that was
+  the whole argument for Markdown never exists. Not kept as a second format
+  either — a second format is a second writer, and it is the one with the
+  hand-rolled escaper.
 - **A page-initiated download from the renderer.** Rejected on `ipc.ts`' own
   rule rather than on the sandbox claim in the issue, which is about a different
   session.
@@ -537,8 +599,18 @@ either direction.
   runner, and the composed document has no bytes there.
 - **Leaving the item list unfolded.** Rejected with the trade-off stated above,
   and the line at which the rejection would be wrong is written down.
-- **Raising `SPEND_ALLOWANCE_CALLS` to 3.** Not rejected — recorded as Henrik's
-  to take, with its own constant's argument against it quoted.
+- **Raising `SPEND_ALLOWANCE_CALLS` to 3.** Put to Henrik with its cost stated
+  and declined on 2026-08-18. Compose replaces curate instead.
+- **Saving the PDF without opening it**, as `workspace.download` does today.
+  Declined by Henrik on 2026-08-18: what a person expects from an export is the
+  document, not a sentence naming a folder. The cost — DASH launches another
+  application — is stated in decision 4 rather than absorbed silently.
+- **Zipping a run's several files as part of this decision.** Henrik asked for
+  `.zip` for multi-file, picture and video outputs, and scoped it to its own
+  issue on 2026-08-18. It is about workspace files rather than about the brief,
+  and it needs its own answer to zip-versus-folder — DASH already answered that
+  question once the other way, in `host.bringHome`, which raises a **folder**
+  dialog and writes the files into it (`electron/preload.ts:398-412`).
 
 ## What is proven
 
@@ -553,8 +625,13 @@ What a build session must prove, and in this order:
 - ⬜ that a v1 artifact validates and renders identically after the enum widens,
   and that `document` on a v1 artifact is refused at ingest.
 - ⬜ that an artifact carrying both `curation` and `document` is refused.
-- ⬜ that the Markdown writer escapes a model-authored `[link](url)` and that the
-  only live links in the file come from `items[].item_url`.
+- ⬜ that the print window is destroyed on every path — success, a `printToPDF`
+  rejection, and a cancelled dialog — and that the quit still completes, as a
+  **new `prove-quit.ts` scene** rather than as a unit test that cannot see a
+  wedged window.
+- ⬜ that the PDF renders with the item list **open** and in the light theme
+  regardless of what DASH is set to, since both are silent failures that produce
+  a plausible-looking wrong document.
 - ⬜ the folded list, the count in the summary, and the honesty layer outside the
   fold — **by capture, asking `.open`**, because a closed `<details>` still has
   layout boxes and a geometry check will report the folded content as on screen.
