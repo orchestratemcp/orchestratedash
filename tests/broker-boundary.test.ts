@@ -672,15 +672,18 @@ describe("the shipped operations", () => {
     // person's Run press opens (ADR 0016). The sentence above survives word for
     // word — what a person can ask for is now a run as well as a question.
     expect(allOperations().map((operation) => operation.id).sort()).toEqual([
+      "anthropic.brief.compose",
       "anthropic.chat.completion",
       "anthropic.digest.curate",
       "anthropic.models.list",
       "gmail.draft.create",
       "gmail.message.read",
       "gmail.search",
+      "openai.brief.compose",
       "openai.chat.completion",
       "openai.digest.curate",
       "openai.models.list",
+      "openrouter.brief.compose",
       "openrouter.chat.completion",
       "openrouter.digest.curate",
       "openrouter.models.list",
@@ -693,21 +696,30 @@ describe("the shipped operations", () => {
     // reaches are a read and a spend, and `WRITE_PATHS` — the array a reader is
     // invited to treat as the complete answer to "what can this do to my
     // account?" — is still one Gmail path. MAR-619's three curations are spends
-    // and change neither half of that.
+    // and change neither half of that, and MAR-674's three compositions are the
+    // same again: nine spends now, still no write, still one Gmail path.
+    //
+    // These numbers are pinned rather than derived on purpose. A test that
+    // computed them from the same arrays the source builds would agree with any
+    // widening automatically, which is the one thing this assertion exists to
+    // stop — `OPERATIONS`' own docblock says adding one must be "a deliberate
+    // act", and a number somebody has to edit is what makes it one.
     const keyed = allOperations().filter(
       (operation) => !operation.id.startsWith("gmail."),
     );
-    expect(keyed).toHaveLength(9);
+    expect(keyed).toHaveLength(12);
     expect(keyed.some((operation) => operation.access === "write")).toBe(false);
     expect(keyed.filter((operation) => operation.access === "read")).toHaveLength(3);
-    expect(keyed.filter((operation) => operation.access === "spend")).toHaveLength(6);
+    expect(keyed.filter((operation) => operation.access === "spend")).toHaveLength(9);
   });
 
   it("splits cleanly by profile, with no operation in two", () => {
+    // Gmail stays at three. A model provider is four since MAR-674: list the
+    // catalogue, answer a question, group a list, write a document.
     expect(operationsForProvider("google-gmail")).toHaveLength(3);
-    expect(operationsForProvider("openrouter")).toHaveLength(3);
-    expect(operationsForProvider("anthropic")).toHaveLength(3);
-    expect(operationsForProvider("openai")).toHaveLength(3);
+    expect(operationsForProvider("openrouter")).toHaveLength(4);
+    expect(operationsForProvider("anthropic")).toHaveLength(4);
+    expect(operationsForProvider("openai")).toHaveLength(4);
     expect(operationsForProvider("google-calendar")).toEqual([]);
   });
 
