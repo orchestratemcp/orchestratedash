@@ -613,7 +613,15 @@ export interface ArtifactItem {
  * resolves to the same document rather than to whatever is newest.
  */
 interface RunArtifactBase {
-  artifact_version: 1;
+  /**
+   * 1 or 2 since ADR 0025, and the widening is load-bearing rather than
+   * cosmetic: `validators()` compiles one Ajv validator for this contract, so
+   * before it a v2 artifact was rejected whole at ingest and never stored.
+   *
+   * Only `brief` requires 2. A digest may carry `set_aside` at either version,
+   * for the reason that member states.
+   */
+  artifact_version: 1 | 2;
   agent: string;
   run_id: string;
   artifact_id: string;
@@ -672,9 +680,51 @@ export type DigestCuration =
     }
   | { state: "not_curated"; reason: CurationRefusal };
 
+/**
+ * Why the agent left something out, in a closed set (ADR 0025).
+ *
+ * Closed so the sentence a person reads is DASH's rather than the agent's —
+ * the distinction `sources_fetched` keeps, and the one `lib/copy/identifiers.ts`
+ * exists to protect. Free text here would be agent-authored prose on the one
+ * surface whose whole job is DASH's own honest accounting.
+ */
+export type SetAsideReason =
+  | "no_signal"
+  | "duplicate"
+  | "off_topic"
+  | "too_old"
+  | "unparseable";
+
+/**
+ * One thing the agent collected and did not put in the digest (ADR 0025).
+ *
+ * `reason` is **optional**, and that is a decision rather than laziness: the
+ * competitor scout has emitted `set_aside` since MAR-647 with no reason on it,
+ * travelling under this contract's open `additionalProperties` and rendering
+ * nowhere. Requiring one would make this contract reject, at ingest, every
+ * artifact the one real agent produces today. DASH renders the absence as
+ * *left out, and the agent did not say why*, which is still more than the
+ * nothing it renders now.
+ *
+ * Only what DASH reads is typed. The scout also carries `competitor` and
+ * `item_url` here; both go on travelling untyped and unconstrained, because a
+ * constraint on a field no surface reads is a way to reject a good artifact for
+ * no benefit.
+ */
+export interface ArtifactSetAside {
+  headline: string;
+  reason?: SetAsideReason;
+}
+
 export interface DigestArtifact extends RunArtifactBase {
   kind: "digest";
   sources_fetched?: ArtifactSource[];
+  /**
+   * What this run collected and left out (ADR 0025). Absent means the agent
+   * never had this idea — **not** that it discarded nothing, which is a claim
+   * no artifact makes and no surface may imply.
+   */
+  set_aside?: ArtifactSetAside[];
   items: ArtifactItem[];
   /**
    * Absent for every digest written before MAR-619, and for every agent that
@@ -733,6 +783,98 @@ export interface DraftArtifact extends RunArtifactBase {
 }
 
 /**
+ * One paragraph of a brief, and the unit citation is bound to (ADR 0025).
+ *
+ * `items` are positions into the digest named by `derived_from` — numbers and
+ * never text, which is the property `readCuration` established and this extends
+ * from a label to a body. Bound to the paragraph rather than to the section on
+ * purpose: a section-level binding lets one wrong sentence borrow the citations
+ * of every other sentence under the same heading, which is the defect Henrik
+ * reported when a model theme label landed on a row carrying a real link.
+ *
+ * **Absent `items` is uncited prose, not an error.** It is kept and marked, on
+ * `app/_components/digest.tsx`'s rule: dropping the unsupported part is how a
+ * grounded verdict becomes theatre.
+ */
+export interface BriefParagraph {
+  body: string;
+  items?: number[];
+}
+
+export interface BriefSection {
+  heading: string;
+  paragraphs: BriefParagraph[];
+}
+
+/**
+ * The document itself (ADR 0025).
+ *
+ * Ordered, and the order is the document — this is the one structure in this
+ * file a renderer must not re-sort. Every string is model-authored, rendered as
+ * text and never as markup, and carries no link: `readBrief` drops a paragraph
+ * containing anything that looks like an address rather than cleaning it up.
+ */
+export interface ArtifactDocument {
+  sections: BriefSection[];
+  /** What the provider says wrote this. The agent's report, not DASH's record. */
+  model?: string;
+}
+
+/**
+ * Which digest a brief was written from, and the fingerprint that makes the
+ * join checkable (ADR 0025 amendment 1).
+ *
+ * Splitting the brief from the roundup is what Henrik asked for — *"One RAW and
+ * one curated. Don't mix them."* The cost is that a paragraph's `items` now
+ * index into a **different artifact's** array, and two separate records
+ * guarantee nothing about being the same list in the same order. This is that
+ * guarantee, and it is checked rather than trusted.
+ *
+ * On a mismatch DASH draws the brief with **no citations at all**. A wrong
+ * citation is a real link under a claim it does not support — worse than no
+ * citation, and exactly what the index-only design exists to prevent.
+ */
+export interface BriefDerivedFrom {
+  artifact_id: string;
+  /**
+   * Checked rather than assumed equal to the brief's own `run_id`. An agent
+   * could write a brief from a previous run's digest, and DASH should be able
+   * to say so rather than joining across runs in silence.
+   */
+  run_id: string;
+  /**
+   * The length of that list when the brief was written. Redundant against the
+   * hash and kept anyway: it is what lets DASH say *written from 60 items, and
+   * this digest has 58* in words somebody can act on, where a hash mismatch
+   * alone says only that something differs.
+   */
+  item_count: number;
+  /**
+   * SHA-256, lowercase hex, over a canonical rendering of the digest's `items`
+   * in order. The canonicalisation is **one** pure function shared by DASH and
+   * the agent kit and must never be transcribed into a second place — a drift
+   * between the two ends turns every correct brief into an uncited one.
+   */
+  items_digest: string;
+}
+
+/**
+ * A document a model wrote about a digest this same run produced (ADR 0025).
+ *
+ * **Never instead of the digest.** Henrik, reopening decision 2: *"I think it
+ * should be two documents. One RAW and one curated. Don't mix them."* The raw
+ * roundup stays a `DigestArtifact` and stays exactly what it was, which is what
+ * keeps `analyzeGrounding` grading the same population it always graded — a
+ * model cannot improve a run's verdict by writing well.
+ */
+export interface BriefArtifact extends RunArtifactBase {
+  kind: "brief";
+  artifact_version: 2;
+  document: ArtifactDocument;
+  derived_from: BriefDerivedFrom;
+}
+
+/**
  * A discriminated union rather than one interface with optional members
  * (MAR-458).
  *
@@ -745,9 +887,20 @@ export interface DraftArtifact extends RunArtifactBase {
  * which is where MAR-457's own lesson points: four defects reached the installed
  * smoke because nothing forced a caller to exist.
  */
-export type RunArtifact = DigestArtifact | DraftArtifact;
+export type RunArtifact = DigestArtifact | DraftArtifact | BriefArtifact;
 
-/** Narrow to the kind the grounding verdict is about. */
+/**
+ * Narrow to the kind the grounding verdict is about.
+ *
+ * Unchanged by ADR 0025, and that is the point: a brief is not a digest, so
+ * `analyzeGrounding` cannot be handed one, and the verdict goes on being
+ * computed over exactly the population it always was.
+ */
 export function isDigestArtifact(artifact: RunArtifact): artifact is DigestArtifact {
   return artifact.kind === "digest";
+}
+
+/** Narrow to the document kind (ADR 0025). */
+export function isBriefArtifact(artifact: RunArtifact): artifact is BriefArtifact {
+  return artifact.kind === "brief";
 }

@@ -221,6 +221,23 @@ export function describeArtifactRole(kind: string): ArtifactRole {
         previewable: true,
       };
 
+    case "brief":
+      return {
+        label: "Briefing",
+        // Says what it is *about* as well as what it is, because a run now
+        // produces two outputs and the pair only makes sense together: this
+        // one is written, the roundup beside it is everything collected.
+        // ADR 0025 amendment 1 is the reason there are two — Henrik's "one RAW
+        // and one curated", and a label that said only "Briefing" would leave
+        // a reader wondering which of the two cards they were looking at.
+        purpose: "Written up from everything this agent collected on this run.",
+        // False until the renderer lands. `OutputContent` then offers the
+        // record as it arrived rather than an empty pane, which is the honest
+        // answer for a format this build cannot lay out yet — and it is the
+        // branch that module's own docblock calls "the one worth having".
+        previewable: false,
+      };
+
     default:
       return {
         label: "Output",

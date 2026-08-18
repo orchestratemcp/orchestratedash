@@ -68,8 +68,16 @@ describe("the artifact contract", () => {
   });
 
   it("refuses a version it was not written for", () => {
-    const result = validateArtifact(artifact({ artifact_version: 2 }));
+    // Was `2` until ADR 0025 widened the enum. The intent is unchanged and the
+    // number moved: an artifact declaring a version this build has never heard
+    // of is refused whole rather than read partly.
+    const result = validateArtifact(artifact({ artifact_version: 3 }));
     expect(result.ok).toBe(false);
+  });
+
+  it("accepts a digest at version 2", () => {
+    const result = validateArtifact(artifact({ artifact_version: 2 }));
+    expect(result.ok).toBe(true);
   });
 
   it("keeps the four source outcomes apart", () => {
@@ -272,5 +280,174 @@ describe("ingest", () => {
     expect(result.accepted).toBe(0);
     expect(result.rejected[0]?.errors[0]).toContain("must match the runner-hosted source");
     expect(store.artifactsForRun("ai-news-scout", "run-1")).toHaveLength(0);
+  });
+});
+
+/**
+ * What the agent left out, and the regression this block exists to prevent
+ * (ADR 0025).
+ *
+ * `set_aside` is not new to the wire. The competitor scout has emitted it since
+ * MAR-647, travelling under this schema's open `additionalProperties` and
+ * rendering nowhere — so the moment the contract *defines* the field, its shape
+ * starts being checked, and a definition stricter than what is already flying
+ * rejects every artifact the one real agent produces.
+ *
+ * The first case below is that agent's exact shape, read out of
+ * `../competitor-scout/agent.mjs`. It is the whole reason `reason` is optional
+ * and the reason nothing but `headline` is constrained.
+ */
+describe("what was set aside", () => {
+  /** The scout's real shape, verbatim: no reason, and two fields DASH does not read. */
+  const scoutEntries = [
+    {
+      headline: "orchestrate-ci published v0.4.2",
+      competitor: "OpenClaw",
+      item_url: "https://example.test/releases/v0-4-2",
+    },
+  ];
+
+  it("accepts the shape the competitor scout already emits, at version 1", () => {
+    const result = validateArtifact(artifact({ set_aside: scoutEntries }));
+    expect(result.ok).toBe(true);
+  });
+
+  it("does not require version 2 for it, unlike a brief", () => {
+    // Gating an in-flight field on a version bump would break a working agent
+    // to enforce a number. The versioned member is the one carrying a new kind.
+    const v2 = validateArtifact(artifact({ artifact_version: 2, set_aside: scoutEntries }));
+    expect(v2.ok).toBe(true);
+  });
+
+  it("accepts every reason in the closed set", () => {
+    for (const reason of ["no_signal", "duplicate", "off_topic", "too_old", "unparseable"]) {
+      const result = validateArtifact(
+        artifact({ set_aside: [{ headline: "Left out", reason }] }),
+      );
+      expect(result.ok, reason).toBe(true);
+    }
+  });
+
+  it("refuses a reason DASH has no sentence for", () => {
+    // Closed so the words a person reads are DASH's. Free text here would put
+    // agent-authored prose on the surface whose job is DASH's own accounting.
+    const result = validateArtifact(
+      artifact({ set_aside: [{ headline: "Left out", reason: "did not like it" }] }),
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it("requires the one field DASH renders", () => {
+    const result = validateArtifact(artifact({ set_aside: [{ reason: "duplicate" }] }));
+    expect(result.ok).toBe(false);
+  });
+});
+
+/**
+ * The brief, and the join it is only allowed to make when it can be checked
+ * (ADR 0025 amendment 1).
+ */
+describe("a brief", () => {
+  function brief(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      artifact_version: 2,
+      agent: "ai-news-scout",
+      run_id: "run-1",
+      artifact_id: "brief-1",
+      kind: "brief",
+      title: "What the news adds up to",
+      generated_at: "2026-08-01T09:00:00.000Z",
+      document: {
+        sections: [
+          {
+            heading: "Agents got cheaper",
+            paragraphs: [{ body: "Two providers cut their prices this week.", items: [0, 1] }],
+          },
+        ],
+      },
+      derived_from: {
+        artifact_id: "digest-1",
+        run_id: "run-1",
+        item_count: 2,
+        items_digest: "a".repeat(64),
+      },
+      ...overrides,
+    };
+  }
+
+  it("accepts a document bound to a digest it names", () => {
+    expect(validateArtifact(brief()).ok).toBe(true);
+  });
+
+  it("refuses a brief at version 1", () => {
+    // The version is what makes "this producer was written against the contract
+    // that has a document in it" checkable rather than inferred from a member.
+    expect(validateArtifact(brief({ artifact_version: 1 })).ok).toBe(false);
+  });
+
+  it("refuses a brief with no document", () => {
+    const { document: _dropped, ...rest } = brief();
+    expect(validateArtifact(rest).ok).toBe(false);
+  });
+
+  it("refuses a brief that does not say which list it cites", () => {
+    // The sharp one. A paragraph's `items` are positions into another
+    // artifact's array, so a brief with no `derived_from` carries numbers
+    // pointing at nothing checkable — which is worse than carrying none.
+    const { derived_from: _dropped, ...rest } = brief();
+    expect(validateArtifact(rest).ok).toBe(false);
+  });
+
+  it("refuses a fingerprint that is not a SHA-256", () => {
+    for (const bad of ["", "not-a-hash", "A".repeat(64), "a".repeat(63)]) {
+      expect(
+        validateArtifact(brief({ derived_from: { ...(brief().derived_from as object), items_digest: bad } })).ok,
+        bad,
+      ).toBe(false);
+    }
+  });
+
+  it("keeps a paragraph that cites nothing", () => {
+    // Uncited prose is a verdict input, not an error — the same rule that keeps
+    // an uncited item on screen. Dropping it is how the document would come to
+    // look better grounded than it is.
+    const result = validateArtifact(
+      brief({
+        document: {
+          sections: [{ heading: "Context", paragraphs: [{ body: "A quiet week overall." }] }],
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("refuses a section with no heading and a paragraph with no body", () => {
+    expect(
+      validateArtifact(
+        brief({ document: { sections: [{ paragraphs: [{ body: "x" }] }] } }),
+      ).ok,
+    ).toBe(false);
+    expect(
+      validateArtifact(
+        brief({ document: { sections: [{ heading: "H", paragraphs: [{ items: [0] }] }] } }),
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("bounds how much document one artifact may carry", () => {
+    const tooMany = {
+      sections: Array.from({ length: 9 }, (_value, index) => ({
+        heading: `Section ${String(index)}`,
+        paragraphs: [{ body: "Text." }],
+      })),
+    };
+    expect(validateArtifact(brief({ document: tooMany })).ok).toBe(false);
+  });
+
+  it("does not require items, sources_fetched or anything else a digest requires", () => {
+    // A brief is not a digest wearing a different label. It carries no items of
+    // its own by design: the items live in the roundup it points at, which is
+    // what "one RAW and one curated, don't mix them" means in the contract.
+    expect(validateArtifact(brief()).ok).toBe(true);
   });
 });
