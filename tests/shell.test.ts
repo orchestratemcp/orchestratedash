@@ -306,6 +306,13 @@ describe("the audited command chokepoint", () => {
       // reason `shell.menu` is: it changes nothing about the agent, the store,
       // or the world the agent acts on.
       "workspace.download",
+      // MAR-674, ADR 0025 decision 4. The same two opaque ids and the same
+      // absence of a path, one process over: main composes the PDF from an
+      // artifact it already holds and prints it in a window this bridge
+      // cannot reach, rather than fetching bytes from the runner. A second
+      // command rather than a format flag on the first, because the two have
+      // different sources and different failure sentences.
+      "workspace.exportBrief",
       // MAR-588. An eighth family, and the only route in DASH that can send
       // something off this machine without an agent asking it to. Note the
       // payloads: three of the four have none at all, so page script can ask

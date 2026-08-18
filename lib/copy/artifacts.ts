@@ -86,6 +86,16 @@ export const OUTPUTS_PANEL_COPY = {
    * happening, and would quietly suggest the output has been somewhere else.
    */
   download: "Save a copy",
+  /**
+   * The brief's own export (MAR-674, ADR 0025 decision 4).
+   *
+   * Names the format, unlike `download`, and the difference is not
+   * inconsistency. "Save a copy" is right for a file the agent already wrote:
+   * the copy is of a thing that exists, and its format is whatever the agent
+   * chose. A briefing has no file anywhere — DASH composes one at the moment of
+   * the press — so the honest verb has to say what it is about to make.
+   */
+  export_pdf: "Save as PDF",
   developer_summary: "Reference for developers",
   /*
    * The provenance receipt's disclosure label (MAR-576).

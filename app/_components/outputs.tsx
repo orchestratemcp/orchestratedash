@@ -48,6 +48,7 @@ export function OutputsPanel({
   single = false,
   openId,
   onDownload,
+  onExportBrief,
   runHref,
 }: {
   cards: readonly ArtifactCardView[];
@@ -113,6 +114,15 @@ export function OutputsPanel({
    */
   onDownload?: (card: ArtifactCardView) => void;
   /**
+   * Save this briefing as a PDF, or absent (MAR-674, ADR 0025 decision 4).
+   *
+   * Absent hides the control entirely, on `onDownload`'s reasoning one
+   * argument along: a surface that cannot reach the command should show no
+   * button rather than a dead one, because a greyed-out export reads as a
+   * claim about the briefing rather than about the window.
+   */
+  onExportBrief?: (card: ArtifactCardView) => void;
+  /**
    * Where the run that made one card lives, or absent (MAR-609).
    *
    * Per card and not per panel. The agent page's list spans runs, so a single
@@ -145,6 +155,7 @@ export function OutputsPanel({
       <OutputCard
         card={entry}
         onDownload={onDownload}
+        onExportBrief={onExportBrief}
         runHref={runHref}
         /* Only the newest digest is graded, which is the rule
            `lib/views/build.ts` already applies when it computes the verdict.
@@ -206,11 +217,13 @@ function OutputCard({
   card,
   grounding,
   onDownload,
+  onExportBrief,
   runHref,
 }: {
   card: ArtifactCardView;
   grounding: GroundingAnalysis | null;
   onDownload?: (card: ArtifactCardView) => void;
+  onExportBrief?: (card: ArtifactCardView) => void;
   runHref?: (card: ArtifactCardView) => string;
 }): ReactNode {
   const { artifact, role, receipt, recovery, reference } = card;
@@ -226,6 +239,20 @@ function OutputCard({
    * Offering Download there would send them to a dialog that ends in a refusal.
    */
   const downloadable = onDownload !== undefined && recovery === null;
+
+  /*
+   * MAR-674. Offered on a brief and on nothing else.
+   *
+   * **Not gated on `recovery`**, unlike the download beside it, and the
+   * difference is the whole reason this is a second control rather than a
+   * format flag on the first. `download` fetches bytes the runner is holding,
+   * so an output that has moved has nothing to fetch. A briefing is composed
+   * from the artifact DASH itself stores, which is still here whatever happened
+   * to the agent's workspace — so the four unavailable states do not gate it,
+   * and a person can still take away the document from a run whose files are
+   * gone.
+   */
+  const exportable = onExportBrief !== undefined && artifact.kind === "brief";
 
   return (
     <article className={recovery === null ? "output-card" : "output-card is-unavailable"}>
@@ -288,6 +315,15 @@ function OutputCard({
             type="button"
           >
             {COPY.download}
+          </button>
+        ) : null}
+        {exportable ? (
+          <button
+            className="button-secondary"
+            onClick={() => onExportBrief?.(card)}
+            type="button"
+          >
+            {COPY.export_pdf}
           </button>
         ) : null}
         {/* MAR-609. The route from one output back to the run that made it,

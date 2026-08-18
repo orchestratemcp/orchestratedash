@@ -151,6 +151,10 @@ interface DashShellClient {
    * front of the user rather than refuse honestly.
    */
   downloadOutput?(args: { agent_id: string; artifact_id: string }): Promise<CommandResult>;
+  /** MAR-674. Optional for `downloadOutput`'s reason: an older installed
+      build has the bridge and not this member, and a page must be able to
+      say so rather than throw. */
+  exportBriefAsPdf?(args: { agent_id: string; artifact_id: string }): Promise<CommandResult>;
   /**
    * Re-import an agent DASH created, from DASH's current template (MAR-576).
    *
@@ -1146,6 +1150,38 @@ export async function downloadOutput(args: {
     };
   }
   return bridge.downloadOutput(args);
+}
+
+/**
+ * Save one briefing as a PDF and open it (MAR-674, ADR 0025 decision 4).
+ *
+ * `downloadOutput`'s twin, and the two refusals above are worth keeping
+ * separate rather than sharing: a browser tab cannot print through Electron at
+ * all, and an older installed build has the command but not this member. Both
+ * sentences name what to do rather than what failed.
+ */
+export async function exportBriefAsPdf(args: {
+  agent_id: string;
+  artifact_id: string;
+}): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to save this briefing as a PDF.",
+    };
+  }
+  if (bridge.exportBriefAsPdf === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "This version of the DASH app cannot save a briefing as a PDF yet.",
+    };
+  }
+  return bridge.exportBriefAsPdf(args);
 }
 
 /**
