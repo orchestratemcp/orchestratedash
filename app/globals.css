@@ -4655,6 +4655,30 @@ button:disabled {
   color: inherit;
 }
 
+/* The deep dive (MAR-691).
+
+   The same non-card treatment `digest-curation` below uses, and for the same
+   reason: this is a reading of items already on the page, not a second
+   surface competing with them. Set apart from `digest-curation` only by
+   margin — the two never render as siblings competing for the same visual
+   weight, since one is DASH's grouping and the other is the model's own
+   prose, and `digest.tsx` draws this one first. */
+
+.digest-deep-dive {
+  margin-bottom: var(--space-5);
+}
+
+.digest-deep-dive > h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.digest-deep-dive-text {
+  margin: 0 0 var(--space-2);
+  white-space: pre-wrap;
+}
+
 /* The curated digest (MAR-619).
 
    A grouping is a reading of the same items, so it is set as the same kind of

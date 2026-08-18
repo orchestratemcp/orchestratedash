@@ -212,6 +212,60 @@
         }
       }
     },
+    "deep_dive": {
+      "type": "object",
+      "description": "A closer look at part of the digest, written by a model from items already in this artifact (MAR-691). Absent means the agent never attempts this — most digests, and every digest written before this existed. Mirrors `curation`'s state split for the same reason: absent and `not_written` are different claims, and a renderer that conflated them would put a refusal on a digest that never tried one. `not_written` covers both a genuine refusal and the ordinary case of nothing yet to look harder at (`nothing_picked`, `nothing_found`), which is why its reasons are a superset of `curation.reason` rather than the same enum. `text` is the one field here that is prose: it carries no link of its own, the same rule `curation.overview` keeps, because a model writing about items DASH already trusts must never be able to point a reader anywhere the items themselves did not.",
+      "required": ["state"],
+      "allOf": [
+        {
+          "description": "A written deep dive has to carry the text that makes it one, the same reason a `curated` block has to carry its groups.",
+          "if": { "properties": { "state": { "const": "written" } }, "required": ["state"] },
+          "then": {
+            "required": ["text"],
+            "$comment": "Present only to satisfy Ajv's strictRequired check, as elsewhere in this file. `true` adds no constraint.",
+            "properties": { "text": true }
+          }
+        },
+        {
+          "description": "And one that was not written has to say why, for `curation`'s own reason: the sentence a person reads needs a cause in it.",
+          "if": { "properties": { "state": { "const": "not_written" } }, "required": ["state"] },
+          "then": {
+            "required": ["reason"],
+            "properties": { "reason": true }
+          }
+        }
+      ],
+      "properties": {
+        "state": {
+          "enum": ["written", "not_written"],
+          "description": "Whether a model actually wrote a closer look this run."
+        },
+        "reason": {
+          "enum": [
+            "nothing_picked",
+            "nothing_found",
+            "no_model_connection",
+            "not_connected",
+            "no_model_chosen",
+            "needs_a_person",
+            "unreadable",
+            "refused"
+          ],
+          "description": "Why nothing was written. The first two are not refusals at all — there was nothing yet to look harder at — and are kept apart from the four that mirror the broker's own refusal codes plus `unreadable`, the one where a provider answered and was paid and nothing readable came back."
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "The model the provider says wrote this. The agent's own report, with the same standing `curation.model` has — DASH does not sit between an agent and its provider."
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12000,
+          "description": "Model-authored prose. Rendered as text and never as markup, and it carries no link — the same rule `curation.overview` keeps, extended to a body rather than a label."
+        }
+      }
+    },
     "document": {
       "type": "object",
       "description": "What a model wrote about this run's digest (ADR 0025 decision 1). Required when kind is `brief`, meaningless on any other kind. Ordered sections of prose, and the ordering is the document — this is the one member in the contract whose sequence a renderer must not re-sort. Every string here is model-authored, is rendered as text and never as markup, and may not carry a link: `readBrief` drops a paragraph containing anything that looks like an address rather than cleaning it, exactly as `readCuration` does for a group label.",

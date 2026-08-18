@@ -145,6 +145,34 @@ describe("every output is drawn", () => {
 });
 
 /**
+ * MAR-691. `deep_dive.text` reached DASH on the digest artifact and nothing
+ * drew it — see `tests/deep-dive-render.test.tsx` for `DigestBody` on its own.
+ * This pins the same field through the Output stage's own wrapper, because
+ * `app/_components/outputs.tsx` is one of the two places `DigestBody` is
+ * reached from and MAR-668 is the reminder that fixing the other one is not
+ * the same fix.
+ */
+describe("the deep dive, on the Output stage", () => {
+  const digestWithDeepDive: DigestArtifact = {
+    ...digest,
+    artifact_id: "digest-mar691",
+    deep_dive: {
+      state: "written",
+      model: "openai/gpt-5-mini",
+      text: "A closer look the sample agent wrote, from items already above.",
+    },
+  };
+
+  it("draws the deep dive's text on the output card", () => {
+    const html = render(undefined, [
+      { artifact: digestWithDeepDive, received_at: "2026-08-18T08:00:05.000Z", stored_bytes: 512 },
+    ]);
+    expect(html).toContain("A closer look the sample agent wrote, from items already above.");
+    expect(html).toContain("Written by a language model");
+  });
+});
+
+/**
  * MAR-622's dated history, where MAR-646 left it.
  *
  * `OutputsPanel` no longer collapses anything: the cockpit's Output stage draws

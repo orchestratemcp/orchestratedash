@@ -681,6 +681,41 @@ export type DigestCuration =
   | { state: "not_curated"; reason: CurationRefusal };
 
 /**
+ * Why a deep dive was not written, in the kinds that lead somewhere different.
+ *
+ * A superset of `CurationRefusal`: `nothing_picked` and `nothing_found` are not
+ * refusals at all — there was nothing yet for a model to look harder at, which
+ * is the ordinary case on a first run — while the rest mirror the broker's own
+ * refusal codes plus `unreadable`, the same way `CurationRefusal` does.
+ */
+export type DeepDiveRefusal =
+  | "nothing_picked"
+  | "nothing_found"
+  | "no_model_connection"
+  | "not_connected"
+  | "no_model_chosen"
+  | "needs_a_person"
+  | "unreadable"
+  | "refused";
+
+/**
+ * A closer look at part of a digest, written by a model from items already in
+ * the artifact (MAR-691).
+ *
+ * A union on `state`, for `DigestCuration`'s own reason: a renderer reading
+ * `text ?? null` would draw an agent whose provider refused exactly like an
+ * agent that never attempted this, and those are opposite claims.
+ */
+export type DeepDive =
+  | {
+      state: "written";
+      text: string;
+      /** What the provider says answered. The agent's own report, not DASH's record. */
+      model?: string;
+    }
+  | { state: "not_written"; reason: DeepDiveRefusal };
+
+/**
  * Why the agent left something out, in a closed set (ADR 0025).
  *
  * Closed so the sentence a person reads is DASH's rather than the agent's —
@@ -734,6 +769,14 @@ export interface DigestArtifact extends RunArtifactBase {
    * refused.
    */
   curation?: DigestCuration;
+  /**
+   * The only prose an agent writes, when it writes any (MAR-691). Reaches DASH
+   * on the same artifact as `curation` and is otherwise unrelated to it — a
+   * digest can carry either, neither, or both. Absent for every digest written
+   * before this existed, and for a run where nothing was written; see
+   * `DeepDive`.
+   */
+  deep_dive?: DeepDive;
 }
 
 /**

@@ -284,6 +284,38 @@ describe("all five components draw", () => {
   });
 });
 
+/**
+ * MAR-691. `deep_dive.text` reached DASH on the digest artifact and nothing
+ * drew it, in this renderer any more than in the Output stage's. `panel.tsx`
+ * draws its own artifact card rather than reusing `outputs.tsx`'s — MAR-576's
+ * own note above records what fixing only one renderer once cost — so this is
+ * checked here separately from `tests/outputs-render.test.tsx`, both reaching
+ * the same `DigestBody` that `tests/deep-dive-render.test.tsx` covers alone.
+ */
+describe("the deep dive, on the declarative panel", () => {
+  const digestWithDeepDive = {
+    ...digest,
+    artifact_id: "digest-mar691-panel",
+    deep_dive: {
+      state: "written",
+      model: "openai/gpt-5-mini",
+      text: "A closer look the sample agent wrote, from items already above.",
+    },
+  } as unknown as DigestArtifact;
+
+  const html = render(
+    view(
+      [EVERY_SECTION[0]],
+      [{ artifact: digestWithDeepDive, received_at: "2026-08-18T08:00:05.000Z", stored_bytes: 512 }],
+    ),
+  );
+
+  it("draws the deep dive's text through the report section", () => {
+    expect(html).toContain("A closer look the sample agent wrote, from items already above.");
+    expect(html).toContain("Written by a language model");
+  });
+});
+
 describe("the panel's output history", () => {
   const today = new Date();
   today.setHours(12, 0, 0, 0);

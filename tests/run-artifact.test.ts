@@ -107,6 +107,71 @@ describe("the artifact contract", () => {
 });
 
 /* ---------------------------------------------------------------------- *
+ * The deep dive (MAR-691)
+ * ---------------------------------------------------------------------- */
+
+describe("a digest's deep dive", () => {
+  it("accepts a digest that never attempts one", () => {
+    expect(validateArtifact(artifact()).ok).toBe(true);
+  });
+
+  it("accepts one the model wrote", () => {
+    const result = validateArtifact(
+      artifact({ deep_dive: { state: "written", text: "A closer look." } }),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("accepts one the model wrote with a reported provider", () => {
+    const result = validateArtifact(
+      artifact({
+        deep_dive: { state: "written", text: "A closer look.", model: "openai/gpt-5-mini" },
+      }),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("refuses a written deep dive with no text", () => {
+    // The one thing that makes it written rather than not — the same rule
+    // `curation`'s `curated` branch keeps for `groups`.
+    const result = validateArtifact(artifact({ deep_dive: { state: "written" } }));
+    expect(result.ok).toBe(false);
+  });
+
+  it("accepts every reason nothing was written, and refuses one missing its reason", () => {
+    // The eight reasons the real sample agent emits today, including the two
+    // that are not refusals at all (`nothing_picked`, `nothing_found`) — this
+    // is what keeps a not-yet-armed first run validating against the same
+    // schema as a run a provider actually refused.
+    for (const reason of [
+      "nothing_picked",
+      "nothing_found",
+      "no_model_connection",
+      "not_connected",
+      "no_model_chosen",
+      "needs_a_person",
+      "unreadable",
+      "refused",
+    ]) {
+      const result = validateArtifact(
+        artifact({ deep_dive: { state: "not_written", reason } }),
+      );
+      expect(result.ok, reason).toBe(true);
+    }
+
+    const missingReason = validateArtifact(artifact({ deep_dive: { state: "not_written" } }));
+    expect(missingReason.ok).toBe(false);
+  });
+
+  it("refuses text over the length ceiling", () => {
+    const result = validateArtifact(
+      artifact({ deep_dive: { state: "written", text: "x".repeat(12_001) } }),
+    );
+    expect(result.ok).toBe(false);
+  });
+});
+
+/* ---------------------------------------------------------------------- *
  * Where a draft actually is (MAR-469)
  * ---------------------------------------------------------------------- */
 

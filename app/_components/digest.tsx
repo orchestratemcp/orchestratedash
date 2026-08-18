@@ -18,6 +18,9 @@ import {
   describeBriefAuthor,
   describeBriefCitations,
 } from "../../lib/copy/brief";
+/* MAR-691, safe on the same terms as `lib/copy/curation.ts` above: it imports
+   nothing but types and drags nothing into the renderer bundle. */
+import { DEEP_DIVE_HEADING, describeDeepDiveAuthor } from "../../lib/copy/deep-dive";
 import { humanizeAgentName } from "../../lib/copy/agent-name";
 import { describeDigestGaps, describeSourceFailure } from "../../lib/copy/recovery";
 /* A value import, and safe: `lib/copy/when.ts` has no imports at all, so it
@@ -131,6 +134,13 @@ export function DigestBody({
           <p>{gap.next_action}</p>
         </div>
       )}
+
+      {/* MAR-691. The deep dive, above the grouping — the same order the
+          agent's own saved report uses, and for the same reason it gives:
+          "the deeper look sits above the items rather than among them". It is
+          the one piece of writing an agent produces on its own rather than
+          DASH's own grouping of the agent's collected items, so it leads. */}
+      <DeepDive artifact={artifact} />
 
       {/* MAR-619. What the digest adds up to, before the digest.
 
@@ -249,6 +259,48 @@ function DigestItem({
         ) : null}
       </p>
     </>
+  );
+}
+
+/**
+ * A closer look at part of the digest, in the model's own written words
+ * (MAR-691).
+ *
+ * `deep_dive.text` used to reach DASH and be dropped: it is not a member of
+ * any panel section, not referenced anywhere in `app/` or `lib/`, and the
+ * schema's open `additionalProperties` let it travel intact into storage with
+ * nothing ever drawing it. This is that draw.
+ *
+ * Two states, and only one renders anything. `not_written` is not shown —
+ * `describeDeepDiveAuthor`'s docblock has the reason: on the sample agent this
+ * is scoped to one thing chosen on a previous run, so most digests have
+ * nothing to say here, and a sentence about that on every one of them would be
+ * noise. `curation`'s `not_curated` case is different: curation is attempted
+ * on every run, so its refusal is always news. Absent draws nothing either,
+ * for the same reason `Curation` below draws nothing for a digest that
+ * predates the feature.
+ *
+ * **`text` is plain text, never markup.** Rendered the same way
+ * `curation.overview` is — a `<p>`, not `dangerouslySetInnerHTML` and not a
+ * markdown parser — which is what keeps the citation-integrity property this
+ * exists to protect: whatever a model writes here can describe an item by
+ * number, the way the agent's own prompt asks it to, but it cannot become a
+ * clickable link no fetch produced. The heading is DASH's own words, not the
+ * model's, for the same reason a curated group's label is a `<p>` rather than
+ * an `<h3>` — see `Curation` below.
+ */
+function DeepDive({ artifact }: { artifact: DigestArtifact }): ReactNode {
+  const { deep_dive: deepDive } = artifact;
+  if (deepDive === undefined || deepDive.state !== "written") {
+    return null;
+  }
+
+  return (
+    <section className="digest-deep-dive" aria-label={DEEP_DIVE_HEADING}>
+      <h3>{DEEP_DIVE_HEADING}</h3>
+      <p className="wrap digest-deep-dive-text">{deepDive.text}</p>
+      <p className="muted">{describeDeepDiveAuthor(deepDive.model)}</p>
+    </section>
   );
 }
 
