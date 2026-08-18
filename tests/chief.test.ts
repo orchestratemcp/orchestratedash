@@ -209,13 +209,12 @@ describe("the chief invents nothing", () => {
     expect(line?.runs).toBe("Not run yet");
   });
 
-  it("names the agent in the action, so the button's object is not a scroll position", () => {
+  it("names the agent talked about, even though MAR-696 removed the button that used to point at it", () => {
     const line = describeChief({
       agent: "news-scout",
       runs: "Run once",
       glance: [GLANCE_ALL_CLEAR],
     });
-    expect(line?.action).toBe("Ask news-scout");
     expect(line?.agent).toBe("news-scout");
   });
 

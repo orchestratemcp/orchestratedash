@@ -6373,3 +6373,72 @@ that exists today, and the one-line fix — read the name off the
 `fleet_connections` row that PR makes the sole reference — belongs to whichever
 merges second. The note is written at the site in `execute.ts` step 5 as well as
 here.
+
+## MAR-696 — the fleet chat becomes a floating chat window, no ASK buttons (planned)
+
+Worktree `../dash-mar696-floating-chat`, branch `000henrik/mar-696-floating-chat`,
+cut from `origin/master` at `8bf4671` after confirming that commit was master's
+tip. Henrik, with a screenshot of the fleet page's chat area (the agent row's
+"ASK AI-NEWS-SCOUT-4" button and the "Ask the chief about your fleet" textarea's
+own ASK button): *"remove all excess. I only want a floating chat window. No
+button. Remove the ask button as well."* Built the conservative reading named in
+the issue: the fleet page's chat, not an app-wide persistent overlay.
+
+**Both buttons are gone and nothing that depended on either lost a capability.**
+`ChiefChat`'s own submit button (`lib/copy/chief-chat.ts`'s `CHIEF_CHAT_COPY.submit`)
+is deleted along with the field; `ask()` already ran on Enter, so the button only
+ever did what the key already did. `ChiefBand`'s standing `chief-actions` link
+("Ask {agent}", `lib/copy/chief.ts`'s `ChiefLine.action`) is deleted along with
+the field that built it. The routed hand-off (`ChiefChat`'s `ChiefHandoff`,
+reached by asking the chief a question that names an agent) is untouched — MAR-690's
+routed suggestion still works, which is the affordance MAR-696 asked to keep.
+The placeholder now carries what the button's label carried: *"What needs me? Or:
+who reads the news? Press Enter to ask."*
+
+**The composer left the band's own layout and became a fixed-position window.**
+`.chief-chat` was a second grid row of `.chief-band`, and an open room grew that
+row over the cards' share of `.fleet-stage`. It is `position: fixed` now,
+anchored to the page (clearing `.fleet-rail` with the same `--sidebar-width` the
+rail's own column is, dropped below 900px where the rail moves above the page),
+not laid out as a row of the band at all — `.fleet-stage.chief-is-open`'s
+row-growth rule is deleted with it, and the cards no longer give up any height
+for an open room. A first pass anchored the floating window to `.chief-band`'s
+own box instead (`position: absolute`, that box `position: relative`); at 375px
+the band shrinks to just the glyph and the sentence once the composer is no
+longer inside it, and the composer — taller than that shrunken box — rode up
+over the chief's own portrait. `electron/capture-mar615.ts` caught it:
+`overlap_area: 625` in four frames, the whole glyph inside the composer's
+rectangle. The fixed-position redesign has no containing block in common with
+the band at all, and a second capture run measured `overlap_area: 0` in all 12
+`spotlight-{closed,open}-{1280,768,375}-{light,dark}` frames.
+
+**Zero corners held without a declared exception.** `--radius-sm` and
+`--radius-md` are already `0px` system-wide (`app/tokens.css`), so the floating
+window's border-radius needed no override. Elevation is tonal layering and a
+crisp border — `--surface-2` against the page's own `--surface-0`/`--surface-1`
+— never a drop shadow: `app/tokens.css`'s own rule, "Surfaces — tonal layering,
+crisp borders, no shadows (MAR-528)," `DESIGN.md`'s "Elevation & Depth" quoted
+verbatim in that file's own comment.
+
+**Verified.** `pnpm typecheck` clean. Targeted `tests/chief-chat-render.test.tsx`,
+`tests/chief.test.ts`, `tests/chief-chat-copy.test.ts` 42/42 (three tests rewritten
+for the removed button and the removed standing link; none of the removed field's
+assertions survive under the old name). `tests/fleet-view-render.test.tsx`'s own
+"offers the one place this agent can actually be asked something" test rewritten
+— it asserted the now-removed link by name. FULL SUITE 218 files / 4161 passed /
+11 skipped / 0 failed from PowerShell. `pnpm brand:check` passed. `pnpm
+build:renderer` and `pnpm build:shell` both green. `pnpm exec electron
+dist/electron/capture-mar615.mjs` run twice against a fresh scratch store and
+`--user-data-dir` each time (the first attempt this session hung with zero CPU
+and no log line, environmental rather than code — a bare retry produced the
+30-image, 0-overlap run the second design change is proven against); images and
+`layout.json` committed under `qa-screenshots-mar696/`. `pnpm verify:shell` NOT
+RUN — DASH itself may be running on Henrik's machine and AGENTS.md forbids
+force-killing it, so CI's Windows shell-smoke is this branch's installed witness.
+
+**What is not proven.** No PR is open yet — this entry is filed alongside the
+branch, not after a merge. Henrik has not looked at the images; "capture
+screenshots... so Henrik can judge in the morning and widen deliberately" is the
+issue's own acceptance, and nobody has judged them yet. The wider reading MAR-696
+names and explicitly refuses — a chat that floats across every page rather than
+only the fleet page's own — is undecided and unbuilt, on purpose.

@@ -289,21 +289,24 @@ describe("the chief, under the cards", () => {
     expect(markup).toContain("Run 3 times");
   });
 
-  it("offers the one place this agent can actually be asked something", () => {
+  it("draws no standing link to the agent — MAR-696 removed the per-agent Ask button", () => {
     /*
-     * MAR-419's chat is not built. The action is MAR-545's per-agent Ask instead,
-     * on the agent's own workspace — a real destination rather than a box that
-     * would take a question nothing can answer.
+     * This used to assert a standing "Ask news-scout" link into
+     * `/agents/detail?agent=news-scout#ask-agent`. Henrik's own words removed
+     * it: *"remove all excess... No button."* Reaching that agent is still
+     * possible — through a routed hand-off in an open chief conversation
+     * (`ChiefHandoff`, covered by `tests/chief-chat-render.test.tsx`) — but
+     * nothing on the closed band points there any more.
      *
-     * MAR-660 moves "Open this agent" off the chief entirely — Henrik's own
-     * words, it belongs "under the avatar in the card for every agent," not
-     * on a component about the fleet as a whole. See "the list a cold render
-     * draws" below for its new home.
+     * MAR-660's "Open this agent" left the chief earlier still, onto the card
+     * itself (`fleet-card.tsx`'s `FleetOpenLink`); this only confirms neither
+     * control is back.
      */
     const markup = renderToStaticMarkup(<ChiefBand agent={agent()} />);
-    expect(markup).toContain("Ask news-scout");
+    expect(markup).not.toContain("Ask news-scout");
     expect(markup).not.toContain("Open this agent");
-    expect(markup).toContain("/agents/detail?agent=news-scout#ask-agent");
+    expect(markup).not.toContain("#ask-agent");
+    expect(markup).not.toContain("button-link");
   });
 
   it("says where it is and stops when there is no agent to talk about", () => {
