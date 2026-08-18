@@ -1,9 +1,13 @@
 # ADR 0025: A brief is a document bound to its evidence by index, and the list folds without disappearing
 
-**Status:** accepted in part — Henrik ruled on decisions 2, 4 and 5 on
-2026-08-18 and deferred 1 and 3 ("I trust you here"). Decision 4 was **changed
-by his ruling**: the export is a PDF, not a Markdown file, and it opens after it
-is saved. Nothing here is built and nothing here is a schema edit.
+**Status:** accepted, with **amendment 1** — Henrik ruled on decisions 2, 4
+and 5 on 2026-08-18 and deferred 1 and 3 ("I trust you here"). Decision 4 was
+changed by his ruling: the export is a PDF, not a Markdown file, and it opens
+after it is saved. Later the same day he **reopened decision 2** and overturned
+it: the brief and the raw roundup are **two documents**, which also withdraws
+most of decision 3. See amendment 1 at the end of this file — **read it before
+building anything from decisions 2 or 3.** Nothing here is built and nothing
+here is a schema edit.
 **Date:** 2026-08-18
 **Issue:** MAR-674 (DASH — the brief is the product). Depends on nothing;
 unblocks MAR-691 (`deep_dive.text` is dropped), and MAR-670 / MAR-671 / MAR-667
@@ -638,3 +642,212 @@ What a build session must prove, and in this order:
 - ⬜ one real charged run of the scout producing a document, attended. That is
   the only thing that closes MAR-674, and it is Henrik's bar: a briefing he would
   rather read than CoWork's, findable in two presses.
+
+
+---
+
+## Amendment 1 (MAR-674): the brief and the roundup are two documents, and nothing folds
+
+**Status:** accepted — Henrik, 2026-08-18, hours after accepting decision 2 and
+having had it explained to him in plain language: *"I'm not sure of this. I
+think it should be two documents. One RAW and one curated. Don't mix them."*
+The placement question — how the two sit on the page — he answered the same day:
+**the brief leads and the raw card sits below it, both always present.**
+
+**Date:** 2026-08-18
+
+This amendment **overturns decision 2's central rejection** and **withdraws most
+of decision 3**. Decisions 1, 4 and 5 survive whole and are not relitigated
+here.
+
+### The correction this document owes first
+
+Decision 2 was explained to Henrik as *"the written brief and the list of things
+it was written from live in one document, not two."* That sentence conflated two
+different things and is what he pushed back on, correctly:
+
+| the question | what decision 2 actually did |
+| --- | --- |
+| are the prose and the raw items **mixed in the data**? | **No, and never were.** `document` never rewrote, reordered or replaced `items`, and the ADR says so twice. |
+| are they **one record you open, or two**? | One. And that is the part he is overturning. |
+
+So "don't mix them" was already true of the data. What was single was the
+*record*, the card, and the thing a person opens. This amendment splits that.
+
+### Why the original rejection was wrong, in its own terms
+
+Decision 2 rejected a separate `kind: "brief"` on two grounds. One was a
+mistake and the other has a fix.
+
+**The mistake.** It claimed two artifacts per run would rebuild MAR-668's
+duplication. That is a misreading of MAR-668, which was about **the same
+briefing drawn twice in two places**. One raw card and one curated card are two
+*different documents* drawn once each. `lib/copy/panel.ts:270-284`'s yield rule
+is keyed on `artifact_id` and handles two ids as naturally as one.
+
+**The real objection, and its fix.** The brief cites its evidence by position,
+so across two artifacts those indices point into *another document's* array, and
+nothing structurally guarantees it is the same list in the same order. That
+objection stands. What decision 2 missed is that this codebase's answer to an
+unguaranteed join is not to avoid the join — it is to **make it checkable**,
+which is what `sources_fetched` already does for a digest's own citations.
+
+### Decision A1.1 — two kinds, one run, and the raw one is untouched
+
+> **`kind: "digest"` stays exactly what it is — the raw roundup, the complete
+> list, `analyzeGrounding`'s input, unchanged. A third kind, `kind: "brief"`,
+> carries `document` and nothing else about the items.**
+
+`document` moves off the digest and onto the brief. What stays on the digest is
+what was always the agent's own collected material: `items[]`, `items[].content`
+(MAR-670's recovered source text), `sources_fetched[]` and `set_aside[]`.
+
+**Artifact v2 is still needed and decision 2's mechanism survives.**
+`artifact_version` still becomes `enum [1, 2]` on the one existing schema, for
+two reasons that outlive the split: `items[].content` and `set_aside[]` are
+additions to the digest, and a new `kind` needs its own `allOf` branch — which
+`run-artifact.schema.json`'s own header already says is *"part of adding a
+kind."* The ingest finding is unchanged and is still the part easy to miss: one
+compiled validator against a `const 1` means a v2 artifact is rejected whole and
+never stored today.
+
+What changes in the schema from decision 2:
+
+- `document` is required by `kind: "brief"` rather than being an optional member
+  of a digest, and a `brief` requires `artifact_version: 2`.
+- **The `curation` / `document` mutual exclusion can no longer be enforced by
+  the schema**, because they now live on two different artifacts and no
+  single-document constraint can see both. This is a real loss and is recorded
+  rather than papered over: what keeps them from coexisting is now decision 5's
+  plan rule (compose replaces curate) plus a renderer that prefers the brief —
+  a convention and a preference, where decision 2 had a refusal. If a run ever
+  produces both, the reader gets two model-authored groupings of one list and
+  DASH cannot refuse it at ingest.
+
+### Decision A1.2 — the join is checked, never trusted
+
+> **A brief carries a fingerprint of the exact list it was written against.
+> When it does not match, DASH draws the brief without citations and says why —
+> it never draws a citation it cannot verify points at the right row.**
+
+```
+brief.derived_from {
+  artifact_id     ← the digest this was written from
+  run_id          ← the same run, checked rather than assumed
+  item_count      ← the length of the list at the moment of writing
+  items_digest    ← a hash over that list, in order
+}
+```
+
+`items_digest` is computed by the agent over the same rendering of `items[]` it
+sent to the model, and recomputed by DASH from the digest artifact it holds. The
+exact canonicalisation is a build detail and must be specified once, in one pure
+function, with the agent-kit template and DASH reading the same module — the
+cross-file contract `lib/agent-sources.ts` opens by refusing to leave in two
+places.
+
+**Three states, and the third is the one this exists for:**
+
+| state | what DASH draws |
+| --- | --- |
+| the digest is present and the fingerprint matches | the brief with its citations, exactly as decision 1 specifies |
+| the digest has not arrived yet | the brief, with its citation markers rendered as pending rather than as links — the two artifacts race on one channel and neither ordering is a fault |
+| the fingerprint does **not** match | the brief with **no citations at all**, under DASH's own sentence saying it was written from a different list than the one on this page |
+
+The third row is the whole point. A wrong citation is worse than no citation:
+it is a real link under a claim it does not support, which is the failure mode
+decision 1 exists to make structurally impossible and which a naive
+cross-artifact join would have reintroduced by the back door.
+
+### Decision A1.3 — the brief leads, the roundup sits below, and nothing folds
+
+> **Both cards are always on the run's output page. The brief first, the raw
+> roundup as a full second card underneath it. Decision 3's `<details>` is
+> withdrawn.**
+
+Henrik's placement ruling, and it resolves the tension this ADR asked him to
+arbitrate rather than trading it off:
+
+**The fold only ever existed because the two were one record.** A brief is short
+because it is a brief; a roundup is complete because it is a roundup. Once they
+are separate cards, there is nothing to collapse — the reader lands on the
+document, the evidence is the next thing down, and `app/_components/digest.tsx`'s
+rule that nothing collected may become invisible is satisfied **by construction
+rather than by argument.** The "line that must not be crossed" this ADR wrote
+under decision 3 no longer has anything to police.
+
+Three things decision 3 said that this withdraws:
+
+- **The `<details>` fold, and its summary line stating the count.** Gone. The
+  list is drawn in full, as it is today.
+- **The rewrite of `PANEL_ALREADY_SHOWN`.** Decision 3 required it because
+  *"Shown in full at the top of this page"* would have become false under a
+  fold. Nothing folds, so the sentence is true again and the copy is left alone.
+- **"One component, both renderers."** Decision 3's neatest property was that
+  the document living on the digest meant `outputs.tsx` and `panel.tsx` gained
+  it from one edit to `DigestBody`. That is lost: a `brief` is a new kind, so
+  both renderers gain a `case "brief"` in their own switch. **This is the
+  trap two-renderers-draw-an-artifact-card names, and it is now live again** —
+  fixing `outputs.tsx` will not have fixed `panel.tsx`, and only a photograph
+  with both in frame has ever caught it.
+
+What survives from decision 3 unchanged: DASH's card keeps the body and the
+author's `report` / `outputs` section yields it, on `lib/copy/panel.ts:270-284`'s
+reason. The `shown` set is now keyed on two ids rather than one.
+
+### What this costs
+
+- **The schema stops being able to refuse a curated digest beside a brief.** A
+  refusal became a convention. Named above, not softened.
+- **A fingerprint to compute, canonicalise and keep in step across two
+  repositories.** The agent writes it, DASH checks it, and a canonicalisation
+  that drifts between them turns every brief into the third row of A1.2's table
+  — citations silently gone, on a correct brief.
+- **A third state on the page** that did not exist before: a brief whose digest
+  has not arrived. It needs copy, and the copy must not read as an error.
+- **The two-renderers trap is live again**, where decision 3 had removed it by
+  construction.
+- **Two cards per run where a person previously saw one.** Mitigated by the
+  role labels and `stated_at` in each card heading, which MAR-609 already added
+  for exactly this reason.
+
+### What this does not change
+
+Decision 1 whole: the compose operation, the DASH-owned prompt, paragraph-level
+index binding, the refusal of any paragraph carrying an address, and the honest
+statement that a hallucinated claim cannot carry a link but can still name a
+real item's number. Decision 4 whole: the PDF, the print route, the forced-open
+fold **inside the print route** — which now means the raw card's list, printed
+in full — the forced-light theme, the destroyed window and `shell.openPath`.
+Decision 5 whole: compose replaces curate and `SPEND_ALLOWANCE_CALLS` stays at
+2. `analyzeGrounding` reads a digest and is not given a brief, which is now true
+by kind rather than by discipline.
+
+### Alternatives rejected within this amendment
+
+- **Keeping one artifact and folding, as decision 2 and 3 had it.** Overturned
+  by Henrik. Its own defence required a fold, and the fold required a
+  line-not-to-cross that somebody would have had to police forever.
+- **Two artifacts with an unchecked index join.** The thing decision 2 rejected,
+  and rightly. Without A1.2's fingerprint this amendment would be worse than
+  what it replaces.
+- **Copying the cited items into the brief instead of referencing them.** No
+  join to check, and two copies of one list that drift — and it would put
+  agent-collected material inside a model-authored document, which is the one
+  thing "don't mix them" most clearly forbids.
+- **Drawing the brief and refusing to show it when the digest is missing.** A
+  brief DASH holds and will not draw is a run whose output vanished for a
+  reason the reader cannot see. The pending-citation state says the true thing
+  instead.
+
+### What is proven
+
+**Nothing.** Amendment 1 changes no code, and the six proofs the original
+document owes are unchanged except where they name the fold. Two are added:
+
+- ⬜ that a brief whose `items_digest` does not match draws **no** citations,
+  and that a brief whose digest has not arrived draws pending ones — both as
+  pure tests over the join, with no Electron.
+- ⬜ that the brief card and the roundup card both render in `outputs.tsx`
+  **and** in `panel.tsx`, **by capture with both in frame**, because a new kind
+  puts the two-renderers trap back in play.
