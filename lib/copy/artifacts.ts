@@ -231,11 +231,10 @@ export function describeArtifactRole(kind: string): ArtifactRole {
         // and one curated", and a label that said only "Briefing" would leave
         // a reader wondering which of the two cards they were looking at.
         purpose: "Written up from everything this agent collected on this run.",
-        // False until the renderer lands. `OutputContent` then offers the
-        // record as it arrived rather than an empty pane, which is the honest
-        // answer for a format this build cannot lay out yet — and it is the
-        // branch that module's own docblock calls "the one worth having".
-        previewable: false,
+        // True since MAR-674 packet 3: `BriefBody` draws it, in both
+        // renderers. It was false for exactly one packet, during which a brief
+        // showed the "Show what arrived" disclosure rather than an empty pane.
+        previewable: true,
       };
 
     default:

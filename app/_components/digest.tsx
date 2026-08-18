@@ -10,13 +10,21 @@ import {
   describeCuratedBy,
   describeNotCurated,
 } from "../../lib/copy/curation";
+import { citedItems } from "../../lib/brief/citations";
+import type { BriefCitations } from "../../lib/brief/citations";
+import {
+  BRIEF_CITED_LABEL,
+  BRIEF_UNCITED_LABEL,
+  describeBriefAuthor,
+  describeBriefCitations,
+} from "../../lib/copy/brief";
 import { humanizeAgentName } from "../../lib/copy/agent-name";
 import { describeDigestGaps, describeSourceFailure } from "../../lib/copy/recovery";
 /* A value import, and safe: `lib/copy/when.ts` has no imports at all, so it
    reaches no Node builtin and drags nothing into the renderer bundle — the rule
    `tests/client-bundle.test.ts` enforces over every component in `app/`. */
 import { plainMoment } from "../../lib/copy/when";
-import type { DigestArtifact, DraftArtifact } from "../../lib/contracts";
+import type { BriefArtifact, DigestArtifact, DraftArtifact } from "../../lib/contracts";
 
 /**
  * A digest, with where each item came from (MAR-457).
@@ -660,5 +668,145 @@ export function GroundingChip({
     >
       {missing} of {grounding.items_total} unsourced
     </span>
+  );
+}
+
+/**
+ * A written brief, and the accounting DASH can honestly put around it
+ * (MAR-674, ADR 0025).
+ *
+ * ## What this draws that no other body does
+ *
+ * Everything inside `document` is model-authored prose. `DigestBody` draws an
+ * agent's record of what it found; this draws a provider's writing about that
+ * record, and the difference is why every string DASH adds around it comes from
+ * `lib/copy/brief.ts` rather than from the artifact.
+ *
+ * ## Rendered as text, never as markup
+ *
+ * A heading is a `h3` because it is one, and a paragraph is a `p`. Nothing here
+ * interprets the model's characters: `readBrief` already refused any paragraph
+ * with an address in it, and React escapes the rest by construction. There is
+ * no markdown step, and adding one would be handing a provider's output a way
+ * to become elements on a privileged page.
+ *
+ * ## The citations come from DASH's list, never from the text
+ *
+ * A paragraph carries positions into the digest's `items`, and the link under
+ * it is that item's own `item_url` — collected by the agent, checked against
+ * the fingerprint, and never a string the model produced. When the join is not
+ * sound `citedItems` returns nothing at all, so a paragraph shows no citation
+ * rather than a wrong one.
+ */
+export function BriefBody({
+  artifact,
+  citations,
+}: {
+  artifact: BriefArtifact;
+  citations: BriefCitations | null;
+}): ReactNode {
+  /*
+   * A resolver was never run, so nothing is claimed either way.
+   *
+   * Not the same as `digest_missing`, which is a checked answer. This is the
+   * state a card built by a caller that passed no resolver is in, and it draws
+   * the document with no citations and no notice — the honest rendering of "DASH
+   * has not looked", rather than a sentence asserting something it did not check.
+   */
+  const resolved: BriefCitations = citations ?? {
+    state: "digest_missing",
+    items: [],
+    expected_count: artifact.derived_from.item_count,
+    found_count: null,
+  };
+  const notice = citations === null ? null : describeBriefCitations(resolved);
+
+  return (
+    <>
+      {notice === null ? null : (
+        <div className="notice notice-err" role="status">
+          <p>
+            <strong>{notice.headline}</strong>
+          </p>
+          <p>{notice.meaning}</p>
+          <p>{notice.next_action}</p>
+        </div>
+      )}
+
+      {/* Whose writing this is, said before it rather than under it. A reader
+          who reaches the attribution after the prose has already read the
+          prose as DASH's. */}
+      <p className="muted">{describeBriefAuthor(artifact.document.model)}</p>
+
+      {artifact.document.sections.map((section, sectionIndex) => (
+        <section key={`${section.heading}:${String(sectionIndex)}`} className="brief-section">
+          <h3>{section.heading}</h3>
+          {section.paragraphs.map((paragraph, paragraphIndex) => (
+            <BriefParagraphBody
+              key={`${String(sectionIndex)}:${String(paragraphIndex)}`}
+              paragraph={paragraph}
+              citations={resolved}
+            />
+          ))}
+        </section>
+      ))}
+    </>
+  );
+}
+
+/**
+ * One paragraph and what it was written from.
+ *
+ * Its own component for `DigestItem`'s reason: the interesting part is the
+ * citation line, and a second copy of that logic would be a second place for an
+ * uncited paragraph to quietly stop being marked.
+ *
+ * The uncited label is shown rather than the line being omitted. A brief whose
+ * unattributed sentences look exactly like its attributed ones reads as fully
+ * grounded, which is the theatre `app/_components/digest.tsx` opens by refusing.
+ */
+function BriefParagraphBody({
+  paragraph,
+  citations,
+}: {
+  paragraph: BriefArtifact["document"]["sections"][number]["paragraphs"][number];
+  citations: BriefCitations;
+}): ReactNode {
+  const cited = citedItems(paragraph.items, citations);
+
+  return (
+    <>
+      <p className="wrap">{paragraph.body}</p>
+      {cited.length === 0 ? (
+        /* Silent when DASH withheld the citations rather than the model
+           omitting them: under a mismatch every paragraph would wear this
+           label, which would read as the model's failure when it is DASH's
+           refusal to guess. The notice at the top has already said so once. */
+        citations.state !== "matched" ? null : (
+          <p className="muted brief-uncited">{BRIEF_UNCITED_LABEL}</p>
+        )
+      ) : (
+        <p className="muted brief-cited">
+          {BRIEF_CITED_LABEL}
+          {": "}
+          {cited.map((item, index) => (
+            <span key={`${item.headline}:${String(index)}`}>
+              {index === 0 ? null : " · "}
+              {/* The headline is the link text and the address is what the
+                  anchor carries — `DigestItem`'s rule, and the address here
+                  came from the agent's own collected row rather than from
+                  anything the model wrote. */}
+              {item.item_url === undefined ? (
+                item.headline
+              ) : (
+                <a href={item.item_url} rel="noreferrer noopener" target="_blank">
+                  {item.headline}
+                </a>
+              )}
+            </span>
+          ))}
+        </p>
+      )}
+    </>
   );
 }

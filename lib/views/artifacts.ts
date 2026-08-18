@@ -22,6 +22,7 @@
  * product feature instead of four strings nobody has ever rendered.
  */
 
+import type { BriefCitations } from "../brief/citations";
 import type { RunArtifact } from "../contracts";
 import type { RunArtifactRecord } from "../store";
 import {
@@ -99,6 +100,21 @@ export interface ArtifactReference {
 
 export interface ArtifactCardView {
   artifact: RunArtifact;
+  /**
+   * Whether this brief's paragraphs may cite anything, and what they cite
+   * (MAR-674, ADR 0025 amendment 1).
+   *
+   * **Null for every kind but `brief`**, and null on a brief means nobody
+   * resolved it — which is why `resolveCitations` below has an honest default
+   * rather than a guess. A digest has its own items and needs no join; a draft
+   * cites messages rather than items.
+   *
+   * Computed by the caller for `resolveAvailability`'s reason and one sharper
+   * one: the check is a SHA-256, `node:crypto` cannot enter the renderer
+   * bundle, and this module is imported by components. The verdict crosses as
+   * data, exactly as `GroundingAnalysis` does.
+   */
+  citations: BriefCitations | null;
   /** The short date label used when this card sits in an agent's history. */
   history_day: string;
   role: ArtifactRole;
@@ -120,6 +136,20 @@ export interface ArtifactCardView {
 export function buildArtifactCards(
   records: readonly RunArtifactRecord[],
   resolveAvailability: (record: RunArtifactRecord) => ArtifactAvailability = () => "available",
+  /**
+   * The citation verdict for a brief, or null.
+   *
+   * A parameter with an honest default, on the reasoning `resolveAvailability`
+   * already carries: the answer needs a hash of another artifact's items, this
+   * module must stay importable by a component, and a default that guessed
+   * would put citations on screen that nothing had checked. Null renders as no
+   * citations rather than as unchecked ones.
+   *
+   * Placed before `today` because `today` exists for tests and nothing in
+   * production passes it — inserting here keeps every existing call site
+   * correct without an `undefined` in the middle of it.
+   */
+  resolveCitations: (record: RunArtifactRecord) => BriefCitations | null = () => null,
   today = new Date(),
 ): ArtifactCardView[] {
   return records.map((record) => {
@@ -128,6 +158,7 @@ export function buildArtifactCards(
 
     return {
       artifact,
+      citations: resolveCitations(record),
       history_day: describeArtifactHistoryDay(artifact.generated_at, today),
       role: describeArtifactRole(artifact.kind),
       availability,

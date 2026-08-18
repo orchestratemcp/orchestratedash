@@ -20,7 +20,7 @@ import type {
   PanelTableView,
   PanelView,
 } from "../../lib/views/panel";
-import { DigestBody, DraftBody } from "./digest";
+import { BriefBody, DigestBody, DraftBody } from "./digest";
 import { OutputHistory } from "./output-history";
 
 /**
@@ -558,6 +558,14 @@ function PanelArtifactBody({ card }: { card: ArtifactCardView }): ReactNode {
       return <DigestBody artifact={card.artifact} grounding={null} />;
     case "draft":
       return <DraftBody artifact={card.artifact} />;
+    case "brief":
+      /* MAR-674, and this case is the two-renderers trap in the act.
+         `app/_components/outputs.tsx` gained the same branch in the same change,
+         and a build that added it there alone would leave the author's own panel
+         drawing a brief as "Show what arrived" while DASH's card drew the
+         document — one defect, two files, and only a photograph with both in
+         frame has ever caught it. */
+      return <BriefBody artifact={card.artifact} citations={card.citations} />;
     default:
       // Unreachable through the union and deliberately not a throw: the schema
       // and the renderer are two authorities that can disagree across a version,

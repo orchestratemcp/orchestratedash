@@ -91,6 +91,7 @@ import {
   type PanelSectionV1,
   type PanelTableColumn,
 } from "../panel-spec";
+import type { BriefCitations } from "../brief/citations";
 import { buildArtifactCards, type ArtifactCardView } from "./artifacts";
 
 /**
@@ -122,6 +123,16 @@ export interface PanelContext {
   /** This agent's artifacts, newest first. Never another agent's — see below. */
   artifacts: readonly RunArtifactRecord[];
   facts: PanelDashFacts;
+  /**
+   * The citation verdict for a brief this panel draws (MAR-674).
+   *
+   * Optional, and handed in from outside for the reason `facts` is: resolving
+   * it means hashing another artifact's items, `node:crypto` cannot enter the
+   * renderer bundle, and this module is imported by `app/_components/panel.tsx`.
+   * Absent means no caller resolved one, which renders as no citations rather
+   * than as unchecked ones.
+   */
+  resolveCitations?: (record: RunArtifactRecord) => BriefCitations | null;
 }
 
 /* ---------------------------------------------------------------------- *
@@ -293,7 +304,10 @@ function buildSection(
         kind: "report",
         at,
         label: section.label,
-        card: record === null ? null : (buildArtifactCards([record])[0] ?? null),
+        card:
+          record === null
+            ? null
+            : (buildArtifactCards([record], undefined, context.resolveCitations)[0] ?? null),
         // Always scoped: `artifact_role` is required on a `report`.
         empty: describeEmptyOutputSection(true),
       };
@@ -318,7 +332,7 @@ function buildSection(
         kind: "outputs",
         at,
         label: section.label,
-        cards: buildArtifactCards(shown),
+        cards: buildArtifactCards(shown, undefined, context.resolveCitations),
         capped: describeOutputsCap(shown.length, matching.length),
         // Scoped only when the author named a role. An unscoped section shows
         // everything, and telling its reader the author picked a kind of output
