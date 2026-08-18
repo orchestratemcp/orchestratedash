@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://orchestratemcp.dev/orchestratedash/contracts/run-artifact.schema.json",
-  "title": "OrchestrateDASH run artifact v1",
+  "title": "OrchestrateDASH run artifact v1 and v2",
   "description": "What a run produced, as opposed to what it did. Carried to DASH on the runner's newline-delimited JSON channel as {\"type\":\"artifact\"} and validated at the same boundary telemetry is. A separate contract from run-event.schema.json on purpose: telemetry v1 is frozen and locked in contract.lock.json, an artifact is a different population from an event, and listRuns derives run status from events alone — an artifact must never be able to perturb that. additionalProperties is left open per the contract's additive-versioning rule.",
   "type": "object",
   "required": ["artifact_version", "agent", "run_id", "artifact_id", "kind", "title", "generated_at"],
@@ -18,10 +18,22 @@
     {
       "if": { "properties": { "kind": { "const": "draft" } }, "required": ["kind"] },
       "then": { "required": ["draft"], "properties": { "draft": true } }
+    },
+    {
+      "description": "ADR 0025 amendment 1. The third kind, and the branch that makes `artifact_version` mean something rather than being a number nobody checks: a brief REQUIRES version 2, so a producer emitting one has necessarily been written against this contract. `derived_from` is required beside `document` because a brief's whole citation property is an index into another artifact's list, and an index with no way to check which list it names is worse than no citation at all.",
+      "if": { "properties": { "kind": { "const": "brief" } }, "required": ["kind"] },
+      "then": {
+        "required": ["document", "derived_from"],
+        "$comment": "`artifact_version` is constrained rather than merely required: the outer object already requires it, and what this adds is that it must be 2 here.",
+        "properties": { "document": true, "derived_from": true, "artifact_version": { "const": 2 } }
+      }
     }
   ],
   "properties": {
-    "artifact_version": { "const": 1 },
+    "artifact_version": {
+      "enum": [1, 2],
+      "description": "Widened from `const 1` by ADR 0025. Note what this widening actually is: `lib/contracts.ts` compiles ONE validator for this file, so before it a v2 artifact was not partly read — it was rejected whole and never stored. A v1 artifact is unchanged and stays valid byte for byte. Version 2 is required by, and only by, the `brief` kind; `set_aside` is deliberately NOT gated on it, for the reason given on that member."
+    },
     "agent": {
       "type": "string",
       "minLength": 1,
@@ -39,8 +51,8 @@
       "description": "Stable for the life of the artifact and unique within (agent, run_id). This is what makes 'open the digest again' resolve to the same document rather than to whatever is newest — the stable id MAR-457 asks for."
     },
     "kind": {
-      "enum": ["digest", "draft"],
-      "description": "`draft` was added by MAR-458, when a second kind existed rather than in advance of one. It means a reply an agent composed. Whether that reply exists anywhere but DASH is `draft.placement`, which MAR-469 made a required member for exactly this reason: stage 1's description said a draft was always LOCAL, and stage 2 made that false without changing the kind. A renderer that reads the kind alone can no longer tell, and now cannot compile without asking."
+      "enum": ["digest", "draft", "brief"],
+      "description": "`brief` was added by ADR 0025 amendment 1 and means a document a model wrote ABOUT a digest this same run produced — never instead of it. Henrik's rule, on reopening decision 2: \"One RAW and one curated. Don't mix them.\" The raw roundup stays a `digest` and stays exactly what it was, so `analyzeGrounding` grades the same population it always did and a model cannot improve a run's verdict by writing well. `draft` was added by MAR-458, when a second kind existed rather than in advance of one. It means a reply an agent composed. Whether that reply exists anywhere but DASH is `draft.placement`, which MAR-469 made a required member for exactly this reason: stage 1's description said a draft was always LOCAL, and stage 2 made that false without changing the kind. A renderer that reads the kind alone can no longer tell, and now cannot compile without asking."
     },
     "title": { "type": "string", "minLength": 1, "maxLength": 200 },
     "generated_at": { "type": "string", "format": "date-time" },
@@ -196,6 +208,84 @@
                 "maxItems": 200
               }
             }
+          }
+        }
+      }
+    },
+    "document": {
+      "type": "object",
+      "description": "What a model wrote about this run's digest (ADR 0025 decision 1). Required when kind is `brief`, meaningless on any other kind. Ordered sections of prose, and the ordering is the document — this is the one member in the contract whose sequence a renderer must not re-sort. Every string here is model-authored, is rendered as text and never as markup, and may not carry a link: `readBrief` drops a paragraph containing anything that looks like an address rather than cleaning it, exactly as `readCuration` does for a group label.",
+      "required": ["sections"],
+      "properties": {
+        "sections": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": ["heading", "paragraphs"],
+            "properties": {
+              "heading": { "type": "string", "minLength": 1, "maxLength": 80 },
+              "paragraphs": {
+                "type": "array",
+                "maxItems": 6,
+                "items": {
+                  "type": "object",
+                  "required": ["body"],
+                  "properties": {
+                    "body": { "type": "string", "minLength": 1, "maxLength": 1200 },
+                    "items": {
+                      "type": "array",
+                      "description": "Positions into the digest named by `derived_from`, zero-based. Bound to the PARAGRAPH and not to the section, which is the whole safety argument of ADR 0025 decision 1: a section-level binding would let one wrong sentence borrow the citations of every other sentence under the same heading, which is the defect Henrik reported. ABSENT IS NOT AN ERROR — it means prose the model wrote without naming a source, and the renderer marks it rather than dropping it, on `digest.tsx`'s rule that hiding the evidence against a verdict is how the verdict becomes theatre.",
+                      "items": { "type": "integer", "minimum": 0 },
+                      "maxItems": 200
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "What the provider says wrote this. The agent's own report, with telemetry v1's `model` standing rather than DASH's. Copy must attribute it."
+        }
+      }
+    },
+    "derived_from": {
+      "type": "object",
+      "description": "The digest this brief was written from, and the fingerprint that makes the join CHECKABLE (ADR 0025 amendment 1, A1.2). Required when kind is `brief`. Splitting the brief from the roundup is what Henrik asked for; the cost is that `document.sections[].paragraphs[].items` now index into a DIFFERENT artifact's array, and nothing about two separate records guarantees they are the same list in the same order. This member is that guarantee. DASH recomputes `items_digest` from the digest it holds, and on a mismatch draws the brief with NO citations under its own sentence — because a wrong citation is a real link under a claim it does not support, which is worse than no citation and is precisely what the index-only design exists to prevent.",
+      "required": ["artifact_id", "run_id", "item_count", "items_digest"],
+      "properties": {
+        "artifact_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "run_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Carried and checked rather than assumed equal to the brief's own `run_id`. A brief written from a previous run's digest is a thing an agent could do, and DASH should be able to say so rather than silently joining across runs."
+        },
+        "item_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The length of that list when the brief was written. Redundant against `items_digest` and kept anyway: it is what lets DASH say 'written from 60 items, and this digest has 58' in words a person can act on, where a hash mismatch alone says only that something differs."
+        },
+        "items_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256, lowercase hex, over a canonical rendering of the digest's `items` in order. The canonicalisation is ONE pure function shared by DASH and the agent kit and must never be transcribed into a second place — a drift between the two ends turns every correct brief into an uncited one, which is A1.2's recorded cost."
+        }
+      }
+    },
+    "set_aside": {
+      "type": "array",
+      "description": "What the agent collected and deliberately did not put in the digest. The other half of the honesty layer beside `sources_fetched`: that member says which sources did not answer, this one says what answered and was left out.\n\nDELIBERATELY NOT GATED ON artifact_version 2, unlike `document`. The competitor scout has emitted this field since MAR-647 and it has been travelling under this schema's open `additionalProperties` and rendering nowhere — so gating it would reject, at ingest, every artifact the one real agent produces today. A contract change that breaks a working agent to enforce a version number is the wrong trade, and the versioned member is the one that carries a new kind.\n\nONLY WHAT DASH RENDERS IS DEFINED. The scout also carries `competitor` and `item_url` on these entries; both go on travelling under `additionalProperties` and neither is constrained here, because a constraint on a field DASH does not read is a way to reject a good artifact for no benefit.",
+      "items": {
+        "type": "object",
+        "required": ["headline"],
+        "properties": {
+          "headline": { "type": "string", "minLength": 1, "maxLength": 300 },
+          "reason": {
+            "enum": ["no_signal", "duplicate", "off_topic", "too_old", "unparseable"],
+            "description": "Why it was left out, in a CLOSED set so that the sentence a person reads is DASH's rather than the agent's. The alternative — free text — would put agent-authored prose on the one surface whose entire job is to be DASH's own honest accounting, which is the distinction `sources_fetched` keeps and `lib/copy/identifiers.ts` exists to protect.\n\nOptional, and absent is rendered as 'left out, and the agent did not say why' rather than as an error. The scout's existing entries carry no reason at all, and a required member would make this contract reject them."
           }
         }
       }
