@@ -489,6 +489,28 @@ describe("configuring DASH before importing anything", () => {
     await expect(store.get(connectionSecretName(SCOUT, "mail", "gmail-account"))).rejects.toThrow();
   });
 
+  it("titles a fleet card's agents with the stored rename, not the manifest alone (MAR-690)", () => {
+    /*
+     * `scout()`'s manifest carries the example's own `display_name` ("Meeting
+     * Assistant") because only `agent.name` is overridden to `news-scout`.
+     * Before MAR-690, `fleetAgentTitle` read that manifest field and nothing
+     * else, so a store rename never reached this card — the exact mismatch the
+     * chief's own `AgentRow.title` never had, because it always preferred the
+     * stored column.
+     */
+    const world = { [SCOUT]: scout() };
+    const withoutRename = fleetConnectorViews([
+      { name: SCOUT, manifest: world[SCOUT] as ConnectionSourceManifest },
+    ]).find((one) => one.provider === GMAIL);
+    expect(withoutRename?.agents.find((one) => one.agent === SCOUT)?.title).toBe("Meeting Assistant");
+
+    const renamed = fleetConnectorViews(
+      [{ name: SCOUT, manifest: world[SCOUT] as ConnectionSourceManifest }],
+      new Map([[SCOUT, "Henrik's Scout"]]),
+    ).find((one) => one.provider === GMAIL);
+    expect(renamed?.agents.find((one) => one.agent === SCOUT)?.title).toBe("Henrik's Scout");
+  });
+
   it("gives it to the waiting agent on one press, without a second sign-in", async () => {
     const store = vault();
     const oauth = scriptedOAuth();

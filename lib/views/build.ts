@@ -579,18 +579,33 @@ function displayNameOf(manifest: ConnectionSourceManifest, fallback: string): st
 }
 
 /**
- * The MAR-589 title for one fleet candidate: `agentDisplayName`'s answer, over
- * the same `manifest.agent` shape `displayNameOf` above already casts to.
+ * The MAR-589 title for one fleet candidate: `agentDisplayName`'s answer, with
+ * the stored rename column preferred over the manifest's own `display_name` —
+ * the same precedence `connectionsView`'s own `agents` list applies three lines
+ * below its call to this function, and the one every other title-bearing
+ * surface applies (`AgentRow.title`, which is what the chief prints).
+ *
+ * MAR-690 found this precedence missing here specifically: a connector card's
+ * "which agents reach this key" list was reading the manifest alone, so a
+ * renamed (or, for an MCP-planned agent with no author-declared name, a
+ * store-corrupted) agent showed one title on this list and a different one
+ * everywhere else DASH names it — including the chief, which is the
+ * `AgentRow.title` reader and therefore never disagreed with the rest of DASH
+ * to begin with.
  *
  * `agentId` is `manifest.agent.name` in every caller — `listConnectionCapableAgents`
  * derives one from the other — so it is the correct fallback rather than a
  * second guess, and it means this never needs the manifest to have parsed
  * cleanly to produce a name a person can read.
  */
-function fleetAgentTitle(agentId: string, manifest: ConnectionSourceManifest): string {
+function fleetAgentTitle(
+  agentId: string,
+  manifest: ConnectionSourceManifest,
+  storedDisplayName?: string | null,
+): string {
   const agent = (manifest as { agent?: { display_name?: unknown } }).agent;
-  const display = typeof agent?.display_name === "string" ? agent.display_name : undefined;
-  return agentDisplayName({ name: agentId, display_name: display });
+  const declared = typeof agent?.display_name === "string" ? agent.display_name : undefined;
+  return agentDisplayName({ name: agentId, display_name: storedDisplayName ?? declared });
 }
 
 /**
@@ -1000,7 +1015,12 @@ export function connectionsView(store: StoreShape = readStore()): ConnectionsVie
     }
   }
 
-  const fleet = fleetConnectorViews(capable);
+  // MAR-690. Same map `agents` below reads from, handed to the fleet cards so
+  // their own per-agent title matches it.
+  const storedDisplayNames = new Map(
+    capable.map(({ name }) => [name, store.agents[name]?.display_name ?? null]),
+  );
+  const fleet = fleetConnectorViews(capable, storedDisplayNames);
 
   return {
     // MAR-593. What DASH can connect, computed from the catalogue and the fleet
@@ -1058,16 +1078,28 @@ export function connectionsView(store: StoreShape = readStore()): ConnectionsVie
  * fact. `capable` arrives already read: this runs inside `connectionsView`, which
  * has the manifests in hand, and re-reading them per connector would be a query
  * per card on every render.
+ *
+ * `storedDisplayNames` carries the rename column per agent (MAR-690), keyed the
+ * same way `connectionsView`'s own `agents` list reads `store.agents[name]?.display_name`
+ * three lines above its call here — so this list and that one, on the same
+ * page, cannot title the same agent two different ways. Defaulted to empty
+ * rather than made required: every existing caller before MAR-690 had no rename
+ * to give it, and an empty map falls through `fleetAgentTitle` to the manifest
+ * exactly as it always did.
  */
 export function fleetConnectorViews(
   capable: ReadonlyArray<{ name: string; manifest: ConnectionSourceManifest }>,
+  storedDisplayNames: ReadonlyMap<string, string | null> = new Map(),
 ): FleetConnectorView[] {
   const candidates = capable.map(({ name, manifest }) => ({
     agent_id: name,
     manifest,
   }));
   const titleByAgent = new Map(
-    candidates.map((candidate) => [candidate.agent_id, fleetAgentTitle(candidate.agent_id, candidate.manifest)]),
+    candidates.map((candidate) => [
+      candidate.agent_id,
+      fleetAgentTitle(candidate.agent_id, candidate.manifest, storedDisplayNames.get(candidate.agent_id)),
+    ]),
   );
 
   return fleetCatalogue().map((connector) => {
