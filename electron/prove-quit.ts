@@ -40,6 +40,15 @@
  * would otherwise have cost a restart. A pass here is a pass of the last resort,
  * not of the fix — the `approval` scene is the fix.
  *
+ * `brief_print` proves `electron/brief-pdf.ts`'s hazard is actually mitigated
+ * rather than only documented (MAR-674, ADR 0025 decision 4). It opens a hidden
+ * `BrowserWindow` the same way `exportBriefAsPdf` does — a `data:` URL, no
+ * preload, sandboxed, never navigating — lets it sit for two seconds the way a
+ * real print would, then destroys it itself, exactly as that module's `finally`
+ * does. Unlike `wedged`, this window IS destroyed before the app window closes,
+ * so a pass here demonstrates the `finally` block's own cleanup keeps DASH
+ * quittable, not merely that some later window was never opened.
+ *
  * ## Running it
  *
  * ```powershell
@@ -223,6 +232,35 @@ async function run(): Promise<void> {
       event.preventDefault();
     });
     note(`stray window opened (${describeWindows()})`);
+  }
+
+  if (SCENE === "brief_print") {
+    // The same shape `exportBriefAsPdf` creates: hidden, no preload, sandboxed,
+    // never navigating. See that module's header for why each option is there —
+    // this scene exists to prove its `finally` really frees the process, not to
+    // re-argue the options themselves.
+    const printWindow = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        preload: undefined,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        webSecurity: true,
+        experimentalFeatures: false,
+      },
+    });
+    printWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    printWindow.webContents.on("will-navigate", (event) => {
+      event.preventDefault();
+    });
+    await printWindow.loadURL(
+      `data:text/html;charset=utf-8,${encodeURIComponent("<html><body>prove-quit brief_print scene</body></html>")}`,
+    );
+    note(`print window loaded (${describeWindows()})`);
+    await settle(2_000);
+    printWindow.destroy();
+    note(`print window destroyed (${describeWindows()})`);
   }
 
   if (RUNNER_MODE === "stop") {
