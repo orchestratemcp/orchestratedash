@@ -103,6 +103,7 @@ import path from "node:path";
 
 import { putAgentDomState } from "../lib/agent-dom/store.js";
 import { importManifest, ingestArtifacts, ingestEvents } from "../lib/store.js";
+import { fingerprintItems } from "../lib/brief/fingerprint.js";
 
 const OUT = path.resolve(
   process.cwd(),
@@ -178,11 +179,18 @@ function seed(): void {
    *
    * The shipped example declares none, so before this the Output stage's frame
    * showed DASH's card and nothing under it — a picture that looks identical
-   * whether the fix is in or out. These two sections are the exact pair the
-   * real competitor scout declares, and they are what drew the briefing a
-   * second and a third time: a `report` bound to the digest role and an
-   * `outputs` section over the same role. The `note` is the control — a section
-   * that draws no artifact body must be untouched by the fix.
+   * whether the fix is in or out. The first two of these sections are the
+   * exact pair the real competitor scout declares, and they are what drew the
+   * briefing a second and a third time: a `report` bound to the digest role
+   * and an `outputs` section over the same role. The `note` is the control — a
+   * section that draws no artifact body must be untouched by the fix.
+   *
+   * `latest_brief` is MAR-674 packet 5a's own addition, not the real scout's —
+   * it binds to the `brief` role so the author's panel has somewhere to draw
+   * the brief artifact `seed()` adds below. Without it `PanelArtifactBody`
+   * would compile a `case "brief"` that this harness never exercises, because
+   * `newestOfRole`/`context.artifacts.filter` only surface an artifact to a
+   * panel section whose `artifact_role` names its `kind`.
    */
   manifest["agent_dom"] = {
     ...((manifest["agent_dom"] as Record<string, unknown> | undefined) ?? {}),
@@ -195,6 +203,12 @@ function seed(): void {
           type: "report",
           label: "Latest briefing",
           artifact_role: "digest",
+        },
+        {
+          id: "latest_brief",
+          type: "report",
+          label: "Written up",
+          artifact_role: "brief",
         },
         {
           id: "everything",
@@ -223,6 +237,28 @@ function seed(): void {
     "AI agent news for Monday",
     "AI agent news for Sunday",
   ];
+  /**
+   * Shared by every digest below and by the brief seeded after them —
+   * `fingerprintItems` has to run over the exact same list `run-scout-0`'s
+   * digest carries, or `resolveBriefCitations` reads the join as a `mismatch`
+   * and the brief draws with no citations, same as a real drift would.
+   */
+  const digestItems = [
+    {
+      headline: "A supervisor for long-running agents lands in beta",
+      summary: "One paragraph of a digest, which is the thing a person opened this page to read.",
+      source_name: "Hacker News",
+      source_url: "https://hn.algolia.com/api/v1/search",
+      item_url: "https://hn.algolia.com/api/v1/search?query=supervisor",
+    },
+    {
+      headline: "Permission brokers replace token pass-through",
+      summary: "A second item, so the open card is visibly a report rather than a line.",
+      source_name: "Hacker News",
+      source_url: "https://hn.algolia.com/api/v1/search",
+      item_url: "https://hn.algolia.com/api/v1/search?query=brokers",
+    },
+  ];
   const accepted = ingestArtifacts(
     days.map((day, index) => ({
       artifact_version: 1,
@@ -240,24 +276,63 @@ function seed(): void {
           item_count: 2,
         },
       ],
-      items: [
-        {
-          headline: "A supervisor for long-running agents lands in beta",
-          summary:
-            "One paragraph of a digest, which is the thing a person opened this page to read.",
-          source_name: "Hacker News",
-          source_url: "https://hn.algolia.com/api/v1/search",
-        },
-        {
-          headline: "Permission brokers replace token pass-through",
-          summary: "A second item, so the open card is visibly a report rather than a line.",
-          source_name: "Hacker News",
-          source_url: "https://hn.algolia.com/api/v1/search",
-        },
-      ],
+      items: digestItems,
     })),
   );
   console.log(`[cockpit] ${String(accepted.accepted)} artifact(s) accepted`);
+
+  /*
+   * MAR-674 packet 5a. A `brief` derived from `digest-scout-0` — the run
+   * `latest_briefing` and the telemetry below both already treat as "this
+   * run" — so both `outputs.tsx`'s Output stage and `panel.tsx`'s
+   * `latest_brief` section have a brief artifact to draw. `derived_from`
+   * carries `fingerprintItems(digestItems)` over the identical list rather
+   * than a value copied by hand, on `lib/brief/fingerprint.ts`'s own
+   * warning: a drift between the hash and the list it describes turns a
+   * correct brief into an uncited one, silently.
+   */
+  const briefAccepted = ingestArtifacts([
+    {
+      artifact_version: 2,
+      agent: AGENT,
+      run_id: "run-scout-0",
+      artifact_id: "brief-scout-0",
+      kind: "brief",
+      title: "What the scout found today",
+      generated_at: daysAgo(0),
+      document: {
+        model: "openai/gpt-5-mini",
+        sections: [
+          {
+            heading: "Agent supervision is moving fast",
+            paragraphs: [
+              {
+                body: "A supervisor for long-running agents landed in beta this week, aimed at exactly the failure mode DASH's own approval flow exists to catch.",
+                items: [0],
+              },
+              {
+                body: "Permission brokers are replacing token pass-through as the default way an agent reaches a provider, rather than holding a credential itself.",
+                items: [1],
+              },
+            ],
+          },
+        ],
+      },
+      derived_from: {
+        artifact_id: "digest-scout-0",
+        run_id: "run-scout-0",
+        item_count: digestItems.length,
+        items_digest: fingerprintItems(digestItems),
+      },
+    },
+  ]);
+  if (briefAccepted.accepted !== 1) {
+    // Silent here would mean a schema drift produces a picture of the
+    // "Show what arrived" disclosure instead of the brief, which is exactly
+    // the wrong-page failure this harness's own header warns against.
+    throw new Error(`the seeded brief was refused: ${JSON.stringify(briefAccepted.rejected)}`);
+  }
+  console.log(`[cockpit] ${String(briefAccepted.accepted)} brief artifact(s) accepted`);
 
   /*
    * Telemetry for the newest run, so the Run stage has a feed, meters and a
@@ -383,7 +458,7 @@ function seed(): void {
     throw new Error(`the seeded snapshot was refused: ${put.errors.join("; ")}`);
   }
 
-  console.log(`[cockpit] seeded ${AGENT}: 4 outputs, 1 run of telemetry, 1 snapshot`);
+  console.log(`[cockpit] seeded ${AGENT}: 4 digests, 1 brief, 1 run of telemetry, 1 snapshot`);
 }
 
 /** MAR-664's own agent, for the About scene below. */
@@ -824,6 +899,72 @@ async function run(): Promise<void> {
   );
   await settle(400);
   await shoot(window, "agent-output-author-panel");
+
+  /*
+   * MAR-674 packet 5a's scene: a `brief` artifact in frame in BOTH renderers.
+   * `tests/brief-render.test.tsx` already asserts the document and its links
+   * render in each through `renderToStaticMarkup` — real evidence, and not a
+   * photograph. This is the photograph that assertion has been standing in
+   * for: whether `case "brief"` actually draws, in the packaged renderer,
+   * rather than only compiling. The two-renderers trap is exactly why one
+   * capture without the other would prove nothing — a build that added the
+   * case to `outputs.tsx` and forgot `panel.tsx` compiles clean either way.
+   *
+   * ONE FRAME CANNOT SHOW BOTH RENDERERS DRAWING THE SAME BRIEF IN FULL, AND
+   * THAT IS MAR-668'S OWN RULE RATHER THAN A LIMIT OF THIS HARNESS. The Output
+   * stage draws exactly one card in full — `resolveOpenCard`, MAR-646 — and
+   * `page.tsx` tells the author's panel which artifact_id that was, so
+   * `PanelArtifactCard` yields the body for exactly that one (`panel.tsx`
+   * :414). Point both at the same brief and the panel photograph would only
+   * ever show the yield sentence, which exercises `describeArtifactRole`
+   * rather than `PanelArtifactBody`'s `case "brief"` — not the branch this
+   * proof is about. So the two shots below open DIFFERENT cards on purpose,
+   * via the `output` query param `app/_data/routes.ts` defines: the first
+   * opens the brief so `outputs.tsx` draws it, the second opens a digest so
+   * the brief is NOT the stage's open card and `panel.tsx` draws it instead
+   * of yielding to a copy that, in this second shot, is not there.
+   */
+  nativeTheme.themeSource = "light";
+  await settle(300);
+  const briefOpenRoute =
+    `/agents/detail?agent=${encodeURIComponent(AGENT)}&stage=output&output=${encodeURIComponent("brief-scout-0")}`;
+  await go(window, briefOpenRoute);
+  await resizeTo(window, VIEWPORT.width, VIEWPORT.height);
+  await go(window, briefOpenRoute);
+  await settle(400);
+  await shoot(window, "agent-output-brief-outputs-area");
+
+  const digestOpenRoute =
+    `/agents/detail?agent=${encodeURIComponent(AGENT)}&stage=output&output=${encodeURIComponent("digest-scout-0")}`;
+  await go(window, digestOpenRoute);
+  const at = await resizeTo(window, VIEWPORT.width, VIEWPORT.height);
+  await go(window, digestOpenRoute);
+  await within(
+    "scroll the author's panel to the brief section",
+    5_000,
+    window.webContents.executeJavaScript(
+      `[...document.querySelectorAll(".agent-panel-section h3")].find((el) => el.textContent === "Written up")?.scrollIntoView({ block: "center" })`,
+    ),
+  );
+  await settle(400);
+  const panelBriefCard = await within(
+    "confirm the panel drew the brief's body rather than yielding to it",
+    5_000,
+    window.webContents.executeJavaScript(
+      `Boolean([...document.querySelectorAll(".agent-panel-section")]
+        .find((el) => el.querySelector("h3")?.textContent === "Written up")
+        ?.querySelector(".output-card:not(.is-elsewhere)"))`,
+    ),
+  );
+  console.log(
+    `[cockpit] panel drew the brief's body rather than yielding (window reports ${String(at)}px): ${String(panelBriefCard)}`,
+  );
+  if (panelBriefCard !== true) {
+    throw new Error(
+      "the author's panel yielded the brief instead of drawing it — the open card must not be brief-scout-0 here",
+    );
+  }
+  await shoot(window, "agent-output-brief-author-panel");
 
   /*
    * MAR-664's scene: the About disclosure, closed and then open, on the
