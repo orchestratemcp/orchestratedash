@@ -302,11 +302,24 @@ describe("connect", () => {
     expect(receipts).toHaveLength(1);
     // Spends first and the read second, which is `byAccess`'s ordering: the
     // line worth reading must not sit under the line that is not (MAR-545).
-    // Two spends since MAR-619 — the person's own question and the agent's own
-    // summarising — and the read stays last.
+    // THREE spends since MAR-674 — the person's own question, the agent's own
+    // summarising, and now the agent writing the brief — and the read stays
+    // last.
+    //
+    // This assertion moving is the interesting part of adding an operation and
+    // is why it is pinned by value. `resolveKeyGrant` hands an agent every
+    // operation its provider has, so a key connected LAST WEEK reaches the new
+    // one the moment this build ships: the grant is by provider, not by the
+    // capabilities a manifest declared. Nobody re-consents, and the receipt is
+    // the only place that fact surfaces — so the receipt has to be right.
+    // Within the spends the order is the CATALOGUE's, not alphabetical: the
+    // compose operations are a third frozen array appended after the curations,
+    // so a new capability joins at the end of its access class rather than
+    // sorting itself into the middle of a list somebody has read before.
     expect(receipts[0]?.operations).toEqual([
       "openrouter.chat.completion",
       "openrouter.digest.curate",
+      "openrouter.brief.compose",
       "openrouter.models.list",
     ]);
     // A key names nobody, so there is no account hint to invent from it.
@@ -417,13 +430,17 @@ describe("the view the Connections page consumes", () => {
     expect(card?.capabilities.map((one) => one.id)).toEqual([
       "openrouter.chat.completion",
       "openrouter.digest.curate",
+      "openrouter.brief.compose",
       "openrouter.models.list",
     ]);
     // The ones that cost money are the ones that have to carry a consequence
-    // sentence, and the one that does not must not invent one (MAR-545). Both
-    // spends carry theirs, and they are different sentences: a question is
-    // asked once, and a curation happens on every run (MAR-619).
+    // sentence, and the one that does not must not invent one (MAR-545). All
+    // three spends carry theirs, and they are three different sentences: a
+    // question is asked once, a curation happens on every run (MAR-619), and a
+    // brief is written on every run too (MAR-674). The read stays last and
+    // stays silent.
     expect(card?.capabilities.map((one) => one.consequence !== null)).toEqual([
+      true,
       true,
       true,
       false,

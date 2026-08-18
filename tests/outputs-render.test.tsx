@@ -219,7 +219,7 @@ describe("an agent's output history", () => {
   const html = decode(
     renderToStaticMarkup(
       <OutputHistory
-        cards={buildArtifactCards(historical, undefined, today)}
+        cards={buildArtifactCards(historical, undefined, undefined, today)}
         collapsed
         renderCard={(card) => (
           <article className="output-card">

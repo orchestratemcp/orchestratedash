@@ -86,6 +86,16 @@ export const OUTPUTS_PANEL_COPY = {
    * happening, and would quietly suggest the output has been somewhere else.
    */
   download: "Save a copy",
+  /**
+   * The brief's own export (MAR-674, ADR 0025 decision 4).
+   *
+   * Names the format, unlike `download`, and the difference is not
+   * inconsistency. "Save a copy" is right for a file the agent already wrote:
+   * the copy is of a thing that exists, and its format is whatever the agent
+   * chose. A briefing has no file anywhere — DASH composes one at the moment of
+   * the press — so the honest verb has to say what it is about to make.
+   */
+  export_pdf: "Save as PDF",
   developer_summary: "Reference for developers",
   /*
    * The provenance receipt's disclosure label (MAR-576).
@@ -218,6 +228,22 @@ export function describeArtifactRole(kind: string): ArtifactRole {
         // it at more length; neither placement is redundant, because the list
         // is where somebody decides whether to worry.
         purpose: "A message the agent wrote for you. Nothing has been sent.",
+        previewable: true,
+      };
+
+    case "brief":
+      return {
+        label: "Briefing",
+        // Says what it is *about* as well as what it is, because a run now
+        // produces two outputs and the pair only makes sense together: this
+        // one is written, the roundup beside it is everything collected.
+        // ADR 0025 amendment 1 is the reason there are two — Henrik's "one RAW
+        // and one curated", and a label that said only "Briefing" would leave
+        // a reader wondering which of the two cards they were looking at.
+        purpose: "Written up from everything this agent collected on this run.",
+        // True since MAR-674 packet 3: `BriefBody` draws it, in both
+        // renderers. It was false for exactly one packet, during which a brief
+        // showed the "Show what arrived" disclosure rather than an empty pane.
         previewable: true,
       };
 

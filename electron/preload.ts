@@ -446,6 +446,22 @@ const dashShell = {
     send("workspace.download", { ...args }),
 
   /**
+   * Save one briefing as a PDF, and open it (MAR-674, ADR 0025 decision 4).
+   *
+   * The same two opaque ids as `downloadOutput` and the same absence: no path
+   * in the payload and none in the reply. What differs is one process over —
+   * main composes the document out of an artifact it already holds and prints
+   * it in a window this bridge cannot reach, rather than fetching bytes from
+   * the runner.
+   *
+   * A named method rather than a flag on `downloadOutput`, for the reason the
+   * connection trio above are three methods: two names a reviewer can count
+   * beat one that branches on an argument.
+   */
+  exportBriefAsPdf: (args: { agent_id: string; artifact_id: string }) =>
+    send("workspace.exportBrief", { ...args }),
+
+  /**
    * Re-import an agent DASH created, from DASH's current template (MAR-576).
    *
    * One agent id and nothing else. There is no manifest in the payload, no
