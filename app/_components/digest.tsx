@@ -10,6 +10,11 @@ import {
   describeCuratedBy,
   describeNotCurated,
 } from "../../lib/copy/curation";
+/* MAR-698. The one component in this tree that reaches the command bridge, and
+   it does so only inside a click handler — see its header for why the anchor
+   stays an anchor and why this file may still be rendered in the main process
+   for the exported PDF. */
+import { LinkOut } from "./link-out";
 import { citedItems } from "../../lib/brief/citations";
 import type { BriefCitations } from "../../lib/brief/citations";
 import {
@@ -232,9 +237,11 @@ function DigestItem({
         {item.item_url === undefined ? (
           item.headline
         ) : (
-          <a href={item.item_url} rel="noreferrer noopener" target="_blank">
-            {item.headline}
-          </a>
+          /* MAR-698. The address is the agent's own collected row and the link
+             text is still the headline — a bare address is unreadable and tells
+             a person nothing about where they are going. What changed is that
+             the press now reaches somewhere. */
+          <LinkOut href={item.item_url}>{item.headline}</LinkOut>
         )}
       </h3>
       {item.summary === undefined ? null : <p className="wrap">{item.summary}</p>}
@@ -468,7 +475,14 @@ function SourceList({ artifact }: { artifact: DigestArtifact }): ReactNode {
           const recovery = describeSourceFailure(source);
           return (
             <li key={source.source_url}>
-              <strong>{source.source_name}</strong>
+              {/* MAR-698. The address was here all along and was doing nothing
+                  but keying the row — this list named where the digest came
+                  from and gave no way to go there. It is the agent's own
+                  collected row, so it is DASH's to link; the source's name is
+                  the link text, on `DigestItem`'s rule. */}
+              <strong>
+                <LinkOut href={source.source_url}>{source.source_name}</LinkOut>
+              </strong>
               {source.item_count === undefined ? null : (
                 <span className="muted">
                   {" "}
@@ -851,9 +865,7 @@ function BriefParagraphBody({
               {item.item_url === undefined ? (
                 item.headline
               ) : (
-                <a href={item.item_url} rel="noreferrer noopener" target="_blank">
-                  {item.headline}
-                </a>
+                <LinkOut href={item.item_url}>{item.headline}</LinkOut>
               )}
             </span>
           ))}

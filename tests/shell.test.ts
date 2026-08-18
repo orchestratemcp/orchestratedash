@@ -20,6 +20,7 @@ import type {
   IdentityAction,
   ModelAction,
   NotifyAction,
+  OpenAction,
   SampleAction,
   StandingAnswerAction,
   WorkspaceAction,
@@ -313,6 +314,16 @@ describe("the audited command chokepoint", () => {
       // command rather than a format flag on the first, because the two have
       // different sources and different failure sentences.
       "workspace.exportBrief",
+      // MAR-697, MAR-698. A ninth family: the only route by which a press
+      // inside DASH's window can start something outside it. Note the payloads.
+      // One carries an address and no agent, because a link on a card is not
+      // about anything DASH supervises; the other carries an agent and a file
+      // NAME, never a path — main computes the one folder that name may resolve
+      // in, which is what bounds this to files DASH itself wrote. Neither
+      // loosens `createWindow`'s navigation denial; both route around it
+      // through main.
+      "open.link",
+      "open.export",
       // MAR-588. An eighth family, and the only route in DASH that can send
       // something off this machine without an agent asking it to. Note the
       // payloads: three of the four have none at all, so page script can ask
@@ -619,6 +630,18 @@ describe("dispatch", () => {
     // real one reaches the runner over a socket and raises a native save
     // dialog, and neither exists in this process.
     const downloads: Array<{ action: string; target: Record<string, string> }> = [];
+    // MAR-697, MAR-698. Recorded rather than performed, and here that is the
+    // only option: the real one calls `shell.openExternal` or `shell.openPath`,
+    // and a test that performed either would open a browser window and a PDF
+    // reader on whoever ran the suite. What these tests are about is that the
+    // command is reviewed, audited and routed to this seam carrying no path —
+    // the `https` gate is `tests/outbound-link.test.ts`, over the pure decision,
+    // and the containment gate is `tests/agent-exports.test.ts`, over a real
+    // directory.
+    const opens: Array<{
+      action: OpenAction;
+      target: { url?: string; agent_id?: string; file?: string };
+    }> = [];
     // MAR-576. Recorded rather than performed: the real one rewrites the agent
     // folder and the store through `importManifest`, and neither exists here.
     const samples: Array<{ action: SampleAction; target: { agent_id: string } }> = [];
@@ -681,6 +704,7 @@ describe("dispatch", () => {
       standingAnswers,
       folders,
       models,
+      opens,
       asks,
       chiefs,
       modelAction: (action: ModelAction, target: Record<string, unknown>) => {
@@ -704,6 +728,13 @@ describe("dispatch", () => {
           detail: `${action} ok`,
           data: { task_id: "task-fake-1" },
         });
+      },
+      openAction: (
+        action: OpenAction,
+        target: { url?: string; agent_id?: string; file?: string },
+      ) => {
+        opens.push({ action, target });
+        return Promise.resolve({ ok: true });
       },
       // MAR-576. Recorded, not performed. The fake regenerates nothing and
       // writes nothing: what these tests are about is that the command is
@@ -1770,6 +1801,153 @@ describe("dispatch", () => {
 
     it("refuses to execute one without the trusted side", () => {
       expect(() => executeCommand(reviewCommand(download))).toThrowError(
+        /must go through dispatchCommand/,
+      );
+    });
+  });
+
+  /**
+   * MAR-697 and MAR-698's `open.*`, and the property worth pinning is that
+   * neither of them can name a place.
+   *
+   * These are the only two commands that start something outside DASH's
+   * window, so what they are *unable* to say is the whole security argument:
+   * `open.link` carries an address and no agent, `open.export` carries an agent
+   * and a single file name, and neither declares a key a path could arrive in.
+   * Whether an address is one DASH will open is `tests/outbound-link.test.ts`,
+   * over the pure decision; whether a name resolves to a file DASH itself wrote
+   * is `tests/agent-exports.test.ts`, over a real directory. This describe is
+   * about review, audit and routing, which is what the seam owns.
+   */
+  describe("opening something outside DASH (MAR-697, MAR-698)", () => {
+    const link = {
+      command: "open.link",
+      request_id: "req-open-1",
+      payload: { url: "https://news.test/prices" },
+    };
+    const openExport = {
+      command: "open.export",
+      request_id: "req-open-2",
+      payload: { agent_id: "ai-news-scout", file: "News from 3 sources.pdf" },
+    };
+
+    it("routes a link to the open side and not to the workspace or the agent", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(link, ctx);
+
+      expect(result).toMatchObject({ ok: true });
+      expect(ctx.opens).toEqual([
+        { action: "link", target: { url: "https://news.test/prices", agent_id: undefined, file: undefined } },
+      ]);
+      expect(ctx.workspaces).toHaveLength(0);
+      expect(ctx.downloads).toHaveLength(0);
+      expect(ctx.inputs).toHaveLength(0);
+    });
+
+    it("routes an export to the open side carrying a name and no path", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(openExport, ctx);
+
+      expect(result).toMatchObject({ ok: true });
+      expect(ctx.opens).toEqual([
+        {
+          action: "export",
+          target: {
+            agent_id: "ai-news-scout",
+            file: "News from 3 sources.pdf",
+            url: undefined,
+          },
+        },
+      ]);
+    });
+
+    /*
+     * The same list `workspace.download` is held to, on the command that would
+     * be the more useful one to smuggle a path through: this one ends in
+     * `shell.openPath`.
+     */
+    it.each(["path", "destination", "folder", "stored_path", "directory"])(
+      "refuses an export carrying a %s field",
+      async (key) => {
+        const ctx = context();
+        const result = await dispatchCommand(
+          {
+            ...openExport,
+            payload: { ...openExport.payload, [key]: "C:\Users\someone\Desktop" },
+          },
+          ctx,
+        );
+
+        expect(result).toMatchObject({ ok: false, reason: "unexpected_payload_field" });
+        expect(ctx.opens).toHaveLength(0);
+      },
+    );
+
+    it("gives a link no way to name an agent, and an export no way to name an address", async () => {
+      const ctx = context();
+      const withAgent = await dispatchCommand(
+        { ...link, payload: { ...link.payload, agent_id: "ai-news-scout" } },
+        ctx,
+      );
+      const withUrl = await dispatchCommand(
+        { ...openExport, payload: { ...openExport.payload, url: "https://news.test" } },
+        ctx,
+      );
+
+      expect(withAgent).toMatchObject({ ok: false, reason: "unexpected_payload_field" });
+      expect(withUrl).toMatchObject({ ok: false, reason: "unexpected_payload_field" });
+      expect(ctx.opens).toHaveLength(0);
+    });
+
+    it("refuses an open that names nothing to open", async () => {
+      const ctx = context();
+      const noUrl = await dispatchCommand(
+        { command: "open.link", request_id: "req-open-3", payload: {} },
+        ctx,
+      );
+      const noFile = await dispatchCommand(
+        {
+          command: "open.export",
+          request_id: "req-open-4",
+          payload: { agent_id: "ai-news-scout" },
+        },
+        ctx,
+      );
+
+      expect(noUrl).toMatchObject({ ok: false, reason: "missing_payload_field" });
+      expect(noFile).toMatchObject({ ok: false, reason: "missing_payload_field" });
+      expect(ctx.opens).toHaveLength(0);
+    });
+
+    it("is audited, with keys only, and recorded as changing nothing", async () => {
+      const ctx = context();
+      await dispatchCommand(link, ctx);
+      await dispatchCommand(openExport, ctx);
+
+      expect(ctx.audited[0]).toMatchObject({
+        command: "open.link",
+        decision: "allowed",
+        payload_keys: ["url"],
+        mutates: false,
+      });
+      expect(ctx.audited[1]).toMatchObject({
+        command: "open.export",
+        decision: "allowed",
+        payload_keys: ["agent_id", "file"],
+        mutates: false,
+      });
+    });
+
+    /*
+     * The sharpest case in this list. A pure module that answered "opened"
+     * without opening anything would send somebody looking for a window that
+     * is not there.
+     */
+    it("refuses to execute either one without the trusted side", () => {
+      expect(() => executeCommand(reviewCommand(link))).toThrowError(
+        /must go through dispatchCommand/,
+      );
+      expect(() => executeCommand(reviewCommand(openExport))).toThrowError(
         /must go through dispatchCommand/,
       );
     });
