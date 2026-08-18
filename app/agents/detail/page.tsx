@@ -24,7 +24,7 @@ import { FolderUpdate } from "../../_components/folder-update";
 import { AgentControls, AgentCockpitHeader } from "../../_components/agent-header";
 import { AgentHealth } from "../../_components/agent-health";
 import { AgentRail } from "../../_components/agent-rail";
-import { AgentSettings } from "../../_components/agent-settings";
+import { AgentSettings, StandingAnswers } from "../../_components/agent-settings";
 import { AgentStageView } from "../../_components/agent-stage";
 import { AgentTelemetry } from "../../_components/agent-telemetry";
 /* `AgentTiles` is not imported and the file is gone (MAR-646). The row was two
@@ -48,6 +48,7 @@ import {
   markAgentLooked,
   refreshSampleAgent,
   revealAgentFolder,
+  setStandingAnswer,
   startAgent,
   submitAgentCommand,
   submitHostCommand,
@@ -950,6 +951,7 @@ function AgentWorkspace(): ReactNode {
           issue={issue}
           pending={pending}
           reasons={reasons}
+          setFeedback={setFeedback}
           setReasons={setReasons}
           snapshot={view.snapshot}
         />
@@ -1183,6 +1185,16 @@ function AgentWorkspace(): ReactNode {
             canAct={canAct}
             checkable={view.folder_checkable}
             onAdopted={() => setRefreshKey((value) => value + 1)}
+            setFeedback={setFeedback}
+          />
+
+          {/* MAR-681. Renders nothing for an agent nobody has answered
+              "always this" for — see the component's own note. */}
+          <StandingAnswers
+            agent={view.agent}
+            answers={view.standing_answers}
+            canAct={canAct}
+            onChanged={() => setRefreshKey((value) => value + 1)}
             setFeedback={setFeedback}
           />
         </AgentSettings>
@@ -1662,6 +1674,7 @@ function WaitingWork({
   issue,
   pending,
   reasons,
+  setFeedback,
   setReasons,
   snapshot,
 }: {
@@ -1674,6 +1687,7 @@ function WaitingWork({
   ) => Promise<void>;
   pending: string | null;
   reasons: Record<string, string>;
+  setFeedback: Dispatch<SetStateAction<CommandFeedback>>;
   setReasons: Dispatch<SetStateAction<Record<string, string>>>;
   snapshot: WorkspaceSnapshotView | null;
 }): ReactNode {
@@ -1694,6 +1708,7 @@ function WaitingWork({
             observedAt={snapshot.observed_at}
             pending={pending}
             reason={reasons[item.id] ?? ""}
+            setFeedback={setFeedback}
             setReason={(reason) => {
               setReasons((current) => ({ ...current, [item.id]: reason }));
             }}
@@ -1889,6 +1904,7 @@ function InboxControl({
   observedAt,
   pending,
   reason,
+  setFeedback,
   setReason,
 }: {
   agent: string;
@@ -1902,6 +1918,7 @@ function InboxControl({
   observedAt: string;
   pending: string | null;
   reason: string;
+  setFeedback: Dispatch<SetStateAction<CommandFeedback>>;
   setReason: (reason: string) => void;
 }): ReactNode {
   const base = {
@@ -1909,6 +1926,30 @@ function InboxControl({
     observed_at: observedAt,
     task_id: item.task_id,
   };
+  // MAR-681. One checkbox per card rather than per option: "always this way"
+  // describes the question, not any one answer to it, and it is read at the
+  // moment an option is pressed rather than driving a second control.
+  const [remember, setRemember] = useState(false);
+
+  async function chooseOption(optionId: string, optionLabel: string): Promise<void> {
+    const key = `choice:${item.id}:${optionId}`;
+    if (remember) {
+      const stored = await setStandingAnswer({
+        agent_id: agent,
+        question_label: item.label,
+        option_id: optionId,
+        option_label: optionLabel,
+      });
+      if (!stored.ok) {
+        setFeedback({
+          ok: false,
+          message:
+            stored.detail ?? "DASH could not remember this answer, but is answering it this once.",
+        });
+      }
+    }
+    await issue(key, "choose", { ...base, choice_id: item.id, option_id: optionId });
+  }
 
   return (
     /* MAR-641. An id per item, because the cockpit's rail names one decision
@@ -1947,27 +1988,33 @@ function InboxControl({
       </div>
 
       {!canAct || item.expired ? null : item.kind === "choice" ? (
-        <div className="choice-list" aria-label={item.label}>
-          {item.options.map((option) => {
-            const key = `choice:${item.id}:${option.id}`;
-            return (
+        <div className="choice-list-wrap">
+          <div className="choice-list" aria-label={item.label}>
+            {item.options.map((option) => (
               <button
                 disabled={pending !== null}
                 key={option.id}
-                onClick={() =>
-                  void issue(key, "choose", {
-                    ...base,
-                    choice_id: item.id,
-                    option_id: option.id,
-                  })
-                }
+                onClick={() => void chooseOption(option.id, option.label)}
                 type="button"
               >
                 <span>{option.label}</span>
                 {option.detail === undefined ? null : <small>{option.detail}</small>}
               </button>
-            );
-          })}
+            ))}
+          </div>
+          {/* MAR-681, Henrik's own words: "I want both all the time." Read at
+              the moment an option is pressed, so one press both answers this
+              occurrence and remembers the answer — revocable on the Settings
+              stage, `AGENT_SETTINGS_COPY.standing_answers`. */}
+          <label className="choice-remember">
+            <input
+              checked={remember}
+              disabled={pending !== null}
+              onChange={(event) => setRemember(event.target.checked)}
+              type="checkbox"
+            />
+            {AGENT_COCKPIT_COPY.remember_choice}
+          </label>
         </div>
       ) : (
         <div className="approval-controls">

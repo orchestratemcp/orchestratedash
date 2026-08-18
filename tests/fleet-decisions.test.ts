@@ -61,6 +61,7 @@ describe("the closed kind list", () => {
       "fleet_connection",
       "fleet_grant",
       "irreversible_approval",
+      "standing_answer",
     ]);
   });
 });

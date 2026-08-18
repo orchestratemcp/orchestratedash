@@ -611,7 +611,7 @@ function approvalIsEnforceable(
   return action.approval.enforcement === "runner_enforced";
 }
 
-function hasExpired(expiresAt: string, now: Date): boolean {
+export function hasExpired(expiresAt: string, now: Date): boolean {
   const expiry = Date.parse(expiresAt);
   if (Number.isNaN(expiry)) {
     // An unparseable deadline is not evidence of expiry. Treat the item as live
