@@ -18,6 +18,23 @@ Manifest input is v2 and runner telemetry is v1. Development and installed store
 
 Keep the lifecycle explicit: `planned` -> `merged` -> `proven`. Proven means the packaged or installed path named by the issue was executed with reproducible evidence.
 
+**Proven-debt budget:** when more than 10 packets sit at `merged` without
+`proven`, the next dispatched session is a proving session, not a feature
+session. Merged-but-unproven work is inventory, not progress.
+
+## State hygiene
+
+`PROJECT_STATE.md` is a HEAD document under ~200 lines: current truth only,
+rotated at every checkpoint into `docs/state-archive/`. `state.json` holds
+per-packet records (id, lifecycle, commit, proof command); evidence
+narratives go to the issue and the archive, never into JSON fields.
+`lifecycle_note` holds only the latest reconciliation paragraph, overwritten
+in place.
+
+Serial-numbered resources — ADR numbers, migration indexes — are assigned by
+the orchestrator at dispatch time, never chosen by a worker session;
+parallel packets collide on them and no gate sees it.
+
 ## Process safety
 
 Do not force-kill Electron or the runner. New runners stop through the authenticated `/shutdown` route. A pre-identity Windows runner that cannot shut down gracefully requires one explicit Windows restart. Never assume port 3000 belongs to DASH; verify the owner.
@@ -40,25 +57,21 @@ Return one or more copy/paste-ready prompts and specify for each:
    evidence that must be written back to Linear/state files;
 5. coordination rules for any parallel session.
 
-Model routing while usage is available:
+Model routing while usage is available (Claude-first since 2026-08 — Claude
+Max capacity outweighs Codex):
 
-- Use **Codex `gpt-5.6-sol` with high/xhigh reasoning** for cross-repository
-  implementation, architecture migrations, difficult debugging, security
-  boundaries, and installed/runtime proof work.
-- Use **Codex `gpt-5.6-terra` with medium/high reasoning** for a bounded issue,
-  mechanical cleanup, focused tests, or documentation where the scope is known.
-- Use **Claude Code `--model opus` with extended thinking** for an independent
-  architecture/UX audit, long-context reconciliation, or a second opinion on a
-  risky plan. The official `opus` alias intentionally resolves to Claude Code's
-  current Opus model; include the concrete model ID too when the client exposes
-  it.
-- Use **Claude Code `--model sonnet`** for bounded implementation and review when
-  Opus usage is limited.
+- Use **Claude Code `--model opus` with extended thinking** (or the current
+  strongest Claude model the client exposes) for architecture, cross-repo
+  migrations, difficult debugging, security boundaries, installed/runtime
+  proof work, and long-context reconciliation.
+- Use **Claude Code `--model sonnet`** for a bounded issue, mechanical
+  cleanup, focused tests, or documentation where the scope is known.
+- Use **Codex `gpt-5.6-sol` high/xhigh** as the independent second opinion:
+  read-only audits of risky plans, or the implementation owner when Claude
+  usage is exhausted.
 
-For important work that benefits from both clients, default to Codex
-`gpt-5.6-sol` xhigh as the implementation/proof owner and Claude Code `opus` as
-a read-only reviewer. Reverse the lead only when the task is primarily product
-writing or UX synthesis. Two live sessions must never edit the same files or
+For important work that benefits from both clients, default to Claude Code
+as the implementation/proof owner and Codex as a read-only reviewer. Two live sessions must never edit the same files or
 worktree. Give them separate repositories/file ownership, or make one explicitly
 read-only. The user will say when one provider's usage is exhausted; until then,
 recommend the strongest justified model rather than silently downgrading.
