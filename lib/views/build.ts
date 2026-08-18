@@ -24,7 +24,11 @@
 import { existsSync } from "node:fs";
 
 import { analyzeGrounding } from "../analyze";
-import { isDigestArtifact } from "../contracts";
+import { isBriefArtifact, isDigestArtifact } from "../contracts";
+import type { DigestArtifact } from "../contracts";
+import type { RunArtifactRecord } from "../store";
+import { resolveBriefCitations } from "../brief/fingerprint";
+import type { BriefCitations } from "../brief/citations";
 import type { ManifestPermissions, PermissionGrant } from "../contracts";
 import { brokeredField, requestedOperations, unrequestedOperations } from "../broker/grant";
 import { hasFrozenPath, operationById, type BrokerOperation } from "../broker/operations";
@@ -481,8 +485,10 @@ export function runView(
      * an artifact `resolveArtifactAvailability` has never heard of still reads
      * `available`.
      */
-    artifact_cards: buildArtifactCards(artifactRecords, (record) =>
-      availabilityForArtifact(record.artifact.artifact_id),
+    artifact_cards: buildArtifactCards(
+      artifactRecords,
+      (record) => availabilityForArtifact(record.artifact.artifact_id),
+      citationResolverFor(artifactRecords),
     ),
     // Only a digest is graded (MAR-458). A draft has no items and no
     // `sources_fetched`, so there is nothing to check its citations against —
@@ -1461,8 +1467,18 @@ export function workspaceView(
    * which is the exact duplication the note below this one warns off.
    */
   const availabilityByRun = new Map<string, (artifactId: string) => ArtifactAvailability>();
+  /*
+   * Hoisted out of the call, because two things now read it.
+   *
+   * It was inline while `buildArtifactCards` had one resolver; a second one
+   * needs the same list to find each brief's digest in, and calling
+   * `artifactRecordsForAgent` twice would be two queries that could disagree
+   * about what this agent has produced — the duplication the availability note
+   * above this one warns off, one argument along.
+   */
+  const agentRecords = artifactRecordsForAgent(agent);
   const outputs: ArtifactCardView[] = buildArtifactCards(
-    artifactRecordsForAgent(agent),
+    agentRecords,
     (record) => {
       const runId = record.artifact.run_id;
       let resolve = availabilityByRun.get(runId);
@@ -1472,6 +1488,7 @@ export function workspaceView(
       }
       return resolve(record.artifact.artifact_id);
     },
+    citationResolverFor(agentRecords),
   );
 
   /*
@@ -1623,6 +1640,9 @@ export function workspaceView(
     // MAR-548, ADR 0008 slice 3's wiring. The authoritative document, not the
     // row's copy — see `panelDocument` for which store answers and why.
     panel: buildPanelView(document, {
+      // MAR-674. The panel is renderer-safe and cannot hash anything, so the
+      // resolver is handed in from here, exactly as `facts` is.
+      resolveCitations: citationResolverFor(agentRecords),
       artifacts: artifactRecordsForAgent(agent),
       facts: dashFactsForAgent(agent, store),
     }),
@@ -1951,5 +1971,59 @@ export function workInboxView(now: Date = new Date()): WorkInboxView {
       if (b.last_activity_at === null) return -1;
       return a.last_activity_at.localeCompare(b.last_activity_at) || a.agent.localeCompare(b.agent);
     }),
+  };
+}
+
+/**
+ * A citation resolver over one set of artifact records (MAR-674, ADR 0025
+ * amendment 1).
+ *
+ * ## Why this is a closure over a list rather than a store query
+ *
+ * A brief points at a digest **of its own run**, and both arrive on the same
+ * channel into the same table. Every caller here already holds the records it
+ * needs — the run detail page holds one run's, the agent page holds the whole
+ * history — so resolving means finding a sibling in an array rather than asking
+ * the store again. A resolver that queried per card would be one query per
+ * output on a page that polls.
+ *
+ * ## Why the digests are grouped by run
+ *
+ * The agent-wide caller's list spans runs, and `resolveBriefCitations` checks
+ * `derived_from.run_id` as well as the artifact id — so handing it every digest
+ * this agent ever wrote would be correct but wasteful, and grouping keeps the
+ * lookup to the run in question. The run detail caller has one group and pays
+ * nothing for the generality.
+ *
+ * Built once per call rather than per card: `buildArtifactCards` maps, and a
+ * grouping rebuilt inside that map would be quadratic on an agent with a long
+ * history.
+ */
+function citationResolverFor(
+  records: readonly RunArtifactRecord[],
+): (record: RunArtifactRecord) => BriefCitations | null {
+  const digestsByRun = new Map<string, DigestArtifact[]>();
+  for (const record of records) {
+    const { artifact } = record;
+    if (!isDigestArtifact(artifact)) {
+      continue;
+    }
+    const group = digestsByRun.get(artifact.run_id);
+    if (group === undefined) {
+      digestsByRun.set(artifact.run_id, [artifact]);
+    } else {
+      group.push(artifact);
+    }
+  }
+
+  return (record) => {
+    const { artifact } = record;
+    // Null for a digest and a draft, which is the type's own rule: a digest has
+    // its own items and needs no join, and a draft cites messages rather than
+    // items.
+    if (!isBriefArtifact(artifact)) {
+      return null;
+    }
+    return resolveBriefCitations(artifact, digestsByRun.get(artifact.run_id) ?? []);
   };
 }

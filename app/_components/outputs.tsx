@@ -5,7 +5,7 @@ import type { GroundingAnalysis } from "../../lib/analyze";
 import { AGENT_OUTPUTS_COPY } from "../../lib/copy/agent-page";
 import { OUTPUTS_PANEL_COPY as COPY } from "../../lib/copy/artifacts";
 import { canPreview, resolveOpenCard, type ArtifactCardView } from "../../lib/views/artifacts";
-import { DigestBody, DraftBody, DraftPlacementChip, GroundingChip } from "./digest";
+import { BriefBody, DigestBody, DraftBody, DraftPlacementChip, GroundingChip } from "./digest";
 import { OutputHistory } from "./output-history";
 
 /**
@@ -439,6 +439,12 @@ function OutputContent({
       return <DigestBody artifact={artifact} grounding={grounding} />;
     case "draft":
       return <DraftBody artifact={artifact} />;
+    case "brief":
+      // MAR-674. The citation verdict is resolved main-side and travels on the
+      // card, so this renderer branches on an answer rather than computing one
+      // — `node:crypto` cannot enter this bundle. `card.citations` is null when
+      // nobody resolved it, which draws the document and no citations.
+      return <BriefBody artifact={artifact} citations={card.citations} />;
     default:
       // Unreachable through the union, and deliberately not a throw. The kinds
       // are validated against a JSON schema at the boundary and narrowed by a
