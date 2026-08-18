@@ -1590,6 +1590,50 @@ const MIGRATIONS: readonly Migration[] = [
     PRIMARY KEY (agent, run_id, step)
   );
   `,
+
+  // MAR-681. A standing answer: a person's own choice for one agent's question,
+  // recorded once and read back before the question is ever asked again.
+  // (Migration 29: master records 28 — MAR-654's per-step models — so this is
+  // the next free index, and an installed store that has recorded 0 to 28 runs
+  // exactly one more.)
+  //
+  // ## What this table is not
+  //
+  // It is not `agent_questions` (migration 18). That table is the Ask feature's
+  // transcript — a person asking an agent a question about what it has saved,
+  // answered by a model. This is the Agent DOM's `choices[]`: a runtime fork in
+  // an agent's own plan, answered by a person clicking one of the options the
+  // agent offered. The two have never shared a table and do not start now.
+  //
+  // ## Keyed by a question's own words, because nothing else is durable
+  //
+  // The Agent DOM v1 contract mints `choice.id` fresh per occurrence — it is an
+  // instance id, not a question id, and two runs of the same agent asking "which
+  // competitor to focus on?" have no field in common except the label the agent's
+  // author wrote. So the key is `question_key`, a normalised form of that label
+  // (`standingAnswerQuestionKey` in `lib/agent-dom/standing-answers.ts` is the one
+  // place that decides what "the same question" means), and `question_label`
+  // beside it keeps the exact words a person answered — a receipt, in ADR 0012's
+  // sense, rather than a value nothing can render back verbatim.
+  //
+  // **Not filed through `fleet_decisions`' point-lookup.** ADR 0024's memory is
+  // retrieved by subject and chain, never by equality, and answering "is there a
+  // standing answer for this exact question, right now" on every poll is
+  // precisely the access pattern that table is not for. Setting or clearing one
+  // still files a decision (`standing_answer` in `DECISION_KINDS`) — the same
+  // split `agent_model_choice` draws between its own row and `fleet_model_default`'s
+  // audit trail.
+  `
+  CREATE TABLE IF NOT EXISTS standing_answers (
+    agent         TEXT NOT NULL,
+    question_key  TEXT NOT NULL,
+    question_label TEXT NOT NULL,
+    option_id     TEXT NOT NULL,
+    option_label  TEXT NOT NULL,
+    chosen_at     TEXT NOT NULL,
+    PRIMARY KEY (agent, question_key)
+  );
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

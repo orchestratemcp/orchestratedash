@@ -5,7 +5,8 @@ import { useState, type Dispatch, type ReactNode, type SetStateAction } from "re
 
 import { AGENT_SETTINGS_COPY, AGENT_TRIGGER_COPY } from "../../lib/copy/agent-page";
 import { O_FLEET, type OName } from "../../lib/brand/o-cast";
-import { renameAgent, setAgentAvatar } from "../_data/source";
+import type { StandingAnswerView } from "../../lib/views/types";
+import { clearStandingAnswer, renameAgent, setAgentAvatar } from "../_data/source";
 import { OAvatar } from "./o-avatar";
 
 /**
@@ -408,6 +409,110 @@ function AgentAvatarField({
         {AGENT_SETTINGS_COPY.identity.avatar_cancel}
       </button>
     </dd>
+  );
+}
+
+/**
+ * "Always answer this way", revocable (MAR-681).
+ *
+ * Henrik's own words, on the walk where the competitor scout's question
+ * expired unanswered: *"I want both all the time."* Each row is a receipt —
+ * the question and the chosen option in the agent's own words, never DASH's
+ * paraphrase — plus the one control this drawer offers over it: forget it, so
+ * DASH asks again next time.
+ *
+ * Renders nothing for an agent nobody has answered this way for, `identity`'s
+ * reason: a heading over an empty list is the wall MAR-609 was filed on.
+ */
+export function StandingAnswers({
+  agent,
+  answers,
+  canAct,
+  onChanged,
+  setFeedback,
+}: {
+  agent: string;
+  answers: StandingAnswerView[];
+  canAct: boolean;
+  /** Re-read the workspace, so the row a Forget press removed actually goes. */
+  onChanged: () => void;
+  setFeedback: Dispatch<SetStateAction<{ ok: boolean; message: string } | null>>;
+}): ReactNode {
+  if (answers.length === 0) {
+    return null;
+  }
+  return (
+    <section className="agent-settings-block">
+      <h3>{AGENT_SETTINGS_COPY.standing_answers.heading}</h3>
+      <p className="muted wrap">{AGENT_SETTINGS_COPY.standing_answers.detail}</p>
+      <ol className="row-list">
+        {answers.map((answer) => (
+          <StandingAnswerRow
+            agent={agent}
+            answer={answer}
+            canAct={canAct}
+            key={answer.question_key}
+            onChanged={onChanged}
+            setFeedback={setFeedback}
+          />
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function StandingAnswerRow({
+  agent,
+  answer,
+  canAct,
+  onChanged,
+  setFeedback,
+}: {
+  agent: string;
+  answer: StandingAnswerView;
+  canAct: boolean;
+  onChanged: () => void;
+  setFeedback: Dispatch<SetStateAction<{ ok: boolean; message: string } | null>>;
+}): ReactNode {
+  const [busy, setBusy] = useState(false);
+
+  async function forget(): Promise<void> {
+    setBusy(true);
+    setFeedback(null);
+    const result = await clearStandingAnswer({ agent_id: agent, question_key: answer.question_key });
+    setBusy(false);
+    setFeedback({
+      ok: result.ok,
+      message: result.ok ? "Forgotten." : (result.detail ?? "DASH could not forget this answer."),
+    });
+    if (result.ok) {
+      onChanged();
+    }
+  }
+
+  return (
+    <li>
+      <article className="row-card">
+        <h3>{answer.question_label}</h3>
+        <p>{answer.option_label}</p>
+        <div className="button-row">
+          <p className="muted">{AGENT_SETTINGS_COPY.standing_answers.set_on(answer.chosen_at)}</p>
+          {/* Said rather than drawn as a disabled button, `AgentNameField`'s
+              reason: a greyed-out Forget here would read as a claim about this
+              agent, and the true statement is about which window this is. */}
+          {canAct ? (
+            <button
+              className="button-link"
+              disabled={busy}
+              onClick={() => void forget()}
+              type="button"
+            >
+              {AGENT_SETTINGS_COPY.standing_answers.forget}
+            </button>
+          ) : null}
+        </div>
+      </article>
+    </li>
   );
 }
 

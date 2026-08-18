@@ -21,6 +21,7 @@ import type {
   ModelAction,
   NotifyAction,
   SampleAction,
+  StandingAnswerAction,
   WorkspaceAction,
 } from "../lib/shell/ipc";
 import type { AgentCommandInput } from "../lib/agent-dom/runner";
@@ -204,6 +205,13 @@ describe("the audited command chokepoint", () => {
       // for the same reason `favourite` is — there is no absent state that
       // means "put it back" the way `display_name`'s omission does.
       "identity.avatar",
+      // MAR-681. A person's own record that an agent's runtime question should
+      // stop being asked. Its own family rather than a fourth `identity.*`
+      // member: `identity.*` is about identifying an agent to the reader, and
+      // this is about a question the agent asked, keyed by the question's own
+      // words. Contacts nobody, like every member of the family beside it.
+      "standing_answer.set",
+      "standing_answer.clear",
       // MAR-584. A seventh family, and the only route in DASH that accepts a
       // document somebody else's editor wrote. Three members and the split
       // between the first two is the point: comparing is a read and accepting
@@ -618,6 +626,19 @@ describe("dispatch", () => {
       action: IdentityAction;
       target: { agent_id: string; display_name?: string; favourite?: boolean };
     }> = [];
+    // MAR-681. Recorded rather than performed, `renames`' own reason: the real
+    // one writes a row through `node:sqlite`, which this process has no store
+    // for.
+    const standingAnswers: Array<{
+      action: StandingAnswerAction;
+      target: {
+        agent_id: string;
+        question_key?: string;
+        question_label?: string;
+        option_id?: string;
+        option_label?: string;
+      };
+    }> = [];
     // MAR-584. Recorded rather than performed, for the same reason as the rest:
     // the real one reads the agent folder off disk, writes through
     // `importManifest` and — for `reveal` — calls an Electron main API, none of
@@ -650,6 +671,7 @@ describe("dispatch", () => {
       samples,
       looks,
       renames,
+      standingAnswers,
       folders,
       models,
       asks,
@@ -697,6 +719,19 @@ describe("dispatch", () => {
         target: { agent_id: string; display_name?: string; favourite?: boolean },
       ) => {
         renames.push({ action, target });
+        return Promise.resolve({ ok: true });
+      },
+      standingAnswerAction: (
+        action: StandingAnswerAction,
+        target: {
+          agent_id: string;
+          question_key?: string;
+          question_label?: string;
+          option_id?: string;
+          option_label?: string;
+        },
+      ) => {
+        standingAnswers.push({ action, target });
         return Promise.resolve({ ok: true });
       },
       // MAR-584. Recorded, not performed, for `sampleAction`'s reason: these

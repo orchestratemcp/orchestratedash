@@ -37,6 +37,7 @@ import {
 } from "../fleet/decisions";
 import { readDecisions } from "../fleet/decisions-store";
 import { readFleetConnection, readFleetGrants } from "../fleet/store";
+import { readStandingAnswer } from "../agent-dom/standing-answers";
 import {
   readAgentModelChoice,
   readFleetLevelModels,
@@ -216,6 +217,23 @@ function currentOutcomeFor(
       return declared.route.has(row.topic)
         ? { state: "declared", component: row.topic }
         : { state: "dropped", component: row.topic };
+    }
+    case "standing_answer": {
+      // MAR-681. Topic is the question's own key — `standing_answers`' primary
+      // key alongside the agent — so the comparison is against the exact row
+      // that decision actually wrote, `fleet_level_model`'s shape above.
+      if (!agentAlive(row.subject_id)) {
+        return null;
+      }
+      const current = readStandingAnswer(row.subject_id, row.topic);
+      return current === null
+        ? { state: "cleared" }
+        : {
+            state: "set",
+            question_label: current.question_label,
+            option_id: current.option_id,
+            option_label: current.option_label,
+          };
     }
   }
 }

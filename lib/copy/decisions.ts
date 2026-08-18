@@ -73,6 +73,20 @@ export function describeModelUnpinned(): string {
   return "Model pin cleared; each step matches its declared level.";
 }
 
+/**
+ * `question_key`, not `question_label` — this module's own rule (see the
+ * header) that an author's own prose does not enter a frozen sentence. The
+ * verbatim question and the chosen option travel in `outcome`, for a surface
+ * that wants to quote them.
+ */
+export function describeStandingAnswerSet(questionKey: string): string {
+  return `Standing answer set: ${questionKey}.`;
+}
+
+export function describeStandingAnswerCleared(questionKey: string): string {
+  return `Standing answer cleared: ${questionKey}.`;
+}
+
 export function describeFleetDefaultSet(modelId: string): string {
   return `Fleet default model set: ${modelId}.`;
 }

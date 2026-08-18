@@ -102,6 +102,14 @@ export const DECISION_KINDS = [
    * `irreversible: true`.
    */
   "irreversible_approval",
+  /**
+   * A standing answer to one of an agent's runtime questions, set or cleared
+   * (MAR-681). Filed by `lib/agent-dom/standing-answers.ts`. Topic is the
+   * question's own key, `chainKeyOf`'s reason exactly: "what has this agent's
+   * 'which competitor' question been answered?" is a chain lookup rather than a
+   * search through every decision this agent has ever produced.
+   */
+  "standing_answer",
 ] as const;
 
 export type DecisionKind = (typeof DECISION_KINDS)[number];

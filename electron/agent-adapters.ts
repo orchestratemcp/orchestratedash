@@ -32,9 +32,14 @@
 
 import { resolveControlLocation } from "../lib/agent-dom/control-location";
 import { pullEvidence } from "../lib/agent-dom/evidence";
-import { noAdapter, type AgentDomAdapter } from "../lib/agent-dom/runner";
+import { noAdapter, runAgentCommand, type AgentDomAdapter } from "../lib/agent-dom/runner";
 import { localRunnerChannel } from "../lib/agent-dom/runner-channel";
-import { putAgentDomState } from "../lib/agent-dom/store";
+import { putAgentDomState, readAgentDomState } from "../lib/agent-dom/store";
+import {
+  readStandingAnswer,
+  standingAnswerPrincipal,
+  standingAutoAnswers,
+} from "../lib/agent-dom/standing-answers";
 import { fetchAgentDomState, httpAdapter, type ControlChannel } from "../lib/agent-dom/transport";
 import { isManifestV2 } from "../lib/contracts";
 import { isSecureStoreError, type SecureStore } from "../lib/secure-store";
@@ -202,12 +207,61 @@ export function createAgentChannels(
     return { uri: location.uri, token };
   }
 
+  /** The command path's own resolution, `channelFor`'s neighbour so `poll` can share it. */
+  function adapterFor(agentId: string): AgentDomAdapter {
+    const channel = channelFor(agentId);
+    return channel === null ? noAdapter : httpAdapter(channel);
+  }
+
+  /**
+   * Answer, without a popup, every fresh choice a standing answer covers
+   * (MAR-681, build item 1).
+   *
+   * Reads the row `putAgentDomState` just wrote rather than trusting the
+   * document the runner sent this tick — `observed_at` has to be the value
+   * DASH actually holds, `enforceCommand`'s `stale_snapshot` check otherwise
+   * refuses every one of these on the freeze `lib/agent-dom/store.ts`
+   * describes. Goes through the same `runAgentCommand` pipeline a live click
+   * does: the same nonce, the same idempotency key, the same audit row, and
+   * the same `choice_expired`/`choice_already_made`/`unknown_option` checks —
+   * a second, narrower path to "the runner accepted a choose" is exactly how
+   * a standing answer could come to bypass a rule enforcement already makes.
+   */
+  async function applyStandingAnswers(agentId: string): Promise<void> {
+    const held = readAgentDomState(agentId);
+    if (held === null) {
+      return;
+    }
+    const answers = standingAutoAnswers(held.state, new Date(), (questionKey) =>
+      readStandingAnswer(agentId, questionKey),
+    );
+    for (const answer of answers) {
+      const issued = await runAgentCommand(
+        {
+          request_id: `standing-answer:${answer.choice_id}`,
+          command: "choose",
+          target: { agent_id: agentId, task_id: answer.task_id, choice_id: answer.choice_id },
+          observed_at: held.observed_at,
+          option_id: answer.option_id,
+          payload_keys: ["agent_id", "task_id", "choice_id", "option_id", "observed_at"],
+          mutates: true,
+          irreversible: true,
+          reason: "Answered automatically from a standing answer.",
+        },
+        { principal: standingAnswerPrincipal(), adapter: adapterFor(agentId) },
+      );
+      if (!issued.ok) {
+        log(
+          `[dash-shell] ${agentId}'s standing answer for one question could not be applied: ` +
+            `${issued.reason ?? issued.detail ?? "unknown"}`,
+        );
+      }
+    }
+  }
+
   return {
     channelFor,
-    adapterFor(agentId: string): AgentDomAdapter {
-      const channel = channelFor(agentId);
-      return channel === null ? noAdapter : httpAdapter(channel);
-    },
+    adapterFor,
     refresh,
 
     async poll(): Promise<void> {
@@ -240,6 +294,10 @@ export function createAgentChannels(
             `[dash-shell] ${agentId} published a state snapshot that fails the contract: ` +
               stored.errors.slice(0, 3).join("; "),
           );
+        }
+
+        if (stored.ok) {
+          await applyStandingAnswers(agentId);
         }
       }
     },

@@ -115,9 +115,11 @@ import {
   type HostActionResult,
   type IdentityAction,
   type RunnerLifecycleResult,
+  type StandingAnswerAction,
   type WorkspaceAction,
   type WorkspaceActionResult,
 } from "../lib/shell/ipc";
+import { clearStandingAnswer, writeStandingAnswer } from "../lib/agent-dom/standing-answers";
 import { declaredLimitsFor } from "../lib/views/inputs";
 import {
   SHELL_READ_CHANNEL,
@@ -971,6 +973,10 @@ export function registerCommandChannel(
       // `refreshSampleAgent`'s reason.
       agentAction: (action, target) =>
         Promise.resolve(performIdentityAction(action, target)),
+      // MAR-681. `performIdentityAction`'s neighbour and the same reason: a
+      // plain `node:sqlite` write that main.ts is the trusted side for.
+      standingAnswerAction: (action, target) =>
+        Promise.resolve(performStandingAnswerAction(action, target)),
       // MAR-584. The one route in DASH that accepts a document somebody else's
       // editor wrote. Every gate is inside `electron/folder-update.ts`, beside
       // the reads and the write it guards, for `refreshSampleAgent`'s reason.
@@ -1444,6 +1450,50 @@ function performIdentityAction(
   if (!result.ok) {
     return { ok: false, refusal: result.errors.join(" ") };
   }
+  return { ok: true };
+}
+
+/**
+ * A person's standing answer to one of an agent's runtime questions, set or
+ * cleared (MAR-681).
+ *
+ * `performIdentityAction`'s shape: the gate each write needs is its own —
+ * `writeStandingAnswer` and `clearStandingAnswer` both refuse silently rather
+ * than throw, so the only refusal this function itself states is a payload
+ * `reviewCommand`'s own rules should have already made impossible, checked
+ * again here for the same reason every `!result.ok` branch beside it is.
+ */
+function performStandingAnswerAction(
+  action: StandingAnswerAction,
+  target: {
+    agent_id: string;
+    question_key?: string;
+    question_label?: string;
+    option_id?: string;
+    option_label?: string;
+  },
+): { ok: boolean; refusal?: string } {
+  if (action === "clear") {
+    if (target.question_key === undefined) {
+      return { ok: false, refusal: "A standing answer needs to name which question to forget." };
+    }
+    clearStandingAnswer(target.agent_id, target.question_key, new Date().toISOString());
+    return { ok: true };
+  }
+  if (
+    target.question_label === undefined ||
+    target.option_id === undefined ||
+    target.option_label === undefined
+  ) {
+    return { ok: false, refusal: "A standing answer needs the question and the chosen option." };
+  }
+  writeStandingAnswer(
+    target.agent_id,
+    target.question_label,
+    target.option_id,
+    target.option_label,
+    new Date().toISOString(),
+  );
   return { ok: true };
 }
 

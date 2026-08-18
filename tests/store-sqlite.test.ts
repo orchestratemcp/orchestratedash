@@ -152,8 +152,12 @@ describe("schema", () => {
     // installed store that has recorded 0 to 27 runs exactly one more, and the
     // amendment's own "the migration index is not decidable yet" is what this
     // number resolves.
+    //
+    // 29 is MAR-681's `standing_answers` — a person's own "always this" for one
+    // of an agent's runtime questions. Appended on the standing terms: an
+    // installed store that has recorded 0 to 28 runs exactly one more.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(28);
+    expect(version.user_version).toBe(29);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -302,7 +306,7 @@ describe("schema", () => {
     ).toEqual({ count: 0 });
     expect(
       (nextDb.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(28);
+    ).toBe(29);
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -662,7 +666,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(28);
+    ).toBe(29);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

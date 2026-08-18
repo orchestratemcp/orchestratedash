@@ -4379,6 +4379,25 @@ button.button-unavailable:disabled {
   color: var(--muted);
 }
 
+/* MAR-681. Wraps the choice buttons and the "always answer this way"
+   checkbox so the two stack together, `.approval-controls`' own shape. */
+.choice-list-wrap {
+  display: grid;
+  gap: var(--space-2);
+  min-width: min(20rem, 100%);
+}
+
+.choice-list-wrap .choice-list {
+  min-width: 0;
+}
+
+.choice-remember {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-muted);
+}
+
 .approval-controls {
   width: min(26rem, 100%);
 }

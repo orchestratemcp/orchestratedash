@@ -357,6 +357,20 @@ interface DashShellClient {
    */
   setAgentAvatar?(args: { agent_id: string; avatar: string }): Promise<CommandResult>;
   /**
+   * Remember — or forget — an agent's answer to one runtime question
+   * (MAR-681).
+   *
+   * Optional for the same reason as everything above: a shell built before
+   * this feature has a `dashShell` without them.
+   */
+  setStandingAnswer?(args: {
+    agent_id: string;
+    question_label: string;
+    option_id: string;
+    option_label: string;
+  }): Promise<CommandResult>;
+  clearStandingAnswer?(args: { agent_id: string; question_key: string }): Promise<CommandResult>;
+  /**
    * The four notification commands (MAR-588).
    *
    * Optional for the same reason as everything above. Note what three of them
@@ -1357,6 +1371,66 @@ export async function setAgentAvatar(args: {
       request_id: "",
       reason: "read_only_host",
       detail: "This version of the DASH app cannot change an agent's avatar yet.",
+    };
+  }
+  return call(args);
+}
+
+/**
+ * Remember an agent's answer to one runtime question: "always this"
+ * (MAR-681).
+ *
+ * `setAgentAvatar`'s shape exactly, for the same reason: a browser tab cannot
+ * act, and an older packaged build may not carry this method yet.
+ */
+export async function setStandingAnswer(args: {
+  agent_id: string;
+  question_label: string;
+  option_id: string;
+  option_label: string;
+}): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to remember an answer.",
+    };
+  }
+  const call = bridge.setStandingAnswer;
+  if (call === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "This version of the DASH app cannot remember an answer yet.",
+    };
+  }
+  return call(args);
+}
+
+/** `setStandingAnswer`'s undo. */
+export async function clearStandingAnswer(args: {
+  agent_id: string;
+  question_key: string;
+}): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to forget a standing answer.",
+    };
+  }
+  const call = bridge.clearStandingAnswer;
+  if (call === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "This version of the DASH app cannot forget a standing answer yet.",
     };
   }
   return call(args);

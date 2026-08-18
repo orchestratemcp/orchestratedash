@@ -89,10 +89,26 @@ function toTurnView(
    * goes to. That is the rule `declaredOnly` exists to be a mechanism for.
    */
   const route = answerChief(turn.question, fleet);
+  /*
+   * MAR-690. A model-answered turn already gave a complete answer over the
+   * whole fleet, so an `ambiguous` recompute — "which did you mean?" — is a
+   * request to disambiguate *after* the question was already answered, which
+   * is nonsensical. That is what "what agents run local and what runs in the
+   * cloud" hit: three agents happen to share a `local_*` capability word, a
+   * coincidence of vocabulary rather than a real ambiguity about the fleet-wide
+   * question the model had just finished answering.
+   *
+   * A `routed` match is kept: a single, confident "agent X is the one built for
+   * that" is a suggestion offered alongside the model's answer, never a demand
+   * that the person clarify before getting one — so it does not carry the same
+   * contradiction and stays exactly as it was for a question genuinely about one
+   * agent's own work (`tests/chief-transcript.test.ts`'s "ai agent news" case).
+   */
+  const modelAnswered = turn.provider_id !== null;
   const handoffs =
     route.kind === "routed"
       ? [route.agent]
-      : route.kind === "ambiguous"
+      : route.kind === "ambiguous" && !modelAnswered
         ? [...route.agents]
         : [];
   return {
@@ -116,7 +132,10 @@ function toTurnView(
       title: agent.title,
       goal: agent.goal,
     })),
-    matched: route.kind === "routed" || route.kind === "ambiguous" ? [...route.matched] : [],
+    matched:
+      route.kind === "routed" || (route.kind === "ambiguous" && !modelAnswered)
+        ? [...route.matched]
+        : [],
     receipt: turn.receipt.map((row) => ({ ...row, capabilities: [...row.capabilities] })),
     receipt_note: describeChiefReceipt(turn.receipt.length).sentence,
     stale: fleetChangedSince(turn.receipt, now),

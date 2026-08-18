@@ -320,4 +320,33 @@ describe("the room a returning reader sees", () => {
     expect(turn?.handoffs.map((one) => one.agent)).toEqual(["ai-agent-news"]);
     expect(turn?.matched.length).toBeGreaterThan(0);
   });
+
+  /*
+   * MAR-690. The reported case exactly: three agents share a `local_*`
+   * capability word by coincidence, the model already answered the fleet-wide
+   * question in full, and DASH's own recompute must not append a "which did
+   * you mean?" to an answer that was never ambiguous in the first place.
+   */
+  it("does not offer to disambiguate a fleet-wide question the model already answered", () => {
+    const fleet = [
+      row({ name: "ai-news-scout", title: "Ai news scout", capabilities: ["local_file_write"] }),
+      row({ name: "invoice-filer", title: "Invoice filer", capabilities: ["local_file_read"] }),
+      row({ name: "receipt-sorter", title: "Receipt sorter", capabilities: ["local_file_move"] }),
+    ];
+    recordChiefTurn({
+      asked_at: "2026-08-17T10:00:00.000Z",
+      question: "what agents run local and what runs in the cloud",
+      answer: "All three run locally, none in the cloud.",
+      failure: null,
+      provider_id: "openrouter",
+      model_id: "anthropic/claude-sonnet-5",
+      tokens_in: 799,
+      tokens_out: 72,
+      amount_usd: 0.0023,
+      receipt: briefingFor(fleet),
+    });
+    const turn = chiefRoomView(fleet).turns[0];
+    expect(turn?.handoffs).toEqual([]);
+    expect(turn?.matched).toEqual([]);
+  });
 });
