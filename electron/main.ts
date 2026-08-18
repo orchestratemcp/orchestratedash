@@ -35,6 +35,8 @@ import { assertContractsLocation } from "./resources";
 import { ignoreBrokenPipeErrors } from "../lib/shell/pipe-guard";
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from "electron";
+
+import { exportBriefAsPdf } from "./brief-pdf";
 import { readUiScale, writeUiScale } from "./ui-scale";
 import { DEFAULT_UI_SCALE, UI_SCALES, parseUiScale, type UiScale } from "../lib/views/ui-scale";
 
@@ -951,10 +953,18 @@ export function registerCommandChannel(
       // place in DASH that opens a file picker, and `download` the only action
       // that raises a save dialog. What crosses back is a task id, a name and
       // a size — never a path in either direction.
-      workspaceAction: (action, target) =>
-        action === "download"
+      workspaceAction: (action, target) => {
+        // MAR-674. A third branch, and the reason it is not folded into the
+        // download: this one never touches the runner. It composes a document
+        // from an artifact DASH is already holding, which is why a machine with
+        // no bundled runner can still export a briefing it has.
+        if (action === "export_brief") {
+          return exportBriefAsPdf(target.agent_id, target.artifact_id ?? "");
+        }
+        return action === "download"
           ? workspaceDownload(runner, target.artifact_id ?? "")
-          : workspaceAction(runner, action, target),
+          : workspaceAction(runner, action, target);
+      },
       // MAR-576. The only route in DASH that rewrites an author's manifest, and
       // the ownership gate that makes that safe lives inside it rather than at
       // the seam — see `refreshSampleAgent`.

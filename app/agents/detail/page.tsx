@@ -45,6 +45,7 @@ import { AGENT_WORKSPACE_PARAMS, agentStageHref, runDetailHref } from "../../_da
 import {
   dataSource,
   downloadOutput,
+  exportBriefAsPdf,
   markAgentLooked,
   refreshSampleAgent,
   revealAgentFolder,
@@ -1503,6 +1504,33 @@ function OutputsArea({
   openId?: string | null;
   setFeedback: Dispatch<SetStateAction<CommandFeedback>>;
 }): ReactNode {
+  /**
+   * Save one briefing as a PDF (MAR-674).
+   *
+   * `save`'s twin below, deliberately not folded into it. The two commands have
+   * different sources — one fetches bytes the runner holds, one composes a
+   * document DASH holds — and therefore different sentences when they fail; a
+   * single handler branching on the artifact kind would have one message for
+   * two situations.
+   */
+  async function exportBrief(card: ArtifactCardView): Promise<void> {
+    setFeedback(null);
+    const result = await exportBriefAsPdf({
+      agent_id: agent,
+      artifact_id: card.reference.artifact_id,
+    });
+    // A cancelled dialog answers `ok` with no sentence — `save`'s rule, and the
+    // same reason: reporting it would be DASH narrating a choice back at the
+    // person who just made it.
+    if (result.ok && (result.detail ?? "") === "") {
+      return;
+    }
+    setFeedback({
+      ok: result.ok,
+      message: result.detail ?? "DASH could not save this briefing as a PDF.",
+    });
+  }
+
   async function save(card: ArtifactCardView): Promise<void> {
     setFeedback(null);
     const result = await downloadOutput({
@@ -1532,6 +1560,7 @@ function OutputsArea({
       heading={AGENT_OUTPUTS_COPY.heading}
       openId={openId}
       onDownload={canAct ? (card) => void save(card) : undefined}
+      onExportBrief={canAct ? (card) => void exportBrief(card) : undefined}
       /* Per card, because this list spans runs now. The old page had one link
          under the whole panel saying "open the run these came from", which was
          true when every card came from one run and would have been a lie the

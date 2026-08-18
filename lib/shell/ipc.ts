@@ -1001,6 +1001,33 @@ export const COMMANDS = {
   },
 
   /*
+   * MAR-674, ADR 0025 decision 4. Save a briefing as a PDF and open it.
+   *
+   * The same two opaque ids as `workspace.download` and the same rule about
+   * them — main raises the dialog, main writes the bytes, and no path crosses
+   * this boundary in either direction.
+   *
+   * What is different is where the bytes come from, and it is why this is a
+   * second command rather than a flag on the first. `download` fetches a file
+   * the *agent* wrote, over the runner's authenticated channel; a briefing is
+   * composed by DASH out of an artifact it is already holding, and has no bytes
+   * at the runner at all. Two sources, two failure modes, two sentences.
+   *
+   * `mutates` is false on `workspace.download`'s reasoning. It also opens the
+   * file afterwards, which is Henrik's ruling and is a thing DASH does *for*
+   * the person with a file they just chose the location of — not a change to
+   * the agent, the store, or anything the agent acts on.
+   */
+  "workspace.exportBrief": {
+    effect:
+      "Save this briefing as a PDF where the user picks, then open it. Changes nothing about the agent.",
+    payload_keys: ["agent_id", "artifact_id"],
+    required_keys: ["agent_id", "artifact_id"],
+    mutates: false,
+    irreversible: false,
+  },
+
+  /*
    * MAR-588. Where DASH posts when an agent needs somebody, as three commands
    * and a switch.
    *
@@ -1403,6 +1430,11 @@ export const WORKSPACE_ACTIONS = {
   // page. The input-selection commands landing beside it is what the family
   // was made for.
   "workspace.download": "download",
+  // MAR-674. A fifth member, and it belongs here for the family's own stated
+  // reason: it touches a file a person chose. It reaches no runner — see the
+  // catalogue entry — which is the one thing that makes it a sibling of
+  // `download` rather than the same command with a format flag.
+  "workspace.exportBrief": "export_brief",
 } as const;
 
 export type WorkspaceCommandName = keyof typeof WORKSPACE_ACTIONS;
