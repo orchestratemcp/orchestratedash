@@ -138,7 +138,10 @@ what a person is actually relying on:
   unreachable. Nothing can schedule it.
 - **Model choice.** The chief has no picker. It asks under DASH's fleet default
   (MAR-642), and with no default set it has no model and says so. ADR 0012
-  decision 4 holds: DASH does not choose a model for anybody.
+  decision 4 holds: DASH does not choose a model for anybody. **Superseded by
+  Amendment 1 (MAR-696):** the chief now has a picker of its own, read before
+  the fleet default rather than instead of it; the other two bullets and ADR
+  0012 decision 4 both still hold exactly as written.
 - **The answer drives nothing.** ADR 0012's structural guarantee, unchanged.
   Nothing in DASH parses a chief answer, follows a link out of it, derives a
   command from it, resolves an approval by it, or hands it to an agent.
@@ -368,3 +371,46 @@ himself — *"the agents have no real output so we can't really test this"*:
 So "the chief knows the fleet" is not accepted as proven by any test in the list
 above. It is accepted when Henrik re-walks station 11 against a fleet that has
 produced real work.
+
+---
+
+## Amendment 1 (MAR-696): the chief gets a picker of its own
+
+**Amends:** Decision 4's "Model choice" bullet — *"The chief has no picker. It
+asks under DASH's fleet default (MAR-642), and with no default set it has no
+model and says so."* That sentence is no longer true and this amendment is the
+record of why.
+
+The corrected composer (MAR-696, replacing the floating window this ADR's own
+visual-direction section anticipated arguing about, and which Henrik refused on
+sight as PR #246/`c058d9b`) carries, in his own words, *"the chief's current
+model and a swap control."* A swap control needs something to swap into — a
+model the chief can be told to use instead of the fleet's — and that is a
+standing choice DASH did not previously let anyone make.
+
+**What changed, mechanically.** `chief_model_choice` is a new one-row table,
+`fleet_model_default`'s exact shape, read *before* it rather than instead of
+it (`readEffectiveChiefModel`, `lib/ai/model-store.ts`). Nothing about
+`fleet_model_default` moved: an agent with no pin of its own still falls back
+to it exactly as before, and the chief now does too, but only where it has no
+pin of its own either. Filed under its own decision kind, `chief_model` —
+never a second write under `fleet_model_default`'s kind — because the two are
+different rows, and a decision kind resolves against its own row.
+
+**What did not change.** Decision 4's other two bullets stand untouched: a
+chief question is still unreachable except through a person pressing send, and
+the answer still drives nothing. The picker is the one and only widening this
+amendment records — the chief still declares one connection and one
+capability, still cannot be scheduled, and ADR 0012 decision 4 — DASH does not
+choose a model for anybody — still holds, restated one level up: DASH does not
+choose the chief's model either, unless nobody has, in which case the fleet's
+own standing default answers exactly as it always did.
+
+**The visual-direction section above is otherwise unchanged and its argument
+held**, with one exception it explicitly reserved the door for: *"the
+remaining lever is a declared exception... putting that decision to Henrik
+against a screenshot rather than against a paragraph."* Henrik's 2026-08-19
+screenshot answered it — rounded corners, but scoped to the composer alone,
+recorded as `--radius-chief-composer` in `app/tokens.css` and nowhere else.
+The rest of that section's argument — unbox the turns, one accent, no
+persona — is unaffected; corner radius was always the one lever it left open.

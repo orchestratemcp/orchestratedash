@@ -1634,6 +1634,32 @@ const MIGRATIONS: readonly Migration[] = [
     PRIMARY KEY (agent, question_key)
   );
   `,
+
+  // MAR-696. The chief's own model, independent of `fleet_model_default`.
+  //
+  // `fleet_model_default`'s exact shape — one row, `CHECK (id = 1)`, absence
+  // is the shipped state — because the two are separate standing states for
+  // the same reason `fleet_level_model` is separate from the default it falls
+  // back to: `readEffectiveChiefModel` reads this row only where it exists and
+  // reads `fleet_model_default` only where it does not, and a view that
+  // resolved one against the other's current value would report a setting
+  // nobody made. Before this table, `lib/views/chief.ts` read the fleet
+  // default directly and ADR 0023's own record said the chief "has no picker
+  // at all" — this is that reversal, made once here rather than by a second
+  // write into the fleet default's row under a borrowed decision kind (a
+  // decision kind resolves against its own row).
+  //
+  // `provider_id`/`model_id` are checked exactly as every other model row is
+  // (`aiProviderById`, `isModelId`) before they are written and again when
+  // they are read back. ADR 0002 invariant 7.
+  `
+  CREATE TABLE IF NOT EXISTS chief_model_choice (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    provider_id TEXT NOT NULL,
+    model_id    TEXT NOT NULL,
+    chosen_at   TEXT NOT NULL
+  );
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

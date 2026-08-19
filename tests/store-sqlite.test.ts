@@ -156,8 +156,13 @@ describe("schema", () => {
     // 29 is MAR-681's `standing_answers` — a person's own "always this" for one
     // of an agent's runtime questions. Appended on the standing terms: an
     // installed store that has recorded 0 to 28 runs exactly one more.
+    //
+    // 30 is MAR-696's `chief_model_choice` — the chief's own model, read
+    // before `fleet_model_default` rather than instead of it. Appended on the
+    // standing terms: an installed store that has recorded 0 to 29 runs
+    // exactly one more.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(29);
+    expect(version.user_version).toBe(30);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -220,6 +225,9 @@ describe("schema", () => {
     // the fleet room and an agent's room are two threads with nothing shared,
     // because `{ kind: "chief" }` carries no agent id to key one by.
     expect(tables).toContain("chief_messages");
+    // MAR-696. The chief's own model pin, one row, read before the fleet
+    // default rather than instead of it.
+    expect(tables).toContain("chief_model_choice");
   });
 
   it("migrates a copied real-shape v25 fleet row without re-entering its vault key", async () => {
@@ -306,7 +314,7 @@ describe("schema", () => {
     ).toEqual({ count: 0 });
     expect(
       (nextDb.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(29);
+    ).toBe(30);
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -666,7 +674,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(29);
+    ).toBe(30);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

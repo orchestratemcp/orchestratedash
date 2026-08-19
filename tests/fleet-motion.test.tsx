@@ -194,50 +194,42 @@ describe("the motion rides the tokens, so reduced motion stills the fleet for fr
     }
   });
 
-  it("resizes the chief's portrait through --o-size, never width (MAR-615)", () => {
+  it("never resizes the chief's composer sprite by box, and the --o-size/!important mechanism it used to need is gone (MAR-615, MAR-696)", () => {
     /*
-     * The regression this pins cost a capture run to find and could not have
-     * been found any other way. `.chief-glyph` used to be an inline `<svg>`, so
-     * MAR-648's narrow-width rule shrank it with `width`/`height`. MAR-615 made
-     * it an `OAvatar`, and that rule died in two separate ways at once:
+     * This used to pin `.chief-glyph`'s three-rule, `!important`-carrying
+     * `--o-size` override — a 100px portrait that had to shrink at two
+     * breakpoints inside `ChiefBand`'s bordered box, which is what forced the
+     * cascade fight this test's own history explains at length. MAR-696
+     * deleted that box. The sprite that replaced it, `.chief-composer-o` in
+     * `chief-chat.tsx`'s `ChiefComposerGlyph`, is a fixed `size={50}` accent
+     * perched on the composer — it never needs to shrink at any width, so it
+     * never reaches for `--o-size` in CSS at all, and the `!important`
+     * mechanism this file used to regression-test has nothing left to test.
      *
-     * 1. `.chief-glyph` and `.o-avatar` are both a single class, so source
-     *    order breaks the tie and `.o-avatar { width: var(--o-size) }` — 2,500
-     *    lines further down — won. A media query adds no specificity. The chief
-     *    drew at 100px in a band with 230px to spend and the composer collapsed
-     *    to zero height.
-     * 2. Even winning, `width` alone would have *cropped*: the sprite is a
-     *    background sheet sized from `--o-size`, so the box and the sheet have
-     *    to move together or one frame is shown as a corner of itself.
-     *
-     * So the rule is about the mechanism, not the numbers: any rule that
-     * resizes this element goes through the custom property. Nothing renders
-     * differently for a reader of this test — which is the point, because
-     * nothing rendered differently for the whole suite last time either.
+     * What still matters, and what this keeps proving: `.chief-glyph` must
+     * not quietly come back (the trap it names is real for *any* element
+     * carrying `OAvatar`'s inline style, not just the one this file used to
+     * track), and whatever rule *does* position `.chief-composer-o` must
+     * never reach for `width`/`height`/`--o-size` — the same crop-vs-cascade
+     * trap, caught before a capture run has to find it a second time.
      */
-    const bodies = [...globals.matchAll(/\.chief-glyph\s*\{([^}]*)\}/g)].map((match) => match[1] ?? "");
-    expect(bodies.length).toBeGreaterThan(1);
+    /*
+     * Comments stripped first — this test's own explanation names the class
+     * it must not find, `tests/chief.test.ts`'s `source()` reason exactly: an
+     * assertion that reads the raw file fails on its own documentation.
+     */
+    const withoutComments = globals.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(withoutComments, "the old bordered-box mechanism must not come back").not.toMatch(
+      /\.chief-glyph\b/,
+    );
 
-    const sized = bodies.filter((body) => /--o-size/.test(body));
-    expect(sized.length, "no rule sizes the chief's portrait").toBeGreaterThan(0);
-    for (const body of sized) {
-      // Inline styles are what `OAvatar` writes, and only an important author
-      // declaration beats one.
-      expect(body).toMatch(/--o-size\s*:[^;]*!important/);
-      /*
-       * An integer ratio of the sheet's own 50px frames, `agent-settings.tsx`'s
-       * rule: `image-rendering: pixelated` upscales by nearest neighbour, so
-       * anything else lands some source pixels on two screen pixels and some on
-       * three and the sprite reads as a rendering fault rather than as pixel art.
-       */
-      const value = /--o-size\s*:\s*([0-9]+)px/.exec(body)?.[1];
-      expect(value, "the size is not a plain pixel length").toBeDefined();
-      expect([25, 50, 100, 200]).toContain(Number(value));
-    }
-
+    const bodies = [...globals.matchAll(/\.chief-composer-o\s*\{([^}]*)\}/g)].map(
+      (match) => match[1] ?? "",
+    );
+    expect(bodies.length, "no rule positions the composer's perched O").toBeGreaterThan(0);
     for (const body of bodies) {
-      expect(body, "sizing the chief's portrait by box crops the sheet").not.toMatch(
-        /(?:^|[\s;])(?:width|height)\s*:/,
+      expect(body, "sizing the perched O by box or by override crops the sheet").not.toMatch(
+        /(?:^|[\s;])(?:width|height|--o-size)\s*:/,
       );
     }
   });

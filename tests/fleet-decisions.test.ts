@@ -57,6 +57,11 @@ describe("the closed kind list", () => {
       // resolving one against the other's current value would report a setting
       // nobody made.
       "fleet_level_model",
+      // MAR-696. The chief's own model pin — a kind of its own for
+      // `fleet_level_model`'s exact reason: it reads before the default
+      // rather than instead of it, and a shared kind would let one row's
+      // history stand in for the other's.
+      "chief_model",
       "connection_grant",
       "fleet_connection",
       "fleet_grant",
@@ -313,6 +318,35 @@ describe("filing at the write-sites", () => {
       ["fleet", null, "set"],
       ["fleet", null, "cleared"],
     ]);
+  });
+
+  it("files the chief's own model with a fleet subject, apart from the fleet default's row", async () => {
+    // MAR-696. The chief's pin and the fleet default are two rows and two
+    // chains — a shared kind would let one row's history stand in for the
+    // other's, which is the trap `chief_model`'s own docblock names.
+    const { decisions, models } = await freshStore();
+    expect(models.writeFleetModelDefault("anthropic", "claude-haiku-4-5-20251001", now())).toBe(true);
+    expect(models.writeChiefModelChoice("openai", "gpt-5-mini", now())).toBe(true);
+    models.clearChiefModelChoice();
+    // Clearing again is not a transition: no pin, nothing to clear.
+    models.clearChiefModelChoice();
+
+    const log = decisions.readDecisions();
+    expect(log.map((row) => [row.kind, row.subject_kind, row.subject_id, row.outcome["state"]])).toEqual([
+      ["fleet_model_default", "fleet", null, "set"],
+      ["chief_model", "fleet", null, "set"],
+      ["chief_model", "fleet", null, "cleared"],
+    ]);
+    // The fleet default's own row is untouched by any of the chief's writes.
+    expect(models.readFleetModelDefault()).toEqual({
+      provider_id: "anthropic",
+      model_id: "claude-haiku-4-5-20251001",
+    });
+    expect(models.readChiefModelChoice()).toBeNull();
+    expect(models.readEffectiveChiefModel()).toEqual({
+      provider_id: "anthropic",
+      model_id: "claude-haiku-4-5-20251001",
+    });
   });
 
   it("reads a row with an unknown kind as the absence of a record", async () => {

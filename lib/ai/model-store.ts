@@ -28,6 +28,8 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { isModelId } from "../broker/operations";
 import {
+  describeChiefModelCleared,
+  describeChiefModelSet,
   describeFleetDefaultCleared,
   describeFleetDefaultSet,
   describeLevelModelCleared,
@@ -313,6 +315,139 @@ export function readEffectiveModelChoice(
     readFleetModelDefault(),
     agentProviderId,
   );
+}
+
+/* ---------------------------------------------------------------------- *
+ * The chief's own model (MAR-696)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The chief's own model, or null when nobody has pinned one.
+ *
+ * `readFleetModelDefault`'s exact rule, one table along: a row naming a
+ * provider this build no longer has, or a model id that no longer passes
+ * `isModelId`, reads as null — a record this build cannot interpret is the
+ * absence of a record.
+ *
+ * Independent of `fleet_model_default`. `readEffectiveChiefModel` is what
+ * combines the two; nothing here falls back to the fleet default itself,
+ * for `readFleetLevelModels`' reason one row up: a function that decided
+ * what an absent row *meant* would be a second authority beside
+ * `applyFleetDefault`, free to drift from it.
+ */
+export function readChiefModelChoice(): FleetModelDefault | null {
+  let row: unknown;
+  try {
+    row = db().prepare("SELECT provider_id, model_id FROM chief_model_choice WHERE id = 1").get();
+  } catch (error: unknown) {
+    console.warn(`[dash] could not read the chief's model: ${message(error)}`);
+    return null;
+  }
+  if (row === undefined || row === null) {
+    return null;
+  }
+
+  const record = row as Record<string, unknown>;
+  const providerId = String(record["provider_id"]);
+  const modelId = String(record["model_id"]);
+  if (aiProviderById(providerId) === null || !isModelId(modelId)) {
+    return null;
+  }
+  return { provider_id: providerId, model_id: modelId };
+}
+
+/**
+ * What the chief actually asks under: its own pin, or the fleet default.
+ *
+ * The reader every consumer of the chief's model should use, on
+ * `readEffectiveModelChoice`'s own argument: the precedence is a product
+ * decision and five surfaces reading two rows separately is five chances to
+ * disagree about which wins. Null means there is nothing to ask under —
+ * `lib/views/chief.ts` is what turns that into the room's `blocked` sentence.
+ */
+export function readEffectiveChiefModel(): FleetModelDefault | null {
+  return readChiefModelChoice() ?? readFleetModelDefault();
+}
+
+/**
+ * Name one model for the chief.
+ *
+ * `writeFleetModelDefault`'s shape and its reason: false is a refusal — a
+ * provider DASH does not broker, or an id DASH is not willing to write down —
+ * and the caller renders a sentence rather than a fault.
+ *
+ * **It writes nothing to `fleet_model_default`.** Every agent without a pin
+ * of its own keeps falling back to that row exactly as it did before the
+ * chief had one of its own; there is no code path here that could touch it.
+ */
+export function writeChiefModelChoice(providerId: string, modelId: string, at: string): boolean {
+  if (aiProviderById(providerId) === null || !isModelId(modelId)) {
+    return false;
+  }
+  // `writeFleetModelDefault`'s read-before-write, for its reason: the log
+  // records transitions, and re-saving the same choice is not one.
+  const before = readChiefModelChoice();
+  try {
+    db()
+      .prepare(
+        "INSERT INTO chief_model_choice (id, provider_id, model_id, chosen_at) " +
+          "VALUES (1, ?, ?, ?) " +
+          "ON CONFLICT (id) DO UPDATE SET " +
+          "provider_id = excluded.provider_id, model_id = excluded.model_id, " +
+          "chosen_at = excluded.chosen_at",
+      )
+      .run(providerId, modelId, at);
+  } catch (error: unknown) {
+    console.warn(`[dash] could not record the chief's model: ${message(error)}`);
+    return false;
+  }
+  if (before === null || before.provider_id !== providerId || before.model_id !== modelId) {
+    fileDecision({
+      decided_at: at,
+      subject_kind: "fleet",
+      subject_id: null,
+      kind: "chief_model",
+      topic: "",
+      summary: describeChiefModelSet(modelId),
+      outcome: { state: "set", provider_id: providerId, model_id: modelId },
+      decided_by: "person",
+      rule: null,
+      reason: null,
+      receipts: ["chief_model_choice 1"],
+    });
+  }
+  return true;
+}
+
+/**
+ * Go back to the chief asking under the fleet default (or nothing, if there
+ * is none of those either).
+ *
+ * Deletes rather than writing a sentinel, `clearFleetModelDefault`'s rule:
+ * "no pin of its own" and "a pin nothing can read" would be two states
+ * meaning one thing, and only one of them is the state DASH ships in.
+ */
+export function clearChiefModelChoice(): void {
+  try {
+    const result = db().prepare("DELETE FROM chief_model_choice WHERE id = 1").run();
+    if (Number(result.changes) > 0) {
+      fileDecision({
+        decided_at: new Date().toISOString(),
+        subject_kind: "fleet",
+        subject_id: null,
+        kind: "chief_model",
+        topic: "",
+        summary: describeChiefModelCleared(),
+        outcome: { state: "cleared" },
+        decided_by: "person",
+        rule: null,
+        reason: null,
+        receipts: ["chief_model_choice 1"],
+      });
+    }
+  } catch (error: unknown) {
+    console.warn(`[dash] could not clear the chief's model: ${message(error)}`);
+  }
 }
 
 /* ---------------------------------------------------------------------- *

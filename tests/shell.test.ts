@@ -247,6 +247,12 @@ describe("the audited command chokepoint", () => {
       // step can be resolved to, bounded by the levels that agent's plan
       // declares.
       "model.level",
+      // MAR-696. A fourth in that family naming no agent: the chief's own
+      // model, read before the fleet default rather than instead of it.
+      // Reaches no provider, no vault and no manifest — the same two ids
+      // `model.default` takes, and main writes `chief_model_choice` rather
+      // than `fleet_model_default` either way.
+      "model.chief",
 
       // MAR-545. The tenth family, one member, and the first command in this
       // catalogue that costs the person money. The renderer names an agent, a

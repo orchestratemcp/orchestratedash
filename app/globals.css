@@ -1420,14 +1420,22 @@ code {
 
 /*
  * The stage fills whatever `.fleet-main` has left after the heading.
- * Two rows, 2fr / 1fr, so the cards are two thirds and the chief is one
- * third of that remaining height — the same split in every view.
+ *
+ * MAR-696: the second row is `auto` now, not `minmax(0, 1fr)`. That fraction
+ * was Henrik's cards-two-thirds/chief-one-third split, sized for `ChiefBand`'s
+ * bordered box — a portrait and a sentence genuinely needed a third of the
+ * stage. `ChiefBand` is gone; the composer that replaced it is a slim rounded
+ * bar and a one-line model row, and stretching it to fill a reserved fraction
+ * would leave it floating in empty space above its own bottom edge. The cards
+ * take whatever is left instead (`minmax(0, 1fr)`), which is the same "give
+ * the composer only what it needs" argument `auto` already makes for a normal
+ * document flow.
  */
 .fleet-stage {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: var(--density-stack);
   margin-top: var(--density-stack);
 }
@@ -2372,96 +2380,26 @@ code {
   }
 }
 
-/* ── The chief, under the cards ───────────────────────────────────────────
+/* ── MAR-696: the fleet page's big agent spotlight box is gone ───────────
  *
- * `app/_components/fleet-list.tsx` carries the argument for what the chief is
- * allowed to say and why its portrait is a glyph rather than one of the O's.
- * What this rule does is **give it a third of the stage**: Henrik asked for
- * the cards in two thirds and the chief in one third, in every view.
- *
- * It is a grid area of `.fleet-stage`, not sticky. Sticky was the fix when
- * the cards were document-tall and the chief fell below the fold. The stage
- * now owns the height, so the chief is on screen because it is a row of the
- * layout rather than because it pins over the list.
- *
- * ## MAR-696: the composer stopped living in this box
- *
- * Until now `.chief-chat` was a second grid row here, and an open room grew
- * that row over the cards' own share of the stage. Henrik asked for a floating
- * window instead — *"remove all excess... I only want a floating chat
- * window"* — so `.chief-chat` is `position: fixed` now (below), anchored to
- * the page rather than laid out as one of this band's rows. It is not
- * anchored to this box: a first pass tried that, and at 375px the band shrinks
- * to just the glyph and the sentence while the composer stayed the same
- * height, so the floating window rode up over the portrait it shares a corner
- * with. `overflow: hidden` is gone from here regardless, because this band no
- * longer has a second row whose overflow it was ever guarding.
+ * `ChiefBand` — the bordered box `.chief-band` drew, one grid area of
+ * `.fleet-stage`, holding the chief's portrait and a sentence about whichever
+ * agent was centred — no longer exists. Henrik, of a screenshot of it: *"This
+ * box Ive asked you to remove manytimes."* Everything that used to be styled
+ * here (`.chief-band`, `.chief-line`, `.chief-glyph` and the `!important`
+ * `--o-size` overrides that sized the portrait inside it, `.chief-runs`) is
+ * deleted rather than repurposed, because none of it has a corresponding
+ * element any more. What replaced the box — the composer `ChiefChat` now
+ * draws directly under the cards — is styled in its own section below,
+ * *"The chief's composer, incorporated (MAR-648, MAR-696)"*.
  */
-.chief-band {
-  min-height: 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: var(--space-4);
-  margin: 0;
-  padding: var(--space-4) var(--space-5);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  /*
-   * Opaque, and that is load-bearing rather than a colour choice: `DESIGN.md`
-   * forbids glassmorphism outright — *"All overlays should be opaque"* — and a
-   * translucent band would put a card's portrait behind the chief's sentence.
-   */
-  background: var(--surface-1);
-}
-
-/* The docked band picks up the accent border while its floating room is
-   open — the one visible sign, on the band itself, of what `is-chatting`
-   means now that it no longer changes the band's own layout. */
-.chief-band.is-chatting {
-  border-color: var(--accent);
-}
-
-.chief-line {
-  min-height: 0;
-  overflow: auto;
-}
-
-.chief-line .fleet-hosting {
-  margin-top: var(--space-2);
-}
-
-/*
- * Positioning only, since MAR-615 vendored the chief's own portrait — nothing
- * here draws with `currentColor` any more. Never `--ok`: `app/tokens.css`
- * reserves emerald for live and healthy things, and `checkEmerald` fails a
- * container that would make the chief's costume look like a health signal.
- */
-.chief-glyph {
-  flex: none;
-  align-self: start;
-}
-
-.chief-says {
-  margin: 0;
-  font-size: var(--text-base);
-}
-
-.chief-says > code {
-  font-size: inherit;
-}
-
-.chief-runs {
-  margin: var(--space-1) 0 0;
-  font-size: var(--text-sm);
-}
 
 @media (max-width: 760px) {
   /*
-   * The arrows go and the band stacks. Nothing is lost with the arrows: the row
-   * is a scroll container, and a touch drag is the gesture a window this narrow is
-   * being used with anyway — the same reasoning `.fleet-strip` uses for dropping
-   * to a count rather than shrinking a sprite.
+   * The arrows go and the spotlight track stacks. Nothing is lost with the
+   * arrows: the row is a scroll container, and a touch drag is the gesture a
+   * window this narrow is being used with anyway — the same reasoning
+   * `.fleet-strip` uses for dropping to a count rather than shrinking a sprite.
    */
   .fleet-spotlight-track {
     grid-template-columns: minmax(0, 1fr);
@@ -2469,102 +2407,6 @@ code {
 
   .fleet-spotlight-step {
     display: none;
-  }
-
-  /*
-   * MAR-648. A stack, not a grid: the glyph moves above the sentence rather
-   * than beside it, which at this width is the better reading anyway — the
-   * speaker over what was said.
-   *
-   * No `overflow` override here (MAR-696 dropped the one this rule used to
-   * carry): the band holds only the glyph and the sentence now that the
-   * composer floats out of it (below), and clipping the band would clip the
-   * floating room the moment it grew taller than the band's own shrunken
-   * height.
-   */
-  .chief-band {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    padding: var(--space-3) var(--space-4);
-  }
-
-  /*
-   * The chief's sentence stops being a scroll container and becomes text.
-   *
-   * `.chief-line` carries `min-height: 0; overflow: auto` so it can scroll
-   * inside the grid's fixed row. In a flex column those two combine into
-   * something else entirely: the default `flex-shrink: 1` plus a zero minimum
-   * lets it collapse to no height at all when the band is tight.
-   */
-  .chief-line {
-    flex: none;
-    min-height: auto;
-    overflow: visible;
-  }
-
-  /*
-   * The glyph gives up most of its area here, and that is a fix rather than a
-   * tidy-up.
-   *
-   * ## Why this sets `--o-size`, and why it is `!important` (MAR-615)
-   *
-   * This rule was `width: 24px; height: 24px` and it silently stopped working
-   * the moment MAR-615 replaced the chief's inline `<svg>` with a vendored
-   * `OAvatar`. Two reasons, and both had to be answered:
-   *
-   * 1. **It lost the cascade.** `.chief-glyph` and `.o-avatar` are both one
-   *    class, so specificity ties and source order decides — and `.o-avatar`'s
-   *    `width: var(--o-size)` is declared some 2,500 lines further down. A
-   *    media query adds no specificity, so this rule simply never applied and
-   *    the chief drew at 100px in a band with far less room to spend.
-   * 2. **Width alone would have cropped rather than scaled.** The sprite is a
-   *    background sheet sized `calc(var(--o-size) * var(--o-frames))`, so
-   *    shrinking the box without shrinking the sheet shows a corner of one
-   *    frame. Setting `--o-size` moves the box, the sheet and the keyframes'
-   *    step distance together, which is the only way they stay coherent.
-   *
-   * `!important` because `OAvatar` writes `--o-size` as an *inline* style, and
-   * an important author declaration is the only thing in the cascade that beats
-   * one. It is the sole `!important` in this stylesheet and it is here rather
-   * than in the component because the size is a fact about how much room this
-   * band has, which is a question only the stylesheet is in a position to ask.
-   *
-   * 25px and not 24px, which is `agent-settings.tsx`'s rule and not a rounding
-   * preference: the source frames are 50px and `image-rendering: pixelated`
-   * upscales by nearest neighbour, so anything but an integer ratio lands some
-   * source pixels on two screen pixels and some on three, and the sprite stops
-   * reading as pixel art and starts reading as a rendering fault. 25 is half of
-   * 50. 24 is not half of anything.
-   */
-  .chief-glyph {
-    --o-size: 25px !important;
-  }
-}
-
-/*
- * The tablet band, where the portrait is too big but not small-glyph small
- * (MAR-615).
- *
- * 760px is MAR-648's breakpoint and it is the right one for everything else in
- * that block, so this is a second rule rather than a wider first one. Just
- * above it — 768px is the middle width every DASH design pass is argued at —
- * the band is short enough that its `auto` first row is compressed below the
- * portrait's own height, and a 100px glyph with `align-self: start` then paints
- * 21px *into the composer's row*. That is the same failure MAR-648 records
- * above at 375px, one breakpoint up and one cause along: not a `1fr` row
- * collapsing, but a sprite twice the size of the `<svg>` this band was tuned
- * for.
- *
- * 50px rather than 25px because there is room for a portrait here and it is
- * still the speaker; 50px rather than 60px because the sheet's frames are 50px
- * and 1:1 is the sharpest this sprite is ever drawn. The measured overlap at
- * this width was 21px, so halving the glyph clears it with room left over —
- * `electron/capture-mar615.ts` reports the intersection and it is 0.
- */
-@media (min-width: 761px) and (max-width: 1024px) {
-  .chief-glyph {
-    --o-size: 50px !important;
   }
 }
 
@@ -7846,83 +7688,170 @@ main:has(.agent-cockpit) {
 }
 
 /* ------------------------------------------------------------------------ *
- * The chief's composer and its room, floating (MAR-648, MAR-696)
+ * The chief's composer, incorporated (MAR-648, MAR-696)
  * ------------------------------------------------------------------------ */
 
 /*
- * A window over the whole stage, not a row of the band.
+ * In the page's own layout, not a window over it.
  *
- * `position: fixed` rather than anchored to `.chief-band`'s own box, and that
- * is a correction rather than the first design: the band shrinks to just the
- * glyph and the sentence now that the composer floats, and a composer
- * anchored to that shrunken box rides up over the glyph the moment it needs
- * more height than the band is tall. `electron/capture-mar615.ts` caught it
- * at 375px — `overlap_area: 625`, the whole portrait sitting inside the
- * composer's own rectangle — in four frames a viewport-relative anchor cannot
- * reach, because it no longer shares a containing block with the band at all.
+ * `position: relative` rather than `position: fixed` — the reversal of the
+ * first pass, which Henrik refused on sight: *"the floating textbox was a
+ * disaster... Its not floating in the sense as we have it right now. Its
+ * incorporated in the design."* This box is the last row of `.fleet-stage`
+ * (above), sized to its own content now that `ChiefBand`'s bordered box is
+ * gone — see that rule's own note on why the stage no longer reserves a
+ * fraction for it.
  *
- * `right` clears `.fleet-rail`, the same `--sidebar-width` the rail's own
- * column is. Below 900px `.fleet-shell` drops that column — the rail moves
- * above the page instead — and the override below removes the offset with it.
- *
- * Henrik's own words are why it is a window at all — *"remove all excess... I
- * only want a floating chat window"* — and MAR-528's elevation rule
- * ("Surfaces — tonal layering, crisp borders, no shadows") is why it reads as
- * one without a drop shadow: a step up the surface ramp and a 1px border are
- * this system's whole vocabulary for depth, so `--surface-2` against the
- * page's own `--surface-0`/`--surface-1` is the lift.
- *
- * Both states — the compact bar and the open room above it — are this one box;
- * only whether `.chief-room` is in the document changes its height, and it
- * grows upward because the anchor is the box's bottom edge, not its top.
+ * It stays the one thing that still overlays: `.chief-room` (below) is
+ * `position: absolute` from this box, so an open conversation covers the
+ * cards above it rather than pushing them down — MAR-696's own instruction,
+ * *"the chat appears above the input and places itself over the cards."*
+ * `position: relative` here is what gives that overlay something to anchor
+ * to.
  */
-.chief-chat {
-  position: fixed;
-  right: calc(var(--sidebar-width) + var(--space-6));
-  bottom: var(--space-6);
-  z-index: 20;
+.chief-composer {
+  position: relative;
   display: grid;
   gap: var(--space-2);
-  width: min(24rem, 100%);
+}
+
+/*
+ * MAR-659, from ADR 0022's proposal, restated for a box that no longer floats
+ * over the whole stage: opaque and bordered on its own terms — `DESIGN.md`
+ * forbids glassmorphism outright, and a translucent room would put a card
+ * behind the chief's words — a step up the surface ramp and a 1px border are
+ * this system's whole vocabulary for depth (MAR-528, "no shadows"), so
+ * `--surface-2` against the page's own `--surface-0`/`--surface-1` is the
+ * lift.
+ *
+ * `bottom: 100%` is the whole of "expands upward": the room's own bottom edge
+ * sits at the composer's top edge, so it grows away from the field rather
+ * than toward it, and past `max-height` it scrolls itself rather than
+ * pushing the field off the top of the page.
+ */
+.chief-room {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  z-index: 20;
+  margin-bottom: var(--space-2);
+  min-height: 0;
+  max-height: min(24rem, calc(100vh - 10rem));
+  overflow: auto;
+  display: grid;
+  gap: var(--space-2);
   padding: var(--space-3);
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
 }
 
-@media (max-width: 900px) {
-  /* `.fleet-shell` drops the sidebar column at this width — the rail moves
-     above the page — so there is nothing left of the page edge to clear. */
-  .chief-chat {
-    right: var(--space-4);
-  }
-}
-
-@media (max-width: 760px) {
-  /* Full width of the page rather than a fixed column — the same width a
-     bottom sheet would claim, without a second positioning scheme for it. */
-  .chief-chat {
-    left: var(--space-3);
-    right: var(--space-3);
-    bottom: var(--space-3);
-    width: auto;
-  }
+/*
+ * MAR-696. The header MAR-683 took off this room — a heading a sighted reader
+ * had to read past on every open, and Close/Clear controls Escape already
+ * made redundant — comes back, because this is a different room: MAR-683's
+ * argument was that neither control did anything a keyboard could not
+ * already do, and that is still true of Close. It is not true of Clear:
+ * nothing before this let a person empty what is drawn here without leaving
+ * the page, which is the whole reason the control exists now.
+ */
+.chief-room-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
 /*
- * MAR-659, from ADR 0022's proposal: this used to draw no border of its own
- * and lean on `.chief-band`'s frame — a bordered box inside a bordered band
- * was one of the four named reasons the room read as "edgy" rather than as a
- * soft, Claude/ChatGPT-shaped conversation. MAR-696 moved the composer out of
- * that band entirely, so `.chief-chat`'s own border (above) is this surface's
- * frame now; what is left here is only the cap that keeps an open thread from
- * growing taller than the window it is floating in — past this height it
- * scrolls itself rather than pushing the composer off the top of the page.
+ * `white-space: nowrap` because a flex row with no minimum on its items lets
+ * "Ask the chief" break one word per line once `.chief-room-actions` presses
+ * in from the other side — measured at 375px, where the pre-fix Clear label
+ * (a full sentence, before it was shortened for the same reason `button`'s
+ * own forced-caps rule argues for below) squeezed this into exactly that.
  */
-.chief-room {
-  min-height: 0;
-  max-height: min(24rem, calc(100vh - 10rem));
-  overflow: auto;
+.chief-room-heading {
+  margin: 0;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.chief-room-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* A link-styled control rather than `.button-secondary` — MAR-659's reading
+   of "soft" applies here too: a bordered button beside a bordered room is one
+   more border than this surface needs for a control this low-stakes. */
+.chief-room-clear {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.chief-room-clear:disabled {
+  color: var(--text-muted);
+  opacity: 0.5;
+  text-decoration: none;
+  cursor: default;
+}
+
+.chief-room-clear:hover:not(:disabled),
+.chief-room-clear:focus-visible {
+  color: var(--text);
+}
+
+.chief-room-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--text-muted);
+  font-size: var(--text-base);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chief-room-close:hover,
+.chief-room-close:focus-visible {
+  color: var(--text);
+}
+
+.chief-room-clear:focus-visible,
+.chief-room-close:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/*
+ * MAR-648. The unprompted glyph's speech, and now a turn's own answer too —
+ * moved here from the deleted `ChiefBand` block, unchanged, because both
+ * still reach for it: `Says` (below `.chief-speaker`) and `ChiefTurnBody`'s
+ * reply paragraph.
+ */
+.chief-says {
+  margin: 0;
+  font-size: var(--text-base);
+}
+
+.chief-says > code {
+  font-size: inherit;
 }
 
 /*
@@ -8127,6 +8056,10 @@ main:has(.agent-cockpit) {
   color: var(--warn);
 }
 
+.chief-compose {
+  display: block;
+}
+
 .chief-field {
   display: block;
   min-width: 0;
@@ -8144,17 +8077,43 @@ main:has(.agent-cockpit) {
   color: var(--text-muted);
 }
 
+/*
+ * The positioning parent for the enter glyph and the perched O — both anchor
+ * here rather than to `.chief-field`, which also carries the visible subject
+ * caption above the field: a glyph centred on this box is centred on the
+ * rounded field a person actually sees, not on a taller box that includes a
+ * line of text above it.
+ */
+.chief-input-wrap {
+  position: relative;
+  display: block;
+}
+
+/*
+ * MAR-696. `--radius-chief-composer` — see `app/tokens.css`'s own header on
+ * why this is the one declared exception rather than a stray literal, and
+ * `tests/tokens.test.ts` on how it stays the *only* one. Everything else
+ * about this rule is `.chief-input`'s previous shape: `--surface-1` (one step
+ * up from the page) and a 1px border are the whole of this system's
+ * vocabulary for depth (MAR-528, "no shadows"), and `field-sizing: content`
+ * is what lets `rows` grow the box "up a bit" on focus without JavaScript
+ * measuring anything.
+ *
+ * Right padding clears `.chief-enter-glyph`; `resize: none` because a
+ * person dragging this box's own corner would fight `rows`' own resize on
+ * focus.
+ */
 .chief-input {
   width: 100%;
   min-height: var(--space-8);
-  padding: var(--space-3);
-  background: var(--surface-0);
+  padding: var(--space-3) var(--space-7) var(--space-3) var(--space-4);
+  background: var(--surface-1);
   color: var(--text);
   border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chief-composer);
   font: inherit;
   line-height: var(--leading-normal);
-  resize: vertical;
+  resize: none;
   field-sizing: content;
 }
 
@@ -8162,6 +8121,108 @@ main:has(.agent-cockpit) {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-color: var(--accent);
+}
+
+/*
+ * MAR-696. The affordance the Ask button used to occupy — Claude Code's own
+ * composer, the reference on the issue, draws this glyph rather than a
+ * button, and `ask()` already runs on Enter (`chief-chat.tsx`), so this
+ * names the key rather than duplicating what pressing it does.
+ * `pointer-events: none` because it sits over the input's own text area and
+ * must never steal a click a person meant for the field.
+ */
+.chief-enter-glyph {
+  position: absolute;
+  right: var(--space-4);
+  bottom: var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  pointer-events: none;
+}
+
+/*
+ * MAR-696. "A small pixel O standing on top of the field at the right."
+ * Perched rather than beside it: `top: 0` is the field's own top edge, and
+ * `translateY(-84%)` lifts the sprite so only its feet — the bottom ~8px of
+ * a 50px sprite — land inside the field's own box, which is `--space-3`'s
+ * value (the field's top padding, `.chief-input`'s own rule): the character
+ * stands on the border and dips into the padding a real foot would, never
+ * into the row `.chief-input`'s text actually sits on.
+ *
+ * `electron/capture-mar615.ts`'s `measureComposer` is what caught the first
+ * number here being wrong: `-55%` measured `overlap_area: 1150` at 1280px —
+ * roughly half the sprite's own height sitting inside the textarea's box,
+ * over where typed text reads. This is the corrected figure, verified at
+ * `overlap_area: 0` against `.chief-input` in that harness's own run.
+ *
+ * `pointer-events: none` for `.chief-enter-glyph`'s own reason, sharpened:
+ * this sprite sits directly over the corner a person would click to select
+ * the end of a line of typed text, and a decorative costume must never be
+ * the thing that intercepts that.
+ */
+.chief-composer-o {
+  position: absolute;
+  top: 0;
+  right: var(--space-4);
+  transform: translateY(-84%);
+  pointer-events: none;
+}
+
+/*
+ * MAR-696, ADR 0023 amendment 1. Always drawn, whether the room is open or
+ * closed — Henrik's own words, *"the chief's current model and a swap
+ * control."* One line and one control, never a paragraph: this is not
+ * `.chief-scope`, the standing explainer MAR-683 removed as chrome nobody
+ * asked to see yet.
+ */
+.chief-model-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  font-size: var(--text-sm);
+}
+
+.chief-model-line p {
+  margin: 0;
+}
+
+.chief-model-swap {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.chief-model-swap:hover,
+.chief-model-swap:focus-visible {
+  color: var(--text);
+}
+
+.chief-model-swap:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/*
+ * The picker itself, asked for on press — see `ChiefModelPicker`'s own
+ * header on why the list is fetched rather than loaded on mount. A full-width
+ * row of its own rather than inline with the swap button: a `<select>`, a
+ * fetch button and an outcome sentence do not fit one line at any width this
+ * composer is drawn at.
+ */
+.chief-model-picker {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
 }
 
 /* ---------------------------------------------------------------------- *

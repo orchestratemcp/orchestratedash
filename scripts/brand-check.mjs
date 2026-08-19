@@ -58,13 +58,18 @@ const STYLESHEETS = [path.join(APP_DIR, "globals.css"), path.join(APP_DIR, "toke
  *
  * One entry, since MAR-615. DASH's fleet avatars sit beside an agent's own
  * name on every surface BRAND-03/04/05 plan, so the character repeats nothing
- * there and announcing it would add a costume nobody asked about. The chief
- * band in `fleet-list.tsx` is the exception: nothing else on that surface
- * names who is speaking, so the portrait genuinely is the information, the
- * same way it was when it was a `role="img"` glyph before this issue vendored
- * a real one.
+ * there and announcing it would add a costume nobody asked about. The chief's
+ * portrait is the exception: nothing else on the surface it draws on names
+ * who is speaking, so the portrait genuinely is the information, the same way
+ * it was when it was a `role="img"` glyph before MAR-615 vendored a real one.
+ *
+ * MAR-696 moved that portrait from `ChiefGlyph` in `fleet-list.tsx` (deleted
+ * with the bordered `ChiefBand` it stood in) to `ChiefComposerGlyph` in
+ * `chief-chat.tsx`, perched on the composer instead — the entry moved with
+ * it rather than growing to two, because the old file no longer imports
+ * `OAvatar` at all.
  */
-const LABEL_ALLOWLIST = new Set(["app/_components/fleet-list.tsx"]);
+const LABEL_ALLOWLIST = new Set(["app/_components/chief-chat.tsx"]);
 
 const failures = [];
 

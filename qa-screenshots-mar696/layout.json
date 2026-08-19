@@ -1,151 +1,82 @@
 {
-  "captured_at": "2026-08-18T20:38:50.101Z",
+  "captured_at": "2026-08-19T20:13:05.115Z",
   "measurements": [
     {
-      "surface": "spotlight",
-      "state": "composer-closed",
-      "viewport": 1280,
+      "surface": "composer",
+      "state": "collapsed",
+      "viewport": 1279,
       "theme": "light",
       "page_overflows": false,
-      "band_found": true,
-      "chief_is_open": false,
-      "glyph_box": {
-        "x": 285,
-        "y": 578,
-        "width": 100,
-        "height": 100
-      },
-      "chat_box": {
-        "x": 632,
-        "y": 759,
-        "width": 384,
-        "height": 117
-      },
-      "line_box": {
-        "x": 401,
-        "y": 578,
-        "width": 594,
-        "height": 60
-      },
-      "glyph_is_action": true,
-      "overlap_area": 0,
-      "overlap_with_line": 0,
-      "strip_found": true,
-      "strip_total": 5,
-      "strip_animated": 5
-    },
-    {
-      "surface": "spotlight",
-      "state": "composer-focused",
-      "viewport": 1280,
-      "theme": "light",
-      "composer_focused": true,
-      "page_overflows": false,
-      "band_found": true,
-      "chief_is_open": false,
-      "glyph_box": {
-        "x": 285,
-        "y": 578,
-        "width": 100,
-        "height": 100
-      },
-      "chat_box": {
-        "x": 632,
-        "y": 751,
-        "width": 384,
-        "height": 125
-      },
-      "line_box": null,
-      "glyph_is_action": true,
-      "overlap_area": 0,
-      "overlap_with_line": null,
-      "strip_found": true,
-      "strip_total": 5,
-      "strip_animated": 5
-    },
-    {
-      "surface": "picker",
-      "state": "closed",
-      "viewport": 1280,
-      "theme": "light",
-      "page_overflows": false,
-      "field_found": true,
-      "picker_open": false,
-      "option_count": 0,
-      "option_animated": 0,
-      "pressed_count": 0
-    },
-    {
-      "surface": "picker",
-      "state": "open",
-      "viewport": 1280,
-      "theme": "light",
-      "opened": true,
-      "page_overflows": false,
-      "field_found": true,
-      "picker_open": true,
-      "option_count": 11,
-      "option_animated": 11,
-      "pressed_count": 1
-    },
-    {
-      "surface": "spotlight",
-      "state": "composer-closed",
-      "viewport": 768,
-      "theme": "light",
-      "page_overflows": false,
-      "band_found": true,
-      "chief_is_open": false,
-      "glyph_box": {
-        "x": 84,
-        "y": 734,
+      "composer_found": true,
+      "composer_is_open": false,
+      "room_box": null,
+      "o_box": {
+        "x": 949,
+        "y": 636,
         "width": 50,
         "height": 50
       },
-      "chat_box": {
-        "x": 368,
-        "y": 883,
-        "width": 384,
-        "height": 117
+      "input_box": {
+        "x": 264,
+        "y": 678,
+        "width": 751,
+        "height": 48
       },
-      "line_box": {
-        "x": 150,
-        "y": 734,
-        "width": 573,
-        "height": 60
+      "field_box": {
+        "x": 264,
+        "y": 678,
+        "width": 751,
+        "height": 53
       },
-      "glyph_is_action": true,
-      "overlap_area": 0,
-      "overlap_with_line": 0,
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "room_heading_visible": null,
       "strip_found": true,
       "strip_total": 5,
       "strip_animated": 5
     },
     {
-      "surface": "spotlight",
-      "state": "composer-focused",
-      "viewport": 768,
+      "surface": "composer",
+      "state": "expanded",
+      "viewport": 1279,
       "theme": "light",
       "composer_focused": true,
       "page_overflows": false,
-      "band_found": true,
-      "chief_is_open": false,
-      "glyph_box": {
-        "x": 84,
-        "y": 734,
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_box": {
+        "x": 264,
+        "y": 600,
+        "width": 751,
+        "height": 50
+      },
+      "o_box": {
+        "x": 949,
+        "y": 636,
         "width": 50,
         "height": 50
       },
-      "chat_box": {
-        "x": 368,
-        "y": 875,
-        "width": 384,
-        "height": 125
+      "input_box": {
+        "x": 264,
+        "y": 678,
+        "width": 751,
+        "height": 48
       },
-      "line_box": null,
-      "glyph_is_action": true,
-      "overlap_area": 0,
-      "overlap_with_line": null,
+      "field_box": {
+        "x": 264,
+        "y": 678,
+        "width": 751,
+        "height": 53
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "room_heading_visible": "Ask the chief",
       "strip_found": true,
       "strip_total": 5,
       "strip_animated": 5
@@ -153,7 +84,7 @@
     {
       "surface": "picker",
       "state": "closed",
-      "viewport": 768,
+      "viewport": 1279,
       "theme": "light",
       "page_overflows": false,
       "field_found": true,
@@ -165,7 +96,7 @@
     {
       "surface": "picker",
       "state": "open",
-      "viewport": 768,
+      "viewport": 1279,
       "theme": "light",
       "opened": true,
       "page_overflows": false,
@@ -176,237 +107,81 @@
       "pressed_count": 1
     },
     {
-      "surface": "spotlight",
-      "state": "composer-closed",
-      "viewport": 375,
+      "surface": "composer",
+      "state": "collapsed",
+      "viewport": 767,
       "theme": "light",
       "page_overflows": false,
-      "band_found": true,
-      "chief_is_open": false,
-      "glyph_box": {
-        "x": 72,
-        "y": 601,
-        "width": 25,
-        "height": 25
-      },
-      "chat_box": {
-        "x": 12,
-        "y": 683,
-        "width": 351,
-        "height": 117
-      },
-      "line_box": {
-        "x": 72,
-        "y": 634,
-        "width": 270,
-        "height": 79
-      },
-      "glyph_is_action": true,
-      "overlap_area": 0,
-      "overlap_with_line": 0,
-      "strip_found": true,
-      "strip_total": 5,
-      "strip_animated": 5
-    },
-    {
-      "surface": "spotlight",
-      "state": "composer-focused",
-      "viewport": 375,
-      "theme": "light",
-      "composer_focused": true,
-      "page_overflows": false,
-      "band_found": true,
-      "chief_is_open": false,
-      "glyph_box": {
-        "x": 72,
-        "y": 601,
-        "width": 25,
-        "height": 25
-      },
-      "chat_box": {
-        "x": 12,
-        "y": 675,
-        "width": 351,
-        "height": 125
-      },
-      "line_box": null,
-      "glyph_is_action": true,
-      "overlap_area": 0,
-      "overlap_with_line": null,
-      "strip_found": true,
-      "strip_total": 5,
-      "strip_animated": 5
-    },
-    {
-      "surface": "picker",
-      "state": "closed",
-      "viewport": 375,
-      "theme": "light",
-      "page_overflows": false,
-      "field_found": true,
-      "picker_open": false,
-      "option_count": 0,
-      "option_animated": 0,
-      "pressed_count": 0
-    },
-    {
-      "surface": "picker",
-      "state": "open",
-      "viewport": 375,
-      "theme": "light",
-      "opened": true,
-      "page_overflows": false,
-      "field_found": true,
-      "picker_open": true,
-      "option_count": 11,
-      "option_animated": 11,
-      "pressed_count": 1
-    },
-    {
-      "surface": "spotlight",
-      "state": "composer-closed",
-      "viewport": 1280,
-      "theme": "dark",
-      "page_overflows": false,
-      "band_found": true,
-      "chief_is_open": false,
-      "glyph_box": {
-        "x": 285,
-        "y": 578,
-        "width": 100,
-        "height": 100
-      },
-      "chat_box": {
-        "x": 632,
-        "y": 759,
-        "width": 384,
-        "height": 117
-      },
-      "line_box": {
-        "x": 401,
-        "y": 578,
-        "width": 594,
-        "height": 60
-      },
-      "glyph_is_action": true,
-      "overlap_area": 0,
-      "overlap_with_line": 0,
-      "strip_found": true,
-      "strip_total": 5,
-      "strip_animated": 5
-    },
-    {
-      "surface": "spotlight",
-      "state": "composer-focused",
-      "viewport": 1280,
-      "theme": "dark",
-      "composer_focused": true,
-      "page_overflows": false,
-      "band_found": true,
-      "chief_is_open": false,
-      "glyph_box": {
-        "x": 285,
-        "y": 578,
-        "width": 100,
-        "height": 100
-      },
-      "chat_box": {
-        "x": 632,
-        "y": 751,
-        "width": 384,
-        "height": 125
-      },
-      "line_box": null,
-      "glyph_is_action": true,
-      "overlap_area": 0,
-      "overlap_with_line": null,
-      "strip_found": true,
-      "strip_total": 5,
-      "strip_animated": 5
-    },
-    {
-      "surface": "picker",
-      "state": "closed",
-      "viewport": 1280,
-      "theme": "dark",
-      "page_overflows": false,
-      "field_found": true,
-      "picker_open": false,
-      "option_count": 0,
-      "option_animated": 0,
-      "pressed_count": 0
-    },
-    {
-      "surface": "picker",
-      "state": "open",
-      "viewport": 1280,
-      "theme": "dark",
-      "opened": true,
-      "page_overflows": false,
-      "field_found": true,
-      "picker_open": true,
-      "option_count": 11,
-      "option_animated": 11,
-      "pressed_count": 1
-    },
-    {
-      "surface": "spotlight",
-      "state": "composer-closed",
-      "viewport": 768,
-      "theme": "dark",
-      "page_overflows": false,
-      "band_found": true,
-      "chief_is_open": false,
-      "glyph_box": {
-        "x": 84,
-        "y": 734,
+      "composer_found": true,
+      "composer_is_open": false,
+      "room_box": null,
+      "o_box": {
+        "x": 677,
+        "y": 760,
         "width": 50,
         "height": 50
       },
-      "chat_box": {
-        "x": 368,
-        "y": 883,
-        "width": 384,
-        "height": 117
+      "input_box": {
+        "x": 63,
+        "y": 802,
+        "width": 680,
+        "height": 48
       },
-      "line_box": {
-        "x": 150,
-        "y": 734,
-        "width": 573,
-        "height": 60
+      "field_box": {
+        "x": 63,
+        "y": 802,
+        "width": 680,
+        "height": 53
       },
-      "glyph_is_action": true,
-      "overlap_area": 0,
-      "overlap_with_line": 0,
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "room_heading_visible": null,
       "strip_found": true,
       "strip_total": 5,
       "strip_animated": 5
     },
     {
-      "surface": "spotlight",
-      "state": "composer-focused",
-      "viewport": 768,
-      "theme": "dark",
+      "surface": "composer",
+      "state": "expanded",
+      "viewport": 767,
+      "theme": "light",
       "composer_focused": true,
       "page_overflows": false,
-      "band_found": true,
-      "chief_is_open": false,
-      "glyph_box": {
-        "x": 84,
-        "y": 734,
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_box": {
+        "x": 63,
+        "y": 724,
+        "width": 680,
+        "height": 50
+      },
+      "o_box": {
+        "x": 677,
+        "y": 760,
         "width": 50,
         "height": 50
       },
-      "chat_box": {
-        "x": 368,
-        "y": 875,
-        "width": 384,
-        "height": 125
+      "input_box": {
+        "x": 63,
+        "y": 802,
+        "width": 680,
+        "height": 48
       },
-      "line_box": null,
-      "glyph_is_action": true,
-      "overlap_area": 0,
-      "overlap_with_line": null,
+      "field_box": {
+        "x": 63,
+        "y": 802,
+        "width": 680,
+        "height": 53
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "room_heading_visible": "Ask the chief",
       "strip_found": true,
       "strip_total": 5,
       "strip_animated": 5
@@ -414,7 +189,217 @@
     {
       "surface": "picker",
       "state": "closed",
-      "viewport": 768,
+      "viewport": 767,
+      "theme": "light",
+      "page_overflows": false,
+      "field_found": true,
+      "picker_open": false,
+      "option_count": 0,
+      "option_animated": 0,
+      "pressed_count": 0
+    },
+    {
+      "surface": "picker",
+      "state": "open",
+      "viewport": 767,
+      "theme": "light",
+      "opened": true,
+      "page_overflows": false,
+      "field_found": true,
+      "picker_open": true,
+      "option_count": 11,
+      "option_animated": 11,
+      "pressed_count": 1
+    },
+    {
+      "surface": "composer",
+      "state": "collapsed",
+      "viewport": 374,
+      "theme": "light",
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": false,
+      "room_box": null,
+      "o_box": {
+        "x": 292,
+        "y": 535,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 55,
+        "y": 577,
+        "width": 303,
+        "height": 65
+      },
+      "field_box": {
+        "x": 55,
+        "y": 577,
+        "width": 303,
+        "height": 70
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "room_heading_visible": null,
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "composer",
+      "state": "expanded",
+      "viewport": 374,
+      "theme": "light",
+      "composer_focused": true,
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_box": {
+        "x": 55,
+        "y": 499,
+        "width": 303,
+        "height": 50
+      },
+      "o_box": {
+        "x": 292,
+        "y": 535,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 55,
+        "y": 577,
+        "width": 303,
+        "height": 65
+      },
+      "field_box": {
+        "x": 55,
+        "y": 577,
+        "width": 303,
+        "height": 70
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "room_heading_visible": "Ask the chief",
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "picker",
+      "state": "closed",
+      "viewport": 374,
+      "theme": "light",
+      "page_overflows": false,
+      "field_found": true,
+      "picker_open": false,
+      "option_count": 0,
+      "option_animated": 0,
+      "pressed_count": 0
+    },
+    {
+      "surface": "picker",
+      "state": "open",
+      "viewport": 374,
+      "theme": "light",
+      "opened": true,
+      "page_overflows": false,
+      "field_found": true,
+      "picker_open": true,
+      "option_count": 11,
+      "option_animated": 11,
+      "pressed_count": 1
+    },
+    {
+      "surface": "composer",
+      "state": "collapsed",
+      "viewport": 1279,
+      "theme": "dark",
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": false,
+      "room_box": null,
+      "o_box": {
+        "x": 949,
+        "y": 636,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 264,
+        "y": 678,
+        "width": 751,
+        "height": 48
+      },
+      "field_box": {
+        "x": 264,
+        "y": 678,
+        "width": 751,
+        "height": 53
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "room_heading_visible": null,
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "composer",
+      "state": "expanded",
+      "viewport": 1279,
+      "theme": "dark",
+      "composer_focused": true,
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_box": {
+        "x": 264,
+        "y": 600,
+        "width": 751,
+        "height": 50
+      },
+      "o_box": {
+        "x": 949,
+        "y": 636,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 264,
+        "y": 678,
+        "width": 751,
+        "height": 48
+      },
+      "field_box": {
+        "x": 264,
+        "y": 678,
+        "width": 751,
+        "height": 53
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "room_heading_visible": "Ask the chief",
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "picker",
+      "state": "closed",
+      "viewport": 1279,
       "theme": "dark",
       "page_overflows": false,
       "field_found": true,
@@ -426,7 +411,7 @@
     {
       "surface": "picker",
       "state": "open",
-      "viewport": 768,
+      "viewport": 1279,
       "theme": "dark",
       "opened": true,
       "page_overflows": false,
@@ -437,63 +422,81 @@
       "pressed_count": 1
     },
     {
-      "surface": "spotlight",
-      "state": "composer-closed",
-      "viewport": 375,
+      "surface": "composer",
+      "state": "collapsed",
+      "viewport": 767,
       "theme": "dark",
       "page_overflows": false,
-      "band_found": true,
-      "chief_is_open": false,
-      "glyph_box": {
-        "x": 72,
-        "y": 601,
-        "width": 25,
-        "height": 25
+      "composer_found": true,
+      "composer_is_open": false,
+      "room_box": null,
+      "o_box": {
+        "x": 677,
+        "y": 760,
+        "width": 50,
+        "height": 50
       },
-      "chat_box": {
-        "x": 12,
-        "y": 683,
-        "width": 351,
-        "height": 117
+      "input_box": {
+        "x": 63,
+        "y": 802,
+        "width": 680,
+        "height": 48
       },
-      "line_box": {
-        "x": 72,
-        "y": 634,
-        "width": 270,
-        "height": 79
+      "field_box": {
+        "x": 63,
+        "y": 802,
+        "width": 680,
+        "height": 53
       },
-      "glyph_is_action": true,
-      "overlap_area": 0,
-      "overlap_with_line": 0,
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "room_heading_visible": null,
       "strip_found": true,
       "strip_total": 5,
       "strip_animated": 5
     },
     {
-      "surface": "spotlight",
-      "state": "composer-focused",
-      "viewport": 375,
+      "surface": "composer",
+      "state": "expanded",
+      "viewport": 767,
       "theme": "dark",
       "composer_focused": true,
       "page_overflows": false,
-      "band_found": true,
-      "chief_is_open": false,
-      "glyph_box": {
-        "x": 72,
-        "y": 601,
-        "width": 25,
-        "height": 25
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_box": {
+        "x": 63,
+        "y": 724,
+        "width": 680,
+        "height": 50
       },
-      "chat_box": {
-        "x": 12,
-        "y": 675,
-        "width": 351,
-        "height": 125
+      "o_box": {
+        "x": 677,
+        "y": 760,
+        "width": 50,
+        "height": 50
       },
-      "line_box": null,
-      "glyph_is_action": true,
-      "overlap_area": 0,
-      "overlap_with_line": null,
+      "input_box": {
+        "x": 63,
+        "y": 802,
+        "width": 680,
+        "height": 48
+      },
+      "field_box": {
+        "x": 63,
+        "y": 802,
+        "width": 680,
+        "height": 53
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "room_heading_visible": "Ask the chief",
       "strip_found": true,
       "strip_total": 5,
       "strip_animated": 5
@@ -501,7 +504,7 @@
     {
       "surface": "picker",
       "state": "closed",
-      "viewport": 375,
+      "viewport": 767,
       "theme": "dark",
       "page_overflows": false,
       "field_found": true,
@@ -513,7 +516,112 @@
     {
       "surface": "picker",
       "state": "open",
-      "viewport": 375,
+      "viewport": 767,
+      "theme": "dark",
+      "opened": true,
+      "page_overflows": false,
+      "field_found": true,
+      "picker_open": true,
+      "option_count": 11,
+      "option_animated": 11,
+      "pressed_count": 1
+    },
+    {
+      "surface": "composer",
+      "state": "collapsed",
+      "viewport": 374,
+      "theme": "dark",
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": false,
+      "room_box": null,
+      "o_box": {
+        "x": 292,
+        "y": 535,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 55,
+        "y": 577,
+        "width": 303,
+        "height": 65
+      },
+      "field_box": {
+        "x": 55,
+        "y": 577,
+        "width": 303,
+        "height": 70
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "room_heading_visible": null,
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "composer",
+      "state": "expanded",
+      "viewport": 374,
+      "theme": "dark",
+      "composer_focused": true,
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_box": {
+        "x": 55,
+        "y": 499,
+        "width": 303,
+        "height": 50
+      },
+      "o_box": {
+        "x": 292,
+        "y": 535,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 55,
+        "y": 577,
+        "width": 303,
+        "height": 65
+      },
+      "field_box": {
+        "x": 55,
+        "y": 577,
+        "width": 303,
+        "height": 70
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "room_heading_visible": "Ask the chief",
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "picker",
+      "state": "closed",
+      "viewport": 374,
+      "theme": "dark",
+      "page_overflows": false,
+      "field_found": true,
+      "picker_open": false,
+      "option_count": 0,
+      "option_animated": 0,
+      "pressed_count": 0
+    },
+    {
+      "surface": "picker",
+      "state": "open",
+      "viewport": 374,
       "theme": "dark",
       "opened": true,
       "page_overflows": false,

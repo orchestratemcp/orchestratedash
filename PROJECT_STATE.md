@@ -35,8 +35,12 @@ the packaged path.
   it. Discord outbound notifications shipped. Model choice per step
   (MAR-583) shipped. Outputs usability (MAR-697/698, PR #245): collected
   links open through the main process and exported PDFs land somewhere
-  findable — merged, not proven. Fleet chief chat as a floating window
-  with no ASK buttons (MAR-696, PR #246) — merged, not proven.
+  findable — merged, not proven. Fleet chief chat: the PR #246 floating
+  window was refused on sight ("the floating textbox was a disaster");
+  MAR-696's corrected composer — incorporated into the page, the big
+  agent spotlight box deleted, a model line and swap control added (ADR
+  0023 amendment 1) — is a new PR awaiting Henrik's judgment on the
+  screenshots, not yet merged.
 
 ## Active decision surface (ADRs 0019–0025)
 

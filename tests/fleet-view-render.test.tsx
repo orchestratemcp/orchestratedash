@@ -14,16 +14,16 @@
  * what it proves is worth having: the default view is what a cold render draws,
  * and the card is complete before a single hook has fired.
  *
- * The spotlight's own chrome is driven directly — `ChiefBand` and
- * `spotlightPosition` are exported for this — because there is no way to give a
- * static render a scroll position.
+ * The spotlight's own chrome is driven directly — `spotlightPosition` is
+ * exported for this — because there is no way to give a static render a
+ * scroll position.
  */
 
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { describeRunCount } from "../app/_components/fleet-card";
-import { ChiefBand, FleetList, spotlightPosition } from "../app/_components/fleet-list";
+import { FleetList, spotlightPosition } from "../app/_components/fleet-list";
 import { FleetRail } from "../app/_components/fleet-rail";
 import { FleetViewToggle } from "../app/_components/fleet-view-toggle";
 import { FLEET_CARD_STATUSES, describeFleetCardStatus } from "../lib/copy/fleet-status";
@@ -63,8 +63,6 @@ function agent(over: Partial<AgentRow> = {}): AgentRow {
     ...over,
   } as AgentRow;
 }
-
-const NO_SIGHTINGS = { seen: {} } as never;
 
 describe("the layout control", () => {
   const markup = renderToStaticMarkup(<FleetViewToggle />);
@@ -156,7 +154,6 @@ describe("the list a cold render draws", () => {
   const markup = renderToStaticMarkup(
     <FleetList
       agents={[agent(), agent({ name: "digest", title: "Digest", avatar: "wizard" })]}
-      log={NO_SIGHTINGS}
     />,
   );
 
@@ -203,22 +200,31 @@ describe("the list a cold render draws", () => {
     expect(markup).not.toContain('tabindex="0"');
   });
 
-  it("puts the facts on the chief, because the card is a portrait", () => {
+  it("stays a portrait, and draws no glance chip's full sentence inline", () => {
     /*
-     * `lib/views/fleet-view.ts`'s rule from the markup's side: the views are three
-     * tracks over one `FleetCard`, so a chip cannot exist in one view and not
-     * another. The prose left the card; the chief is on the same list in every
-     * view and is where those facts now live.
+     * `lib/views/fleet-view.ts`'s rule from the markup's side: the views are
+     * three tracks over one `FleetCard`, so a chip cannot exist in one view
+     * and not another — and the card is a portrait in all three, never a
+     * sentence.
+     *
+     * This used to also assert the chip's full sentence reached the page
+     * through `ChiefBand`'s unprompted line — `expect(markup).toContain(
+     * GLANCE_ALL_CLEAR.meaning)`. MAR-696 deleted that band whole ("the big
+     * agent spotlight card"), and nothing replaced its per-agent prose; a
+     * glance chip's meaning is not drawn anywhere on this page any more,
+     * only the mark's own glyph on the card. That is a real narrowing, named
+     * here rather than quietly kept passing by asserting for text nobody
+     * draws.
      */
-    expect(markup).toContain(GLANCE_ALL_CLEAR.meaning);
-    expect(markup).toContain("chief-band");
+    expect(markup).not.toContain(GLANCE_ALL_CLEAR.meaning);
+    expect(markup).not.toContain("chief-band");
     expect(markup).not.toContain("Read the news sources you choose");
   });
 });
 
 describe("a card for an agent that has never run (MAR-634)", () => {
   const markup = renderToStaticMarkup(
-    <FleetList agents={[agent({ run_count: 0 })]} log={NO_SIGHTINGS} />,
+    <FleetList agents={[agent({ run_count: 0 })]} />,
   );
 
   it("says the absence instead of leaving a gap that reads as a failed load", () => {
@@ -259,10 +265,16 @@ describe("a card for an agent that has never run (MAR-634)", () => {
     expect(markup).toContain("fleet-mark-local");
   });
 
-  it("words it once, so the card and the chief cannot disagree", () => {
-    // Twice on screen, from one function: the card's mark and the chief's
-    // run line. Two literals would be two things to improve separately.
-    expect([...markup.matchAll(/Not run yet/g)]).toHaveLength(2);
+  it("words it once, from `describeRunCount`, with nothing left to repeat it", () => {
+    /*
+     * Used to be twice on screen — the card's mark and the chief's own run
+     * line quoting the same function — and the point was that one function
+     * fed both, so neither could drift from the other. MAR-696 removed the
+     * second reader (`ChiefBand`'s `chief-runs` line) along with the whole
+     * band; the invariant that mattered was "one function, not two strings",
+     * and that survives with a single caller exactly as it did with two.
+     */
+    expect([...markup.matchAll(/Not run yet/g)]).toHaveLength(1);
   });
 });
 
@@ -281,52 +293,11 @@ describe("where a card stands in the spotlight", () => {
   });
 });
 
-describe("the chief, under the cards", () => {
-  it("talks about the agent in the middle, by name", () => {
-    const markup = renderToStaticMarkup(<ChiefBand agent={agent()} />);
-    expect(markup).toContain("news-scout");
-    expect(markup).toContain(GLANCE_ALL_CLEAR.meaning);
-    expect(markup).toContain("Run 3 times");
-  });
-
-  it("draws no standing link to the agent — MAR-696 removed the per-agent Ask button", () => {
-    /*
-     * This used to assert a standing "Ask news-scout" link into
-     * `/agents/detail?agent=news-scout#ask-agent`. Henrik's own words removed
-     * it: *"remove all excess... No button."* Reaching that agent is still
-     * possible — through a routed hand-off in an open chief conversation
-     * (`ChiefHandoff`, covered by `tests/chief-chat-render.test.tsx`) — but
-     * nothing on the closed band points there any more.
-     *
-     * MAR-660's "Open this agent" left the chief earlier still, onto the card
-     * itself (`fleet-card.tsx`'s `FleetOpenLink`); this only confirms neither
-     * control is back.
-     */
-    const markup = renderToStaticMarkup(<ChiefBand agent={agent()} />);
-    expect(markup).not.toContain("Ask news-scout");
-    expect(markup).not.toContain("Open this agent");
-    expect(markup).not.toContain("#ask-agent");
-    expect(markup).not.toContain("button-link");
-  });
-
-  it("says where it is and stops when there is no agent to talk about", () => {
-    const markup = renderToStaticMarkup(<ChiefBand agent={null} />);
-    expect(markup).toContain("The chief is waiting");
-    // No action, because there is nothing to act on. A button that named no
-    // agent would be the dead control this band exists to avoid.
-    expect(markup).not.toContain("button-link");
-  });
-
-  it("is drawn from the vendored cast, but never as one of the agents' own costumes (MAR-615)", () => {
-    // The chief is audited cast art since MAR-615 — no longer the placeholder
-    // glyph MAR-544's boot sequence distinguished from the O's. It still is
-    // not an ordinary agent's costume: it animates through its own vendored
-    // sheet rather than the still-image path a fleet avatar without `action`
-    // would use, and `O_FLEET` (asserted in tests/o-cast.test.ts) is what keeps
-    // `oFor()` from ever landing an agent in it.
-    const markup = renderToStaticMarkup(<ChiefBand agent={agent()} />);
-    expect(markup).toContain("chief-glyph");
-    expect(markup).toContain("/o/actions/chief-baton-wave.png");
-    expect(markup).not.toContain("/o/1x/");
-  });
-});
+/*
+ * MAR-696. The describe block that used to live here — "the chief, under the
+ * cards" — rendered `ChiefBand` directly to prove it named the selected
+ * agent by name and drew the vendored glyph. `ChiefBand` no longer exists:
+ * that whole bordered box is the "big agent spotlight card" Henrik asked to
+ * have removed, not relocated. `tests/chief-chat-render.test.tsx` covers what
+ * replaced it — the composer `FleetList` renders directly.
+ */

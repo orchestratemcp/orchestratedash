@@ -4,18 +4,13 @@ import { useRouter } from "next/navigation";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { AgentHosting, FleetCard, describeRunCount } from "./fleet-card";
+import { FleetCard } from "./fleet-card";
 import { ChiefChat } from "./chief-chat";
-import { InfoNote } from "./info-note";
-import { OAvatar } from "./o-avatar";
 import { useFleetFilterSync } from "./fleet-rail";
 import { useFleetView } from "./fleet-view-toggle";
 import { agentWorkspaceHref } from "../_data/routes";
-import { CHIEF_NAME, describeChief, describeFleetSummary } from "../../lib/copy/chief";
-import { describeFleetCardStatus } from "../../lib/copy/fleet-status";
 import { matchesFleetFilter } from "../../lib/views/fleet-filter";
 import { stepRowsSelection, stepSpotlight } from "../../lib/views/fleet-view";
-import type { SightingLog } from "../../lib/host-sightings";
 import { describeChiefNoModel } from "../../lib/copy/chief-chat";
 import type { AgentRow, ChiefRoomView } from "../../lib/views/types";
 
@@ -31,6 +26,8 @@ import type { AgentRow, ChiefRoomView } from "../../lib/views/types";
 const EMPTY_CHIEF_ROOM: ChiefRoomView = Object.freeze({
   can_ask: false,
   model_id: null,
+  model_provider_id: null,
+  model_is_own: false,
   blocked: describeChiefNoModel(),
   turns: [],
 });
@@ -85,7 +82,6 @@ export function FleetList({
   chief = EMPTY_CHIEF_ROOM,
   canAct = false,
   onAsked,
-  log,
   onToggleFavourite,
 }: {
   /** The whole fleet — the rail's own counts depend on this being unfiltered. */
@@ -103,8 +99,6 @@ export function FleetList({
   canAct?: boolean;
   /** Ask the page to re-read the view, so a new chief turn appears. */
   onAsked?: () => void;
-  /** What the Servers page saw, this window (MAR-606, ADR 0015). */
-  log: SightingLog;
   /** Star — or unstar — one agent (MAR-640). Optional: see `FleetCard`'s own note. */
   onToggleFavourite?: (agent: string, next: boolean) => void;
 }): ReactNode {
@@ -339,16 +333,17 @@ export function FleetList({
   );
 
   /*
-   * MAR-648. Whether the chief's room is open, floating over the cards.
+   * MAR-648. Whether the chief's room is open, overlaying the cards.
    *
-   * Held here rather than inside `ChiefChat` because `ChiefBand` is what draws
-   * both the docked band and the floating room, so it is the element in a
-   * position to pass the fact down to whichever of its own children need it —
-   * `ChiefChat` says when it should change and this only remembers the answer.
-   * MAR-696 stopped the cards giving up any height for an open room — the room
-   * floats over them now instead of growing the stage's own row — but the state
-   * itself still belongs here for the same reason it always did: it says
-   * whether the fleet's own band is mid-conversation, not where anybody is.
+   * Held here rather than inside `ChiefChat`, on `FleetList`'s own standing
+   * reason: this is the element already holding the fleet's selection and
+   * the cards `chief-room` overlays, so it is in a position to say whether
+   * the stage itself is mid-conversation — `ChiefChat` says when it should
+   * change and this only remembers the answer. MAR-696 removed `ChiefBand`,
+   * the layer that used to sit between this state and `ChiefChat`; the state
+   * moved down one level with it rather than into `ChiefChat` itself, since
+   * a future sibling of the composer (the cards' own dimming, say) would need
+   * the same fact `ChiefChat` does.
    *
    * React state and not the address, which is the opposite of the call
    * `lib/views/agent-stage.ts` made for the agent page's stages — and the
@@ -380,19 +375,23 @@ export function FleetList({
           cardsPane
         )}
       </div>
-      <ChiefBand
-        agent={visible[current] ?? null}
+      {/*
+        MAR-696. The composer, incorporated into the page's own layout rather
+        than docked in a bordered band — `ChiefBand` and the big box Henrik
+        asked to have removed ("This box Ive asked you to remove manytimes")
+        are both gone. `ChiefChat` draws itself; nothing here wraps it.
+      */}
+      <ChiefChat
         agents={visible}
-        chief={chief}
+        view={chief}
         canAct={canAct}
-        onAsked={onAsked}
-        chatOpen={chiefOpen}
-        log={log}
-        onCloseChat={() => {
-          setChiefOpen(false);
-        }}
-        onOpenChat={() => {
+        onAsked={onAsked ?? noop}
+        open={chiefOpen}
+        onOpen={() => {
           setChiefOpen(true);
+        }}
+        onClose={() => {
+          setChiefOpen(false);
         }}
       />
     </div>
@@ -421,208 +420,12 @@ export function spotlightPosition(index: number, centred: number): string | unde
 }
 
 /**
- * The chief, under the cards — in every view, in the lower third.
- *
- * ## What the chief does here, and what it does not
- *
- * `docs/design-brief.md` gives the chief one job: *"A non-technical user should
- * never have to read the fleet grid to answer 'is my thing working'. They should
- * be able to ask, and get a sentence."* This is the sentence, for the selected
- * agent, given without being asked. Opening the agent lives here too, because
- * the card above is now a portrait.
- *
- * ## The asking is built now (MAR-648)
- *
- * This paragraph used to say MAR-419 was blocked on a fleet-wide selection over
- * MAR-545's completion layer. The selection was never the hard part. What is
- * actually in the way is narrower and is recorded in `lib/chief/route.ts`: the
- * broker resolves a manifest per agent and the fleet principal has none, and
- * `connectionSecretName` only ever emits `dash.connection.`, so the fleet's own
- * key cannot be reached from the spend path by construction.
- *
- * So the chief asks nothing of anybody and still answers, which is MAR-648's own
- * scope for it — *"answers scoped to facts the chief can already speak (glance
- * chips, fleet facts)"*. `ChiefChat` is the box and `lib/chief/reply.ts` is what
- * comes back. The old rule this band was written under still holds and is why
- * that box is safe to draw: it is not a dead input, because every press produces
- * a real answer out of records this component already has in its props.
- *
- * The per-agent Ask has not gone anywhere. It is what a routed reply links to
- * (`ChiefChat`'s `ChiefHandoff`, drawn under a turn that named an agent) — the
- * same destination this band's own `chief-actions` link used to point at
- * without a question having been asked first. MAR-696 removed that standing
- * link along with this composer's own submit button: Henrik's own words,
- * *"remove all excess... No button."* Nothing about reaching an agent through
- * the chief changed, only the affordance that pointed there before anybody had
- * typed anything.
- *
- * ## The chief is not one of the O's, and now has its own portrait anyway
- *
- * Until MAR-615 this was drawn as inline rects on the sidebar's 12×12 grid, in
- * `currentColor`, like `sidebar-icons.tsx` and like MAR-544's boot glyph — a
- * placeholder standing in for *"not one of the cast: the cast are the agents'
- * characters, and the thing booting here is DASH."* That question still holds:
- * `O_FLEET` still excludes the chief, and `oFor()` can never land an ordinary
- * agent in his costume. But the chief is cast, even if he is not fleet —
- * orchestrateweb's `scripts/build-o-chief.mjs` re-dresses the audited king into
- * his own still and his own `chief-baton-wave` idle sheet, vendored here the
- * same way every other character is, and this band is exactly the spotlight
- * that sheet was built for.
- *
-
- * Exported so a render test can drive it without a scroll container, which is
- * the one thing this repository's tests have no way to produce: every render
- * test here is `renderToStaticMarkup`, so no effect runs and the spotlight is
- * unreachable through `FleetList` itself.
- *
- * ## When nothing is selected, the chief talks about the fleet (MAR-639)
- *
- * Henrik's own example: *"2 need you, 1 working."* Replaces the old fixed
- * "waiting for an agent to talk about" — a sentence that named nothing an
- * agent that reached this branch could actually be about. `describeFleetSummary`
- * builds it from the same per-card status every portrait is tinted by, so the
- * fleet and the chief cannot disagree about what "needs you" means.
- */
-export function ChiefBand({
-  agent,
-  agents = [],
-  chief = EMPTY_CHIEF_ROOM,
-  canAct = false,
-  onAsked,
-  chatOpen = false,
-  log = {},
-  onCloseChat,
-  onOpenChat,
-}: {
-  agent: AgentRow | null;
-  /**
-   * Every agent in the fleet, read only for the summary drawn above — never
-   * for anything about the selected agent, which stays `agent`'s alone.
-   * Optional and defaulting to empty so a caller (this file's own render
-   * tests included) that only ever had one agent to hand keeps working.
-   *
-   * MAR-648 gave it a second reader: `ChiefChat` routes over the same list,
-   * which is what makes "ask the chief" a question about the fleet in front of
-   * you rather than about a fleet somebody else filtered.
-   */
-  agents?: readonly AgentRow[];
-  /** The chief's kept conversation (MAR-659). See `FleetList`'s own note. */
-  chief?: ChiefRoomView;
-  /** False in a browser tab, where there is no bridge to ask through. */
-  canAct?: boolean;
-  /** Ask the page to re-read the view, so a new chief turn appears. */
-  onAsked?: () => void;
-  /** Whether the room is open. Optional, for the render tests that predate it. */
-  chatOpen?: boolean;
-  log?: SightingLog;
-  onCloseChat?: () => void;
-  onOpenChat?: () => void;
-}): ReactNode {
-  const line =
-    agent === null
-      ? null
-      : describeChief({
-          agent: agent.name,
-          runs: describeRunCount(agent.run_count),
-          glance: agent.glance,
-        });
-
-  return (
-    <aside className={chatOpen ? "chief-band is-chatting" : "chief-band"}>
-      <ChiefGlyph />
-      {/*
-        MAR-648. The unprompted line steps aside while the room is open.
-
-        Both are the chief talking, and leaving them on screen together would put
-        a sentence about the agent in the middle of the cards directly above a
-        conversation about something the person actually asked — one speaker
-        saying two unrelated things at once, which is the duplication MAR-646 was
-        filed on rather than a second opinion. The glyph stays: it is who is
-        speaking, and that has not changed.
-      */}
-      {chatOpen ? null : line === null || agent === null ? (
-        <p className="chief-says muted">
-          {describeFleetSummary(
-            agents.map(
-              (row) =>
-                describeFleetCardStatus({
-                  running: row.running,
-                  run_count: row.run_count,
-                  glance: row.glance,
-                })?.id ?? null,
-            ),
-          )}
-        </p>
-      ) : (
-        <div className="chief-line">
-          {/*
-            The agent's name in the same monospace the card used to give it
-            in its header band, so the thing the chief is talking about is
-            recognisable as the portrait above rather than as a new noun.
-          */}
-          <p className="chief-says">
-            <code>{line.agent}</code> — {line.says}
-            {/*
-              MAR-639. The all-clear chip's whole sentence, behind the note
-              rather than loose in the line — `ChiefLine.note`'s own header
-              states which chip this is and why.
-            */}
-            {line.note === null ? null : <InfoNote>{line.note}</InfoNote>}
-          </p>
-          <p className="chief-runs muted">{line.runs}</p>
-          <AgentHosting agent={agent.name} hostedOn={agent.hosted_on} log={log} />
-        </div>
-      )}
-
-      {/*
-        MAR-648, floating since MAR-696. The composer, and the room it opens
-        above itself — `app/globals.css`'s `.chief-chat` positions both as a
-        window over the cards rather than a row of the band, but the tab order
-        this comment used to describe still holds: last in the band and
-        therefore last reached, so somebody arriving here with a keyboard reads
-        the chief's sentence about the agent in the middle before they reach a
-        box that asks them to compose something.
-      */}
-      <ChiefChat
-        agents={agents}
-        view={chief}
-        canAct={canAct}
-        onAsked={onAsked ?? noop}
-        open={chatOpen}
-        onClose={onCloseChat ?? noop}
-        onOpen={onOpenChat ?? noop}
-      />
-    </aside>
-  );
-}
-
-/**
- * For a `ChiefBand` rendered without the handlers.
- *
- * `ChiefBand` is exported for the render tests, which drive it directly because
- * every test here is `renderToStaticMarkup` and the spotlight is unreachable
- * through `FleetList` — see this component's header. Those callers hold no open
- * state, and a composer that throws on focus would make the band untestable to
- * keep a prop required that only one caller in the application can supply.
+ * `onAsked` and `onOpen`/`onClose` are optional on `FleetList` — this file's
+ * own render tests predate the composer and hold no open state — so this is
+ * what a composer rendered without them falls back to. A required handler
+ * would have made those tests fail to compile to keep a prop only one caller
+ * in the application can supply.
  */
 function noop(): void {
   /* nothing to do */
-}
-
-/**
- * The chief's vendored portrait, waving his baton (MAR-615).
- *
- * `label={CHIEF_NAME}` because this is the one place `OAvatarProps.label`'s
- * own docblock names as the exception: the character genuinely *is* the
- * information here, standing in for who is speaking rather than decorating an
- * agent's name that is already printed beside it. `scripts/brand-check.mjs`'s
- * `LABEL_ALLOWLIST` names this file for exactly that reason — everywhere else
- * in DASH the rule holds with no exceptions.
- *
- * `size={100}`, the portrait scale `AgentPortrait` uses for the one other
- * surface where a character is close to being the subject rather than a
- * marker in a list.
- */
-function ChiefGlyph(): ReactNode {
-  return <OAvatar name="chief" size={100} action label={CHIEF_NAME} className="chief-glyph" />;
 }

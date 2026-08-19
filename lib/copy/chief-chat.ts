@@ -144,6 +144,40 @@ export const CHIEF_CHAT_COPY = {
   free: "Answered from your own records. No model was asked and nothing was charged.",
   /** The activity line's accessible name, `ASK_ACTIVITY_LABEL`'s shape. */
   activity_label: "Question in progress",
+
+  /* -------------------------------------------------------------------- *
+   * MAR-696: incorporated into the page, with an X and a clear button
+   * -------------------------------------------------------------------- */
+
+  /** The collapse control's accessible name, open only. */
+  collapse: "Close the chief's conversation",
+  /**
+   * The clear control's own visible label.
+   *
+   * Short on purpose: every `<button>` in this system renders upper-case
+   * (`app/globals.css`'s shared button rule) and a full sentence shouted in
+   * caps reads as an alarm rather than a description — the label stays a
+   * label and the honest scope moves to `clear_detail`, an attribute a
+   * sighted reader can still reach (`title`) rather than one only announced.
+   */
+  clear: "Clear",
+  /**
+   * The clear control's fuller, honest scope — `title`, not the visible
+   * label. Says exactly what it does and no more: `chief_messages` is the
+   * chief's own memory and an audit surface (MAR-673); this button empties
+   * what is drawn on screen and leaves that table alone, which is a real
+   * distinction from `chief.clear`'s own "delete the whole conversation" and
+   * has to read as one.
+   */
+  clear_detail: "Clears what's shown here — the chief still remembers this conversation",
+  /** Under the model line, when nobody has set one anywhere. */
+  no_model: "No model set yet.",
+  /** The link out of `no_model`, to the one place a fleet default is set. */
+  no_model_link: "Set one in Settings",
+  /** The swap control's own label. */
+  swap: "Swap",
+  /** The swap panel's own way back to the fleet default. */
+  swap_default: "Use the fleet default",
 } as const;
 
 /**
@@ -220,6 +254,19 @@ export function describeChiefNoModel(): { headline: string; meaning: string } {
       "I can still tell you how your fleet is standing, which I read straight off your agents' " +
       "own cards. Set a default on the AI tab in Settings and I can answer the rest.",
   };
+}
+
+/**
+ * Under the composer, always: whose choice the chief is asking under
+ * (MAR-696, ADR 0023 amendment 1).
+ *
+ * The model id itself is not in this sentence — `lib/copy/identifiers.ts`'s
+ * rule, restated for a model id rather than a component id: it is a value,
+ * set beside the sentence in `<code>`, the same treatment
+ * `describeChiefReceipt`'s charge line already gives one.
+ */
+export function describeChiefModelLine(own: boolean): string {
+  return own ? "The chief's own model:" : "Asking under DASH's fleet default:";
 }
 
 /* ---------------------------------------------------------------------- *

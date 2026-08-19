@@ -4,13 +4,15 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { agentStageHref } from "../_data/routes";
-import { askChief } from "../_data/source";
+import { askChief, listProviderModels, setChiefModel } from "../_data/source";
 import { OAvatar } from "./o-avatar";
+import { aiProviderById } from "../../lib/ai/providers";
 import { answeredFromRecords } from "../../lib/chief/records-answer";
 import {
   CHIEF_CHAT_COPY,
   describeAmbiguous,
   describeChiefActivity,
+  describeChiefModelLine,
   describeMatch,
   describeRouted,
   type ChiefSentence,
@@ -94,7 +96,7 @@ import type { AgentRow, ChiefRoomView, ChiefTurnView } from "../../lib/views/typ
  * — main decides, using the same function. If the two ever disagreed, the worst
  * case is a loader that was not needed or one missing for a moment.
  *
- * ## MAR-696: the last button leaves, and the room floats
+ * ## MAR-696, first pass: the last button leaves, and the room floats
  *
  * Henrik, with a screenshot of this composer's own Ask button and the band's
  * per-agent one beside it: *"remove all excess. I only want a floating chat
@@ -103,9 +105,76 @@ import type { AgentRow, ChiefRoomView, ChiefTurnView } from "../../lib/views/typ
  * loses no capability. `CHIEF_CHAT_COPY.placeholder` carries the affordance the
  * button's label carried, which is `AskComposer`'s own rule applied here: a
  * control that disappears has to leave its instruction somewhere a reader still
- * finds it. `app/globals.css`'s `.chief-chat` is what makes "floating" true —
- * this component still only says when the room opens and closes.
+ * finds it.
+ *
+ * ## MAR-696, corrected spec (2026-08-19): the first pass was refused on sight
+ *
+ * Henrik, seeing the floating window merged as `c058d9b`: *"the floating
+ * textbox was a disaster. Thats not what I want at all."* And, of the big
+ * bordered `ChiefBand` this composer used to live inside: *"This box Ive
+ * asked you to remove manytimes."* That whole band is gone now — `FleetList`
+ * renders this component directly under the cards, nothing wraps it, and
+ * `ChiefBand`/`ChiefGlyph` no longer exist. In Henrik's own words: *"Its not
+ * floating in the sense as we have it right now. Its incorporated in the
+ * design."*
+ *
+ * So `.chief-composer` sits in the page's own layout rather than at
+ * `position: fixed` — the reversal of the paragraph above — and `.chief-room`
+ * is now the one piece that still overlays: it opens **above** the composer,
+ * `position: absolute` from `.chief-composer`'s own box, so an open
+ * conversation covers the cards above it without reflowing them (MAR-615's
+ * band-anchoring defect is moot now that there is no band to anchor to or
+ * shrink out from under it).
+ *
+ * Three pieces are new and none of them existed in the first pass:
+ *
+ * - **Rounded corners**, a declared exception to Bit-Command's zero-corner
+ *   rule scoped to `--radius-chief-composer` alone (`app/tokens.css`,
+ *   `tests/tokens.test.ts`) — Henrik's own call, named as one.
+ * - **A perched O and an enter glyph**, replacing the Ask button's old
+ *   position with a costume and a keyboard hint rather than a control —
+ *   `ChiefComposerGlyph` below, sized through `OAvatar`'s `size` prop rather
+ *   than a CSS override (see that component's own header on why a plain rule
+ *   would either be silently overridden or crop the sprite instead of
+ *   scaling it).
+ * - **A model line and a swap control**, brought back rather than left
+ *   removed — ADR 0023 amendment 1 records that the chief has a picker of
+ *   its own now, `chief_model_choice`, read before `fleet_model_default`
+ *   rather than instead of it. This is not `.chief-settings`, the standing
+ *   scope note MAR-683 dropped: that was a paragraph explaining what the
+ *   room could do, on screen whether or not the model mattered yet, and it
+ *   stays gone. What is back is one line naming a fact and a control for
+ *   changing it — a setting, not a preamble.
+ *
+ * And the room's **X and Clear**, dropped by MAR-683 as standing chrome
+ * nobody could act on differently than Escape already let them, are back for
+ * the same reason the model line is: `chief-chat-render.test.tsx`'s old
+ * assertion that neither exists is deleted rather than kept passing, because
+ * this is a different room. Clear is scoped deliberately narrower than
+ * `chief.clear` (see `visibleChiefTurns` below) rather than reusing it.
  */
+
+/**
+ * The turns Clear leaves on screen (MAR-696).
+ *
+ * Pure, and exported for that reason: every render test in this repository is
+ * `renderToStaticMarkup`, so no click ever reaches `ChiefChat`'s own
+ * `onClick`, and the honesty of "empties the visible transcript only" is
+ * exactly the thing a render can't exercise without one. Testing this
+ * function directly is what proves the *filter*, independent of whether a
+ * test harness can ever press the button that sets `clearedThroughId`.
+ *
+ * `turns` is oldest-first (`chiefRoomView`'s own order) and `id` only ever
+ * grows, so "greater than the cleared boundary" is "asked after the clear" —
+ * the same ordering assumption `readChiefTurns`' own docblock states.
+ */
+export function visibleChiefTurns(
+  turns: readonly ChiefTurnView[],
+  clearedThroughId: number | null,
+): readonly ChiefTurnView[] {
+  return clearedThroughId === null ? turns : turns.filter((turn) => turn.id > clearedThroughId);
+}
+
 export function ChiefChat({
   agents,
   view,
@@ -133,6 +202,24 @@ export function ChiefChat({
   const [elapsed, setElapsed] = useState(0);
   const [feedback, setFeedback] = useState<string | null>(null);
   const thread = useRef<HTMLDivElement | null>(null);
+  /*
+   * MAR-696. The Clear button's own state, and the whole reason it is a
+   * number here rather than a call into `lib/chief/store.ts`.
+   *
+   * `chief_messages` is the chief's memory and an audit surface (MAR-673) —
+   * `chief.clear` already exists for genuinely forgetting it, and it deletes
+   * rows, on purpose (`lib/chief/store.ts`'s own docblock). This is a
+   * different, smaller promise: clear what is drawn in this window. Every
+   * turn with an id at or below this one is filtered out of `visible` below;
+   * nothing is asked of main, nothing is deleted, and the chief still has
+   * every word of it the next time anybody asks. Session-only by construction
+   * — plain `useState`, not a store write — so leaving the page and coming
+   * back (or `onAsked` re-reading the view after a fresh question) is what
+   * makes the transcript legible again, the same honesty `chiefRoomView`'s own
+   * doc gives that return.
+   */
+  const [clearedThroughId, setClearedThroughId] = useState<number | null>(null);
+  const visible = visibleChiefTurns(view.turns, clearedThroughId);
 
   /*
    * Whole seconds since the press — the one number on this surface the renderer
@@ -163,12 +250,12 @@ export function ChiefChat({
    * things asked this one too.
    */
   useEffect(() => {
-    if (!open || view.turns.length === 0) {
+    if (!open || visible.length === 0) {
       return;
     }
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     thread.current?.scrollTo({ top: thread.current.scrollHeight, behavior: reduce ? "auto" : "smooth" });
-  }, [open, view.turns.length]);
+  }, [open, visible.length]);
 
   /*
    * MAR-683. Escape closes the room from anywhere in it, not only from the
@@ -231,17 +318,46 @@ export function ChiefChat({
   }
 
   return (
-    <div className="chief-chat">
+    <div className={open ? "chief-composer is-open" : "chief-composer"}>
       {open ? (
-        /*
-         * No heading and no actions row (MAR-683) — `aria-label` carries the
-         * same name a visible `<h2>` used to, for a screen reader, without a
-         * line of chrome a sighted reader has to read past on every open.
-         */
-        <div className="chief-room" ref={thread} aria-label={CHIEF_CHAT_COPY.heading}>
-          {view.turns.length === 0 ? null : (
+        <div className="chief-room" ref={thread}>
+          {/*
+            MAR-696 brings the room's own header back — `aria-label` still
+            carries the room's name for a screen reader, exactly as the
+            headingless version did, but a sighted reader now has the same
+            name visible, beside the two controls MAR-683 took off this row.
+          */}
+          <div className="chief-room-head" aria-label={CHIEF_CHAT_COPY.heading}>
+            <p className="chief-room-heading">{CHIEF_CHAT_COPY.heading}</p>
+            <div className="chief-room-actions">
+              <button
+                type="button"
+                className="chief-room-clear"
+                title={CHIEF_CHAT_COPY.clear_detail}
+                disabled={visible.length === 0}
+                onClick={() => {
+                  const last = view.turns[view.turns.length - 1];
+                  if (last !== undefined) {
+                    setClearedThroughId(last.id);
+                  }
+                }}
+              >
+                {CHIEF_CHAT_COPY.clear}
+              </button>
+              <button
+                type="button"
+                className="chief-room-close"
+                aria-label={CHIEF_CHAT_COPY.collapse}
+                onClick={onClose}
+              >
+                <span aria-hidden="true">×</span>
+              </button>
+            </div>
+          </div>
+
+          {visible.length === 0 ? null : (
             <ol className="chief-turns" aria-label={CHIEF_CHAT_COPY.thread_kept_heading}>
-              {view.turns.map((turn) => (
+              {visible.map((turn) => (
                 <li key={turn.id} className="chief-turn">
                   <p className="chief-asked wrap">
                     <span className="chief-speaker">{CHIEF_CHAT_COPY.you}</span>
@@ -266,17 +382,205 @@ export function ChiefChat({
             reads rather than one this component just happens to be wired for.
           */}
           <span className="chief-subject">{CHIEF_CHAT_COPY.label}</span>
-          <textarea
-            className="chief-input"
-            rows={2}
-            value={question}
-            placeholder={CHIEF_CHAT_COPY.placeholder}
-            onChange={(event) => setQuestion(event.target.value)}
-            onFocus={onOpen}
-            onKeyDown={onKeyDown}
-          />
+          <span className="chief-input-wrap">
+            <textarea
+              className="chief-input"
+              rows={open ? 2 : 1}
+              value={question}
+              placeholder={CHIEF_CHAT_COPY.placeholder}
+              onChange={(event) => setQuestion(event.target.value)}
+              onFocus={onOpen}
+              onKeyDown={onKeyDown}
+            />
+            {/*
+              MAR-696. The affordance the Ask button used to occupy, replaced
+              by a glyph rather than a control — `ask()` already runs on
+              Enter, so this names the key rather than duplicating what
+              pressing it does.
+            */}
+            <span className="chief-enter-glyph" aria-hidden="true">
+              ↵
+            </span>
+            {/*
+              MAR-696. Perched on the field itself rather than beside it —
+              `.chief-input-wrap` is this glyph's positioning parent so it
+              anchors to the rounded box a person actually sees, not to the
+              taller `.chief-field` the visible subject caption sits above.
+            */}
+            <ChiefComposerGlyph />
+          </span>
         </label>
       </div>
+
+      <ChiefModelLine view={view} canAct={canAct} onChanged={onAsked} />
+    </div>
+  );
+}
+
+/**
+ * The chief's costume, perched on the composer rather than standing beside
+ * it (MAR-696).
+ *
+ * `size={50}` — a row's scale, `OAvatarProps.size`'s own vocabulary — because
+ * this is an accent on a control now, not the portrait `ChiefBand` used to
+ * give it at `size={100}`. Sized through the prop rather than a CSS rule for
+ * that prop's own reason: `OAvatar` writes `--o-size` as an inline style, so
+ * a plain `width`/`height` override on `.chief-composer-o` would either lose
+ * the cascade to that inline value or, worse, still apply and crop one corner
+ * of the action sheet's frame instead of shrinking the whole character —
+ * `app/globals.css`'s `.chief-glyph` rule is the one place in this codebase
+ * that already had to learn this the hard way.
+ */
+function ChiefComposerGlyph(): ReactNode {
+  return <OAvatar name="chief" size={50} action label={CHIEF_NAME} className="chief-composer-o" />;
+}
+
+/**
+ * Whose model the chief is asking under, and a way to change it (MAR-696,
+ * ADR 0023 amendment 1).
+ *
+ * Always drawn, open or closed — Henrik's own words, *"the chief's current
+ * model and a swap control"*, under the field rather than inside the room, so
+ * it is not something a person has to open a conversation to see. Not
+ * `.chief-settings`, the standing scope paragraph MAR-683 dropped: this is
+ * one fact and one control, not a paragraph explaining what the room can do.
+ */
+function ChiefModelLine({
+  view,
+  canAct,
+  onChanged,
+}: {
+  view: ChiefRoomView;
+  canAct: boolean;
+  onChanged: () => void;
+}): ReactNode {
+  const [open, setOpen] = useState(false);
+
+  if (view.model_id === null || view.model_provider_id === null) {
+    return (
+      <p className="chief-model-line muted">
+        {CHIEF_CHAT_COPY.no_model}{" "}
+        {canAct ? <Link href="/settings/ai">{CHIEF_CHAT_COPY.no_model_link}</Link> : null}
+      </p>
+    );
+  }
+
+  return (
+    <div className="chief-model-line">
+      <p className="muted">
+        {describeChiefModelLine(view.model_is_own)} <code className="value">{view.model_id}</code>
+      </p>
+      {canAct ? (
+        <button
+          type="button"
+          className="chief-model-swap"
+          onClick={() => {
+            setOpen((was) => !was);
+          }}
+        >
+          {CHIEF_CHAT_COPY.swap}
+        </button>
+      ) : null}
+      {open ? (
+        <ChiefModelPicker
+          providerId={view.model_provider_id}
+          modelId={view.model_id}
+          onChanged={() => {
+            setOpen(false);
+            onChanged();
+          }}
+          onClose={() => {
+            setOpen(false);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The swap panel itself, asked for on press rather than fetched on mount
+ * (MAR-696) — `ModelDefault`'s own rule, restated: a page that loaded a
+ * provider's catalogue every time somebody opened this box would contact a
+ * third party on every focus. Scoped to the one provider already in force
+ * rather than every provider DASH holds a key for: a cross-provider swap is
+ * `ModelDefault`'s own job on the AI tab in Settings, and this is a narrower
+ * one — *change what the chief is already asking under*, not *choose among
+ * everything DASH could ask under*.
+ */
+function ChiefModelPicker({
+  providerId,
+  modelId,
+  onChanged,
+  onClose,
+}: {
+  providerId: string;
+  modelId: string;
+  onChanged: () => void;
+  onClose: () => void;
+}): ReactNode {
+  const [models, setModels] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<{ ok: boolean; detail: string } | null>(null);
+  const service = aiProviderById(providerId)?.label ?? "this service";
+
+  async function ask(): Promise<void> {
+    setBusy(true);
+    setOutcome(null);
+    const result = await listProviderModels({ provider_id: providerId });
+    setBusy(false);
+    if (!result.ok) {
+      setOutcome({ ok: false, detail: result.detail ?? "DASH could not ask which models are available." });
+      return;
+    }
+    setModels(result.models ?? []);
+    setOutcome({ ok: true, detail: result.detail ?? "" });
+  }
+
+  async function choose(nextModelId: string): Promise<void> {
+    setBusy(true);
+    setOutcome(null);
+    const result =
+      nextModelId === ""
+        ? await setChiefModel()
+        : await setChiefModel({ provider_id: providerId, model_id: nextModelId });
+    setBusy(false);
+    setOutcome({ ok: result.ok, detail: result.detail ?? "" });
+    if (result.ok) {
+      onChanged();
+    }
+  }
+
+  const listed = models === null ? [modelId] : models.includes(modelId) ? models : [modelId, ...models];
+
+  return (
+    <div className="chief-model-picker">
+      <select
+        className="field"
+        value={modelId}
+        disabled={busy}
+        onChange={(event) => {
+          void choose(event.target.value);
+        }}
+      >
+        <option value="">{CHIEF_CHAT_COPY.swap_default}</option>
+        {listed.map((id) => (
+          <option key={id} value={id}>
+            {id}
+          </option>
+        ))}
+      </select>
+      <button type="button" className="button-secondary" disabled={busy} onClick={() => void ask()}>
+        {models === null ? `See what ${service} offers` : `Ask ${service} again`}
+      </button>
+      <button type="button" className="button-secondary" onClick={onClose}>
+        Done
+      </button>
+      {outcome === null || outcome.ok ? null : (
+        <p className="notice-warn" role="status">
+          {outcome.detail}
+        </p>
+      )}
     </div>
   );
 }

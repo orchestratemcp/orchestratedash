@@ -87,6 +87,15 @@ export const DECISION_KINDS = [
    * value would report a setting nobody made.
    */
   "fleet_level_model",
+  /**
+   * The chief's own model pin, set or cleared (MAR-696). Filed by
+   * `lib/ai/model-store.ts`, beside `fleet_model_default` but never sharing
+   * its row: the chief reads its own pin first and the fleet default only
+   * where that is absent, so a view resolving one against the other's current
+   * value would report a setting nobody made — the same separation
+   * `fleet_level_model` keeps from the default it falls back to.
+   */
+  "chief_model",
   /** An agent's own connection granted or revoked. Filed by `lib/broker/store.ts`. */
   "connection_grant",
   /** A fleet connection made or disconnected. Subject is the provider. */

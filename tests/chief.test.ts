@@ -42,34 +42,6 @@ function source(...segments: string[]): string {
 }
 
 const chiefSource = source("lib", "copy", "chief.ts");
-const listSource = source("app", "_components", "fleet-list.tsx");
-
-/**
- * The body of `ChiefBand`, or a failure that says so.
- *
- * Taken once, at module scope, and **throwing rather than returning null** —
- * which is the half of this that was a real defect rather than a line-ending
- * quirk. Both cases below used to run the regex themselves and fall back to
- * `band?.[1] ?? ""`, so on Windows the second one asserted that the empty
- * string does not contain "OAvatar". It passed for years without reading a
- * single character of the component.
- *
- * An assertion built on an optional match is an assertion that reports success
- * when it has nothing to check. If this component is ever renamed or moved,
- * the honest outcome is a loud failure here, not four quiet passes.
- */
-function chiefBand(): string {
-  const matched = /export function ChiefBand\(([\s\S]*?)\n}\n/.exec(listSource);
-  if (matched === null) {
-    throw new Error(
-      "ChiefBand could not be found in app/_components/fleet-list.tsx — " +
-        "every assertion about what the band draws would be vacuous, so this fails instead",
-    );
-  }
-  return matched[1] ?? "";
-}
-
-const BAND = chiefBand();
 
 function chip(over: Partial<GlanceChip> = {}): GlanceChip {
   return {
@@ -241,32 +213,20 @@ describe("the chief invents nothing", () => {
   });
 });
 
-describe("the chief is not the Chief chat", () => {
-  it("draws no input a person could type into and get nothing back from", () => {
-    /*
-     * MAR-419 is the Chief chat, it is unbuilt, and `app/_components/ask.tsx`
-     * states the rule this band is held to: **never a dead input.** The band's
-     * action is the truest thing in reach instead — MAR-545's per-agent Ask, on
-     * the agent's own workspace.
-     *
-     * Asserted against the band's source rather than against a render, because the
-     * defect this prevents is somebody adding the box before the thing behind it
-     * exists, and that arrives as markup rather than as a state.
-     */
-    expect(BAND).not.toMatch(/<input\b/);
-    expect(BAND).not.toMatch(/<textarea\b/);
-    expect(BAND).not.toMatch(/<form\b/);
-  });
-
-  it("draws no avatar inline, delegating the portrait to its own glyph function", () => {
-    /*
-     * `ChiefBand` itself never reaches for `OAvatar` — it renders `<ChiefGlyph
-     * />` and stops, so a reviewer asking "does this component draw a costume
-     * from state" gets a complete answer without also having to read the glyph.
-     */
-    expect(BAND).not.toContain("<OAvatar");
-    expect(BAND).toContain("<ChiefGlyph");
-  });
+/*
+ * MAR-696. `ChiefBand` is gone — the bordered box these two checks used to
+ * read `fleet-list.tsx` for was itself the "big agent spotlight card" Henrik
+ * asked removed, and the "never a dead input"/"draws no avatar inline"
+ * checks that used to sit here are `chief-chat-render.test.tsx`'s job now
+ * (that file already asserts the composer is a live textarea and that
+ * exactly one O animates on the surface). What still belongs here, repointed
+ * rather than deleted, is the vendored-costume proof: the chief's portrait
+ * moved from `ChiefGlyph` in `fleet-list.tsx` into `ChiefComposerGlyph` in
+ * `chief-chat.tsx`, and both checks are about that literal source, wherever
+ * it stands.
+ */
+describe("the chief's costume, wherever it stands", () => {
+  const chatSource = source("app", "_components", "chief-chat.tsx");
 
   it("draws the vendored chief, never an ordinary agent's costume (MAR-615)", () => {
     /*
@@ -278,7 +238,7 @@ describe("the chief is not the Chief chat", () => {
      * `name="chief"` here — never an expression — is what keeps
      * `scripts/brand-rules.mjs`'s `checkCostume` able to prove that statically.
      */
-    expect(listSource).toContain('name="chief"');
+    expect(chatSource).toContain('name="chief"');
   });
 
   it("names the speaker, which is the one avatar-ish thing in DASH that is named", () => {
@@ -292,10 +252,12 @@ describe("the chief is not the Chief chat", () => {
      * pass it at all.
      */
     expect(CHIEF_NAME.length).toBeGreaterThan(0);
-    expect(listSource).toContain("label={CHIEF_NAME}");
+    expect(chatSource).toContain("label={CHIEF_NAME}");
   });
+});
 
-  it("has a quiet state that does not become a second empty state", () => {
+describe("the chief's quiet state", () => {
+  it("does not become a second empty state", () => {
     // `app/page.tsx` already says "nothing here yet" where a person can act on
     // it. This says where the chief is and stops.
     expect(CHIEF_WAITING).toMatch(/chief/i);

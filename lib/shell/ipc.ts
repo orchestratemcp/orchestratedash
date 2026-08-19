@@ -657,6 +657,34 @@ export const COMMANDS = {
     // already recorded are never revised.
     irreversible: false,
   },
+  /*
+   * MAR-696. A fourth member about no agent, on `model.default`'s exact terms
+   * — including the shape of its own name: this is the chief's *default*,
+   * read before the fleet's rather than instead of it, so `model.chief`
+   * rather than `model.chief_default` matches the family's own naming
+   * (`model.default`, not `model.fleet_default`).
+   *
+   * Appended last, `model.level`'s own reason: `tests/shell.test.ts` pins the
+   * whole list in order, so a new command goes at the end of its family.
+   *
+   * It widens nothing `model.default` did not already widen: both name a
+   * provider from `AI_PROVIDER_IDS` and reach no manifest, no vault and no
+   * network. What is new is which row main writes — this one touches
+   * `chief_model_choice`, never `fleet_model_default`, so an agent's own
+   * fallback is untouched either way.
+   */
+  "model.chief": {
+    effect:
+      "Set the model the chief itself asks under, or clear it back to DASH's fleet default. " +
+      "Contacts nobody.",
+    payload_keys: ["provider_id", "model_id"],
+    // Neither is required: no provider and no model is how the chief's own
+    // pin is cleared, in `model.default`'s shape.
+    required_keys: [],
+    mutates: true,
+    // Nothing in the world changes and the previous setting is one press away.
+    irreversible: false,
+  },
 
   /*
    * MAR-545. Asking an agent a question about what it has found.
@@ -712,8 +740,13 @@ export const COMMANDS = {
    * fleet question at an agent or an agent question at the fleet. There is no
    * connection id because the chief's one connection is a constant of DASH's own
    * composed manifest (`lib/chief/manifest.ts`), and there is no model id for
-   * `ask.question`'s reason, sharpened: the chief has no picker at all and asks
-   * under DASH's fleet default.
+   * `ask.question`'s reason, sharpened: which model answers is read in main
+   * from `chief_model_choice`/`fleet_model_default`, the same way an agent's
+   * own model is — `model.chief` (MAR-696) is the picker's own command, kept
+   * out of this family for the reason every other setting is: naming a model
+   * to ask under and asking under it are different acts, and folding the
+   * first into the second would let a compromised page choose what a
+   * question spends against in the same call that spends it.
    *
    * `irreversible` is true for exactly the same reason `ask.question` is, and
    * with the same caveat: nothing in the world changes, and what cannot be undone
@@ -1666,6 +1699,10 @@ export const MODEL_ACTIONS = {
   "model.catalogue": "catalogue",
   // MAR-654. A third, on the same terms: what one *level* means, fleet-wide.
   "model.level": "level",
+  // MAR-696. A fourth: the chief's own model, read before the fleet default
+  // rather than instead of it — never a fourth family, on this comment's own
+  // terms: what it changes is still which model DASH asks for.
+  "model.chief": "chief",
 } as const;
 
 export type ModelCommandName = keyof typeof MODEL_ACTIONS;

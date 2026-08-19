@@ -171,7 +171,17 @@ describe("contrast", () => {
     const declarations = tokens.replace(/\/\*[\s\S]*?\*\//g, "");
     const radii = [...declarations.matchAll(/--radius-([\w-]+):\s*([^;]+);/g)];
     expect(radii.length).toBeGreaterThan(0);
+    /*
+     * MAR-696. The one declared exception this file's own paragraph
+     * anticipates — Henrik's 2026-08-19 ruling for the fleet page's chief
+     * composer, and nothing wider: every other `--radius-*` name still has to
+     * read `0px`, so this loop skips exactly one name rather than relaxing
+     * the assertion for all of them.
+     */
     for (const [, name, value] of radii) {
+      if (name === "chief-composer") {
+        continue;
+      }
       expect((value as string).trim(), `--radius-${String(name)}`).toBe("0px");
     }
     expect(declarations).not.toMatch(/--radius-pill/);

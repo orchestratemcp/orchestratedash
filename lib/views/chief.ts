@@ -17,7 +17,7 @@
  * structurally for exactly that reason.
  */
 
-import { readFleetModelDefault } from "../ai/model-store";
+import { readChiefModelChoice, readFleetModelDefault } from "../ai/model-store";
 import { aiProviderById } from "../ai/providers";
 import { briefingFor, fleetChangedSince, type ChiefBriefingRow } from "../chief/briefing";
 import { chiefFleetFrom } from "../chief/records-answer";
@@ -40,29 +40,58 @@ export function chiefRoomView(agents: readonly AgentRow[]): ChiefRoomView {
   const fleet = chiefFleetFrom(agents);
   const turns = readChiefTurns().map((turn) => toTurnView(turn, now, fleet));
 
+  /*
+   * MAR-696. The chief's own pin, read first — `readEffectiveChiefModel`'s
+   * precedence, inlined here rather than called so this function can still
+   * say *which* row answered (`model_is_own`), which the composer's swap
+   * control needs and the reader does not.
+   *
+   * Still not a fallback to an *agent's* pinned model — ADR 0023's ruling is
+   * unchanged, only which of the chief's own two rows wins is new.
+   */
+  const chiefPin = readChiefModelChoice();
   const fleetDefault = readFleetModelDefault();
-  if (fleetDefault === null) {
+  const effective = chiefPin ?? fleetDefault;
+  if (effective === null) {
     /*
      * The shipped state, and every DASH today is in it. No default means no
      * provider, means no manifest, means the broker would refuse before it
      * touched a vault — so the room says so and points at the tab rather than
      * offering a button that produces `unknown_connection`.
-     *
-     * Deliberately not a fallback to an agent's pinned model. The chief is not
-     * an agent, and spending under a setting somebody made about their news
-     * scout would be DASH choosing on their behalf.
      */
-    return { can_ask: false, model_id: null, blocked: describeChiefNoModel(), turns };
+    return {
+      can_ask: false,
+      model_id: null,
+      model_provider_id: null,
+      model_is_own: false,
+      blocked: describeChiefNoModel(),
+      turns,
+    };
   }
-  if (aiProviderById(fleetDefault.provider_id) === null) {
-    // A row naming a provider this build has dropped. `readFleetModelDefault`
-    // already returns null for one, so this is the belt to that braces — and it
-    // reports the same state rather than a fourth one, because from the room's
-    // side there is no difference: there is nothing to ask.
-    return { can_ask: false, model_id: null, blocked: describeChiefNoModel(), turns };
+  if (aiProviderById(effective.provider_id) === null) {
+    // A row naming a provider this build has dropped. `readChiefModelChoice`
+    // and `readFleetModelDefault` already return null for one, so this is the
+    // belt to that braces — and it reports the same state rather than a
+    // fourth one, because from the room's side there is no difference: there
+    // is nothing to ask.
+    return {
+      can_ask: false,
+      model_id: null,
+      model_provider_id: null,
+      model_is_own: false,
+      blocked: describeChiefNoModel(),
+      turns,
+    };
   }
 
-  return { can_ask: true, model_id: fleetDefault.model_id, blocked: null, turns };
+  return {
+    can_ask: true,
+    model_id: effective.model_id,
+    model_provider_id: effective.provider_id,
+    model_is_own: chiefPin !== null,
+    blocked: null,
+    turns,
+  };
 }
 
 /**
