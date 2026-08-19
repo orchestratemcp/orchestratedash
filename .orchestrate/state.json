@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "project": "DASH",
-  "updated_at": "2026-08-19T16:00:00Z",
+  "updated_at": "2026-08-19T16:45:00Z",
   "current_wave": "Wave 2 - outside-app connections",
-  "lifecycle_note": "Reconciled 2026-08-19 by the packaged-shell proving sweep. pnpm verify was run three times from PowerShell: runs 1 and 2 lost single vitest files to 5s timeouts under 22-way parallelism (all re-ran green alone, so flake, not regression), and run 3 passed state:check, typecheck, brand:check and 222/222 test files before verify:shell died at startup on 'database disk image is malformed' — the installed dash.sqlite is WAL-mode with no -wal and is unreadable, filed as MAR-700 (no fix attempted). Zero of 85 proofs ran against the real store. The same smoke was therefore re-run against a clean installed-style store (--user-data-dir=<clean>\\orchestratedash, proof 0 green), which is CI's shell-smoke configuration: 85/85 PASS, 0 FAIL. Eight packets whose stated bar those proofs actually cover were promoted to proven, each citing its proof number; everything else stays merged because no proof in the 85 asserts its behaviour. MAR-506 and MAR-518 were deliberately NOT promoted: their bar is the retire button pressed against a genuinely damaged runner.sqlite, and proof 4b only shows a healthy runner answering — though this sweep found such a damaged store, so the fixture now exists. MAR-548 and MAR-569 were recorded planned with a null commit while both were merged on master (7c0e29e / bc62e61); the index was corrected against git. MAR-641 is promoted at the packet level (cockpit slice 1) and deliberately keeps its drift warning: the Linear issue is genuinely In Progress because its acceptance is one PR per stage view. Every other promoted issue was already Done in Linear — the drift was in this index, not in Linear. Not proven on Henrik's real installed store — that re-run is owed once MAR-700 is decided.",
+  "lifecycle_note": "Reconciled 2026-08-19 by the packaged-shell proving sweep, and the installed store was repaired mid-session. pnpm verify initially died in verify:shell on 'database disk image is malformed': the installed dash.sqlite was WAL-mode with no -wal, header claiming 474 pages against 356 present (MAR-700). A hand-written b-tree recovery showed the damaged file was strictly worse than MAR-676's 2026-08-17 snapshot (26 of 34 tables, 26 runs vs 73), so on Henrik's approval the snapshot was restored and the damaged file kept at malformed-20260819/. DASH then repaired itself unattended: MAR-682's reconciliation recognised the pre-renumber shape, created chief_messages, and the migration loop carried the store to user_version 29, 38 tables, integrity ok. THE PROOF IS AGAINST THE REAL INSTALLED STORE: pnpm verify:shell, 85/85 PASS, 0 FAIL, proof 0 green on %APPDATA%\\orchestratedash. Eight packets whose stated bar those proofs cover were promoted to proven, each citing its proof number. MAR-506 and MAR-518 were NOT promoted: their bar is the retire button pressed against a genuinely damaged runner.sqlite, and proof 4b reported store_damaged false. MAR-548 and MAR-569 were recorded planned with null commits while both were merged on master (7c0e29e / bc62e61); the index was corrected against git. MAR-641 keeps its drift warning on purpose: the packet is cockpit slice 1 and is proven, but the Linear issue is genuinely In Progress because its acceptance is one PR per stage view. Two defects were filed rather than fixed: the first page lands in a failed view on the one launch a store reconciliation runs, and the vitest suite loses a random file to a 5s timeout under 22-way parallelism (three of five verify runs).",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -39,8 +39,8 @@
       "linear_status": "Done",
       "commit": "d965f03",
       "proof": {
-        "command": "pnpm build:renderer && pnpm build:shell; then DASH_SHELL_URL=dash-app://ui/ pnpm exec electron dist/electron/smoke.mjs --user-data-dir=<clean>\\orchestratedash",
-        "run": "2026-08-19 sweep: 85/85 PASS, 0 FAIL, [smoke] all proofs passed; proof 1b, 2c, 2d, 1f (packaged origin; the named read methods; the agents round trip)"
+        "command": "pnpm verify:shell (PowerShell, the real installed store)",
+        "run": "2026-08-19 real-store sweep: 85/85 PASS, 0 FAIL, [smoke] all proofs passed; proof 1b, 2c, 2d, 1f"
       }
     },
     {
@@ -55,8 +55,8 @@
       "linear_status": "Done",
       "commit": "e30921c",
       "proof": {
-        "command": "pnpm build:renderer && pnpm build:shell; then DASH_SHELL_URL=dash-app://ui/ pnpm exec electron dist/electron/smoke.mjs --user-data-dir=<clean>\\orchestratedash",
-        "run": "2026-08-19 sweep: 85/85 PASS, 0 FAIL, [smoke] all proofs passed; proof 3c (the live workspace completes a narrowed read round trip)"
+        "command": "pnpm verify:shell (PowerShell, the real installed store)",
+        "run": "2026-08-19 real-store sweep: 85/85 PASS, 0 FAIL, [smoke] all proofs passed; proof 3c"
       }
     },
     {
@@ -191,8 +191,8 @@
       "linear_status": "Done",
       "commit": "56b16a2",
       "proof": {
-        "command": "pnpm build:renderer && pnpm build:shell; then DASH_SHELL_URL=dash-app://ui/ pnpm exec electron dist/electron/smoke.mjs --user-data-dir=<clean>\\orchestratedash",
-        "run": "2026-08-19 sweep: 85/85 PASS, 0 FAIL, [smoke] all proofs passed; proof 8a-8f (lapses attributed and dated; no invented decision; no operation named)"
+        "command": "pnpm verify:shell (PowerShell, the real installed store)",
+        "run": "2026-08-19 real-store sweep: 85/85 PASS, 0 FAIL, [smoke] all proofs passed; proof 8a-8f"
       }
     },
     {
@@ -525,8 +525,8 @@
       "linear_status": "Done",
       "commit": "2b3801e",
       "proof": {
-        "command": "pnpm build:renderer && pnpm build:shell; then DASH_SHELL_URL=dash-app://ui/ pnpm exec electron dist/electron/smoke.mjs --user-data-dir=<clean>\\orchestratedash",
-        "run": "2026-08-19 sweep: 85/85 PASS, 0 FAIL, [smoke] all proofs passed; proof 6b-m1, 6b-m2, 6b-m3, 6c-f (folder migration, and DASH's copy runs)"
+        "command": "pnpm verify:shell (PowerShell, the real installed store)",
+        "run": "2026-08-19 real-store sweep: 85/85 PASS, 0 FAIL, [smoke] all proofs passed; proof 6b-m1, 6b-m2, 6b-m3, 6c-f"
       }
     },
     {
@@ -535,8 +535,8 @@
       "linear_status": "Done",
       "commit": "9c7c72d",
       "proof": {
-        "command": "pnpm build:renderer && pnpm build:shell; then DASH_SHELL_URL=dash-app://ui/ pnpm exec electron dist/electron/smoke.mjs --user-data-dir=<clean>\\orchestratedash",
-        "run": "2026-08-19 sweep: 85/85 PASS, 0 FAIL, [smoke] all proofs passed; proof 6n, 6o (the panel renderer, drawn from a real declared panel)"
+        "command": "pnpm verify:shell (PowerShell, the real installed store)",
+        "run": "2026-08-19 real-store sweep: 85/85 PASS, 0 FAIL, [smoke] all proofs passed; proof 6n, 6o"
       }
     },
     {
@@ -554,8 +554,8 @@
       "linear_status": "Done",
       "commit": "0816f0c",
       "proof": {
-        "command": "pnpm build:renderer && pnpm build:shell; then DASH_SHELL_URL=dash-app://ui/ pnpm exec electron dist/electron/smoke.mjs --user-data-dir=<clean>\\orchestratedash",
-        "run": "2026-08-19 sweep: 85/85 PASS, 0 FAIL, [smoke] all proofs passed; proof 6o, 6n (no raw instant inside the author's region)"
+        "command": "pnpm verify:shell (PowerShell, the real installed store)",
+        "run": "2026-08-19 real-store sweep: 85/85 PASS, 0 FAIL, [smoke] all proofs passed; proof 6o, 6n"
       }
     },
     {
@@ -564,8 +564,8 @@
       "linear_status": "Done",
       "commit": "7c0e29e",
       "proof": {
-        "command": "pnpm build:renderer && pnpm build:shell; then DASH_SHELL_URL=dash-app://ui/ pnpm exec electron dist/electron/smoke.mjs --user-data-dir=<clean>\\orchestratedash",
-        "run": "2026-08-19 sweep: 85/85 PASS, 0 FAIL, [smoke] all proofs passed; proof 6n, 6o (the workspace draws the declared panel; no control, no raw instant)"
+        "command": "pnpm verify:shell (PowerShell, the real installed store)",
+        "run": "2026-08-19 real-store sweep: 85/85 PASS, 0 FAIL, [smoke] all proofs passed; proof 6n, 6o"
       },
       "note": "PR OPEN, NOT MERGED: branch 000henrik/mar-548-sample-agents, cut from origin/master at 9c7c72d in its own worktree (../dash-mar548), then fast-forwarded to 0816f0c once PR #89 landed so the panel-render widening could be taken. No commit is claimed here; merging is left to Henrik. WHAT THIS IS: ADR 0008 slice 3's integration, plus the first manifests to declare the block it renders. MAR-554 shipped resolvePanel -> buildPanelView -> AgentPanel and wired it to nothing, and its own exit note named what would lift the ceiling: a real declared panel on the installed shell. THE WIRING is two joins and a field. workspaceView passes the FOLDER's agent.manifest.json to buildPanelView and falls back to the row's manifest_json; app/agents/detail/page.tsx renders AgentPanel BELOW the permission receipt and the Outputs area, because those are DASH's record and DASH's controls and the panel is somebody else's box - an author's note sitting above them would occupy the place a person has learned to read DASH's own voice. panelDocument is where ADR 0008's authority rule finally has a caller: it is stated in lib/views/panel.ts's prose and cannot be stated in a type, because that module must stay free of node:fs to reach the renderer bundle. A folder that is present and unreadable falls back to the row, and that is NOT the silent repair the ADR forbids - reconcileAgentFolders has already recorded it as a folder_unreadable issue at startup and routed it through the same damage surface readStore's unreadable rows use. TWO PANELS, five section types between them. The AI News Scout - the manifest agent-kit/scaffold.ts generates, which is what Try a sample agent actually creates - declares report(digest) + metrics + table over the digest's items. Every metric on it is a dash_fact, so every value it draws is attributed to DASH; the scout has no top-level numeric field, so an artifact_field metric could only ever render absent while looking like a number the agent had stood behind. published_at is declared timestamp rather than text, which is the load-bearing word: it is the author telling DASH the value is a moment, which is the licence DASH needs to run it through plainMoment instead of shipping the machine's spelling of it. The Gmail meeting assistant declares note + report(draft) + outputs + metrics; its note describes what the assistant does and deliberately makes NO safety claim, because nothing-is-sent is DASH's sentence rendered by DraftBody outside the author's voice, and an author's note repeating it is the one thing the attribution rule exists to prevent. artifactRecordsForAgent is new and its SECOND QUERY IS NOT AN OPTIMISATION. A panel binds by role across every run, so a newest-first window alone would let an agent that has written PANEL_ARTIFACT_LIMIT drafts since its last digest push that digest out of the window, and a report bound to digest would render its stated empty state - the surface saying nothing-yet about a record DASH is holding. The second query takes the newest artifact of every kind whatever its position and closes it by construction. The limit is 20 because that is max_items' own maximum in the schema: DASH's fetch bound is exactly the largest bound the vocabulary can ask for, so a truncation a person sees is always the author's cap biting and never DASH's. BOTH LOAD-BEARING TESTS WERE DEMONSTRATED FAILING FIRST. Pointing panelDocument at the row turns the folder-wins test red (expected Edited on disk, received the row's title); dropping the second query turns the buried-role test red (20 drafts, no digest). Both pass on the code as committed. INSTALLED WITNESS: electron/smoke.ts gains 6n and 6o on the workspace route of the agent proof 6 has just created through the real handoff. 6n asserts the author's title, three drawn sections and a table with rows - rows exist only because the run above really produced a digest and the role really resolved against it. 6o measures ADR 0008's strongest claim where it can be refused: zero controls inside the region and zero raw instants. THE TRIM IS A FINDING, NOT A CHANGE. The issue asks to stop shipping the rest of the cast and there is no cast being shipped: examples/ is in no package, nothing seeds a fleet, no surface offers those manifests, and the only sample a user can meet is the one the menu scaffolds. The four non-sample manifests in examples/ are fixtures with a directory that flatters them, and tests/panel-spec.test.ts records that where a reader will meet it. Moving them was the alternative and was declined on a LIVE COLLISION: MAR-569 is dirty in its own worktree editing contracts/agent.manifest.v2.schema.json, and connection requirements will land on exactly those connection-declaring examples. What did change is that the sample set is now two agents that both declare a panel. EVIDENCE ON THE BRANCH: state:check valid (19 pre-existing drift warnings, none from this branch), typecheck clean, brand:check green, full vitest from PowerShell 104 files / 2056 passed / 8 skipped / 0 failed with 12 new, build:renderer green - which is the check that the new client import of app/_components/panel did not drag a Node builtin into the browser bundle. NOT RUN, and this is the whole gap between merged and proven: pnpm verify:shell and the electron/capture.ts re-run. A live DASH (OrchestrateDASH, pid 24792, with a main window) held the single-instance lock for this entire session and AGENTS.md forbids force-killing it; both remaining evidence items need it closed, and closing another session's window is not this session's call - the same judgment MAR-441, MAR-421, MAR-434 and MAR-554 each recorded. CI's Windows shell-smoke gate on the PR is what runs 6n and 6o until then. NON-GOALS HELD: no schema edit (contracts/ belongs to MAR-569 this session, and $defs.panel was verified byte-identical to orchestratekit-mcp's pinned fixture at 01e3f8a before anything moved), no new panel section type, no control in the vocabulary. ONE PROMPT PREMISE WAS WRONG AND IS RECORDED: the MCP repo does NOT hold per-agent panel fixtures. At 01e3f8a the only panel-shaped things there are the pinned DASH schema and the .strict() boundary tests in tests/tools/exportBuildBrief.test.ts, so both panels were designed against the schema instead. SESSION END STATE, corrected from the entry above: PR #92's `verify` job is GREEN and its `shell-smoke` job is RED at head 283d3b6, and WHICH PROOF FAILS IS NOT KNOWN. That is not a hedge - it is a property of the gate: CI's shell-smoke log stops at proof 6a in the failing run AND in the last green one alike, so the job reports pass/fail without ever saying which proof decided it. Worth its own issue. Three candidate causes were addressed in order and the third is unconfirmed: (1) the receipt shipping raw instants, found and fixed, which would certainly have failed 6o on the first red run at 23cbfd1; (2) 6n/6o failing rather than skipping when 6g produced no run, fixed to MAR-473's discipline; (3) the workspace navigation racing 6k's, reproduced locally as ERR_ABORTED (-3) and now retried three times. A throwaway Electron probe - deleted, not committed, and skipping smoke-identity so it took its own app name, userData and lock beside the live DASH - established that the scaffolded manifest IMPORTS with its panel, that the panel DRAWS on the real /agents/detail route in the packaged renderer, and that the region contains NO raw instant. So neither 6n's nor 6o's assertions are known to be wrong, and the remaining red is undiagnosed rather than explained. THE NEXT SESSION'S FIRST ACT IS `pnpm verify:shell` FROM POWERSHELL WITH DASH CLOSED, redirected to a file, which prints the failing proof's own line and detail object - the thing CI structurally cannot show. ALSO LEFT ON THIS MACHINE: an orphan runner from that probe, pid 44632, endpoint \\\\.\\pipe\\orchestratedash-runner-646211ccf86724c940adb923, holding the SCRATCH store at %APPDATA%\\Electron and not DASH's own at %APPDATA%\\orchestratedash. It was not force-killed, per AGENTS.md. It should not affect verify:shell (different data directory, different pipe) but it is named here rather than left for somebody to find, which is the gap MAR-509's note says nothing in the runbook closes. CORRECTED AT SESSION END, and this supersedes the paragraph above: CI IS GREEN AT 19848eb - verify SUCCESS and shell-smoke SUCCESS - so 6n and 6o executed on a Windows installed shell and the declared panel was witnessed there. Three red runs, three different causes, and only the first was a product defect. (1) The receipt's raw instants: real, fixed, the reason 6o exists. (2) A navigation race - 6k loads the run detail page immediately before 6n loads the workspace, and a navigation arriving while a page is still settling returns ERR_ABORTED (-3); retried now, so the proof fails when the panel is wrong rather than when Chromium cancelled a load. (3) 6n was asking the wrong question: it read section labels with '.agent-panel-section h3', a DESCENDANT selector, and DigestBody renders each digest item's headline as an h3 inside the report section, so a panel with three author labels and a two-item digest returned five and labels.length === 3 was false about a panel that was entirely correct. It is ':scope > h3' now, and the assertion moved from a count to the three declared strings BY VALUE - which would have caught it on the first run rather than the third. THE GATE COULD NOT SAY WHICH: shell-smoke's log stops at proof 6a in a failing run and in a green one alike, so three CI round-trips were spent on what one readable log would have answered at once; that deserves its own issue. What broke the deadlock was the throwaway probe described above. STILL NOT DONE, and it is the whole gap to proven: pnpm verify locally from PowerShell, and the electron/capture.ts re-run for workspace screenshots of a real declared panel on a real route. Both need DASH closed."
     },
@@ -959,8 +959,8 @@
       "linear_status": "In Progress",
       "commit": "5a57617",
       "proof": {
-        "command": "pnpm build:renderer && pnpm build:shell; then DASH_SHELL_URL=dash-app://ui/ pnpm exec electron dist/electron/smoke.mjs --user-data-dir=<clean>\\orchestratedash",
-        "run": "2026-08-19 sweep: 85/85 PASS, 0 FAIL, [smoke] all proofs passed; proof 6p (the agent's own output is on the page a link lands on)"
+        "command": "pnpm verify:shell (PowerShell, the real installed store)",
+        "run": "2026-08-19 real-store sweep: 85/85 PASS, 0 FAIL, [smoke] all proofs passed; proof 6p"
       }
     },
     {

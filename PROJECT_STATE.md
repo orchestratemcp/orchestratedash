@@ -62,12 +62,16 @@ smoke's 85 proofs. **Proven-debt is still far over budget** — the proving
 wave continues, not new features. Merged-but-unproven work is inventory,
 not progress.
 
-The sweep could not run against the installed store: `dash.sqlite` is
-WAL-mode with no `-wal` and is unreadable, so `verify:shell` dies before
-proof 0 (MAR-700, urgent, no fix attempted). The eight promotions rest on
-the same smoke re-run against a clean installed-style store — CI's
-shell-smoke configuration, 85/85 — so the real-store re-run is still owed
-once MAR-700 is decided.
+The promotions rest on **`pnpm verify:shell` against the real installed
+store: 85/85 PASS, 0 FAIL**, proof 0 green on `%APPDATA%\orchestratedash`.
+
+Getting there repaired the store. `dash.sqlite` was WAL-mode with no
+`-wal` and unreadable (MAR-700); a b-tree recovery showed the damaged file
+was strictly worse than MAR-676's 2026-08-17 snapshot, so the snapshot was
+restored and the damaged file kept at `malformed-20260819/`. DASH then
+repaired itself unattended — MAR-682's reconciliation recognised the
+pre-renumber shape, created `chief_messages`, and the migration loop
+carried the store to `user_version` 29, 38 tables, `integrity_check: ok`.
 
 ## Known standing constraints
 
