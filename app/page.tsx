@@ -7,7 +7,6 @@ import { FleetRail } from "./_components/fleet-rail";
 import { OAvatar } from "./_components/o-avatar";
 import { HostNotice, ViewFailed, ViewLoading } from "./_components/view-state";
 import { checkRunnerStatus, retireRunnerStore, setAgentFavourite } from "./_data/source";
-import { useSightings } from "./_data/sightings";
 import { useCanAct, useHost, useRefreshOnWindowFocus, useView } from "./_data/use-view";
 import { oFor } from "../lib/brand/o-cast";
 import { describeRunnerStoreDamage, type RunnerStoreDamageKind } from "../lib/copy/recovery";
@@ -57,15 +56,6 @@ export default function AgentsPage(): ReactNode {
   const host = useHost();
   const canAct = useCanAct();
   const storeDamage = useRunnerStoreDamage(canAct);
-  /*
-   * MAR-606. What the Servers page saw, this window (ADR 0015).
-   *
-   * Empty until somebody has pressed Check somewhere, which is the honest
-   * majority case and the one every card is worded for. This page never asks a
-   * server anything — see `useView`'s own header on why it does not poll, and
-   * ADR 0015 on why a sighting is not stored.
-   */
-  const log = useSightings();
   const [favouriteOverrides, toggleFavourite] = useFavouriteOverrides();
   /*
    * MAR-640. The store's own answer, corrected by a press this window has not
@@ -157,7 +147,6 @@ export default function AgentsPage(): ReactNode {
           onAsked={() => {
             setRefreshKey((value) => value + 1);
           }}
-          log={log}
           onToggleFavourite={toggleFavourite}
         />
           )}

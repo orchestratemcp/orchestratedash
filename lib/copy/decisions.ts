@@ -104,6 +104,15 @@ export function describeLevelModelCleared(levelLabel: string): string {
   return `Level model cleared — ${levelLabel}; steps of that kind fall back to the default.`;
 }
 
+/** MAR-696. The chief's own pin, independent of the fleet default. */
+export function describeChiefModelSet(modelId: string): string {
+  return `Chief's model set: ${modelId}.`;
+}
+
+export function describeChiefModelCleared(): string {
+  return "Chief's model pin cleared; the chief asks under the fleet default again.";
+}
+
 export function describeConnectionGranted(connectionId: string): string {
   return `Connection granted: ${connectionId}.`;
 }

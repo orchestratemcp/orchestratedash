@@ -25,6 +25,7 @@ import {
   CHIEF_CHAT_COPY,
   describeAmbiguous,
   describeChiefActivity,
+  describeChiefModelLine,
   describeChiefNoModel,
   describeChiefReceipt,
   describeChiefScope,
@@ -64,6 +65,8 @@ describe("the chief's own words are plain", () => {
       scope.headline,
       scope.meaning,
       ...SENTENCES.map((one) => one.sentence),
+      describeChiefModelLine(true),
+      describeChiefModelLine(false),
     ]);
   });
 

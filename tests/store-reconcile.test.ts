@@ -173,7 +173,7 @@ describe("a store a pre-renumber build migrated", () => {
     const next = await reopen(first.dataDir);
     const handle = next.db();
 
-    expect(version(handle)).toBe(29);
+    expect(version(handle)).toBe(30);
     for (const table of MASTER_24_TO_26_TABLES) {
       expect(tableNames(handle)).toContain(table);
     }
@@ -349,7 +349,7 @@ describe("stores the repair must never touch", () => {
   it("leaves a fresh store alone", async () => {
     const { dataDir, db } = await freshStore();
 
-    expect(version(db.db())).toBe(29);
+    expect(version(db.db())).toBe(30);
     expect(db.describeStoreReconciliation()).toBeNull();
     expect(backupsIn(dataDir)).toEqual([]);
   });
@@ -360,7 +360,7 @@ describe("stores the repair must never touch", () => {
     first.db.closeDb();
 
     const next = await reopen(first.dataDir);
-    expect(version(next.db())).toBe(29);
+    expect(version(next.db())).toBe(30);
     expect(next.describeStoreReconciliation()).toBeNull();
     expect(backupsIn(first.dataDir)).toEqual([]);
   });
@@ -405,7 +405,7 @@ describe("stores the repair must never touch", () => {
 
     expect(next.describeStoreReconciliation()).toBeNull();
     expect(backupsIn(first.dataDir)).toEqual([]);
-    expect(version(handle)).toBe(29);
+    expect(version(handle)).toBe(30);
     // Migration 27 ran, so the row is `account-1` and the default — which is the
     // ordinary upgrade this store was always going to get.
     expect(handle.prepare("SELECT account_id, is_default FROM fleet_connections").get()).toEqual({
@@ -428,7 +428,7 @@ describe("stores the repair must never touch", () => {
     const next = await reopen(first.dataDir);
     expect(next.describeStoreReconciliation()).toBeNull();
     expect(backupsIn(first.dataDir)).toEqual([]);
-    expect(version(next.db())).toBe(29);
+    expect(version(next.db())).toBe(30);
   });
 
   it("leaves a store below the range alone even with the shape present", async () => {
@@ -443,7 +443,7 @@ describe("stores the repair must never touch", () => {
     const next = await reopen(first.dataDir);
     expect(next.describeStoreReconciliation()).toBeNull();
     expect(backupsIn(first.dataDir)).toEqual([]);
-    expect(version(next.db())).toBe(29);
+    expect(version(next.db())).toBe(30);
   });
 });
 
@@ -626,7 +626,7 @@ describe("migrate() wires MAR-682 at boot, beside MAR-676's own call", () => {
     const next = await reopen(first.dataDir);
     const handle = next.db();
 
-    expect(version(handle)).toBe(29);
+    expect(version(handle)).toBe(30);
     expect(tableNames(handle)).toContain("chief_messages");
 
     const backups = backupsIn(first.dataDir);
@@ -650,7 +650,7 @@ describe("migrate() wires MAR-682 at boot, beside MAR-676's own call", () => {
     first.db.closeDb();
 
     const next = await reopen(first.dataDir);
-    expect(version(next.db())).toBe(29);
+    expect(version(next.db())).toBe(30);
     expect(next.describeStoreReconciliation()).toBeNull();
     expect(backupsIn(first.dataDir)).toEqual([]);
   });
@@ -667,7 +667,7 @@ describe("migrate() wires MAR-682 at boot, beside MAR-676's own call", () => {
     // this boot's MAR-682 call finds it present and returns null -- the one
     // reconciliation record on the store is MAR-676's, not a second one that
     // overwrote it.
-    expect(version(handle)).toBe(29);
+    expect(version(handle)).toBe(30);
     expect(tableNames(handle)).toContain("chief_messages");
     expect(next.describeStoreReconciliation()).toMatchObject({
       recorded_version: 24,

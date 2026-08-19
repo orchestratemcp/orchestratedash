@@ -1,6 +1,6 @@
 /**
  * MAR-615's three surfaces, photographed in the real shell: the bottom strip,
- * the chief's spotlight, and the per-agent avatar picker. **Not part of the
+ * the chief's composer, and the per-agent avatar picker. **Not part of the
  * shipped shell.**
  *
  * ## Why a harness of its own
@@ -15,10 +15,29 @@
  * answer, because every render test here is `renderToStaticMarkup` and none of
  * them lay anything out.
  *
+ * ## MAR-696: the same question, a different collision
+ *
+ * The bordered `ChiefBand` this file's own history describes is gone, and with
+ * it `.chief-band`/`.chief-glyph`/`.chief-chat`/`.chief-line` — deleted, not
+ * repurposed, per `app/globals.css`'s own note. `measureComposer` (below,
+ * renamed from `measureBand`) reads the surface that replaced it:
+ * `.chief-composer`, incorporated into the page rather than floating over it,
+ * with the chief's portrait perched *on* the field on purpose now
+ * (`.chief-composer-o`) rather than standing beside it — so "zero overlap
+ * with the composer" is no longer the right invariant; some overlap with
+ * `.chief-input-wrap`, and with `.chief-input`'s own top padding, is the
+ * design (the sprite's feet, not its whole body, land on the field). What
+ * still must stay zero is `overlap_past_padding` below: how far the sprite
+ * reaches past the padding into the row `.chief-input`'s text actually sits
+ * on — the one part a costume must never cover, whichever field it perches on.
+ *
  * So the images are only half of what this writes. `layout.json` carries the
- * portrait's rectangle and the composer's, and the intersection of the two, at
- * every width and in both states. A picture of that band can look perfectly
- * fine at 1280 and have the baton through the textarea at 375; the numbers say
+ * portrait's rectangle and the textarea's, and the intersection of the two, at
+ * every width, in both themes, and in both the collapsed and the expanded
+ * state — each state's own frame forced explicitly per shot rather than
+ * assumed to persist, `capture-fleet-views.ts`'s own lesson about a toggle
+ * that survives navigation: a picture of that field can look perfectly fine
+ * at 1280 and have the O through the typed text at 375; the numbers say
  * which, and they say it the same way whether or not anybody looks closely.
  *
  * ## Density is not swept here, deliberately
@@ -313,22 +332,25 @@ async function ensureComfortable(target: BrowserWindow): Promise<void> {
 }
 
 /**
- * The measurement this harness exists for.
+ * The measurement this harness exists for (renamed from `measureBand`,
+ * MAR-696 — the box it used to measure is gone).
  *
- * `overlap_area` is the intersection of the chief's portrait with the composer,
- * in CSS pixels. Zero is the passing answer and the only one: these are two
- * elements of one band and neither is allowed to sit on the other. It is
- * reported alongside both rectangles rather than as a bare verdict, because a
- * number greater than zero needs to be readable as *which way* they collided.
- *
- * `strip_animated` and `strip_total` are the bottom strip's own claim — every
- * O in it now has a vendored sheet, so the two should agree. They are counted
- * from `is-action` on the avatar rather than from the sheet manifest, which is
- * the difference between "the file exists" and "this page is drawing it".
+ * `overlap_area` is the intersection of the chief's perched portrait with the
+ * **textarea itself** — `.chief-input`, not the whole composer. Some overlap
+ * is the design now, not a defect: `.chief-composer-o`'s own header explains
+ * that the sprite's feet land inside the field's top padding on purpose, the
+ * same way a standing figure's feet sink slightly into the ground it stands
+ * on rather than floating a pixel above it. What must stay zero is
+ * `overlap_past_padding` — the vertical reach of that overlap past
+ * `--space-3` (the field's own top padding, `.chief-input`'s rule), which is
+ * where `.chief-input`'s text actually starts. `overlap_with_field` is
+ * reported alongside both and is *expected* to be positive — the perch
+ * overlapping `.chief-input-wrap`'s own box is the whole point of the
+ * `transform` below.
  */
-async function measureBand(target: BrowserWindow): Promise<unknown> {
+async function measureComposer(target: BrowserWindow): Promise<unknown> {
   return within(
-    "measure band",
+    "measure composer",
     10_000,
     target.webContents.executeJavaScript(
       `(() => {
@@ -347,26 +369,45 @@ async function measureBand(target: BrowserWindow): Promise<unknown> {
            const h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
            return w > 0 && h > 0 ? w * h : 0;
          };
-         const glyph = box(document.querySelector(".chief-glyph"));
-         const chat = box(document.querySelector(".chief-chat"));
-         const line = box(document.querySelector(".chief-line"));
+         const oEl = document.querySelector(".chief-composer-o");
+         const inputEl = document.querySelector(".chief-input");
+         const o = box(oEl);
+         const input = box(inputEl);
+         const field = box(document.querySelector(".chief-input-wrap"));
+         const room = box(document.querySelector(".chief-room"));
          const strip = document.querySelectorAll(".fleet-strip-o .o-avatar");
          let animated = 0;
          strip.forEach((el) => { if (el.classList.contains("is-action")) animated += 1; });
+         /*
+          * How far the O's own bottom edge reaches past where the field's
+          * top padding ends — the boundary the input's text actually starts
+          * at. Negative or zero means the sprite's feet stay inside the
+          * padding (the design); positive means they have reached the text
+          * row, which is the one number this harness refuses.
+          */
+         const padTop = inputEl === null ? null : parseFloat(getComputedStyle(inputEl).paddingTop);
+         const overlapPastPadding =
+           o === null || input === null || padTop === null
+             ? null
+             : Math.round(o.y + o.height - (input.y + padTop));
          return {
            viewport: window.innerWidth,
            page_overflows: root.scrollWidth > root.clientWidth,
-           band_found: document.querySelector(".chief-band") !== null,
-           chief_is_open: document.querySelector(".fleet-stage.chief-is-open") !== null,
-           glyph_box: glyph,
-           chat_box: chat,
-           line_box: line,
-           glyph_is_action: (() => {
-             const el = document.querySelector(".chief-glyph");
-             return el === null ? null : el.classList.contains("is-action");
+           composer_found: document.querySelector(".chief-composer") !== null,
+           composer_is_open: document.querySelector(".chief-composer.is-open") !== null,
+           room_box: room,
+           o_box: o,
+           input_box: input,
+           field_box: field,
+           o_is_action: oEl === null ? null : oEl.classList.contains("is-action"),
+           overlap_area: intersect(o, input),
+           overlap_past_padding: overlapPastPadding,
+           overlap_with_field: intersect(o, field),
+           model_line_found: document.querySelector(".chief-model-line") !== null,
+           room_heading_visible: (() => {
+             const el = document.querySelector(".chief-room-heading");
+             return el === null ? null : el.textContent;
            })(),
-           overlap_area: intersect(glyph, chat),
-           overlap_with_line: intersect(glyph, line),
            strip_found: document.querySelector(".fleet-strip") !== null,
            strip_total: strip.length,
            strip_animated: animated,
@@ -467,42 +508,50 @@ async function run(): Promise<void> {
     await settle(300);
 
     for (const viewport of VIEWPORTS) {
-      /* ---- the fleet page: the spotlight and the strip ---- */
+      /* ---- the fleet page: the composer, collapsed and expanded, and the strip ---- */
       await go(window, "/");
       await resizeTo(window, viewport.width, viewport.height);
       // Reloaded after the resize: a page reads its view once, on mount, and a
       // layout settled at the previous width would be filed under this one.
       await go(window, "/");
 
-      const closed = await measureBand(window);
+      const closed = await measureComposer(window);
       measurements.push({
-        surface: "spotlight",
-        state: "composer-closed",
+        surface: "composer",
+        state: "collapsed",
         viewport: viewport.name,
         theme,
         ...(closed as object),
       });
-      console.log(`[mar615] spotlight closed ${viewport.name}/${theme} ${JSON.stringify(closed)}`);
-      await scrollTo(window, ".chief-band");
-      await shoot(window, `spotlight-closed-${viewport.name}-${theme}`);
+      console.log(`[mar615] composer collapsed ${viewport.name}/${theme} ${JSON.stringify(closed)}`);
+      await scrollTo(window, ".chief-composer");
+      await shoot(window, `composer-collapsed-${viewport.name}-${theme}`);
 
       await scrollTo(window, ".fleet-strip");
       await shoot(window, `strip-${viewport.name}-${theme}`);
 
-      /* ---- the same band with the composer focused ---- */
-      await scrollTo(window, ".chief-band");
+      /*
+       * ---- the same composer expanded (MAR-696) ----
+       *
+       * Forced per frame, not assumed to persist — `capture-fleet-views.ts`'s
+       * own lesson about the density toggle applies here just as directly: a
+       * navigation (`go`, above) unmounts the room, so every frame in this
+       * loop presses focus again rather than trusting the previous frame's
+       * state survived the reload.
+       */
+      await scrollTo(window, ".chief-composer");
       const focused = await focusComposer(window);
-      const open = await measureBand(window);
+      const open = await measureComposer(window);
       measurements.push({
-        surface: "spotlight",
-        state: "composer-focused",
+        surface: "composer",
+        state: "expanded",
         viewport: viewport.name,
         theme,
         composer_focused: focused,
         ...(open as object),
       });
-      console.log(`[mar615] spotlight open ${viewport.name}/${theme} ${JSON.stringify(open)}`);
-      await shoot(window, `spotlight-open-${viewport.name}-${theme}`);
+      console.log(`[mar615] composer expanded ${viewport.name}/${theme} ${JSON.stringify(open)}`);
+      await shoot(window, `composer-expanded-${viewport.name}-${theme}`);
 
       /* ---- the avatar picker, shut and open ---- */
       await go(window, AGENT_ROUTE);
@@ -544,17 +593,24 @@ async function run(): Promise<void> {
    * to a reviewer's eye. Each of these has a picture that looks correct while
    * being wrong.
    */
-  const bands = measurements.filter((entry) => (entry as { surface: string }).surface === "spotlight");
+  const composers = measurements.filter((entry) => (entry as { surface: string }).surface === "composer");
   const pickers = measurements.filter((entry) => (entry as { surface: string }).surface === "picker");
-  const collided = bands.filter((entry) => ((entry as Record<string, number>)["overlap_area"] ?? 0) > 0);
-  const onTheLine = bands.filter(
-    (entry) => ((entry as Record<string, number>)["overlap_with_line"] ?? 0) > 0,
+  const overTheText = composers.filter(
+    (entry) => ((entry as Record<string, number>)["overlap_past_padding"] ?? 0) > 0,
+  );
+  const offTheField = composers.filter(
+    (entry) => ((entry as Record<string, number>)["overlap_with_field"] ?? 0) <= 0,
   );
   const overflowed = measurements.filter(
     (entry) => (entry as { page_overflows: boolean }).page_overflows,
   );
-  const stillChief = bands.filter((entry) => (entry as { glyph_is_action: boolean }).glyph_is_action !== true);
-  const stripGaps = bands.filter(
+  const stillChief = composers.filter((entry) => (entry as { o_is_action: boolean }).o_is_action !== true);
+  const expandedButClosed = composers.filter(
+    (entry) =>
+      (entry as { state: string }).state === "expanded" &&
+      (entry as { composer_is_open: boolean }).composer_is_open !== true,
+  );
+  const stripGaps = composers.filter(
     (entry) =>
       ((entry as Record<string, number>)["strip_total"] ?? 0) !==
       ((entry as Record<string, number>)["strip_animated"] ?? -1),
@@ -567,8 +623,9 @@ async function run(): Promise<void> {
 
   console.log(
     `\n[mar615] wrote ${String(written.length)} images and layout.json to ${OUT}\n` +
-      `[mar615] ${collided.length === 0 ? "portrait and composer never overlap" : `${String(collided.length)} FRAMES OVERLAP THE COMPOSER`}\n` +
-      `[mar615] ${onTheLine.length === 0 ? "portrait never overlaps the chief's sentence" : `${String(onTheLine.length)} FRAMES OVERLAP THE LINE`}\n` +
+      `[mar615] ${overTheText.length === 0 ? "the perched O never covers typed text" : `${String(overTheText.length)} FRAMES HAVE THE O OVER THE TEXTAREA`}\n` +
+      `[mar615] ${offTheField.length === 0 ? "the O perches on the field in every frame" : `${String(offTheField.length)} FRAMES HAVE THE O NOT STANDING ON THE FIELD`}\n` +
+      `[mar615] ${expandedButClosed.length === 0 ? "every expanded frame is actually open" : `${String(expandedButClosed.length)} EXPANDED FRAMES WERE NOT MARKED OPEN`}\n` +
       `[mar615] ${stillChief.length === 0 ? "the chief animates in every frame" : `${String(stillChief.length)} FRAMES DREW A STILL CHIEF`}\n` +
       `[mar615] ${stripGaps.length === 0 ? "every O in the strip animates" : `${String(stripGaps.length)} FRAMES HAD A STILL O IN THE STRIP`}\n` +
       `[mar615] ${emptyPickers.length === 0 ? "the picker drew its options" : `${String(emptyPickers.length)} OPEN PICKERS WERE EMPTY`}\n` +

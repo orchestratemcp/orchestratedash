@@ -75,6 +75,7 @@ import {
 import { stepsNeedingAModel } from "../lib/ai/model-levels";
 import {
   clearAgentModelChoice,
+  clearChiefModelChoice,
   clearFleetLevelModel,
   clearFleetModelDefault,
   clearStepLevelOverride,
@@ -82,6 +83,7 @@ import {
   readFleetLevelModels,
   readStepLevelOverrides,
   writeAgentModelChoice,
+  writeChiefModelChoice,
   writeFleetLevelModel,
   writeFleetModelDefault,
   writeStepLevelOverride,
@@ -1172,7 +1174,7 @@ async function pushNotifyConfiguration(runner: RunnerHandle | null): Promise<voi
  * vault, and it returns above the manifest read with the other two.
  */
 async function performModelAction(
-  action: "choose" | "step" | "list" | "default" | "catalogue" | "level",
+  action: "choose" | "step" | "list" | "default" | "catalogue" | "level" | "chief",
   target: {
     agent_id: string;
     connection_id?: string;
@@ -1200,6 +1202,29 @@ async function performModelAction(
       };
     }
     const written = writeFleetModelDefault(target.provider_id, target.model_id, now);
+    return written
+      ? { ok: true, detail: "Saved." }
+      : {
+          ok: false,
+          detail: "DASH does not recognise that provider or that model name.",
+        };
+  }
+
+  if (action === "chief") {
+    /*
+     * MAR-696. The chief's own row, `default`'s clearing shape exactly: an
+     * absent model id and provider id is the instruction to put it back, and
+     * "back" here means the fleet default rather than nothing — `readEffectiveChiefModel`
+     * is what a reader resolves that through.
+     */
+    if (target.model_id === undefined || target.provider_id === undefined) {
+      clearChiefModelChoice();
+      return {
+        ok: true,
+        detail: "The chief asks under DASH's fleet default again.",
+      };
+    }
+    const written = writeChiefModelChoice(target.provider_id, target.model_id, now);
     return written
       ? { ok: true, detail: "Saved." }
       : {

@@ -40,6 +40,7 @@ import { readFleetConnection, readFleetGrants } from "../fleet/store";
 import { readStandingAnswer } from "../agent-dom/standing-answers";
 import {
   readAgentModelChoice,
+  readChiefModelChoice,
   readFleetLevelModels,
   readFleetModelDefault,
 } from "../ai/model-store";
@@ -148,6 +149,20 @@ function currentOutcomeFor(
     }
     case "fleet_model_default": {
       const current = readFleetModelDefault();
+      return current === null
+        ? { state: "cleared" }
+        : { state: "set", provider_id: current.provider_id, model_id: current.model_id };
+    }
+    /*
+     * MAR-696, ADR 0023 amendment 1. `readChiefModelChoice` rather than
+     * `readEffectiveChiefModel` — this chain describes the chief's own row,
+     * `chief_model_choice`, never the fleet default it falls back to when
+     * that row is absent, which is `fleet_level_model`'s own reason one row
+     * up: comparing against the resolved value would report a setting
+     * nobody made through this chain.
+     */
+    case "chief_model": {
+      const current = readChiefModelChoice();
       return current === null
         ? { state: "cleared" }
         : { state: "set", provider_id: current.provider_id, model_id: current.model_id };

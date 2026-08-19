@@ -1,30 +1,28 @@
 /**
- * The chief's composer and its room, drawn (MAR-648, floating since MAR-696).
+ * The chief's composer and its room, drawn (MAR-648, incorporated MAR-696).
  *
  * `renderToStaticMarkup`, like every render test here, so no effect runs and
- * nothing is clicked. What that reaches is the whole of what MAR-648 asked for
- * on this surface — a box, focus opens a room above it, and the composer does
- * not move — because all three are markup and CSS rather than behaviour.
+ * nothing is clicked. What that reaches is the whole of what MAR-696's
+ * corrected spec asked for on this surface — a rounded field with a perched O
+ * and an enter glyph, a model line always visible underneath, and a room that
+ * opens above the field with a visible heading and its own X and Clear —
+ * because all four are markup and CSS rather than behaviour. What a static
+ * render cannot reach is the Clear button's own effect, which is why that is
+ * tested separately, as the pure function it is filtered through
+ * (`visibleChiefTurns`, in `chief-chat-render.test.tsx`'s sibling file for
+ * that reason — see the bottom of this file).
  *
  * The assertions worth reading are the negative ones: the chief never draws a
- * loader, the unprompted line steps aside rather than sitting above a
- * conversation, and MAR-696 left no button anywhere on this surface.
+ * loader, the unprompted subject stays visible, and there is still no submit
+ * button anywhere on this surface.
  */
 
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { ChiefBand } from "../app/_components/fleet-list";
+import { ChiefChat, visibleChiefTurns } from "../app/_components/chief-chat";
 import { CHIEF_CHAT_COPY } from "../lib/copy/chief-chat";
-import { GLANCE_ALL_CLEAR, type GlanceChip } from "../lib/copy/glance";
-import type { AgentRow } from "../lib/views/types";
-
-const NEEDS_YOU: GlanceChip = {
-  question: "needs_you",
-  label: "needs you",
-  meaning: "This agent is waiting for you to approve something before it can carry on.",
-  tone: "warn",
-};
+import type { AgentRow, ChiefRoomView, ChiefTurnView } from "../lib/views/types";
 
 function row(over: Partial<AgentRow> = {}): AgentRow {
   return {
@@ -47,7 +45,7 @@ function row(over: Partial<AgentRow> = {}): AgentRow {
     },
     avatar: "ninja",
     deploy: { deployable: false, reason: "no_folder" },
-    glance: [GLANCE_ALL_CLEAR],
+    glance: [],
     running: false,
     hosted_on: [],
     favourite: false,
@@ -55,197 +53,281 @@ function row(over: Partial<AgentRow> = {}): AgentRow {
   } as AgentRow;
 }
 
-function band(props: Parameters<typeof ChiefBand>[0]): string {
-  return renderToStaticMarkup(<ChiefBand {...props} />);
+function turn(over: Partial<ChiefTurnView> = {}): ChiefTurnView {
+  return {
+    id: 1,
+    question: "how is my fleet doing",
+    asked: "just now",
+    answer: "Everything is quiet.",
+    failure: null,
+    from_records: true,
+    handoffs: [],
+    matched: [],
+    receipt: [],
+    receipt_note: "Nothing from your records was used for this one.",
+    stale: false,
+    model: null,
+    charge: null,
+    ...over,
+  };
 }
 
-describe("the chief's band carries a composer", () => {
+function view(over: Partial<ChiefRoomView> = {}): ChiefRoomView {
+  return {
+    can_ask: false,
+    model_id: null,
+    model_provider_id: null,
+    model_is_own: false,
+    blocked: null,
+    turns: [],
+    ...over,
+  };
+}
+
+const NOOP = (): void => {
+  /* nothing to do */
+};
+
+function chat(props: Partial<Parameters<typeof ChiefChat>[0]> = {}): string {
+  return renderToStaticMarkup(
+    <ChiefChat
+      agents={[row()]}
+      view={view()}
+      canAct={false}
+      onAsked={NOOP}
+      open={false}
+      onOpen={NOOP}
+      onClose={NOOP}
+      {...props}
+    />,
+  );
+}
+
+describe("the composer, collapsed", () => {
   it("draws a box a person can type in", () => {
-    const html = band({ agent: row(), agents: [row()] });
+    const html = chat();
     expect(html).toContain("<textarea");
     expect(html).toContain(CHIEF_CHAT_COPY.placeholder);
   });
 
   /*
-   * MAR-696. Henrik's own words: *"remove all excess... No button."* The
-   * placeholder above is now the only place that says how to send a question —
-   * `describeAskActivity`'s honesty rule applied to a control instead of a
-   * sentence: an affordance that moves has to still be findable somewhere.
-   *
-   * Not "no button anywhere": the all-clear chip's own `InfoNote` still draws
-   * one (its "what this means" disclosure, unrelated to sending a question),
-   * so the assertion is against the submit control by name rather than against
-   * every `<button` in the band.
+   * MAR-696. Henrik's own words, both passes: "remove all excess... No
+   * button" the first time, and the corrected spec still draws no button —
+   * an enter glyph replaced the Ask button's position, not a second control.
+   * Not "no button anywhere": the swap control and the room's own Clear/Close
+   * are buttons too, and this asserts against the submit control by name.
    */
   it("draws no submit button — Enter is the only way to send", () => {
-    const html = band({ agent: row(), agents: [row()] });
+    const html = chat();
     expect(html).not.toContain(">Ask<");
     expect(html).not.toContain('class="primary"');
   });
 
-  /*
-   * `ask.tsx`'s standing rule, which is why this band refused to draw a box for
-   * as long as MAR-419 was unbuilt. It is satisfied differently here: the box is
-   * live because every press produces a real answer out of records, not because
-   * a model was wired up.
-   */
   it("is never a dead input", () => {
-    const html = band({ agent: row(), agents: [row()] });
-    /*
-     * The box is live, and MAR-696 left it the only control on this surface:
-     * there is no button left to disable on an empty press, only `ask()`'s own
-     * early return (`chief-chat.tsx`) for a question that is all whitespace.
-     */
+    const html = chat();
     expect(html).toContain('<textarea class="chief-input"');
     expect(/<textarea[^>]*\sdisabled/.test(html)).toBe(false);
   });
 
-  it("draws no standing scope note or model line — MAR-683 moved that to per-turn provenance", () => {
-    // MAR-683. The closed band used to carry `.chief-settings`, a scope
-    // headline and (once a model was set) its id, on screen whether or not the
-    // room was even open. That line is gone: what model answered, and what it
-    // read, is now said once per turn, in the receipt beside the answer it
-    // belongs to — never as a standing indicator nobody asked to see yet.
-    const html = band({ agent: row(), agents: [row()] });
-    expect(html).not.toContain("chief-settings");
-    expect(html).not.toContain("I read your own records");
-    expect(html).not.toContain("Nothing said here is saved");
-    expect(html).not.toContain("Asking under");
-  });
-
-  /*
-   * MAR-659. The fleet is this composer's subject and it used to be
-   * announcement-only — `CHIEF_CHAT_COPY.label` inside a `visually-hidden`
-   * span. A person should not need a screen reader to learn this box is not
-   * one particular agent's.
-   */
   it("says whose composer this is, in words a sighted reader sees too", () => {
-    const html = band({ agent: row(), agents: [row()] });
+    const html = chat();
     expect(html).toContain(CHIEF_CHAT_COPY.label);
     expect(html).not.toContain(`<span class="visually-hidden">${CHIEF_CHAT_COPY.label}</span>`);
   });
 
-  /*
-   * The chief answers from props, in the same tick. A loader over a synchronous
-   * read would be the same fabrication MAR-648 forbids on the agent page,
-   * wearing the opposite costume — theatre asserting work where there is none.
-   */
+  /* MAR-696. Claude Code's own composer, the reference on the issue: an enter
+     glyph inside the field on the right, standing in for the button that left. */
+  it("draws an enter glyph, decorative and never a control", () => {
+    const html = chat();
+    expect(html).toContain('<span class="chief-enter-glyph" aria-hidden="true">');
+    expect(html).toContain("↵");
+  });
+
   it("draws no loader, because it never waits", () => {
-    const html = band({ agent: row(), agents: [row()] });
+    const html = chat();
     expect(html).not.toContain("ask-activity");
     /*
-     * This line used to read `not.toContain("is-action")`, and MAR-615 made
-     * that assertion mean something it was never written to mean. `is-action`
-     * was a fair proxy for the loader when the only animated O on this band
-     * would have been one put there by work in flight; the chief was inline
-     * rects and could not carry it. The chief now has a vendored baton-wave
-     * idle sheet, so the class is on this band every time it draws, and the
-     * bare assertion would forbid the portrait rather than the loader.
-     *
-     * What still says what this test means is *how many* O's animate here and
-     * *which*: exactly one, and it is the chief's own portrait. An animating O
-     * belonging to an agent — the shape a loader would take, whether or not it
-     * came wrapped in `.ask-activity` — still fails.
+     * Exactly one animating O, and it is the chief's own perched composer
+     * glyph — `ChiefComposerGlyph`, not the old `ChiefBand` portrait. An
+     * animating O belonging to an agent, or a second one anywhere on this
+     * surface, still fails.
      */
     expect(html.match(/is-action/g)).toHaveLength(1);
-    expect(html).toContain('class="o-avatar chief-glyph is-action"');
+    expect(html).toContain('class="o-avatar chief-composer-o is-action"');
+  });
+
+  it("draws no room, because it is not open", () => {
+    const html = chat();
+    expect(html).not.toContain("chief-room");
+  });
+
+  it("is not marked is-open when closed", () => {
+    const html = chat();
+    expect(html).toContain('class="chief-composer"');
+    expect(html).not.toContain("is-open");
+  });
+});
+
+describe("the model line, always drawn (MAR-696, ADR 0023 amendment 1)", () => {
+  it("names the chief's own pin, distinctly from the fleet default", () => {
+    const html = chat({
+      view: view({ can_ask: true, model_id: "claude-haiku-4-5-20251001", model_provider_id: "anthropic", model_is_own: true }),
+    });
+    expect(html).toContain("The chief&#x27;s own model:");
+    expect(html).toContain("claude-haiku-4-5-20251001");
+  });
+
+  it("names the fleet default when the chief has no pin of its own", () => {
+    const html = chat({
+      view: view({ can_ask: true, model_id: "gpt-5-mini", model_provider_id: "openai", model_is_own: false }),
+    });
+    expect(html).toContain("Asking under DASH&#x27;s fleet default:");
+    expect(html).toContain("gpt-5-mini");
+  });
+
+  it("draws the swap control only where a person can act", () => {
+    const withAccess = chat({
+      canAct: true,
+      view: view({ can_ask: true, model_id: "gpt-5-mini", model_provider_id: "openai", model_is_own: false }),
+    });
+    expect(withAccess).toContain(CHIEF_CHAT_COPY.swap);
+
+    const readOnly = chat({
+      canAct: false,
+      view: view({ can_ask: true, model_id: "gpt-5-mini", model_provider_id: "openai", model_is_own: false }),
+    });
+    expect(readOnly).not.toContain(CHIEF_CHAT_COPY.swap);
+  });
+
+  it("says no model is set, and links to Settings only where a person can act", () => {
+    const withAccess = chat({ canAct: true });
+    expect(withAccess).toContain(CHIEF_CHAT_COPY.no_model);
+    expect(withAccess).toContain(CHIEF_CHAT_COPY.no_model_link);
+    expect(withAccess).toContain('href="/settings/ai"');
+
+    const readOnly = chat({ canAct: false });
+    expect(readOnly).toContain(CHIEF_CHAT_COPY.no_model);
+    expect(readOnly).not.toContain(CHIEF_CHAT_COPY.no_model_link);
+  });
+
+  it("is not `.chief-settings`, the standing scope note MAR-683 removed", () => {
+    const html = chat({
+      view: view({ can_ask: true, model_id: "gpt-5-mini", model_provider_id: "openai", model_is_own: false }),
+    });
+    expect(html).not.toContain("chief-settings");
+    expect(html).not.toContain("I read your own records");
+    expect(html).not.toContain("Nothing said here is saved");
   });
 });
 
 describe("the room opens above the composer", () => {
-  it("shows the composer, named for a screen reader, when it is open and nothing is asked", () => {
-    const html = band({ agent: row(), agents: [row()], chatOpen: true });
-    // MAR-683 dropped the visible `<h2>` and the Clear/Close button-links —
-    // Escape already closes the room, from anywhere in it, not only from the
-    // composer (see the component's own header). What survives is the
-    // accessible name, now carried as an `aria-label` rather than a heading a
-    // sighted reader had to read past on every open.
-    expect(html).toContain(`aria-label="${CHIEF_CHAT_COPY.heading}"`);
-    expect(html).not.toContain("chief-room-head");
-    expect(html).not.toContain("chief-room-actions");
-    // The composer is still there, and after the room in the document — which
-    // is what "the room appears above it" means in a source order.
-    expect(html.indexOf("chief-room")).toBeLessThan(html.indexOf("chief-compose"));
+  it("shows a visible heading now, and the composer stays after it in source order", () => {
+    const html = chat({ open: true });
+    // MAR-696 brought the heading back as text a sighted reader sees, not
+    // only an `aria-label` — the reversal of MAR-683's own choice, made for
+    // a different room this time (the Clear button beside it is new).
+    expect(html).toContain(`<p class="chief-room-heading">${CHIEF_CHAT_COPY.heading}</p>`);
+    // `class="chief-compose"` rather than the bare substring "chief-compose",
+    // which is also a prefix of the outer wrapper's own "chief-composer" —
+    // an unquoted match would find that first and report the room as later
+    // in source order than it actually is.
+    expect(html.indexOf('class="chief-room"')).toBeLessThan(html.indexOf('class="chief-compose"'));
   });
 
-  /*
-   * MAR-659, ADR 0023. Henrik's own report: he changed view, came back, and the
-   * thread was blank.
-   *
-   * The shape half of that issue answered it by explaining the emptiness —
-   * *"leaving this page clears this chat"* — which was the honest thing to say
-   * about a chief that really did forget. MAR-659 removed the cause; MAR-683
-   * then removed the scope note itself as standing chrome. Both wordings stay
-   * refused: a thread that survives must not carry a sentence telling a reader
-   * it does not, whether or not anything else replaces it.
-   */
+  it("draws an X to collapse and a Clear button, both MAR-683 removed and MAR-696 restores", () => {
+    const html = chat({ open: true, view: view({ turns: [turn()] }) });
+    expect(html).toContain('class="chief-room-close"');
+    expect(html).toContain("Close the chief");
+    expect(html).toContain('class="chief-room-clear"');
+    expect(html).toContain(">Clear<");
+    // The visible label stays short — every button in this system renders
+    // upper-case, and a full sentence shouted in caps reads as an alarm.
+    // The fuller, honest scope is still reachable, as `title`.
+    expect(html).toContain("Clears what");
+  });
+
+  it("disables Clear when there is nothing to clear", () => {
+    const html = chat({ open: true, view: view({ turns: [] }) });
+    expect(/class="chief-room-clear"[^>]*\sdisabled/.test(html)).toBe(true);
+  });
+
+  it("leaves Clear enabled once a turn exists", () => {
+    const html = chat({ open: true, view: view({ turns: [turn()] }) });
+    expect(/class="chief-room-clear"[^>]*\sdisabled/.test(html)).toBe(false);
+  });
+
   it("no longer tells a returning reader their conversation was cleared", () => {
-    const html = band({ agent: row(), agents: [row()], chatOpen: true });
+    const html = chat({ open: true });
     expect(html).not.toContain("Nothing said here is saved");
     expect(html).not.toContain("is expected, not a lost conversation");
   });
 
-  /*
-   * MAR-683. The always-on "I can read your records, but I cannot write you a
-   * sentence yet" block is gone — `performChiefAction` already puts the same
-   * headline in a turn's own feedback line on the one path that needs it (a
-   * question that would have gone to a model), which `describeChiefNoModel`'s
-   * own unit test in `chief-chat-copy.test.ts` still covers. What a static
-   * render can still prove, and what actually matters here, is the standing
-   * half of MAR-659's rule: with no model configured and nothing asked yet, the
-   * box is not greyed out. A composer disabled here would be a dead input where
-   * the records-only question still works.
-   */
   it("leaves the box working with no model configured and nothing asked", () => {
-    const html = band({ agent: row(), agents: [row()], chatOpen: true });
+    const html = chat({ open: true });
     expect(html).not.toContain("chief-blocked");
     expect(html).not.toContain("chief-scope");
     expect(html).toContain('<textarea class="chief-input"');
     expect(/<textarea[^>]*\sdisabled/.test(html)).toBe(false);
   });
 
-  /*
-   * Both are the chief talking. Leaving them together would put a sentence
-   * about whichever card is centred directly above a conversation about
-   * something the person actually asked — one speaker saying two unrelated
-   * things at once, which is MAR-646's duplication rather than a second opinion.
-   */
-  it("puts the unprompted line away while the room is open", () => {
-    const closed = band({ agent: row({ glance: [NEEDS_YOU] }), agents: [row({ glance: [NEEDS_YOU] })] });
-    const open = band({
-      agent: row({ glance: [NEEDS_YOU] }),
-      agents: [row({ glance: [NEEDS_YOU] })],
-      chatOpen: true,
+  it("marks the composer itself while its room is open", () => {
+    const html = chat({ open: true });
+    expect(html).toContain("chief-composer is-open");
+  });
+
+  it("draws every turn handed to it", () => {
+    const html = chat({
+      open: true,
+      view: view({ turns: [turn({ id: 1, question: "one" }), turn({ id: 2, question: "two" })] }),
     });
-    expect(closed).toContain(NEEDS_YOU.meaning);
-    expect(open).not.toContain(NEEDS_YOU.meaning);
-  });
-
-  it("keeps the chief's glyph, because that is who is speaking", () => {
-    const html = band({ agent: row(), agents: [row()], chatOpen: true });
-    expect(html).toContain("chief-glyph");
-  });
-
-  /*
-   * MAR-696 stopped the cards giving up any height for an open room — the room
-   * floats over them now (`app/globals.css`'s `.chief-chat`) rather than
-   * growing the stage's own row. `is-chatting` survives as the band's own
-   * open-state marker, which is what lets the docked band's border pick up the
-   * accent while its floating room is showing.
-   */
-  it("marks the band itself while its floating room is open", () => {
-    const html = band({ agent: row(), agents: [row()], chatOpen: true });
-    expect(html).toContain("is-chatting");
+    expect(html).toContain("one");
+    expect(html).toContain("two");
   });
 });
 
-describe("the band without a chat", () => {
-  /*
-   * `ChiefBand` is exported for render tests that predate the composer and hold
-   * no open state. A required handler would have made the band untestable to
-   * keep a prop only one caller in the application can supply.
-   */
-  it("still renders when no handlers are given", () => {
-    expect(() => band({ agent: row(), agents: [row()] })).not.toThrow();
+describe("the composer without handlers", () => {
+  it("still renders when only the required props are given", () => {
+    expect(() =>
+      renderToStaticMarkup(
+        <ChiefChat
+          agents={[]}
+          view={view()}
+          canAct={false}
+          onAsked={NOOP}
+          open={false}
+          onOpen={NOOP}
+          onClose={NOOP}
+        />,
+      ),
+    ).not.toThrow();
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * `visibleChiefTurns`: the Clear button's own effect, pure (MAR-696)
+ * ---------------------------------------------------------------------- */
+
+describe("visibleChiefTurns — what Clear actually filters", () => {
+  it("returns every turn when nothing has been cleared", () => {
+    const turns = [turn({ id: 1 }), turn({ id: 2 })];
+    expect(visibleChiefTurns(turns, null)).toEqual(turns);
+  });
+
+  it("drops every turn at or before the cleared boundary", () => {
+    const turns = [turn({ id: 1 }), turn({ id: 2 }), turn({ id: 3 })];
+    expect(visibleChiefTurns(turns, 2).map((t) => t.id)).toEqual([3]);
+  });
+
+  it("keeps a turn asked after the clear", () => {
+    const turns = [turn({ id: 1 })];
+    // Cleared through id 1, then a new turn (id 2) arrives — the ordinary
+    // shape once `onAsked` re-reads the view after a fresh question.
+    const next = [...turns, turn({ id: 2 })];
+    expect(visibleChiefTurns(next, 1).map((t) => t.id)).toEqual([2]);
+  });
+
+  it("clears to empty when every turn is at or before the boundary", () => {
+    const turns = [turn({ id: 1 }), turn({ id: 2 })];
+    expect(visibleChiefTurns(turns, 2)).toEqual([]);
   });
 });

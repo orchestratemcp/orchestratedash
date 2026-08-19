@@ -294,6 +294,15 @@ interface DashShellClient {
     model_id?: string;
   }): Promise<CommandResult>;
   /**
+   * The chief's own model, read before the fleet default rather than instead
+   * of it (MAR-696, ADR 0023 amendment 1).
+   *
+   * Optional for the three above's reason, and the same degradation: a shell
+   * older than this command draws the model line already in force — it comes
+   * through the view — and cannot change it. Reads, refuses to act.
+   */
+  setChiefModel?(args: { provider_id?: string; model_id?: string }): Promise<CommandResult>;
+  /**
    * Asking an agent a question (MAR-545).
    *
    * Optional for the reason every method here is, and this is the one where the
@@ -953,7 +962,8 @@ async function modelCommand(
     | "listModels"
     | "setDefaultModel"
     | "listProviderModels"
-    | "setLevelModel",
+    | "setLevelModel"
+    | "setChiefModel",
   args: Record<string, unknown>,
   cannot: string,
 ): Promise<CommandResult> {
@@ -1040,6 +1050,20 @@ export async function setLevelModel(args: {
   model_id?: string;
 }): Promise<CommandResult> {
   return modelCommand("setLevelModel", args, "change what one kind of step runs on");
+}
+
+/**
+ * Set or clear the chief's own model (MAR-696).
+ *
+ * `setDefaultModel`'s exact shape: no arguments is how it is cleared, and
+ * clearing puts the chief back on DASH's fleet default rather than on
+ * nothing — `readEffectiveChiefModel` is what a reader resolves that
+ * through.
+ */
+export async function setChiefModel(
+  args: { provider_id?: string; model_id?: string } = {},
+): Promise<CommandResult> {
+  return modelCommand("setChiefModel", args, "change the model the chief asks under");
 }
 
 /**

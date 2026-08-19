@@ -642,6 +642,14 @@ const dashShell = {
    */
   setLevelModel: (args: { provider_id: string; level: string; model_id?: string }) =>
     send("model.level", dropUnset(args)),
+  /**
+   * The chief's own model, read before the fleet default rather than instead
+   * of it (MAR-696). A fourth method carrying no agent id, on the three
+   * above's terms — omitting both fields clears the chief's own pin, in
+   * `setDefaultModel`'s shape: the absent field is the instruction.
+   */
+  setChiefModel: (args: { provider_id?: string; model_id?: string }) =>
+    send("model.chief", dropUnset(args)),
 
   /**
    * Ask this agent's model a question about what it has saved (MAR-545).

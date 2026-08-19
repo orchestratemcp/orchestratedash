@@ -558,6 +558,17 @@ export interface ChiefRoomView {
    * no friendlier name to give.
    */
   model_id: string | null;
+  /**
+   * The provider behind `model_id`, or null when `model_id` is. MAR-696: what
+   * the composer's swap control lists models for.
+   */
+  model_provider_id: string | null;
+  /**
+   * Whether `model_id` is the chief's own pin (MAR-696) rather than the fleet
+   * default it falls back to when there is none. False when `model_id` is
+   * null too.
+   */
+  model_is_own: boolean;
   /** Why the model half is unavailable, or null when it is available. */
   blocked: { headline: string; meaning: string } | null;
   /** The kept conversation, oldest first. */

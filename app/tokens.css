@@ -352,6 +352,18 @@
   --radius-lg: 0px;
 
   /*
+   * MAR-696. The one declared exception, argued for and spent exactly the way
+   * the paragraph above says an exception must be: named in this file, not
+   * slipped into a stylesheet nobody re-reads. Henrik, 2026-08-19, on the
+   * fleet page's chief composer specifically — *"rounded edges (explicit
+   * exception to Bit-Command's zero-corner rule, Henrik's call for this
+   * control)"* — never generalised, so `tests/tokens.test.ts` asserts every
+   * other `--radius-*` name still reads `0px` and only `.chief-composer`
+   * reaches for this one.
+   */
+  --radius-chief-composer: 20px;
+
+  /*
    * "Pixel-shading": a 1px offset line of a darker shade, which is this system's
    * whole answer to a drop shadow. Spent as a zero-blur `box-shadow`, so it is a
    * hard edge and never a gradient.
