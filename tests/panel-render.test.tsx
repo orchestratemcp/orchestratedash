@@ -533,15 +533,27 @@ describe("the panel asks the user for nothing", () => {
 
   it("adds no link of its own", () => {
     /*
-     * The honest form of the claim. No section type takes a URL, so the panel
-     * contributes none — and this fixture's digest items carry no source link,
-     * so a link appearing here would have come from the panel rather than from
-     * the artifact. A digest that *does* carry one draws it exactly as the run
-     * detail page already does; that is the artifact contract's link, not this
-     * vocabulary's.
+     * The honest form of the claim, and MAR-698 sharpened it.
+     *
+     * No section type takes a URL, so the panel vocabulary contributes no link
+     * — that is what this test is about and it is unchanged. What changed is
+     * that "therefore there are no anchors at all" stopped being a safe way to
+     * say it: `DigestBody` now draws the digest's own collected addresses as
+     * links on every surface, and this fixture carries one in
+     * `sources_fetched`. The same qualification `<details>` already earned in
+     * the control list above, for the same reason and from the same field.
+     *
+     * So the assertion names the artifact's own addresses rather than counting
+     * anchors. A link the *panel* invented would fail it exactly as before.
      */
-    expect(html).not.toContain("<a ");
-    expect(html).not.toContain("href=");
+    const collected = (digest.sources_fetched ?? []).map((source) => source.source_url);
+    expect(collected.length).toBeGreaterThan(0);
+
+    const linked = [...html.matchAll(/href="([^"]*)"/g)].map((match) => match[1]);
+    expect(linked.length).toBeGreaterThan(0);
+    for (const address of linked) {
+      expect(collected, address).toContain(address);
+    }
   });
 
   it("carries no grounding chip, because a verdict is DASH's and renders outside", () => {

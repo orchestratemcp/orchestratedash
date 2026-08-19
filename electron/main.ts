@@ -37,6 +37,7 @@ import { ignoreBrokenPipeErrors } from "../lib/shell/pipe-guard";
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from "electron";
 
 import { exportBriefAsPdf } from "./brief-pdf";
+import { openAgentExport, openCollectedLink } from "./open-out";
 import { readUiScale, writeUiScale } from "./ui-scale";
 import { DEFAULT_UI_SCALE, UI_SCALES, parseUiScale, type UiScale } from "../lib/views/ui-scale";
 
@@ -117,6 +118,7 @@ import {
   type HostActionResult,
   type IdentityAction,
   type RunnerLifecycleResult,
+  type OpenAction,
   type StandingAnswerAction,
   type WorkspaceAction,
   type WorkspaceActionResult,
@@ -959,12 +961,21 @@ export function registerCommandChannel(
         // from an artifact DASH is already holding, which is why a machine with
         // no bundled runner can still export a briefing it has.
         if (action === "export_brief") {
-          return exportBriefAsPdf(target.agent_id, target.artifact_id ?? "");
+          return exportBriefAsPdf(dataDir, target.agent_id, target.artifact_id ?? "");
         }
         return action === "download"
           ? workspaceDownload(runner, target.artifact_id ?? "")
           : workspaceAction(runner, action, target);
       },
+      // MAR-697, MAR-698. The only route by which a press inside DASH's window
+      // can start something outside it. Both gates live in `electron/open-out.ts`
+      // beside the `shell` call they guard rather than here — `lib/shell/ipc.ts`
+      // states why at the seam: a rule written here is a rule a second
+      // implementation could forget.
+      openAction: (action: OpenAction, target) =>
+        action === "link"
+          ? openCollectedLink(target.url)
+          : openAgentExport(dataDir, target.agent_id ?? "", target.file),
       // MAR-576. The only route in DASH that rewrites an author's manifest, and
       // the ownership gate that makes that safe lives inside it rather than at
       // the seam — see `refreshSampleAgent`.
