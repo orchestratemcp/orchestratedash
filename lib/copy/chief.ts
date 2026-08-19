@@ -15,15 +15,12 @@
  *
  * ## What this is not, said plainly because the name collides
  *
- * **This is not the Chief chat.** MAR-419 is that, it is unbuilt, and it is
- * blocked on a fleet-wide selection over MAR-545's completion layer
- * (`docs/mar-545-handoff.md`). Nothing here calls a model, spends a key, or
- * takes a question. When MAR-419 lands it replaces the band's action with a real
- * input; until then the band's action is the one true thing in reach — the
- * per-agent Ask that MAR-545 already shipped on the agent's own workspace.
- *
- * So there is no dead input anywhere in this feature, which is `ask.tsx`'s
- * standing rule and the reason that component's union has no arm for one.
+ * **This is not the Chief chat.** MAR-648 is that (`app/_components/chief-chat.tsx`),
+ * and it long ago replaced the standing "Ask {agent}" link this module used to
+ * hand the band — MAR-696 removed that link along with the chat's own submit
+ * button, leaving nothing here that draws a control at all. Nothing in this
+ * module calls a model, spends a key, or takes a question; it only writes the
+ * one sentence the band says about the agent in the middle, unprompted.
  *
  * ## It invents nothing, and the shape is what enforces that
  *
@@ -81,13 +78,6 @@ export interface ChiefLine {
   note: string | null;
   /** The second line: DASH's record of whether this agent has ever worked. */
   runs: string;
-  /**
-   * What the action under the chief says.
-   *
-   * Names the agent, because the chief is standing under a row of them and "Ask"
-   * alone would be a button whose object is a scroll position.
-   */
-  action: string;
 }
 
 /**
@@ -138,7 +128,6 @@ export function describeChief(facts: ChiefFacts): ChiefLine | null {
     says: isAllClear ? "All clear." : spoken.meaning,
     note: isAllClear ? spoken.meaning : null,
     runs: facts.runs,
-    action: `Ask ${facts.agent}`,
   };
 }
 

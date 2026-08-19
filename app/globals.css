@@ -2377,34 +2377,30 @@ code {
  * `app/_components/fleet-list.tsx` carries the argument for what the chief is
  * allowed to say and why its portrait is a glyph rather than one of the O's.
  * What this rule does is **give it a third of the stage**: Henrik asked for
- * the cards in two thirds and the chief in one third, in every view. MAR-419
- * is the chat that will fill this band and is not built; a band that is
- * already one third of the page does not jump the day the input lands.
+ * the cards in two thirds and the chief in one third, in every view.
  *
  * It is a grid area of `.fleet-stage`, not sticky. Sticky was the fix when
  * the cards were document-tall and the chief fell below the fold. The stage
  * now owns the height, so the chief is on screen because it is a row of the
  * layout rather than because it pins over the list.
+ *
+ * ## MAR-696: the composer stopped living in this box
+ *
+ * Until now `.chief-chat` was a second grid row here, and an open room grew
+ * that row over the cards' own share of the stage. Henrik asked for a floating
+ * window instead — *"remove all excess... I only want a floating chat
+ * window"* — so `.chief-chat` is `position: fixed` now (below), anchored to
+ * the page rather than laid out as one of this band's rows. It is not
+ * anchored to this box: a first pass tried that, and at 375px the band shrinks
+ * to just the glyph and the sentence while the composer stayed the same
+ * height, so the floating window rode up over the portrait it shares a corner
+ * with. `overflow: hidden` is gone from here regardless, because this band no
+ * longer has a second row whose overflow it was ever guarding.
  */
 .chief-band {
   min-height: 0;
-  overflow: hidden;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  /*
-   * MAR-648. The chief says its piece at its own height; the composer takes the
-   * rest of the band.
-   *
-   * Before the composer existed every child sat on one implicit row and the
-   * band's spare height went into that row, which was invisible with only a
-   * sentence in it. A second row stopped it being invisible: the sentence row
-   * kept stretching, the composer floated in the middle of the band, and at
-   * 375px — where the band is short enough that a `1fr` row collapses to
-   * nothing — the glyph overflowed its own row and was painted over the buttons
-   * beneath it. The capture run caught that. Nothing overflowed the page and no
-   * test could have seen it.
-   */
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   gap: var(--space-4);
   margin: 0;
@@ -2419,13 +2415,11 @@ code {
   background: var(--surface-1);
 }
 
-.chief-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  align-items: center;
-  align-self: start;
-  justify-content: flex-end;
+/* The docked band picks up the accent border while its floating room is
+   open — the one visible sign, on the band itself, of what `is-chatting`
+   means now that it no longer changes the band's own layout. */
+.chief-band.is-chatting {
+  border-color: var(--accent);
 }
 
 .chief-line {
@@ -2478,37 +2472,21 @@ code {
   }
 
   /*
-   * MAR-648. A stack, not a grid, and the band scrolls.
+   * MAR-648. A stack, not a grid: the glyph moves above the sentence rather
+   * than beside it, which at this width is the better reading anyway — the
+   * speaker over what was said.
    *
-   * Two separate failures, both caught by the capture run and neither visible
-   * to a test. The rigid `minmax(0, 1fr)` first row collapsed to nothing at
-   * 375px and let the glyph paint over the buttons beneath it. Replacing it
-   * with three auto rows fixed that and left the second: four children in a
-   * two-column grid are placed implicitly, and the composer landed back on the
-   * actions row on top of the Ask button.
-   *
-   * Placing all four explicitly would work and would have to be undone for the
-   * open room, where two of them are not rendered at all. A flex column has no
-   * placement to get wrong: the children stack in source order whichever of
-   * them exist. The glyph moves above the sentence rather than beside it, which
-   * at this width is the better reading of the two anyway — the speaker over
-   * what was said.
-   *
-   * `overflow: auto` because at 375px the band genuinely cannot fit a sentence,
-   * two buttons and a composer, and `hidden` resolved that by cutting the box a
-   * person is meant to type into in half. Scrolling keeps everything reachable,
-   * and the composer is last in the band, which is where a thumb already is.
+   * No `overflow` override here (MAR-696 dropped the one this rule used to
+   * carry): the band holds only the glyph and the sentence now that the
+   * composer floats out of it (below), and clipping the band would clip the
+   * floating room the moment it grew taller than the band's own shrunken
+   * height.
    */
   .chief-band {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
     padding: var(--space-3) var(--space-4);
-    overflow: auto;
-  }
-
-  .chief-actions {
-    justify-content: stretch;
   }
 
   /*
@@ -2517,9 +2495,7 @@ code {
    * `.chief-line` carries `min-height: 0; overflow: auto` so it can scroll
    * inside the grid's fixed row. In a flex column those two combine into
    * something else entirely: the default `flex-shrink: 1` plus a zero minimum
-   * lets it collapse to no height at all when the band is tight, which is what
-   * the 375px capture showed — a band holding a glyph and two buttons and no
-   * sentence, with nothing overflowing and nothing to measure.
+   * lets it collapse to no height at all when the band is tight.
    */
   .chief-line {
     flex: none;
@@ -2528,31 +2504,8 @@ code {
   }
 
   /*
-   * Half the stage rather than a third, and only here.
-   *
-   * At 1280 a third of the page is plenty for a sentence and a composer. At
-   * 375 it is about 230px, which is not enough for a sentence, two buttons and
-   * a box — and the box is the one that ended up below the fold. The cards give
-   * up height they were already scrolling through at this width; the composer
-   * is on screen on arrival, which is the whole claim MAR-648 makes for it.
-   */
-  .fleet-stage {
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1.4fr);
-  }
-
-  /*
    * The glyph gives up most of its area here, and that is a fix rather than a
    * tidy-up.
-   *
-   * At 375px the band has about 230px to hold a sentence, two buttons and a
-   * composer, and at 48px square the speaker's portrait alone was a fifth of
-   * it — enough to push the box below the fold. MAR-612 was corrected once for
-   * exactly this: *"a view whose distinguishing feature is off screen on
-   * arrival is a view nobody would choose"*, said then about the chief itself
-   * and true now about the thing MAR-648 calls the front door.
-   *
-   * It stays a real glyph rather than disappearing, because it is who is
-   * speaking and the replies below are attributed to it.
    *
    * ## Why this sets `--o-size`, and why it is `!important` (MAR-615)
    *
@@ -2564,8 +2517,7 @@ code {
    *    class, so specificity ties and source order decides — and `.o-avatar`'s
    *    `width: var(--o-size)` is declared some 2,500 lines further down. A
    *    media query adds no specificity, so this rule simply never applied and
-   *    the chief drew at 100px in a band with 230px to spend. The composer
-   *    collapsed to *zero height*: not pushed below the fold, absent.
+   *    the chief drew at 100px in a band with far less room to spend.
    * 2. **Width alone would have cropped rather than scaled.** The sprite is a
    *    background sheet sized `calc(var(--o-size) * var(--o-frames))`, so
    *    shrinking the box without shrinking the sheet shows a corner of one
@@ -2587,11 +2539,6 @@ code {
    */
   .chief-glyph {
     --o-size: 25px !important;
-  }
-
-  .chief-actions > .button-link {
-    flex: 1;
-    text-align: center;
   }
 }
 
@@ -7899,53 +7846,82 @@ main:has(.agent-cockpit) {
 }
 
 /* ------------------------------------------------------------------------ *
- * The chief's composer and its room
+ * The chief's composer and its room, floating (MAR-648, MAR-696)
  * ------------------------------------------------------------------------ */
 
 /*
- * The band gives the chief two thirds while the room is open.
+ * A window over the whole stage, not a row of the band.
  *
- * The cards are not hidden and not removed — they lose height and keep their
- * scroll, which is `FleetList`'s standing rule that no view ever takes an agent
- * out of the document or the tab order. "Expands over" is a ratio, not a
- * curtain.
- */
-.fleet-stage.chief-is-open {
-  grid-template-rows: minmax(0, 1fr) minmax(0, 2fr);
-}
-
-/*
- * Full width of the band's three columns, under the glyph and the line — and
- * docked to the bottom of the space that leaves.
+ * `position: fixed` rather than anchored to `.chief-band`'s own box, and that
+ * is a correction rather than the first design: the band shrinks to just the
+ * glyph and the sentence now that the composer floats, and a composer
+ * anchored to that shrunken box rides up over the glyph the moment it needs
+ * more height than the band is tall. `electron/capture-mar615.ts` caught it
+ * at 375px — `overlap_area: 625`, the whole portrait sitting inside the
+ * composer's own rectangle — in four frames a viewport-relative anchor cannot
+ * reach, because it no longer shares a containing block with the band at all.
  *
- * `align-self: end` is Henrik's own word for this surface: *"dedicate a space at
- * the bottom"*. It also makes the composer's position independent of how much
- * the chief happens to be saying above it, so a band whose sentence grows by a
- * line does not move the box under somebody's cursor.
+ * `right` clears `.fleet-rail`, the same `--sidebar-width` the rail's own
+ * column is. Below 900px `.fleet-shell` drops that column — the rail moves
+ * above the page instead — and the override below removes the offset with it.
+ *
+ * Henrik's own words are why it is a window at all — *"remove all excess... I
+ * only want a floating chat window"* — and MAR-528's elevation rule
+ * ("Surfaces — tonal layering, crisp borders, no shadows") is why it reads as
+ * one without a drop shadow: a step up the surface ramp and a 1px border are
+ * this system's whole vocabulary for depth, so `--surface-2` against the
+ * page's own `--surface-0`/`--surface-1` is the lift.
+ *
+ * Both states — the compact bar and the open room above it — are this one box;
+ * only whether `.chief-room` is in the document changes its height, and it
+ * grows upward because the anchor is the box's bottom edge, not its top.
  */
 .chief-chat {
-  grid-column: 1 / -1;
-  align-self: end;
+  position: fixed;
+  right: calc(var(--sidebar-width) + var(--space-6));
+  bottom: var(--space-6);
+  z-index: 20;
   display: grid;
   gap: var(--space-2);
-  min-height: 0;
-  width: 100%;
+  width: min(24rem, 100%);
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
 }
 
-/* Open, the room wants the height, so the chat stops docking and fills. */
-.chief-band.is-chatting .chief-chat {
-  align-self: stretch;
+@media (max-width: 900px) {
+  /* `.fleet-shell` drops the sidebar column at this width — the rail moves
+     above the page — so there is nothing left of the page edge to clear. */
+  .chief-chat {
+    right: var(--space-4);
+  }
+}
+
+@media (max-width: 760px) {
+  /* Full width of the page rather than a fixed column — the same width a
+     bottom sheet would claim, without a second positioning scheme for it. */
+  .chief-chat {
+    left: var(--space-3);
+    right: var(--space-3);
+    bottom: var(--space-3);
+    width: auto;
+  }
 }
 
 /*
- * MAR-659, from ADR 0022's proposal: this used to draw its own border and its
- * own `--surface-0` against `.chief-band`'s `--surface-1` — a bordered box
- * inside a bordered band, and one of the four named reasons the room read as
- * "edgy" rather than as a soft, Claude/ChatGPT-shaped conversation. The band's
- * own frame is the only border this surface needs.
+ * MAR-659, from ADR 0022's proposal: this used to draw no border of its own
+ * and lean on `.chief-band`'s frame — a bordered box inside a bordered band
+ * was one of the four named reasons the room read as "edgy" rather than as a
+ * soft, Claude/ChatGPT-shaped conversation. MAR-696 moved the composer out of
+ * that band entirely, so `.chief-chat`'s own border (above) is this surface's
+ * frame now; what is left here is only the cap that keeps an open thread from
+ * growing taller than the window it is floating in — past this height it
+ * scrolls itself rather than pushing the composer off the top of the page.
  */
 .chief-room {
   min-height: 0;
+  max-height: min(24rem, calc(100vh - 10rem));
   overflow: auto;
 }
 
@@ -8151,14 +8127,8 @@ main:has(.agent-cockpit) {
   color: var(--warn);
 }
 
-.chief-compose {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-2);
-}
-
 .chief-field {
-  flex: 1 1 auto;
+  display: block;
   min-width: 0;
 }
 
@@ -8192,18 +8162,6 @@ main:has(.agent-cockpit) {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-color: var(--accent);
-}
-
-@media (max-width: 760px) {
-  /*
-   * The band stacks at this width already. The room keeps a floor so it is a
-   * room rather than a letterbox — below this the cards scroll, which is the
-   * trade a narrow window has to make and the one the reader chose by opening
-   * the composer.
-   */
-  .fleet-stage.chief-is-open {
-    grid-template-rows: minmax(0, auto) minmax(12rem, 2fr);
-  }
 }
 
 /* ---------------------------------------------------------------------- *

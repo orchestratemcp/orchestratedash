@@ -71,9 +71,13 @@ export const CHIEF_CHAT_COPY = {
    * different kinds of question and a person cannot guess that from a box. The
    * first is a standing question it answers itself; the second is one it hands
    * to an agent. Somebody who types either gets the shape of the thing back.
+   *
+   * MAR-696 removed the submit button — Henrik's own words, "No button." — so
+   * this is also the only place left that says how to send a question. The
+   * trailing clause is what the button used to say with its label rather than
+   * its position.
    */
-  placeholder: "What needs me? Or: who reads the news?",
-  submit: "Ask",
+  placeholder: "What needs me? Or: who reads the news? Press Enter to ask.",
   /**
    * The scrollback's heading.
    *

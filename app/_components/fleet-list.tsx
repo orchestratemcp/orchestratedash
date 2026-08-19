@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -340,12 +339,16 @@ export function FleetList({
   );
 
   /*
-   * MAR-648. Whether the chief's room is open over the cards.
+   * MAR-648. Whether the chief's room is open, floating over the cards.
    *
-   * Held here rather than inside `ChiefChat` because it is a fact about the
-   * *stage*: the band grows and the cards give up their two thirds, which is a
-   * decision only the element that owns both tracks can take. `ChiefChat` says
-   * when it should change and this decides what that looks like.
+   * Held here rather than inside `ChiefChat` because `ChiefBand` is what draws
+   * both the docked band and the floating room, so it is the element in a
+   * position to pass the fact down to whichever of its own children need it —
+   * `ChiefChat` says when it should change and this only remembers the answer.
+   * MAR-696 stopped the cards giving up any height for an open room — the room
+   * floats over them now instead of growing the stage's own row — but the state
+   * itself still belongs here for the same reason it always did: it says
+   * whether the fleet's own band is mid-conversation, not where anybody is.
    *
    * React state and not the address, which is the opposite of the call
    * `lib/views/agent-stage.ts` made for the agent page's stages — and the
@@ -360,7 +363,7 @@ export function FleetList({
   const [chiefOpen, setChiefOpen] = useState(false);
 
   return (
-    <div className={chiefOpen ? "fleet-stage chief-is-open" : "fleet-stage"}>
+    <div className="fleet-stage">
       <div className="fleet-cards">
         {/*
           MAR-640. A filter that hides everybody says so rather than leaving a
@@ -444,9 +447,14 @@ export function spotlightPosition(index: number, centred: number): string | unde
  * that box is safe to draw: it is not a dead input, because every press produces
  * a real answer out of records this component already has in its props.
  *
- * The per-agent Ask has not gone anywhere. It is what a routed reply links to,
- * which is the same destination this band's action always pointed at — reached
- * now by asking a question rather than by knowing in advance which agent to ask.
+ * The per-agent Ask has not gone anywhere. It is what a routed reply links to
+ * (`ChiefChat`'s `ChiefHandoff`, drawn under a turn that named an agent) — the
+ * same destination this band's own `chief-actions` link used to point at
+ * without a question having been asked first. MAR-696 removed that standing
+ * link along with this composer's own submit button: Henrik's own words,
+ * *"remove all excess... No button."* Nothing about reaching an agent through
+ * the chief changed, only the affordance that pointed there before anybody had
+ * typed anything.
  *
  * ## The chief is not one of the O's, and now has its own portrait anyway
  *
@@ -546,51 +554,34 @@ export function ChiefBand({
           )}
         </p>
       ) : (
-        <>
-          <div className="chief-line">
+        <div className="chief-line">
+          {/*
+            The agent's name in the same monospace the card used to give it
+            in its header band, so the thing the chief is talking about is
+            recognisable as the portrait above rather than as a new noun.
+          */}
+          <p className="chief-says">
+            <code>{line.agent}</code> — {line.says}
             {/*
-              The agent's name in the same monospace the card used to give it
-              in its header band, so the thing the chief is talking about is
-              recognisable as the portrait above rather than as a new noun.
+              MAR-639. The all-clear chip's whole sentence, behind the note
+              rather than loose in the line — `ChiefLine.note`'s own header
+              states which chip this is and why.
             */}
-            <p className="chief-says">
-              <code>{line.agent}</code> — {line.says}
-              {/*
-                MAR-639. The all-clear chip's whole sentence, behind the note
-                rather than loose in the line — `ChiefLine.note`'s own header
-                states which chip this is and why.
-              */}
-              {line.note === null ? null : <InfoNote>{line.note}</InfoNote>}
-            </p>
-            <p className="chief-runs muted">{line.runs}</p>
-            <AgentHosting agent={agent.name} hostedOn={agent.hosted_on} log={log} />
-          </div>
-          <div className="chief-actions">
-            {/*
-              A link to the workspace, with the Ask section's own anchor on it.
-              The fragment lands when the page has drawn and is a no-op when it
-              has not — either way the reader is on the one surface in DASH
-              where this agent can actually be asked something.
-
-              MAR-660 moves the button that used to open the agent from here
-              onto the card itself — Henrik's own words, "under the avatar in
-              the card for every agent," not on a component about the fleet as
-              a whole. `fleet-card.tsx`'s `FleetOpenLink` is where it lives now.
-            */}
-            <Link className="button-link" href={`${agentWorkspaceHref(line.agent)}#ask-agent`}>
-              {line.action}
-            </Link>
-          </div>
-        </>
+            {line.note === null ? null : <InfoNote>{line.note}</InfoNote>}
+          </p>
+          <p className="chief-runs muted">{line.runs}</p>
+          <AgentHosting agent={agent.name} hostedOn={agent.hosted_on} log={log} />
+        </div>
       )}
 
       {/*
-        MAR-648. The composer, docked, and the room it opens above itself.
-
-        Last in the band and therefore last in the tab order, which is the right
-        order for it: somebody arriving here with a keyboard reaches the chief's
-        sentence and the two controls about the agent in the middle before they
-        reach a box that asks them to compose something.
+        MAR-648, floating since MAR-696. The composer, and the room it opens
+        above itself — `app/globals.css`'s `.chief-chat` positions both as a
+        window over the cards rather than a row of the band, but the tab order
+        this comment used to describe still holds: last in the band and
+        therefore last reached, so somebody arriving here with a keyboard reads
+        the chief's sentence about the agent in the middle before they reach a
+        box that asks them to compose something.
       */}
       <ChiefChat
         agents={agents}

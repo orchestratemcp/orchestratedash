@@ -93,6 +93,18 @@ import type { AgentRow, ChiefRoomView, ChiefTurnView } from "../../lib/views/typ
  * That guess is a **prediction about latency, not a decision about the answer**
  * — main decides, using the same function. If the two ever disagreed, the worst
  * case is a loader that was not needed or one missing for a moment.
+ *
+ * ## MAR-696: the last button leaves, and the room floats
+ *
+ * Henrik, with a screenshot of this composer's own Ask button and the band's
+ * per-agent one beside it: *"remove all excess. I only want a floating chat
+ * window. No button."* `ask()` already ran on Enter (`onKeyDown` below) —
+ * pressing Ask only ever did what Enter already did — so removing the button
+ * loses no capability. `CHIEF_CHAT_COPY.placeholder` carries the affordance the
+ * button's label carried, which is `AskComposer`'s own rule applied here: a
+ * control that disappears has to leave its instruction somewhere a reader still
+ * finds it. `app/globals.css`'s `.chief-chat` is what makes "floating" true —
+ * this component still only says when the room opens and closes.
  */
 export function ChiefChat({
   agents,
@@ -264,14 +276,6 @@ export function ChiefChat({
             onKeyDown={onKeyDown}
           />
         </label>
-        <button
-          type="button"
-          className="primary"
-          disabled={question.trim().length === 0 || busy}
-          onClick={() => void ask()}
-        >
-          {CHIEF_CHAT_COPY.submit}
-        </button>
       </div>
     </div>
   );

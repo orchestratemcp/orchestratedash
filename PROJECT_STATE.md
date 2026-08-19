@@ -35,7 +35,8 @@ the packaged path.
   it. Discord outbound notifications shipped. Model choice per step
   (MAR-583) shipped. Outputs usability (MAR-697/698, PR #245): collected
   links open through the main process and exported PDFs land somewhere
-  findable — merged, not proven.
+  findable — merged, not proven. Fleet chief chat as a floating window
+  with no ASK buttons (MAR-696, PR #246) — merged, not proven.
 
 ## Active decision surface (ADRs 0019–0025)
 

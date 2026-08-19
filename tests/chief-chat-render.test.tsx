@@ -1,15 +1,14 @@
 /**
- * The chief's composer and its room, drawn (MAR-648).
+ * The chief's composer and its room, drawn (MAR-648, floating since MAR-696).
  *
  * `renderToStaticMarkup`, like every render test here, so no effect runs and
  * nothing is clicked. What that reaches is the whole of what MAR-648 asked for
- * on this surface — the band grows a box, focus opens a room above it, and the
- * composer does not move — because all three are markup and CSS rather than
- * behaviour.
+ * on this surface — a box, focus opens a room above it, and the composer does
+ * not move — because all three are markup and CSS rather than behaviour.
  *
- * The assertions worth reading are the two negative ones: the chief never draws
- * a loader, and the unprompted line steps aside rather than sitting above a
- * conversation.
+ * The assertions worth reading are the negative ones: the chief never draws a
+ * loader, the unprompted line steps aside rather than sitting above a
+ * conversation, and MAR-696 left no button anywhere on this surface.
  */
 
 import { describe, expect, it } from "vitest";
@@ -60,12 +59,28 @@ function band(props: Parameters<typeof ChiefBand>[0]): string {
   return renderToStaticMarkup(<ChiefBand {...props} />);
 }
 
-describe("the chief's band grows a composer", () => {
+describe("the chief's band carries a composer", () => {
   it("draws a box a person can type in", () => {
     const html = band({ agent: row(), agents: [row()] });
     expect(html).toContain("<textarea");
     expect(html).toContain(CHIEF_CHAT_COPY.placeholder);
-    expect(html).toContain(CHIEF_CHAT_COPY.submit);
+  });
+
+  /*
+   * MAR-696. Henrik's own words: *"remove all excess... No button."* The
+   * placeholder above is now the only place that says how to send a question —
+   * `describeAskActivity`'s honesty rule applied to a control instead of a
+   * sentence: an affordance that moves has to still be findable somewhere.
+   *
+   * Not "no button anywhere": the all-clear chip's own `InfoNote` still draws
+   * one (its "what this means" disclosure, unrelated to sending a question),
+   * so the assertion is against the submit control by name rather than against
+   * every `<button` in the band.
+   */
+  it("draws no submit button — Enter is the only way to send", () => {
+    const html = band({ agent: row(), agents: [row()] });
+    expect(html).not.toContain(">Ask<");
+    expect(html).not.toContain('class="primary"');
   });
 
   /*
@@ -77,10 +92,9 @@ describe("the chief's band grows a composer", () => {
   it("is never a dead input", () => {
     const html = band({ agent: row(), agents: [row()] });
     /*
-     * The *box* is live. The send button is disabled on an empty box, which is
-     * `AskComposer`'s own rule and the opposite of this defect: there is no
-     * sentence worth showing for "you typed nothing", and a button that does
-     * nothing on press is worse than one that says it is not ready.
+     * The box is live, and MAR-696 left it the only control on this surface:
+     * there is no button left to disable on an empty press, only `ask()`'s own
+     * early return (`chief-chat.tsx`) for a question that is all whitespace.
      */
     expect(html).toContain('<textarea class="chief-input"');
     expect(/<textarea[^>]*\sdisabled/.test(html)).toBe(false);
@@ -212,7 +226,14 @@ describe("the room opens above the composer", () => {
     expect(html).toContain("chief-glyph");
   });
 
-  it("marks the stage so the cards give up their two thirds", () => {
+  /*
+   * MAR-696 stopped the cards giving up any height for an open room — the room
+   * floats over them now (`app/globals.css`'s `.chief-chat`) rather than
+   * growing the stage's own row. `is-chatting` survives as the band's own
+   * open-state marker, which is what lets the docked band's border pick up the
+   * accent while its floating room is showing.
+   */
+  it("marks the band itself while its floating room is open", () => {
     const html = band({ agent: row(), agents: [row()], chatOpen: true });
     expect(html).toContain("is-chatting");
   });
