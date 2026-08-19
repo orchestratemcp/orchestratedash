@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "project": "DASH",
-  "updated_at": "2026-08-19T16:45:00Z",
+  "updated_at": "2026-08-19T20:40:00Z",
   "current_wave": "Wave 2 - outside-app connections",
-  "lifecycle_note": "Reconciled 2026-08-19 by the packaged-shell proving sweep, and the installed store was repaired mid-session. pnpm verify initially died in verify:shell on 'database disk image is malformed': the installed dash.sqlite was WAL-mode with no -wal, header claiming 474 pages against 356 present (MAR-700). A hand-written b-tree recovery showed the damaged file was strictly worse than MAR-676's 2026-08-17 snapshot (26 of 34 tables, 26 runs vs 73), so on Henrik's approval the snapshot was restored and the damaged file kept at malformed-20260819/. DASH then repaired itself unattended: MAR-682's reconciliation recognised the pre-renumber shape, created chief_messages, and the migration loop carried the store to user_version 29, 38 tables, integrity ok. THE PROOF IS AGAINST THE REAL INSTALLED STORE: pnpm verify:shell, 85/85 PASS, 0 FAIL, proof 0 green on %APPDATA%\\orchestratedash. Eight packets whose stated bar those proofs cover were promoted to proven, each citing its proof number. MAR-506 and MAR-518 were NOT promoted: their bar is the retire button pressed against a genuinely damaged runner.sqlite, and proof 4b reported store_damaged false. MAR-548 and MAR-569 were recorded planned with null commits while both were merged on master (7c0e29e / bc62e61); the index was corrected against git. MAR-641 keeps its drift warning on purpose: the packet is cockpit slice 1 and is proven, but the Linear issue is genuinely In Progress because its acceptance is one PR per stage view. Two defects were filed rather than fixed: the first page lands in a failed view on the one launch a store reconciliation runs, and the vitest suite loses a random file to a 5s timeout under 22-way parallelism (three of five verify runs).",
+  "lifecycle_note": "RECONCILIATION 2026-08-19 (orchestrator): MAR-682, MAR-684, MAR-690, MAR-678, MAR-687 promoted merged -> proven on the proving wave's evidence - B's packaged-build proofs (prove-quit scenes PASS, cockpit screenshots) and C's scratch-store + vault proofs, completed by Henrik's attended chief press at 21:30 (real charged broker_audit allowed row; comments on each issue). MAR-680 stays merged (live-step and auto-refresh halves unproven, named on the issue); MAR-685 stays merged with a named blocker (the tagged commit fixed a different bug - attended re-walk needed before promotion). MAR-696 redo merged as e378ef0; first attempt c058d9b was refused by Henrik and replaced. MAR-704 filed, fixed and merged same day (f65d2fc). Every promotion verified with git merge-base --is-ancestor.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -1172,8 +1172,8 @@
     },
     {
       "id": "MAR-682",
-      "lifecycle": "merged",
-      "linear_status": "Backlog",
+      "lifecycle": "proven",
+      "linear_status": "Done",
       "commit": "d46c1ce",
       "proof": {
         "command": "pnpm typecheck; pnpm exec vitest run tests/store-reconcile.test.ts; pnpm test; pnpm state:check"
@@ -1181,8 +1181,8 @@
     },
     {
       "id": "MAR-684",
-      "lifecycle": "merged",
-      "linear_status": "Backlog",
+      "lifecycle": "proven",
+      "linear_status": "Done",
       "commit": "234e50c",
       "proof": {
         "command": "pnpm typecheck; pnpm exec vitest run tests/vault.test.ts tests/secure-store.test.ts tests/fleet-standing.test.ts tests/fleet-connections.test.ts tests/redaction.test.ts; pnpm test; pnpm build:renderer; pnpm build:shell; pnpm verify:shell NOT RUN"
@@ -1190,8 +1190,8 @@
     },
     {
       "id": "MAR-682",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
+      "lifecycle": "proven",
+      "linear_status": "Done",
       "commit": "984246d",
       "proof": {
         "command": "pnpm typecheck; pnpm test tests/store-sqlite.test.ts tests/store-reconcile.test.ts; pnpm build:renderer; pnpm build:shell"
@@ -1199,8 +1199,8 @@
     },
     {
       "id": "MAR-678",
-      "lifecycle": "merged",
-      "linear_status": "Backlog",
+      "lifecycle": "proven",
+      "linear_status": "Done",
       "commit": "a8a4b64",
       "proof": {
         "command": "pnpm typecheck; pnpm test; pnpm build:renderer; pnpm build:shell; electron dist/electron/prove-quit.mjs (scenes plain, approval, wedged); pnpm verify:shell NOT RUN"
@@ -1226,8 +1226,8 @@
     },
     {
       "id": "MAR-687",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
+      "lifecycle": "proven",
+      "linear_status": "Done",
       "commit": "978b7e2929c45eee393e3bce4d52a2d936cea69a",
       "proof": {
         "command": "pnpm typecheck; pnpm test; pnpm build:renderer; pnpm build:shell; electron dist/electron/capture-cockpit.mjs; pnpm verify:shell NOT RUN"
@@ -1262,8 +1262,8 @@
     },
     {
       "id": "MAR-690",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
+      "lifecycle": "proven",
+      "linear_status": "Done",
       "commit": "43b1076b2d250daee57ed57ecb3fe4f1bc48c66f",
       "proof": {
         "command": "pnpm typecheck; pnpm exec vitest run tests/chief-route.test.ts tests/chief-reply.test.ts tests/chief-transcript.test.ts tests/chief-briefing.test.ts tests/chief-chat-copy.test.ts tests/chief-principal.test.ts tests/agent-name.test.ts tests/fleet-connections.test.ts; pnpm exec vitest run; pnpm build:renderer"
@@ -1433,10 +1433,21 @@
     },
     {
       "id": "MAR-696",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "In Progress",
-      "commit": null,
+      "commit": "e378ef094bb6472b807e89eb6a04b9f593932bc7",
       "note": "PLANNED 2026-08-19, REPLACING c058d9b (refused on sight, see the entry above). Worktree ../dash-mar696-redo, branch 000henrik/mar-696-composer-redo, cut from origin/master at 1a46c72 after confirming that commit was master's tip. Henrik, seeing the floating window: \"the floating textbox was a disaster. Thats not what I want at all.\" And, with a screenshot of the fleet page's big agent spotlight card: \"This box Ive asked you to remove manytimes\" -- the scribbled region in the ORIGINAL screenshot meant remove the whole ChiefBand box, not just its ASK button. THE BOX IS GONE: ChiefBand and ChiefGlyph (app/_components/fleet-list.tsx) deleted whole, not repurposed -- the chief's unprompted per-agent sentence and the fleet-summary line went with it, a real narrowing named in tests/fleet-view-render.test.tsx rather than quietly kept passing. FleetList renders ChiefChat directly under the cards now. THE COMPOSER IS INCORPORATED: .chief-composer is position: relative, in the page's own layout (.fleet-stage's grid-template-rows changed from a reserved minmax(0,1fr) third to auto, since a slim bar no longer needs a fixed fraction) -- only .chief-room still overlays, position: absolute from .chief-composer, opening upward over the cards without reflowing them. Rounded corners are a declared, scoped exception -- --radius-chief-composer in app/tokens.css, the one non-zero radius token tests/tokens.test.ts allows by name. A small O is perched on the field's right edge via OAvatar's size prop (never a CSS override -- ChiefComposerGlyph's own comment explains why that would lose the cascade or crop the sprite); capture-mar615.ts's first placement (translateY(-55%)) measured overlap_area: 1150 against the textarea at 1280px -- the sprite's feet sat in the middle of the typing row -- corrected to translateY(-84%), verified at overlap_past_padding: -4 (safely inside the field's own top padding) in all 12 composer frames on the second run. An enter (↵) glyph sits inside the field on the right. A MODEL LINE AND SWAP CONTROL, NEW: the chief previously had no model of its own -- ADR 0023 decision 4 said so explicitly, always riding fleet_model_default -- this PR reverses that (ADR 0023 amendment 1, recorded in the doc). New table chief_model_choice (lib/db.ts migration 29, user_version 30), read before the fleet default rather than instead of it (lib/ai/model-store.ts's readEffectiveChiefModel), filed under its own chief_model decision kind rather than a second write under fleet_model_default's (a decision kind resolves against its own row) -- new IPC command model.chief through lib/shell/ipc.ts, electron/main.ts, electron/preload.ts, app/_data/source.ts. The swap panel lists models for the provider already in force and can clear back to the fleet default; cross-provider selection stays ModelDefault's job on the AI tab, flagged in the PR as a scope note. EXPANDED STATE CARRIES AN X AND A CLEAR, both of which MAR-683 removed as standing chrome and this restores for a different reason: Clear is new capability, not a returned one. Clear is deliberately narrower than the existing chief.clear command (which still exists and still hard-deletes chief_messages, on purpose) -- visibleChiefTurns, a pure function exported from chief-chat.tsx and unit-tested directly, filters the room's own React state (clearedThroughId) without touching the store; chief_messages is the chief's memory and an audit surface (MAR-673) and nothing here deletes a row. A REAL LAYOUT DEFECT FOUND AND FIXED DURING CAPTURE: the room's Clear button first rendered its full honest sentence as the visible label, and every <button> in this system force-uppercases (app/globals.css's shared button rule) -- a full sentence shouted in caps read as an alarm and squeezed \"Ask the chief\" into a three-line wrap at 375px (room height 76px). Shortened to \"Clear\" with the honest scope moved to title; room height at 375px dropped to 50px on the rebuilt capture. VERIFIED: pnpm typecheck clean; targeted vitest (chief*, fleet-view-render, fleet-decisions, tokens, store-sqlite, store-reconcile, shell, fleet-motion) 368/368; FULL SUITE 222 files / 4240 passed / 11 skipped / 0 failed from PowerShell; pnpm brand:check passed (LABEL_ALLOWLIST repointed from fleet-list.tsx to chief-chat.tsx, the labeled OAvatar's new home); pnpm build:renderer and pnpm build:shell both green; pnpm state:check valid (pre-existing Linear-lag drift only). electron/capture-mar615.ts extended (not a new harness) with the new selectors and a padding-aware overlap invariant, run three times against a fresh scratch store and --user-data-dir each time as the CSS was corrected -- the first run hung at zero CPU with no log line, the same environmental flake MAR-696's first attempt recorded, resolved the same way (TaskStop, kill the stray electron pid, bare retry) -- 30 images and layout.json written on the final run, committed under qa-screenshots-mar696/, all six pass/fail claims green (perched O never covers typed text, O perches on the field every frame, every expanded frame is actually open, chief animates every frame, strip animates every frame, no frame overflows sideways). pnpm verify:shell NOT RUN, per AGENTS.md's rule against a session force-affecting a store that may be in use -- CI's Windows shell-smoke is this branch's installed witness. NOT PROVEN: no PR is open yet and Henrik has not judged the images. Hard stop at PR-open per session brief -- no merge, no adjacent fleet-page work."
+    },
+    {
+      "id": "MAR-704",
+      "lifecycle": "merged",
+      "linear_status": "In Progress",
+      "commit": "f65d2fc512e95fdbb7899da4cd70de6ff3093a2b",
+      "proof": {
+        "command": "pnpm typecheck; pnpm exec vitest run (4 suites importing app/page.tsx, then full suite); pnpm build:renderer; pnpm build:shell",
+        "run": "Built by the 2026-08-19 proving session on Henrik's live checkout, landed by the orchestrator as PR #252. Full suite 222 files / 4234 passed. Fix holds the last read fleet page through a post-answer re-read so the chief room stays open; app/page.tsx only. Not proven: Henrik seeing the room stay open through a live answer on the installed build."
+      },
+      "note": "MERGED, NOT PROVEN. Henrik hit the defect live (the chief room closed the instant its answer arrived); evidence and scope are on MAR-704. The adjacent FleetList spotlight-index reset (same root cause) is named there and deliberately untouched."
     }
   ]
 }
