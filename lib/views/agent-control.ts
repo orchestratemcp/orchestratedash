@@ -108,8 +108,16 @@ export type AgentRunControl =
        * matters less here only because the task this press eventually binds is
        * one the agent has not published yet. Carried so the caller has the same
        * freshness token for the second half.
+       *
+       * **Null when there is no snapshot at all (MAR-703).** That is the state
+       * an agent is in before it has ever reported on this store, and it is one
+       * of the two this control now answers — so there is no observation to
+       * carry, and inventing a timestamp would assert a freshness DASH does not
+       * have. Nothing reads it on this arm: `startAndRun` polls for the task the
+       * press produces and pairs *that* read's `observed_at` with the `retry`,
+       * which is the only pairing the command layer accepts.
        */
-      observed_at: string;
+      observed_at: string | null;
     }
   | {
       kind: "live";
@@ -123,6 +131,39 @@ export type AgentRunControl =
       /** Which sentence in `AGENT_CONTROL_COPY.idle` answers this. */
       reason: "not_reported" | "nothing_waiting" | "read_only";
     };
+
+/**
+ * What DASH holds for this agent, as against what the agent has said (MAR-703).
+ *
+ * An object rather than a third positional boolean, and the reason is the one
+ * `AgentControls.onStart` gives about its own callback: `(snapshot, true, true)`
+ * is a call one transposition away from offering to spawn a process, and the
+ * two flags here mean opposite kinds of thing — one is about the window, the
+ * other about the disk. Named at every call site, they cannot be swapped
+ * silently.
+ *
+ * It is deliberately not the registration itself. This module reads nothing and
+ * must not learn how to; a caller that handed it a `ManagedRegistration` would
+ * be handing the client bundle a shape whose home is `node:fs`, and
+ * `tests/client-bundle` is the gate that would catch it a week later.
+ */
+export interface AgentHolding {
+  /**
+   * Whether DASH holds a registration naming a program it could spawn here.
+   *
+   * The registration file's existence, not the runner's current opinion of it.
+   * Those differ for exactly one moment — a registration written while the
+   * runner is up and not yet re-read — and the doors that write one ask the
+   * supervisor to reload precisely so the difference does not outlive the press
+   * (MAR-616). A refusal from that window is named on screen rather than
+   * predicted here.
+   *
+   * False is the honest answer for a manifest-only agent: ADR 0008's
+   * row-without-a-program standing, where there is nothing to start and
+   * `AGENT_CONTROL_COPY.idle.not_reported` is the true sentence.
+   */
+  startable: boolean;
+}
 
 export interface AgentControlView {
   status: {
@@ -144,6 +185,7 @@ export interface AgentControlView {
 export function buildAgentControl(
   snapshot: WorkspaceSnapshotView | null,
   canAct: boolean,
+  holding: AgentHolding,
 ): AgentControlView {
   if (snapshot === null) {
     return {
@@ -151,12 +193,67 @@ export function buildAgentControl(
       // snapshot has a real state and "Not reported" is it — the old page's
       // status heading simply did not render, so the tile it now fills was an
       // absence rather than a fact.
+      //
+      // It stays "Not reported" even when the branch below offers Start, and the
+      // two do not contradict each other: the status tile says what the *agent*
+      // has told DASH, which is nothing, and the button says what *DASH* can do
+      // about it, which is start it. Relabelling the tile to match the button
+      // would put a claim about the process into the one field that is only ever
+      // the agent's own word.
       status: {
         label: "Not reported",
         tone: "calm",
         detail: "This agent has not published its state to DASH yet.",
       },
-      run: { kind: "idle", reason: canAct ? "not_reported" : "read_only" },
+      /*
+       * The door ADR 0022 built, reached from the state that needs it most
+       * (MAR-703).
+       *
+       * ## Why this branch existed and did nothing
+       *
+       * ADR 0022 decided that DASH may start a registered agent whose process is
+       * not running, and gated it on `STOPPED` — `offline` or `error` — because
+       * those are the two verdicts the *runner* publishes about its own child.
+       * That predicate is right and is untouched below. What it could never
+       * cover is this branch, which returns above it: `STOPPED.has(...)` reads
+       * `overview.status`, and an agent with no snapshot has no overview to
+       * read. So the one state in which a person most needs to start something
+       * — nothing has ever run here — was the one state decided before the
+       * start branch was reached.
+       *
+       * The consequence is a closed loop, and Henrik met it on the installed app
+       * after the 2026-08-19 store restore: no snapshot means no start control,
+       * no start control means no run, and no run means no snapshot. The Overview
+       * checklist went on saying "Open Run and press Run now" at a stage that
+       * answered with a sentence and no button.
+       *
+       * ## Why an absent snapshot is safe to spawn from, when a claimed idle is
+       * not
+       *
+       * `STOPPED`'s note refuses to start an agent because the agent said it was
+       * idle — "a spawn decided by the thing being spawned". Nothing says
+       * anything here. An absent snapshot is not a claim by the agent; it is the
+       * absence of every claim, and `runner/state.ts` cannot have published one
+       * for a child it does not have running. So this reads no agent's word at
+       * all, which is a stronger position than the branch below rather than a
+       * looser one.
+       *
+       * ## What is checked instead, and why it is not the snapshot
+       *
+       * `holding.startable` — whether DASH holds a registration naming a program
+       * it could spawn. That is the question `Supervisor.start` will actually
+       * answer, and asking it here is what keeps `not_reported` honest: the
+       * sentence stays for the agent DASH genuinely cannot start, and stops
+       * being the answer for one it can. Offering the button to an agent with no
+       * registration would earn an `unknown_agent` *after* the press, which is
+       * the refusal this whole module exists to not create.
+       */
+      run:
+        !canAct
+          ? { kind: "idle", reason: "read_only" }
+          : holding.startable
+            ? { kind: "start", observed_at: null }
+            : { kind: "idle", reason: "not_reported" },
     };
   }
 
