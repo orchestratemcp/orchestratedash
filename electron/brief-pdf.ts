@@ -1,21 +1,36 @@
 /**
- * Save a brief as a PDF, and open it (MAR-674, ADR 0025 decision 4).
+ * Save a brief as a PDF, and open it (MAR-674, ADR 0025 decision 4; MAR-697).
  *
  * Henrik's ruling, on 2026-08-18, against this ADR's first draft: *"text files
  * should download as html->PDF"*, and *save, then open*. Both are here.
  *
- * ## The order is the design, and it is `workspaceDownload`'s
+ * ## There is no dialog any more (MAR-697)
  *
- * **Ask first, render second.** A cancelled dialog costs no window, no print and
- * no bytes; a flow that produced the PDF and then asked where to put it would
- * have had to choose a place on its own, and a downloads folder DASH picked is
- * a place a person has to go and find.
+ * Henrik, after the first real export: *"Can we have auto path to the agents
+ * folder in dash."* So DASH chooses the place, and chooses the same one every
+ * time: this agent's own exports folder, listed back on the Output stage by the
+ * component MAR-697 asks for. A save nobody had to answer a question for, and
+ * one they can find again without having remembered where they put it.
+ *
+ * MAR-674's argument for asking first was that *"a downloads folder DASH picked
+ * is a place a person has to go and find"*. That was right about a folder
+ * chosen silently and nothing more; it is answered by listing the folder rather
+ * than by asking. What that argument also bought — a cancelled dialog costing no
+ * window and no print — is simply gone, and it cost a press either way.
+ *
+ * **Where the folder is, and why it is not where MAR-697 said.** It asked for
+ * `agents/<agent>/`. `lib/agent-exports.ts` records at length why that location
+ * would lose the files: `writeAgentFolder` swaps the whole agent folder on any
+ * re-import, folder adoption or template refresh. Exports live beside that tree
+ * instead, in `exports/<agent>/`.
  *
  * ## What crosses back to the renderer
  *
- * A sentence and a folder. Not the path, not the bytes, not the markup —
- * `lib/shell/ipc.ts` states that a path never crosses that boundary in either
- * direction, and this route is the newest reason to keep it.
+ * A sentence. Not the path, not the bytes, not the markup — `lib/shell/ipc.ts`
+ * states that a path never crosses that boundary in either direction, and this
+ * route is the newest reason to keep it. MAR-674 returned the folder's name in
+ * that sentence because the person had just chosen it; there is nothing to name
+ * now, and the list on the stage is where the file is pointed to instead.
  *
  * ## The window, and the hazard that comes with it
  *
@@ -32,7 +47,7 @@
  * so "never navigates" is a rule this window can actually keep.
  */
 
-import { BrowserWindow, dialog, shell } from "electron";
+import { BrowserWindow, shell } from "electron";
 /*
  * The **browser** server build, in a Node process, on purpose — the same
  * decision `electron/capture-panel.ts` documents at length. `react-dom/server`
@@ -50,7 +65,8 @@ import { briefPrintDocument } from "../lib/brief/print.js";
 import { resolveBriefCitations } from "../lib/brief/fingerprint.js";
 import { isBriefArtifact, isDigestArtifact } from "../lib/contracts.js";
 import { artifactRecordsForAgent } from "../lib/store.js";
-import { describeReceiptMoment } from "../lib/copy/artifacts.js";
+import { BRIEF_EXPORT_COPY, describeReceiptMoment } from "../lib/copy/artifacts.js";
+import { prepareAgentExports, unusedExportName } from "../lib/agent-exports.js";
 
 /** How long a print may take before DASH stops waiting and says so. */
 const PRINT_TIMEOUT_MS = 30_000;
@@ -58,10 +74,12 @@ const PRINT_TIMEOUT_MS = 30_000;
 /**
  * A filename a person will recognise, out of the agent's own title.
  *
- * The agent's words, not DASH's, on `workspaceDownload`'s rule — the suggested
- * name is what the person will be looking for. Reduced to what a filesystem
- * will take: this string reaches `dialog.showSaveDialog` as a default, and a
- * title carrying a slash would otherwise propose a path.
+ * The agent's words, not DASH's, on `workspaceDownload`'s rule — the name is
+ * what the person will be looking for. Reduced to what a filesystem will take,
+ * and MAR-697 made that load-bearing rather than defensive: this string used to
+ * be a *suggestion* in a save dialog somebody could edit, and it is now the
+ * name of a file DASH writes unattended. A title carrying a slash would have
+ * proposed a path before; now it would be one.
  */
 export function briefFileName(title: string): string {
   const cleaned = title
@@ -73,13 +91,19 @@ export function briefFileName(title: string): string {
 }
 
 /**
- * Render, ask, print, save, open.
+ * Render, print, save, open.
  *
  * Every failure is a sentence rather than a throw: this is reached from the
  * audited command dispatcher, and a rejected promise there becomes a generic
  * refusal a person cannot act on.
+ *
+ * `dataDir` is a parameter rather than an import, on `assertStoreLocation`'s
+ * reasoning: main already holds the resolved directory, and reaching for it
+ * here would put a second opinion about where the store lives into a module
+ * whose job is to write a file beside it.
  */
 export async function exportBriefAsPdf(
+  dataDir: string,
   agentId: string,
   artifactId: string,
 ): Promise<{ ok: boolean; detail: string }> {
@@ -104,15 +128,27 @@ export async function exportBriefAsPdf(
       .filter((digest) => digest.run_id === brief.run_id),
   );
 
-  // Ask before doing any work. See this module's header.
-  const chosen = await dialog.showSaveDialog({
-    defaultPath: briefFileName(brief.title),
-    title: "Save this briefing as a PDF",
-    filters: [{ name: "PDF", extensions: ["pdf"] }],
-  });
-  if (chosen.canceled || chosen.filePath === undefined || chosen.filePath === "") {
-    // Not a failure. The person answered the question, and the answer was no.
-    return { ok: true, detail: "" };
+  /*
+   * Where it goes, decided rather than asked (MAR-697).
+   *
+   * Before the render, which is what asking first used to buy: a folder DASH
+   * cannot create is a failure worth reporting without having spent a window
+   * and a print on it first.
+   *
+   * The name is numbered rather than overwritten. An agent that runs daily
+   * produces briefings with the same title, and replacing yesterday's document
+   * with today's — no press, no dialog, nothing on screen — is the one way this
+   * change could quietly lose something somebody wanted.
+   */
+  let destination: string;
+  try {
+    const { folder, existing } = prepareAgentExports(dataDir, agentId);
+    destination = path.join(folder, unusedExportName(existing, briefFileName(brief.title)));
+  } catch {
+    return {
+      ok: false,
+      detail: "DASH could not make a place to keep this briefing on this computer.",
+    };
   }
 
   /*
@@ -174,7 +210,7 @@ export async function exportBriefAsPdf(
       "DASH could not turn this briefing into a PDF.",
     );
 
-    writeFileSync(chosen.filePath, pdf);
+    writeFileSync(destination, pdf);
   } catch (error: unknown) {
     return {
       ok: false,
@@ -197,14 +233,23 @@ export async function exportBriefAsPdf(
 
   // Henrik's ruling: the document, not a sentence naming a folder. Safe on two
   // counts stated in the ADR — DASH composed these bytes a moment ago, and the
-  // path is the one the person chose in the OS's own dialog.
-  const opened = await shell.openPath(chosen.filePath);
-  const folder = path.dirname(chosen.filePath);
+  // path is one DASH computed rather than one anything outside main supplied.
+  const opened = await shell.openPath(destination);
+  /*
+   * The sentence names the list rather than a path (MAR-697).
+   *
+   * MAR-674 named the folder because the person had just chosen it and was
+   * being told their choice was honoured. Nobody chose this one, so naming it
+   * would put an `%APPDATA%` path on a guided surface, which is the shape of
+   * thing `lib/copy/identifiers.ts` exists to keep off one. What replaces it is
+   * better than a path anyway: the file is now on the stage the person is
+   * looking at, one press from opening again.
+   */
   return opened === ""
-    ? { ok: true, detail: `Saved to ${folder} and opened.` }
+    ? { ok: true, detail: BRIEF_EXPORT_COPY.saved }
     : // The file is on disk either way. A machine with no PDF reader is not a
       // failed export, and saying so is more useful than repeating the OS error.
-      { ok: true, detail: `Saved to ${folder}. DASH could not open it for you.` };
+      { ok: true, detail: BRIEF_EXPORT_COPY.saved_not_opened };
 }
 
 /**

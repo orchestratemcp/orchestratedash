@@ -462,6 +462,32 @@ const dashShell = {
     send("workspace.exportBrief", { ...args }),
 
   /**
+   * Open one address the agent collected, in this computer's browser (MAR-698).
+   *
+   * The bridge member that makes a link on a card clickable without any part of
+   * `createWindow`'s navigation denial being relaxed. This window still cannot
+   * navigate off its origin and still cannot open a second one; what it can do
+   * is ask main to hand one address to the operating system, and main refuses
+   * anything that is not `https`.
+   *
+   * A named method rather than a flag on something else, for the reason the
+   * workspace pair above are two methods: somebody counting the ways out of
+   * this window should be able to count them by name.
+   */
+  openLink: (args: { url: string }) => send("open.link", { ...args }),
+
+  /**
+   * Open one file DASH saved for this agent (MAR-697).
+   *
+   * A **file name**, never a path — the one thing this bridge may say about a
+   * document on disk, and it says it about a folder main computed rather than
+   * one a page named. That is `downloadOutput`'s rule above pointing the other
+   * way: there, no path crosses because main raises the dialog; here, no path
+   * crosses because main owns the only folder this name can resolve in.
+   */
+  openExport: (args: { agent_id: string; file: string }) => send("open.export", { ...args }),
+
+  /**
    * Re-import an agent DASH created, from DASH's current template (MAR-576).
    *
    * One agent id and nothing else. There is no manifest in the payload, no

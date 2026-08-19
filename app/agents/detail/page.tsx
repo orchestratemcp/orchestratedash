@@ -35,6 +35,7 @@ import { LiveFeed } from "../../_components/live-feed";
 import { ModelChoice } from "../../_components/model-choice";
 import { InputsPanel, type SelectedInput } from "../../_components/inputs";
 import { LiveBrowserPanel } from "../../_components/browser-panel";
+import { ExportsList } from "../../_components/output-exports";
 import { OutputsPanel } from "../../_components/outputs";
 import { AgentPanel } from "../../_components/panel";
 import { RemoveAgent } from "../../_components/remove-agent";
@@ -47,6 +48,7 @@ import {
   downloadOutput,
   exportBriefAsPdf,
   markAgentLooked,
+  openExport,
   refreshSampleAgent,
   revealAgentFolder,
   setStandingAnswer,
@@ -66,6 +68,7 @@ import {
   AGENT_OUTPUTS_COPY,
   AGENT_TILE_COPY,
 } from "../../../lib/copy/agent-page";
+import { EXPORTS_PANEL_COPY } from "../../../lib/copy/artifacts";
 import { INPUTS_PANEL_COPY } from "../../../lib/copy/inputs";
 import { SAMPLE_REFRESH_COPY } from "../../../lib/copy/panel";
 import { describeWorkingPhase } from "../../../lib/copy/working";
@@ -90,6 +93,7 @@ import { resolveOpenCard, type ArtifactCardView } from "../../../lib/views/artif
 import { isRunInFlight, type InboxItem } from "../../../lib/workspace";
 import type {
   AgentDeployTarget,
+  AgentExportView,
   WorkspaceRunView,
   WorkspaceSnapshotView,
 } from "../../../lib/views/types";
@@ -1096,7 +1100,9 @@ function AgentWorkspace(): ReactNode {
           agent={view.agent}
           canAct={canAct}
           cards={view.outputs}
+          exports={view.exports}
           grounding={view.latest_digest_grounding}
+          onExported={() => setRefreshKey((value) => value + 1)}
           openId={openOutput}
           setFeedback={setFeedback}
         />
@@ -1492,14 +1498,28 @@ function OutputsArea({
   agent,
   canAct,
   cards,
+  exports,
   grounding,
+  onExported,
   openId,
   setFeedback,
 }: {
   agent: string;
   canAct: boolean;
   cards: ArtifactCardView[];
+  /** What DASH has saved for this agent (MAR-697). */
+  exports: AgentExportView[];
   grounding: GroundingAnalysis | null;
+  /**
+   * Read this agent again, because a file has just been saved (MAR-697).
+   *
+   * The list below is built from the folder on disk, and the page would
+   * otherwise pick the new file up on its next poll — a few seconds during
+   * which the sentence DASH just showed points at a list the file is not in
+   * yet. A promise made in a notice has to be true by the time somebody looks
+   * down to check it.
+   */
+  onExported: () => void;
   /** Which card the rail asked for, or null for the newest (MAR-641). */
   openId?: string | null;
   setFeedback: Dispatch<SetStateAction<CommandFeedback>>;
@@ -1519,15 +1539,43 @@ function OutputsArea({
       agent_id: agent,
       artifact_id: card.reference.artifact_id,
     });
-    // A cancelled dialog answers `ok` with no sentence — `save`'s rule, and the
-    // same reason: reporting it would be DASH narrating a choice back at the
-    // person who just made it.
-    if (result.ok && (result.detail ?? "") === "") {
-      return;
-    }
+    /*
+     * Always a sentence now (MAR-697).
+     *
+     * `save` below still has the silent branch, because a save dialog can
+     * still be cancelled and reporting that would be DASH narrating a choice
+     * back at the person who made it. This flow has no dialog to cancel: it
+     * either saved the document or it could not, and both are worth saying.
+     */
     setFeedback({
       ok: result.ok,
       message: result.detail ?? "DASH could not save this briefing as a PDF.",
+    });
+    if (result.ok) {
+      // Before the person looks down for the list the sentence just named.
+      onExported();
+    }
+  }
+
+  /**
+   * Open one of the files DASH saved (MAR-697).
+   *
+   * A refusal is shown here, unlike a link press, and the difference is what
+   * the person is looking at afterwards. A link sends them to their browser;
+   * this one leaves them on this page in front of a name that did nothing, so
+   * the two things that can go wrong — the file has been deleted since the
+   * page was drawn, or this computer has no program for it — both need a
+   * sentence. Main composes it; there is nothing for this handler to decide.
+   */
+  async function openSaved(entry: AgentExportView): Promise<void> {
+    setFeedback(null);
+    const result = await openExport({ agent_id: agent, file: entry.file });
+    if (result.ok) {
+      return;
+    }
+    setFeedback({
+      ok: false,
+      message: result.detail ?? EXPORTS_PANEL_COPY.open_failed,
     });
   }
 
@@ -1550,26 +1598,37 @@ function OutputsArea({
   }
 
   return (
-    <OutputsPanel
-      cards={cards}
-      emptyState={{
-        headline: AGENT_OUTPUTS_COPY.empty_headline,
-        detail: AGENT_OUTPUTS_COPY.empty_detail,
-      }}
-      grounding={grounding}
-      heading={AGENT_OUTPUTS_COPY.heading}
-      openId={openId}
-      onDownload={canAct ? (card) => void save(card) : undefined}
-      onExportBrief={canAct ? (card) => void exportBrief(card) : undefined}
-      /* Per card, because this list spans runs now. The old page had one link
-         under the whole panel saying "open the run these came from", which was
-         true when every card came from one run and would have been a lie the
-         moment MAR-609 widened the scope. */
-      runHref={(card) => runDetailHref(agent, card.reference.run_id)}
-      /* MAR-646. One output at a time, because the rail beside this stage is
-         the index of them. */
-      single
-    />
+    <>
+      <OutputsPanel
+        cards={cards}
+        emptyState={{
+          headline: AGENT_OUTPUTS_COPY.empty_headline,
+          detail: AGENT_OUTPUTS_COPY.empty_detail,
+        }}
+        grounding={grounding}
+        heading={AGENT_OUTPUTS_COPY.heading}
+        openId={openId}
+        onDownload={canAct ? (card) => void save(card) : undefined}
+        onExportBrief={canAct ? (card) => void exportBrief(card) : undefined}
+        /* Per card, because this list spans runs now. The old page had one link
+           under the whole panel saying "open the run these came from", which was
+           true when every card came from one run and would have been a lie the
+           moment MAR-609 widened the scope. */
+        runHref={(card) => runDetailHref(agent, card.reference.run_id)}
+        /* MAR-646. One output at a time, because the rail beside this stage is
+           the index of them. */
+        single
+      />
+      {/* MAR-697, ADR 0008. Under DASH's account of the outputs and above the
+          author's panel, which is where DASH's own records go on this stage.
+          It draws nothing at all until something has been saved — see
+          `ExportsList` for why that is the opposite of the rule the panel
+          above it follows. */}
+      <ExportsList
+        exports={exports}
+        onOpen={canAct ? (entry) => void openSaved(entry) : undefined}
+      />
+    </>
   );
 }
 

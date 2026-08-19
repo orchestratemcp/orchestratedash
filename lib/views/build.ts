@@ -68,6 +68,12 @@ import {
 } from "../agent-dom/store";
 import { readStandingAnswers } from "../agent-dom/standing-answers";
 import { dataDir } from "../db";
+/* MAR-697. The exports folder and the two words DASH puts around a file in it.
+   `listAgentExports` reaches `node:fs`, which is ordinary here — this module
+   already reads the agent folder off disk through `inspectAgentFolderStanding`
+   below. */
+import { listAgentExports } from "../agent-exports";
+import { describeReceiptMoment, describeRecordSize } from "../copy/artifacts";
 import {
   analysisForRun,
   complianceForAgent,
@@ -1500,6 +1506,26 @@ export function workspaceView(
    * two chances for one page to disagree with itself about whether this agent
    * has a model.
    */
+  /*
+   * MAR-697. What DASH has saved for this agent, as sentences.
+   *
+   * Read off disk here rather than out of the store, because there is no row
+   * to read: the folder *is* the record. That is the same authority argument
+   * ADR 0008 makes about the agent folder, and it costs one `readdir` on a page
+   * that already opens the manifest through `panelDocument` above.
+   *
+   * The wording happens here and not in `lib/agent-exports.ts` for the reason
+   * `buildArtifactCards` words a receipt: that module answers what is on the
+   * disk, this one answers what the screen says, and a size formatted beside a
+   * `statSync` is a copy decision filed where nobody looks for one.
+   */
+  const exports = listAgentExports(dataDir, agent).map((entry) => ({
+    file: entry.file,
+    label: entry.label,
+    when: describeReceiptMoment(entry.saved_at),
+    size: describeRecordSize(entry.bytes),
+  }));
+
   const modelSettings = buildAgentModelSettings(agent, manifest as ModelSourceManifest);
   const manifestGap = describeManifestGap(document);
   const health = buildAgentHealth({
@@ -1561,6 +1587,9 @@ export function workspaceView(
     latest_digest_grounding:
       digest === null || !isDigestArtifact(digest) ? null : analyzeGrounding(digest),
     outputs,
+    // MAR-697. DASH's own record of what it has saved for this agent, beside
+    // DASH's own record of what the agent produced.
+    exports,
     /*
      * MAR-635. The same events `buildAgentAsk` already reads, pointed at a
      * feed and a meter panel rather than at a cost sentence. Filtered here

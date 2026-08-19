@@ -119,6 +119,54 @@ export const OUTPUTS_PANEL_COPY = {
   },
 } as const;
 
+/**
+ * What DASH says after it has saved a briefing for somebody (MAR-697).
+ *
+ * Both sentences deliberately name **no path**. MAR-674 named the folder
+ * because the person had just picked it in the operating system’s own dialog
+ * and was being told their choice was honoured. Nobody picks this one, so a
+ * path here would be DASH showing its filing system to a person who did not ask
+ * to see it — exactly the shape `lib/copy/identifiers.ts` keeps off a guided
+ * surface. What the sentence points at instead is the list on the stage, which
+ * is a place on the screen they are already looking at rather than a place on a
+ * disk they would have to go and find.
+ *
+ * The second is not a failure and is not worded as one. The document exists,
+ * DASH wrote it, and the only thing that did not happen is a program opening —
+ * which is a fact about the computer.
+ */
+export const BRIEF_EXPORT_COPY = {
+  saved: "Saved and opened. You can find it again under Saved files below.",
+  saved_not_opened:
+    "Saved. DASH could not open it for you, so open it from Saved files below.",
+} as const;
+
+/**
+ * The list of documents DASH has made for this agent (MAR-697).
+ *
+ * ## “Saved files”, not “Exports”
+ *
+ * `download`’s reasoning one surface along. Export is what a developer calls
+ * the operation; what a person has is a file they saved, and the heading is
+ * read by somebody looking for a document rather than for a feature. It also
+ * stays true if DASH ever writes something here that was not exported from a
+ * briefing.
+ *
+ * ## The empty state says where files will appear, not that there are none
+ *
+ * A person meets this heading before they have ever pressed Save as PDF, so
+ * the honest thing to say is what will put something here — the same rule the
+ * agent page’s own empty output state follows.
+ */
+export const EXPORTS_PANEL_COPY = {
+  heading: "Saved files",
+  empty: "Nothing saved yet. Use Save as PDF on a briefing and it will appear here.",
+  /* Said about the file rather than about the press. `openPath` fails when this
+     computer has no program for the kind of file, which is not something the
+     person did and not something this page can fix for them. */
+  open_failed: "DASH could not open that file. This computer may have no program set up for it.",
+} as const;
+
 const HISTORY_DAY = new Intl.DateTimeFormat("en-GB", {
   day: "numeric",
   month: "long",
