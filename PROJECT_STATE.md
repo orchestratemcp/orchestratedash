@@ -1,12 +1,13 @@
 # DASH project state — HEAD
 
-Updated: 2026-08-18 (workflow v2: state rotation)
+Updated: 2026-08-19 (workflow v2: state rotation, refreshed after master moved past it)
 
 This file is the **current truth only**, kept under ~200 lines. The full
-narrative history through 2026-08-18 lives in
-`docs/state-archive/PROJECT_STATE-2026-08-18.md`; per-packet evidence
-narratives live in `.orchestrate/archive/state-2026-08-18-full.json` and in
-git history. `.orchestrate/state.json` is the packet index (id, lifecycle,
+narrative history through 2026-08-19 lives in
+`docs/state-archive/PROJECT_STATE-2026-08-18.md` (master's appended entries
+followed the rename in the refresh merge); per-packet evidence narratives
+live in `.orchestrate/archive/state-2026-08-19-full.json` (and the earlier
+`state-2026-08-18-full.json`) and in git history. `.orchestrate/state.json` is the packet index (id, lifecycle,
 commit, proof command) and is validated by `pnpm state:check`. Rotate this
 file at every checkpoint: move superseded entries to the archive, never
 append forever.
@@ -32,7 +33,9 @@ the packaged path.
   reach). Gmail is read/search/draft-only against a loopback provider —
   the real-Google consent path remains unproven and no surface may claim
   it. Discord outbound notifications shipped. Model choice per step
-  (MAR-583) shipped.
+  (MAR-583) shipped. Outputs usability (MAR-697/698, PR #245): collected
+  links open through the main process and exported PDFs land somewhere
+  findable — merged, not proven.
 
 ## Active decision surface (ADRs 0019–0025)
 
@@ -50,9 +53,9 @@ the packaged path.
   decision is filed where it is made; a brief is a document bound to its
   evidence (MAR-674, promoted to proven 2026-08-18, `8bf4671`).
 
-## Lifecycle counts (from state.json, 2026-08-18)
+## Lifecycle counts (from state.json, 2026-08-19)
 
-~135 packet entries merged, ~18 proven, ~21 planned. **Proven-debt is far
+135 packet entries merged, 18 proven, 23 planned. **Proven-debt is far
 over budget** — the current focus is a proving wave, not new features.
 Merged-but-unproven work is inventory, not progress.
 
