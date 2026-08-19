@@ -1493,6 +1493,25 @@ export interface WorkspaceConnectionView {
   detail: string | null;
 }
 
+/**
+ * One document DASH saved for an agent, as the stage draws it (MAR-697).
+ *
+ * Four fields and no path. `label` is the file’s own name without its
+ * extension — what the person called the briefing — and it is the link text,
+ * on `DigestItem`’s rule that a name is what somebody recognises and an
+ * address is what an anchor carries.
+ */
+export interface AgentExportView {
+  /** The file’s own name, which is what a press sends back to main. */
+  file: string;
+  /** The name without its extension, for the link text. */
+  label: string;
+  /** When DASH saved it, in DASH’s words rather than the machine’s. */
+  when: string;
+  /** How big it is, as a value a person can read. */
+  size: string;
+}
+
 export interface WorkspaceMemoryView {
   id: string;
   label: string;
@@ -1643,6 +1662,27 @@ export type WorkspaceView =
        * `app/_components/outputs.tsx` already argues for.
        */
       outputs: ArtifactCardView[];
+      /**
+       * The documents DASH has saved for this agent, newest first (MAR-697).
+       *
+       * **DASH’s own record, which is what makes it renderable in DASH’s own
+       * part of the stage.** Nothing else writes to this folder — no agent, no
+       * runner, no adapter — so every entry is a file DASH composed at the
+       * moment somebody pressed a button. That is ADR 0008’s test for what may
+       * live outside the author’s panel, and this list passes it in the
+       * strongest form: the author could not have put anything here.
+       *
+       * `file` is a name and never a path — the same rule `view.browser` keeps
+       * for `frame_after`, and for the sharper reason: this name is the handle a
+       * press sends back to main, which resolves it inside one folder it
+       * computed itself. `when` and `size` are already worded, because a view
+       * hands the screen sentences rather than machine spellings.
+       *
+       * Empty rather than absent when there are none, on `outputs`’ reason: an
+       * agent nobody has exported anything from is the ordinary state, not a
+       * state the stage has to render differently from one DASH could not read.
+       */
+      exports: AgentExportView[];
       /**
        * The live output feed for this agent's current or latest run (MAR-635).
        *

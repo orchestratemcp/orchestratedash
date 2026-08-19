@@ -5015,6 +5015,75 @@ button:disabled {
 }
 
 /* ------------------------------------------------------------------------ *
+ * The files DASH has saved for an agent (MAR-697)
+ *
+ * Beside the outputs rather than at the foot of this sheet, because that is
+ * where it is on screen: `ExportsList` renders under the Output stage's own
+ * card and above the author's panel.
+ *
+ * A list and not cards. `.output-card` is right for a thing somebody is about
+ * to read; these are files they have already read and are coming back for, so
+ * the shape is an index — and a row that reflows rather than a table, which is
+ * the rule MAR-491 paid to establish and every list in DASH has kept since.
+ * ------------------------------------------------------------------------ */
+
+.export-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* Wraps rather than truncates. The name is the only handle a person has on
+   which document this is, and a briefing title elided at 40 characters is two
+   days of the same agent looking identical. */
+.export-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.export-row:last-child {
+  border-bottom: 0;
+}
+
+.export-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A button that reads as a link, because that is what it does — see
+   `ExportsList` for why it cannot be an anchor. Everything here is undoing a
+   button's default chrome; the focus ring is deliberately left alone, since a
+   control reachable only by keyboard has to stay visible to one. */
+.export-open {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.export-open:hover {
+  text-decoration: underline;
+}
+
+/* Pushed to the end of the row where there is room for it, and dropped onto
+   its own line where there is not. `margin-left: auto` against a wrapping flex
+   row does both without a media query. */
+.export-facts {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------------ *
  * The files a person gives an agent (MAR-507)
  *
  * Cards, and the rule they inherit is the one MAR-491 paid to establish:

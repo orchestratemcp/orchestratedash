@@ -1020,9 +1020,57 @@ export const COMMANDS = {
    */
   "workspace.exportBrief": {
     effect:
-      "Save this briefing as a PDF where the user picks, then open it. Changes nothing about the agent.",
+      "Save this briefing as a PDF in this agent's own folder in DASH, then open it. Changes nothing about the agent.",
     payload_keys: ["agent_id", "artifact_id"],
     required_keys: ["agent_id", "artifact_id"],
+    mutates: false,
+    irreversible: false,
+  },
+
+  /*
+   * MAR-697, MAR-698. The two ways out of DASH's window, and there are no
+   * others.
+   *
+   * A ninth family, and it earns one on the terms the eighth did: what these
+   * have in common is not an agent, a file a person chose or the vault, but
+   * that performing one **hands something to a program DASH does not own** —
+   * the person's web browser, or whatever this computer opens a PDF with. That
+   * is a distinct kind of reach and deserves to be findable by name, because
+   * the honest answer to "what can DASH be made to launch?" should be readable
+   * from one map rather than assembled out of two entries filed under a family
+   * whose stated reason is files a person chose.
+   *
+   * **Neither widens the navigation policy, and that is the whole design.**
+   * `createWindow` denies `window.open` and refuses navigation off the
+   * renderer's origin; both commands leave that untouched and route the press
+   * through main instead. `electron/open-out.ts` is the one place either
+   * reaches Electron, and `lib/shell/outbound.ts` owns the `https` gate.
+   *
+   * Note the payloads. `open.link` takes an address and no agent — it is about
+   * a link on a card rather than about anything DASH supervises. `open.export`
+   * takes an agent and a **file name**, never a path: main computes the one
+   * folder that name may resolve in, which is what bounds a compromised
+   * renderer's reach here to files DASH itself wrote.
+   *
+   * `mutates` is false on both, on `workspace.download`'s reasoning: opening
+   * something changes nothing about the agent, the store, or the world the
+   * agent acts on.
+   */
+  "open.link": {
+    effect:
+      "Open one web address the agent collected, in this computer's own web browser. Secure addresses only. Changes nothing about the agent.",
+    payload_keys: ["url"],
+    required_keys: ["url"],
+    payload_types: { url: "string" },
+    mutates: false,
+    irreversible: false,
+  },
+  "open.export": {
+    effect:
+      "Open one file DASH saved in this agent's exports folder, in whatever program this computer uses for it. Changes nothing about the agent.",
+    payload_keys: ["agent_id", "file"],
+    required_keys: ["agent_id", "file"],
+    payload_types: { agent_id: "string", file: "string" },
     mutates: false,
     irreversible: false,
   },
@@ -1445,6 +1493,32 @@ export function isWorkspaceCommandName(value: CommandName): value is WorkspaceCo
 }
 
 /**
+ * Handing something to a program DASH does not own (MAR-697, MAR-698).
+ *
+ * A ninth family, for the reason set out beside its two catalogue entries: this
+ * is the only route by which a press inside DASH's window can start something
+ * outside it. `WORKSPACE_ACTIONS` would have been the tempting home for the
+ * second member — it does touch a file — and folding it in there would have
+ * made "what can DASH launch?" a question whose answer is spread across a
+ * family whose stated subject is files a person chose. These two are about the
+ * *launch*, and the file is incidental to one of them.
+ *
+ * Both are performed by `electron/open-out.ts` and nothing else, which is what
+ * makes that module reviewable as the seam rather than as one caller of many.
+ */
+export const OPEN_ACTIONS = {
+  "open.link": "link",
+  "open.export": "export",
+} as const;
+
+export type OpenCommandName = keyof typeof OPEN_ACTIONS;
+export type OpenAction = (typeof OPEN_ACTIONS)[OpenCommandName];
+
+export function isOpenCommandName(value: CommandName): value is OpenCommandName {
+  return Object.hasOwn(OPEN_ACTIONS, value);
+}
+
+/**
  * Re-importing an agent DASH scaffolded (MAR-576).
  *
  * A fifth family with one member, on the terms the fourth was created under: it
@@ -1809,6 +1883,7 @@ type UnroutedCommand = Exclude<
   | ShellUiCommandName
   | BrowserCommandName
   | WorkspaceCommandName
+  | OpenCommandName
   | SampleCommandName
   | GlanceCommandName
   | IdentityCommandName
@@ -2113,6 +2188,13 @@ export function executeCommand(review: CommandReview): CommandResult {
     // MAR-507. In this list for the plainest reason of all: performing one
     // opens a file picker, which this module cannot do and must not appear to.
     isWorkspaceCommandName(review.command) ||
+    // MAR-697, MAR-698. Performing one reaches `shell.openExternal` or
+    // `shell.openPath`, and the second also reads the exports folder off disk —
+    // neither available to a sandboxed preload. This is the entry where
+    // succeeding without acting would be most misleading: a person who pressed
+    // a link and was told it opened would go looking for a window that is not
+    // there.
+    isOpenCommandName(review.command) ||
     // MAR-576. Performing one writes the agent folder and the store, both of
     // which need `node:fs` — and this module stays importable from a sandboxed
     // preload. Succeeding here would report a manifest replaced that was not.
@@ -2587,6 +2669,32 @@ export interface DispatchContext {
       artifact_id?: string;
     },
   ): Promise<WorkspaceActionResult>;
+  /**
+   * Start something outside DASH's window (MAR-697, MAR-698).
+   *
+   * Injected for the reason `workspaceAction` above is, and it is the sharpest
+   * case on this interface: performing one calls `shell.openExternal` or
+   * `shell.openPath`, and a sandboxed preload holds neither. A module that
+   * could answer this itself would be a module that could open anything from a
+   * page's say-so.
+   *
+   * **The two gates are the implementation's and are deliberately not stated
+   * here.** `electron/open-out.ts` owns both — the `https` check on an address
+   * and the containment check on a file name — because a rule written at this
+   * seam is a rule a second implementation could forget, while a rule written
+   * beside the `shell` call is unavoidable by anything that actually opens
+   * something. `sampleAction` below makes the same argument about its ownership
+   * check.
+   *
+   * `target` is loose because the two commands take different fields and
+   * `reviewCommand` has already enforced which. Nothing here may carry a path:
+   * `file` is a single name, and what it is allowed to name is decided in main
+   * against a folder main computed.
+   */
+  openAction(
+    action: OpenAction,
+    target: { url?: string; agent_id?: string; file?: string },
+  ): Promise<{ ok: boolean; refusal?: string; detail?: string }>;
   /**
    * Re-import an agent DASH scaffolded, from DASH's current template (MAR-576).
    *
@@ -3171,6 +3279,35 @@ export async function dispatchCommand(
       reason: result.refusal,
       detail: result.detail,
       data: result.data,
+    };
+  }
+
+  if (isOpenCommandName(review.command)) {
+    /*
+     * MAR-697, MAR-698. Note what does not leave this function: a path.
+     *
+     * `open.link` carries an address and main decides whether it is one DASH
+     * will open — `https` and nothing else. `open.export` carries an agent and
+     * a single file *name*, and main computes the folder that name may resolve
+     * in. So the widest thing a compromised renderer can ask for here is "open
+     * a secure web address" or "open a file DASH itself saved for agent X",
+     * which is what the two anchors on the screen ask for.
+     *
+     * The fields are read optionally and passed through. Which of them each
+     * command requires is `reviewCommand`'s job, already done by here.
+     */
+    const optionalField = (key: string): string | undefined =>
+      typeof review.payload[key] === "string" ? (review.payload[key] as string) : undefined;
+    const result = await context.openAction(OPEN_ACTIONS[review.command], {
+      url: optionalField("url"),
+      agent_id: optionalField("agent_id"),
+      file: optionalField("file"),
+    });
+    return {
+      ok: result.ok,
+      request_id: review.audit.request_id,
+      reason: result.refusal,
+      detail: result.detail,
     };
   }
 

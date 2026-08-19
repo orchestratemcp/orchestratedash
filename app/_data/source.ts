@@ -156,6 +156,18 @@ interface DashShellClient {
       say so rather than throw. */
   exportBriefAsPdf?(args: { agent_id: string; artifact_id: string }): Promise<CommandResult>;
   /**
+   * The two ways out of DASH's window (MAR-697, MAR-698).
+   *
+   * Optional for the reason everything here is, and the degradation differs
+   * between them in a way that decides how each is called. Without `openLink`
+   * an anchor is left to behave like an anchor, which is right in a browser tab
+   * and inert in an installed shell too old to have the command — so a link
+   * there stays exactly as dead as it is today, and nothing new breaks. Without
+   * `openExport` there is nothing to fall back to, so the list says so.
+   */
+  openLink?(args: { url: string }): Promise<CommandResult>;
+  openExport?(args: { agent_id: string; file: string }): Promise<CommandResult>;
+  /**
    * Re-import an agent DASH created, from DASH's current template (MAR-576).
    *
    * Optional for the same reason as the two above, and the case is a real one
@@ -1182,6 +1194,61 @@ export async function exportBriefAsPdf(args: {
     };
   }
   return bridge.exportBriefAsPdf(args);
+}
+
+/**
+ * Open one address the agent collected, outside DASH (MAR-698).
+ *
+ * ## The browser-tab refusal here is a fallback rather than a message
+ *
+ * Every other function in this module composes a sentence for a host that
+ * cannot act, because a button that did nothing has to say why. This one is
+ * different: on the developer path the page is in a real browser, and an anchor
+ * whose click was not intercepted has already done the right thing on its own.
+ * So `LinkOut` calls this **only** when the bridge is there, and lets the
+ * anchor behave like an anchor otherwise. The refusal below is what a caller
+ * that did not check gets, and it names the app rather than the link.
+ *
+ * The `https` rule is not restated here, deliberately. A check in the renderer
+ * would be a second copy of a rule that has to hold in main anyway, free to
+ * drift from it and worth nothing against a compromised page. See
+ * `lib/shell/outbound.ts`, which is the only place it is written down.
+ */
+export async function openLink(args: { url: string }): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge?.openLink === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to follow this link.",
+    };
+  }
+  return bridge.openLink(args);
+}
+
+/**
+ * Open one file DASH saved for this agent (MAR-697).
+ *
+ * `openLink`'s twin with the opposite degradation, and the refusal here is a
+ * real message rather than a fallback: a browser tab has no way at all to open
+ * a file on this computer, and there is no anchor behaviour to fall back to
+ * because this list names files rather than addresses.
+ */
+export async function openExport(args: {
+  agent_id: string;
+  file: string;
+}): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge?.openExport === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to open this file.",
+    };
+  }
+  return bridge.openExport(args);
 }
 
 /**
