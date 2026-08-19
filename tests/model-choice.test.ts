@@ -45,7 +45,8 @@ import {
 } from "../lib/ai/model-choice";
 import type { DefaultModelLevel } from "../lib/ai/model-levels";
 import { classifyProbe } from "../lib/ai/liveness";
-import type { ConnectionSourceManifest } from "../lib/connections";
+import { composeOperationId } from "../lib/broker/operations";
+import type { ConnectionSourceManifest, RequiredCapability } from "../lib/connections";
 import { Vault } from "../lib/vault";
 import { FakeSafeStorage } from "./fakes/fake-safe-storage";
 import { refusingOAuth } from "./fakes/oauth-operations";
@@ -82,6 +83,7 @@ const {
   writeStepLevelOverride,
 } = await import("../lib/ai/model-store");
 const { buildAgentModelSettings, buildRunModel } = await import("../lib/views/models");
+const { workspaceView } = await import("../lib/views/build");
 const { readStoreBytes } = await import("./helpers/store-bytes");
 
 /** Distinctive: if this appears anywhere, it got there from this test. */
@@ -107,7 +109,11 @@ const LATER = "2026-08-10T10:00:00.000Z";
  */
 function manifestWith(
   route: Array<Record<string, unknown>>,
-  overrides: { provider?: string; ownership?: string } = {},
+  overrides: {
+    provider?: string;
+    ownership?: string;
+    capabilities?: RequiredCapability[];
+  } = {},
 ): ConnectionSourceManifest {
   return {
     planned_route: route as ConnectionSourceManifest["planned_route"],
@@ -119,7 +125,9 @@ function manifestWith(
           label: "Your model provider",
           purpose: "Write the digest",
           ownership: (overrides.ownership ?? "dash_managed") as "dash_managed",
-          capabilities: [{ id: "model.completion", label: "Write text", access: "write" }],
+          capabilities: overrides.capabilities ?? [
+            { id: "model.completion", label: "Write text", access: "write" },
+          ],
           fields: [
             {
               id: "key",
@@ -185,11 +193,10 @@ function reported(...models: Array<string | undefined>): Array<{ model?: string 
  * would fail as an import error somewhere far away from the thing it was
  * checking.
  */
-function storedManifest(): Record<string, unknown> {
+function storedManifest(source: ConnectionSourceManifest = manifestWith(MIXED_ROUTE)): Record<string, unknown> {
   const example = JSON.parse(
     readFileSync(path.join(repoRoot, "examples", "agent.manifest.example.json"), "utf8"),
   ) as Record<string, unknown>;
-  const source = manifestWith(MIXED_ROUTE);
   return {
     ...example,
     agent: { ...(example["agent"] as Record<string, unknown>), name: AGENT },
@@ -372,6 +379,38 @@ describe("what the agent page can offer", () => {
     writeStepLevelOverride(AGENT, 2, "cheap", AT);
     const settings = buildAgentModelSettings(AGENT, manifestWith(MIXED_ROUTE));
     expect(settings.steps.find((entry) => entry.step === 2)?.overridden).toBe(false);
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * What the Run press discloses about spend (MAR-694)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * `lib/views/build.ts`'s `spendingService` used to find a spend capability by
+ * matching `.digest.curate` on the id. `.brief.compose` is a second, equally
+ * real spend operation (MAR-674) that suffix check never recognised, so an
+ * agent that only asks to write up a briefing read as unable to spend while
+ * its own run could still make a paid call. The fix reads the broker's own
+ * operation catalogue instead of a literal suffix, so this pins the case the
+ * old check missed rather than the one it already caught.
+ */
+describe("what the Run press discloses about spend", () => {
+  it("reports it can spend for a plan declaring brief.compose, not just digest.curate", async () => {
+    const source = manifestWith(MIXED_ROUTE, {
+      capabilities: [
+        { id: composeOperationId("openrouter"), label: "Write it up", access: "spend" },
+      ],
+    });
+    await connectKey(vault(), source);
+    writeAgentModelChoice(AGENT, "openrouter", "anthropic/claude-sonnet-5", AT);
+    importManifest(storedManifest(source));
+
+    const view = workspaceView(AGENT);
+    if (!view.found) {
+      throw new Error("expected the agent to be found");
+    }
+    expect(view.run_spend).not.toBeNull();
   });
 });
 
