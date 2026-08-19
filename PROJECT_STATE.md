@@ -56,9 +56,22 @@ the packaged path.
 
 ## Lifecycle counts (from state.json, 2026-08-19)
 
-135 packet entries merged, 18 proven, 23 planned. **Proven-debt is far
-over budget** — the current focus is a proving wave, not new features.
-Merged-but-unproven work is inventory, not progress.
+132 packet entries merged, 26 proven, 19 planned, after the 2026-08-19
+packaged-shell proving sweep promoted eight packets against the shell
+smoke's 85 proofs. **Proven-debt is still far over budget** — the proving
+wave continues, not new features. Merged-but-unproven work is inventory,
+not progress.
+
+The promotions rest on **`pnpm verify:shell` against the real installed
+store: 85/85 PASS, 0 FAIL**, proof 0 green on `%APPDATA%\orchestratedash`.
+
+Getting there repaired the store. `dash.sqlite` was WAL-mode with no
+`-wal` and unreadable (MAR-700); a b-tree recovery showed the damaged file
+was strictly worse than MAR-676's 2026-08-17 snapshot, so the snapshot was
+restored and the damaged file kept at `malformed-20260819/`. DASH then
+repaired itself unattended — MAR-682's reconciliation recognised the
+pre-renumber shape, created `chief_messages`, and the migration loop
+carried the store to `user_version` 29, 38 tables, `integrity_check: ok`.
 
 ## Known standing constraints
 
