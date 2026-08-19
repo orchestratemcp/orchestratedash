@@ -56,9 +56,18 @@ the packaged path.
 
 ## Lifecycle counts (from state.json, 2026-08-19)
 
-135 packet entries merged, 18 proven, 23 planned. **Proven-debt is far
-over budget** — the current focus is a proving wave, not new features.
-Merged-but-unproven work is inventory, not progress.
+132 packet entries merged, 26 proven, 19 planned, after the 2026-08-19
+packaged-shell proving sweep promoted eight packets against the shell
+smoke's 85 proofs. **Proven-debt is still far over budget** — the proving
+wave continues, not new features. Merged-but-unproven work is inventory,
+not progress.
+
+The sweep could not run against the installed store: `dash.sqlite` is
+WAL-mode with no `-wal` and is unreadable, so `verify:shell` dies before
+proof 0 (MAR-700, urgent, no fix attempted). The eight promotions rest on
+the same smoke re-run against a clean installed-style store — CI's
+shell-smoke configuration, 85/85 — so the real-store re-run is still owed
+once MAR-700 is decided.
 
 ## Known standing constraints
 
