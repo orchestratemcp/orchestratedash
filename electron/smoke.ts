@@ -269,6 +269,97 @@ async function waitForValue<T>(
 }
 
 /**
+ * Wait for the runner to report a spawned proof agent gone; if it never does,
+ * kill it directly rather than hand `rmSync` a live child and hope a few quick
+ * retries outrun it.
+ *
+ * MAR-702. `runner/supervisor.ts`'s own `stop()` already escalates SIGTERM to
+ * SIGKILL after `STOP_GRACE_MS` (5s), and this harness then waits another 15s
+ * for that to land before it ever touches the directory the child is running
+ * in. On an unloaded machine that is generous. On a CI runner finishing a
+ * whole verify pass at once it is not always enough: proof 8's cleanup hit
+ * exactly this on 2026-08-19 (run 32298839266) — 15069ms over 56 polls, never
+ * reported gone, immediately followed by an EPERM that killed the whole
+ * process before proof 9 ever ran. That is the failure this function removes:
+ * not by raising the budget, which only makes the same race less likely to be
+ * observed, but by reaping the child directly once the budget is spent, so
+ * cleanup no longer depends on winning a race against a process this harness
+ * knows exactly how to end.
+ */
+async function waitOrReap(
+  call: ReturnType<typeof runnerFetch>,
+  origin: string,
+  token: string,
+  agentId: string,
+  label: string,
+): Promise<void> {
+  const observed = await waitForObserved<"gone">(async () => {
+    try {
+      const response = await call(`${origin}/agents`, {
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(3_000),
+      });
+      const body = (await response.json()) as {
+        agents?: Array<{ agent_id?: string; lifecycle?: string; pid?: number | null }>;
+      };
+      const entry = body.agents?.find((agent) => agent.agent_id === agentId);
+      const gone =
+        entry === undefined || entry.lifecycle === "exited" || entry.lifecycle === "stopped";
+      return { value: gone ? ("gone" as const) : null, seen: entry ?? null };
+    } catch (error: unknown) {
+      return { value: null, seen: { error: error instanceof Error ? error.message : String(error) } };
+    }
+  }, label, 15_000);
+
+  if (observed.value !== null) return;
+
+  const pid = (observed.last_seen as { pid?: number | null } | null)?.pid ?? null;
+  if (pid === null) {
+    console.warn(
+      `[smoke] ${label}: not reported gone after the wait, and no pid was observed to reap; ` +
+        `last saw ${JSON.stringify(observed.last_seen)}`,
+    );
+    return;
+  }
+  console.warn(`[smoke] ${label}: not reported gone after the wait; reaping pid ${String(pid)} directly`);
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch (error: unknown) {
+    // The runner's own SIGKILL and this one racing is not a defect — ESRCH
+    // here means the process was already gone by the time this ran.
+    console.warn(
+      `[smoke] ${label}: direct kill of pid ${String(pid)} failed, likely already exited: ${String(error)}`,
+    );
+  }
+  // A bounded settle on top of `rmSync`'s own retry below: Windows can hold a
+  // handle for a short moment after the process that owned it has actually
+  // died.
+  await new Promise((resolve) => setTimeout(resolve, 500));
+}
+
+/**
+ * `rmSync`'s bounded retry covers the brief window after a process genuinely
+ * exits; `waitOrReap` above covers one that had not. If the directory still
+ * cannot be removed after both, that is worth knowing — antivirus, a second
+ * process, something this harness does not model — but it is a cleanup fact,
+ * not a verdict on the proof that already recorded its own pass or fail
+ * above. Letting it throw would abort every proof still queued behind this
+ * one, which is what actually happened in run 32298839266: the uncaught EPERM
+ * from this exact call ended the process before proof 9 got a chance to run
+ * at all. `electron/smoke.ts`'s own `exitAfterClosing` already establishes
+ * the same principle for the store: never let cleanup change the verdict.
+ */
+function removeScratchDir(label: string, dir: string): void {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+  } catch (error: unknown) {
+    console.error(
+      `[smoke] ${label}: could not remove ${dir} after waiting and reaping: ${String(error)}`,
+    );
+  }
+}
+
+/**
  * The example snapshot's deadlines are fixed dates in July 2026 and every one of
  * them is now in the past, so an `approve` against it is refused at
  * `approval_expired` — a real rejection, and the wrong one to be proving. The
@@ -2477,23 +2568,7 @@ async function proveUntracedAttempts(recorded: {
     }).catch(() => undefined);
 
     // Windows holds the child's cwd until it has fully exited; see proof 7.
-    await waitForValue(async () => {
-      try {
-        const response = await call(`${handle.origin}/agents`, {
-          headers: { authorization: `Bearer ${handle.token}` },
-          signal: AbortSignal.timeout(3_000),
-        });
-        const body = (await response.json()) as {
-          agents?: Array<{ agent_id?: string; lifecycle?: string }>;
-        };
-        const entry = (body.agents ?? []).find((agent) => agent.agent_id === AGENT_ID);
-        return entry === undefined || entry.lifecycle === "exited" || entry.lifecycle === "stopped"
-          ? "gone"
-          : null;
-      } catch {
-        return null;
-      }
-    }, "the burst agent's process to exit", 15_000);
+    await waitOrReap(call, handle.origin, handle.token, AGENT_ID, "the burst agent's process to exit");
 
     removeRegistration(dataDir, AGENT_ID);
     forgetAgent(AGENT_ID);
@@ -2506,7 +2581,7 @@ async function proveUntracedAttempts(recorded: {
       signal: AbortSignal.timeout(5_000),
     }).catch(() => undefined);
   } finally {
-    rmSync(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    removeScratchDir("the burst proof's scratch directory", workDir);
   }
 }
 
@@ -3335,23 +3410,7 @@ async function proveTheBroker(recorded: {
     // child's cwd until it has fully exited, and the first version of this
     // proof hit EPERM there — which turned a passing run into a failing one
     // over a temporary file lock rather than over anything about the broker.
-    await waitForValue(async () => {
-      try {
-        const response = await call(`${handle.origin}/agents`, {
-          headers: { authorization: `Bearer ${handle.token}` },
-          signal: AbortSignal.timeout(3_000),
-        });
-        const body = (await response.json()) as {
-          agents?: Array<{ agent_id?: string; lifecycle?: string }>;
-        };
-        const entry = (body.agents ?? []).find((agent) => agent.agent_id === AGENT_ID);
-        return entry === undefined || entry.lifecycle === "exited" || entry.lifecycle === "stopped"
-          ? "gone"
-          : null;
-      } catch {
-        return null;
-      }
-    }, "the proof agent's process to exit", 15_000);
+    await waitOrReap(call, handle.origin, handle.token, AGENT_ID, "the proof agent's process to exit");
 
     removeRegistration(dataDir, AGENT_ID);
     forgetAgent(AGENT_ID);
@@ -3368,7 +3427,7 @@ async function proveTheBroker(recorded: {
     // here, whatever happened above.
     delete process.env.DASH_BROKER_PROOF_ORIGIN;
     server?.close();
-    rmSync(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    removeScratchDir("the broker proof's scratch directory", workDir);
   }
 }
 
@@ -3643,23 +3702,13 @@ async function proveProtectedWorkspaceDownload(recorded: {
       signal: AbortSignal.timeout(10_000),
     }).catch(() => undefined);
 
-    await waitForValue(async () => {
-      try {
-        const response = await call(`${handle.origin}/agents`, {
-          headers: { authorization: `Bearer ${handle.token}` },
-          signal: AbortSignal.timeout(3_000),
-        });
-        const body = (await response.json()) as {
-          agents?: Array<{ agent_id?: string; lifecycle?: string }>;
-        };
-        const entry = (body.agents ?? []).find((agent) => agent.agent_id === AGENT_ID);
-        return entry === undefined || entry.lifecycle === "exited" || entry.lifecycle === "stopped"
-          ? "gone"
-          : null;
-      } catch {
-        return null;
-      }
-    }, "the workspace proof agent's process to exit", 15_000);
+    await waitOrReap(
+      call,
+      handle.origin,
+      handle.token,
+      AGENT_ID,
+      "the workspace proof agent's process to exit",
+    );
 
     removeRegistration(dataDir, AGENT_ID);
     forgetAgent(AGENT_ID);
@@ -3669,8 +3718,8 @@ async function proveProtectedWorkspaceDownload(recorded: {
       signal: AbortSignal.timeout(5_000),
     }).catch(() => undefined);
   } finally {
-    rmSync(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-    rmSync(selectedFilesDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    removeScratchDir("the workspace proof's scratch directory", workDir);
+    removeScratchDir("the workspace proof's selected-files directory", selectedFilesDir);
   }
 }
 
