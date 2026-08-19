@@ -53,6 +53,30 @@ export default function AgentsPage(): ReactNode {
    */
   const [refreshKey, setRefreshKey] = useState(0);
   const state = useView((source) => source.agents(), focusKey + refreshKey);
+  /*
+   * MAR-690 follow-up. A re-read after asking the chief a question flips
+   * `state.status` back to `"loading"` for the time it takes to re-read the
+   * store — `useView`'s own rule, and the right one for a page's first paint.
+   * But this page's `"loading"` branch below swaps the whole fleet out for a
+   * skeleton, which unmounts `FleetList` and, with it, the chief room's own
+   * open/closed state (`FleetList`'s `chiefOpen`, owned there rather than
+   * here for the reasons its own comment gives). Henrik: the room "closed
+   * down while answering" and he had to reopen it to see the answer that had
+   * already arrived.
+   *
+   * `display` is the fix, held here rather than in `useView` itself: the last
+   * successfully read page, kept on screen through a refresh that follows it,
+   * so the fleet — and the room open inside it — never unmounts once there is
+   * something to show. Only the very first read, with nothing yet to keep
+   * showing, still renders the skeleton below.
+   */
+  const [lastReady, setLastReady] = useState<typeof state | null>(null);
+  useEffect(() => {
+    if (state.status === "ready") {
+      setLastReady(state);
+    }
+  }, [state]);
+  const display = state.status === "loading" && lastReady !== null ? lastReady : state;
   const host = useHost();
   const canAct = useCanAct();
   const storeDamage = useRunnerStoreDamage(canAct);
@@ -66,8 +90,8 @@ export default function AgentsPage(): ReactNode {
    * which agents are starred.
    */
   const agents = useMemo(
-    () => (state.status === "ready" ? applyFavouriteOverrides(state.data.agents, favouriteOverrides) : []),
-    [state, favouriteOverrides],
+    () => (display.status === "ready" ? applyFavouriteOverrides(display.data.agents, favouriteOverrides) : []),
+    [display, favouriteOverrides],
   );
 
   return (
@@ -85,10 +109,10 @@ export default function AgentsPage(): ReactNode {
       */}
       {storeDamage !== null ? <RunnerStoreDamageNotice kind={storeDamage} /> : null}
 
-      {state.status === "loading" ? (
+      {display.status === "loading" ? (
         <ViewLoading what="your agents" />
-      ) : state.status === "failed" ? (
-        <ViewFailed recovery={state.recovery} />
+      ) : display.status === "failed" ? (
+        <ViewFailed recovery={display.recovery} />
       ) : (
         <>
           {/*
@@ -102,7 +126,7 @@ export default function AgentsPage(): ReactNode {
             agent, the list is what they came for, and an onboarding card that
             outstays its welcome is the thing every empty state gets wrong.
           */}
-          {state.data.agents.length === 0 && state.data.damage === null ? (
+          {display.data.agents.length === 0 && display.data.damage === null ? (
             <TryTheScout />
           ) : null}
           {/*
@@ -111,14 +135,14 @@ export default function AgentsPage(): ReactNode {
             about a row that is gone would turn a partial loss into a total one
             on screen — which is the failure this whole change exists to undo.
           */}
-          {state.data.damage !== null ? <ViewFailed recovery={state.data.damage} /> : null}
-          {state.data.agents.length === 0 ? (
+          {display.data.damage !== null ? <ViewFailed recovery={display.data.damage} /> : null}
+          {display.data.agents.length === 0 ? (
             /*
              * "No agents yet" is a claim about history, and it is false when the
              * agents are in the store and unreadable. The recovery above already
              * says what happened, so this says only what is true either way.
              */
-            state.data.damage !== null ? null : (
+            display.data.damage !== null ? null : (
               <div className="empty">
                 <p>
                   Nothing here yet. Start with AI News Scout above, or{" "}
@@ -142,7 +166,7 @@ export default function AgentsPage(): ReactNode {
         */
         <FleetList
           agents={agents}
-          chief={state.data.chief}
+          chief={display.data.chief}
           canAct={canAct}
           onAsked={() => {
             setRefreshKey((value) => value + 1);
@@ -166,12 +190,12 @@ export default function AgentsPage(): ReactNode {
             was too: decisions outlive their subjects, so an emptied fleet with
             history still needs a way to it.
           */}
-          {state.data.decisions.total === 0 ? null : (
+          {display.data.decisions.total === 0 ? null : (
             <p className="fleet-decisions-note">
               <Link href="/decisions">
-                {state.data.decisions.total === 1
+                {display.data.decisions.total === 1
                   ? "1 decision recorded — see the log"
-                  : `${String(state.data.decisions.total)} decisions recorded — see the log`}
+                  : `${String(display.data.decisions.total)} decisions recorded — see the log`}
               </Link>
             </p>
           )}
