@@ -18,6 +18,20 @@ import type { WorkspaceSnapshotView } from "../lib/views/types";
 
 const OBSERVED = "2026-08-11T09:00:00.000Z";
 
+/**
+ * The two things DASH can hold for an agent, named once (MAR-703).
+ *
+ * `HELD` is the ordinary agent: imported through any of the three doors, with a
+ * registration naming a program the runner could spawn. `UNHELD` is ADR 0008's
+ * manifest-only standing — DASH knows the plan and has nothing to run.
+ *
+ * Every call names one of them, which is the point of the parameter being an
+ * object: `buildAgentControl(snapshot, true, true)` would be a fixture one
+ * transposition away from asserting the opposite of what it reads.
+ */
+const HELD = { startable: true } as const;
+const UNHELD = { startable: false } as const;
+
 function snapshot(over: Partial<WorkspaceSnapshotView> = {}): WorkspaceSnapshotView {
   return {
     observed_at: OBSERVED,
@@ -50,24 +64,70 @@ function snapshot(over: Partial<WorkspaceSnapshotView> = {}): WorkspaceSnapshotV
 
 describe("an agent that has not reported", () => {
   /**
-   * The defect in one test. A null snapshot is the state a just-added agent is
-   * in, and the old page drew no control and said nothing about it.
+   * MAR-703, and the defect in one test.
+   *
+   * A snapshot only ever arrives from a running agent, so an agent that has
+   * never run on this store has none — the state a fresh import is in, and the
+   * state every agent was in after the 2026-08-19 store restore rebuilt the
+   * `agents` table from folders. This branch answered all of them with a
+   * sentence and no button, which closed the loop Henrik reported: no snapshot,
+   * no start control, no run, no snapshot.
+   *
+   * ADR 0022 had already decided DASH may start a registered agent whose process
+   * is not running. It could never fire here, because it is gated on a status
+   * read off the snapshot this branch returns above.
    */
-  it("still has a status and a stated reason rather than nothing", () => {
-    const control = buildAgentControl(null, true);
+  it("offers a start when DASH holds a program, though nothing has reported", () => {
+    const control = buildAgentControl(null, true, HELD);
 
-    expect(control.run).toEqual({ kind: "idle", reason: "not_reported" });
+    expect(control.run).toEqual({ kind: "start", observed_at: null });
+  });
+
+  /**
+   * The status tile is the agent's own word and the button is DASH's, and the
+   * two are allowed to disagree.
+   *
+   * "Not reported" stays true beside a Start button — nothing has reported —
+   * and relabelling the tile to match the control would put a claim about the
+   * process into the one field that only ever carries the agent's own report.
+   */
+  it("still says the agent has reported nothing, beside the button", () => {
+    const control = buildAgentControl(null, true, HELD);
+
     expect(control.status.label).toBe("Not reported");
     expect(control.status.detail).not.toBe("");
   });
 
+  /**
+   * What the sentence is *for*, after the narrowing.
+   *
+   * MAR-609 built `not_reported` because a freshly added agent once showed no
+   * button and no explanation. That is still the right answer for the agent DASH
+   * genuinely cannot run — ADR 0008's manifest-only standing — and this holds
+   * the sentence to that population rather than letting the fix delete it.
+   */
+  it("keeps the stated reason for an agent DASH holds no program for", () => {
+    const control = buildAgentControl(null, true, UNHELD);
+
+    expect(control.run).toEqual({ kind: "idle", reason: "not_reported" });
+    expect(control.status.label).toBe("Not reported");
+  });
+
+  /**
+   * The one refusal that is about the window rather than the agent, and it
+   * outranks the new branch as it outranks every other.
+   *
+   * A browser tab reading the same agent must not be told the agent has not
+   * reported — that is a claim about the agent, and it would be false — and it
+   * must certainly not be offered a spawn it cannot reach.
+   */
   it("blames the window rather than the agent when the window cannot act", () => {
-    // A browser tab reading the same agent must not be told the agent has not
-    // reported — that is a claim about the agent, and it would be false.
-    expect(buildAgentControl(null, false).run).toEqual({
-      kind: "idle",
-      reason: "read_only",
-    });
+    for (const holding of [HELD, UNHELD]) {
+      expect(buildAgentControl(null, false, holding).run).toEqual({
+        kind: "idle",
+        reason: "read_only",
+      });
+    }
   });
 });
 
@@ -78,6 +138,7 @@ describe("an agent that has reported", () => {
         tasks: [{ id: "task-1", label: "Collect the news", status: "pending", run_id: null, detail: null, created_at: OBSERVED }],
       }),
       true,
+      HELD,
     );
 
     expect(control.run).toEqual({
@@ -98,6 +159,7 @@ describe("an agent that has reported", () => {
         tasks: [{ id: "task-1", label: "Done", status: "complete", run_id: "run-1", detail: null, created_at: OBSERVED }],
       }),
       true,
+      HELD,
     );
 
     expect(control.run).toEqual({ kind: "idle", reason: "nothing_waiting" });
@@ -116,6 +178,7 @@ describe("an agent that has reported", () => {
       const control = buildAgentControl(
         snapshot({ overview: { ...snapshot().overview, status } }),
         true,
+        HELD,
       );
 
       expect(control.run).toEqual({ kind: "idle", reason: "nothing_waiting" });
@@ -126,6 +189,7 @@ describe("an agent that has reported", () => {
     const control = buildAgentControl(
       snapshot({ overview: { ...snapshot().overview, status } }),
       true,
+      HELD,
     );
 
     expect(control.run).toEqual({ kind: "start", observed_at: OBSERVED });
@@ -159,6 +223,7 @@ describe("an agent that has reported", () => {
         ],
       }),
       true,
+      HELD,
     );
 
     expect(control.run).toEqual({ kind: "start", observed_at: OBSERVED });
@@ -173,6 +238,7 @@ describe("an agent that has reported", () => {
     const control = buildAgentControl(
       snapshot({ overview: { ...snapshot().overview, status: "offline" } }),
       false,
+      HELD,
     );
 
     expect(control.run).toEqual({ kind: "idle", reason: "read_only" });
@@ -205,6 +271,7 @@ describe("an agent that has reported", () => {
         tasks: [{ id: "task-1", label: "Next", status: "pending", run_id: null, detail: null, created_at: OBSERVED }],
       }),
       true,
+      HELD,
     );
 
     expect(control.run.kind).toBe("live");
@@ -219,6 +286,7 @@ describe("an agent that has reported", () => {
         tasks: [{ id: "task-1", label: "Collect", status: "pending", run_id: null, detail: null, created_at: OBSERVED }],
       }),
       false,
+      HELD,
     );
 
     expect(control.run).toEqual({ kind: "idle", reason: "read_only" });
@@ -234,7 +302,7 @@ describe("the status pill", () => {
    */
   it("is loud only for the states that need a person", () => {
     const tone = (status: WorkspaceSnapshotView["overview"]["status"]) =>
-      buildAgentControl(snapshot({ overview: { ...snapshot().overview, status } }), true).status
+      buildAgentControl(snapshot({ overview: { ...snapshot().overview, status } }), true, HELD).status
         .tone;
 
     expect(tone("ready")).toBe("calm");
@@ -251,6 +319,7 @@ describe("the status pill", () => {
     const control = buildAgentControl(
       snapshot({ overview: { ...snapshot().overview, status: "needs_attention" } }),
       true,
+      HELD,
     );
 
     expect(control.status.label).toBe("Needs attention");

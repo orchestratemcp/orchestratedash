@@ -523,6 +523,22 @@ const dashShell = {
   checkFolder: (args: { agent_id: string }) => send("folder.check", { ...args }),
   adoptFolder: (args: { agent_id: string }) => send("folder.adopt", { ...args }),
   revealFolder: (args: { agent_id: string }) => send("folder.reveal", { ...args }),
+  /**
+   * The fifth (MAR-705): set an agent up again from the copy DASH already keeps.
+   *
+   * One agent id, exactly like the three above, and the same argument holds in
+   * the same strong form: page script cannot supply a plan, a program, a path or
+   * a command. It names an agent DASH already has; main reads DASH's own folder
+   * for that agent, runs the same schema and the same constraints a first import
+   * runs, and asks the person before writing anything.
+   *
+   * It sits with the three rather than with `chooseFolder` because it names an
+   * agent, and its own method rather than a flag on `adoptFolder` because the
+   * two write different things — that one refreshes a plan, this one also puts
+   * back what starts a program — and a boolean deciding which would be one
+   * transposition away from re-pointing the thing that spawns.
+   */
+  repairAgent: (args: { agent_id: string }) => send("folder.repair", { ...args }),
 
   /**
    * The fourth folder command, and the only one on this whole bridge that takes

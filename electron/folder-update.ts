@@ -57,6 +57,7 @@ import {
   type CurrentManifest,
 } from "../lib/folder-changes";
 import { chooseAgentFolder } from "./folder-import";
+import { repairAgent } from "./folder-repair";
 import { checkManifestConstraints } from "../lib/manifest-constraints";
 import { readRegistration, writeRegistration } from "../lib/registration";
 import { acceptFolderManifest, readAgentManifest } from "../lib/store";
@@ -113,6 +114,18 @@ export function performFolderAction(
       return adoptFolder(dataDir, agentId);
     case "reveal":
       return revealFolder(dataDir, agentId);
+    /*
+     * MAR-705. The fifth verb, and the second to take the runner port.
+     *
+     * It takes it for `choose`'s stated reason — "the door that writes a
+     * registration is the door that must ask the supervisor to re-read its
+     * list" — which is precisely what this door is for: an agent whose
+     * registration DASH has just put back is one the runner goes on refusing as
+     * unknown until it reloads. The other three register nothing and still do
+     * not take it.
+     */
+    case "repair":
+      return repairAgent(dataDir, agentId, runner);
   }
 }
 

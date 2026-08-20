@@ -1583,6 +1583,23 @@ export function workspaceView(
      */
     avatar: readAgentAvatar(agent),
     snapshot,
+    /*
+     * MAR-703. Read from the registration rather than from the snapshot beside
+     * it, and that is this issue's load-bearing line.
+     *
+     * The snapshot answers "what has this agent said", and after a store restore
+     * — or on any agent that has never run here — the answer is nothing. The
+     * registration answers "does DASH hold a program it could spawn", which
+     * survives a rebuilt `agents` table because a registration is a file in
+     * `agents/` rather than a row: MAR-553's re-projection reads those files, and
+     * `runner/main.ts` loads them at boot. So an agent can be perfectly startable
+     * while having reported nothing at all, and until this field existed the
+     * control panel could not tell that state from a manifest-only agent.
+     *
+     * One small read on a five-second poll, beside the manifest, the folder and
+     * the deploy rows this function already opens.
+     */
+    startable: readRegistration(dataDir, agent) !== null,
     latest_digest: digest,
     latest_digest_grounding:
       digest === null || !isDigestArtifact(digest) ? null : analyzeGrounding(digest),

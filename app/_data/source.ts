@@ -190,6 +190,16 @@ interface DashShellClient {
   adoptFolder?(args: { agent_id: string }): Promise<CommandResult>;
   revealFolder?(args: { agent_id: string }): Promise<CommandResult>;
   /**
+   * Setting an agent up again from the copy DASH already keeps (MAR-705).
+   *
+   * Optional like every method here, and the degradation matters more than most:
+   * a shell too old to have it is one where the only repair is the terminal
+   * command Henrik asked to be rid of, so the sentence `folderCommand` composes
+   * for a missing method has to say *this version cannot* rather than anything a
+   * reader could take as *this cannot be repaired*.
+   */
+  repairAgent?(args: { agent_id: string }): Promise<CommandResult>;
+  /**
    * Adding an agent by choosing its folder (MAR-598).
    *
    * Optional for the reason every method here is, and the degradation is the
@@ -799,7 +809,7 @@ export async function refreshSampleAgent(args: {
  * argument, applied one layer further out.
  */
 async function folderCommand(
-  method: "checkFolder" | "adoptFolder" | "revealFolder",
+  method: "checkFolder" | "adoptFolder" | "revealFolder" | "repairAgent",
   args: { agent_id: string },
   cannot: string,
 ): Promise<CommandResult> {
@@ -834,6 +844,17 @@ export async function adoptAgentFolder(args: { agent_id: string }): Promise<Comm
 
 export async function revealAgentFolder(args: { agent_id: string }): Promise<CommandResult> {
   return folderCommand("revealFolder", args, "open this agent's folder");
+}
+
+/**
+ * Set this agent up again from the copy DASH already keeps (MAR-705).
+ *
+ * Routed through `folderCommand` because its signature is the same one id the
+ * other three take, and its two refusals are the same two — a window with no
+ * bridge, and a shell too old to have the method.
+ */
+export async function repairAgent(args: { agent_id: string }): Promise<CommandResult> {
+  return folderCommand("repairAgent", args, "set this agent up again");
 }
 
 /**
