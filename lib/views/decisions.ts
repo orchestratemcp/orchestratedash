@@ -45,7 +45,8 @@ import {
   readFleetModelDefault,
 } from "../ai/model-store";
 import type { DefaultModelLevel } from "../ai/model-levels";
-import type { StoreShape } from "../store";
+import { shouldSendTelemetry } from "../lab/settings";
+import { readLabTelemetrySettings, type StoreShape } from "../store";
 import type { AgentRow, FleetDecisionsView } from "./types";
 
 /**
@@ -249,6 +250,26 @@ function currentOutcomeFor(
             option_id: current.option_id,
             option_label: current.option_label,
           };
+    }
+    case "lab_telemetry": {
+      /*
+       * MAR-479, ADR 0026. One chain and no topic — there is one such setting.
+       *
+       * `shouldSendTelemetry` rather than the `enabled` column, and this is a
+       * drift case worth having: somebody who switched sending on and later lost
+       * the token — a profile move, a wiped vault — has a fleet that no longer
+       * matches the decision they made, and no decision says why. That is what
+       * ADR 0024's drift marker is for, and reading the column alone would
+       * report "sending" for a DASH that cannot send.
+       *
+       * The same helper the write-site froze its outcome with, so the two shapes
+       * agree by construction rather than by two people remembering to.
+       */
+      const settings = readLabTelemetrySettings();
+      return {
+        state: shouldSendTelemetry(settings) ? "sending" : "off",
+        endpoint: settings.endpoint,
+      };
     }
   }
 }

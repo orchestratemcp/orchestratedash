@@ -61,6 +61,7 @@ import type {
   AgentsView,
   ConnectionsView,
   HostsView,
+  LabTelemetryView,
   NotificationsView,
   RunView,
   RunsView,
@@ -152,6 +153,29 @@ export const READS = {
     params: [],
   },
   /*
+   * MAR-479, ADR 0026. The tenth, and the one that has to be readable *before*
+   * anybody consents to anything.
+   *
+   * What comes back is whether DASH is sending, to which address, four masked
+   * characters, and two payload bodies: the one DASH would post right now, and
+   * every one it has posted. The token is in the vault under one name,
+   * `labTelemetryView` never opens it, and there is no field on
+   * `LabTelemetryView` it could be assigned to — the closure
+   * `view.notifications` keeps over a webhook address, applied to a token.
+   *
+   * Read against the catalogue's promise: the bodies are safe to hand a renderer
+   * for the reason ADR 0026 decision 2 makes them safe to send at all — every
+   * field in one is a registry id, an enum, a digest or a date, and no branch of
+   * `composeObservation` reads a user-authored string. A read that could return
+   * an agent's goal would be a read that had quietly become the thing this whole
+   * feature is built not to do.
+   */
+  "view.labTelemetry": {
+    returns:
+      "Whether DASH reports its agents' plans to a LAB, which one, exactly what it would send right now, and exactly what it has sent. Never the token.",
+    params: [],
+  },
+  /*
    * MAR-628, ADR 0019. The ninth, and the one whose whole point is that a person
    * can see it: the controlled browser's own record — where DASH let its browser
    * go, where it went, what it decided about each request, and what it refused
@@ -197,6 +221,7 @@ export interface ReadResults {
   "view.workspace": WorkspaceView;
   "view.hosts": HostsView;
   "view.notifications": NotificationsView;
+  "view.labTelemetry": LabTelemetryView;
   "view.browser": BrowserView;
 }
 
@@ -302,6 +327,8 @@ export interface DashReadApi {
   hosts?(): Promise<ReadResponse<ReadResults["view.hosts"]>>;
   /** Optional for `hosts`'s reason: a shell older than MAR-588 has no such read. */
   notifications?(): Promise<ReadResponse<ReadResults["view.notifications"]>>;
+  /** Optional for `hosts`'s reason: a shell older than MAR-479 has no such read. */
+  labTelemetry?(): Promise<ReadResponse<ReadResults["view.labTelemetry"]>>;
   /** Optional for `hosts`'s reason: a shell older than MAR-628 has no such read. */
   browser?(agent: string): Promise<ReadResponse<ReadResults["view.browser"]>>;
 }

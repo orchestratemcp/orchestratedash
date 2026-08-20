@@ -161,8 +161,20 @@ describe("schema", () => {
     // before `fleet_model_default` rather than instead of it. Appended on the
     // standing terms: an installed store that has recorded 0 to 29 runs
     // exactly one more.
+    //
+    // 31 is MAR-479's `lab_telemetry`, `lab_telemetry_sends` and
+    // `lab_telemetry_sent` (ADR 0026) — whether this DASH reports its agents'
+    // plans to a LAB, and the verbatim record of everything it has sent.
+    // Appended on the standing terms.
+    //
+    // **This index was chosen by a worker session, which AGENTS.md says is not
+    // how serial-numbered resources get assigned.** It is the end of the list,
+    // which is the only position that leaves an already-migrated installed store
+    // alone, and this pin is what fails if a parallel packet took 31 first —
+    // exactly the blocking gate the note at 25 describes. Confirm the number at
+    // the merge rather than assuming it survived.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(30);
+    expect(version.user_version).toBe(31);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -314,7 +326,7 @@ describe("schema", () => {
     ).toEqual({ count: 0 });
     expect(
       (nextDb.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(30);
+    ).toBe(31);
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -674,7 +686,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(30);
+    ).toBe(31);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

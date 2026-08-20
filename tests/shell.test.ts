@@ -19,6 +19,7 @@ import type {
   ChiefAction,
   IdentityAction,
   ModelAction,
+  LabAction,
   NotifyAction,
   OpenAction,
   SampleAction,
@@ -350,6 +351,17 @@ describe("the audited command chokepoint", () => {
       "notify.disconnect",
       "notify.test",
       "notify.setKind",
+      // MAR-479, ADR 0026. The second route that can send something off this
+      // machine without an agent asking it to, and the first whose subject is
+      // DASH itself. Note the payloads again: no token in any of them, one
+      // address, one boolean. `lab.sendNow` is the only command in this whole
+      // catalogue marked irreversible for a reason that is not about spending
+      // money or messaging a person -- the bytes reach a database DASH does not
+      // own, and there is no request that would take them back.
+      "lab.connect",
+      "lab.disconnect",
+      "lab.setEnabled",
+      "lab.sendNow",
       // MAR-383. A third family, and the only one that reaches the OS vault.
       // Note what is *not* in any of their payloads: no key here could carry a
       // credential, which is what keeps "no secrets cross this boundary" true
@@ -707,6 +719,14 @@ describe("dispatch", () => {
     // about review, audit and routing -- depend on a network.
     const notifications: Array<{ action: NotifyAction; target: { kind?: string; enabled?: boolean } }> =
       [];
+    // MAR-479, ADR 0026. Recorded, not performed, for the entry above's reason
+    // and one more: the real implementation opens the credential window and
+    // posts to a LAB, and a fake that did either would make these tests depend
+    // on a network and on a machine that is very often not running.
+    const labTelemetry: Array<{
+      action: LabAction;
+      target: { enabled?: boolean; endpoint?: string };
+    }> = [];
     return {
       audited,
       inputs,
@@ -726,6 +746,7 @@ describe("dispatch", () => {
         return Promise.resolve({ ok: true, detail: `${action} ok` });
       },
       notifications,
+      labTelemetry,
       hosts,
       workspaces,
       menus,
@@ -797,6 +818,10 @@ describe("dispatch", () => {
       },
       notifyAction: (action: NotifyAction, target: { kind?: string; enabled?: boolean }) => {
         notifications.push({ action, target });
+        return Promise.resolve({ ok: true });
+      },
+      labAction: (action: LabAction, target: { enabled?: boolean; endpoint?: string }) => {
+        labTelemetry.push({ action, target });
         return Promise.resolve({ ok: true });
       },
       // MAR-545. Recorded, not performed, for `sampleAction`'s reason — and here

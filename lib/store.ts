@@ -52,6 +52,11 @@ import {
   findDuplicateHost,
   type HostRecord,
 } from "./hosts";
+import {
+  DEFAULT_LAB_ENDPOINT,
+  LAB_TELEMETRY_OFF,
+  type LabTelemetrySettings,
+} from "./lab/settings";
 import { checkManifestConstraints } from "./manifest-constraints";
 import { NO_NOTIFICATIONS, type NotificationSettings } from "./notify/settings";
 import { isMaskedHint } from "./secret-refs";
@@ -2025,6 +2030,192 @@ export function setNotificationKind(
  */
 export function forgetNotificationWebhook(): void {
   db().prepare("DELETE FROM notify_discord WHERE id = 1").run();
+}
+
+/* ---------------------------------------------------------------------- *
+ * LAB telemetry (MAR-479, ADR 0026)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Whether this DASH is set up to tell a LAB anything, and where.
+ *
+ * **No row means off**, and that is the shipped state rather than a default
+ * somebody could change: ADR 0026 decision 7's first constraint is "off by
+ * default, not off until you accept a banner", and absence is the only
+ * implementation of that which cannot be misread.
+ *
+ * The masked hint is re-checked on the way out, `readNotificationSettings`'
+ * discipline: this column is on the user's disk and anything could have been
+ * written into it, so a hint that would not have been accepted going in is not
+ * handed to a page as if DASH had produced it.
+ *
+ * Nothing here opens the vault. The token is never consulted to answer "is this
+ * set up" — that would pop an OS unlock prompt at the moment somebody merely
+ * looked at a settings page, `BrokerRowView`'s reason.
+ */
+export function readLabTelemetrySettings(): LabTelemetrySettings {
+  const row = db()
+    .prepare("SELECT enabled, endpoint, masked_hint, configured_at FROM lab_telemetry WHERE id = 1")
+    .get() as Record<string, unknown> | undefined;
+
+  if (row === undefined) {
+    return LAB_TELEMETRY_OFF;
+  }
+
+  const hint = text(row, "masked_hint");
+  const endpoint = text(row, "endpoint");
+  const configuredAt = text(row, "configured_at");
+
+  return {
+    enabled: row["enabled"] !== 0,
+    // An empty endpoint column reads as the default rather than as an empty
+    // string a send would then try to POST to. Same rule as the hint above.
+    endpoint: endpoint.length > 0 ? endpoint : DEFAULT_LAB_ENDPOINT,
+    masked_hint: isMaskedHint(hint) ? hint : null,
+    configured_at: configuredAt.length > 0 ? configuredAt : null,
+  };
+}
+
+/** Create the singleton if it is not there yet, so an UPDATE has something to hit. */
+function ensureLabTelemetryRow(): void {
+  db()
+    .prepare("INSERT OR IGNORE INTO lab_telemetry (id, endpoint) VALUES (1, ?)")
+    .run(DEFAULT_LAB_ENDPOINT);
+}
+
+/**
+ * Record that a token is now in the vault, and where it is for.
+ *
+ * Refuses anything that is not a mask, `recordNotificationWebhook`'s reason: a
+ * caller that reached here holding a real credential has made the one mistake
+ * this whole feature is shaped around, and it should fail at the call rather
+ * than land in a column `tests/redaction.test.ts` then finds by scanning the
+ * database bytes.
+ *
+ * `enabled` is deliberately not touched. Pasting a token is not consent to
+ * send — that is a separate press, and conflating them would make the switch
+ * decorative.
+ */
+export function recordLabTelemetryToken(
+  maskedHint: string,
+  endpoint: string,
+  at: string = new Date().toISOString(),
+): void {
+  if (!isMaskedHint(maskedHint)) {
+    throw new Error("recordLabTelemetryToken was given something that is not a masked hint.");
+  }
+  ensureLabTelemetryRow();
+  db()
+    .prepare("UPDATE lab_telemetry SET masked_hint = ?, endpoint = ?, configured_at = ? WHERE id = 1")
+    .run(maskedHint, endpoint, at);
+}
+
+/** Turn the sending on or off. Leaves the token and the receipts alone. */
+export function setLabTelemetryEnabled(enabled: boolean): void {
+  ensureLabTelemetryRow();
+  db().prepare("UPDATE lab_telemetry SET enabled = ? WHERE id = 1").run(enabled ? 1 : 0);
+}
+
+/**
+ * Forget the token and stop.
+ *
+ * The row goes; `lab_telemetry_sends` and `lab_telemetry_sent` **stay**. That
+ * split is ADR 0026 decision 7 and is the opposite of what
+ * `forgetNotificationWebhook` does with its own switches, on purpose: somebody
+ * turning this off is very likely turning it off *because* they went to look at
+ * what was being sent, and deleting the record of it at that exact moment would
+ * be the worst possible timing for a helpful cleanup.
+ *
+ * Keeping `lab_telemetry_sent` also means turning it back on does not re-send a
+ * month of history to a LAB that already has it.
+ *
+ * Removing the vault entry is the caller's job and happens first — see
+ * `electron/lab-telemetry.ts`.
+ */
+export function forgetLabTelemetryToken(): void {
+  db().prepare("DELETE FROM lab_telemetry WHERE id = 1").run();
+}
+
+/** One stored receipt, read back. `body` is the literal bytes that were posted. */
+export interface LabSendReceipt {
+  id: number;
+  sent_at: string;
+  endpoint: string;
+  body: string;
+  outcome: string;
+  /** HTTP status, or -1 when the attempt never got an answer. */
+  status: number;
+  detail: string;
+  accepted: number;
+}
+
+/**
+ * File one receipt. Called for every attempt, including the ones that failed.
+ *
+ * MAR-479's second constraint is the whole reason this exists, and the reason
+ * it takes `body` as a string the caller already built rather than an array it
+ * would serialise here: the preview a person read before deciding and the bytes
+ * that went over the socket have to be the same string, or the receipt is
+ * worthless. `payloadBody` is that single composer.
+ */
+export function recordLabSend(receipt: Omit<LabSendReceipt, "id">): void {
+  db()
+    .prepare(
+      "INSERT INTO lab_telemetry_sends (sent_at, endpoint, body, outcome, status, detail, accepted) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+    .run(
+      receipt.sent_at,
+      receipt.endpoint,
+      receipt.body,
+      receipt.outcome,
+      receipt.status,
+      receipt.detail,
+      receipt.accepted,
+    );
+}
+
+/** The receipts, newest first. `limit` because a page renders a few, not a year. */
+export function listLabSends(limit = 20): LabSendReceipt[] {
+  return (
+    db()
+      .prepare(
+        "SELECT id, sent_at, endpoint, body, outcome, status, detail, accepted " +
+          "FROM lab_telemetry_sends ORDER BY id DESC LIMIT ?",
+      )
+      .all(limit) as Array<Record<string, unknown>>
+  ).map((row) => ({
+    id: Number(row["id"]),
+    sent_at: text(row, "sent_at"),
+    endpoint: text(row, "endpoint"),
+    body: text(row, "body"),
+    outcome: text(row, "outcome"),
+    status: Number(row["status"]),
+    detail: text(row, "detail"),
+    accepted: Number(row["accepted"]),
+  }));
+}
+
+/** Which `(goal_slug, observed_on)` pairs LAB has already taken. */
+export function readLabSentKeys(): Set<string> {
+  const rows = db().prepare("SELECT key FROM lab_telemetry_sent").all() as Array<
+    Record<string, unknown>
+  >;
+  return new Set(rows.map((row) => text(row, "key")));
+}
+
+/**
+ * Mark a batch as taken.
+ *
+ * Only ever called with the keys of a **fully** accepted batch — see the
+ * migration note. `INSERT OR IGNORE` rather than a uniqueness check, so a
+ * re-send that raced does not throw.
+ */
+export function markLabSent(keys: readonly string[], at: string = new Date().toISOString()): void {
+  const statement = db().prepare("INSERT OR IGNORE INTO lab_telemetry_sent (key, sent_at) VALUES (?, ?)");
+  for (const key of keys) {
+    statement.run(key, at);
+  }
 }
 
 /**

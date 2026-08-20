@@ -40,9 +40,13 @@ the packaged path.
   MAR-696's corrected composer — incorporated into the page, the big
   agent spotlight box deleted, a model line and swap control added (ADR
   0023 amendment 1) — is a new PR awaiting Henrik's judgment on the
-  screenshots, not yet merged.
+  screenshots, not yet merged. **The DASH→LAB loop is closed** (MAR-479,
+  ADR 0026): a real LAB accepted a real observation composed from a real
+  run, `dash_route_`-prefixed, and LAB `/insights` renders
+  `dash-telemetry` beside `lab-local`. Off by default, one opt-in, and a
+  receipt of the literal bytes. Merged, not proven — the PR is open.
 
-## Active decision surface (ADRs 0019–0025)
+## Active decision surface (ADRs 0019–0026)
 
 - ADR 0019 + amendment 1: controlled browser. Slice 1 **built and
   machine-proven** (`electron/prove-browser.ts`, 11 checks) — open one

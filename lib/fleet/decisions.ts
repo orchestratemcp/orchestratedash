@@ -119,6 +119,24 @@ export const DECISION_KINDS = [
    * search through every decision this agent has ever produced.
    */
   "standing_answer",
+  /**
+   * Whether this DASH tells a LAB what its agents' plans are made of, and which
+   * LAB (MAR-479, ADR 0026 decision 9). Filed by `electron/lab-telemetry.ts` —
+   * switched on, switched off, or a token pasted for an address.
+   *
+   * **Its own kind, and here the rule is load-bearing rather than tidy.** The
+   * question a person asks this log is *"is my DASH sending anything off this
+   * machine, and since when?"*. Filed under `fleet_connection` it would resolve
+   * against whichever provider was connected last; filed beside the
+   * notification route it would answer with Discord's state.
+   * `fleet_level_model` and `chief_model` are separate from
+   * `fleet_model_default` for exactly this reason, and ADR 0024's own words are
+   * the test: a decision kind resolves against its own row.
+   *
+   * Subject is the fleet — a property of the install, not of an agent. Topic is
+   * empty: there is one such setting and no chain within it.
+   */
+  "lab_telemetry",
 ] as const;
 
 export type DecisionKind = (typeof DECISION_KINDS)[number];
