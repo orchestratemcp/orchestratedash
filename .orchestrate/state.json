@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "DASH",
-  "updated_at": "2026-08-20T07:25:00Z",
+  "updated_at": "2026-08-20T07:50:00Z",
   "current_wave": "Wave 2 - outside-app connections",
   "lifecycle_note": "RECONCILIATION 2026-08-19 (orchestrator): MAR-682, MAR-684, MAR-690, MAR-678, MAR-687 promoted merged -> proven on the proving wave's evidence - B's packaged-build proofs (prove-quit scenes PASS, cockpit screenshots) and C's scratch-store + vault proofs, completed by Henrik's attended chief press at 21:30 (real charged broker_audit allowed row; comments on each issue). MAR-680 stays merged (live-step and auto-refresh halves unproven, named on the issue); MAR-685 stays merged with a named blocker (the tagged commit fixed a different bug - attended re-walk needed before promotion). MAR-696 redo merged as e378ef0; first attempt c058d9b was refused by Henrik and replaced. MAR-704 filed, fixed and merged same day (f65d2fc). Every promotion verified with git merge-base --is-ancestor.",
   "authority": {
@@ -1451,8 +1451,8 @@
     },
     {
       "id": "MAR-703",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
+      "lifecycle": "proven",
+      "linear_status": "Done",
       "commit": "00330c6be5d9d495d8e2078c3730d5385283e02a",
       "proof": {
         "command": "pnpm typecheck; pnpm vitest run tests/agent-control.test.ts tests/copy-agent-page.test.ts tests/agent-cockpit-render.test.tsx tests/folder-repair.test.ts tests/folder-repair-flow.test.ts tests/repair-render.test.tsx tests/shell.test.ts tests/client-bundle.test.ts; pnpm test; pnpm build:renderer; pnpm build:shell; pnpm verify:shell NOT RUN (Henrik's DASH may be live)"
@@ -1461,8 +1461,8 @@
     },
     {
       "id": "MAR-705",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
+      "lifecycle": "proven",
+      "linear_status": "Done",
       "commit": "00330c6be5d9d495d8e2078c3730d5385283e02a",
       "proof": {
         "command": "pnpm typecheck; pnpm vitest run tests/agent-control.test.ts tests/copy-agent-page.test.ts tests/agent-cockpit-render.test.tsx tests/folder-repair.test.ts tests/folder-repair-flow.test.ts tests/repair-render.test.tsx tests/shell.test.ts tests/client-bundle.test.ts; pnpm test; pnpm build:renderer; pnpm build:shell; pnpm verify:shell NOT RUN (Henrik's DASH may be live)"
