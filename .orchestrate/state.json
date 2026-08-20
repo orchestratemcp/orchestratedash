@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "DASH",
-  "updated_at": "2026-08-19T20:40:00Z",
+  "updated_at": "2026-08-20T07:25:00Z",
   "current_wave": "Wave 2 - outside-app connections",
   "lifecycle_note": "RECONCILIATION 2026-08-19 (orchestrator): MAR-682, MAR-684, MAR-690, MAR-678, MAR-687 promoted merged -> proven on the proving wave's evidence - B's packaged-build proofs (prove-quit scenes PASS, cockpit screenshots) and C's scratch-store + vault proofs, completed by Henrik's attended chief press at 21:30 (real charged broker_audit allowed row; comments on each issue). MAR-680 stays merged (live-step and auto-refresh halves unproven, named on the issue); MAR-685 stays merged with a named blocker (the tagged commit fixed a different bug - attended re-walk needed before promotion). MAR-696 redo merged as e378ef0; first attempt c058d9b was refused by Henrik and replaced. MAR-704 filed, fixed and merged same day (f65d2fc). Every promotion verified with git merge-base --is-ancestor.",
   "authority": {
@@ -1451,9 +1451,9 @@
     },
     {
       "id": "MAR-703",
-      "lifecycle": "planned",
-      "linear_status": "Backlog",
-      "commit": null,
+      "lifecycle": "merged",
+      "linear_status": "In Progress",
+      "commit": "00330c6be5d9d495d8e2078c3730d5385283e02a",
       "proof": {
         "command": "pnpm typecheck; pnpm vitest run tests/agent-control.test.ts tests/copy-agent-page.test.ts tests/agent-cockpit-render.test.tsx tests/folder-repair.test.ts tests/folder-repair-flow.test.ts tests/repair-render.test.tsx tests/shell.test.ts tests/client-bundle.test.ts; pnpm test; pnpm build:renderer; pnpm build:shell; pnpm verify:shell NOT RUN (Henrik's DASH may be live)"
       },
@@ -1461,9 +1461,9 @@
     },
     {
       "id": "MAR-705",
-      "lifecycle": "planned",
-      "linear_status": "Backlog",
-      "commit": null,
+      "lifecycle": "merged",
+      "linear_status": "In Progress",
+      "commit": "00330c6be5d9d495d8e2078c3730d5385283e02a",
       "proof": {
         "command": "pnpm typecheck; pnpm vitest run tests/agent-control.test.ts tests/copy-agent-page.test.ts tests/agent-cockpit-render.test.tsx tests/folder-repair.test.ts tests/folder-repair-flow.test.ts tests/repair-render.test.tsx tests/shell.test.ts tests/client-bundle.test.ts; pnpm test; pnpm build:renderer; pnpm build:shell; pnpm verify:shell NOT RUN (Henrik's DASH may be live)"
       },
@@ -1471,9 +1471,9 @@
     },
     {
       "id": "MAR-694",
-      "lifecycle": "planned",
-      "linear_status": "In Review",
-      "commit": null,
+      "lifecycle": "merged",
+      "linear_status": "In Progress",
+      "commit": "3a03ebd88ee0c8b143ff84e7783cf2610d7532e3",
       "proof": {
         "command": "pnpm typecheck; targeted vitest (model-choice, views, broker-compose, curated-digest); pnpm test; pnpm build:renderer"
       },
@@ -1481,9 +1481,9 @@
     },
     {
       "id": "MAR-702",
-      "lifecycle": "planned",
-      "linear_status": "Todo",
-      "commit": null,
+      "lifecycle": "merged",
+      "linear_status": "In Progress",
+      "commit": "50b75ab32aac8c73550057aace75ba25f482b915",
       "proof": {
         "command": "pnpm typecheck; pnpm test; pnpm build:renderer; pnpm exec electron dist/electron/smoke.mjs --user-data-dir=<scratch>\\orchestratedash (x3 consecutive)",
         "run": "typecheck clean. Full vitest suite (maxWorkers: 6) 222 files / 4240 passed / 11 skipped / 0 failed. Shell smoke run three times consecutively against three fresh scratch --user-data-dir stores: 85/85 PASS, 0 FAIL, [smoke] all proofs passed, every run -- no reap/EPERM activity triggered in any run, confirming the new fallback path is inert in the steady state."
