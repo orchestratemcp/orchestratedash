@@ -31,10 +31,14 @@ import { resolveBriefCitations } from "../brief/fingerprint";
 import type { BriefCitations } from "../brief/citations";
 import type { ManifestPermissions, PermissionGrant } from "../contracts";
 import { brokeredField, requestedOperations, unrequestedOperations } from "../broker/grant";
-import { hasFrozenPath, operationById, type BrokerOperation } from "../broker/operations";
+import {
+  hasFrozenPath,
+  isSpendOperation,
+  operationById,
+  type BrokerOperation,
+} from "../broker/operations";
 import { describeClientOwner, describeCustody, describeDashClosedWindow } from "../broker/providers";
 import { listReceipts, readBrokerAudit, readBrokerLapses, type BrokerLapse } from "../broker/store";
-import { CURATE_OPERATION_SUFFIX } from "../broker/operations";
 import { describeRunSpend } from "../copy/curation";
 import { describeBrokerRefusal } from "../copy/recovery";
 import { agentDisplayName } from "../copy/agent-name";
@@ -1897,10 +1901,12 @@ function dashFactsForAgent(agent: string, store: StoreShape): PanelDashFacts {
  * different, already-worded outcome rather than a gap this function papers
  * over:
  *
- * 1. **The agent asks.** Its manifest declares a capability whose id is a
- *    curation operation — the same suffix `agent-kit/template/agent.mjs` finds
- *    its own by, so what this predicts and what the agent attempts are the same
- *    fact read from the same place.
+ * 1. **The agent asks.** Its manifest declares a capability whose id resolves,
+ *    through the broker's own operation catalogue (`operationById`), to an
+ *    operation whose `access` is `"spend"`. Read from the catalogue rather than
+ *    matched by a suffix literal here, so a fourth spend operation joins this
+ *    check the moment it joins `lib/broker/operations.ts` — the same place that
+ *    decides what the agent's own request will actually cost.
  * 2. **A key is held.** `can_choose` is false without one, and a run in that
  *    state is refused before anything is sent — `describeNotCurated`'s
  *    `not_connected` says so on the digest afterwards.
@@ -1930,7 +1936,11 @@ function spendingService(
       Array.isArray(capabilities) &&
       capabilities.some((capability) => {
         const id = (capability as { id?: unknown }).id;
-        return typeof id === "string" && id.endsWith(CURATE_OPERATION_SUFFIX);
+        if (typeof id !== "string") {
+          return false;
+        }
+        const operation = operationById(id);
+        return operation !== null && isSpendOperation(operation);
       })
     );
   });
