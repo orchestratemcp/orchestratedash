@@ -158,7 +158,30 @@ export const AGENT_CONTROL_COPY = {
    */
   idle: {
     /**
-     * No Agent DOM snapshot has arrived. The state every new agent is in.
+     * No snapshot **and** no program DASH could start. Narrowed by MAR-703.
+     *
+     * ## What it used to answer, and why that was the defect
+     *
+     * It answered every agent with no Agent DOM snapshot — which, ADR 0022
+     * having built starting-a-stopped-agent as exactly this door, was the one
+     * population that most needed the door. A snapshot only ever arrives from a
+     * running agent, so "nothing has reported" and "nothing can be started"
+     * were being told apart by nothing at all, and the sentence below was shown
+     * to both. Henrik met the consequence after the 2026-08-19 store restore:
+     * the header read NOT REPORTED, the Overview checklist said to open Run and
+     * press Run now, and the Run stage answered with this sentence and no
+     * button. `buildAgentControl` now offers Start whenever DASH holds a
+     * registration, so what is left here is the agent DASH genuinely cannot run
+     * — ADR 0008's manifest-only standing, or a registration that has gone.
+     *
+     * ## Why the wording moved off "has not reported"
+     *
+     * Because that was never the reason a person could not press anything, and
+     * saying it put the blame on the agent for DASH's own missing record. What
+     * a person can act on is the true fact: DASH has no program saved for this
+     * agent. `not_reported_exit` then names the way out, so this stops being a
+     * state with no exit (MAR-705) — the pairing is the whole point, and a
+     * sentence shipped without it would be the dead end again in new words.
      *
      * **"on this computer" is load-bearing and was added after MAR-602's
      * per-server buttons moved into this panel.** Without it the panel could
@@ -169,11 +192,40 @@ export const AGENT_CONTROL_COPY = {
      * to the sentence where a control is absent.
      */
     not_reported:
-      "This agent has not reported its state yet, so DASH has nothing to start on this computer.",
+      "DASH has no saved program for this agent, so there is nothing to start on this computer.",
     /** A snapshot, but no task waiting to be run. */
     nothing_waiting: "Nothing is waiting to be run on this computer.",
     /** The window cannot act — a browser tab rather than the installed shell. */
     read_only: "This window can show this agent but cannot control it.",
+  },
+  /**
+   * The way out of `idle.not_reported` (MAR-705).
+   *
+   * ## Why a state with no exit is the thing being fixed
+   *
+   * Henrik, told that the way to repair an agent was `npm run open-in-dash`:
+   * *"Okey, this redeploy of an faulty agent is to hard. Can you figure out how
+   * we can do it from dash and not some terminal command?"* The sentence above
+   * had been describing a situation and stopping, which on the one screen where
+   * a person has no other control reads as DASH reporting that their agent is
+   * over. Naming the door is what turns it back into a step.
+   *
+   * ## Why it points at Settings and does not act here
+   *
+   * ADR 0008 puts an agent's controls on the Settings stage and the repair is
+   * one of them, so this moves the person to the control rather than growing a
+   * second copy of it on the Run stage. Two buttons performing one repair is the
+   * duplication `buildAgentControl` was written to end, and a repair that ran
+   * from a sentence would run without the consent screen the Settings control
+   * shows.
+   *
+   * The label is short because buttons are uppercased globally: a long honest
+   * label reads as an alarm on a stage that is already telling somebody
+   * something is wrong.
+   */
+  not_reported_exit: {
+    detail: "If it should be able to run, DASH can set it up again from the copy it already has.",
+    action: "Repair this agent",
   },
   /*
    * There is no `manual_note` here and there was one until MAR-646.

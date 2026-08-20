@@ -432,6 +432,7 @@ export function AgentControls({
   hasFiles,
   hosts,
   onCancelKey,
+  onRepair,
   onRun,
   onRunControl,
   onRunOnHost,
@@ -480,6 +481,19 @@ export function AgentControls({
   ) => void;
   /** Ask one server to start this agent (MAR-602). */
   onRunOnHost: (target: AgentDeployTarget) => void;
+  /**
+   * Go to the repair control on the Settings stage (MAR-705).
+   *
+   * Navigation and nothing else — the same standing the header's RUN cell has
+   * had since MAR-687, and for the same reason Henrik gave then: a control that
+   * acts and switches the stage does two things a person asked one thing for.
+   * The repair itself has a consent screen, and it lives beside the button that
+   * opens it rather than behind a sentence three stages away.
+   *
+   * Null where there is nowhere to send anybody — a read-only window, whose own
+   * sentence is the true one there.
+   */
+  onRepair: (() => void) | null;
   run: AgentControlView["run"];
   /**
    * What pressing Run now will spend, or null (MAR-619, ADR 0016).
@@ -559,6 +573,24 @@ export function AgentControls({
         </div>
         {hostButtons === null ? null : <div className="button-row">{hostButtons}</div>}
         <p className="muted">{AGENT_CONTROL_COPY.idle[run.reason]}</p>
+        {/*
+          MAR-705. The exit, on the one reason that is a dead end.
+
+          `nothing_waiting` is not one — that agent is running and will offer
+          something — and `read_only` is not one either, because the repair is a
+          control and this window has none. So the route is drawn for
+          `not_reported` alone, which after MAR-703 means the agent DASH holds no
+          program for: the single state where a person has nothing to press and
+          nothing to read that tells them what to do next.
+        */}
+        {run.reason === "not_reported" && onRepair !== null ? (
+          <div className="folder-update-do">
+            <button className="button-secondary" onClick={onRepair} type="button">
+              {AGENT_CONTROL_COPY.not_reported_exit.action}
+            </button>
+            <p className="muted wrap">{AGENT_CONTROL_COPY.not_reported_exit.detail}</p>
+          </div>
+        ) : null}
       </section>
     );
   }

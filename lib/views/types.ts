@@ -1635,6 +1635,23 @@ export type WorkspaceView =
       avatar: OName | null;
       snapshot: WorkspaceSnapshotView | null;
       /**
+       * Whether DASH holds a registration naming a program it could spawn
+       * (MAR-703).
+       *
+       * A sibling of `snapshot` for the same reason `latest_digest` is one, and
+       * the sharper case of it: the snapshot is what the *agent* said and is
+       * null until it has said anything, while this is what *DASH holds on this
+       * computer* and is true from the moment the agent was imported. The whole
+       * point is that it survives the snapshot being absent — that pairing,
+       * "nothing reported, but startable", is the state MAR-703 was filed on and
+       * the one `buildAgentControl` could not previously distinguish from "not
+       * startable at all".
+       *
+       * False for ADR 0008's manifest-only standing, where DASH knows what the
+       * agent plans to do and says plainly that it cannot run it.
+       */
+      startable: boolean;
+      /**
        * The most recent digest, across every run — and deliberately a sibling of
        * `snapshot` rather than a field inside it.
        *

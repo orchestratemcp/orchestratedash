@@ -282,6 +282,14 @@ describe("the audited command chokepoint", () => {
       // renderer can neither see nor dismiss — after which a second dialog asks
       // the person before a byte is copied.
       "folder.choose",
+      // MAR-705. The fifth, and the one that opens no chooser: it names an agent
+      // DASH already holds and sets it up again from the copy in DASH's own
+      // keeping. Page script cannot supply a plan, a program, a path or a
+      // command — every location is resolved from the agent id by main — and the
+      // person is asked before anything is written. It reads the folder and never
+      // writes it, which is what separates it from `folder.choose` above and is
+      // why re-importing DASH's own folder stays refused.
+      "folder.repair",
       // MAR-536. Servers are independent of agents. Create accepts only the
       // four ordinary connection facts; main mints both names and returns only
       // the public key, while probe and forget take the opaque host id.

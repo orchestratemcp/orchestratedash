@@ -21,6 +21,7 @@ import {
    than the next person following it. */
 import { DeployToServer } from "../../_components/deploy";
 import { FolderUpdate } from "../../_components/folder-update";
+import { RepairAgent } from "../../_components/repair-agent";
 import { AgentControls, AgentCockpitHeader } from "../../_components/agent-header";
 import { AgentHealth } from "../../_components/agent-health";
 import { AgentRail } from "../../_components/agent-rail";
@@ -796,7 +797,7 @@ function AgentWorkspace(): ReactNode {
    * `RunCard` decided whether to draw pause and cancel — with the result that a
    * new agent got none of the three and no explanation for any of them.
    */
-  const control = buildAgentControl(view.snapshot, canAct);
+  const control = buildAgentControl(view.snapshot, canAct, { startable: view.startable });
   /*
    * There is no tile row here and there were four of them (MAR-646).
    *
@@ -897,6 +898,11 @@ function AgentWorkspace(): ReactNode {
         onStart={() => {
           void startAndRunHere();
         }}
+        /* MAR-705. Navigation only, exactly as the header's RUN cell is since
+           MAR-687 — the repair has a consent screen and it belongs beside the
+           control that owns it, on the stage ADR 0008 allows controls on. Null
+           in a read-only window, which has no repair to reach. */
+        onRepair={canAct ? () => goToStage("settings") : null}
         run={control.run}
         /* MAR-619, ADR 0016. Already worded by `lib/copy/curation.ts` and
            resolved in `lib/views/build.ts`, which is the only layer that can
@@ -1192,6 +1198,19 @@ function AgentWorkspace(): ReactNode {
             canAct={canAct}
             checkable={view.folder_checkable}
             onAdopted={() => setRefreshKey((value) => value + 1)}
+            setFeedback={setFeedback}
+          />
+
+          {/* MAR-705. Under the folder block because it is the same folder, and
+              after it because the order is how likely a person is to want them:
+              editing an agent is the ordinary visit, repairing one is the visit
+              they were sent here by. Renders nothing at all where there is no
+              folder to set up again from — see the component's own note. */}
+          <RepairAgent
+            agent={view.agent}
+            canAct={canAct}
+            hasFolder={view.folder_checkable}
+            onRepaired={() => setRefreshKey((value) => value + 1)}
             setFeedback={setFeedback}
           />
 
