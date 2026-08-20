@@ -888,6 +888,48 @@ export const COMMANDS = {
     mutates: true,
     irreversible: false,
   },
+  /*
+   * MAR-705. The fifth folder command: set an agent up again from the copy DASH
+   * already holds.
+   *
+   * Henrik, on being told that repairing an agent meant `npm run open-in-dash`:
+   * *"Okey, this redeploy of an faulty agent is to hard. Can you figure out how
+   * we can do it from dash and not some terminal command?"* The terminal command
+   * only fires a deep link at the import door; every ingredient was already
+   * inside DASH, and none of them was reachable from it.
+   *
+   * ## What it writes, and the one thing it deliberately does not
+   *
+   * It rewrites DASH's *record* of an agent: the row's manifest, the
+   * registration file naming the program to spawn, and the baseline MAR-584
+   * compares against. Then it asks the supervisor to re-read its list, which is
+   * what makes a Start press in the same session reach the agent instead of
+   * being refused as unknown (MAR-616).
+   *
+   * **It does not re-copy the folder**, and that is not a shortcut. The folder
+   * is the *source* of everything read here, so copying it over itself changes
+   * no byte of the agent's program — while `writeAgentFolder` stages a
+   * replacement from the files it was handed and swaps it in, which would delete
+   * whatever the read skipped: a non-text file the agent wrote, an installed
+   * `node_modules`. `inspectChosenFolder` refuses a folder inside DASH's own
+   * keeping for exactly this reason, and this command is that refusal's answer
+   * rather than a way around it: the repair a person needs is of DASH's record,
+   * which is the half that goes missing.
+   *
+   * `mutates` is plainly true. `irreversible` is **false**, and here the flag is
+   * unusually easy: the agent's folder, identity, character, runs, outputs and
+   * connected credentials are all untouched, and what is rewritten is rewritten
+   * *from* the folder — so the state before and the state after describe the
+   * same agent, which is the whole point of a repair.
+   */
+  "folder.repair": {
+    effect:
+      "Set this agent up again from the copy DASH already keeps, so DASH can run it. Its folder, its history and what it has made are not changed.",
+    payload_keys: ["agent_id"],
+    required_keys: ["agent_id"],
+    mutates: true,
+    irreversible: false,
+  },
 
   /*
    * MAR-536. A host is not an agent's property: it is a server DASH reaches
@@ -1665,6 +1707,7 @@ export const FOLDER_ACTIONS = {
   "folder.adopt": "adopt",
   "folder.reveal": "reveal",
   "folder.choose": "choose",
+  "folder.repair": "repair",
 } as const;
 
 export type FolderCommandName = keyof typeof FOLDER_ACTIONS;

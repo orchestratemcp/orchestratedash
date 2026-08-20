@@ -31,10 +31,14 @@ import { resolveBriefCitations } from "../brief/fingerprint";
 import type { BriefCitations } from "../brief/citations";
 import type { ManifestPermissions, PermissionGrant } from "../contracts";
 import { brokeredField, requestedOperations, unrequestedOperations } from "../broker/grant";
-import { hasFrozenPath, operationById, type BrokerOperation } from "../broker/operations";
+import {
+  hasFrozenPath,
+  isSpendOperation,
+  operationById,
+  type BrokerOperation,
+} from "../broker/operations";
 import { describeClientOwner, describeCustody, describeDashClosedWindow } from "../broker/providers";
 import { listReceipts, readBrokerAudit, readBrokerLapses, type BrokerLapse } from "../broker/store";
-import { CURATE_OPERATION_SUFFIX } from "../broker/operations";
 import { describeRunSpend } from "../copy/curation";
 import { describeBrokerRefusal } from "../copy/recovery";
 import { agentDisplayName } from "../copy/agent-name";
@@ -1583,6 +1587,23 @@ export function workspaceView(
      */
     avatar: readAgentAvatar(agent),
     snapshot,
+    /*
+     * MAR-703. Read from the registration rather than from the snapshot beside
+     * it, and that is this issue's load-bearing line.
+     *
+     * The snapshot answers "what has this agent said", and after a store restore
+     * — or on any agent that has never run here — the answer is nothing. The
+     * registration answers "does DASH hold a program it could spawn", which
+     * survives a rebuilt `agents` table because a registration is a file in
+     * `agents/` rather than a row: MAR-553's re-projection reads those files, and
+     * `runner/main.ts` loads them at boot. So an agent can be perfectly startable
+     * while having reported nothing at all, and until this field existed the
+     * control panel could not tell that state from a manifest-only agent.
+     *
+     * One small read on a five-second poll, beside the manifest, the folder and
+     * the deploy rows this function already opens.
+     */
+    startable: readRegistration(dataDir, agent) !== null,
     latest_digest: digest,
     latest_digest_grounding:
       digest === null || !isDigestArtifact(digest) ? null : analyzeGrounding(digest),
@@ -1880,10 +1901,12 @@ function dashFactsForAgent(agent: string, store: StoreShape): PanelDashFacts {
  * different, already-worded outcome rather than a gap this function papers
  * over:
  *
- * 1. **The agent asks.** Its manifest declares a capability whose id is a
- *    curation operation — the same suffix `agent-kit/template/agent.mjs` finds
- *    its own by, so what this predicts and what the agent attempts are the same
- *    fact read from the same place.
+ * 1. **The agent asks.** Its manifest declares a capability whose id resolves,
+ *    through the broker's own operation catalogue (`operationById`), to an
+ *    operation whose `access` is `"spend"`. Read from the catalogue rather than
+ *    matched by a suffix literal here, so a fourth spend operation joins this
+ *    check the moment it joins `lib/broker/operations.ts` — the same place that
+ *    decides what the agent's own request will actually cost.
  * 2. **A key is held.** `can_choose` is false without one, and a run in that
  *    state is refused before anything is sent — `describeNotCurated`'s
  *    `not_connected` says so on the digest afterwards.
@@ -1913,7 +1936,11 @@ function spendingService(
       Array.isArray(capabilities) &&
       capabilities.some((capability) => {
         const id = (capability as { id?: unknown }).id;
-        return typeof id === "string" && id.endsWith(CURATE_OPERATION_SUFFIX);
+        if (typeof id !== "string") {
+          return false;
+        }
+        const operation = operationById(id);
+        return operation !== null && isSpendOperation(operation);
       })
     );
   });
