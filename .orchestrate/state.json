@@ -1493,8 +1493,8 @@
     {
       "id": "MAR-479",
       "lifecycle": "merged",
-      "linear_status": "In Progress",
-      "commit": null,
+      "linear_status": "Backlog",
+      "commit": "ee08fffe729f2ba607c0320a119e34ec521ba593",
       "proof": {
         "command": "pnpm verify; then with a LAB running (LAB_DASH_INGEST_ENABLED=1, LAB_DASH_INGEST_TOKEN set): pnpm build:renderer; pnpm build:shell; DASH_DATA_DIR=<scratch> DASH_PROVE_LAB_TOKEN=<token> DASH_PROVE_LAB_ENDPOINT=http://127.0.0.1:3010 DASH_PROVE_LAB_MANIFEST=../competitor-scout/agent.manifest.json DASH_PROVE_LAB_EVENTS=../competitor-scout/runs/events.jsonl pnpm exec electron --user-data-dir=<profile> dist/electron/prove-lab.mjs",
         "run": "pnpm verify EXIT=0 (state:check valid, typecheck clean, brand:check passed, 229 test files / 4317 passed / 9 skipped / 0 failed, verify:shell green). prove-lab: 3/3 PASS — a real LAB accepted the batch (HTTP 200, accepted=2), DASH kept the message it posted, and the receipt is byte-identical to the payload the page previewed before the switch was touched. LAB's dash_telemetry_events holds four dash_route_b5870cb47ce4 rows (two sends x two real run days, 2026-08-16 and 2026-08-18), distinct from the three dash_demo_ fixture rows; LAB /insights renders 'source: dash-telemetry, lab-local'."
