@@ -16,12 +16,44 @@ import { defineConfig, configDefaults } from "vitest/config";
  * the opposite reason: a file deleted on master still runs from a worktree that
  * has it.
  *
- * Only `exclude` is set. Every other default stays exactly as it was, because
- * the suite has always run against them and this file exists to remove a
- * directory rather than to start configuring the runner.
- *
  * No effect in CI, which has no `.claude/` — the divergence this fixes is one
  * only a developer's machine can have, which is why it survived so long.
+ *
+ * ## `maxWorkers` (MAR-702)
+ *
+ * The other divergence a developer's machine can have: more cores than the
+ * suite can use without contending with itself. Unset, Vitest fills every
+ * logical processor it finds — 22 on the machine MAR-702 was filed from — and
+ * the suite's own numbers say that is oversubscription, not throughput: a
+ * green run there logged `287.00s` of test time inside `34.74s` of wall
+ * clock, roughly 8x. The files that lost a random 5s `testTimeout` were
+ * always the ones that touch the filesystem or open SQLite in their first
+ * `beforeEach` — `mkdtempSync`, `freshStore()` — which is exactly the
+ * contention 22-wide oversubscription would produce, worsened by Windows
+ * Defender scanning every one of the ~200 temp directories the suite creates
+ * and tears down.
+ *
+ * `6` is not a guess. Measured on that same 22-core machine, immediately
+ * before this change, three ways:
+ *
+ * | `maxWorkers` | test time | wall clock |
+ * | -- | -- | -- |
+ * | unset (≈22) | 310.77s | 40.65s |
+ * | 6 | 154.76s | 46.50s |
+ * | 3 | 135.17s | 85.72s |
+ *
+ * Going from unset to 6 roughly halves the test time — real contention coming
+ * off, not fixed overhead — for a wall-clock cost of about 14%. Going from 6
+ * to 3 buys almost no further reduction in test time (154.76s → 135.17s) for
+ * nearly double the wall clock: past 6, the suite is CPU-bound on this
+ * machine, not contention-bound, so a lower cap would only cost time without
+ * addressing what MAR-702 is actually about. Raising `testTimeout` instead was
+ * considered and rejected, per MAR-702: it hides the oversubscription rather
+ * than removing it, and a 5s budget to open a scratch SQLite file is not
+ * itself unreasonable — the timeout was never the defect, the width was.
+ *
+ * No measurable effect on CI's Linux `verify` job, which runs on far fewer
+ * cores than this ever throttles down to.
  */
 export default defineConfig({
   test: {
@@ -32,5 +64,6 @@ export default defineConfig({
       // from.
       "**/.claude/**",
     ],
+    maxWorkers: 6,
   },
 });
