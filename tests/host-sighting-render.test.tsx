@@ -1,9 +1,16 @@
 /**
  * Where an agent runs, drawn (MAR-606).
  *
- * `tests/host-sighting.test.ts` proves the sentences. This proves the half a
- * reader meets — that the moment is on the screen beside the colour, and that a
- * card which has never been checked says so rather than going blank.
+ * `tests/host-sighting.test.ts` proves the sentences, including
+ * `describeAgentHosting`'s — a fleet-card-shaped indicator that still exists
+ * as a pure, tested function. What it no longer has, since MAR-669, is a
+ * caller: `AgentHosting`, the component that rendered it, lived inside the
+ * chief band's per-agent line, and Henrik asked that line removed entirely.
+ * Deleting the component deleted its render test with it. This file keeps
+ * only what still renders — the Servers page's `WhatIsOnThisServer`, proving
+ * the half a reader meets there: that the moment is on the screen beside the
+ * colour, and that a card which has never been checked says so rather than
+ * going blank.
  *
  * The chip assertions read the **document**, never `innerText`. `app/globals.css`
  * uppercases `.chip` as typography, so a harness that grepped the rendered text
@@ -14,71 +21,13 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { AgentHosting } from "../app/page";
 import { WhatIsOnThisServer } from "../app/_components/server-card";
 import { describeWhatIsOnHost } from "../lib/host-sighting";
-import { createSightingStore } from "../lib/host-sightings";
-import type { AgentHostedOnView } from "../lib/views/types";
 
 const AGENT = "News Scout";
 const SERVER = "Hostinger";
 const AT = "2026-08-10T21:14:37Z";
 const SENT_ON = "10 August 2026";
-const HOSTED: AgentHostedOnView[] = [{ host_id: "host-1", label: SERVER, sent_on: SENT_ON }];
-
-function fleet(hostedOn: AgentHostedOnView[], log = {}): string {
-  return renderToStaticMarkup(<AgentHosting agent={AGENT} hostedOn={hostedOn} log={log} />);
-}
-
-describe("the fleet card's hosting indicator", () => {
-  it("draws nothing at all for an agent that runs on this computer", () => {
-    // Not an empty frame and not a placeholder. Almost every agent is in this
-    // state and a card full of "not deployed" would be noise on every row.
-    expect(fleet([])).toBe("");
-  });
-
-  it("names the server before any check, rather than going blank", () => {
-    const html = fleet(HOSTED);
-    expect(html).toContain(`sent to ${SERVER}`);
-    expect(html).toContain("chip-muted");
-    expect(html).toContain("has not asked");
-  });
-
-  it("carries the moment beside the colour once a check has answered", () => {
-    /*
-     * ADR 0015's bound, at the surface. The emerald chip is licensed by the
-     * sentence under it; a card that drew the colour and dropped the timestamp
-     * would be making the present-tense claim the ADR forbids.
-     */
-    const store = createSightingStore();
-    store.record("host-1", {
-      label: SERVER,
-      agents: [{ agent_id: AGENT, running: true }],
-      at: AT,
-    });
-    const html = fleet(HOSTED, store.snapshot());
-    expect(html).toContain(`seen running on ${SERVER}`);
-    expect(html).toContain("chip-ok");
-    expect(html).toContain("when DASH asked on");
-    expect(html).not.toContain("is running");
-  });
-
-  it("says so when the server answered and did not name this agent", () => {
-    const store = createSightingStore();
-    store.record("host-1", { label: SERVER, agents: [], at: AT });
-    const html = fleet(HOSTED, store.snapshot());
-    expect(html).toContain(`not on ${SERVER}`);
-    expect(html).toContain("chip-warn");
-  });
-
-  it("points at the Servers page when an agent is on more than one", () => {
-    // One line has room for one server. The page that lists them all is named
-    // rather than the card silently choosing.
-    const html = fleet([...HOSTED, { host_id: "host-2", label: "Second", sent_on: SENT_ON }]);
-    expect(html).toContain("2 servers");
-    expect(html).toContain("Servers page");
-  });
-});
 
 describe("what is on this server, drawn", () => {
   const rows = (seen: Parameters<typeof describeWhatIsOnHost>[0]["seen"], at: string | null) =>

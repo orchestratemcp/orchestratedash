@@ -1,22 +1,19 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { AgentHosting, FleetCard, describeRunCount } from "./fleet-card";
+import { FleetCard } from "./fleet-card";
 import { ChiefChat } from "./chief-chat";
-import { InfoNote } from "./info-note";
 import { OAvatar } from "./o-avatar";
 import { useFleetFilterSync } from "./fleet-rail";
 import { useFleetView } from "./fleet-view-toggle";
 import { agentWorkspaceHref } from "../_data/routes";
-import { CHIEF_NAME, describeChief, describeFleetSummary } from "../../lib/copy/chief";
+import { CHIEF_NAME, describeFleetSummary } from "../../lib/copy/chief";
 import { describeFleetCardStatus } from "../../lib/copy/fleet-status";
 import { matchesFleetFilter } from "../../lib/views/fleet-filter";
 import { stepRowsSelection, stepSpotlight } from "../../lib/views/fleet-view";
-import type { SightingLog } from "../../lib/host-sightings";
 import type { AgentRow } from "../../lib/views/types";
 
 /**
@@ -34,13 +31,17 @@ import type { AgentRow } from "../../lib/views/types";
  * switching on an attribute a pre-paint script has already written
  * (`FleetViewScript`).
  *
- * ## What React is for: which agent the chief is talking about
+ * ## What React is for: which card is selected
  *
  * CSS can lay a scroll-snapping row and can size two rows of three; it cannot
- * tell the chief who to talk about. Every view now tracks a selected index.
+ * decide which card is picked. Every view now tracks a selected index — the
+ * border `.fleet-card.is-selected` draws, and the card the spotlight centres.
  * In the grid and in rows, a press on a card sets it. In the spotlight, the
  * middle card is the selection, measured from real rectangles, and a press
- * scrolls that card to the middle.
+ * scrolls that card to the middle. Selection no longer changes what the
+ * chief says beneath the cards (MAR-669: the band speaks about the fleet as
+ * a whole and nothing else) — it is purely which card reads as "this one",
+ * for the reader's own reference.
  *
  * No card is hidden, removed from the document or taken out of the tab order
  * in any view: a person scrolling this row with a keyboard reaches every
@@ -57,8 +58,8 @@ import type { AgentRow } from "../../lib/views/types";
  *
  * ## Keyboard selection (MAR-640)
  *
- * Rows gets ↑/↓ to move the selection (the chief follows, `select`'s own
- * job) and Enter to open the selected agent's workspace. Spotlight gets ←/→
+ * Rows gets ↑/↓ to move the selection and Enter to open the selected
+ * agent's workspace. Spotlight gets ←/→
  * as the keyboard equivalent of the two step buttons already beside it —
  * `stepSpotlight` is the same function either way. Grid gets neither: a
  * two-dimensional grid has no single "next" a linear key can name, and
@@ -66,13 +67,10 @@ import type { AgentRow } from "../../lib/views/types";
  */
 export function FleetList({
   agents,
-  log,
   onToggleFavourite,
 }: {
   /** The whole fleet — the rail's own counts depend on this being unfiltered. */
   agents: readonly AgentRow[];
-  /** What the Servers page saw, this window (MAR-606, ADR 0015). */
-  log: SightingLog;
   /** Star — or unstar — one agent (MAR-640). Optional: see `FleetCard`'s own note. */
   onToggleFavourite?: (agent: string, next: boolean) => void;
 }): ReactNode {
@@ -345,10 +343,8 @@ export function FleetList({
         )}
       </div>
       <ChiefBand
-        agent={visible[current] ?? null}
         agents={visible}
         chatOpen={chiefOpen}
-        log={log}
         onCloseChat={() => {
           setChiefOpen(false);
         }}
@@ -388,31 +384,30 @@ export function spotlightPosition(index: number, centred: number): string | unde
  *
  * `docs/design-brief.md` gives the chief one job: *"A non-technical user should
  * never have to read the fleet grid to answer 'is my thing working'. They should
- * be able to ask, and get a sentence."* This is the sentence, for the selected
- * agent, given without being asked. Opening the agent lives here too, because
- * the card above is now a portrait.
+ * be able to ask, and get a sentence."* Until MAR-669 that sentence was about
+ * whichever card was selected. It is now always about the **fleet** —
+ * Henrik's own words, asked directly and answered plainly: *"remove the
+ * per-agent line entirely. The chief band speaks about the fleet as a whole
+ * and nothing else."* Station 11's *"when in fleet mode I want the chat to
+ * only be chief mode"* is what this always meant for the composer; MAR-669
+ * makes it true of the unprompted line too. A card's own facts — its status,
+ * its place, its name — live on the card now (`fleet-card.tsx`'s combined
+ * indicator row), and opening one lives on the card too (MAR-660's
+ * `FleetOpenLink`), so nothing this band said about a single agent is
+ * unreachable — it moved to the thing it was about.
  *
- * ## The asking is built now (MAR-648)
+ * ## Asking about one agent still works, from here or from its own page
  *
- * This paragraph used to say MAR-419 was blocked on a fleet-wide selection over
- * MAR-545's completion layer. The selection was never the hard part. What is
- * actually in the way is narrower and is recorded in `lib/chief/route.ts`: the
- * broker resolves a manifest per agent and the fleet principal has none, and
- * `connectionSecretName` only ever emits `dash.connection.`, so the fleet's own
- * key cannot be reached from the spend path by construction.
+ * `ChiefChat` routes a typed question about a named agent to that agent's own
+ * workspace (`lib/chief/route.ts`, `lib/chief/reply.ts`) — MAR-648's build,
+ * untouched by this change. `app/_components/ask.tsx`'s `#ask-agent` section
+ * on the agent's own page is the destination either way, whether a person
+ * gets there by asking the chief or by opening the card directly. Removing
+ * the band's own per-agent line does not remove that route — it only removes
+ * the one place in DASH that spoke about a single agent from a component
+ * whose subject is the whole fleet.
  *
- * So the chief asks nothing of anybody and still answers, which is MAR-648's own
- * scope for it — *"answers scoped to facts the chief can already speak (glance
- * chips, fleet facts)"*. `ChiefChat` is the box and `lib/chief/reply.ts` is what
- * comes back. The old rule this band was written under still holds and is why
- * that box is safe to draw: it is not a dead input, because every press produces
- * a real answer out of records this component already has in its props.
- *
- * The per-agent Ask has not gone anywhere. It is what a routed reply links to,
- * which is the same destination this band's action always pointed at — reached
- * now by asking a question rather than by knowing in advance which agent to ask.
- *
- * ## The chief is not one of the O's, and now has its own portrait anyway
+ * ## The chief is not one of the O's, and has its own portrait anyway
  *
  * Until MAR-615 this was drawn as inline rects on the sidebar's 12×12 grid, in
  * `currentColor`, like `sidebar-icons.tsx` and like MAR-544's boot glyph — a
@@ -425,69 +420,38 @@ export function spotlightPosition(index: number, centred: number): string | unde
  * same way every other character is, and this band is exactly the spotlight
  * that sheet was built for.
  *
-
- * Exported so a render test can drive it without a scroll container, which is
- * the one thing this repository's tests have no way to produce: every render
- * test here is `renderToStaticMarkup`, so no effect runs and the spotlight is
- * unreachable through `FleetList` itself.
+ * ## The unprompted line (MAR-639, narrowed to fleet-only at MAR-669)
  *
- * ## When nothing is selected, the chief talks about the fleet (MAR-639)
- *
- * Henrik's own example: *"2 need you, 1 working."* Replaces the old fixed
- * "waiting for an agent to talk about" — a sentence that named nothing an
- * agent that reached this branch could actually be about. `describeFleetSummary`
+ * Henrik's own example: *"2 need you, 1 working."* `describeFleetSummary`
  * builds it from the same per-card status every portrait is tinted by, so the
- * fleet and the chief cannot disagree about what "needs you" means.
+ * fleet and the chief cannot disagree about what "needs you" means. It steps
+ * aside while the room is open — both are the chief talking, and leaving them
+ * on screen together would put one sentence directly above a conversation
+ * about something the person actually asked, the duplication MAR-646 was
+ * filed on rather than a second opinion.
  */
 export function ChiefBand({
-  agent,
   agents = [],
   chatOpen = false,
-  log = {},
   onCloseChat,
   onOpenChat,
 }: {
-  agent: AgentRow | null;
   /**
-   * Every agent in the fleet, read only for the summary drawn above — never
-   * for anything about the selected agent, which stays `agent`'s alone.
-   * Optional and defaulting to empty so a caller (this file's own render
-   * tests included) that only ever had one agent to hand keeps working.
-   *
-   * MAR-648 gave it a second reader: `ChiefChat` routes over the same list,
-   * which is what makes "ask the chief" a question about the fleet in front of
-   * you rather than about a fleet somebody else filtered.
+   * Every agent in the fleet — what the summary above is built from and what
+   * `ChiefChat` routes a typed question over. Optional and defaulting to
+   * empty so a caller (this file's own render tests included) that has none
+   * to hand keeps working.
    */
   agents?: readonly AgentRow[];
   /** Whether the room is open. Optional, for the render tests that predate it. */
   chatOpen?: boolean;
-  log?: SightingLog;
   onCloseChat?: () => void;
   onOpenChat?: () => void;
 }): ReactNode {
-  const line =
-    agent === null
-      ? null
-      : describeChief({
-          agent: agent.name,
-          runs: describeRunCount(agent.run_count),
-          glance: agent.glance,
-        });
-
   return (
     <aside className={chatOpen ? "chief-band is-chatting" : "chief-band"}>
       <ChiefGlyph />
-      {/*
-        MAR-648. The unprompted line steps aside while the room is open.
-
-        Both are the chief talking, and leaving them on screen together would put
-        a sentence about the agent in the middle of the cards directly above a
-        conversation about something the person actually asked — one speaker
-        saying two unrelated things at once, which is the duplication MAR-646 was
-        filed on rather than a second opinion. The glyph stays: it is who is
-        speaking, and that has not changed.
-      */}
-      {chatOpen ? null : line === null || agent === null ? (
+      {chatOpen ? null : (
         <p className="chief-says muted">
           {describeFleetSummary(
             agents.map(
@@ -500,52 +464,15 @@ export function ChiefBand({
             ),
           )}
         </p>
-      ) : (
-        <>
-          <div className="chief-line">
-            {/*
-              The agent's name in the same monospace the card used to give it
-              in its header band, so the thing the chief is talking about is
-              recognisable as the portrait above rather than as a new noun.
-            */}
-            <p className="chief-says">
-              <code>{line.agent}</code> — {line.says}
-              {/*
-                MAR-639. The all-clear chip's whole sentence, behind the note
-                rather than loose in the line — `ChiefLine.note`'s own header
-                states which chip this is and why.
-              */}
-              {line.note === null ? null : <InfoNote>{line.note}</InfoNote>}
-            </p>
-            <p className="chief-runs muted">{line.runs}</p>
-            <AgentHosting agent={agent.name} hostedOn={agent.hosted_on} log={log} />
-          </div>
-          <div className="chief-actions">
-            {/*
-              A link to the workspace, with the Ask section's own anchor on it.
-              The fragment lands when the page has drawn and is a no-op when it
-              has not — either way the reader is on the one surface in DASH
-              where this agent can actually be asked something.
-
-              MAR-660 moves the button that used to open the agent from here
-              onto the card itself — Henrik's own words, "under the avatar in
-              the card for every agent," not on a component about the fleet as
-              a whole. `fleet-card.tsx`'s `FleetOpenLink` is where it lives now.
-            */}
-            <Link className="button-link" href={`${agentWorkspaceHref(line.agent)}#ask-agent`}>
-              {line.action}
-            </Link>
-          </div>
-        </>
       )}
 
       {/*
         MAR-648. The composer, docked, and the room it opens above itself.
 
-        Last in the band and therefore last in the tab order, which is the right
-        order for it: somebody arriving here with a keyboard reaches the chief's
-        sentence and the two controls about the agent in the middle before they
-        reach a box that asks them to compose something.
+        Last in the band and therefore last in the tab order, which is the
+        right order for it: somebody arriving here with a keyboard reaches the
+        chief's sentence before they reach a box that asks them to compose
+        something.
       */}
       <ChiefChat
         agents={agents}

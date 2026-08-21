@@ -62,7 +62,7 @@ function band(props: Parameters<typeof ChiefBand>[0]): string {
 
 describe("the chief's band grows a composer", () => {
   it("draws a box a person can type in", () => {
-    const html = band({ agent: row(), agents: [row()] });
+    const html = band({ agents: [row()] });
     expect(html).toContain("<textarea");
     expect(html).toContain(CHIEF_CHAT_COPY.placeholder);
     expect(html).toContain(CHIEF_CHAT_COPY.submit);
@@ -75,7 +75,7 @@ describe("the chief's band grows a composer", () => {
    * a model was wired up.
    */
   it("is never a dead input", () => {
-    const html = band({ agent: row(), agents: [row()] });
+    const html = band({ agents: [row()] });
     /*
      * The *box* is live. The send button is disabled on an empty box, which is
      * `AskComposer`'s own rule and the opposite of this defect: there is no
@@ -91,7 +91,7 @@ describe("the chief's band grows a composer", () => {
     // dead chrome. There is no model here, so there is no model chip — what is
     // true is where the answers come from, and MAR-659's honesty pass made
     // that sentence lead with the fact a returning reader actually needs.
-    const html = band({ agent: row(), agents: [row()] });
+    const html = band({ agents: [row()] });
     expect(html).toContain("Nothing said here is saved");
     expect(html).not.toContain("Asking under");
   });
@@ -103,7 +103,7 @@ describe("the chief's band grows a composer", () => {
    * one particular agent's.
    */
   it("says whose composer this is, in words a sighted reader sees too", () => {
-    const html = band({ agent: row(), agents: [row()] });
+    const html = band({ agents: [row()] });
     expect(html).toContain(CHIEF_CHAT_COPY.label);
     expect(html).not.toContain(`<span class="visually-hidden">${CHIEF_CHAT_COPY.label}</span>`);
   });
@@ -114,7 +114,7 @@ describe("the chief's band grows a composer", () => {
    * wearing the opposite costume — theatre asserting work where there is none.
    */
   it("draws no loader, because it never waits", () => {
-    const html = band({ agent: row(), agents: [row()] });
+    const html = band({ agents: [row()] });
     expect(html).not.toContain("ask-activity");
     /*
      * This line used to read `not.toContain("is-action")`, and MAR-615 made
@@ -137,7 +137,7 @@ describe("the chief's band grows a composer", () => {
 
 describe("the room opens above the composer", () => {
   it("shows the scope note and the composer when it is open and nothing is asked", () => {
-    const html = band({ agent: row(), agents: [row()], chatOpen: true });
+    const html = band({ agents: [row()], chatOpen: true });
     expect(html).toContain(CHIEF_CHAT_COPY.heading);
     expect(html).toContain(CHIEF_CHAT_COPY.close);
     // The composer is still there, and after the room in the document — which
@@ -153,35 +153,31 @@ describe("the room opens above the composer", () => {
    * click.
    */
   it("tells a returning reader the empty thread is expected, not broken", () => {
-    const html = band({ agent: row(), agents: [row()], chatOpen: true });
+    const html = band({ agents: [row()], chatOpen: true });
     expect(html).toContain("Nothing said here is saved");
     expect(html).toContain("is expected, not a lost conversation");
   });
 
   /*
-   * Both are the chief talking. Leaving them together would put a sentence
-   * about whichever card is centred directly above a conversation about
-   * something the person actually asked — one speaker saying two unrelated
-   * things at once, which is MAR-646's duplication rather than a second opinion.
+   * Both are the chief talking. Leaving them together would put the
+   * fleet-wide summary directly above a conversation about something the
+   * person actually asked — one speaker saying two unrelated things at once,
+   * which is MAR-646's duplication rather than a second opinion.
    */
   it("puts the unprompted line away while the room is open", () => {
-    const closed = band({ agent: row({ glance: [NEEDS_YOU] }), agents: [row({ glance: [NEEDS_YOU] })] });
-    const open = band({
-      agent: row({ glance: [NEEDS_YOU] }),
-      agents: [row({ glance: [NEEDS_YOU] })],
-      chatOpen: true,
-    });
-    expect(closed).toContain(NEEDS_YOU.meaning);
-    expect(open).not.toContain(NEEDS_YOU.meaning);
+    const closed = band({ agents: [row({ glance: [NEEDS_YOU] })] });
+    const open = band({ agents: [row({ glance: [NEEDS_YOU] })], chatOpen: true });
+    expect(closed).toContain("1 needs you.");
+    expect(open).not.toContain("1 needs you.");
   });
 
   it("keeps the chief's glyph, because that is who is speaking", () => {
-    const html = band({ agent: row(), agents: [row()], chatOpen: true });
+    const html = band({ agents: [row()], chatOpen: true });
     expect(html).toContain("chief-glyph");
   });
 
   it("marks the stage so the cards give up their two thirds", () => {
-    const html = band({ agent: row(), agents: [row()], chatOpen: true });
+    const html = band({ agents: [row()], chatOpen: true });
     expect(html).toContain("is-chatting");
   });
 });
@@ -193,6 +189,6 @@ describe("the band without a chat", () => {
    * keep a prop only one caller in the application can supply.
    */
   it("still renders when no handlers are given", () => {
-    expect(() => band({ agent: row(), agents: [row()] })).not.toThrow();
+    expect(() => band({ agents: [row()] })).not.toThrow();
   });
 });

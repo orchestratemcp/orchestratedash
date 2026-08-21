@@ -1,15 +1,20 @@
 /**
- * What the chief says, and everything it is not allowed to say (MAR-612).
+ * What the chief says, and everything it is not allowed to say (MAR-612,
+ * narrowed to fleet-only at MAR-669).
  *
- * The chief stands under the spotlight view and gives a sentence about the agent
- * in the middle — `docs/design-brief.md`'s "they should be able to ask, and get a
- * sentence", given without being asked.
+ * The chief stands under the cards and gives a sentence about the fleet —
+ * `docs/design-brief.md`'s "they should be able to ask, and get a sentence",
+ * given without being asked. It spoke about the agent in the middle too,
+ * until Henrik's MAR-669 screenshot asked for that removed: *"the chief band
+ * speaks about the fleet as a whole and nothing else."* `describeChief` and
+ * its per-agent cases went with it — this file's own tests for them went
+ * too, on the same terms MAR-642 packet 4 deleted `DeployPanel`'s: every
+ * claim they made is still made, just not by a function this module keeps.
  *
  * A character in a speech position is the easiest place in an interface to
- * smuggle a claim nobody can source, so most of these cases are about the chief
- * having nothing of its own to say: every string it returns either arrived
- * already worded or is a fixed literal, and the ranking it applies is one this
- * repository had already settled for the bottom strip.
+ * smuggle a claim nobody can source, so most of what remains is about the
+ * chief having nothing of its own to say: every string it returns either
+ * arrived already worded or is a fixed literal.
  */
 
 import { describe, expect, it } from "vitest";
@@ -17,8 +22,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { CHIEF_NAME, CHIEF_WAITING, describeChief, describeFleetSummary } from "../lib/copy/chief";
-import { GLANCE_ALL_CLEAR, type GlanceChip } from "../lib/copy/glance";
+import { CHIEF_NAME, CHIEF_WAITING, describeFleetSummary } from "../lib/copy/chief";
 import type { FleetCardStatus } from "../lib/copy/fleet-status";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -71,103 +75,6 @@ function chiefBand(): string {
 
 const BAND = chiefBand();
 
-function chip(over: Partial<GlanceChip> = {}): GlanceChip {
-  return {
-    question: "needs_you",
-    label: "needs you",
-    meaning: "One step is waiting for your approval.",
-    tone: "warn",
-    ...over,
-  };
-}
-
-describe("the chief picks one thing to say", () => {
-  it("says the whole sentence, not the chip's two words", () => {
-    /*
-     * `GlanceChip.label` is sized for a chip beside four others; `meaning` is the
-     * sentence, and it is what a reader looking at one line rather than scanning a
-     * row wants. Same reasoning `lib/copy/glance.ts` gives for rendering the
-     * meaning under the chips instead of hiding it in a tooltip.
-     */
-    const line = describeChief({
-      agent: "news-scout",
-      runs: "Run 3 times",
-      glance: [chip()],
-    });
-    expect(line?.says).toBe("One step is waiting for your approval.");
-  });
-
-  it("puts something waiting on you above something new to read", () => {
-    /*
-     * `lib/copy/glance.ts`'s tone scale, read top to bottom: amber is waiting on
-     * you, blue is new to read, grey is neither. It is the same priority
-     * `lib/views/fleet-motion.ts` settled for the bottom strip — waiting outranks
-     * working, because the person is what the agent is blocked on — and two
-     * vocabularies for one fleet must not disagree about what matters most.
-     */
-    const line = describeChief({
-      agent: "news-scout",
-      runs: "Run 3 times",
-      glance: [
-        chip({ question: "new_output", tone: "accent", meaning: "A new report arrived today." }),
-        chip({ question: "needs_you", tone: "warn", meaning: "One step is waiting for you." }),
-      ],
-    });
-    expect(line?.says).toBe("One step is waiting for you.");
-  });
-
-  it("puts something new to read above nothing at all", () => {
-    const line = describeChief({
-      agent: "news-scout",
-      runs: "Run 3 times",
-      glance: [
-        GLANCE_ALL_CLEAR,
-        chip({ question: "new_output", tone: "accent", meaning: "A new report arrived today." }),
-      ],
-    });
-    expect(line?.says).toBe("A new report arrived today.");
-  });
-
-  it("is stable within a tone", () => {
-    // The first chip of the winning tone, in the order `lib/views/glance.ts`
-    // built them, so the sentence does not reshuffle between two renders that
-    // read the same store.
-    const glance = [
-      chip({ question: "needs_you", tone: "warn", meaning: "First." }),
-      chip({ question: "overdue", tone: "warn", meaning: "Second." }),
-    ];
-    expect(describeChief({ agent: "a", runs: "Run once", glance })?.says).toBe("First.");
-  });
-
-  it("says a short 'All clear.' for the all-clear chip, with the whole sentence behind it", () => {
-    /*
-     * MAR-639. The chip's own sentence enumerates four answered "no"s — DASH
-     * showing its working about an agent with nothing to decide — and that is
-     * exactly the sentence `lib/copy/info-note.ts` argues moves behind a note:
-     * an absence, read once and never needed again. `says` carries the fact;
-     * `note` carries the working.
-     */
-    const line = describeChief({
-      agent: "news-scout",
-      runs: "Not run yet",
-      glance: [GLANCE_ALL_CLEAR],
-    });
-    expect(line?.says).toBe("All clear.");
-    expect(line?.note).toBe(GLANCE_ALL_CLEAR.meaning);
-  });
-
-  it("carries no note for a chip that names something waiting on the reader", () => {
-    // The four demands stay whole on `says`, per `splitGlance`'s own rule —
-    // `note` is exclusively the all-clear chip's field.
-    const line = describeChief({
-      agent: "news-scout",
-      runs: "Run once",
-      glance: [chip()],
-    });
-    expect(line?.note).toBeNull();
-  });
-});
-
 describe("the fleet summary, for when nothing is selected (MAR-639)", () => {
   const S = (status: FleetCardStatus | null): FleetCardStatus | null => status;
 
@@ -194,48 +101,12 @@ describe("the fleet summary, for when nothing is selected (MAR-639)", () => {
 });
 
 describe("the chief invents nothing", () => {
-  it("passes the run sentence through rather than rebuilding it", () => {
-    /*
-     * The fleet card's own `describeRunCount` output arrives already worded. Two
-     * copies of "Not run yet" is two copies that can disagree the day somebody
-     * improves one of them — the argument `AgentTile.value` makes about a tile
-     * never composing its own copy.
-     */
-    const line = describeChief({
-      agent: "news-scout",
-      runs: "Not run yet",
-      glance: [GLANCE_ALL_CLEAR],
-    });
-    expect(line?.runs).toBe("Not run yet");
-  });
-
-  it("names the agent in the action, so the button's object is not a scroll position", () => {
-    const line = describeChief({
-      agent: "news-scout",
-      runs: "Run once",
-      glance: [GLANCE_ALL_CLEAR],
-    });
-    expect(line?.action).toBe("Ask news-scout");
-    expect(line?.agent).toBe("news-scout");
-  });
-
-  it("says nothing at all about an agent with no chips", () => {
-    /*
-     * `AgentRow.glance` is documented as never empty, so this state is not
-     * supposed to exist. The honest answer to a card DASH could not fill in is
-     * silence rather than reassurance — a cheerful sentence over a record that
-     * failed to load is the exact invention `lib/copy/glance.ts` refuses when it
-     * declines to turn an absent fact into a chip.
-     */
-    expect(describeChief({ agent: "news-scout", runs: "Run once", glance: [] })).toBeNull();
-  });
-
-  it("has no clock, no store and no fourth fact", () => {
+  it("has no clock and no store", () => {
     /*
      * MAR-547's ruling against `CPU LOAD 87%`, enforced at the module's edge: a
      * pure copy module that cannot reach a database or a clock cannot round a
-     * missing answer up into a claim. The chief's only inputs are three strings
-     * somebody else already stood behind.
+     * missing answer up into a claim. `describeFleetSummary`'s only input is a
+     * list of statuses somebody else already computed.
      */
     expect(chiefSource).not.toMatch(/\bnew Date\b|\bDate\.now\b|Math\.random/);
     expect(chiefSource).not.toMatch(/from "\.\.\/(db|store|views\/glance)"/);
@@ -245,10 +116,10 @@ describe("the chief invents nothing", () => {
 describe("the chief is not the Chief chat", () => {
   it("draws no input a person could type into and get nothing back from", () => {
     /*
-     * MAR-419 is the Chief chat, it is unbuilt, and `app/_components/ask.tsx`
-     * states the rule this band is held to: **never a dead input.** The band's
-     * action is the truest thing in reach instead — MAR-545's per-agent Ask, on
-     * the agent's own workspace.
+     * `ChiefBand` itself renders no box — `<ChiefChat />` is a component
+     * reference, not inline markup, and that component is where the real
+     * textarea lives (MAR-648). `app/_components/ask.tsx`'s rule still holds
+     * either way: never a dead input.
      *
      * Asserted against the band's source rather than against a render, because the
      * defect this prevents is somebody adding the box before the thing behind it

@@ -1457,24 +1457,32 @@ code {
    */
   --fleet-gap: calc(var(--density-gap) * 1.5);
   /*
-   * 14rem, and the number is arithmetic rather than taste (MAR-634). It now
-   * bounds the grid's *row height* only — see the desktop block below — and
-   * is unrelated to the column track, which MAR-639 sizes on its own terms
-   * immediately below.
+   * 16rem, and the number is arithmetic rather than taste (MAR-634, revised
+   * at MAR-669). It bounds the grid's *row height* only — see the desktop
+   * block below — and is unrelated to the column track, which MAR-639 sizes
+   * on its own terms immediately below.
    *
-   * MAR-630 asked for three across and set this to 16rem, and three 16rem
-   * cards have never once fitted: at 1280 the stage is the window less the
-   * 240px sidebar, less the 240px rail, less this pane's own 24px either side
-   * — 752px — and three 256px tracks with two 18px gaps want 804. So the grid
-   * drew two columns and called itself a three-column grid, which is half of
-   * why the stage read as a void: a fleet of three was landing as 2 + 1.
+   * MAR-630 asked for three across and set this to 16rem for the *column*
+   * track, and three 16rem cards never once fitted there: at 1280 the stage
+   * is the window less the 240px sidebar, less the 240px rail, less this
+   * pane's own 24px either side — 752px — and three 256px tracks with two
+   * 18px gaps want 804. MAR-634 dropped it to 14rem (224px) to fix that width
+   * problem, on a variable this rule has not governed column width with since
+   * MAR-639 split the two concerns apart.
    *
-   * 224px makes it 708, and leaves room for the cards pane's own scrollbar on
-   * the frames where a third row exists. Nothing narrower than 1280 changes:
-   * at 768 two columns fitted before and fit now, and at 375 the
-   * `min(…, 100%)` floor below has always given one full-width card.
+   * MAR-669 raises it back to 16rem for the *unrelated* reason: the row-
+   * height budget, not the column-width one. The portrait grew from 100px to
+   * 128px (`.fleet-portrait`'s own comment) and the previous two-row indicator
+   * cluster — the place badge above `.fleet-pick`, the status mark inside it
+   * — became one row, which gives back some of what the portrait took. Net,
+   * 224px stopped being enough; 256px is the next round number with headroom
+   * rather than the exact measured minimum, verified against
+   * `electron/capture-fleet-views.ts`'s own `visible_rows`/`stage_filled`
+   * numbers before and after (see the MAR-669 packet entry for the measured
+   * result) rather than assumed from arithmetic the way this comment's own
+   * history warns against.
    */
-  --fleet-card: 14rem;
+  --fleet-card: 16rem;
   height: 100%;
   /*
    * MAR-639: a 9rem floor and a 10.5rem ceiling — measured, not the first
@@ -1548,9 +1556,18 @@ code {
   border-color: var(--line-strong);
 }
 
+/*
+ * MAR-669. The one indicator row: the place badge and the status (or
+ * never-run) mark together, Henrik's own words — "status indicator next to
+ * local/cloud." Grid and Spotlight need nothing beyond `flex` here — a flex
+ * item inside `.fleet-identity`'s own centred column, so the whole row reads
+ * as one centred unit. Rows repositions it below; see that section's own
+ * comment for why the wrapper stays this same class rather than a new one.
+ */
 .fleet-marks {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: var(--space-2);
   align-items: center;
 }
@@ -1584,6 +1601,13 @@ code {
   flex: none;
   flex-direction: column;
   align-items: center;
+  /*
+   * MAR-669. The name, the portrait and the identity cluster are three flat
+   * children now (`.fleet-name` moved out of `.fleet-identity` — see
+   * `fleet-card.tsx`'s own header) and this is what spaces them, replacing
+   * `.fleet-identity`'s old `margin-top`.
+   */
+  gap: var(--space-2);
   width: 100%;
   margin: 0;
   padding: 0;
@@ -1729,12 +1753,22 @@ code {
  * two, on the same scale `lib/copy/glance.ts` states for its chips.
  * `app/tokens.css` is the palette either way: no colour here is introduced
  * for this one tile.
+ *
+ * MAR-669: Grid's own box, 128px — up from 100px, and the largest this
+ * column can take. `OAvatar` draws the sprite at 150px here
+ * (`fleet-card.tsx`'s `portraitSize`), a whole multiple of the 50px source,
+ * so the box is a crop window rather than a resample — the same technique
+ * Rows already used to show a 100px sprite in a 56px row. 128px is what is
+ * left of the grid's own 144px column floor (`.row-list.fleet-grid`'s 9rem)
+ * once this card's own padding is taken out; going wider reopens MAR-639's
+ * four-column fight over the column track. Spotlight's own rule below
+ * overrides both numbers — that card has room to spare.
  */
 .fleet-portrait {
   display: flex;
   flex: none;
-  width: 100px;
-  height: 100px;
+  width: 128px;
+  height: 128px;
   align-items: center;
   justify-content: center;
   padding: 0;
@@ -1743,10 +1777,9 @@ code {
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   /*
-   * 100px is 2× the 50px source. A sprite may be cropped; it may not
-   * be resampled to fit (that is `image-rendering: pixelated`'s whole argument)
-   * and it may not push the page sideways, which is a defect the capture
-   * harness fails a frame for.
+   * A sprite may be cropped; it may not be resampled to fit (that is
+   * `image-rendering: pixelated`'s whole argument) and it may not push the
+   * page sideways, which is a defect the capture harness fails a frame for.
    */
   overflow: hidden;
 }
@@ -1762,18 +1795,20 @@ code {
 }
 
 /*
- * The status mark, the last-run line and the name, stacked under the
- * portrait and reading as one cluster with it (MAR-639) — colour on the
- * portrait, icon and word right beneath it. Centred here for the grid and
- * spotlight tracks; `[data-fleet-view="rows"]` below moves it beside the
- * portrait instead.
+ * The indicator row and the last-run line, under the portrait and reading as
+ * one cluster with it (MAR-639) — colour on the portrait, marks right
+ * beneath it. Centred here for the grid and spotlight tracks;
+ * `[data-fleet-view="rows"]` below moves it beside the portrait instead.
+ *
+ * MAR-669: the name moved out to `.fleet-pick` directly, above the portrait
+ * — see `fleet-card.tsx`'s own header. `.fleet-pick`'s `gap` now carries the
+ * spacing this rule's own `margin-top` used to.
  */
 .fleet-identity {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-1);
-  margin-top: var(--space-2);
   min-width: 0;
 }
 
@@ -1845,7 +1880,9 @@ code {
  * 100px portrait would be taller than the row around it. The sprite is
  * still cropped rather than resampled at every size it is drawn at
  * (`.fleet-portrait`'s own rule), which is the property that comment was
- * actually protecting.
+ * actually protecting. MAR-669 does not grow Rows' portrait — its 56px/40px
+ * box was never Henrik's complaint, and this row's pinned height has no
+ * room to spare for it.
  */
 [data-fleet-view="rows"] .row-list.fleet-grid {
   max-width: none;
@@ -1854,24 +1891,6 @@ code {
   justify-content: stretch;
 }
 
-/*
- * MAR-640. The place badge (`.fleet-marks`) moves into the row instead of
- * standing on its own line above `.fleet-pick`: at a ~72px target the
- * measured content proved this the load-bearing half of the anatomy, not a
- * cosmetic one — a second stacked line was the difference between a row
- * that fit the density bound and one whose own content forced `minmax`'s
- * `min-content` floor past it regardless of what the bound said, on the
- * exact "the floor is what makes the bound safe" property MAR-634's own
- * comment states for the grid. `order` puts it after the identity cluster
- * so "place" still reads beside "last-run", the issue's own pairing.
- *
- * MAR-660 widens the gap between that cluster and the identity grid beside
- * it: Henrik's own words, the status and place text "gets too tight… give
- * lots of room to the status indicators." Measured, not guessed — a card
- * this wide at 1280 has the width to spare, and the tightness was never
- * about pixels available, only about how few of them this rule was asking
- * for.
- */
 [data-fleet-view="rows"] .fleet-card {
   flex-direction: row;
   align-items: center;
@@ -1880,32 +1899,11 @@ code {
 }
 
 /*
- * MAR-660. Bottom-aligned rather than centred on the row's own cross axis,
- * which is what put it here in the first place: `.fleet-favourite`'s corner
- * is fixed (`top/right: var(--space-2)`, 28px tall) regardless of the row's
- * own height, and a badge centred across a 56-72px row sits squarely inside
- * that footprint — Henrik's station 2, "the star that is placed over the
- * status indicators," measured as a real pixel overlap rather than a mere
- * impression before this rule existed. Aligning to the end of the row
- * instead lands the badge beside `.fleet-last-run` — the grid's own
- * "lastrun" cell, immediately to its left — clear of the star's fixed band
- * at both pinned row heights, and leaves `status` alone on the row above it
- * with the room this issue's own words ask for.
- */
-[data-fleet-view="rows"] .fleet-marks {
-  order: 2;
-  flex: none;
-  align-self: flex-end;
-}
-
-/*
  * MAR-660. Compact's ~56px row leaves less clearance under the star's fixed
- * corner than comfortable's ~68-72px does — measured, not assumed: aligning
- * `.fleet-marks` to the row's end (above) cleared the star at comfortable but
- * still left a 2px overlap at compact. Tucked in and slightly smaller here,
- * on `.fleet-portrait`'s own precedent for a compact-only size a few rules up
- * — 24px keeps the star at WCAG's own 24px minimum target size rather than
- * shrinking under it.
+ * corner than comfortable's ~68-72px does — measured, not assumed. Tucked in
+ * and slightly smaller here, on `.fleet-portrait`'s own precedent for a
+ * compact-only size a few rules up — 24px keeps the star at WCAG's own 24px
+ * minimum target size rather than shrinking under it.
  */
 [data-fleet-view="rows"][data-density="compact"] .fleet-favourite {
   top: var(--space-1);
@@ -1913,23 +1911,39 @@ code {
   height: 1.5rem;
 }
 
+/*
+ * MAR-669. `.fleet-pick` becomes the row's own grid, in place of the flex
+ * row plus `.fleet-identity`'s own nested grid MAR-640 built. `.fleet-name`
+ * moved out to sit beside `.fleet-portrait` directly (`fleet-card.tsx`'s own
+ * header), so a second nested grid would have needed a second wrapper Rows
+ * alone drew — this is the same flat markup Grid and Spotlight use, laid out
+ * differently, which is what a view is for.
+ *
+ * `.fleet-identity` goes `display: contents` immediately below: it stops
+ * existing as a box and its own children — `.fleet-marks`, `.fleet-last-run`,
+ * `.fleet-goal` — become direct items of this grid, the same technique that
+ * keeps a `<tbody>`-free table row's cells addressable. The DOM keeps every
+ * fact as a real, readable node; only the box that used to wrap three of
+ * them stops taking up space.
+ */
 [data-fleet-view="rows"] .fleet-pick {
-  order: 1;
-  flex: 1 1 auto;
-  flex-direction: row;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(7rem, auto);
+  grid-template-areas:
+    "portrait name       indicators"
+    "portrait goal       lastrun";
+  column-gap: var(--space-3);
   align-items: center;
-  gap: var(--space-3);
-  min-width: 0;
+  width: 100%;
   text-align: start;
 }
 
-/*
- * MAR-640. 56px comfortable — the issue's own number — and a smaller
- * compact size, both chosen so portrait + this section's tightened padding
- * stay under the row's own density-keyed height bound rather than forcing
- * it open: see the desktop block below for the two numbers this has to fit.
- */
+[data-fleet-view="rows"] .fleet-identity {
+  display: contents;
+}
+
 [data-fleet-view="rows"] .fleet-portrait {
+  grid-area: portrait;
   width: 56px;
   height: 56px;
 }
@@ -1937,38 +1951,6 @@ code {
 [data-fleet-view="rows"][data-density="compact"] .fleet-portrait {
   width: 40px;
   height: 40px;
-}
-
-/*
- * MAR-640. The row anatomy: name and goal grow on the left; the status mark
- * and the last-run line form a second, fixed-width column on the right.
- *
- * A CSS grid rather than a second flex axis, because the four facts stay
- * **flat siblings in the DOM** — `.fleet-name`, `.fleet-goal`,
- * `.fleet-mark-*` and `.fleet-last-run`, in that document order, unchanged
- * from Grid and Spotlight — and only `grid-template-areas` can place four
- * flat siblings into two rows of two columns without either reordering them
- * (which would draw the name *after* the status mark in Grid and Spotlight,
- * where the stack is centred and order is what makes it read top-to-bottom
- * as status-then-name) or wrapping them in new elements JSX would have to
- * render differently per view.
- *
- * The never-run case has no `.fleet-last-run` at all — `FleetCard`'s own
- * branch — so `status` sits alone in its row of the named grid and the cell
- * below it is simply empty, which is the correct picture of "nothing to
- * report yet" rather than a gap needing a placeholder.
- */
-[data-fleet-view="rows"] .fleet-identity {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(7rem, auto);
-  grid-template-areas:
-    "name   status"
-    "goal   lastrun";
-  column-gap: var(--space-3);
-  align-items: center;
-  margin-top: 0;
-  text-align: start;
-  width: 100%;
 }
 
 [data-fleet-view="rows"] .fleet-name {
@@ -1980,8 +1962,17 @@ code {
   grid-area: goal;
 }
 
-[data-fleet-view="rows"] .fleet-mark {
-  grid-area: status;
+/*
+ * MAR-669. The place badge and the status (or never-run) mark, together,
+ * where the status mark stood alone before — Henrik's own words, "status
+ * indicator next to local/cloud," applied to Rows too rather than left as a
+ * Grid/Spotlight-only change. `justify-self: end` is `.fleet-last-run`'s own
+ * rule, so the two right-hand cells still line up on the row's trailing
+ * edge the way MAR-640 first drew them.
+ */
+[data-fleet-view="rows"] .fleet-marks {
+  grid-area: indicators;
+  justify-content: flex-end;
   justify-self: end;
 }
 
@@ -1999,24 +1990,33 @@ code {
  */
 @media (max-width: 900px) {
   /*
-   * MAR-640. `.fleet-card` and `.fleet-pick` both go back to a column at
-   * this width — the row-height bound below is desktop-only for MAR-634's
-   * own reason, so there is no budget being protected here and the card is
-   * free to be the full-height, fully-stacked shape Grid already draws.
+   * MAR-640, redone at MAR-669. `.fleet-card` goes back to a column at this
+   * width, and `.fleet-pick`/`.fleet-identity` go back to the plain flex
+   * stack the base (grid) rules already draw — the row-height bound below is
+   * desktop-only for MAR-634's own reason, so there is no budget being
+   * protected here and the card is free to be the full-height, fully-stacked
+   * shape Grid already draws. Explicit resets rather than silence: a
+   * `display: grid` / `display: contents` pair set above does not undo
+   * itself just because the row got narrow.
    */
   [data-fleet-view="rows"] .fleet-card {
     flex-direction: column;
     padding: var(--density-card-p);
   }
 
-  [data-fleet-view="rows"] .fleet-marks {
-    order: 0;
+  [data-fleet-view="rows"] .fleet-pick {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    text-align: center;
   }
 
-  [data-fleet-view="rows"] .fleet-pick {
-    order: 0;
+  [data-fleet-view="rows"] .fleet-identity {
+    display: flex;
     flex-direction: column;
-    text-align: center;
+    align-items: center;
+    gap: var(--space-1);
   }
 
   [data-fleet-view="rows"] .fleet-portrait,
@@ -2025,31 +2025,12 @@ code {
     height: 100px;
   }
 
-  [data-fleet-view="rows"] .fleet-name {
-    margin-top: var(--space-2);
+  [data-fleet-view="rows"] .fleet-marks {
+    justify-content: center;
   }
 
-  /*
-   * MAR-640. The two-column cluster is a desktop-width shape: a fixed 7rem
-   * status column beside a name column that has already given up most of
-   * its own width is the same "two rectangles fighting over 375px" defect
-   * MAR-590 fixed on the grid. Collapsed to one column here, reading
-   * top-to-bottom the same order Grid and Spotlight already draw it in.
-   */
-  [data-fleet-view="rows"] .fleet-identity {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "name"
-      "goal"
-      "status"
-      "lastrun";
-    justify-items: center;
-    text-align: center;
-  }
-
-  [data-fleet-view="rows"] .fleet-mark,
   [data-fleet-view="rows"] .fleet-last-run {
-    justify-self: center;
+    justify-self: auto;
   }
 }
 
@@ -2106,6 +2087,20 @@ code {
 
 [data-fleet-view="spotlight"] .row-list.fleet-grid::-webkit-scrollbar {
   display: none;
+}
+
+/*
+ * MAR-669. The card Henrik actually annotated: "the character smallest
+ * relative to it," said about this view specifically, because Spotlight's
+ * card is the one with room to spare — 22rem tall, up to 20rem wide (the
+ * bound below). 200px is an exact fit for `OAvatar`'s own sprite
+ * (`fleet-card.tsx`'s `portraitSize` returns 200 here), so nothing is
+ * cropped: this is the one box in the fleet where the box and the sheet are
+ * the same size.
+ */
+[data-fleet-view="spotlight"] .fleet-portrait {
+  width: 200px;
+  height: 200px;
 }
 
 [data-fleet-view="spotlight"] .row-list.fleet-grid > li {
@@ -2284,11 +2279,13 @@ code {
     justify-content: center;
   }
 
-  /* In rows the pick is a horizontal band, and centring it would push the
-     portrait and the name into the middle of a full-width card. */
-  [data-fleet-view="rows"] .fleet-pick {
-    justify-content: flex-start;
-  }
+  /*
+   * MAR-669 removes what stood here: `justify-content: flex-start` on Rows'
+   * own `.fleet-pick`, an override for when that element was a horizontal
+   * flex band. It is `display: grid` now (this section, above) and fills its
+   * row on the `1fr` name column, so there is no leftover space for
+   * `justify-content` to distribute and nothing this rule was doing.
+   */
 
   /*
    * MAR-639 removes what stood here: a `display: grid` override on the card
@@ -2390,7 +2387,13 @@ code {
   min-height: 0;
   overflow: hidden;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  /*
+   * Two columns, not three. The third — `auto`, for `.chief-actions`' own
+   * trailing "Ask <agent>" button — went with the per-agent line at MAR-669;
+   * `.chief-chat`'s own `grid-column: 1 / -1` still spans whatever this
+   * template declares, so dropping a column here cost it nothing.
+   */
+  grid-template-columns: auto minmax(0, 1fr);
   /*
    * MAR-648. The chief says its piece at its own height; the composer takes the
    * rest of the band.
@@ -2419,24 +2422,6 @@ code {
   background: var(--surface-1);
 }
 
-.chief-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  align-items: center;
-  align-self: start;
-  justify-content: flex-end;
-}
-
-.chief-line {
-  min-height: 0;
-  overflow: auto;
-}
-
-.chief-line .fleet-hosting {
-  margin-top: var(--space-2);
-}
-
 /*
  * Positioning only, since MAR-615 vendored the chief's own portrait — nothing
  * here draws with `currentColor` any more. Never `--ok`: `app/tokens.css`
@@ -2451,15 +2436,6 @@ code {
 .chief-says {
   margin: 0;
   font-size: var(--text-base);
-}
-
-.chief-says > code {
-  font-size: inherit;
-}
-
-.chief-runs {
-  margin: var(--space-1) 0 0;
-  font-size: var(--text-sm);
 }
 
 @media (max-width: 760px) {
@@ -2505,26 +2481,6 @@ code {
     gap: var(--space-2);
     padding: var(--space-3) var(--space-4);
     overflow: auto;
-  }
-
-  .chief-actions {
-    justify-content: stretch;
-  }
-
-  /*
-   * The chief's sentence stops being a scroll container and becomes text.
-   *
-   * `.chief-line` carries `min-height: 0; overflow: auto` so it can scroll
-   * inside the grid's fixed row. In a flex column those two combine into
-   * something else entirely: the default `flex-shrink: 1` plus a zero minimum
-   * lets it collapse to no height at all when the band is tight, which is what
-   * the 375px capture showed — a band holding a glyph and two buttons and no
-   * sentence, with nothing overflowing and nothing to measure.
-   */
-  .chief-line {
-    flex: none;
-    min-height: auto;
-    overflow: visible;
   }
 
   /*
@@ -2587,11 +2543,6 @@ code {
    */
   .chief-glyph {
     --o-size: 25px !important;
-  }
-
-  .chief-actions > .button-link {
-    flex: 1;
-    text-align: center;
   }
 }
 

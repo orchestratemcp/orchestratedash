@@ -118,8 +118,21 @@ describe("nothing moves while nobody is looking", () => {
 });
 
 describe("the fleet asks for the loop, and asks for nothing else", () => {
-  it("draws the character-select tile at a whole multiple of the source", () => {
-    expect(fleetCard).toContain("<OAvatar name={agent.avatar} size={100} action />");
+  it("draws the portrait at a whole multiple of the source, in every view (MAR-669)", () => {
+    /*
+     * A single literal `size={100}` until MAR-669 grew the portrait
+     * per-view — the call site now reads `portraitSize(view)`, and the
+     * whole-multiple claim moves to that function's own three branches
+     * rather than to one number.
+     */
+    expect(fleetCard).toContain("<OAvatar name={agent.avatar} size={portraitSize(view)} action />");
+    const body = /function portraitSize\(view: FleetView\): OSize \{([\s\S]*?)\n\}/.exec(fleetCard)?.[1];
+    expect(body, "portraitSize could not be found").toBeDefined();
+    const sizes = [...(body ?? "").matchAll(/return (\d+);/g)].map((match) => Number(match[1]));
+    expect(sizes).toHaveLength(3);
+    for (const size of sizes) {
+      expect(size % 50, `${String(size)} is not a whole multiple of the 50px source`).toBe(0);
+    }
   });
 
   it("decides to animate in the source, never from the agent", () => {

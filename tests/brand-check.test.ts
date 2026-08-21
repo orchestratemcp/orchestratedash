@@ -138,10 +138,10 @@ describe("violation 2 — a rendered size that is not a whole multiple of 50", (
     const { names, sizes, failures } = readCastModule(source);
     expect(failures).toEqual([]);
     expect(names).toHaveLength(12);
-    // 200 arrived with MAR-587's character-select tile. 150 is a legal whole
-    // multiple and is deliberately absent: a size is in the union because a
-    // surface draws at it.
-    expect(sizes).toEqual([50, 100, 200]);
+    // 200 arrived with MAR-587's character-select tile; 150 with MAR-669's
+    // Grid portrait (`fleet-card.tsx`'s `portraitSize`) — each landed only
+    // once a surface actually drew at it, the union's own standing rule.
+    expect(sizes).toEqual([50, 100, 150, 200]);
   });
 
   it("fails loudly rather than silently when the union cannot be parsed", () => {

@@ -64,8 +64,6 @@ function agent(over: Partial<AgentRow> = {}): AgentRow {
   } as AgentRow;
 }
 
-const NO_SIGHTINGS = { seen: {} } as never;
-
 describe("the layout control", () => {
   const markup = renderToStaticMarkup(<FleetViewToggle />);
 
@@ -154,10 +152,7 @@ describe("the agents page rail", () => {
 
 describe("the list a cold render draws", () => {
   const markup = renderToStaticMarkup(
-    <FleetList
-      agents={[agent(), agent({ name: "digest", title: "Digest", avatar: "wizard" })]}
-      log={NO_SIGHTINGS}
-    />,
+    <FleetList agents={[agent(), agent({ name: "digest", title: "Digest", avatar: "wizard" })]} />,
   );
 
   it("is the ordered list every other record surface uses", () => {
@@ -203,23 +198,35 @@ describe("the list a cold render draws", () => {
     expect(markup).not.toContain('tabindex="0"');
   });
 
-  it("puts the facts on the chief, because the card is a portrait", () => {
+  it("keeps the goal off the card, because the card is a portrait", () => {
     /*
      * `lib/views/fleet-view.ts`'s rule from the markup's side: the views are three
-     * tracks over one `FleetCard`, so a chip cannot exist in one view and not
-     * another. The prose left the card; the chief is on the same list in every
-     * view and is where those facts now live.
+     * tracks over one `FleetCard`, so a fact cannot exist in one view and not
+     * another. The goal left the card at MAR-612 and stays off it in Grid and
+     * Spotlight — Rows draws its own one-line version, gated on the view.
      */
-    expect(markup).toContain(GLANCE_ALL_CLEAR.meaning);
     expect(markup).toContain("chief-band");
     expect(markup).not.toContain("Read the news sources you choose");
+  });
+
+  it("speaks about the fleet, never about which card is selected (MAR-669)", () => {
+    /*
+     * Both seeded agents are calm — `run_count: 3`, `glance: [GLANCE_ALL_CLEAR]`
+     * — so `describeFleetCardStatus` reads `completed` for each and
+     * `describeFleetSummary` has nothing to ask for. That sentence is what the
+     * band says, and the per-agent line MAR-669 removed — a name, a chip's
+     * meaning, an "Ask <agent>" action — is gone with it.
+     */
+    expect(markup).toContain("Nothing needs you right now.");
+    expect(markup).not.toContain(GLANCE_ALL_CLEAR.meaning);
+    expect(markup).not.toContain("Ask news-scout");
+    expect(markup).not.toContain("chief-line");
+    expect(markup).not.toContain("chief-actions");
   });
 });
 
 describe("a card for an agent that has never run (MAR-634)", () => {
-  const markup = renderToStaticMarkup(
-    <FleetList agents={[agent({ run_count: 0 })]} log={NO_SIGHTINGS} />,
-  );
+  const markup = renderToStaticMarkup(<FleetList agents={[agent({ run_count: 0 })]} />);
 
   it("says the absence instead of leaving a gap that reads as a failed load", () => {
     /*
@@ -259,10 +266,15 @@ describe("a card for an agent that has never run (MAR-634)", () => {
     expect(markup).toContain("fleet-mark-local");
   });
 
-  it("words it once, so the card and the chief cannot disagree", () => {
-    // Twice on screen, from one function: the card's mark and the chief's
-    // run line. Two literals would be two things to improve separately.
-    expect([...markup.matchAll(/Not run yet/g)]).toHaveLength(2);
+  it("says it from one function, and the chief no longer echoes it (MAR-669)", () => {
+    /*
+     * Before MAR-669 this string appeared twice — the card's mark and the
+     * chief's per-agent run line, both built from `describeRunCount` so the
+     * two copies could not disagree. The chief no longer has a per-agent
+     * line to put it in; the card's own mark is the only place left, which
+     * is one copy rather than two agreeing copies.
+     */
+    expect([...markup.matchAll(/Not run yet/g)]).toHaveLength(1);
   });
 });
 
@@ -282,32 +294,34 @@ describe("where a card stands in the spotlight", () => {
 });
 
 describe("the chief, under the cards", () => {
-  it("talks about the agent in the middle, by name", () => {
-    const markup = renderToStaticMarkup(<ChiefBand agent={agent()} />);
-    expect(markup).toContain("news-scout");
-    expect(markup).toContain(GLANCE_ALL_CLEAR.meaning);
-    expect(markup).toContain("Run 3 times");
-  });
-
-  it("offers the one place this agent can actually be asked something", () => {
+  it("talks about the fleet, never about one agent by name (MAR-669)", () => {
     /*
-     * MAR-419's chat is not built. The action is MAR-545's per-agent Ask instead,
-     * on the agent's own workspace — a real destination rather than a box that
-     * would take a question nothing can answer.
-     *
-     * MAR-660 moves "Open this agent" off the chief entirely — Henrik's own
-     * words, it belongs "under the avatar in the card for every agent," not
-     * on a component about the fleet as a whole. See "the list a cold render
-     * draws" below for its new home.
+     * `ChiefBand` no longer takes an `agent` prop at all — Henrik's own words,
+     * "the chief band speaks about the fleet as a whole and nothing else."
+     * `agents` (plural, the whole visible fleet) is what it reads.
      */
-    const markup = renderToStaticMarkup(<ChiefBand agent={agent()} />);
-    expect(markup).toContain("Ask news-scout");
-    expect(markup).not.toContain("Open this agent");
-    expect(markup).toContain("/agents/detail?agent=news-scout#ask-agent");
+    const markup = renderToStaticMarkup(<ChiefBand agents={[agent()]} />);
+    expect(markup).not.toContain("news-scout");
+    expect(markup).not.toContain(GLANCE_ALL_CLEAR.meaning);
+    expect(markup).toContain("Nothing needs you right now.");
   });
 
-  it("says where it is and stops when there is no agent to talk about", () => {
-    const markup = renderToStaticMarkup(<ChiefBand agent={null} />);
+  it("draws no per-agent action — asking one agent still works, from its own page", () => {
+    /*
+     * MAR-669 removed the band's own "Ask <agent>" link along with the rest of
+     * the per-agent line. The route it pointed at is untouched:
+     * `app/_components/ask.tsx`'s `#ask-agent` section still lives on the
+     * agent's own workspace, reached now by `fleet-card.tsx`'s `FleetOpenLink`
+     * (MAR-660) or by asking the chief a routed question (`ChiefChat`).
+     */
+    const markup = renderToStaticMarkup(<ChiefBand agents={[agent()]} />);
+    expect(markup).not.toContain("Ask news-scout");
+    expect(markup).not.toContain("Open this agent");
+    expect(markup).not.toContain("#ask-agent");
+  });
+
+  it("says where it is and stops when the fleet is empty", () => {
+    const markup = renderToStaticMarkup(<ChiefBand agents={[]} />);
     expect(markup).toContain("The chief is waiting");
     // No action, because there is nothing to act on. A button that named no
     // agent would be the dead control this band exists to avoid.
@@ -321,7 +335,7 @@ describe("the chief, under the cards", () => {
     // sheet rather than the still-image path a fleet avatar without `action`
     // would use, and `O_FLEET` (asserted in tests/o-cast.test.ts) is what keeps
     // `oFor()` from ever landing an agent in it.
-    const markup = renderToStaticMarkup(<ChiefBand agent={agent()} />);
+    const markup = renderToStaticMarkup(<ChiefBand agents={[agent()]} />);
     expect(markup).toContain("chief-glyph");
     expect(markup).toContain("/o/actions/chief-baton-wave.png");
     expect(markup).not.toContain("/o/1x/");

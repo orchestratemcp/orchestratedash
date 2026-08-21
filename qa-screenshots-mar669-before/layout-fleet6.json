@@ -1,0 +1,3207 @@
+{
+  "fleet": 6,
+  "views": [
+    "grid",
+    "rows",
+    "spotlight"
+  ],
+  "captured_at": "2026-08-16T18:31:31.982Z",
+  "measurements": [
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "comfortable",
+      "theme": "light",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "497.602px 248.797px",
+        "cards_height": 498,
+        "chief_height": 249
+      },
+      "visible_cards": 6,
+      "visible_rows": 2,
+      "visible_columns": 4,
+      "list": {
+        "auto_rows": "minmax(min-content, 224px)",
+        "auto_columns": "auto",
+        "template_rows": "242.5px 224px",
+        "align_content": "safe center",
+        "gap": "18px",
+        "client_width": 751,
+        "client_height": 498
+      },
+      "card_heights": [
+        243,
+        224
+      ],
+      "stage_filled": 97,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "comfortable",
+      "theme": "light",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "380.938px 190.469px",
+        "cards_height": 381,
+        "chief_height": 190
+      },
+      "visible_cards": 3,
+      "visible_rows": 1,
+      "visible_columns": 3,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "227.5px 242.5px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 665,
+        "client_height": 381
+      },
+      "card_heights": [
+        209,
+        228,
+        243
+      ],
+      "stage_filled": 60,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "comfortable",
+      "theme": "light",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "139.578px 195.414px",
+        "cards_height": 140,
+        "chief_height": 195
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "208.5px 208.5px 227.5px 242.5px 208.5px 208.5px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 288,
+        "client_height": 140
+      },
+      "card_heights": [
+        209,
+        228,
+        243
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "comfortable",
+      "theme": "dark",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "497.602px 248.797px",
+        "cards_height": 498,
+        "chief_height": 249
+      },
+      "visible_cards": 6,
+      "visible_rows": 2,
+      "visible_columns": 4,
+      "list": {
+        "auto_rows": "minmax(min-content, 224px)",
+        "auto_columns": "auto",
+        "template_rows": "242.5px 224px",
+        "align_content": "safe center",
+        "gap": "18px",
+        "client_width": 751,
+        "client_height": 498
+      },
+      "card_heights": [
+        243,
+        224
+      ],
+      "stage_filled": 97,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "comfortable",
+      "theme": "dark",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "380.938px 190.469px",
+        "cards_height": 381,
+        "chief_height": 190
+      },
+      "visible_cards": 3,
+      "visible_rows": 1,
+      "visible_columns": 3,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "227.5px 242.5px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 665,
+        "client_height": 381
+      },
+      "card_heights": [
+        209,
+        228,
+        243
+      ],
+      "stage_filled": 60,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "comfortable",
+      "theme": "dark",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "139.578px 195.414px",
+        "cards_height": 140,
+        "chief_height": 195
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "208.5px 208.5px 227.5px 242.5px 208.5px 208.5px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 288,
+        "client_height": 140
+      },
+      "card_heights": [
+        209,
+        228,
+        243
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "compact",
+      "theme": "light",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "508.266px 254.141px",
+        "cards_height": 508,
+        "chief_height": 254
+      },
+      "visible_cards": 6,
+      "visible_rows": 2,
+      "visible_columns": 4,
+      "list": {
+        "auto_rows": "minmax(min-content, 224px)",
+        "auto_columns": "auto",
+        "template_rows": "242.5px 224px",
+        "align_content": "safe center",
+        "gap": "12px",
+        "client_width": 751,
+        "client_height": 508
+      },
+      "card_heights": [
+        243,
+        224
+      ],
+      "stage_filled": 94,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "compact",
+      "theme": "light",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "391.602px 195.797px",
+        "cards_height": 392,
+        "chief_height": 196
+      },
+      "visible_cards": 3,
+      "visible_rows": 1,
+      "visible_columns": 3,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "227.5px 242.5px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 665,
+        "client_height": 392
+      },
+      "card_heights": [
+        209,
+        228,
+        243
+      ],
+      "stage_filled": 58,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "compact",
+      "theme": "light",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "142.914px 200.078px",
+        "cards_height": 143,
+        "chief_height": 200
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "208.5px 208.5px 227.5px 242.5px 208.5px 208.5px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 288,
+        "client_height": 143
+      },
+      "card_heights": [
+        209,
+        228,
+        243
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "compact",
+      "theme": "dark",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "508.266px 254.141px",
+        "cards_height": 508,
+        "chief_height": 254
+      },
+      "visible_cards": 6,
+      "visible_rows": 2,
+      "visible_columns": 4,
+      "list": {
+        "auto_rows": "minmax(min-content, 224px)",
+        "auto_columns": "auto",
+        "template_rows": "242.5px 224px",
+        "align_content": "safe center",
+        "gap": "12px",
+        "client_width": 751,
+        "client_height": 508
+      },
+      "card_heights": [
+        243,
+        224
+      ],
+      "stage_filled": 94,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "compact",
+      "theme": "dark",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "391.602px 195.797px",
+        "cards_height": 392,
+        "chief_height": 196
+      },
+      "visible_cards": 3,
+      "visible_rows": 1,
+      "visible_columns": 3,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "227.5px 242.5px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 665,
+        "client_height": 392
+      },
+      "card_heights": [
+        209,
+        228,
+        243
+      ],
+      "stage_filled": 58,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "compact",
+      "theme": "dark",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "142.914px 200.078px",
+        "cards_height": 143,
+        "chief_height": 200
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "208.5px 208.5px 227.5px 242.5px 208.5px 208.5px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 288,
+        "client_height": 143
+      },
+      "card_heights": [
+        209,
+        228,
+        243
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "comfortable",
+      "theme": "light",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        751,
+        751,
+        751,
+        751,
+        751,
+        751
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "497.602px 248.797px",
+        "cards_height": 498,
+        "chief_height": 249
+      },
+      "visible_cards": 6,
+      "visible_rows": 6,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "minmax(min-content, 72px)",
+        "auto_columns": "auto",
+        "template_rows": "67.9297px 67.9297px 67.9297px 67.9375px 67.9375px 67.9375px",
+        "align_content": "safe center",
+        "gap": "18px",
+        "client_width": 751,
+        "client_height": 498
+      },
+      "card_heights": [
+        68
+      ],
+      "stage_filled": 100,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "comfortable",
+      "theme": "light",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        665,
+        665,
+        665,
+        665,
+        665,
+        665
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "380.938px 190.469px",
+        "cards_height": 381,
+        "chief_height": 190
+      },
+      "visible_cards": 1,
+      "visible_rows": 1,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "240.5px 240.5px 255.5px 255.5px 240.5px 240.5px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 665,
+        "client_height": 366
+      },
+      "card_heights": [
+        241,
+        256
+      ],
+      "stage_filled": 63,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "comfortable",
+      "theme": "light",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        288,
+        288,
+        288,
+        288,
+        288,
+        288
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "139.578px 195.414px",
+        "cards_height": 140,
+        "chief_height": 195
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "240.5px 240.5px 255.5px 255.5px 240.5px 240.5px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 288,
+        "client_height": 125
+      },
+      "card_heights": [
+        241,
+        256
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "comfortable",
+      "theme": "dark",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        751,
+        751,
+        751,
+        751,
+        751,
+        751
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "497.602px 248.797px",
+        "cards_height": 498,
+        "chief_height": 249
+      },
+      "visible_cards": 6,
+      "visible_rows": 6,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "minmax(min-content, 72px)",
+        "auto_columns": "auto",
+        "template_rows": "67.9297px 67.9297px 67.9297px 67.9375px 67.9375px 67.9375px",
+        "align_content": "safe center",
+        "gap": "18px",
+        "client_width": 751,
+        "client_height": 498
+      },
+      "card_heights": [
+        68
+      ],
+      "stage_filled": 100,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "comfortable",
+      "theme": "dark",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        665,
+        665,
+        665,
+        665,
+        665,
+        665
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "380.938px 190.469px",
+        "cards_height": 381,
+        "chief_height": 190
+      },
+      "visible_cards": 1,
+      "visible_rows": 1,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "240.5px 240.5px 255.5px 255.5px 240.5px 240.5px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 665,
+        "client_height": 366
+      },
+      "card_heights": [
+        241,
+        256
+      ],
+      "stage_filled": 63,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "comfortable",
+      "theme": "dark",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        288,
+        288,
+        288,
+        288,
+        288,
+        288
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "139.578px 195.414px",
+        "cards_height": 140,
+        "chief_height": 195
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "240.5px 240.5px 255.5px 255.5px 240.5px 240.5px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 288,
+        "client_height": 125
+      },
+      "card_heights": [
+        241,
+        256
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "compact",
+      "theme": "light",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        751,
+        751,
+        751,
+        751,
+        751,
+        751
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "508.266px 254.141px",
+        "cards_height": 508,
+        "chief_height": 254
+      },
+      "visible_cards": 6,
+      "visible_rows": 6,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "minmax(min-content, 56px)",
+        "auto_columns": "auto",
+        "template_rows": "56px 56px 56px 56px 56px 56px",
+        "align_content": "safe center",
+        "gap": "12px",
+        "client_width": 751,
+        "client_height": 508
+      },
+      "card_heights": [
+        56
+      ],
+      "stage_filled": 78,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "compact",
+      "theme": "light",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        665,
+        665,
+        665,
+        665,
+        665,
+        665
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "391.602px 195.797px",
+        "cards_height": 392,
+        "chief_height": 196
+      },
+      "visible_cards": 1,
+      "visible_rows": 1,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "232.5px 232.5px 247.5px 247.5px 232.5px 232.5px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 665,
+        "client_height": 377
+      },
+      "card_heights": [
+        233,
+        248
+      ],
+      "stage_filled": 59,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "compact",
+      "theme": "light",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        288,
+        288,
+        288,
+        288,
+        288,
+        288
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "142.914px 200.078px",
+        "cards_height": 143,
+        "chief_height": 200
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "232.5px 232.5px 247.5px 247.5px 232.5px 232.5px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 288,
+        "client_height": 128
+      },
+      "card_heights": [
+        233,
+        248
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "compact",
+      "theme": "dark",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        751,
+        751,
+        751,
+        751,
+        751,
+        751
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "508.266px 254.141px",
+        "cards_height": 508,
+        "chief_height": 254
+      },
+      "visible_cards": 6,
+      "visible_rows": 6,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "minmax(min-content, 56px)",
+        "auto_columns": "auto",
+        "template_rows": "56px 56px 56px 56px 56px 56px",
+        "align_content": "safe center",
+        "gap": "12px",
+        "client_width": 751,
+        "client_height": 508
+      },
+      "card_heights": [
+        56
+      ],
+      "stage_filled": 78,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "compact",
+      "theme": "dark",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        665,
+        665,
+        665,
+        665,
+        665,
+        665
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "391.602px 195.797px",
+        "cards_height": 392,
+        "chief_height": 196
+      },
+      "visible_cards": 1,
+      "visible_rows": 1,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "232.5px 232.5px 247.5px 247.5px 232.5px 232.5px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 665,
+        "client_height": 377
+      },
+      "card_heights": [
+        233,
+        248
+      ],
+      "stage_filled": 59,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "compact",
+      "theme": "dark",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        288,
+        288,
+        288,
+        288,
+        288,
+        288
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "142.914px 200.078px",
+        "cards_height": 143,
+        "chief_height": 200
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "232.5px 232.5px 247.5px 247.5px 232.5px 232.5px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 288,
+        "client_height": 128
+      },
+      "card_heights": [
+        233,
+        248
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "comfortable",
+      "theme": "light",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        218,
+        190,
+        208,
+        208,
+        208,
+        208
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 3,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "497.602px 248.797px",
+        "cards_height": 498,
+        "chief_height": 249
+      },
+      "visible_cards": 2,
+      "visible_rows": 1,
+      "visible_columns": 2,
+      "list": {
+        "auto_rows": "minmax(min-content, 352px)",
+        "auto_columns": "208px",
+        "template_rows": "352px",
+        "align_content": "safe center",
+        "gap": "18px",
+        "client_width": 667,
+        "client_height": 498
+      },
+      "card_heights": [
+        370,
+        323,
+        352
+      ],
+      "stage_filled": 74,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "comfortable",
+      "theme": "light",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        302,
+        268,
+        288,
+        288,
+        288,
+        288
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 2,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "380.938px 190.469px",
+        "cards_height": 381,
+        "chief_height": 190
+      },
+      "visible_cards": 1,
+      "visible_rows": 1,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "minmax(0px, 1fr)",
+        "auto_columns": "288px",
+        "template_rows": "348.938px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 596,
+        "client_height": 381
+      },
+      "card_heights": [
+        219,
+        193,
+        228,
+        209
+      ],
+      "stage_filled": 57,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "comfortable",
+      "theme": "light",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        165,
+        142,
+        157,
+        157,
+        157,
+        157
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 1,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "139.578px 195.414px",
+        "cards_height": 140,
+        "chief_height": 195
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "minmax(0px, 1fr)",
+        "auto_columns": "157.08px",
+        "template_rows": "107.578px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 303,
+        "client_height": 140
+      },
+      "card_heights": [
+        219,
+        190,
+        228,
+        243,
+        209
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "comfortable",
+      "theme": "dark",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        218,
+        190,
+        208,
+        208,
+        208,
+        208
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 3,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "497.602px 248.797px",
+        "cards_height": 498,
+        "chief_height": 249
+      },
+      "visible_cards": 2,
+      "visible_rows": 1,
+      "visible_columns": 2,
+      "list": {
+        "auto_rows": "minmax(min-content, 352px)",
+        "auto_columns": "208px",
+        "template_rows": "352px",
+        "align_content": "safe center",
+        "gap": "18px",
+        "client_width": 667,
+        "client_height": 498
+      },
+      "card_heights": [
+        370,
+        323,
+        352
+      ],
+      "stage_filled": 74,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "comfortable",
+      "theme": "dark",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        302,
+        268,
+        288,
+        288,
+        288,
+        288
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 2,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "380.938px 190.469px",
+        "cards_height": 381,
+        "chief_height": 190
+      },
+      "visible_cards": 1,
+      "visible_rows": 1,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "minmax(0px, 1fr)",
+        "auto_columns": "288px",
+        "template_rows": "348.938px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 596,
+        "client_height": 381
+      },
+      "card_heights": [
+        219,
+        193,
+        228,
+        209
+      ],
+      "stage_filled": 57,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "comfortable",
+      "theme": "dark",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        165,
+        142,
+        157,
+        157,
+        157,
+        157
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 1,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "139.578px 195.414px",
+        "cards_height": 140,
+        "chief_height": 195
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "minmax(0px, 1fr)",
+        "auto_columns": "157.08px",
+        "template_rows": "107.578px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 303,
+        "client_height": 140
+      },
+      "card_heights": [
+        219,
+        190,
+        228,
+        243,
+        209
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "compact",
+      "theme": "light",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        218,
+        190,
+        208,
+        208,
+        208,
+        208
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 3,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "508.266px 254.141px",
+        "cards_height": 508,
+        "chief_height": 254
+      },
+      "visible_cards": 2,
+      "visible_rows": 1,
+      "visible_columns": 2,
+      "list": {
+        "auto_rows": "minmax(min-content, 352px)",
+        "auto_columns": "208px",
+        "template_rows": "352px",
+        "align_content": "safe center",
+        "gap": "12px",
+        "client_width": 667,
+        "client_height": 508
+      },
+      "card_heights": [
+        370,
+        323,
+        352
+      ],
+      "stage_filled": 73,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "compact",
+      "theme": "light",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        302,
+        267,
+        288,
+        288,
+        288,
+        288
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 2,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "391.602px 195.797px",
+        "cards_height": 392,
+        "chief_height": 196
+      },
+      "visible_cards": 1,
+      "visible_rows": 1,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "minmax(0px, 1fr)",
+        "auto_columns": "288px",
+        "template_rows": "359.602px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 596,
+        "client_height": 392
+      },
+      "card_heights": [
+        219,
+        193,
+        228,
+        209
+      ],
+      "stage_filled": 56,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "compact",
+      "theme": "light",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        165,
+        142,
+        157,
+        157,
+        157,
+        157
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 1,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "142.914px 200.078px",
+        "cards_height": 143,
+        "chief_height": 200
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "minmax(0px, 1fr)",
+        "auto_columns": "157.08px",
+        "template_rows": "110.914px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 303,
+        "client_height": 143
+      },
+      "card_heights": [
+        219,
+        190,
+        228,
+        243,
+        209
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "compact",
+      "theme": "dark",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        218,
+        190,
+        208,
+        208,
+        208,
+        208
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 3,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "508.266px 254.141px",
+        "cards_height": 508,
+        "chief_height": 254
+      },
+      "visible_cards": 2,
+      "visible_rows": 1,
+      "visible_columns": 2,
+      "list": {
+        "auto_rows": "minmax(min-content, 352px)",
+        "auto_columns": "208px",
+        "template_rows": "352px",
+        "align_content": "safe center",
+        "gap": "12px",
+        "client_width": 667,
+        "client_height": 508
+      },
+      "card_heights": [
+        370,
+        323,
+        352
+      ],
+      "stage_filled": 73,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "compact",
+      "theme": "dark",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        302,
+        267,
+        288,
+        288,
+        288,
+        288
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 2,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "391.602px 195.797px",
+        "cards_height": 392,
+        "chief_height": 196
+      },
+      "visible_cards": 1,
+      "visible_rows": 1,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "minmax(0px, 1fr)",
+        "auto_columns": "288px",
+        "template_rows": "359.602px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 596,
+        "client_height": 392
+      },
+      "card_heights": [
+        219,
+        193,
+        228,
+        209
+      ],
+      "stage_filled": 56,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "compact",
+      "theme": "dark",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        165,
+        142,
+        157,
+        157,
+        157,
+        157
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": "inbox-sorter — All clear.?DASH has nothing waiting for you on this agent: no new output since you last looked, nothing to approve, nothing left to connect, and no run it has missed.",
+      "chief_action": "Ask inbox-sorter",
+      "chief_inputs": 1,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 1,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "142.914px 200.078px",
+        "cards_height": 143,
+        "chief_height": 200
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "minmax(0px, 1fr)",
+        "auto_columns": "157.08px",
+        "template_rows": "110.914px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 303,
+        "client_height": 143
+      },
+      "card_heights": [
+        219,
+        190,
+        228,
+        243,
+        209
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 3
+    }
+  ]
+}

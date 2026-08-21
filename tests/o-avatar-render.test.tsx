@@ -29,7 +29,7 @@ describe("OAvatar", () => {
     expect(html).toContain('height="50"');
   });
 
-  it.each([50, 100, 200] as const)("renders at %spx through the size custom property", (size) => {
+  it.each([50, 100, 150, 200] as const)("renders at %spx through the size custom property", (size) => {
     const html = renderToStaticMarkup(<OAvatar name="ninja" size={size} />);
     expect(html).toContain(`--o-size:${size}px`);
     // The class is what `app/globals.css` hangs `image-rendering: pixelated` and

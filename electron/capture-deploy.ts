@@ -664,21 +664,16 @@ async function layout(target: BrowserWindow): Promise<unknown> {
                (node) => node.textContent.includes("Put") && node.disabled,
              ),
            /*
-            * MAR-606's three counters, one per surface this scene added.
+            * MAR-606's counters. fleet_hosting/hosting_chip were the third —
+            * the fleet card's own indicator — and are gone with the
+            * "fleet-hosted" scene above: MAR-669 removed their only renderer.
+            * What is left is the servers page's own counter.
             *
             * NOTE: no backticks anywhere in this block. Everything inside the
             * quotes is one template literal in the .ts file, and a backtick in a
             * comment closes it — turning a page script into a parse error two
             * hundred lines away from the mistake.
-            *
-            * hosting_chip reads the chip's own document text and never
-            * innerText: the stylesheet uppercases chips as typography, so a
-            * harness reading rendered text would find "SENT TO MY SERVER" and
-            * report false while the chip sat in the middle of the picture.
             */
-           fleet_hosting: document.querySelectorAll(".fleet-hosting").length,
-           hosting_chip:
-             document.querySelector(".fleet-hosting .chip")?.textContent?.trim() ?? null,
            host_contents: document.querySelectorAll(".host-content").length,
            /*
             * Finding 31's whole point, as a value rather than a boolean: the
@@ -912,23 +907,25 @@ function surfaces(): Surface[] {
   }
   if (SCENE === "deployed") {
     /*
-     * MAR-606's three visible halves, one surface each.
+     * MAR-606 built three visible halves, one surface each. This scene used to
+     * open with the fleet card's own — *"AN agent that is hosted online should
+     * have like an icon or somthing on its fleet card,"* Henrik's own words —
+     * and it never actually landed there: `AgentHosting` rendered inside the
+     * chief band's per-agent line, keyed to whichever card was selected, not
+     * on the card itself the way he asked.
      *
-     * The fleet card is first because it is the one Henrik asked for by name —
-     * *"AN agent that is hosted online should have like an icon or somthing on
-     * its fleet card"* — and it is the only frame here taken on a page that had
-     * previously said nothing at all about servers.
-     *
-     * Focused on the block rather than on the card, `agent-warned`'s lesson
-     * exactly: a fleet card is a portrait, a goal, four chips and a meta line
-     * before it reaches this, so a viewport-sized image scrolled to the card
-     * would put the subject below the fold at 375 in every frame.
+     * MAR-669 removed that line entirely — *"the chief band speaks about the
+     * fleet as a whole and nothing else"* — which took `AgentHosting`'s only
+     * caller with it (`describeAgentHosting`, the pure sentence-builder, is
+     * kept: it is still tested directly and is real, working logic waiting
+     * for a caller). This scene is deleted rather than left pointing at a
+     * `.fleet-hosting` nothing draws — the mislabelling trap `capture-fleet-
+     * views.ts`'s own header names, reached from the "vanished target" side
+     * rather than the "wrong viewport" one. FOLLOW-UP, NOT DONE HERE:
+     * Henrik's original MAR-606 ask — the indicator on the card itself — is
+     * still unbuilt, and would need its own space-budget pass on `.fleet-
+     * card`, which is a bigger change than removing a line.
      */
-    list.push({
-      name: "fleet-hosted",
-      route: "/",
-      focus: ".fleet-hosting",
-    });
     list.push({
       name: "servers-contents",
       route: "/settings/servers",

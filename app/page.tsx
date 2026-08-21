@@ -6,7 +6,6 @@ import { FleetRail } from "./_components/fleet-rail";
 import { OAvatar } from "./_components/o-avatar";
 import { HostNotice, ViewFailed, ViewLoading } from "./_components/view-state";
 import { checkRunnerStatus, retireRunnerStore, setAgentFavourite } from "./_data/source";
-import { useSightings } from "./_data/sightings";
 import { useCanAct, useHost, useRefreshOnWindowFocus, useView } from "./_data/use-view";
 import { oFor } from "../lib/brand/o-cast";
 import { describeRunnerStoreDamage, type RunnerStoreDamageKind } from "../lib/copy/recovery";
@@ -14,15 +13,22 @@ import type { CommandResult } from "../lib/shell/ipc";
 import type { AgentRow } from "../lib/views/types";
 
 /**
- * Two things this page no longer implements, kept importable from here.
+ * This page no longer implements it, kept importable from here.
  *
- * Both moved to `app/_components/fleet-card.tsx` with the card they belong to
- * (MAR-612), and both are imported *from this path* by
- * `tests/host-sighting-render.test.tsx` and `tests/record-card.test.tsx`. The
- * test is the contract; where the function happens to live is not, and a moved
- * file should not be able to fail an unrelated suite.
+ * Moved to `app/_components/fleet-card.tsx` with the card it belongs to
+ * (MAR-612), and imported *from this path* by `tests/record-card.test.tsx`.
+ * The test is the contract; where the function happens to live is not, and a
+ * moved file should not be able to fail an unrelated suite.
+ *
+ * `AgentHosting` used to be re-exported here too. MAR-669 deleted it: its one
+ * caller was the chief band's per-agent line, which Henrik asked removed
+ * entirely, and this repository's own convention is to delete an export
+ * nothing calls rather than keep it importable "just in case" (MAR-642
+ * packet 4's `DeployPanel`, MAR-660's `OpenAgentButton`). What survives on
+ * every card regardless is the place badge (`.fleet-mark`, "Local"/"Cloud"),
+ * which never depended on the chief.
  */
-export { AgentHosting, describeRunCount } from "./_components/fleet-card";
+export { describeRunCount } from "./_components/fleet-card";
 
 /**
  * The folder name `lib/sample-agent.ts` gives the sample agent, and therefore
@@ -47,15 +53,6 @@ export default function AgentsPage(): ReactNode {
   const host = useHost();
   const canAct = useCanAct();
   const storeDamage = useRunnerStoreDamage(canAct);
-  /*
-   * MAR-606. What the Servers page saw, this window (ADR 0015).
-   *
-   * Empty until somebody has pressed Check somewhere, which is the honest
-   * majority case and the one every card is worded for. This page never asks a
-   * server anything — see `useView`'s own header on why it does not poll, and
-   * ADR 0015 on why a sighting is not stored.
-   */
-  const log = useSightings();
   const [favouriteOverrides, toggleFavourite] = useFavouriteOverrides();
   /*
    * MAR-640. The store's own answer, corrected by a press this window has not
@@ -140,7 +137,7 @@ export default function AgentsPage(): ReactNode {
           rows of prose, so every fleet-specific rule remains a `fleet-grid`
           modifier rather than a change to the shared class.
         */
-        <FleetList agents={agents} log={log} onToggleFavourite={toggleFavourite} />
+        <FleetList agents={agents} onToggleFavourite={toggleFavourite} />
           )}
         </>
       )}

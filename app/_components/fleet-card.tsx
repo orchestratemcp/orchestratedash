@@ -6,15 +6,15 @@ import type { ReactNode } from "react";
 import { agentWorkspaceHref } from "../_data/routes";
 import { OAvatar } from "./o-avatar";
 import { useFleetView } from "./fleet-view-toggle";
-import { describeAgentHosting } from "../../lib/host-sighting";
-import { sightingFor, type SightingLog } from "../../lib/host-sightings";
 import { plainDay } from "../../lib/copy/when";
 import {
   describeFleetCardStatus,
   describeFleetPlace,
   type FleetCardStatus,
 } from "../../lib/copy/fleet-status";
-import type { AgentHostedOnView, AgentRow } from "../../lib/views/types";
+import type { AgentRow } from "../../lib/views/types";
+import type { OSize } from "../../lib/brand/o-cast";
+import type { FleetView } from "../../lib/views/fleet-view";
 
 /**
  * Which tone a status tints the portrait (MAR-639), or `null` for the
@@ -45,9 +45,7 @@ function statusTone(status: FleetCardStatus | null): "warn" | "accent" | null {
  * One agent, as a snug portrait card.
  *
  * Three views draw this same card — `lib/views/fleet-view.ts` still holds that
- * a view may change the track and nothing a card says. The sprite is
- * `size={100}` — 2× the 50px source, a whole multiple — so two rows of three
- * sit snug in the cards pane rather than filling it with cropped 200px tiles.
+ * a view may change the track and nothing a card says.
  *
  * ## The whole card is the way in now (MAR-639)
  *
@@ -78,13 +76,55 @@ function statusTone(status: FleetCardStatus | null): "warn" | "accent" | null {
  * the card; it did not make that possible *discoverable*. Henrik's attended
  * pass names the gap directly and asks for it under the avatar, on every
  * card — `FleetOpenLink`, below, is that control, in Grid and Spotlight only,
- * for the reasoning its own header gives. The same pass also caught the
- * favourite star sitting on top of Rows' place badge (`.fleet-marks`) and
- * asked for more room around the status cluster generally — both are
- * `app/globals.css`'s `[data-fleet-view="rows"]` rules now, not this
- * component's, since neither changes what a card says, only where Rows draws
- * it.
+ * for the reasoning its own header gives.
+ *
+ * ## The anatomy, redrawn from Henrik's own annotated screenshot (MAR-669)
+ *
+ * Three instructions, verbatim: *"Put name over the avatar. Make avatar and
+ * the O bigger. Put status indicator at [next] to local/cloud."*
+ *
+ * This **partly revises MAR-660** rather than silently undoing it: MAR-660
+ * gave the place badge (`.fleet-marks`) and the status mark separate corners
+ * of this same card, tuned for Rows' 56–72px row. MAR-669 asks for the
+ * opposite in Grid and Spotlight — the two together, one row — so
+ * `.fleet-marks` moves from a standalone element above the button into
+ * `.fleet-identity`, beside the status (or never-run) mark, both still the
+ * one `.fleet-mark` element they always were. Rows keeps the dense anatomy
+ * MAR-640/660 tuned — portrait beside text — through `display: contents` on
+ * `.fleet-identity` in `app/globals.css`, so the same flat markup lays out on
+ * Rows' own grid; see that rule's own comment.
+ *
+ * `.fleet-name` moves out of `.fleet-identity` to sit directly in `.fleet-
+ * pick`, before `.fleet-portrait` — a real DOM move, not a stylesheet
+ * reorder, so a screen reader reaches the agent's name before its costume the
+ * same way a sighted reader now does. Grid and Spotlight need nothing else
+ * for "name over the avatar": `.fleet-pick`'s own `flex-direction: column`
+ * already draws its children top to bottom in source order.
+ *
+ * The portrait grows through `--o-size` only, never `width`/`height` on the
+ * sprite element itself — MAR-615 lost a session to exactly that mistake, and
+ * this component is the worked example the fix is measured against.
+ * `portraitSize` below is the whole multiple of 50 the *component API* offers
+ * (`lib/brand/o-cast.ts`'s `OSize`); `.fleet-portrait`'s own box, in the
+ * stylesheet, is a crop window over it on `.fleet-portrait`'s own established
+ * rule — "may be cropped, never resampled" — the same technique Rows already
+ * uses to show a 100px sprite in a 56px row. Grid's box cannot grow past its
+ * own column floor (`app/globals.css`'s 9rem / 144px, less this card's
+ * padding) without reopening MAR-639's four-column fight, so it takes a
+ * modest box over a larger sprite; Spotlight's card has room to spare and
+ * gets an exact, uncropped fit. Rows is untouched — its 56px/40px box was
+ * never this issue's complaint.
  */
+function portraitSize(view: FleetView): OSize {
+  switch (view) {
+    case "spotlight":
+      return 200;
+    case "rows":
+      return 100;
+    case "grid":
+      return 150;
+  }
+}
 export function FleetCard({
   agent,
   selected,
@@ -113,12 +153,6 @@ export function FleetCard({
 
   return (
     <article className={selected ? "row-card fleet-card is-selected" : "row-card fleet-card"}>
-      <div className="fleet-marks">
-        <span className={`fleet-mark fleet-mark-${place.id}`}>
-          <FleetMarkGlyph name={place.id} size={markSize} />
-          {place.label}
-        </span>
-      </div>
       {/*
         A real button, not a card that looks clickable. Selection is what tells
         the chief who to talk about. Opening the agent is the stretched link
@@ -131,6 +165,8 @@ export function FleetCard({
         aria-pressed={selected}
         onClick={onSelect}
       >
+        {/* MAR-669. Above the portrait — see this component's own header. */}
+        <span className="fleet-name">{agent.title}</span>
         {/*
           MAR-639. The portrait carries the status as a colour now, not just a
           word beside it: a 2px border and a tinted ground in the same tone
@@ -138,48 +174,59 @@ export function FleetCard({
           the card before reaching the label.
         */}
         <span className={tone === null ? "fleet-portrait" : `fleet-portrait fleet-portrait-${tone}`}>
-          <OAvatar name={agent.avatar} size={100} action />
+          <OAvatar name={agent.avatar} size={portraitSize(view)} action />
         </span>
         <span className="fleet-identity">
-          {status === null ? (
-            /*
-             * MAR-634 item 3. A card with no status mark read as one that
-             * failed to load, which is the one thing it was not: a never-run
-             * agent is a correct, complete card, and MAR-547 forbids dressing
-             * it as `Completed`.
-             *
-             * So the absence gets said rather than left as a gap, and the
-             * words are `describeRunCount`'s — the same sentence the chief
-             * speaks under this card, taken already worded rather than
-             * written twice. `describeFleetCardStatus` returns null only
-             * when `run_count` is zero and nothing is waiting, so this branch
-             * is exactly the never-run case and the string is exactly "Not
-             * run yet". No fifth status was invented to say it.
-             */
-            <span className="fleet-mark fleet-mark-not_run">
-              <FleetMarkGlyph name="not_run" size={16} />
-              {describeRunCount(agent.run_count)}
+          {/*
+            MAR-669. One indicator row: the place badge and the status (or
+            never-run) mark together, Henrik's own words — "status indicator
+            next to local/cloud." `.fleet-marks` is still the one wrapper
+            class it always was; what moved is what it holds.
+          */}
+          <span className="fleet-marks">
+            <span className={`fleet-mark fleet-mark-${place.id}`}>
+              <FleetMarkGlyph name={place.id} size={markSize} />
+              {place.label}
             </span>
-          ) : (
-            <>
+            {status === null ? (
+              /*
+               * MAR-634 item 3. A card with no status mark read as one that
+               * failed to load, which is the one thing it was not: a never-run
+               * agent is a correct, complete card, and MAR-547 forbids dressing
+               * it as `Completed`.
+               *
+               * So the absence gets said rather than left as a gap, and the
+               * words are `describeRunCount`'s — the same sentence the chief
+               * speaks under this card, taken already worded rather than
+               * written twice. `describeFleetCardStatus` returns null only
+               * when `run_count` is zero and nothing is waiting, so this branch
+               * is exactly the never-run case and the string is exactly "Not
+               * run yet". No fifth status was invented to say it.
+               */
+              <span className="fleet-mark fleet-mark-not_run">
+                <FleetMarkGlyph name="not_run" size={16} />
+                {describeRunCount(agent.run_count)}
+              </span>
+            ) : (
               <span className={`fleet-mark fleet-mark-${status.id}`}>
                 <FleetMarkGlyph name={status.id} size={16} />
                 {status.label}
               </span>
-              {/*
-                MAR-639's last-run line. Only drawn once the agent has run at
-                least once — a never-run card's status mark above already says
-                "Not run yet", and repeating it here would be the exact
-                two-copies-that-can-disagree `describeRunCount`'s own header
-                argues against, on a card MAR-614 was written to make quieter
-                rather than louder.
-              */}
-              <span className="fleet-last-run muted">
-                {describeLastRun(agent.run_count, agent.last_run_at)}
-              </span>
-            </>
+            )}
+          </span>
+          {status === null ? null : (
+            /*
+             * MAR-639's last-run line. Only drawn once the agent has run at
+             * least once — a never-run card's status mark above already says
+             * "Not run yet", and repeating it here would be the exact
+             * two-copies-that-can-disagree `describeRunCount`'s own header
+             * argues against, on a card MAR-614 was written to make quieter
+             * rather than louder.
+             */
+            <span className="fleet-last-run muted">
+              {describeLastRun(agent.run_count, agent.last_run_at)}
+            </span>
           )}
-          <span className="fleet-name">{agent.title}</span>
           {/*
             MAR-640. Rows' own addition: the goal was moved off the card and
             onto the chief at MAR-612, and stays there in Grid and Spotlight —
@@ -338,76 +385,6 @@ function FavouriteGlyph(): ReactNode {
 }
 
 /**
- * Where one agent runs, when that is anywhere but this computer (MAR-606).
- *
- * Two sources, joined here because neither is complete on its own and only a
- * renderer holds both:
- *
- * - `hostedOn` is DASH's own deploy record, on the view, durable, and true on a
- *   cold start. It is what makes the indicator appear at all.
- * - `log` is what a server said when somebody last pressed Check, held for this
- *   window only (ADR 0015). It is what gives the indicator a colour.
- *
- * With no sighting the line says DASH sent this here and has not asked since,
- * which is honest and is the state a freshly opened window is always in. It is
- * never blank while a deploy record exists, because "we have not looked" and
- * "there is nothing to say" are different facts and only one of them is true.
- *
- * Exported so a render test can drive both halves without a store or a check.
- * `app/page.tsx` re-exports it, because `tests/host-sighting-render.test.tsx`
- * imports it from there and the test is the contract rather than the path.
- *
- * Drawn by the chief, not the card: the card is a portrait, and this sentence
- * is a fact about the selected agent.
- */
-export function AgentHosting({
-  agent,
-  hostedOn,
-  log,
-}: {
-  agent: string;
-  hostedOn: readonly AgentHostedOnView[];
-  log: SightingLog;
-}): ReactNode {
-  const first = hostedOn[0];
-  if (first === undefined) {
-    return null;
-  }
-  /*
-   * The newest sighting across this agent's servers, or null when none has been
-   * taken. Falls back to the newest *deploy*, which is `hostedOn[0]` — so an
-   * unchecked agent still names a server rather than nothing.
-   */
-  const seen = sightingFor({ agent, sent_to: hostedOn, log });
-  const server = seen?.label ?? first.label;
-  const hosting = describeAgentHosting({
-    agent,
-    server,
-    seen: seen?.seen ?? null,
-    sent_on: hostedOn.find((one) => one.label === server)?.sent_on ?? first.sent_on,
-    at: seen?.at ?? null,
-  });
-  if (hosting === null) {
-    return null;
-  }
-  return (
-    <p className="fleet-hosting">
-      <span className={`chip chip-${hosting.tone}`}>{hosting.chip}</span>
-      {/* The sentence carries the moment, which is what licenses the chip's
-          colour at all — see ADR 0015. It is rendered rather than hidden in a
-          title, for the reason `GlanceChip.meaning` is: a fact somebody has to
-          discover by pointing at something is a fact most people never read. */}
-      <span className="muted wrap">{hosting.sentence}</span>
-      {hostedOn.length > 1 ? (
-        <span className="muted wrap">
-          DASH has sent it to {String(hostedOn.length)} servers. The Servers page lists them all.
-        </span>
-      ) : null}
-    </p>
-  );
-}
-
-/**
  * How many times this agent has worked, in a sentence rather than a number
  * (MAR-491).
  *
@@ -415,9 +392,9 @@ export function AgentHosting({
  * the same fact already assembled. The plural is spelled out because "1 runs"
  * is the smallest possible way for a surface to look unfinished.
  *
- * The chief speaks this sentence (`lib/copy/chief.ts`), and takes it already
- * worded rather than rebuilding it from the number — two copies of "Not run yet"
- * is two copies that can disagree the day somebody improves one of them.
+ * Used elsewhere already worded rather than rebuilt from the number — two
+ * copies of "Not run yet" is two copies that can disagree the day somebody
+ * improves one of them.
  */
 export function describeRunCount(runs: number): string {
   if (runs <= 0) {

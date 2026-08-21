@@ -81,13 +81,14 @@ export const O_FLEET = O_NAMES.filter((name): name is Exclude<OName, "chief"> =>
  * and some on three, and on a 50px shape that unevenness is the difference
  * between pixel art and a mistake.
  *
- * 150 is a legal whole multiple and is deliberately **not** in the union. A size
- * is here because a surface draws at it, which is the same argument
- * `OAvatarProps.size` makes for having no default: an unused size is a number
- * chosen by whoever widened this union for a surface that did not exist yet.
- * Henrik's MAR-587 ask was "make them big" after MAR-586 had already answered
- * "bigger" with 100, so the fleet takes 4× the source rather than 3× and 150
- * arrives the day something needs it.
+ * 150 arrived at MAR-669: Henrik's fleet-card anatomy pass asks for a bigger
+ * portrait in Grid, whose column floor (`app/globals.css`'s 9rem) cannot take
+ * 200 without reopening MAR-639's four-column fight but has room for a
+ * modestly larger sprite than 100. A size is here because a surface draws at
+ * it, which is the same argument `OAvatarProps.size` makes for having no
+ * default: an unused size is a number chosen by whoever widened this union
+ * for a surface that did not exist yet — this one exists now
+ * (`app/_components/fleet-card.tsx`'s `portraitSize`).
  *
  * SITE's `OSize` also offers 25 — an exact half-step for its wordmark, where a
  * 50px character would tower over a 16px nav. DASH has no wordmark and no
@@ -95,7 +96,7 @@ export const O_FLEET = O_NAMES.filter((name): name is Exclude<OName, "chief"> =>
  * (`% 50 === 0`) rather than SITE's looser one. Widening this union is a
  * one-line diff, which is the point: it becomes a decision a reviewer sees.
  */
-export type OSize = 50 | 100 | 200;
+export type OSize = 50 | 100 | 150 | 200;
 
 /**
  * The character for a given seed.
