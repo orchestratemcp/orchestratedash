@@ -7726,8 +7726,16 @@ main:has(.agent-cockpit) {
  *
  * `bottom: 100%` is the whole of "expands upward": the room's own bottom edge
  * sits at the composer's top edge, so it grows away from the field rather
- * than toward it, and past `max-height` it scrolls itself rather than
- * pushing the field off the top of the page.
+ * than toward it, and past `max-height` it hands scrolling to
+ * `.chief-room-scroll` (below) rather than pushing the field off the top of
+ * the page.
+ *
+ * `display: flex; flex-direction: column` (MAR-706, replacing `display:
+ * grid`): the room used to scroll as one box, which took `.chief-room-head`
+ * — the X and Clear controls — out of view with the transcript on any long
+ * conversation. The column now has exactly two children, the head and the
+ * scrolling body, so `overflow: hidden` here confines scrolling to the
+ * second one.
  */
 .chief-room {
   position: absolute;
@@ -7738,8 +7746,9 @@ main:has(.agent-cockpit) {
   margin-bottom: var(--space-2);
   min-height: 0;
   max-height: min(24rem, calc(100vh - 10rem));
-  overflow: auto;
-  display: grid;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-3);
   background: var(--surface-2);
@@ -7755,11 +7764,33 @@ main:has(.agent-cockpit) {
  * already do, and that is still true of Close. It is not true of Clear:
  * nothing before this let a person empty what is drawn here without leaving
  * the page, which is the whole reason the control exists now.
+ *
+ * `flex: none` (MAR-706): a `.chief-room` flex item that never shrinks or
+ * grows, so it keeps its own content height and stays pinned at the top of
+ * the room regardless of how tall `.chief-room-scroll` gets.
  */
 .chief-room-head {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-2);
+}
+
+/*
+ * MAR-706. Everything that scrolls once a conversation outgrows the room:
+ * the transcript, the busy line, the feedback line. Split out of
+ * `.chief-room` itself so the header above never leaves the screen — `flex: 1
+ * 1 auto` takes whatever height `.chief-room-head` does not, and `min-height:
+ * 0` is required for a flex child to shrink below its content size at all
+ * (the classic flexbox trap: without it this box refuses to shrink and
+ * overflows `.chief-room`'s own `max-height` instead of scrolling).
+ */
+.chief-room-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
   gap: var(--space-2);
 }
 

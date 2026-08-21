@@ -283,6 +283,23 @@ describe("the room opens above the composer", () => {
     expect(html).toContain("one");
     expect(html).toContain("two");
   });
+
+  it("keeps the header — and its Close/Clear controls — outside the scrolling transcript (MAR-706)", () => {
+    const html = chat({ open: true, view: view({ turns: [turn()] }) });
+    const headOpen = html.indexOf('<div class="chief-room-head"');
+    const scrollOpen = html.indexOf('<div class="chief-room-scroll"');
+    const closeButton = html.indexOf('class="chief-room-close"');
+    const clearButton = html.indexOf('class="chief-room-clear"');
+    expect(headOpen).toBeGreaterThan(-1);
+    expect(scrollOpen).toBeGreaterThan(-1);
+    // `.chief-room-head` renders — and closes — before `.chief-room-scroll`
+    // opens, so it is that box's sibling rather than a descendant of it: the
+    // transcript can scroll on its own without ever carrying the header, the
+    // X, or Clear off screen with it.
+    expect(headOpen).toBeLessThan(scrollOpen);
+    expect(closeButton).toBeLessThan(scrollOpen);
+    expect(clearButton).toBeLessThan(scrollOpen);
+  });
 });
 
 describe("the composer without handlers", () => {

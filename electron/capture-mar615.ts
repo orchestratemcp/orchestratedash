@@ -109,6 +109,7 @@ import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { importManifest, ingestArtifacts, recordAgentLook } from "../lib/store.js";
+import { recordChiefTurn } from "../lib/chief/store.js";
 
 const OUT = path.resolve(process.cwd(), process.env.DASH_CAPTURE_DIR ?? "qa-screenshots-mar615");
 
@@ -202,7 +203,29 @@ function seed(): void {
   });
   recordAgentLook(WIZARD, new Date().toISOString());
 
-  console.log("[mar615] seeded 5 agents across 5 characters");
+  /*
+   * MAR-706. Ten turns, through the same `recordChiefTurn` door the product
+   * itself writes through — enough to overflow `.chief-room`'s own
+   * `max-height: min(24rem, calc(100vh - 10rem))` at every viewport this
+   * harness sweeps, so the "scrolled" scene below is actually scrolled
+   * rather than showing a room that fit anyway.
+   */
+  for (let i = 1; i <= 10; i += 1) {
+    recordChiefTurn({
+      asked_at: daysAgo(10 - i),
+      question: `How is Budget Digest doing after run ${String(i)}?`,
+      answer: `Run ${String(i)} finished clean. Nothing flagged for review.`,
+      failure: null,
+      provider_id: null,
+      model_id: null,
+      tokens_in: null,
+      tokens_out: null,
+      amount_usd: null,
+      receipt: [],
+    });
+  }
+
+  console.log("[mar615] seeded 5 agents across 5 characters and 10 chief turns");
 }
 
 /* ---------------------------------------------------------------------- *
@@ -417,6 +440,62 @@ async function measureComposer(target: BrowserWindow): Promise<unknown> {
   );
 }
 
+/**
+ * MAR-706. Whether the header — and its Close/Clear controls — stayed on
+ * screen once `.chief-room-scroll` (the transcript's own scrolling child) was
+ * pushed to its bottom. A screenshot alone cannot prove this as reliably as a
+ * measured rectangle can: `head_visible`/`close_visible`/`clear_visible` ask
+ * whether each element's box still sits inside `.chief-room`'s own box after
+ * the scroll, which is false exactly when the header scrolled away with the
+ * transcript rather than staying pinned above it.
+ */
+async function measureRoomPin(target: BrowserWindow): Promise<unknown> {
+  return within(
+    "measure room pin",
+    10_000,
+    target.webContents.executeJavaScript(
+      `(() => {
+         const box = (el) => {
+           if (el === null) return null;
+           const r = el.getBoundingClientRect();
+           return {
+             x: Math.round(r.x), y: Math.round(r.y),
+             width: Math.round(r.width), height: Math.round(r.height),
+           };
+         };
+         const containedIn = (inner, outer) =>
+           inner !== null && outer !== null &&
+           inner.y >= outer.y - 1 && inner.y + inner.height <= outer.y + outer.height + 1;
+         const room = box(document.querySelector(".chief-room"));
+         const scroller = document.querySelector(".chief-room-scroll");
+         return {
+           scrolled: scroller === null ? null : scroller.scrollTop > 0,
+           scroll_height: scroller === null ? null : scroller.scrollHeight,
+           scroll_client_height: scroller === null ? null : scroller.clientHeight,
+           head_visible: containedIn(box(document.querySelector(".chief-room-head")), room),
+           close_visible: containedIn(box(document.querySelector(".chief-room-close")), room),
+           clear_visible: containedIn(box(document.querySelector(".chief-room-clear")), room),
+         };
+       })()`,
+    ),
+  );
+}
+
+/** Scroll `.chief-room-scroll` to its own bottom, the way the newest-turn effect does. */
+async function scrollRoomToBottom(target: BrowserWindow): Promise<void> {
+  await within(
+    "scroll room to bottom",
+    5_000,
+    target.webContents.executeJavaScript(
+      `(() => {
+         const scroller = document.querySelector(".chief-room-scroll");
+         if (scroller !== null) scroller.scrollTop = scroller.scrollHeight;
+       })()`,
+    ),
+  );
+  await settle(400);
+}
+
 /** The picker's own count: every option drawn, and how many of them animate. */
 async function measurePicker(target: BrowserWindow): Promise<unknown> {
   return within(
@@ -553,6 +632,29 @@ async function run(): Promise<void> {
       console.log(`[mar615] composer expanded ${viewport.name}/${theme} ${JSON.stringify(open)}`);
       await shoot(window, `composer-expanded-${viewport.name}-${theme}`);
 
+      /*
+       * ---- MAR-706: the room scrolled to its latest turn, header still pinned ----
+       *
+       * One frame, not the full sweep: `seed()`'s ten turns overflow the room
+       * at every viewport this loop visits, so 1280/light alone is enough to
+       * prove the header stays put — the room's own CSS does not change per
+       * viewport in a way that would make a wider or narrower frame behave
+       * differently.
+       */
+      if (viewport.name === "1280" && theme === "light") {
+        await scrollRoomToBottom(window);
+        const pinned = await measureRoomPin(window);
+        measurements.push({
+          surface: "composer",
+          state: "expanded-scrolled",
+          viewport: viewport.name,
+          theme,
+          ...(pinned as object),
+        });
+        console.log(`[mar615] room scrolled ${viewport.name}/${theme} ${JSON.stringify(pinned)}`);
+        await shoot(window, `composer-expanded-scrolled-${viewport.name}-${theme}`);
+      }
+
       /* ---- the avatar picker, shut and open ---- */
       await go(window, AGENT_ROUTE);
       await scrollTo(window, ".agent-avatar-field");
@@ -620,6 +722,14 @@ async function run(): Promise<void> {
       (entry as { state: string }).state === "open" &&
       ((entry as Record<string, number>)["option_count"] ?? 0) === 0,
   );
+  const scrolledFrames = composers.filter((entry) => (entry as { state: string }).state === "expanded-scrolled");
+  const notActuallyScrolled = scrolledFrames.filter((entry) => (entry as { scrolled: boolean }).scrolled !== true);
+  const headerCarriedOff = scrolledFrames.filter(
+    (entry) =>
+      (entry as { head_visible: boolean }).head_visible !== true ||
+      (entry as { close_visible: boolean }).close_visible !== true ||
+      (entry as { clear_visible: boolean }).clear_visible !== true,
+  );
 
   console.log(
     `\n[mar615] wrote ${String(written.length)} images and layout.json to ${OUT}\n` +
@@ -629,6 +739,8 @@ async function run(): Promise<void> {
       `[mar615] ${stillChief.length === 0 ? "the chief animates in every frame" : `${String(stillChief.length)} FRAMES DREW A STILL CHIEF`}\n` +
       `[mar615] ${stripGaps.length === 0 ? "every O in the strip animates" : `${String(stripGaps.length)} FRAMES HAD A STILL O IN THE STRIP`}\n` +
       `[mar615] ${emptyPickers.length === 0 ? "the picker drew its options" : `${String(emptyPickers.length)} OPEN PICKERS WERE EMPTY`}\n` +
+      `[mar615] ${scrolledFrames.length > 0 && notActuallyScrolled.length === 0 ? "the scrolled scene actually scrolled" : `${String(notActuallyScrolled.length)} SCROLLED FRAMES DID NOT SCROLL (or the scene never ran)`}\n` +
+      `[mar615] ${headerCarriedOff.length === 0 ? "the header, X, and Clear stayed on screen while scrolled" : `${String(headerCarriedOff.length)} SCROLLED FRAMES CARRIED THE HEADER OFF SCREEN`}\n` +
       `[mar615] ${overflowed.length === 0 ? "no frame overflowed sideways" : `${String(overflowed.length)} FRAMES OVERFLOWED`}`,
   );
 
