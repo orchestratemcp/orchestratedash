@@ -320,12 +320,15 @@ export function ChiefChat({
   return (
     <div className={open ? "chief-composer is-open" : "chief-composer"}>
       {open ? (
-        <div className="chief-room" ref={thread}>
+        <div className="chief-room">
           {/*
             MAR-696 brings the room's own header back — `aria-label` still
             carries the room's name for a screen reader, exactly as the
             headingless version did, but a sighted reader now has the same
             name visible, beside the two controls MAR-683 took off this row.
+            MAR-706: this row sits outside the scrolling child below, so it
+            stays on screen at any scroll position rather than scrolling away
+            with the transcript.
           */}
           <div className="chief-room-head" aria-label={CHIEF_CHAT_COPY.heading}>
             <p className="chief-room-heading">{CHIEF_CHAT_COPY.heading}</p>
@@ -355,22 +358,24 @@ export function ChiefChat({
             </div>
           </div>
 
-          {visible.length === 0 ? null : (
-            <ol className="chief-turns" aria-label={CHIEF_CHAT_COPY.thread_kept_heading}>
-              {visible.map((turn) => (
-                <li key={turn.id} className="chief-turn">
-                  <p className="chief-asked wrap">
-                    <span className="chief-speaker">{CHIEF_CHAT_COPY.you}</span>
-                    {turn.question}
-                  </p>
-                  <ChiefTurnBody agents={agents} turn={turn} />
-                </li>
-              ))}
-            </ol>
-          )}
+          <div className="chief-room-scroll" ref={thread}>
+            {visible.length === 0 ? null : (
+              <ol className="chief-turns" aria-label={CHIEF_CHAT_COPY.thread_kept_heading}>
+                {visible.map((turn) => (
+                  <li key={turn.id} className="chief-turn">
+                    <p className="chief-asked wrap">
+                      <span className="chief-speaker">{CHIEF_CHAT_COPY.you}</span>
+                      {turn.question}
+                    </p>
+                    <ChiefTurnBody agents={agents} turn={turn} />
+                  </li>
+                ))}
+              </ol>
+            )}
 
-          {busy ? <ChiefActivity elapsed={elapsed} model={view.model_id} /> : null}
-          {feedback === null ? null : <p className="chief-feedback wrap">{feedback}</p>}
+            {busy ? <ChiefActivity elapsed={elapsed} model={view.model_id} /> : null}
+            {feedback === null ? null : <p className="chief-feedback wrap">{feedback}</p>}
+          </div>
         </div>
       ) : null}
 
