@@ -555,6 +555,58 @@ async function openPicker(target: BrowserWindow): Promise<boolean> {
   return opened;
 }
 
+/**
+ * MAR-704. Asks the chief a records-fast question ("what needs me" — a
+ * `STANDING_WORDS` match, `lib/chief/reply.ts`) and checks the fleet page's
+ * own post-answer re-read the way a person actually hits it: any answer,
+ * records or model, bumps `page.tsx`'s `refreshKey` and re-reads `useView`
+ * through a `"loading"` tick (`onAsked`, chief-chat.tsx:310) — the exact
+ * transition MAR-704 fixed. A records answer needs no provider and no key, so
+ * this proves the fix without depending on Henrik's vault-locked OpenRouter
+ * key resolving.
+ *
+ * Sets the textarea via React's own tracked-value setter (a plain `.value =`
+ * assignment does not fire React's `onChange`) and dispatches a native
+ * `Enter` keydown, the same event `onKeyDown` (chief-chat.tsx:313) reads.
+ */
+async function askRecordsQuestion(target: BrowserWindow): Promise<unknown> {
+  return within(
+    "ask records question",
+    10_000,
+    target.webContents.executeJavaScript(
+      `(async () => {
+         const textarea = document.querySelector("textarea.chief-input");
+         if (textarea === null) return { asked: false, reason: "no textarea" };
+         const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+         setter.call(textarea, "what needs me");
+         textarea.dispatchEvent(new Event("input", { bubbles: true }));
+         textarea.focus();
+         textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+         return { asked: true };
+       })()`,
+    ),
+  );
+}
+
+/** Whatever the page shows right now: still loading, or a room and its turns. */
+async function measurePostAskState(target: BrowserWindow): Promise<unknown> {
+  return within(
+    "measure post-ask state",
+    10_000,
+    target.webContents.executeJavaScript(
+      `(() => {
+         return {
+           page_loading: document.querySelector('[data-view-state="loading"]') !== null,
+           composer_found: document.querySelector(".chief-composer") !== null,
+           composer_is_open: document.querySelector(".chief-composer.is-open") !== null,
+           room_found: document.querySelector(".chief-room") !== null,
+           turn_count: document.querySelectorAll(".chief-turn").length,
+         };
+       })()`,
+    ),
+  );
+}
+
 async function scrollTo(target: BrowserWindow, selector: string): Promise<boolean> {
   const found = (await target.webContents.executeJavaScript(
     `(() => {
@@ -653,6 +705,28 @@ async function run(): Promise<void> {
         });
         console.log(`[mar615] room scrolled ${viewport.name}/${theme} ${JSON.stringify(pinned)}`);
         await shoot(window, `composer-expanded-scrolled-${viewport.name}-${theme}`);
+
+        /*
+         * ---- MAR-704: the room stays open through the post-answer re-read ----
+         *
+         * One frame, on the same page state this block already scrolled to
+         * the bottom of: a fresh navigation would unmount the room, so this
+         * scene deliberately reuses the composer this loop just opened
+         * rather than reloading first.
+         */
+        const asked = await askRecordsQuestion(window);
+        await settle(1500);
+        const postAsk = await measurePostAskState(window);
+        measurements.push({
+          surface: "composer",
+          state: "post-ask",
+          viewport: viewport.name,
+          theme,
+          asked,
+          ...(postAsk as object),
+        });
+        console.log(`[mar615] post-ask ${viewport.name}/${theme} ${JSON.stringify(postAsk)}`);
+        await shoot(window, `composer-post-ask-${viewport.name}-${theme}`);
       }
 
       /* ---- the avatar picker, shut and open ---- */
@@ -697,22 +771,32 @@ async function run(): Promise<void> {
    */
   const composers = measurements.filter((entry) => (entry as { surface: string }).surface === "composer");
   const pickers = measurements.filter((entry) => (entry as { surface: string }).surface === "picker");
-  const overTheText = composers.filter(
+  /*
+   * `measureComposer`'s own shape (`o_is_action`, `overlap_with_field`,
+   * `strip_total`) — collapsed/expanded frames only. The scrolled and
+   * post-ask scenes below call `measureRoomPin`/`measurePostAskState`
+   * instead, whose fields these checks don't have; scoring them here would
+   * read every one of those frames as a failure of a claim they never made.
+   */
+  const composerShaped = composers.filter(
+    (entry) => (entry as { state: string }).state === "collapsed" || (entry as { state: string }).state === "expanded",
+  );
+  const overTheText = composerShaped.filter(
     (entry) => ((entry as Record<string, number>)["overlap_past_padding"] ?? 0) > 0,
   );
-  const offTheField = composers.filter(
+  const offTheField = composerShaped.filter(
     (entry) => ((entry as Record<string, number>)["overlap_with_field"] ?? 0) <= 0,
   );
   const overflowed = measurements.filter(
     (entry) => (entry as { page_overflows: boolean }).page_overflows,
   );
-  const stillChief = composers.filter((entry) => (entry as { o_is_action: boolean }).o_is_action !== true);
-  const expandedButClosed = composers.filter(
+  const stillChief = composerShaped.filter((entry) => (entry as { o_is_action: boolean }).o_is_action !== true);
+  const expandedButClosed = composerShaped.filter(
     (entry) =>
       (entry as { state: string }).state === "expanded" &&
       (entry as { composer_is_open: boolean }).composer_is_open !== true,
   );
-  const stripGaps = composers.filter(
+  const stripGaps = composerShaped.filter(
     (entry) =>
       ((entry as Record<string, number>)["strip_total"] ?? 0) !==
       ((entry as Record<string, number>)["strip_animated"] ?? -1),
@@ -730,6 +814,20 @@ async function run(): Promise<void> {
       (entry as { close_visible: boolean }).close_visible !== true ||
       (entry as { clear_visible: boolean }).clear_visible !== true,
   );
+  /*
+   * MAR-704. The post-ask frame proves the fix only if the room is still
+   * open, the page never got stuck showing the loading skeleton, and a new
+   * turn actually landed — otherwise "the room stayed open" would be true
+   * for the trivial reason that nothing happened.
+   */
+  const postAskFrames = composers.filter((entry) => (entry as { state: string }).state === "post-ask");
+  const roomClosedAfterAsking = postAskFrames.filter(
+    (entry) =>
+      (entry as { page_loading: boolean }).page_loading !== false ||
+      (entry as { room_found: boolean }).room_found !== true ||
+      (entry as { composer_is_open: boolean }).composer_is_open !== true ||
+      ((entry as Record<string, number>)["turn_count"] ?? 0) === 0,
+  );
 
   console.log(
     `\n[mar615] wrote ${String(written.length)} images and layout.json to ${OUT}\n` +
@@ -741,6 +839,7 @@ async function run(): Promise<void> {
       `[mar615] ${emptyPickers.length === 0 ? "the picker drew its options" : `${String(emptyPickers.length)} OPEN PICKERS WERE EMPTY`}\n` +
       `[mar615] ${scrolledFrames.length > 0 && notActuallyScrolled.length === 0 ? "the scrolled scene actually scrolled" : `${String(notActuallyScrolled.length)} SCROLLED FRAMES DID NOT SCROLL (or the scene never ran)`}\n` +
       `[mar615] ${headerCarriedOff.length === 0 ? "the header, X, and Clear stayed on screen while scrolled" : `${String(headerCarriedOff.length)} SCROLLED FRAMES CARRIED THE HEADER OFF SCREEN`}\n` +
+      `[mar615] ${postAskFrames.length > 0 && roomClosedAfterAsking.length === 0 ? "the room stayed open through the post-answer re-read (MAR-704)" : `${String(roomClosedAfterAsking.length)} POST-ASK FRAMES LOST THE OPEN ROOM (or the scene never ran)`}\n` +
       `[mar615] ${overflowed.length === 0 ? "no frame overflowed sideways" : `${String(overflowed.length)} FRAMES OVERFLOWED`}`,
   );
 
