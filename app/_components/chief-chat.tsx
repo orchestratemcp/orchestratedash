@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { agentStageHref } from "../_data/routes";
 import { askChief, listProviderModels, setChiefModel } from "../_data/source";
+import { Composer, filterAfterClear, type ComposerClassNames } from "./composer";
 import { OAvatar } from "./o-avatar";
 import { aiProviderById } from "../../lib/ai/providers";
 import { answeredFromRecords } from "../../lib/chief/records-answer";
@@ -19,6 +20,33 @@ import {
 } from "../../lib/copy/chief-chat";
 import { CHIEF_NAME } from "../../lib/copy/chief";
 import type { AgentRow, ChiefRoomView, ChiefTurnView } from "../../lib/views/types";
+
+/**
+ * The chief's own class-name table for `Composer` (MAR-711).
+ *
+ * Every name here shipped with MAR-696 and is read by name in
+ * `electron/capture-mar615.ts` (`measureComposer`, `measureRoomPin`) and in
+ * `tests/chief-chat-render.test.tsx` — this table keeps them exactly as they
+ * were rather than asking either to learn a new vocabulary. See
+ * `composer.tsx`'s own header for why this is a lookup table and not a
+ * `surface` string `Composer` switches on.
+ */
+const CHIEF_COMPOSER_CLASSES: ComposerClassNames = {
+  root: "chief-composer",
+  room: "chief-room",
+  roomHead: "chief-room-head",
+  roomHeading: "chief-room-heading",
+  roomActions: "chief-room-actions",
+  roomClear: "chief-room-clear",
+  roomClose: "chief-room-close",
+  roomScroll: "chief-room-scroll",
+  compose: "chief-compose",
+  field: "chief-field",
+  subject: "chief-subject",
+  inputWrap: "chief-input-wrap",
+  input: "chief-input",
+  enterGlyph: "chief-enter-glyph",
+};
 
 /**
  * The chief's composer, and the room it opens (MAR-648; given a model and a
@@ -152,6 +180,23 @@ import type { AgentRow, ChiefRoomView, ChiefTurnView } from "../../lib/views/typ
  * assertion that neither exists is deleted rather than kept passing, because
  * this is a different room. Clear is scoped deliberately narrower than
  * `chief.clear` (see `visibleChiefTurns` below) rather than reusing it.
+ *
+ * ## MAR-711: the chrome moves to `composer.tsx`, the words and the DOM do not
+ *
+ * The agent page's own Ask composer adopted this surface's look and
+ * behaviour rather than a second implementation of it — rounded field, enter
+ * glyph, no submit button, an expand-upward room with a pinned X and Clear.
+ * Rather than let two composers drift, the chrome this file drew directly —
+ * `.chief-composer`, `.chief-room` and everything inside `.chief-compose` —
+ * moved into `Composer` (`composer.tsx`), which both surfaces now render
+ * through with their own class-name table and their own `children`. Nothing
+ * about *this* surface's markup, class names or behaviour changed: every
+ * assertion in `chief-chat-render.test.tsx` and every rectangle
+ * `electron/capture-mar615.ts` measures is unchanged, because
+ * `CHIEF_COMPOSER_CLASSES` above is the same vocabulary MAR-696 shipped.
+ * `tests/composer-shared.test.tsx` is the enforcement that a future edit
+ * cannot fork this shape back apart without failing a test, the way
+ * `tests/fleet-view.test.ts` enforces the fleet's one-card-three-tracks rule.
  */
 
 /**
@@ -172,7 +217,7 @@ export function visibleChiefTurns(
   turns: readonly ChiefTurnView[],
   clearedThroughId: number | null,
 ): readonly ChiefTurnView[] {
-  return clearedThroughId === null ? turns : turns.filter((turn) => turn.id > clearedThroughId);
+  return filterAfterClear(turns, clearedThroughId);
 }
 
 export function ChiefChat({
@@ -201,7 +246,6 @@ export function ChiefChat({
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const thread = useRef<HTMLDivElement | null>(null);
   /*
    * MAR-696. The Clear button's own state, and the whole reason it is a
    * number here rather than a call into `lib/chief/store.ts`.
@@ -242,42 +286,11 @@ export function ChiefChat({
   }, [busy]);
 
   /*
-   * The newest turn, scrolled to, and only when there is one to scroll to.
-   *
-   * `behavior` follows the reader's own setting rather than a preference this
-   * component holds — the same read `FleetList.scrollTo` already does, for the
-   * same reason: a person who asked their operating system to stop animating
-   * things asked this one too.
+   * MAR-711. The scroll-to-newest and the Escape-closes-the-room effects both
+   * moved into `Composer`, which owns them once for every surface — see that
+   * file's own header. `scrollSignal` below is what replaces this component's
+   * own `[open, visible.length]` dependency array.
    */
-  useEffect(() => {
-    if (!open || visible.length === 0) {
-      return;
-    }
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    thread.current?.scrollTo({ top: thread.current.scrollHeight, behavior: reduce ? "auto" : "smooth" });
-  }, [open, visible.length]);
-
-  /*
-   * MAR-683. Escape closes the room from anywhere in it, not only from the
-   * composer — the reason the visible Close control could come off without
-   * losing the way out. Bound only while the room is open, on `document` rather
-   * than a single element, because a person reading a turn has not necessarily
-   * left focus in the textarea.
-   */
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    function onDocumentKeyDown(event: globalThis.KeyboardEvent): void {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-    document.addEventListener("keydown", onDocumentKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onDocumentKeyDown);
-    };
-  }, [open, onClose]);
 
   async function ask(): Promise<void> {
     const asked = question.trim();
@@ -310,115 +323,61 @@ export function ChiefChat({
     onAsked();
   }
 
-  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      void ask();
-    }
-  }
-
   return (
-    <div className={open ? "chief-composer is-open" : "chief-composer"}>
-      {open ? (
-        <div className="chief-room">
-          {/*
-            MAR-696 brings the room's own header back — `aria-label` still
-            carries the room's name for a screen reader, exactly as the
-            headingless version did, but a sighted reader now has the same
-            name visible, beside the two controls MAR-683 took off this row.
-            MAR-706: this row sits outside the scrolling child below, so it
-            stays on screen at any scroll position rather than scrolling away
-            with the transcript.
-          */}
-          <div className="chief-room-head" aria-label={CHIEF_CHAT_COPY.heading}>
-            <p className="chief-room-heading">{CHIEF_CHAT_COPY.heading}</p>
-            <div className="chief-room-actions">
-              <button
-                type="button"
-                className="chief-room-clear"
-                title={CHIEF_CHAT_COPY.clear_detail}
-                disabled={visible.length === 0}
-                onClick={() => {
-                  const last = view.turns[view.turns.length - 1];
-                  if (last !== undefined) {
-                    setClearedThroughId(last.id);
-                  }
-                }}
-              >
-                {CHIEF_CHAT_COPY.clear}
-              </button>
-              <button
-                type="button"
-                className="chief-room-close"
-                aria-label={CHIEF_CHAT_COPY.collapse}
-                onClick={onClose}
-              >
-                <span aria-hidden="true">×</span>
-              </button>
-            </div>
-          </div>
+    <Composer
+      classes={CHIEF_COMPOSER_CLASSES}
+      open={open}
+      onOpen={onOpen}
+      onClose={onClose}
+      heading={CHIEF_CHAT_COPY.heading}
+      closeLabel={CHIEF_CHAT_COPY.collapse}
+      clearLabel={CHIEF_CHAT_COPY.clear}
+      clearTitle={CHIEF_CHAT_COPY.clear_detail}
+      clearDisabled={visible.length === 0}
+      onClear={() => {
+        const last = view.turns[view.turns.length - 1];
+        if (last !== undefined) {
+          setClearedThroughId(last.id);
+        }
+      }}
+      scrollSignal={visible.length}
+      /*
+       * MAR-659. Visible rather than `visually-hidden`, so the subject of
+       * this room — the whole fleet, never one agent — is a fact a person
+       * reads rather than one this component just happens to be wired for.
+       */
+      subjectLabel={CHIEF_CHAT_COPY.label}
+      placeholder={CHIEF_CHAT_COPY.placeholder}
+      value={question}
+      onChange={setQuestion}
+      onSubmit={() => void ask()}
+      textareaDisabled={false}
+      /*
+       * MAR-696. Perched on the field itself rather than beside it —
+       * `.chief-input-wrap` is this glyph's positioning parent so it anchors
+       * to the rounded box a person actually sees, not to the taller
+       * `.chief-field` the visible subject caption sits above.
+       */
+      avatar={<ChiefComposerGlyph />}
+      modelLine={<ChiefModelLine view={view} canAct={canAct} onChanged={onAsked} />}
+    >
+      {visible.length === 0 ? null : (
+        <ol className="chief-turns" aria-label={CHIEF_CHAT_COPY.thread_kept_heading}>
+          {visible.map((turn) => (
+            <li key={turn.id} className="chief-turn">
+              <p className="chief-asked wrap">
+                <span className="chief-speaker">{CHIEF_CHAT_COPY.you}</span>
+                {turn.question}
+              </p>
+              <ChiefTurnBody agents={agents} turn={turn} />
+            </li>
+          ))}
+        </ol>
+      )}
 
-          <div className="chief-room-scroll" ref={thread}>
-            {visible.length === 0 ? null : (
-              <ol className="chief-turns" aria-label={CHIEF_CHAT_COPY.thread_kept_heading}>
-                {visible.map((turn) => (
-                  <li key={turn.id} className="chief-turn">
-                    <p className="chief-asked wrap">
-                      <span className="chief-speaker">{CHIEF_CHAT_COPY.you}</span>
-                      {turn.question}
-                    </p>
-                    <ChiefTurnBody agents={agents} turn={turn} />
-                  </li>
-                ))}
-              </ol>
-            )}
-
-            {busy ? <ChiefActivity elapsed={elapsed} model={view.model_id} /> : null}
-            {feedback === null ? null : <p className="chief-feedback wrap">{feedback}</p>}
-          </div>
-        </div>
-      ) : null}
-
-      <div className="chief-compose">
-        <label className="chief-field">
-          {/*
-            MAR-659. Visible rather than `visually-hidden`, so the subject of
-            this room — the whole fleet, never one agent — is a fact a person
-            reads rather than one this component just happens to be wired for.
-          */}
-          <span className="chief-subject">{CHIEF_CHAT_COPY.label}</span>
-          <span className="chief-input-wrap">
-            <textarea
-              className="chief-input"
-              rows={open ? 2 : 1}
-              value={question}
-              placeholder={CHIEF_CHAT_COPY.placeholder}
-              onChange={(event) => setQuestion(event.target.value)}
-              onFocus={onOpen}
-              onKeyDown={onKeyDown}
-            />
-            {/*
-              MAR-696. The affordance the Ask button used to occupy, replaced
-              by a glyph rather than a control — `ask()` already runs on
-              Enter, so this names the key rather than duplicating what
-              pressing it does.
-            */}
-            <span className="chief-enter-glyph" aria-hidden="true">
-              ↵
-            </span>
-            {/*
-              MAR-696. Perched on the field itself rather than beside it —
-              `.chief-input-wrap` is this glyph's positioning parent so it
-              anchors to the rounded box a person actually sees, not to the
-              taller `.chief-field` the visible subject caption sits above.
-            */}
-            <ChiefComposerGlyph />
-          </span>
-        </label>
-      </div>
-
-      <ChiefModelLine view={view} canAct={canAct} onChanged={onAsked} />
-    </div>
+      {busy ? <ChiefActivity elapsed={elapsed} model={view.model_id} /> : null}
+      {feedback === null ? null : <p className="chief-feedback wrap">{feedback}</p>}
+    </Composer>
   );
 }
 

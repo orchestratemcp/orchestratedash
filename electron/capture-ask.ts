@@ -59,6 +59,20 @@
  * Every line is load-bearing and each has cost a session before — see
  * `electron/capture-models.ts`'s header, which argues all five.
  *
+ * ## MAR-711: one more pair of frames, after the main sweep
+ *
+ * The agent page's pinned composer adopted the fleet chief's own shape —
+ * rounded field, enter glyph, no submit button, a room that expands upward,
+ * a pinned X and Clear — rather than a second implementation of it
+ * (`app/_components/composer.tsx`; `tests/composer-shared.test.tsx` is the
+ * structural half of that claim). What a test cannot show is what it looks
+ * like next to the surface it adopted, so `run()` closes with two frames per
+ * theme at 1280px: the `answered` agent's own composer, open, and the fleet's
+ * chief composer, open, for a reviewer to put side by side. This is an
+ * addition to this file rather than a reason for a new one — the scene
+ * chosen for it, `answered`, is the same seed the rest of the sweep already
+ * photographs, so nothing new is staged for it.
+ *
  * ## What it leaves behind, said out loud
  *
  * Importing `./main.js` starts a **runner** against the scratch store, and
@@ -544,6 +558,33 @@ async function scrollTo(target: BrowserWindow, selector: string): Promise<boolea
 }
 
 /**
+ * MAR-711. Focus a composer's own textarea the way a person does — which is
+ * what opens its room — and report whether the composer that owns it ended
+ * up marked open. `electron/capture-mar615.ts`'s own `focusComposer`,
+ * generalized over the selector so this file can drive either surface's
+ * field without importing from a harness it otherwise has no reason to.
+ */
+async function focusComposer(
+  target: BrowserWindow,
+  fieldSelector: string,
+  composerSelector: string,
+): Promise<{ focused: boolean; open: boolean }> {
+  const focused = (await target.webContents.executeJavaScript(
+    `(() => {
+       const input = document.querySelector(${JSON.stringify(fieldSelector)});
+       if (input === null) return false;
+       input.focus();
+       return document.activeElement === input;
+     })()`,
+  )) as boolean;
+  await settle(600);
+  const open = (await target.webContents.executeJavaScript(
+    `document.querySelector(${JSON.stringify(composerSelector)}) !== null`,
+  )) as boolean;
+  return { focused, open };
+}
+
+/**
  * What a picture cannot settle.
  *
  * Five things, and three of them are this feature's whole argument.
@@ -711,6 +752,37 @@ async function run(): Promise<void> {
     }
   }
 
+  /*
+   * MAR-711. Composer parity: the agent's pinned composer and the fleet's
+   * chief composer, both open, at 1280px, in both themes — the header's own
+   * note on why this lives here rather than in a new harness.
+   */
+  const parity: Array<{ theme: string; surface: string; focused: boolean; open: boolean }> = [];
+  for (const theme of THEMES) {
+    nativeTheme.themeSource = theme;
+    await settle(300);
+
+    await go(window, `/agents/detail?agent=${encodeURIComponent(ANSWERED)}`);
+    await resizeTo(window, 1280, 900);
+    await go(window, `/agents/detail?agent=${encodeURIComponent(ANSWERED)}`);
+    const agentComposer = await focusComposer(window, "textarea.ask-input", ".ask-composer.is-open");
+    parity.push({ theme, surface: "agent", ...agentComposer });
+    console.log(`[ask] composer parity, agent, ${theme}: ${JSON.stringify(agentComposer)}`);
+    await shoot(window, `composer-parity-agent-${theme}`);
+
+    await go(window, "/");
+    await resizeTo(window, 1280, 900);
+    await go(window, "/");
+    const chiefComposer = await focusComposer(window, "textarea.chief-input", ".chief-composer.is-open");
+    parity.push({ theme, surface: "chief", ...chiefComposer });
+    console.log(`[ask] composer parity, chief, ${theme}: ${JSON.stringify(chiefComposer)}`);
+    await shoot(window, `composer-parity-chief-${theme}`);
+  }
+  const parityFailed = parity.filter((entry) => !entry.focused || !entry.open);
+  console.log(
+    `[ask] ${parityFailed.length === 0 ? "both composers opened in every parity frame" : `${String(parityFailed.length)} PARITY FRAME(S) DID NOT OPEN`}`,
+  );
+
   writeFileSync(
     path.join(OUT, "layout.json"),
     `${JSON.stringify({ captured_at: new Date().toISOString(), measurements }, null, 2)}\n`,
@@ -751,6 +823,19 @@ async function run(): Promise<void> {
    */
   if (written.length === 0) {
     console.error("[ask] no images were written — this harness proved nothing");
+    app.exit(1);
+    return;
+  }
+  /*
+   * MAR-711. A parity frame that did not open is a picture of the wrong
+   * thing filed under the right name — the same failure mode `written.length
+   * === 0` guards above, one level down.
+   */
+  if (parityFailed.length > 0) {
+    console.error(
+      `[ask] ${String(parityFailed.length)} composer-parity frame(s) never opened — ` +
+        "the images exist and do not show what their names claim",
+    );
     app.exit(1);
     return;
   }

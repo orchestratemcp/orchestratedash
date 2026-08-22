@@ -6,6 +6,10 @@ import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction
 import { AGENT_COCKPIT_COPY } from "../../lib/copy/agent-page";
 import {
   ASK_ACTIVITY_LABEL,
+  ASK_CLEAR,
+  ASK_CLEAR_DETAIL,
+  ASK_CLOSE,
+  ASK_HEADING,
   ASK_MODEL_LABEL,
   describeAskActivity,
   describeChatSubject,
@@ -14,7 +18,34 @@ import type { OName } from "../../lib/brand/o-cast";
 import type { AgentAskView, AskExchangeView } from "../../lib/views/types";
 import { agentStageHref } from "../_data/routes";
 import { askAgentQuestion, submitConnectionCommand } from "../_data/source";
+import { Composer, filterAfterClear, type ComposerClassNames } from "./composer";
 import { OAvatar } from "./o-avatar";
+
+/**
+ * This surface's own class-name table for `Composer` (MAR-711).
+ *
+ * A new vocabulary rather than the chief's: `.ask-history`, `.ask-turn` and
+ * everything a citation or a charge line draws already existed for this
+ * surface's transcript, so only the chrome `Composer` did not yet have a name
+ * for is new here. See `composer.tsx`'s own header for why this is a lookup
+ * table and not a `surface` string switched on internally.
+ */
+const ASK_COMPOSER_CLASSES: ComposerClassNames = {
+  root: "ask-composer",
+  room: "ask-room",
+  roomHead: "ask-room-head",
+  roomHeading: "ask-room-heading",
+  roomActions: "ask-room-actions",
+  roomClear: "ask-room-clear",
+  roomClose: "ask-room-close",
+  roomScroll: "ask-room-scroll",
+  compose: "ask-compose",
+  field: "ask-field",
+  subject: "ask-subject",
+  inputWrap: "ask-input-wrap",
+  input: "ask-input",
+  enterGlyph: "ask-enter-glyph",
+};
 
 /**
  * The conversation with one agent (MAR-545).
@@ -72,21 +103,23 @@ import { OAvatar } from "./o-avatar";
  * MAR-545's rule is that the cost sentence sits *above* the box: it is the
  * thing that could change what somebody types, and under the button it is read
  * after the decision. The thread is the last thing above the bar in the
- * cockpit, so ending it with the estimate keeps that literally true — and the
- * chat bar's own behaviour is what guarantees it, because focusing the bar
- * moves the stage to this thread.
+ * cockpit, so ending it with the estimate keeps that literally true.
+ *
+ * MAR-711 removed the `children` slot this used to carry the composer through
+ * for a caller that wanted the two in one section: nothing ever called it —
+ * the cockpit pins the composer separately, and the composer now opens its
+ * own room with this same content rather than needing to be handed this
+ * section as a child. A dead prop the first sentence of
+ * `app/agents/detail/page.tsx` already argues against.
  */
 export function AskThread({
   ask,
   canAct,
-  children,
   onAsked,
   setFeedback,
 }: {
   ask: AgentAskView;
   canAct: boolean;
-  /** The composer, for the caller that wants it inside the section. */
-  children?: ReactNode;
   onAsked: () => void;
   setFeedback: Dispatch<SetStateAction<{ ok: boolean; message: string } | null>>;
 }): ReactNode {
@@ -164,20 +197,46 @@ export function AskThread({
       ) : ask.reported === null ? null : (
         <p className="muted wrap">{ask.reported}</p>
       )}
-
-      {children}
     </section>
   );
 }
 
 /**
- * The box you type a question into, and nothing else (MAR-545, split out by
- * MAR-641).
+ * The box you type a question into — and now the room that opens above it
+ * (MAR-545, split out by MAR-641; adopted the fleet composer's own shape by
+ * MAR-711).
  *
  * Renders nothing at all when there is nothing to ask with. That is not the
  * silence `AgentControls` was filed against: the reason is on screen directly
  * above, as the thread's fix-it card, and a disabled textarea under it would be
  * the dead input this component's own header refuses.
+ *
+ * ## MAR-711: one shape, adopted rather than copied
+ *
+ * Henrik, of this composer's old submit button beside the chief's: *"adopts
+ * the fleet composer's look and behaviour."* The two used to diverge on every
+ * axis the objective names — a button here and none there, a settings row that
+ * swapped with the loader here and a model line always drawn there, a
+ * navigation to a whole separate stage on focus here and an overlay that opens
+ * in place there. All four are now `Composer`'s decisions, not this
+ * component's: this file supplies `ASK_COMPOSER_CLASSES`, its own submit
+ * function, its own room content (the purpose, the history and the estimate
+ * this agent's questions have always shown), and nothing else.
+ *
+ * The room replaces the old *focus moves you to the Chat stage* behaviour —
+ * `onChatStage` below is what keeps the two from ever drawing the same content
+ * twice on one screen: on the Chat stage, `AskThread` already shows this exact
+ * purpose/history/estimate in full, so the room stays closed there and this
+ * composer draws only the field. Off that stage, the room is the quickest way
+ * to see the same thing without leaving whatever a person is looking at —
+ * `AgentChatBar`'s own reason for existing.
+ *
+ * `open`/`onOpen`/`onClose` are controlled props, `ChiefChat`'s own shape,
+ * rather than state this component keeps to itself — `AgentChatBar` owns
+ * them for the same reason `FleetList` owns the chief's: every render test
+ * in this repository is `renderToStaticMarkup`, which never fires a focus
+ * event, so a room only openable from inside this component would be a room
+ * no test could ever put on screen open.
  */
 export function AskComposer({
   agentAvatar = null,
@@ -185,8 +244,10 @@ export function AskComposer({
   ask,
   canAct,
   onAsked,
-  onEscape,
-  onFocus,
+  onChatStage = false,
+  open,
+  onOpen,
+  onClose,
   setFeedback,
 }: {
   /**
@@ -208,36 +269,28 @@ export function AskComposer({
   canAct: boolean;
   onAsked: () => void;
   /**
-   * Called on Escape, so the cockpit can put back the stage somebody was on
-   * (MAR-648).
-   *
-   * This component's own header refused to bind this key: *"`Escape` is
-   * deliberately not bound: this box holds a question somebody typed, and a key
-   * that discarded it would be a destructive control with no confirmation."*
-   * That reasoning is right, and it is exactly why the binding is safe now —
-   * **Escape does not touch the box.** It changes which stage is on screen and
-   * leaves the question, the cursor and the scrollback where they are, so there
-   * is nothing discarded and nothing to confirm.
+   * Whether the Chat stage is already on screen, showing this exact content
+   * in full (`AskThread`). The room stays closed there rather than drawing
+   * the same purpose, history and estimate a second time — the same argument
+   * `AgentChatBar`'s own blocked branch already makes about this prop.
    */
-  onEscape?: () => void;
-  /** Called when the box takes focus, so the cockpit can show the thread. */
-  onFocus?: () => void;
+  onChatStage?: boolean;
+  /** Whether the room is showing. Owned by `AgentChatBar`. */
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
   setFeedback: Dispatch<SetStateAction<{ ok: boolean; message: string } | null>>;
 }): ReactNode {
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
-  /*
-   * Whole seconds since the press — the one number on this surface the renderer
-   * measured first-hand, which is why it is the one number MAR-648's honesty
-   * rule lets it show while a question is in flight. `describeAskActivity` is
-   * where that argument is written down.
-   *
-   * A second is the right resolution rather than a compromise: this is a person
-   * waiting, not a profiler, and a tenth-of-a-second counter under a loader
-   * reads as instrumentation. It is also one repaint per second, which is the
-   * cheapest honest way to show the surface is still alive.
-   */
   const [elapsed, setElapsed] = useState(0);
+  /*
+   * MAR-711. Clear's own state, `ChiefChat`'s `clearedThroughId` restated for
+   * this room: session-only, filtered here rather than deleted anywhere, so
+   * DASH still keeps every exchange the next time this agent is asked
+   * anything. See `filterAfterClear`'s own header.
+   */
+  const [clearedThroughId, setClearedThroughId] = useState<number | null>(null);
 
   /*
    * Started on the press and cleared with it. Reading the clock rather than
@@ -264,10 +317,14 @@ export function AskComposer({
 
   const flow = ask.ask;
   const model = ask.model;
+  const visible = filterAfterClear(ask.history, clearedThroughId);
 
   async function submit(): Promise<void> {
     if (question.trim().length === 0) {
       return;
+    }
+    if (!onChatStage) {
+      onOpen();
     }
     setElapsed(0);
     setBusy(true);
@@ -281,8 +338,8 @@ export function AskComposer({
     setBusy(false);
     if (result.ok) {
       // Cleared only on success. A question that failed is still in the box, so
-      // pressing the button again is one press rather than typing it out again —
-      // and the row saying it failed is already in the history below.
+      // asking again is one press rather than typing it out again — and the row
+      // saying it failed is already in the history above.
       setQuestion("");
     }
     setFeedback({ ok: result.ok, message: result.detail ?? "" });
@@ -301,76 +358,45 @@ export function AskComposer({
   }
 
   return (
-    <div className="ask-compose">
-      <label className="ask-field">
-        {/* The bar's own name, not the thread's opening sentence (MAR-646).
-            This label used to be `ask.purpose.headline`, which is the paragraph
-            the thread draws directly above it on the Chat stage — one sentence
-            in two places on one screen, and the hidden half is still in the
-            markup, which is exactly the kind of duplication a copy gate reads
-            straight past. A control's accessible name should say what the
-            control is — and MAR-659 is why it is visible now rather than
-            `visually-hidden`: naming *this* agent, not the thread's fuller
-            sentence about what it can answer, is the one thing this label
-            says that nothing else on a non-Chat stage does. */}
-        <span className="ask-subject">{describeChatSubject(agentTitle)}</span>
-        <textarea
-          className="ask-input"
-          rows={2}
-          value={question}
-          placeholder={ask.placeholder}
-          disabled={busy}
-          onChange={(event) => setQuestion(event.target.value)}
-          onFocus={onFocus}
-          /*
-           * Enter sends, Shift+Enter is a new line — the wireframe's own
-           * sentence for the pinned bar, and the convention of every chat box a
-           * person has used.
-           *
-           * Escape puts back the stage somebody was on and **does not touch what
-           * they typed** (MAR-648). See `onEscape`, which carries the argument
-           * for why the refusal this comment used to record does not apply to a
-           * key that discards nothing.
-           */
-          onKeyDown={(event) => {
-            if (event.key === "Escape" && onEscape !== undefined) {
-              event.preventDefault();
-              onEscape();
-              return;
-            }
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              void submit();
-            }
-          }}
-        />
-      </label>
-      <button
-        type="button"
-        className="primary"
-        // Disabled on an empty box rather than refused on press: there is no
-        // sentence worth showing for "you typed nothing", and a button that
-        // charges an account should not be pressable with nothing to ask.
-        disabled={busy || question.trim().length === 0}
-        onClick={() => void submit()}
-      >
-        {busy ? ask.working : ask.submit}
-      </button>
-
-      {/*
-        The settings row (MAR-648), and the activity line in its place while a
-        question is in flight.
-
-        One band rather than two stacked, because they answer the same question
-        at two moments — *what is about to happen* and *what is happening* — and
-        a row that stayed put underneath a second row appearing above it would
-        move the box a person is typing in. The composer never moves; that is
-        the whole shape MAR-648 asked for.
-      */}
-      {busy ? (
-        <AskActivity avatar={agentAvatar} elapsed={elapsed} model={model.model_id} />
-      ) : (
-        <div className="ask-settings">
+    <Composer
+      classes={ASK_COMPOSER_CLASSES}
+      open={open && !onChatStage}
+      onOpen={() => {
+        if (!onChatStage) {
+          onOpen();
+        }
+      }}
+      onClose={onClose}
+      heading={ASK_HEADING}
+      closeLabel={ASK_CLOSE}
+      clearLabel={ASK_CLEAR}
+      clearTitle={ASK_CLEAR_DETAIL}
+      clearDisabled={visible.length === 0}
+      onClear={() => {
+        const last = ask.history[ask.history.length - 1];
+        if (last !== undefined) {
+          setClearedThroughId(last.id);
+        }
+      }}
+      scrollSignal={visible.length}
+      /* The bar's own name, not the thread's opening sentence (MAR-646).
+         This label used to be `ask.purpose.headline`, which is the paragraph
+         the room now draws directly below it — one sentence in two places on
+         one screen, and the hidden half is still in the markup, which is
+         exactly the kind of duplication a copy gate reads straight past. A
+         control's accessible name should say what the control is — and
+         MAR-659 is why it is visible now rather than `visually-hidden`:
+         naming *this* agent, not the fuller sentence about what it can
+         answer, is the one thing this label says that nothing else on a
+         non-Chat stage does. */
+      subjectLabel={describeChatSubject(agentTitle)}
+      placeholder={ask.placeholder}
+      value={question}
+      onChange={setQuestion}
+      onSubmit={() => void submit()}
+      textareaDisabled={busy}
+      modelLine={
+        <div className="ask-model-line">
           <span className="ask-setting">
             <span className="muted">{ASK_MODEL_LABEL}</span>{" "}
             {/* The provider's own id, as a value. `AskModelView` states why
@@ -390,8 +416,26 @@ export function AskComposer({
             {model.change_label}
           </Link>
         </div>
-      )}
-    </div>
+      }
+    >
+      <p className="wrap">{ask.purpose.headline}</p>
+      <p className="muted wrap">{ask.purpose.detail}</p>
+
+      <AskHistory exchanges={visible} sourcesHeading={ask.sources_heading} />
+
+      <div className="ask-terms">
+        {/* The estimate sits above the box, not under a button that no longer
+            exists — it is the thing that could change what somebody types, and
+            the room already opens directly above the field. */}
+        <p className="ask-estimate wrap">{ask.estimate.headline}</p>
+        <p className="muted wrap">{ask.estimate.detail}</p>
+        <p className="muted wrap ask-custody">{ask.custody}</p>
+        {ask.spent === null ? null : <p className="muted wrap">{ask.spent}</p>}
+        {ask.reported === null ? null : <p className="muted wrap">{ask.reported}</p>}
+      </div>
+
+      {busy ? <AskActivity avatar={agentAvatar} elapsed={elapsed} model={model.model_id} /> : null}
+    </Composer>
   );
 }
 
@@ -478,6 +522,23 @@ function AskActivity({
  * the connect button itself: `ask.blocked` is a headline, a meaning and a next
  * action, and a bar that showed the button without the two sentences would be
  * offering a consequence without its explanation.
+ *
+ * ## MAR-711: no more `onEscape`/`onFocus`, and a room this bar now owns
+ *
+ * Both `onEscape`/`onFocus` existed for one reason — focusing the composer
+ * used to navigate the whole cockpit to the Chat stage, and Escape had to put
+ * the stage back. The composer now opens its own room in place instead
+ * (`AskComposer`'s own header), so there is no stage to leave and none to
+ * restore: `Composer` closes the room on Escape by itself, and the cockpit's
+ * stage never moves because of anything typed here.
+ *
+ * `open` moved here from `AskComposer`, `FleetList`'s own shape for the
+ * chief's room: whether the room is showing is now this bar's state, handed
+ * down as a controlled prop, rather than something `AskComposer` decided for
+ * itself. Nothing on this page dims for it the way the fleet's cards do, but
+ * the state has to live somewhere a test can reach without a click —
+ * `renderToStaticMarkup` fires none — and this bar is `AskComposer`'s one
+ * caller either way.
  */
 export function AgentChatBar({
   agent,
@@ -486,8 +547,6 @@ export function AgentChatBar({
   ask,
   canAct,
   onAsked,
-  onEscape,
-  onFocus,
   onChatStage = false,
   setFeedback,
 }: {
@@ -504,21 +563,17 @@ export function AgentChatBar({
   ask: AgentAskView;
   canAct: boolean;
   onAsked: () => void;
-  /** Escape, which changes the stage and never the box (MAR-648). */
-  onEscape?: () => void;
-  onFocus?: () => void;
   /**
-   * Whether the thread is already the stage.
+   * Whether the Chat stage is already on screen.
    *
-   * Only the blocked bar reads it, and the first capture of this frame is why
-   * it exists: the fix-it card and the bar drew the same sentence 800px apart
-   * on one screen, which is exactly the defect MAR-609 removed a Status tile
-   * for. The bar's blocked state is a *pointer* at the card, so on the card's
-   * own stage there is nothing for it to point at and it draws nothing.
+   * The blocked bar reads it for the reason recorded below; `AskComposer`
+   * reads its own copy to keep its room from drawing the same purpose,
+   * history and estimate `AskThread` already shows in full on that stage.
    */
   onChatStage?: boolean;
   setFeedback: Dispatch<SetStateAction<{ ok: boolean; message: string } | null>>;
 }): ReactNode {
+  const [open, setOpen] = useState(false);
   if (!ask.can_ask && onChatStage) {
     return null;
   }
@@ -531,8 +586,10 @@ export function AgentChatBar({
           ask={ask}
           canAct={canAct}
           onAsked={onAsked}
-          onEscape={onEscape}
-          onFocus={onFocus}
+          onChatStage={onChatStage}
+          open={open}
+          onOpen={() => setOpen(true)}
+          onClose={() => setOpen(false)}
           setFeedback={setFeedback}
         />
       ) : (
