@@ -1227,6 +1227,81 @@ export const COMMANDS = {
     irreversible: false,
   },
 
+  /*
+   * MAR-479, ADR 0026. The second family that can send something off this
+   * machine, and the first whose subject is DASH itself rather than an agent.
+   *
+   * The payload rule holds here as it does for `notify.*`: **the token is
+   * absent from every payload below and there is no fifth command that would
+   * carry one.** It is typed into the window `electron/credential-prompt.ts`
+   * owns — the same window a Discord address goes into, reached by the same
+   * route — so `lab.connect` asks main to *ask*.
+   *
+   * `endpoint` is the one string that does cross, and it is not a credential:
+   * it is an address a person typed and can read back off their own settings
+   * page. It is parsed in main rather than here, `notify.setKind`'s split
+   * between a pure catalogue and the write it guards.
+   */
+  "lab.connect": {
+    effect:
+      "Ask for a LAB's ingest token, store it in this computer's vault, and remember which LAB it is for. Sends nothing until you switch sending on.",
+    payload_keys: ["endpoint"],
+    payload_types: { endpoint: "string" },
+    required_keys: ["endpoint"],
+    mutates: true,
+    // Replacing a token loses the old one, which DASH cannot recover, and
+    // nothing happens in the world at the moment it is stored. `notify.connect`
+    // and `connection.connect` make the same call about the same shape of act.
+    irreversible: false,
+  },
+  "lab.disconnect": {
+    effect:
+      "Stop sending, and delete the LAB token from this computer's vault. What was already sent stays on that LAB.",
+    payload_keys: [],
+    required_keys: [],
+    mutates: true,
+    irreversible: false,
+  },
+  /*
+   * The one switch, taking whether.
+   *
+   * `mutates` is true and `irreversible` is false, and the second half needs
+   * the care `notify.test` needed. Switching this on does not itself put
+   * anything anywhere — the send is `lab.sendNow` or the next startup — and
+   * switching it off is a complete undo of the switch. What it cannot undo is a
+   * send that already happened, which is a property of `lab.sendNow` and is
+   * stated there.
+   */
+  "lab.setEnabled": {
+    effect:
+      "Turn sending plan telemetry to LAB on or off. Changes nothing about the agents themselves.",
+    payload_keys: ["enabled"],
+    payload_types: { enabled: "boolean" },
+    required_keys: ["enabled"],
+    mutates: true,
+    irreversible: false,
+  },
+  /*
+   * `irreversible` is **true**, and this is the only command in the family that
+   * earns it.
+   *
+   * This file's own test for the flag is the second invitation and the second
+   * payment — an act DASH cannot take back. That is exactly this: the bytes
+   * reach a database DASH does not own, and there is no request that would
+   * remove them. ADR 0026 decision 7 says the same thing in prose and refuses to
+   * offer an "erase what I sent" button for it. A person pressing this is
+   * pressing the one control in DASH whose effect leaves the machine, so it goes
+   * through the same confirmation an irreversible agent command does.
+   */
+  "lab.sendNow": {
+    effect:
+      "Send everything not yet reported to that LAB now. It cannot be taken back afterwards.",
+    payload_keys: [],
+    required_keys: [],
+    mutates: true,
+    irreversible: true,
+  },
+
   // MAR-383. Three commands that name a connection and carry no credential.
   //
   // The secret is deliberately absent from every payload below, and there is no
@@ -1829,6 +1904,28 @@ export function isNotifyCommandName(value: CommandName): value is NotifyCommandN
   return Object.hasOwn(NOTIFY_ACTIONS, value);
 }
 
+/**
+ * What DASH tells a LAB about its own agents' plans (MAR-479, ADR 0026).
+ *
+ * The tenth family, and the second half of the answer `NOTIFY_ACTIONS`' own
+ * docblock promises. A reviewer asking *"what in DASH can send something off
+ * this machine on its own?"* now reads two maps rather than one, and they are
+ * adjacent so that the answer stays complete.
+ */
+export const LAB_ACTIONS = {
+  "lab.connect": "connect",
+  "lab.disconnect": "disconnect",
+  "lab.setEnabled": "set_enabled",
+  "lab.sendNow": "send_now",
+} as const;
+
+export type LabCommandName = keyof typeof LAB_ACTIONS;
+export type LabAction = (typeof LAB_ACTIONS)[LabCommandName];
+
+export function isLabCommandName(value: CommandName): value is LabCommandName {
+  return Object.hasOwn(LAB_ACTIONS, value);
+}
+
 export const CONNECTION_ACTIONS = {
   "connection.connect": "connect",
   "connection.test": "test",
@@ -1971,6 +2068,7 @@ type UnroutedCommand = Exclude<
   | FolderCommandName
   | ModelCommandName
   | NotifyCommandName
+  | LabCommandName
   | AskCommandName
   | ChiefCommandName
   | "shell.ping"
@@ -2309,6 +2407,13 @@ export function executeCommand(review: CommandReview): CommandResult {
     // delivered to a channel nothing contacted, which is precisely the
     // reassurance that command exists to make checkable.
     isNotifyCommandName(review.command) ||
+    // MAR-479, ADR 0026. Two open a window or touch the vault, one writes a row
+    // and `lab.sendNow` posts to a machine DASH does not own. That last one is
+    // why this entry matters most in the whole list: succeeding here would tell
+    // a person their telemetry had been delivered when nothing left the process,
+    // and the receipt — the one artifact this feature exists to make checkable —
+    // would be a record of an act that never happened.
+    isLabCommandName(review.command) ||
     // MAR-545. Opens the vault, reaches a provider and bills an account.
     // Succeeding here would report a question asked that nothing asked, beside
     // a cost sentence about a charge nobody made.
@@ -2629,6 +2734,25 @@ export interface NotifyActionResult {
   detail?: string;
   /** `••••` plus four characters, after a connect. Absent otherwise. */
   masked_hint?: string;
+}
+
+/**
+ * What comes back from a LAB-telemetry command (MAR-479, ADR 0026).
+ *
+ * `NotifyActionResult`'s shape and its guarantee: nothing a token could be
+ * assigned to crosses back. `sent` is a count and not a payload — the payload a
+ * person reads is the receipt, which arrives through `view.labTelemetry` where
+ * it is a stored record rather than a command's return value.
+ */
+export interface LabActionResult {
+  ok: boolean;
+  refusal?: string;
+  /** Plain language, safe to render. Never contains the token. */
+  detail?: string;
+  /** `••••` plus four characters, after a connect. Absent otherwise. */
+  masked_hint?: string;
+  /** How many entries that LAB accepted, after a send. Absent otherwise. */
+  sent?: number;
 }
 
 export interface DispatchContext {
@@ -2966,6 +3090,21 @@ export interface DispatchContext {
     action: NotifyAction,
     target: { kind?: string; enabled?: boolean },
   ): Promise<NotifyActionResult>;
+  /**
+   * Set up, switch, or run DASH's report to a LAB (MAR-479, ADR 0026).
+   *
+   * Injected exactly as `notifyAction` is, and with the same closed return
+   * type: `electron/lab-telemetry.ts` opens the vault, raises the credential
+   * window and reaches the network, and this module has to stay importable from
+   * a sandboxed preload.
+   *
+   * `endpoint` crosses and the token does not. There is no field for the token,
+   * on the way in or the way out.
+   */
+  labAction(
+    action: LabAction,
+    target: { enabled?: boolean; endpoint?: string },
+  ): Promise<LabActionResult>;
   /**
    * Where the IPC-level audit record goes.
    *
@@ -3478,6 +3617,46 @@ export async function dispatchCommand(
       // for the reason that field exists: primitives only, already safe to
       // render, already safe to log.
       data: result.masked_hint === undefined ? undefined : { masked_hint: result.masked_hint },
+    };
+  }
+
+  if (isLabCommandName(review.command)) {
+    /*
+     * MAR-479, ADR 0026. Two of these take no payload, one takes a boolean and
+     * one takes an address.
+     *
+     * So the widest thing a compromised renderer can do with this family is ask
+     * for the credential window to open, point DASH at an address of its
+     * choosing, flip the switch, or make DASH send the batch it was going to
+     * send anyway. It cannot learn the token, cannot compose what is sent —
+     * `lib/lab/observation.ts` builds that from stored manifests and nothing
+     * else — and cannot cause anything about an agent's goal to be sent, because
+     * no such field exists in the payload.
+     *
+     * Pointing DASH at an attacker's address is the real capability here and it
+     * is bounded twice: `lab.connect` still opens the credential window, so a
+     * person has to type a token before anything can be posted anywhere, and
+     * the address a renderer named is on the settings page afterwards.
+     */
+    const result = await context.labAction(LAB_ACTIONS[review.command], {
+      enabled: review.payload["enabled"] === undefined ? undefined : review.payload["enabled"] === true,
+      endpoint:
+        review.payload["endpoint"] === undefined ? undefined : String(review.payload["endpoint"]),
+    });
+    return {
+      ok: result.ok,
+      request_id: review.audit.request_id,
+      reason: result.refusal,
+      detail: result.detail,
+      // Two primitives, the same discipline as the notify branch above: a
+      // masked hint and a count, both already safe to render and to log.
+      data:
+        result.masked_hint === undefined && result.sent === undefined
+          ? undefined
+          : {
+              ...(result.masked_hint === undefined ? {} : { masked_hint: result.masked_hint }),
+              ...(result.sent === undefined ? {} : { sent: result.sent }),
+            },
     };
   }
 

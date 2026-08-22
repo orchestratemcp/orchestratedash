@@ -43,6 +43,7 @@ import type {
   AgentsView,
   ConnectionsView,
   HostsView,
+  LabTelemetryView,
   NotificationsView,
   RunView,
   RunsView,
@@ -418,6 +419,18 @@ interface DashShellClient {
   disconnectNotifications?(): Promise<CommandResult>;
   testNotifications?(): Promise<CommandResult>;
   setNotificationKind?(args: { kind: string; enabled: boolean }): Promise<CommandResult>;
+  /**
+   * The four LAB-telemetry commands (MAR-479, ADR 0026).
+   *
+   * Optional for the reason every method added since the host family is. Note
+   * what none of them takes: a token. Page script can name an address and can
+   * ask main to raise the credential window, and cannot supply, read back or
+   * compose what is sent — see the `lab.*` entries in `lib/shell/ipc.ts`.
+   */
+  connectLabTelemetry?(args: { endpoint: string }): Promise<CommandResult>;
+  disconnectLabTelemetry?(): Promise<CommandResult>;
+  setLabTelemetryEnabled?(args: { enabled: boolean }): Promise<CommandResult>;
+  sendLabTelemetry?(): Promise<CommandResult>;
   connectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   testConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
   disconnectConnection(args: ConnectionCommandArgs): Promise<CommandResult>;
@@ -542,6 +555,8 @@ export interface DashDataSource {
   workspace(agent: string): Promise<ViewResult<WorkspaceView>>;
   hosts(): Promise<ViewResult<HostsView>>;
   notifications(): Promise<ViewResult<NotificationsView>>;
+  /** MAR-479, ADR 0026. What DASH would tell a LAB, and what it has. */
+  labTelemetry(): Promise<ViewResult<LabTelemetryView>>;
   /** MAR-628, ADR 0019. One agent's controlled browser and its trail. */
   browser(agent: string): Promise<ViewResult<BrowserView>>;
 }
@@ -576,6 +591,8 @@ function shellSource(bridge: DashReadApi): DashDataSource {
   /* MAR-588. Same treatment, same reason: a shell older than this read has no
      such method, and the narrowing has to survive into the closure. */
   const readNotifications = bridge.notifications?.bind(bridge);
+  /* MAR-479. Same treatment, same reason. */
+  const readLabTelemetry = bridge.labTelemetry?.bind(bridge);
   /* MAR-628. Same treatment, same reason. */
   const readBrowser = bridge.browser?.bind(bridge);
   return {
@@ -601,6 +618,10 @@ function shellSource(bridge: DashReadApi): DashDataSource {
       readNotifications === undefined
         ? Promise.resolve({ ok: false, recovery: describeViewFailure("refused") })
         : fromBridge(readNotifications),
+    labTelemetry: () =>
+      readLabTelemetry === undefined
+        ? Promise.resolve({ ok: false, recovery: describeViewFailure("refused") })
+        : fromBridge(readLabTelemetry),
     browser: (agent) =>
       readBrowser === undefined
         ? Promise.resolve({ ok: false, recovery: describeViewFailure("refused") })
@@ -645,6 +666,7 @@ function browserSource(): DashDataSource {
       fromHttp(`/api/views/workspace?agent=${encodeURIComponent(agent)}`),
     hosts: () => fromHttp("/api/views/hosts"),
     notifications: () => fromHttp("/api/views/notifications"),
+    labTelemetry: () => fromHttp("/api/views/lab-telemetry"),
     browser: (agent) => fromHttp(`/api/views/browser?agent=${encodeURIComponent(agent)}`),
   };
 }
@@ -961,6 +983,66 @@ export async function setNotificationKind(args: {
     };
   }
   return call(args);
+}
+
+/* ---------------------------------------------------------------------- *
+ * LAB telemetry (MAR-479, ADR 0026)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The browser-tab refusal matters more here than anywhere else in this file.
+ *
+ * A page served over HTTP has no preload, so it can neither reach the vault nor
+ * raise the credential window — which means **the one setting in DASH that lets
+ * anything leave the machine cannot be switched on from a browser tab at all.**
+ * That is the correct answer to "could a page somebody navigated to turn my
+ * telemetry on", and it is a property of where the bridge is rather than a check
+ * anything performs.
+ */
+async function labCommand<A>(
+  call: ((args: A) => Promise<CommandResult>) | undefined,
+  cannot: string,
+  args: A,
+): Promise<CommandResult> {
+  if (typeof window === "undefined" || window.dashShell === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: `Open the installed DASH app to ${cannot}.`,
+    };
+  }
+  if (call === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: `This version of the DASH app cannot ${cannot}.`,
+    };
+  }
+  return call(args);
+}
+
+export async function connectLabTelemetry(endpoint: string): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  return labCommand(bridge?.connectLabTelemetry, "set up reporting to a LAB", { endpoint });
+}
+
+export async function disconnectLabTelemetry(): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  return labCommand(bridge?.disconnectLabTelemetry, "stop reporting to a LAB", undefined);
+}
+
+export async function setLabTelemetryEnabled(enabled: boolean): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  return labCommand(bridge?.setLabTelemetryEnabled, "change what DASH reports to a LAB", {
+    enabled,
+  });
+}
+
+export async function sendLabTelemetry(): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  return labCommand(bridge?.sendLabTelemetry, "send to a LAB now", undefined);
 }
 
 /**

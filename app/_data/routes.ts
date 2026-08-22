@@ -129,6 +129,17 @@ export const SETTINGS_TABS: readonly Surface[] = [
   { href: SETTINGS_ROOT, label: "Connections" },
   { href: "/settings/ai", label: "AI" },
   { href: "/settings/notifications", label: "Notifications" },
+  /*
+   * MAR-479, ADR 0026. The seventh, and it sits beside Notifications on
+   * purpose: those two tabs are the complete answer to "what does DASH send,
+   * and to whom", and somebody auditing that should find both without having to
+   * know the second exists.
+   *
+   * "Reporting" rather than "Telemetry". The word a person recognises for the
+   * thing they are being asked to consent to is not the word the industry uses
+   * for it, and this tab exists to be found by somebody suspicious.
+   */
+  { href: "/settings/reporting", label: "Reporting" },
   { href: "/settings/servers", label: "Servers" },
   { href: "/settings/add-agent", label: "Add agent" },
   { href: "/settings/preferences", label: "Preferences" },

@@ -67,6 +67,12 @@ describe("the closed kind list", () => {
       "fleet_grant",
       "irreversible_approval",
       "standing_answer",
+      // MAR-479, ADR 0026. Whether this DASH reports its plans to a LAB. A kind
+      // of its own for the same reason as the two above, and here the reason is
+      // at its sharpest: the question this log gets asked about it is "is my
+      // DASH sending anything off this machine?", and a shared kind would answer
+      // that with some other setting's state.
+      "lab_telemetry",
     ]);
   });
 });

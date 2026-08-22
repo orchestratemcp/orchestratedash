@@ -1660,6 +1660,83 @@ const MIGRATIONS: readonly Migration[] = [
     chosen_at   TEXT NOT NULL
   );
   `,
+
+  // MAR-479, ADR 0026. Whether this DASH tells a LAB anything, and the record
+  // of everything it has told one.
+  //
+  // ## `lab_telemetry`: no column a token could go in
+  //
+  // `notify_discord`'s shape and its reasons. The bearer token is a credential
+  // -- anybody holding it can post into that LAB's insights -- so it lives in
+  // the OS vault under one name (`LAB_TELEMETRY_SECRET_NAME`) and this table
+  // holds what every other credential-adjacent row in DASH holds: a masked hint
+  // and a date. `tests/redaction.test.ts` is what checks the database bytes
+  // never contain the value.
+  //
+  // `enabled` is a column rather than the presence of the row, and the two are
+  // deliberately independent: a person can paste a token and leave the switch
+  // off, and can switch off without losing the record that they once set it up.
+  // Absence of the row is the shipped state and reads as `LAB_TELEMETRY_OFF` --
+  // ADR 0026 decision 7's "off is an absence, not a default value".
+  //
+  // `CHECK (id = 1)` states the singleton to SQLite. One DASH talks to one LAB
+  // (LAB's own ingest route says so, contrasting itself with the per-agent
+  // tokens in `/api/events`), so a second row cannot be inserted and no code
+  // path has to decide which of two is real.
+  //
+  // ## `lab_telemetry_sends`: the receipt, and why it holds the whole body
+  //
+  // MAR-479's second constraint is a receipt of **exactly** what is sent -- not
+  // a policy document describing categories. So `body` is the literal string
+  // that went over the socket, stored verbatim rather than re-composed for
+  // display: a receipt assembled a second time is a receipt free to differ from
+  // the act it claims to record. It is safe to keep at rest for the reason ADR
+  // 0026 decision 2 makes the payload safe to send at all -- every field in it
+  // is a registry id, an enum, a digest or a date, and nothing a person typed
+  // can reach it.
+  //
+  // `status` is `-1` for an attempt that never got an answer: a sentinel rather
+  // than a null, so "DASH tried and heard nothing" is a row that renders rather
+  // than one a page has to special-case. Failures are kept beside successes,
+  // deliberately -- somebody checking what was sent is at least as interested in
+  // the attempt that failed.
+  //
+  // ## `lab_telemetry_sent`: what may be skipped next time
+  //
+  // One row per accepted `(goal_slug, observed_on)`. Written **only** on a
+  // fully-accepted batch, because LAB answers with counts and not with which
+  // entries landed -- after a partial answer DASH does not know which half
+  // succeeded, and marking any of them would be DASH recording a fact it does
+  // not have. The cost of that honesty is re-sending an entry LAB already took,
+  // which LAB's own per-day de-duplication absorbs.
+  `
+  CREATE TABLE IF NOT EXISTS lab_telemetry (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    enabled       INTEGER NOT NULL DEFAULT 0,
+    endpoint      TEXT NOT NULL,
+    -- Four trailing characters of the token, masked, or '' for none. Never a
+    -- value: isMaskedHint in lib/secret-refs.ts is what a raw token cannot pass.
+    masked_hint   TEXT NOT NULL DEFAULT '',
+    configured_at TEXT NOT NULL DEFAULT ''
+  );
+
+  CREATE TABLE IF NOT EXISTS lab_telemetry_sends (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    sent_at   TEXT NOT NULL,
+    endpoint  TEXT NOT NULL,
+    -- The literal bytes posted. See the note above for why verbatim.
+    body      TEXT NOT NULL,
+    outcome   TEXT NOT NULL,
+    status    INTEGER NOT NULL,
+    detail    TEXT NOT NULL,
+    accepted  INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS lab_telemetry_sent (
+    key     TEXT PRIMARY KEY,
+    sent_at TEXT NOT NULL
+  );
+  `,
 ];
 
 /* ---------------------------------------------------------------------- *

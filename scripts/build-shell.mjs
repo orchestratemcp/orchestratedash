@@ -238,6 +238,20 @@ await Promise.all([
     format: "esm",
   }),
 
+  // MAR-479's row in LAB, on `prove-start.ts`'s exact terms: evidence rather
+  // than a verdict, named by no `package.json` script, and requiring its own
+  // `DASH_DATA_DIR`. Different from every harness beside it in one way — the
+  // thing it checks is a row in a *different repository's* database, reached
+  // over a port this one does not own, so it needs a LAB running with
+  // `LAB_DASH_INGEST_ENABLED=1`. See `electron/prove-lab.ts` for the one step
+  // it takes outside the real path and why that step is stated rather than hidden.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "prove-lab.ts")],
+    outfile: path.join(outDir, "prove-lab.mjs"),
+    format: "esm",
+  }),
+
   // MAR-628's controlled browser, on `prove-start.ts`'s exact terms: evidence
   // rather than a verdict, named by no `package.json` script, and requiring its
   // own `DASH_DATA_DIR`. Different from every harness beside it in one way —

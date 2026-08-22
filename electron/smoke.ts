@@ -648,6 +648,11 @@ check(
        * what crosses here is DASH's own record — the addresses the run was set
        * up for, the ones its browser reached, and the decision on each request.
        * A page's own text has no field on `BrowserView` to occupy.
+       *
+       * `labTelemetry` earns one because it is the first read whose subject is
+       * what DASH sends outside itself (ADR 0026). It carries no goal and no
+       * agent name: the identity that crosses is a route digest built from
+       * registry vocabulary, plus the receipt LAB returned for it.
        */
       JSON.stringify([
         "agents",
@@ -655,6 +660,7 @@ check(
         "connections",
         "hosts",
         "inbox",
+        "labTelemetry",
         "notifications",
         "run",
         "runs",

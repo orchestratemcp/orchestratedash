@@ -1468,6 +1468,63 @@ export interface NotificationsView {
 }
 
 /* ---------------------------------------------------------------------- *
+ * LAB telemetry (MAR-479, ADR 0026)
+ * ---------------------------------------------------------------------- */
+
+/** One past send, as the page renders it. `body` is the literal bytes posted. */
+export interface LabSendRow {
+  id: number;
+  /** Already worded through `plainDay`. Never a raw timestamp on a guided surface. */
+  sent_on: string;
+  endpoint: string;
+  /** The exact JSON DASH posted. MAR-479's receipt, verbatim. */
+  body: string;
+  /** `accepted`, `partial`, `refused`, `unavailable`, `unreachable` or `no_token`. */
+  outcome: string;
+  /** True only for a batch LAB took in full — for the page to colour the row. */
+  ok: boolean;
+  /** HTTP status, or null when the attempt never got an answer. */
+  status: number | null;
+  detail: string;
+  accepted: number;
+}
+
+/**
+ * Whether DASH tells a LAB anything, what it would tell one, and what it has.
+ *
+ * **There is no field a token could be assigned to** — the property
+ * `NotificationsView` has about a webhook address, and what makes
+ * `view.labTelemetry` unable to become a route to the credential even if
+ * somebody later adds a caller that wants one.
+ *
+ * `preview_body` is the load-bearing field and the reason this view exists at
+ * all: MAR-479's second constraint is a receipt of *exactly* what is sent, in a
+ * place a suspicious person can look **before** deciding. It is composed by the
+ * same `payloadBody` that builds the bytes a send actually posts, so the preview
+ * cannot describe a different message from the one that would go.
+ */
+export interface LabTelemetryView {
+  enabled: boolean;
+  endpoint: string;
+  /** The full URL DASH would POST to, path included. */
+  ingest_url: string;
+  /** `••••` plus four characters of the token, or null. Never a value. */
+  masked_hint: string | null;
+  configured_at: string | null;
+  /** Two or three words. What somebody reads without reading. */
+  standing_chip: string;
+  standing_on: boolean;
+  standing_sentence: string;
+  /** Whether the bytes would stay on this computer. Said, never enforced. */
+  reach_sentence: string;
+  /** The exact JSON DASH would post right now. `[]` when there is nothing. */
+  preview_body: string;
+  preview_count: number;
+  /** Newest first. Failures included, deliberately. */
+  sends: LabSendRow[];
+}
+
+/* ---------------------------------------------------------------------- *
  * Live workspace
  * ---------------------------------------------------------------------- */
 

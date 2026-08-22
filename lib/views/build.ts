@@ -94,6 +94,9 @@ import {
 } from "../agent-folders";
 import { assessConnectionTravel } from "../deploy/connection-travel";
 import { plainDay } from "../copy/when";
+import { payloadBody, pendingObservations } from "../lab/observation";
+import { ingestUrl } from "../lab/send";
+import { describeEndpointReach, describeLabTelemetryStanding } from "../lab/settings";
 import { describeNotificationState } from "../notify/settings";
 import { describeManifestGap } from "../sample-refresh";
 import { glanceReader } from "./glance";
@@ -120,6 +123,9 @@ import {
   readAgentManifest,
   readEvidencePulls,
   readHost,
+  listLabSends,
+  readLabSentKeys,
+  readLabTelemetrySettings,
   readNotificationSettings,
   resolveArtifactAvailability,
   readStore,
@@ -158,6 +164,7 @@ import type {
   FleetLevelModelsView,
   FleetModelDefaultView,
   HostsView,
+  LabTelemetryView,
   NotificationsView,
   PlannedStepView,
   RunView,
@@ -949,6 +956,62 @@ export function notificationsView(): NotificationsView {
     send_approvals: settings.send_approvals,
     send_reports: settings.send_reports,
     state_sentence: describeNotificationState(settings),
+  };
+}
+
+/**
+ * Whether DASH tells a LAB anything, what it would tell one, and what it has
+ * (MAR-479, ADR 0026).
+ *
+ * **Nothing here opens the vault**, `notificationsView`' rule and its two
+ * reasons — an unlock prompt on a render, and there being no field on the view a
+ * token could travel in. The preview is composed from stored manifests and the
+ * receipts are stored rows; neither needs the credential.
+ *
+ * **The preview runs on a DASH that has not opted in, deliberately.** That is
+ * the whole of MAR-479's *before* half: a person has to be able to read exactly
+ * what would be sent while the answer to "is it sending?" is still no. So this
+ * builder branches on nothing — it always composes the payload, and `enabled`
+ * is a field on the result rather than a gate in front of it.
+ *
+ * `payloadBody` is the single composer shared with `sendPending`, which is what
+ * makes the preview and the bytes that would actually go the same string rather
+ * than two renderings that could drift.
+ */
+export function labTelemetryView(): LabTelemetryView {
+  const settings = readLabTelemetrySettings();
+  const observations = pendingObservations(readStore(), readLabSentKeys());
+  const standing = describeLabTelemetryStanding(
+    settings,
+    settings.configured_at === null ? null : plainDay(settings.configured_at),
+  );
+
+  return {
+    enabled: settings.enabled,
+    endpoint: settings.endpoint,
+    ingest_url: ingestUrl(settings.endpoint),
+    masked_hint: settings.masked_hint,
+    configured_at: settings.configured_at,
+    standing_chip: standing.chip,
+    standing_on: standing.on,
+    standing_sentence: standing.sentence,
+    reach_sentence: describeEndpointReach(settings.endpoint),
+    preview_body: payloadBody(observations),
+    preview_count: observations.length,
+    sends: listLabSends().map((send) => ({
+      id: send.id,
+      sent_on: plainDay(send.sent_at) ?? send.sent_at,
+      endpoint: send.endpoint,
+      body: send.body,
+      outcome: send.outcome,
+      // Only a fully-accepted batch is the good state. A 207 took *some*, and a
+      // row coloured as success would be the page rounding a partial answer up
+      // — the one direction this feature must never round in.
+      ok: send.outcome === "accepted",
+      status: send.status < 0 ? null : send.status,
+      detail: send.detail,
+      accepted: send.accepted,
+    })),
   };
 }
 

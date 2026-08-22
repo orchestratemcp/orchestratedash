@@ -1,0 +1,7 @@
+{
+  "chip": "Switched off",
+  "preview_count": 2,
+  "preview_body": "[\n  {\n    \"observed_on\": \"2026-08-18\",\n    \"goal_slug\": \"dash_route_b5870cb47ce4\",\n    \"goal_text\": \"public_source_fetch → signal_sort → brief_compose → deep_dive_synthesis → competitor_choice → report_file_write\",\n    \"components\": [\n      \"public_source_fetch\",\n      \"signal_sort\",\n      \"brief_compose\",\n      \"deep_dive_synthesis\",\n      \"competitor_choice\",\n      \"report_file_write\"\n    ],\n    \"route_selected\": \"composed\",\n    \"route_score\": 0,\n    \"playbook_candidate\": \"\",\n    \"must_have_missing\": [],\n    \"forbidden_present\": [],\n    \"route_changed\": false\n  },\n  {\n    \"observed_on\": \"2026-08-16\",\n    \"goal_slug\": \"dash_route_b5870cb47ce4\",\n    \"goal_text\": \"public_source_fetch → signal_sort → brief_compose → deep_dive_synthesis → competitor_choice → report_file_write\",\n    \"components\": [\n      \"public_source_fetch\",\n      \"signal_sort\",\n      \"brief_compose\",\n      \"deep_dive_synthesis\",\n      \"competitor_choice\",\n      \"report_file_write\"\n    ],\n    \"route_selected\": \"composed\",\n    \"route_score\": 0,\n    \"playbook_candidate\": \"\",\n    \"must_have_missing\": [],\n    \"forbidden_present\": [],\n    \"route_changed\": false\n  }\n]",
+  "sends": 0,
+  "newest": null
+}

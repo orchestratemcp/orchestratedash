@@ -138,6 +138,7 @@ import {
   agentsView,
   connectionsView,
   hostsView,
+  labTelemetryView,
   notificationsView,
   runView,
   runsView,
@@ -176,6 +177,7 @@ import {
   pinHostFingerprint,
   readAgentManifest,
   readHost,
+  readLabTelemetrySettings,
   readNotificationSettings,
   recordAgentDeploy,
   recordAgentLook,
@@ -194,6 +196,7 @@ import {
   registerCredentialChannels,
 } from "./credential-prompt";
 import { performFolderAction } from "./folder-update";
+import { performLabAction, sendPending } from "./lab-telemetry";
 import { buildNotifyConfiguration, performNotifyAction } from "./notify-settings";
 import { providerOperations } from "./oauth-session";
 import { hostBroker, startBroker } from "./broker-host";
@@ -1044,6 +1047,33 @@ export function registerCommandChannel(
             ),
           pushToRunner: () => pushNotifyConfiguration(runner),
         }),
+      /*
+       * MAR-479, ADR 0026. The one entry that can put bytes on a network on
+       * DASH's own behalf rather than on an agent's.
+       *
+       * Same standing as `notifyAction` above and the same shape of argument:
+       * every gate — off-by-default, the vault read, the receipt — is inside
+       * `electron/lab-telemetry.ts` beside the write it guards, and the token is
+       * reachable from exactly this one entry in exactly this one context
+       * object.
+       *
+       * `promptForSecret`'s third argument is whether a value is already stored,
+       * which drives the window's own "replace" wording. It is read off the
+       * settings row rather than out of the vault, so raising the prompt does
+       * not itself cost an unlock.
+       */
+      labAction: (action, target) =>
+        performLabAction(action, target, {
+          store: secureStore(),
+          promptForSecret: (request) =>
+            promptForSecret(
+              request,
+              secureStore().describeBacking().label,
+              readLabTelemetrySettings().masked_hint !== null,
+              appWindow(),
+              RENDERER_ORIGIN,
+            ),
+        }),
     });
   });
 }
@@ -1769,6 +1799,11 @@ export function registerReadChannel(): void {
           ok: true,
           data: notificationsView(),
         } satisfies ReadResponse<ReadResults["view.notifications"]>;
+      case "view.labTelemetry":
+        return {
+          ok: true,
+          data: labTelemetryView(),
+        } satisfies ReadResponse<ReadResults["view.labTelemetry"]>;
       case "view.browser": {
         // MAR-628, ADR 0019. The open session id comes from the live controller
         // and not from the store, and that is the whole reason this case has a
@@ -3042,6 +3077,28 @@ if (typeof app !== "undefined") {
      * throws and reports its own failures.
      */
     void pushNotifyConfiguration(runner);
+
+    /*
+     * MAR-479, ADR 0026. Send the day's plan telemetry, if this DASH has been
+     * asked to and there is anything new.
+     *
+     * ADR 0026 decision 6 chose a daily batch over send-on-event, and this is
+     * the "daily": a DASH opened once a day sends once a day. There is no timer,
+     * deliberately — a timer would be a second schedule to reason about for a
+     * feature whose whole content is a per-day de-duplicated set, and Send now
+     * covers the person who wants it sooner.
+     *
+     * Not awaited, for `pushNotifyConfiguration`'s reason above and a stronger
+     * one: this reaches a machine that is very often simply not running, and ADR
+     * 0004's rule is that nothing about the LAB half may gate anything.
+     * `sendPending` never throws and files a receipt for every outcome,
+     * including the failures.
+     *
+     * `shouldSendTelemetry` is checked inside it before anything is composed, so
+     * on a DASH nobody has opted in this line reads one row and stops — which is
+     * what "off by default" has to mean at a call site rather than in a setting.
+     */
+    void sendPending({ store: secureStore() });
 
     // MAR-467. Before the broker starts, and before the heartbeat moves: the
     // window being recorded is the one that ended when this launch began, and

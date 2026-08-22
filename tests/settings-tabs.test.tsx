@@ -90,15 +90,21 @@ describe("every tab is a route with a page behind it", () => {
 });
 
 describe("nothing was dropped on the way in", () => {
-  it("carries the four labels that used to be four sidebar rows, plus two later tabs", () => {
+  it("carries the four labels that used to be four sidebar rows, plus three later tabs", () => {
     // MAR-599's Preferences, and MAR-642's AI — which is second rather than
     // appended, because it is the tab a DASH holding no key most needs somebody
     // to find. The order is asserted and not just the membership: a tab that
     // quietly moved to the end would still pass a set comparison.
+    //
+    // MAR-479's Reporting is third, immediately after Notifications, and the
+    // adjacency is the point rather than a preference: those two tabs are the
+    // complete answer to "what does DASH send, and to whom", and somebody
+    // auditing that should find the second without knowing it exists.
     expect(SETTINGS_TABS.map((tab) => tab.label)).toEqual([
       "Connections",
       "AI",
       "Notifications",
+      "Reporting",
       "Servers",
       "Add agent",
       "Preferences",

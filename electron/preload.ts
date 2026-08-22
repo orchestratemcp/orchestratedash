@@ -219,6 +219,19 @@ function sendNotificationKind(kind: string, enabled: boolean): Promise<CommandRe
  * The second (MAR-640). `sendNotificationKind`'s reason exactly, for a
  * payload of one id and one boolean rather than two strings and a boolean.
  */
+/**
+ * The third (MAR-479). `sendNotificationKind`'s reason again, for a payload of
+ * one boolean and nothing else — the whole of what a renderer may say about the
+ * one setting that lets anything leave this machine.
+ */
+function sendLabEnabled(enabled: boolean): Promise<CommandResult> {
+  return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
+    command: "lab.setEnabled",
+    request_id: requestId(),
+    payload: { enabled },
+  }) as Promise<CommandResult>;
+}
+
 function sendFavourite(agentId: string, favourite: boolean): Promise<CommandResult> {
   return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
     command: "identity.favourite",
@@ -582,6 +595,30 @@ const dashShell = {
     sendNotificationKind(args.kind, args.enabled),
 
   /**
+   * The four LAB-telemetry commands (MAR-479, ADR 0026).
+   *
+   * **The token is absent from all four**, the story `connectNotifications`
+   * tells about a channel address and for its reason: `connectLabTelemetry` asks
+   * main to *open the credential window*, and what a person types there reaches
+   * the vault without passing through this bridge or the renderer.
+   *
+   * `endpoint` is the one string page script does supply, and it is not a
+   * credential — it is an address a person typed and reads back off their own
+   * settings page. What it can do at worst is point DASH at somebody else's LAB,
+   * which is bounded by `connectLabTelemetry` still requiring a token to be
+   * typed before anything can be posted anywhere.
+   *
+   * `sendLabTelemetry` is the only command in DASH whose effect leaves this
+   * machine and cannot be undone, which is why its catalogue entry is the one
+   * marked `irreversible`.
+   */
+  connectLabTelemetry: (args: { endpoint: string }) =>
+    send("lab.connect", { endpoint: args.endpoint }),
+  disconnectLabTelemetry: () => send("lab.disconnect", {}),
+  setLabTelemetryEnabled: (args: { enabled: boolean }) => sendLabEnabled(args.enabled),
+  sendLabTelemetry: () => send("lab.sendNow", {}),
+
+  /**
    * Remember that this agent's page has just been opened (MAR-586).
    *
    * One agent id and nothing else — in particular, no time. The moment recorded
@@ -868,6 +905,11 @@ const dashData = {
   // `view.notifications` entry in `lib/shell/read.ts` for why this read cannot
   // become a route to the vault.
   notifications: () => read("view.notifications"),
+  // MAR-479, ADR 0026. Whether DASH reports its agents' plans to a LAB, and the
+  // exact bytes it would send and has sent — never the token. See the
+  // `view.labTelemetry` entry in `lib/shell/read.ts` for why this read cannot
+  // become a route to the vault.
+  labTelemetry: () => read("view.labTelemetry"),
   // MAR-628, ADR 0019. The controlled browser's own record. What crosses is
   // where DASH let its browser go, where it went, and what it decided about
   // each request — never the page's content, which goes to the agent through

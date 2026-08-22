@@ -142,3 +142,24 @@ export function describeFleetGrantCleared(provider: string): string {
 export function describeIrreversibleApproval(command: string): string {
   return `An irreversible command was approved: ${command}.`;
 }
+
+/*
+ * MAR-479, ADR 0026. The three transitions of the one setting that lets
+ * anything leave this machine.
+ *
+ * The address is named in every one of them, and that is the point: "sending
+ * turned on" without an address is the half of the fact somebody reading their
+ * decisions log a month later most needs. The token never appears — there is no
+ * parameter it could arrive in.
+ */
+export function describeLabTelemetryEnabled(endpoint: string): string {
+  return `Started sending plan telemetry to ${endpoint}.`;
+}
+
+export function describeLabTelemetryDisabled(): string {
+  return "Stopped sending plan telemetry. Records of what was already sent are kept.";
+}
+
+export function describeLabTelemetryToken(endpoint: string): string {
+  return `A token was stored for plan telemetry to ${endpoint}.`;
+}
