@@ -42,4 +42,30 @@
 
 import { app } from "electron";
 
+import { ALLOW_INSTALLED_STORE_ENV } from "../lib/shell/app-identity";
+
 app.setName("orchestratedash");
+
+/*
+ * And say out loud that the real store is the point (MAR-700).
+ *
+ * Claiming the name above is what sends this harness to
+ * `.../Roaming/orchestratedash`, and MAR-676's checkout guard refuses exactly
+ * that from a checkout it cannot show is the installed one. The smoke ran from
+ * worktrees regardless, because the guard was gated on a launch-form predicate
+ * that happened to exclude it — an exemption nobody chose, sitting beside the
+ * hole that let `pnpm shell` through as well. MAR-700 closes the hole by asking
+ * about the destination instead, which would have taken the smoke's access with
+ * it.
+ *
+ * So the exemption is stated rather than inherited. This is the one harness
+ * whose proof is *about* the real user-data directory — MAR-424's third
+ * acceptance criterion is that a command's refusal lands in `command_audit`
+ * there — and `DASH_ALLOW_INSTALLED_STORE` is the switch that already means
+ * "yes, the real one, on purpose".
+ *
+ * `??=`, so `pnpm verify:shell` against a scratch profile still wins: a
+ * `DASH_DATA_DIR` on the way in is somebody choosing a different store, and this
+ * must not overrule them.
+ */
+process.env[ALLOW_INSTALLED_STORE_ENV] ??= "1";

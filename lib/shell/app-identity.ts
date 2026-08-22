@@ -246,6 +246,37 @@ export function isBlessedCheckout(checkout: AppCheckout): boolean {
 }
 
 /**
+ * Is this launch about to open the installed store?
+ *
+ * ## Why the guard asks about the destination and not the entry point (MAR-700)
+ *
+ * It used to ask `isAppEntryPoint(process.argv[1])`, and that gate was inverted
+ * against its own intention. `electron .` — the app-directory form, the one
+ * `pnpm shell` runs and the one that reads a package.json and takes the name
+ * `orchestratedash` from it — puts the literal string `"."` in `argv[1]`, not a
+ * resolved path. `isAppEntryPoint(".")` is false, so the refusal was **skipped
+ * for the single form it was written to catch**, while `dist/electron/main.mjs`
+ * — the form that gets the fallback name `Electron` and lands in
+ * `%APPDATA%\Electron` instead — was the one being checked.
+ *
+ * That is not a near miss. Between 2026-08-19 and 2026-08-21 six worktrees ran
+ * `pnpm shell` and put roughly twenty-six Electron processes on the one real
+ * `dash.sqlite`, and every one of them walked past a guard that reads, in its
+ * own docblock, as though it had stopped them. The store was left truncated
+ * mid-checkpoint twice: `malformed-20260819/dash.sqlite` claims 474 pages and
+ * holds 356.
+ *
+ * The destination is the honest question. `userData` is `<appData>/<app name>`,
+ * so a process whose store resolves to a directory named `orchestratedash` is
+ * one about to open the person's real agents, connections and history —
+ * whatever argv looked like on the way in. The complement is already covered:
+ * when this is false, `storeIdentityProblem` is what fires.
+ */
+export function resolvesInstalledStore(resolved: string): boolean {
+  return storeBasename(resolved) === APP_NAME;
+}
+
+/**
  * Why this launch may not use the installed store, or null when it may.
  *
  * The message has to name the remedy and not merely the rule, because the person
