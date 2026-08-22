@@ -62,16 +62,26 @@ the packaged path.
   decision is filed where it is made; a brief is a document bound to its
   evidence (MAR-674, promoted to proven 2026-08-18, `8bf4671`).
 
-## Lifecycle counts (from state.json, 2026-08-19)
+## Lifecycle counts (from state.json, 2026-08-22)
 
-132 packet entries merged, 26 proven, 19 planned, after the 2026-08-19
-packaged-shell proving sweep promoted eight packets against the shell
-smoke's 85 proofs. **Proven-debt is still far over budget** — the proving
-wave continues, not new features. Merged-but-unproven work is inventory,
-not progress.
+127 packet entries merged, 39 proven, 19 planned, after the 2026-08-22
+group-A proving sweep (chat front door: MAR-696, 704, 706, 648, 683
+promoted merged -> proven; MAR-679 checked and left merged, a finding —
+its interim de-clutter shipped, the full indicator+popup ask did not).
+**Proven-debt is still far over budget** — the proving wave continues,
+not new features. Merged-but-unproven work is inventory, not progress.
 
-The promotions rest on **`pnpm verify:shell` against the real installed
-store: 85/85 PASS, 0 FAIL**, proof 0 green on `%APPDATA%\orchestratedash`.
+The group-A promotions rest on `electron/capture-mar615.ts` run against
+the **packaged build** (`dash-app://ui/`, `pnpm build:renderer` +
+`pnpm build:shell`, scratch store): the composer/room capture the harness
+already had, plus one new scene (`askRecordsQuestion`/
+`measurePostAskState`) that asks the chief a records-fast question and
+proves the room survives the post-answer re-read without a live model or
+key. Evidence and images: `qa-screenshots-groupA-2026-08-22/`.
+
+The 2026-08-19 sweep's promotions rest on **`pnpm verify:shell` against
+the real installed store: 85/85 PASS, 0 FAIL**, proof 0 green on
+`%APPDATA%\orchestratedash`.
 
 Getting there repaired the store. `dash.sqlite` was WAL-mode with no
 `-wal` and unreadable (MAR-700); a b-tree recovery showed the damaged file

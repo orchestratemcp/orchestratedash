@@ -1,0 +1,101 @@
+﻿
+node.exe : [dash-shell] not claiming dash:// from capture-mar615.mjs — only the app's own entry point may be the handle
+r
+At C:\Users\henri\AppData\Roaming\npm\pnpm.ps1:24 char:5
++     & "node$exe"  "$basedir/node_modules/pnpm/bin/pnpm.cjs" $args
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([dash-shell] no... be the handler:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[dash-shell] DASH_DATA_DIR override in effect: C:\Users\henri\Desktop\projekt\MCP\scratch-mar-groupA-data2
+[dash-shell] store: C:\Users\henri\Desktop\projekt\MCP\scratch-mar-groupA-data2 (app_name=Electron)
+[dash-shell] secure store: Windows Credential Manager (DPAPI) os_backed=true
+[dash-shell] contracts: C:\Users\henri\Desktop\projekt\MCP\orchestratedash\contracts (unpackaged)
+[mar615] seeded 5 agents across 5 characters and 10 chief turns
+[dash-shell] runner: pipe \\.\pipe\orchestratedash-runner-7b4b103991bc2390fd6cf5b1 pid=25444
+[dash-shell] vault self-check: canary=ok, 0/0 fleet reads ok
+[dash-shell] allowed command=runner.status id=bf3707c9-e99d-49fd-a7ca-cbb274f8faed mutates=false
+[dash-shell] allowed command=runner.status id=fc55c172-3d43-4dd5-98e7-f6625f1a0f1b mutates=false
+[dash-shell] allowed command=runner.status id=fab3c4c0-5cda-4b92-ac1f-c2560271cd9e mutates=false
+[dash-shell] allowed command=runner.status id=7402b8e2-a697-4f62-b2fb-80e8cb21e535 mutates=false
+[mar615] composer collapsed 1280/light {"viewport":1279,"page_overflows":false,"composer_found":true,"composer_is_open":false,"room_box":null,"o_box":{"x":949,"y":636,"width":50,"height":50},"input_box":{"x":264,"y":678,"width":751,"height":48},"field_box":{"x":264,"y":678,"width":751,"height":53},"o_is_action":true,"overlap_area":400,"overlap_past_padding":-4,"overlap_with_field":400,"model_line_found":true,"room_heading_visible":null,"strip_found":true,"strip_total":5,"strip_animated":5}
+[mar615] composer-collapsed-1280-light.png 2558x1800
+[mar615] strip-1280-light.png 2558x1800
+[mar615] composer expanded 1280/light {"viewport":1279,"page_overflows":false,"composer_found":true,"composer_is_open":true,"room_box":{"x":264,"y":266,"width":751,"height":384},"o_box":{"x":949,"y":636,"width":50,"height":50},"input_box":{"x":264,"y":678,"width":751,"height":48},"field_box":{"x":264,"y":678,"width":751,"height":53},"o_is_action":true,"overlap_area":400,"overlap_past_padding":-4,"overlap_with_field":400,"model_line_found":true,"room_heading_visible":"Ask the chief","strip_found":true,"strip_total":5,"strip_animated":5}
+[mar615] composer-expanded-1280-light.png 2558x1800
+[mar615] room scrolled 1280/light {"scrolled":true,"scroll_height":4704,"scroll_client_height":326,"head_visible":true,"close_visible":true,"clear_visible":true}
+[mar615] composer-expanded-scrolled-1280-light.png 2558x1800
+[dash-shell] allowed command=chief.ask id=bdd04a6e-a83d-4a7d-9712-a60531ada944 keys=[question] mutates=true
+[mar615] post-ask 1280/light {"page_loading":false,"composer_found":true,"composer_is_open":true,"room_found":true,"turn_count":11}
+[mar615] composer-post-ask-1280-light.png 2558x1800
+[dash-shell] allowed command=glance.looked id=47aab700-aef9-4e11-9505-edc692d8cafa keys=[agent_id] mutates=true
+[mar615] picker-closed-1280-light.png 2558x1800
+[mar615] picker 1280/light {"viewport":1279,"page_overflows":false,"field_found":true,"picker_open":true,"option_count":11,"option_animated":11,"pressed_count":1}
+[mar615] picker-open-1280-light.png 2558x1800
+[dash-shell] allowed command=runner.status id=c51cfe78-3ac8-496f-8f63-ac83d7787f7d mutates=false
+[dash-shell] allowed command=runner.status id=4a90b1ad-af04-44a0-8e17-b4724dc1967e mutates=false
+[mar615] composer collapsed 768/light {"viewport":767,"page_overflows":false,"composer_found":true,"composer_is_open":false,"room_box":null,"o_box":{"x":677,"y":760,"width":50,"height":50},"input_box":{"x":63,"y":802,"width":680,"height":48},"field_box":{"x":63,"y":802,"width":680,"height":53},"o_is_action":true,"overlap_area":400,"overlap_past_padding":-4,"overlap_with_field":400,"model_line_found":true,"room_heading_visible":null,"strip_found":true,"strip_total":5,"strip_animated":5}
+[mar615] composer-collapsed-768-light.png 1534x2048
+[mar615] strip-768-light.png 1534x2048
+[mar615] composer expanded 768/light {"viewport":767,"page_overflows":false,"composer_found":true,"composer_is_open":true,"room_box":{"x":63,"y":390,"width":680,"height":384},"o_box":{"x":677,"y":760,"width":50,"height":50},"input_box":{"x":63,"y":802,"width":680,"height":48},"field_box":{"x":63,"y":802,"width":680,"height":53},"o_is_action":true,"overlap_area":400,"overlap_past_padding":-4,"overlap_with_field":400,"model_line_found":true,"room_heading_visible":"Ask the chief","strip_found":true,"strip_total":5,"strip_animated":5}
+[mar615] composer-expanded-768-light.png 1534x2048
+[dash-shell] allowed command=glance.looked id=f8079ba9-24c1-44cf-9b0f-689c5aa8528a keys=[agent_id] mutates=true
+[mar615] picker-closed-768-light.png 1534x2048
+[mar615] picker 768/light {"viewport":767,"page_overflows":false,"field_found":true,"picker_open":true,"option_count":11,"option_animated":11,"pressed_count":1}
+[mar615] picker-open-768-light.png 1534x2048
+[dash-shell] allowed command=runner.status id=46340058-cfff-445f-bbe8-8375b47de635 mutates=false
+[dash-shell] allowed command=runner.status id=3291732c-a7ac-44e5-93fd-104e2a8b5673 mutates=false
+[mar615] composer collapsed 375/light {"viewport":374,"page_overflows":false,"composer_found":true,"composer_is_open":false,"room_box":null,"o_box":{"x":292,"y":535,"width":50,"height":50},"input_box":{"x":55,"y":577,"width":303,"height":65},"field_box":{"x":55,"y":577,"width":303,"height":70},"o_is_action":true,"overlap_area":400,"overlap_past_padding":-4,"overlap_with_field":400,"model_line_found":true,"room_heading_visible":null,"strip_found":true,"strip_total":5,"strip_animated":5}
+[mar615] composer-collapsed-375-light.png 748x1624
+[mar615] strip-375-light.png 748x1624
+[mar615] composer expanded 375/light {"viewport":374,"page_overflows":false,"composer_found":true,"composer_is_open":true,"room_box":{"x":55,"y":165,"width":303,"height":384},"o_box":{"x":292,"y":535,"width":50,"height":50},"input_box":{"x":55,"y":577,"width":303,"height":65},"field_box":{"x":55,"y":577,"width":303,"height":70},"o_is_action":true,"overlap_area":400,"overlap_past_padding":-4,"overlap_with_field":400,"model_line_found":true,"room_heading_visible":"Ask the chief","strip_found":true,"strip_total":5,"strip_animated":5}
+[mar615] composer-expanded-375-light.png 748x1624
+[dash-shell] allowed command=glance.looked id=aa876919-046b-4dcf-a4dc-6c5f4b86e34f keys=[agent_id] mutates=true
+[mar615] picker-closed-375-light.png 748x1624
+[mar615] picker 375/light {"viewport":374,"page_overflows":false,"field_found":true,"picker_open":true,"option_count":11,"option_animated":11,"pressed_count":1}
+[mar615] picker-open-375-light.png 748x1624
+[dash-shell] allowed command=runner.status id=74accab6-c145-4501-862a-47bf0f55e13b mutates=false
+[dash-shell] allowed command=runner.status id=af967825-e117-4522-8187-38f0aa78d3be mutates=false
+[mar615] composer collapsed 1280/dark {"viewport":1279,"page_overflows":false,"composer_found":true,"composer_is_open":false,"room_box":null,"o_box":{"x":949,"y":636,"width":50,"height":50},"input_box":{"x":264,"y":678,"width":751,"height":48},"field_box":{"x":264,"y":678,"width":751,"height":53},"o_is_action":true,"overlap_area":400,"overlap_past_padding":-4,"overlap_with_field":400,"model_line_found":true,"room_heading_visible":null,"strip_found":true,"strip_total":5,"strip_animated":5}
+[mar615] composer-collapsed-1280-dark.png 2558x1800
+[mar615] strip-1280-dark.png 2558x1800
+[mar615] composer expanded 1280/dark {"viewport":1279,"page_overflows":false,"composer_found":true,"composer_is_open":true,"room_box":{"x":264,"y":266,"width":751,"height":384},"o_box":{"x":949,"y":636,"width":50,"height":50},"input_box":{"x":264,"y":678,"width":751,"height":48},"field_box":{"x":264,"y":678,"width":751,"height":53},"o_is_action":true,"overlap_area":400,"overlap_past_padding":-4,"overlap_with_field":400,"model_line_found":true,"room_heading_visible":"Ask the chief","strip_found":true,"strip_total":5,"strip_animated":5}
+[mar615] composer-expanded-1280-dark.png 2558x1800
+[dash-shell] allowed command=glance.looked id=eff9c1df-bb6b-4daf-91a5-640844b4ce7a keys=[agent_id] mutates=true
+[mar615] picker-closed-1280-dark.png 2558x1800
+[mar615] picker 1280/dark {"viewport":1279,"page_overflows":false,"field_found":true,"picker_open":true,"option_count":11,"option_animated":11,"pressed_count":1}
+[mar615] picker-open-1280-dark.png 2558x1800
+[dash-shell] allowed command=runner.status id=b5de50fd-ff33-435b-8f98-d01d2293ba39 mutates=false
+[dash-shell] allowed command=runner.status id=998b95ff-7047-4d9d-9c38-50f12b12a30c mutates=false
+[mar615] composer collapsed 768/dark {"viewport":767,"page_overflows":false,"composer_found":true,"composer_is_open":false,"room_box":null,"o_box":{"x":677,"y":760,"width":50,"height":50},"input_box":{"x":63,"y":802,"width":680,"height":48},"field_box":{"x":63,"y":802,"width":680,"height":53},"o_is_action":true,"overlap_area":400,"overlap_past_padding":-4,"overlap_with_field":400,"model_line_found":true,"room_heading_visible":null,"strip_found":true,"strip_total":5,"strip_animated":5}
+[mar615] composer-collapsed-768-dark.png 1534x2048
+[mar615] strip-768-dark.png 1534x2048
+[mar615] composer expanded 768/dark {"viewport":767,"page_overflows":false,"composer_found":true,"composer_is_open":true,"room_box":{"x":63,"y":390,"width":680,"height":384},"o_box":{"x":677,"y":760,"width":50,"height":50},"input_box":{"x":63,"y":802,"width":680,"height":48},"field_box":{"x":63,"y":802,"width":680,"height":53},"o_is_action":true,"overlap_area":400,"overlap_past_padding":-4,"overlap_with_field":400,"model_line_found":true,"room_heading_visible":"Ask the chief","strip_found":true,"strip_total":5,"strip_animated":5}
+[mar615] composer-expanded-768-dark.png 1534x2048
+[dash-shell] allowed command=glance.looked id=8c24f0e2-4401-4d46-8a18-040dd74ff08b keys=[agent_id] mutates=true
+[mar615] picker-closed-768-dark.png 1534x2048
+[mar615] picker 768/dark {"viewport":767,"page_overflows":false,"field_found":true,"picker_open":true,"option_count":11,"option_animated":11,"pressed_count":1}
+[mar615] picker-open-768-dark.png 1534x2048
+[dash-shell] allowed command=runner.status id=c1a8512c-77ea-4cb4-a9fe-4712b8161212 mutates=false
+[dash-shell] allowed command=runner.status id=1154d674-6fec-4c85-b513-a1c8ae6aec76 mutates=false
+[mar615] composer collapsed 375/dark {"viewport":374,"page_overflows":false,"composer_found":true,"composer_is_open":false,"room_box":null,"o_box":{"x":292,"y":535,"width":50,"height":50},"input_box":{"x":55,"y":577,"width":303,"height":65},"field_box":{"x":55,"y":577,"width":303,"height":70},"o_is_action":true,"overlap_area":400,"overlap_past_padding":-4,"overlap_with_field":400,"model_line_found":true,"room_heading_visible":null,"strip_found":true,"strip_total":5,"strip_animated":5}
+[mar615] composer-collapsed-375-dark.png 748x1624
+[mar615] strip-375-dark.png 748x1624
+[mar615] composer expanded 375/dark {"viewport":374,"page_overflows":false,"composer_found":true,"composer_is_open":true,"room_box":{"x":55,"y":165,"width":303,"height":384},"o_box":{"x":292,"y":535,"width":50,"height":50},"input_box":{"x":55,"y":577,"width":303,"height":65},"field_box":{"x":55,"y":577,"width":303,"height":70},"o_is_action":true,"overlap_area":400,"overlap_past_padding":-4,"overlap_with_field":400,"model_line_found":true,"room_heading_visible":"Ask the chief","strip_found":true,"strip_total":5,"strip_animated":5}
+[mar615] composer-expanded-375-dark.png 748x1624
+[dash-shell] allowed command=glance.looked id=09d82a3a-780c-4147-b004-66d8ce4db4ff keys=[agent_id] mutates=true
+[mar615] picker-closed-375-dark.png 748x1624
+[mar615] picker 375/dark {"viewport":374,"page_overflows":false,"field_found":true,"picker_open":true,"option_count":11,"option_animated":11,"pressed_count":1}
+[mar615] picker-open-375-dark.png 748x1624
+
+[mar615] wrote 32 images and layout.json to C:\Users\henri\Desktop\projekt\MCP\orchestratedash\qa-screenshots-mar-groupA-packaged2
+[mar615] the perched O never covers typed text
+[mar615] the O perches on the field in every frame
+[mar615] every expanded frame is actually open
+[mar615] the chief animates in every frame
+[mar615] every O in the strip animates
+[mar615] the picker drew its options
+[mar615] the scrolled scene actually scrolled
+[mar615] the header, X, and Clear stayed on screen while scrolled
+[mar615] the room stayed open through the post-answer re-read (MAR-704)
+[mar615] no frame overflowed sideways
