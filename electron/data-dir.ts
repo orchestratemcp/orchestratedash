@@ -72,6 +72,7 @@ import {
   APP_NAME,
   foreignCheckoutProblem,
   isAppEntryPoint,
+  resolvesInstalledStore,
   storeIdentityProblem,
   storeLocationChosen,
   type GitEntryKind,
@@ -173,21 +174,25 @@ export function assertStoreLocation(resolved: string): void {
    * wiring being sound and this one is about whether this process should be here
    * at all — a message about import order would be noise on top of it.
    *
-   * **Gated on the entry point, for `app.setName`'s reason and the same one.**
-   * `foreignCheckoutProblem` asks about an *app-directory* launch: the form that
-   * reads a `package.json`, takes the name `orchestratedash` from it and lands on
-   * the installed userData. `electron dist/electron/smoke.mjs` and the capture
-   * harnesses beside it are not that form and must not be caught by it — the
-   * smoke's whole third acceptance criterion (MAR-424) is that it writes to the
-   * real user-data directory, and `electron/smoke-identity.ts`' header records why
-   * that is deliberate rather than an oversight.
+   * **Gated on the destination, not the entry point (MAR-700).** It used to ask
+   * `isAppEntryPoint(process.argv[1])`, on the belief that this named the
+   * app-directory launch — the form that reads a `package.json`, takes the name
+   * `orchestratedash` from it and lands on the installed userData. It does not.
+   * `electron .` puts the literal `"."` in `argv[1]`, so the predicate was false
+   * and **the refusal was skipped for the one form it existed to catch**, which
+   * is also the form `pnpm shell` uses. Six worktrees walked through it between
+   * 2026-08-19 and 2026-08-21 and left the store truncated mid-checkpoint.
+   * `resolvesInstalledStore` says why the destination is the honest question.
    *
-   * That leaves the smoke able to open the real store from a worktree, which is a
-   * narrower hole than the one this closes and a separate decision from it: it is
-   * reached only by somebody running `pnpm verify:shell`, and changing it means
-   * changing what that proof is about.
+   * The harnesses stay outside it, by a better route than a launch-form gate:
+   * they run as app name `Electron`, so their store is not an `orchestratedash`
+   * directory and this branch does not apply — and when one forgets its
+   * `DASH_DATA_DIR`, `storeIdentityProblem` below is what catches it, which is
+   * the check that was always about them. The smoke reaches the real store on
+   * purpose (MAR-424's third acceptance criterion) and now says so out loud in
+   * `electron/smoke-identity.ts` rather than arriving through a hole.
    */
-  if (isAppEntryPoint(process.argv[1] ?? "")) {
+  if (resolvesInstalledStore(resolved)) {
     const foreign = foreignCheckoutProblem(
       { app_path: app.getAppPath(), packaged: app.isPackaged, git_entry: gitEntryKind() },
       resolved,

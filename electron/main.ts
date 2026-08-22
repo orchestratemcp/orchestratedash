@@ -3349,4 +3349,60 @@ if (typeof app !== "undefined") {
     });
     console.warn(`[dash-shell] quit: ${describeShutdown(outcome)}`);
   });
+
+  installStoreExitGuards();
+}
+
+/**
+ * Checkpoint the store on the exits `will-quit` never sees (MAR-700).
+ *
+ * `will-quit` covers the quit a person asks for, and MAR-678's deadline covers
+ * a quit that gets stuck. Neither covers the ways this process actually ended
+ * during the two weeks the store was destroyed twice:
+ *
+ * - **Ctrl-C on `pnpm shell`.** The dev loop. SIGINT kills the main process
+ *   outright; Electron emits no lifecycle event and the WAL is simply left.
+ * - **`app.exit()`.** It terminates without `before-quit` or `will-quit` by
+ *   design, and `main.ts` reaches it on a failed startup — after the store has
+ *   been opened and migrated.
+ * - **An uncaught exception**, which ends the process through `exit` alone.
+ *
+ * Left mid-WAL, `dash.sqlite` is a two-file structure, and the next process to
+ * checkpoint it while a sibling is mid-write is how a header comes to claim 474
+ * pages over a file holding 356. Six worktrees made that likely; one Ctrl-C
+ * makes it possible.
+ *
+ * `exit` is the backstop rather than the mechanism: it is the last synchronous
+ * moment Node offers, `closeDb` is synchronous, and it fires for a plain return,
+ * `process.exit`, `app.exit` and an uncaught throw alike. The two signals are
+ * handled because they bypass `exit` entirely, and they re-raise rather than
+ * swallow — a Ctrl-C must still terminate DASH, and a handler that ate SIGINT
+ * would create precisely the unkillable shell MAR-678 exists to prevent.
+ *
+ * SIGKILL and `taskkill /F` remain uncoverable by anything in this process.
+ * That is why `AGENTS.md` forbids them and why the memory entry says a reboot is
+ * the only safe lock release.
+ *
+ * Idempotent: `closeDb` clears the handle, so the second call through a
+ * signal-then-`exit` sequence is a no-op rather than a double close.
+ */
+export function installStoreExitGuards(): void {
+  process.on("exit", () => {
+    // No logging: the event loop is gone and console writes can be dropped
+    // mid-line. The checkpoint is the whole job here.
+    closeDb();
+  });
+
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.on(signal, () => {
+      console.warn(`[dash-shell] ${signal}: checkpointing the store before exit`);
+      runShutdownSteps([{ name: "store", run: closeDb }], (line) => {
+        console.warn(line);
+      });
+      // Re-raise so the exit status is the signal's, and so a second Ctrl-C on
+      // a shell that is somehow still here is not swallowed by this listener.
+      process.removeAllListeners(signal);
+      process.kill(process.pid, signal);
+    });
+  }
 }

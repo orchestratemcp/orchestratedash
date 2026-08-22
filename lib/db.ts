@@ -1797,10 +1797,51 @@ export function db(): DatabaseSync {
   return handle;
 }
 
-/** Close the handle. For tests and for a clean shutdown; reopening is cheap. */
+/**
+ * Close the handle. For tests and for a clean shutdown; reopening is cheap.
+ *
+ * ## The checkpoint is explicit, and that is the point (MAR-700)
+ *
+ * `close()` already checkpoints when it is the last connection — but only then,
+ * and it says nothing when it is not. That silence is what the store paid for.
+ * A `TRUNCATE` checkpoint asked for by name folds the log back into
+ * `dash.sqlite`, empties the WAL, and **throws when another process holds the
+ * database** rather than leaving the caller believing a self-contained file was
+ * written. A DASH left mid-WAL is a DASH whose every copy, backup and abrupt
+ * termination lands on a two-file structure that has to be recovered rather than
+ * read — and `malformed-20260819/dash.sqlite` is what that costs when the
+ * recovery does not happen: a header claiming 474 pages over a file holding 356,
+ * three runs and 47 rows unreachable by SQLite.
+ *
+ * The throw is swallowed, deliberately. This runs on the way out of a process
+ * that is leaving anyway, `synchronous = FULL` means every acknowledged commit
+ * is already durable, and `will-quit` turning into an exception would trade one
+ * unwritten checkpoint for a DASH that never exits at all — the failure
+ * `AGENTS.md` forbids resolving with a kill.
+ *
+ * `handle` is cleared **first**, so a throw from either call cannot leave a live
+ * `DatabaseSync` that nothing has a reference to any more. That is MAR-676's
+ * lesson from the open path, applied to the close path: on Windows a leaked
+ * handle also holds its own directory.
+ */
 export function closeDb(): void {
-  handle?.close();
+  const database = handle;
   handle = null;
+  if (database === null) {
+    return;
+  }
+  try {
+    database.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  } catch {
+    // Another process has the database, or it was never in WAL mode. Neither is
+    // worth failing a shutdown over; `close()` below still attempts its own.
+  }
+  try {
+    database.close();
+  } catch {
+    // Already closed, or closed out from under us. The handle is gone either
+    // way, which is the postcondition callers depend on.
+  }
 }
 
 /**

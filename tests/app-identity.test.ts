@@ -24,6 +24,7 @@ import {
   foreignCheckoutProblem,
   isAppEntryPoint,
   isBlessedCheckout,
+  resolvesInstalledStore,
   storeBasename,
   storeIdentityProblem,
   storeLocationChosen,
@@ -213,18 +214,71 @@ describe("foreignCheckoutProblem", () => {
 });
 
 /**
- * The guard's scope, which is the same question `app.setName` asks.
+ * Who may claim the app's name and the `dash://` scheme.
  *
- * `electron/data-dir.ts` applies the checkout guard only to an app-directory
- * launch, because that is the form that reads a package.json and takes the name
- * `orchestratedash` from it. The smoke and a dozen capture harnesses are launched
- * as a file and must stay outside it — the smoke's third acceptance criterion
- * (MAR-424) is that it writes to the *real* user-data directory, deliberately.
+ * This is `app.setName`'s question and, until MAR-700, it was wrongly used as
+ * the checkout guard's as well — see the next block for why those are not the
+ * same question and what it cost.
  */
-describe("the checkout guard's scope", () => {
+describe("isAppEntryPoint", () => {
   it("covers the app entry point and not the proof harnesses beside it", () => {
     expect(isAppEntryPoint("C:\\repo\\dist\\electron\\main.mjs")).toBe(true);
     expect(isAppEntryPoint("C:\\repo\\dist\\electron\\smoke.mjs")).toBe(false);
     expect(isAppEntryPoint("C:\\repo\\dist\\electron\\capture-fleet-views.mjs")).toBe(false);
+  });
+});
+
+/**
+ * The checkout guard's scope, which is a question about the destination
+ * (MAR-700).
+ *
+ * `electron/data-dir.ts` used to gate the guard on `isAppEntryPoint(argv[1])`,
+ * believing it named the app-directory launch — the form that reads a
+ * package.json, takes the name `orchestratedash` from it, and lands on the
+ * installed userData. It names the opposite form. `electron .` puts the literal
+ * `"."` in `argv[1]`, so the refusal was skipped for the one launch it was
+ * written to catch, which is also the one `pnpm shell` runs.
+ *
+ * These cases are the regression: they are written about the store a launch is
+ * about to open, because that is the fact the guard is actually about.
+ */
+describe("the checkout guard's scope", () => {
+  const worktreeStore = "C:\\Users\\henri\\AppData\\Roaming\\orchestratedash";
+
+  it("recognises the installed store however the launch was spelled", () => {
+    expect(resolvesInstalledStore(worktreeStore)).toBe(true);
+    // Trailing separators, and posix, because `userData` is just as valid with
+    // one and the answer must not depend on the platform reading it.
+    expect(resolvesInstalledStore(`${worktreeStore}\\`)).toBe(true);
+    expect(resolvesInstalledStore("/home/henri/.config/orchestratedash")).toBe(true);
+  });
+
+  it("leaves the harnesses' own stores alone", () => {
+    // A harness runs as app name `Electron`, so its store is not an
+    // `orchestratedash` directory and the checkout guard does not apply. When it
+    // forgets `DASH_DATA_DIR`, `storeIdentityProblem` is the check that catches
+    // it — and that has always been the check that was about them.
+    expect(resolvesInstalledStore("C:\\Users\\henri\\AppData\\Roaming\\Electron")).toBe(false);
+    expect(resolvesInstalledStore("C:\\repo\\scratch-final\\profile")).toBe(false);
+    expect(storeIdentityProblem("C:\\Users\\henri\\AppData\\Roaming\\Electron", "Electron")).not.toBeNull();
+  });
+
+  it("refuses `electron .` from a worktree, which the old gate let through", () => {
+    // The regression, stated as the sequence that destroyed the store twice: a
+    // worktree runs `pnpm shell`, Electron takes `orchestratedash` from that
+    // checkout's package.json, and the store resolves to the real one.
+    expect(resolvesInstalledStore(worktreeStore)).toBe(true);
+    expect(foreignCheckoutProblem(worktree, worktreeStore, {})).not.toBeNull();
+
+    // And the gate that used to gate it. `"."` is what `electron .` really puts
+    // in argv[1] — probed against Electron 43.2.0 on 2026-08-22 — so this was
+    // false, and the refusal above never ran.
+    expect(isAppEntryPoint(".")).toBe(false);
+  });
+
+  it("still lets the main checkout and the packaged install open it", () => {
+    // The guard must not cost a person the ordinary way of running DASH.
+    expect(foreignCheckoutProblem(mainCheckout, worktreeStore, {})).toBeNull();
+    expect(foreignCheckoutProblem(installed, worktreeStore, {})).toBeNull();
   });
 });
