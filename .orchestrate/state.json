@@ -1451,8 +1451,8 @@
     },
     {
       "id": "MAR-703",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
+      "lifecycle": "proven",
+      "linear_status": "Done",
       "commit": "00330c6be5d9d495d8e2078c3730d5385283e02a",
       "proof": {
         "command": "pnpm typecheck; pnpm vitest run tests/agent-control.test.ts tests/copy-agent-page.test.ts tests/agent-cockpit-render.test.tsx tests/folder-repair.test.ts tests/folder-repair-flow.test.ts tests/repair-render.test.tsx tests/shell.test.ts tests/client-bundle.test.ts; pnpm test; pnpm build:renderer; pnpm build:shell; pnpm verify:shell NOT RUN (Henrik's DASH may be live)"
@@ -1461,8 +1461,8 @@
     },
     {
       "id": "MAR-705",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
+      "lifecycle": "proven",
+      "linear_status": "Done",
       "commit": "00330c6be5d9d495d8e2078c3730d5385283e02a",
       "proof": {
         "command": "pnpm typecheck; pnpm vitest run tests/agent-control.test.ts tests/copy-agent-page.test.ts tests/agent-cockpit-render.test.tsx tests/folder-repair.test.ts tests/folder-repair-flow.test.ts tests/repair-render.test.tsx tests/shell.test.ts tests/client-bundle.test.ts; pnpm test; pnpm build:renderer; pnpm build:shell; pnpm verify:shell NOT RUN (Henrik's DASH may be live)"
