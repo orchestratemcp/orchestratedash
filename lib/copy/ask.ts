@@ -524,7 +524,15 @@ export function describeAskPurpose(agent: string): AskSentence {
 /** The placeholder in the box. A real question, so the first one is easy to write. */
 export const ASK_PLACEHOLDER = "What have you found about…?";
 
-/** What the button says, and what it says while it is waiting. */
+/**
+ * What a question is called, and what it is called while it is waiting.
+ *
+ * There has been no submit button since MAR-711 adopted the fleet composer's
+ * shape — Enter sends, the same as it always did — so these no longer label a
+ * `<button>`. `lib/views/ask.ts` still carries them on the view as `submit`
+ * and `working`, unread by the composer today, kept for whichever surface
+ * next needs a word for "the thing you are doing" rather than invent one.
+ */
 export const ASK_SUBMIT = "Ask";
 export const ASK_WORKING = "Asking…";
 
@@ -549,6 +557,39 @@ export const ASK_SOURCES_HEADING = "What this answer used";
 export function describeChatSubject(agent: string | null): string {
   return agent === null ? "Message this agent" : `Message ${agent}`;
 }
+
+/* ---------------------------------------------------------------------- *
+ * The room (MAR-711, adopted from `CHIEF_CHAT_COPY`)
+ *
+ * The room's own heading is `ASK_HEADING` itself, unaliased: the room and the
+ * Chat stage's `<h2>` are the same claim ("this is where you ask about what
+ * it found"), and they never show at once (`AskComposer`'s own `onChatStage`
+ * guard), so one heading naming both is accurate rather than a coincidence
+ * worth undoing with a second constant.
+ * ---------------------------------------------------------------------- */
+
+/** The collapse control's accessible name, open only. */
+export const ASK_CLOSE = "Close this conversation";
+
+/**
+ * Clear's own visible label.
+ *
+ * Short on purpose, `CHIEF_CHAT_COPY.clear`'s own reason: every `<button>` in
+ * this system renders upper-case, and a full sentence shouted in caps reads
+ * as an alarm rather than a description. The honest scope moves to
+ * `ASK_CLEAR_DETAIL`, an attribute a sighted reader can still reach (`title`)
+ * rather than one only announced.
+ */
+export const ASK_CLEAR = "Clear";
+
+/**
+ * Clear's fuller, honest scope — `title`, not the visible label.
+ *
+ * Says exactly what it does and no more: this empties what the room draws and
+ * leaves DASH's own record of the conversation alone, which is a real
+ * distinction from deleting it and has to read as one.
+ */
+export const ASK_CLEAR_DETAIL = "Clears what's shown here — DASH still keeps this conversation";
 
 /* ---------------------------------------------------------------------- *
  * The composer's settings row (MAR-648)

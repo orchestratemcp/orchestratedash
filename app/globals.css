@@ -2391,7 +2391,8 @@ code {
  * deleted rather than repurposed, because none of it has a corresponding
  * element any more. What replaced the box — the composer `ChiefChat` now
  * draws directly under the cards — is styled in its own section below,
- * *"The chief's composer, incorporated (MAR-648, MAR-696)"*.
+ * *"The composer, adopted by both surfaces (MAR-648, MAR-696, generalized
+ * MAR-711)"*.
  */
 
 @media (max-width: 760px) {
@@ -6013,11 +6014,14 @@ button:disabled {
   color: var(--text-muted);
 }
 
-.ask-compose {
-  display: grid;
-  gap: var(--space-2);
-  justify-items: start;
-}
+/*
+ * MAR-711. `.ask-compose`, `.ask-field`, `.ask-subject` and `.ask-input`'s
+ * own block layout moved to the combined rules beside `.chief-*`'s, in "The
+ * composer, adopted by both surfaces" below — one declaration for the shape
+ * both composers now share, rather than two that happened to agree. This
+ * comment marks where they used to be so a reader following an old link
+ * lands somewhere useful.
+ */
 
 /*
  * What sending will do. Given the accent bar, because it is the one line on
@@ -6037,52 +6041,6 @@ button:disabled {
   margin: 0;
   font-size: var(--text-sm);
   max-width: 70ch;
-}
-
-.ask-field {
-  display: block;
-  width: 100%;
-  max-width: 70ch;
-}
-
-/*
- * MAR-659. Above the box on the pinned cockpit bar — the fact a person needs
- * before they type into it, on every stage, not only the Chat stage where
- * `ask.purpose.headline` already says the fuller version. `describeChatSubject`
- * used to be `visually-hidden` here.
- */
-.ask-subject {
-  display: block;
-  margin-bottom: var(--space-1);
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-}
-
-/*
- * The box.
- *
- * `field-sizing: content` where it is supported, so two lines of question grow
- * to three rather than scrolling inside a two-row box — and a plain `rows={2}`
- * everywhere else, which is why the rows attribute is on the element rather
- * than a height here.
- */
-.ask-input {
-  width: 100%;
-  padding: var(--space-3);
-  background: var(--surface-0);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  font: inherit;
-  line-height: var(--leading-normal);
-  resize: vertical;
-  field-sizing: content;
-}
-
-.ask-input:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-  border-color: var(--accent);
 }
 
 .ask-input:disabled {
@@ -7379,30 +7337,14 @@ main:has(.agent-cockpit) {
   padding: var(--space-2) var(--space-6);
 }
 
-/* One row rather than the stacked block the full-width section draws. The
-   sentences that used to sit above the box are in the thread now — see
-   `AskThread` — which is what keeps MAR-545's ordering rule true here. */
-.cockpit-chat .ask-compose {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-2);
-  margin: 0;
-}
-
-.cockpit-chat .ask-field {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin: 0;
-}
-
-.cockpit-chat .ask-input {
-  min-height: var(--space-8);
-  margin: 0;
-}
-
-.cockpit-chat .ask-compose > .muted {
-  margin: 0;
-}
+/*
+ * MAR-711. `.ask-composer` needs no override here, the same way
+ * `.chief-composer` needs none from `.fleet-stage`: both are a
+ * `position: relative` block that sizes to its own content, and `.cockpit-chat`
+ * is only ever the padded, bordered band around it — the flex-row overrides
+ * this block used to carry existed for the submit button beside the field,
+ * which is gone.
+ */
 
 .cockpit-chat-blocked {
   display: flex;
@@ -7606,37 +7548,14 @@ main:has(.agent-cockpit) {
 /* ------------------------------------------------------------------------ *
  * The chat is the front door (MAR-648)
  *
- * Two composers, one grammar. The agent page's bar gains a settings row; the
- * chief's band gains the whole thing. Neither moves when its room opens, which
- * is the shape Henrik asked for and the one constraint every rule below is
- * written to keep.
+ * One composer, adopted by two surfaces (MAR-711). The fleet's band and the
+ * agent page's bar both draw through `Composer`, so the field, the room and
+ * the model line are one grammar by construction — see "The composer,
+ * adopted by both surfaces" below for the shared rules, and `.ask-model-line`
+ * for the row that used to be `.ask-settings`. Neither moves when its room
+ * opens, which is the shape Henrik asked for and the one constraint every
+ * rule below is written to keep.
  * ------------------------------------------------------------------------ */
-
-/*
- * The settings row and the activity line occupy the same slot.
- *
- * `.cockpit-chat .ask-compose` is a flex row of box-and-button, so both of
- * these take a full basis and wrap under it rather than squeezing the box —
- * which is what would move the thing a person is typing in.
- */
-.cockpit-chat .ask-compose {
-  flex-wrap: wrap;
-}
-
-.ask-settings,
-.ask-activity {
-  flex: 1 0 100%;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: var(--space-6);
-  margin: 0;
-  font-size: var(--text-sm);
-}
-
-.ask-settings {
-  justify-content: space-between;
-}
 
 .ask-setting {
   display: inline-flex;
@@ -7665,6 +7584,21 @@ main:has(.agent-cockpit) {
 }
 
 /*
+ * What DASH is doing while a question is in flight, inside a room now rather
+ * than swapped in for a settings row (MAR-648, restyled MAR-711). Shared by
+ * both surfaces already — `ChiefActivity` in `chief-chat.tsx` draws this same
+ * class, unrenamed, because the two never needed different chrome here.
+ */
+.ask-activity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--space-6);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+/*
  * The O at work, and the line beside it.
  *
  * No `animation` here and none anywhere near it: `.o-avatar.is-action` already
@@ -7688,7 +7622,17 @@ main:has(.agent-cockpit) {
 }
 
 /* ------------------------------------------------------------------------ *
- * The chief's composer, incorporated (MAR-648, MAR-696)
+ * The composer, adopted by both surfaces (MAR-648, MAR-696, generalized
+ * MAR-711)
+ *
+ * Every rule in this block is a combined selector — `.chief-X, .ask-X` — for
+ * the reason `composer.tsx`'s own header states: `Composer` is one React
+ * component, and these are the one set of rules it draws both surfaces
+ * through. `tests/composer-shared.test.tsx` reads this file and fails if a
+ * future edit styles one half of a pair without the other. The chief's own
+ * class names are unchanged from MAR-696 — `electron/capture-mar615.ts`
+ * reads several of them by name — and the agent's are new names carrying the
+ * identical shape.
  * ------------------------------------------------------------------------ */
 
 /*
@@ -7697,19 +7641,20 @@ main:has(.agent-cockpit) {
  * `position: relative` rather than `position: fixed` — the reversal of the
  * first pass, which Henrik refused on sight: *"the floating textbox was a
  * disaster... Its not floating in the sense as we have it right now. Its
- * incorporated in the design."* This box is the last row of `.fleet-stage`
- * (above), sized to its own content now that `ChiefBand`'s bordered box is
- * gone — see that rule's own note on why the stage no longer reserves a
- * fraction for it.
+ * incorporated in the design."* The chief's sits as the last row of
+ * `.fleet-stage`; the agent's sits inside `.cockpit-chat`. Neither needs an
+ * override from its parent because this rule already sizes to its own
+ * content.
  *
- * It stays the one thing that still overlays: `.chief-room` (below) is
- * `position: absolute` from this box, so an open conversation covers the
- * cards above it rather than pushing them down — MAR-696's own instruction,
- * *"the chat appears above the input and places itself over the cards."*
- * `position: relative` here is what gives that overlay something to anchor
- * to.
+ * It stays the one thing that still overlays: `.chief-room`/`.ask-room`
+ * (below) is `position: absolute` from this box, so an open conversation
+ * covers whatever is above it rather than pushing it down — MAR-696's own
+ * instruction, *"the chat appears above the input and places itself over the
+ * cards."* `position: relative` here is what gives that overlay something to
+ * anchor to.
  */
-.chief-composer {
+.chief-composer,
+.ask-composer {
   position: relative;
   display: grid;
   gap: var(--space-2);
@@ -7719,25 +7664,26 @@ main:has(.agent-cockpit) {
  * MAR-659, from ADR 0022's proposal, restated for a box that no longer floats
  * over the whole stage: opaque and bordered on its own terms — `DESIGN.md`
  * forbids glassmorphism outright, and a translucent room would put a card
- * behind the chief's words — a step up the surface ramp and a 1px border are
- * this system's whole vocabulary for depth (MAR-528, "no shadows"), so
+ * behind the words underneath — a step up the surface ramp and a 1px border
+ * are this system's whole vocabulary for depth (MAR-528, "no shadows"), so
  * `--surface-2` against the page's own `--surface-0`/`--surface-1` is the
  * lift.
  *
  * `bottom: 100%` is the whole of "expands upward": the room's own bottom edge
  * sits at the composer's top edge, so it grows away from the field rather
  * than toward it, and past `max-height` it hands scrolling to
- * `.chief-room-scroll` (below) rather than pushing the field off the top of
- * the page.
+ * `.chief-room-scroll`/`.ask-room-scroll` (below) rather than pushing the
+ * field off the top of the page.
  *
  * `display: flex; flex-direction: column` (MAR-706, replacing `display:
- * grid`): the room used to scroll as one box, which took `.chief-room-head`
- * — the X and Clear controls — out of view with the transcript on any long
+ * grid`): the room used to scroll as one box, which took the head — the X
+ * and Clear controls — out of view with the transcript on any long
  * conversation. The column now has exactly two children, the head and the
  * scrolling body, so `overflow: hidden` here confines scrolling to the
  * second one.
  */
-.chief-room {
+.chief-room,
+.ask-room {
   position: absolute;
   left: 0;
   right: 0;
@@ -7757,19 +7703,21 @@ main:has(.agent-cockpit) {
 }
 
 /*
- * MAR-696. The header MAR-683 took off this room — a heading a sighted reader
- * had to read past on every open, and Close/Clear controls Escape already
- * made redundant — comes back, because this is a different room: MAR-683's
- * argument was that neither control did anything a keyboard could not
- * already do, and that is still true of Close. It is not true of Clear:
- * nothing before this let a person empty what is drawn here without leaving
- * the page, which is the whole reason the control exists now.
+ * MAR-696. The header MAR-683 took off the chief's room — a heading a
+ * sighted reader had to read past on every open, and Close/Clear controls
+ * Escape already made redundant — came back, because this is a different
+ * room: MAR-683's argument was that neither control did anything a keyboard
+ * could not already do, and that is still true of Close. It is not true of
+ * Clear: nothing before this let a person empty what is drawn here without
+ * leaving the page, which is the whole reason the control exists — on both
+ * surfaces now (MAR-711).
  *
- * `flex: none` (MAR-706): a `.chief-room` flex item that never shrinks or
- * grows, so it keeps its own content height and stays pinned at the top of
- * the room regardless of how tall `.chief-room-scroll` gets.
+ * `flex: none` (MAR-706): a room-head flex item that never shrinks or grows,
+ * so it keeps its own content height and stays pinned at the top of the room
+ * regardless of how tall the scroll body gets.
  */
-.chief-room-head {
+.chief-room-head,
+.ask-room-head {
   flex: none;
   display: flex;
   align-items: center;
@@ -7779,14 +7727,15 @@ main:has(.agent-cockpit) {
 
 /*
  * MAR-706. Everything that scrolls once a conversation outgrows the room:
- * the transcript, the busy line, the feedback line. Split out of
- * `.chief-room` itself so the header above never leaves the screen — `flex: 1
- * 1 auto` takes whatever height `.chief-room-head` does not, and `min-height:
- * 0` is required for a flex child to shrink below its content size at all
- * (the classic flexbox trap: without it this box refuses to shrink and
- * overflows `.chief-room`'s own `max-height` instead of scrolling).
+ * the transcript, the busy line, the feedback line. Split out of the room
+ * itself so the header above never leaves the screen — `flex: 1 1 auto`
+ * takes whatever height the head does not, and `min-height: 0` is required
+ * for a flex child to shrink below its content size at all (the classic
+ * flexbox trap: without it this box refuses to shrink and overflows the
+ * room's own `max-height` instead of scrolling).
  */
-.chief-room-scroll {
+.chief-room-scroll,
+.ask-room-scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -7796,12 +7745,13 @@ main:has(.agent-cockpit) {
 
 /*
  * `white-space: nowrap` because a flex row with no minimum on its items lets
- * "Ask the chief" break one word per line once `.chief-room-actions` presses
- * in from the other side — measured at 375px, where the pre-fix Clear label
- * (a full sentence, before it was shortened for the same reason `button`'s
- * own forced-caps rule argues for below) squeezed this into exactly that.
+ * a short heading break one word per line once the actions press in from the
+ * other side — measured at 375px, where the pre-fix Clear label (a full
+ * sentence, before it was shortened for the same reason `button`'s own
+ * forced-caps rule argues for below) squeezed the chief's into exactly that.
  */
-.chief-room-heading {
+.chief-room-heading,
+.ask-room-heading {
   margin: 0;
   white-space: nowrap;
   font-size: var(--text-sm);
@@ -7811,7 +7761,8 @@ main:has(.agent-cockpit) {
   color: var(--text-muted);
 }
 
-.chief-room-actions {
+.chief-room-actions,
+.ask-room-actions {
   flex: none;
   display: flex;
   align-items: center;
@@ -7821,7 +7772,8 @@ main:has(.agent-cockpit) {
 /* A link-styled control rather than `.button-secondary` — MAR-659's reading
    of "soft" applies here too: a bordered button beside a bordered room is one
    more border than this surface needs for a control this low-stakes. */
-.chief-room-clear {
+.chief-room-clear,
+.ask-room-clear {
   padding: 0;
   background: none;
   border: 0;
@@ -7832,7 +7784,8 @@ main:has(.agent-cockpit) {
   cursor: pointer;
 }
 
-.chief-room-clear:disabled {
+.chief-room-clear:disabled,
+.ask-room-clear:disabled {
   color: var(--text-muted);
   opacity: 0.5;
   text-decoration: none;
@@ -7840,11 +7793,14 @@ main:has(.agent-cockpit) {
 }
 
 .chief-room-clear:hover:not(:disabled),
-.chief-room-clear:focus-visible {
+.chief-room-clear:focus-visible,
+.ask-room-clear:hover:not(:disabled),
+.ask-room-clear:focus-visible {
   color: var(--text);
 }
 
-.chief-room-close {
+.chief-room-close,
+.ask-room-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -7860,12 +7816,16 @@ main:has(.agent-cockpit) {
 }
 
 .chief-room-close:hover,
-.chief-room-close:focus-visible {
+.chief-room-close:focus-visible,
+.ask-room-close:hover,
+.ask-room-close:focus-visible {
   color: var(--text);
 }
 
 .chief-room-clear:focus-visible,
-.chief-room-close:focus-visible {
+.chief-room-close:focus-visible,
+.ask-room-clear:focus-visible,
+.ask-room-close:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
@@ -8087,21 +8047,24 @@ main:has(.agent-cockpit) {
   color: var(--warn);
 }
 
-.chief-compose {
+.chief-compose,
+.ask-compose {
   display: block;
 }
 
-.chief-field {
+.chief-field,
+.ask-field {
   display: block;
   min-width: 0;
 }
 
 /*
  * MAR-659. Above the box, on screen whether the room is open or not — the
- * fact a person needs before they type a word: this composer is the fleet's,
- * not one agent's. `CHIEF_CHAT_COPY.label` used to be `visually-hidden`.
+ * fact a person needs before they type a word: whose composer this is. Used
+ * to be `visually-hidden` on both surfaces before MAR-659/MAR-711.
  */
-.chief-subject {
+.chief-subject,
+.ask-subject {
   display: block;
   margin-bottom: var(--space-1);
   font-size: var(--text-sm);
@@ -8109,32 +8072,35 @@ main:has(.agent-cockpit) {
 }
 
 /*
- * The positioning parent for the enter glyph and the perched O — both anchor
- * here rather than to `.chief-field`, which also carries the visible subject
- * caption above the field: a glyph centred on this box is centred on the
- * rounded field a person actually sees, not on a taller box that includes a
- * line of text above it.
+ * The positioning parent for the enter glyph and (on the chief's own field)
+ * the perched O — both anchor here rather than to `.chief-field`/`.ask-field`,
+ * which also carries the visible subject caption above the field: a glyph
+ * centred on this box is centred on the rounded field a person actually
+ * sees, not on a taller box that includes a line of text above it.
  */
-.chief-input-wrap {
+.chief-input-wrap,
+.ask-input-wrap {
   position: relative;
   display: block;
 }
 
 /*
- * MAR-696. `--radius-chief-composer` — see `app/tokens.css`'s own header on
- * why this is the one declared exception rather than a stray literal, and
- * `tests/tokens.test.ts` on how it stays the *only* one. Everything else
- * about this rule is `.chief-input`'s previous shape: `--surface-1` (one step
- * up from the page) and a 1px border are the whole of this system's
- * vocabulary for depth (MAR-528, "no shadows"), and `field-sizing: content`
- * is what lets `rows` grow the box "up a bit" on focus without JavaScript
- * measuring anything.
+ * MAR-696, shared by both fields since MAR-711. `--radius-chief-composer` —
+ * see `app/tokens.css`'s own header on why this is the one declared
+ * exception rather than a stray literal, and `tests/tokens.test.ts` on how
+ * it stays the *only* one; its name predates the agent's field reusing it
+ * and is left as it is rather than renamed for one more file to touch.
+ * Everything else about this rule is `.chief-input`'s original shape:
+ * `--surface-1` (one step up from the page) and a 1px border are the whole
+ * of this system's vocabulary for depth (MAR-528, "no shadows"), and
+ * `field-sizing: content` is what lets `rows` grow the box "up a bit" on
+ * focus without JavaScript measuring anything.
  *
- * Right padding clears `.chief-enter-glyph`; `resize: none` because a
- * person dragging this box's own corner would fight `rows`' own resize on
- * focus.
+ * Right padding clears the enter glyph; `resize: none` because a person
+ * dragging this box's own corner would fight `rows`' own resize on focus.
  */
-.chief-input {
+.chief-input,
+.ask-input {
   width: 100%;
   min-height: var(--space-8);
   padding: var(--space-3) var(--space-7) var(--space-3) var(--space-4);
@@ -8148,21 +8114,23 @@ main:has(.agent-cockpit) {
   field-sizing: content;
 }
 
-.chief-input:focus-visible {
+.chief-input:focus-visible,
+.ask-input:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-color: var(--accent);
 }
 
 /*
- * MAR-696. The affordance the Ask button used to occupy — Claude Code's own
- * composer, the reference on the issue, draws this glyph rather than a
- * button, and `ask()` already runs on Enter (`chief-chat.tsx`), so this
- * names the key rather than duplicating what pressing it does.
- * `pointer-events: none` because it sits over the input's own text area and
- * must never steal a click a person meant for the field.
+ * MAR-696, MAR-711. The affordance a submit button used to occupy on both
+ * surfaces — Claude Code's own composer, the reference on the issue, draws
+ * this glyph rather than a button, and Enter already sends (`Composer`'s own
+ * `onKeyDown`), so this names the key rather than duplicating what pressing
+ * it does. `pointer-events: none` because it sits over the input's own text
+ * area and must never steal a click a person meant for the field.
  */
-.chief-enter-glyph {
+.chief-enter-glyph,
+.ask-enter-glyph {
   position: absolute;
   right: var(--space-4);
   bottom: var(--space-3);
@@ -8205,8 +8173,16 @@ main:has(.agent-cockpit) {
  * control."* One line and one control, never a paragraph: this is not
  * `.chief-scope`, the standing explainer MAR-683 removed as chrome nobody
  * asked to see yet.
+ *
+ * `.ask-model-line` (MAR-711) is the agent's own version of the same row —
+ * what used to be `.ask-settings`, which only ever showed while the composer
+ * was idle and swapped places with `.ask-activity` the moment a question was
+ * in flight. It is now always drawn too, the same standing fact the chief's
+ * line already was: whose model a question will be asked under does not stop
+ * being true while one is running.
  */
-.chief-model-line {
+.chief-model-line,
+.ask-model-line {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;

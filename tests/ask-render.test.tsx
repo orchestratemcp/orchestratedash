@@ -13,6 +13,19 @@
  *
  * Plus the one that is a safety property rather than a design one: an answer is
  * rendered as text, and a link in an answer stays text.
+ *
+ * ## MAR-711: two components, tested separately, because that is how they ship
+ *
+ * `AskThread` (the full Chat-stage section) and `AskComposer` (the pinned bar's
+ * own room, adopted from the fleet composer's shape) used to be composed
+ * together here even though no real caller ever did that — a test convenience
+ * this file's own header once admitted was "the composition ... which is also
+ * what the cockpit does", which stopped being true once the composer stopped
+ * needing `AskThread` wrapped around it to show a purpose, a history or an
+ * estimate. `AskComposer` now carries all three itself. So this file tests
+ * each the way the cockpit actually mounts it: `AskThread` alone, on the Chat
+ * stage; `AskComposer` alone, pinned, with `chief-chat-render.test.tsx`'s own
+ * shape for driving its room open and closed.
  */
 
 import { describe, expect, it } from "vitest";
@@ -21,14 +34,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { AskComposer, AskThread } from "../app/_components/ask";
 import {
   ASK_ACTIVITY_LABEL,
+  ASK_CLEAR,
+  ASK_CLEAR_DETAIL,
+  ASK_CLOSE,
   ASK_CUSTODY,
   ASK_HEADING,
   ASK_MODEL_CHANGE,
   ASK_MODEL_LABEL,
   ASK_PLACEHOLDER,
   ASK_SOURCES_HEADING,
-  ASK_SUBMIT,
-  ASK_WORKING,
   describeAskActivity,
   describeAskModel,
   describeAskPurpose,
@@ -90,8 +104,8 @@ function askable(over: Partial<Extract<AgentAskView, { can_ask: true }>> = {}): 
     purpose: describeAskPurpose(AGENT),
     custody: ASK_CUSTODY,
     placeholder: ASK_PLACEHOLDER,
-    submit: ASK_SUBMIT,
-    working: ASK_WORKING,
+    submit: "Ask",
+    working: "Asking…",
     sources_heading: ASK_SOURCES_HEADING,
     provider_label: "OpenRouter",
     /* MAR-648. The settings row's indicator. `from_default: false` is the
@@ -135,56 +149,47 @@ function blocked(reason: Parameters<typeof describeUnavailable>[0], withConnect:
   };
 }
 
-/**
- * The thread with its composer inside it — one section, as every surface but
- * the cockpit draws it.
- *
- * MAR-641 split `AskAgent` into these two so the cockpit could put the thread
- * on a stage and pin the box to the bottom of the frame. The composition is
- * what this file has always been about, and rendering it here rather than
- * through a wrapper is what keeps the wrapper from existing solely to be
- * tested. Every assertion below is unchanged, including the ordering one: the
- * estimate is the last thing in the thread, so it is still above the box.
- */
-function draw(ask: AgentAskView, canAct = true): string {
+const NOOP = (): void => {
+  /* nothing to do */
+};
+
+function thread(ask: AgentAskView, canAct = true): string {
   return renderToStaticMarkup(
-    <AskThread
+    <AskThread ask={ask} canAct={canAct} onAsked={NOOP} setFeedback={NOOP} />,
+  );
+}
+
+function composer(
+  ask: AgentAskView,
+  over: { canAct?: boolean; open?: boolean; onChatStage?: boolean } = {},
+): string {
+  return renderToStaticMarkup(
+    <AskComposer
       ask={ask}
-      canAct={canAct}
-      onAsked={() => undefined}
-      setFeedback={() => undefined}
-    >
-      <AskComposer
-        ask={ask}
-        canAct={canAct}
-        onAsked={() => undefined}
-        setFeedback={() => undefined}
-      />
-    </AskThread>,
+      canAct={over.canAct ?? true}
+      onAsked={NOOP}
+      onChatStage={over.onChatStage ?? false}
+      open={over.open ?? false}
+      onOpen={NOOP}
+      onClose={NOOP}
+      setFeedback={NOOP}
+    />,
   );
 }
 
 /* ---------------------------------------------------------------------- *
- * Asking
+ * AskThread — the Chat stage's own section
  * ---------------------------------------------------------------------- */
 
-describe("the chat when there is something to ask", () => {
-  it("draws a box, a button, and the estimate above both", () => {
-    const html = draw(askable());
-    expect(html).toContain(ASK_PLACEHOLDER);
-    expect(html).toContain(ASK_SUBMIT);
-    // The estimate is the one line that could change what somebody types, so it
-    // has to be readable before the control it applies to — placed under the
-    // button it would be read after the decision.
-    expect(html.indexOf("Up to 12 saved things")).toBeLessThan(html.indexOf(ASK_PLACEHOLDER));
-  });
-
-  it("starts with the button unpressable, because an empty question is a charge for nothing", () => {
-    expect(draw(askable({ history: [] }))).toContain("disabled");
+describe("the thread when there is something to ask", () => {
+  it("draws the purpose and the history, in order", () => {
+    const html = thread(askable());
+    expect(html).toContain(ASK_HEADING);
+    expect(html.indexOf("Ask")).toBeLessThan(html.indexOf(ANSWERED.question));
   });
 
   it("says where the words go, and what each number is", () => {
-    const html = draw(askable());
+    const html = thread(askable());
     expect(html).toContain("Your questions and the answers stay on this computer");
     // The two figures side by side, each attributed. One is the provider's for
     // something DASH asked; the other is the agent's about its own past.
@@ -192,8 +197,17 @@ describe("the chat when there is something to ask", () => {
     expect(html).toContain("not something DASH watched");
   });
 
+  it("puts the estimate above nothing, since there is no box here any more (MAR-711)", () => {
+    // MAR-545's rule was "above the box" and this section no longer draws
+    // one — `AskComposer` does, pinned. What survives is the ordering that
+    // rule protected: the estimate is still the last thing before wherever a
+    // person would type, which for this section is simply its own end.
+    const html = thread(askable());
+    expect(html.indexOf("Up to 12 saved things")).toBeGreaterThan(html.indexOf(ANSWERED.question));
+  });
+
   it("renders an answer as text, and keeps a link inside it text", () => {
-    const html = draw(
+    const html = thread(
       askable({
         history: [
           {
@@ -213,7 +227,7 @@ describe("the chat when there is something to ask", () => {
   });
 
   it("links only what DASH recorded, and draws a citation with no link as plain text", () => {
-    const html = draw(askable());
+    const html = thread(askable());
     expect(html).toContain('href="https://example.test/chips"');
     expect(html).toContain("Tariffs on steel confirmed");
     expect(html).toContain(ASK_SOURCES_HEADING);
@@ -222,33 +236,19 @@ describe("the chat when there is something to ask", () => {
   });
 
   it("shows a question that failed, with what to do about it", () => {
-    const html = draw(askable({ history: [ANSWERED, FAILED] }));
+    const html = thread(askable({ history: [ANSWERED, FAILED] }));
     expect(html).toContain("And about shipping?");
     expect(html).toContain("turned the question down");
     expect(html).toContain("Check the model this agent is set to use");
     // In order, so the conversation reads downwards.
     expect(html.indexOf("What have you found")).toBeLessThan(html.indexOf("And about shipping"));
   });
-
-  it("tells a browser tab which window can act rather than drawing a dead box", () => {
-    const html = draw(askable(), false);
-    expect(html).toContain("Open the installed DASH app");
-    expect(html).not.toContain("<textarea");
-    // And the conversation is still fully readable there, which is the whole
-    // point of the answer living in the view rather than in one window's memory.
-    expect(html).toContain("Two of the saved reports mention tariffs");
-  });
 });
 
-/* ---------------------------------------------------------------------- *
- * Not asking
- * ---------------------------------------------------------------------- */
-
-describe("the chat when there is nothing to ask with", () => {
-  it("never draws an input, in any of the four reasons", () => {
+describe("the thread when there is nothing to ask with", () => {
+  it("never claims a box exists, in any of the four reasons", () => {
     for (const reason of ["no_provider", "no_key", "no_model_chosen", "nothing_saved"] as const) {
-      const html = draw(blocked(reason, reason === "no_key"));
-      expect(html).not.toContain("<textarea");
+      const html = thread(blocked(reason, reason === "no_key"));
       expect(html).toContain(ASK_HEADING);
       // A sentence and a next action, every time.
       const recovery = describeUnavailable(reason, { agent: AGENT, service: "OpenRouter" });
@@ -258,20 +258,188 @@ describe("the chat when there is nothing to ask with", () => {
   });
 
   it("makes the one fixable reason a button rather than an instruction", () => {
-    const html = draw(blocked("no_key", true));
+    const html = thread(blocked("no_key", true));
     expect(html).toContain("<button");
     expect(html).toContain("Connect OpenRouter");
   });
 
   it("gives the other reasons no button, because there is nothing here for one to do", () => {
-    expect(draw(blocked("no_provider", false))).not.toContain("<button");
-    expect(draw(blocked("nothing_saved", false))).not.toContain("<button");
+    expect(thread(blocked("no_provider", false))).not.toContain("<button");
+    expect(thread(blocked("nothing_saved", false))).not.toContain("<button");
   });
 
   it("keeps a conversation that happened before the key was withdrawn", () => {
-    const html = draw({ ...blocked("no_key", true), history: [ANSWERED] });
+    const html = thread({ ...blocked("no_key", true), history: [ANSWERED] });
     expect(html).toContain("Two of the saved reports mention tariffs");
     expect(html).toContain(ASK_SOURCES_HEADING);
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * AskComposer — the pinned bar and its room (MAR-711)
+ * ---------------------------------------------------------------------- */
+
+describe("the composer, collapsed", () => {
+  it("draws a box a person can type in", () => {
+    const html = composer(askable());
+    expect(html).toContain("<textarea");
+    expect(html).toContain(ASK_PLACEHOLDER);
+  });
+
+  /* MAR-711. The fleet composer's own rule, adopted: Enter already sends. */
+  it("draws no submit button — Enter is the only way to send", () => {
+    const html = composer(askable());
+    expect(html).not.toContain(">Ask<");
+    expect(html).not.toContain('class="primary"');
+  });
+
+  it("is never a dead input", () => {
+    const html = composer(askable());
+    expect(html).toContain('<textarea class="ask-input"');
+    expect(/<textarea[^>]*\sdisabled/.test(html)).toBe(false);
+  });
+
+  it("names this agent, visibly, above the box", () => {
+    const html = composer(askable(), {});
+    expect(html).toContain("Message this agent");
+    expect(html).not.toContain('<span class="visually-hidden">Message');
+
+    const named = renderToStaticMarkup(
+      <AskComposer
+        agentTitle="AI agent news"
+        ask={askable()}
+        canAct
+        onAsked={NOOP}
+        open={false}
+        onOpen={NOOP}
+        onClose={NOOP}
+        setFeedback={NOOP}
+      />,
+    );
+    expect(named).toContain("Message AI agent news");
+  });
+
+  it("draws an enter glyph, decorative and never a control", () => {
+    const html = composer(askable());
+    expect(html).toContain('<span class="ask-enter-glyph" aria-hidden="true">');
+    expect(html).toContain("↵");
+  });
+
+  it("draws no room, because it is not open", () => {
+    const html = composer(askable(), { open: false });
+    expect(html).not.toContain("ask-room");
+  });
+
+  it("is not marked is-open when closed", () => {
+    const html = composer(askable(), { open: false });
+    expect(html).toContain('class="ask-composer"');
+    expect(html).not.toContain("is-open");
+  });
+
+  it("renders nothing at all when there is nothing to ask with", () => {
+    expect(composer(blocked("no_key", true))).toBe("");
+  });
+
+  it("tells a browser tab which window can act rather than drawing a dead box", () => {
+    const html = composer(askable(), { canAct: false });
+    expect(html).toContain("Open the installed DASH app");
+    expect(html).not.toContain("<textarea");
+  });
+});
+
+describe("the model line, always drawn (MAR-648, adopted by MAR-711)", () => {
+  it("names the model this question will be asked under", () => {
+    const html = composer(askable());
+    expect(html).toContain(ASK_MODEL_LABEL);
+    expect(html).toContain("anthropic/claude-sonnet-5");
+  });
+
+  it("is drawn whether the room is open or closed", () => {
+    expect(composer(askable(), { open: false })).toContain(ASK_MODEL_LABEL);
+    expect(composer(askable(), { open: true })).toContain(ASK_MODEL_LABEL);
+  });
+
+  it("sets the model id as a value rather than writing it into a sentence", () => {
+    const html = composer(askable());
+    expect(/<code class="value"[^>]*>anthropic\/claude-sonnet-5<\/code>/.test(html)).toBe(true);
+  });
+
+  it("says whose decision the model was, in text rather than only on hover", () => {
+    const mine = composer(askable());
+    expect(mine).toContain(describeAskModel(false));
+
+    const theirs = composer(
+      askable({
+        model: {
+          model_id: "anthropic/claude-sonnet-5",
+          from_default: true,
+          note: describeAskModel(true),
+          change_label: ASK_MODEL_CHANGE,
+        },
+      }),
+    );
+    expect(theirs).toContain(describeAskModel(true));
+    expect(describeAskModel(true)).not.toBe(describeAskModel(false));
+  });
+
+  it("offers the way to change it", () => {
+    expect(composer(askable())).toContain(ASK_MODEL_CHANGE);
+  });
+});
+
+describe("the room opens above the composer", () => {
+  it("shows a heading, and the composer stays after it in source order", () => {
+    const html = composer(askable(), { open: true });
+    expect(html).toContain(`<p class="ask-room-heading">${ASK_HEADING}</p>`);
+    expect(html.indexOf('class="ask-room"')).toBeLessThan(html.indexOf('class="ask-compose"'));
+  });
+
+  it("draws an X to collapse and a Clear button", () => {
+    const html = composer(askable(), { open: true });
+    expect(html).toContain('class="ask-room-close"');
+    expect(html).toContain(ASK_CLOSE);
+    expect(html).toContain('class="ask-room-clear"');
+    expect(html).toContain(`>${ASK_CLEAR}<`);
+    // Not the full `ASK_CLEAR_DETAIL` string: it carries an apostrophe, which
+    // `renderToStaticMarkup` escapes to `&#x27;` in the attribute it sits in.
+    expect(html).toContain("Clears what");
+    expect(html).toContain("DASH still keeps this conversation");
+  });
+
+  it("disables Clear when there is nothing to clear", () => {
+    const html = composer(askable({ history: [] }), { open: true });
+    expect(/class="ask-room-clear"[^>]*\sdisabled/.test(html)).toBe(true);
+  });
+
+  it("leaves Clear enabled once a question has been answered", () => {
+    const html = composer(askable(), { open: true });
+    expect(/class="ask-room-clear"[^>]*\sdisabled/.test(html)).toBe(false);
+  });
+
+  it("draws the purpose, the history and the estimate — the same facts the Chat stage shows in full", () => {
+    const html = composer(askable(), { open: true });
+    expect(html).toContain(describeAskPurpose(AGENT).headline);
+    expect(html).toContain(ANSWERED.question);
+    expect(html).toContain("Up to 12 saved things");
+  });
+
+  it("stays closed on the Chat stage, where AskThread already shows this in full", () => {
+    // The anti-duplication guard: `onChatStage` is the reason this composer
+    // and `AskThread` never draw the purpose/history/estimate on one screen
+    // at once — `AgentChatBar`'s own header states why.
+    const html = composer(askable(), { open: true, onChatStage: true });
+    expect(html).not.toContain("ask-room\"");
+    expect(html).toContain("<textarea");
+  });
+
+  it("keeps working with a fresh conversation and nothing asked yet", () => {
+    const html = composer(askable({ history: [] }), { open: true });
+    expect(html).toContain('<textarea class="ask-input"');
+    expect(/<textarea[^>]*\sdisabled/.test(html)).toBe(false);
+  });
+
+  it("marks the composer itself while its room is open", () => {
+    expect(composer(askable(), { open: true })).toContain("ask-composer is-open");
   });
 });
 
@@ -290,13 +458,14 @@ describe("somebody who has never heard the word", () => {
       blocked("nothing_saved", false),
     ];
     for (const state of states) {
-      const html = draw(state);
       // MAR-545's own acceptance. `artifact`, `run_id` and `digest` are DASH's
       // words for its own filing, and the person who came to read the news does
       // not have them.
-      expect(html.toLowerCase()).not.toContain("artifact");
-      expect(html.toLowerCase()).not.toContain("run_id");
-      expect(html.toLowerCase()).not.toContain("digest");
+      for (const html of [thread(state), composer(state, { open: true })]) {
+        expect(html.toLowerCase()).not.toContain("artifact");
+        expect(html.toLowerCase()).not.toContain("run_id");
+        expect(html.toLowerCase()).not.toContain("digest");
+      }
     }
   });
 
@@ -316,60 +485,10 @@ describe("somebody who has never heard the word", () => {
       view.sources_heading,
       view.estimate.headline,
       view.estimate.detail,
+      ASK_CLOSE,
+      ASK_CLEAR,
+      ASK_CLEAR_DETAIL,
     ]);
-  });
-});
-
-/* ---------------------------------------------------------------------- *
- * The composer's settings row, and the wait (MAR-648)
- * ---------------------------------------------------------------------- */
-
-describe("the settings row", () => {
-  it("names the model this question will be asked under", () => {
-    const html = draw(askable());
-    expect(html).toContain(ASK_MODEL_LABEL);
-    expect(html).toContain("anthropic/claude-sonnet-5");
-  });
-
-  /*
-   * `AskModelView` states why: DASH holds no table mapping a model id to a
-   * friendlier name, and inventing one is ADR 0012's refused price table in
-   * another costume. So the id is set as a value, in monospace, the way every
-   * other identifier in DASH is.
-   */
-  it("sets the model id as a value rather than writing it into a sentence", () => {
-    const html = draw(askable());
-    expect(/<code class="value"[^>]*>anthropic\/claude-sonnet-5<\/code>/.test(html)).toBe(true);
-  });
-
-  it("says whose decision the model was, in text rather than only on hover", () => {
-    const mine = draw(askable());
-    expect(mine).toContain(describeAskModel(false));
-
-    const theirs = draw(
-      askable({
-        model: {
-          model_id: "anthropic/claude-sonnet-5",
-          from_default: true,
-          note: describeAskModel(true),
-          change_label: ASK_MODEL_CHANGE,
-        },
-      }),
-    );
-    expect(theirs).toContain(describeAskModel(true));
-    // The two are different claims about the same id — see `describeAskModel`.
-    expect(describeAskModel(true)).not.toBe(describeAskModel(false));
-  });
-
-  it("offers the way to change it", () => {
-    expect(draw(askable())).toContain(ASK_MODEL_CHANGE);
-  });
-
-  /* A settings row on a blocked composer would be a setting for a conversation
-     that cannot happen. `AskComposer` renders nothing at all in that state. */
-  it("is absent when there is nothing to ask with", () => {
-    const html = draw(blocked("no_key", true));
-    expect(html).not.toContain(ASK_MODEL_LABEL);
   });
 });
 

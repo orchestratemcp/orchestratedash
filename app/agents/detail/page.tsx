@@ -337,28 +337,6 @@ function AgentWorkspace(): ReactNode {
   const [fragment, setFragment] = useState(() =>
     typeof window === "undefined" ? "" : window.location.hash.slice(1),
   );
-  /*
-   * MAR-648. The stage the chat composer was focused from, for Escape.
-   *
-   * A ref and not state, deliberately: nothing renders differently because of
-   * it, and making it state would repaint the whole cockpit the moment somebody
-   * put a cursor in the box. Null until the composer is focused from another
-   * stage, which is also the honest answer for somebody who arrived on the chat
-   * stage directly — there is nothing underneath to put back.
-   *
-   * **Declared up here with the other hooks, and that placement is the bug this
-   * line was written wrong once.** It first sat beside `stage`, three hundred
-   * lines down, which reads better and is after three early returns — the
-   * loading, failed and not-found branches. So the first render of this page
-   * (loading) ran one fewer hook than the second, and React threw *Rendered
-   * more hooks than during the previous render* the instant a view arrived.
-   *
-   * Nothing caught it. Every render test here is `renderToStaticMarkup`, which
-   * renders once and can never see a hook count change between two renders; the
-   * whole suite, the typecheck and the brand gate were all green. Two capture
-   * harnesses photographing Next's error boundary are what found it.
-   */
-  const returnStage = useRef<AgentStage | null>(null);
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
@@ -1341,10 +1319,13 @@ function AgentWorkspace(): ReactNode {
         />
       </div>
 
-      {/* MAR-545's composer, pinned. Focusing it moves the stage to the thread,
-          which is what keeps MAR-545's rule true in a frame: the estimate — the
-          sentence that could change what somebody types — ends up on screen
-          directly above the box before a word is typed. */}
+      {/* MAR-545's composer, pinned, MAR-711's own room. Focusing it opens
+          the room in place rather than moving the stage — the estimate, the
+          sentence that could change what somebody types, is the last thing
+          the room draws before the field either way. `onChatStage` keeps the
+          room from drawing the same content `AskThread` already shows in
+          full on that one stage; Escape closes the room by itself, so there
+          is no stage to put back and nothing for this page to track. */}
       <AgentChatBar
         agent={view.agent}
         /* MAR-648. The same stored character the header's portrait draws, so
@@ -1358,30 +1339,6 @@ function AgentWorkspace(): ReactNode {
         canAct={canAct}
         onChatStage={stage === "chat"}
         onAsked={() => setRefreshKey((value) => value + 1)}
-        /*
-         * MAR-648. Escape puts back the stage the composer was focused from.
-         *
-         * Not `router.back()`, which would be one line and is wrong for the
-         * case that matters: an address that named the chat stage directly —
-         * MAR-586's chips and `lib/open-link.ts` both produce those — has no
-         * earlier stage of this agent behind it, so Back would leave the agent
-         * altogether. Escape on a surface that expanded means "put back what
-         * was underneath", and where nothing was underneath it correctly does
-         * nothing.
-         */
-        onEscape={() => {
-          const back = returnStage.current;
-          if (back !== null && back !== "chat") {
-            returnStage.current = null;
-            goToStage(back);
-          }
-        }}
-        onFocus={() => {
-          if (stage !== "chat") {
-            returnStage.current = stage;
-            goToStage("chat");
-          }
-        }}
         setFeedback={setFeedback}
       />
     </div>
