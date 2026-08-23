@@ -62,12 +62,24 @@ the packaged path.
   decision is filed where it is made; a brief is a document bound to its
   evidence (MAR-674, promoted to proven 2026-08-18, `8bf4671`).
 
-## Lifecycle counts (from state.json, 2026-08-22)
+## Lifecycle counts (from state.json, 2026-08-23)
 
-127 packet entries merged, 39 proven, 19 planned, after the 2026-08-22
-group-A proving sweep (chat front door: MAR-696, 704, 706, 648, 683
-promoted merged -> proven; MAR-679 checked and left merged, a finding —
-its interim de-clutter shipped, the full indicator+popup ask did not).
+128 packet entries merged, 49 proven, 20 planned, after the 2026-08-23
+group-B proving sweep (agent page: MAR-630, 634, 620, 664, 668, 691, 698,
+635 promoted merged -> proven; MAR-697 promoted for its save-into-folder
+half only — its click-to-open half has a known bug, MAR-740, fixed by a
+parallel session, and is left for that session to promote). Evidence:
+`qa-screenshots-mar630-634-fleet3/`, `-fleet6/`, `qa-screenshots-mar635/`
+(`electron/capture-fleet-views.ts`, `capture-deploy.ts`, both pre-existing
+harnesses re-run against the packaged build) and
+`qa-screenshots-mar664-668-620-691-697-698-635/` (`capture-cockpit.ts`,
+extended with five new scenes: the empty-state disclosure, the deep dive
+on both renderers, a real collected-link click, a real Save-as-PDF into
+`exports/<agent>/`, and the busy-state live feed/telemetry panel).
+Group B is the agent page (MAR-630/634/620/664/668/691/697/698/635) of
+the four-group proving-debt sweep AGENTS.md calls for; groups C
+(fleet+settings) and D (runtime+keys) remain — group A (chat front door)
+was proven 2026-08-22.
 **Proven-debt is still far over budget** — the proving wave continues,
 not new features. Merged-but-unproven work is inventory, not progress.
 
