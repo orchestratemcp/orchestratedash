@@ -22,6 +22,7 @@ import {
   resolveAgentExport,
   unusedExportName,
 } from "../lib/agent-exports";
+import { briefFileName } from "../electron/brief-pdf";
 
 const roots: string[] = [];
 
@@ -220,5 +221,26 @@ describe("what a file name from the renderer may resolve to", () => {
     rmSync(full);
 
     expect(resolveAgentExport(root, "ai-news-scout", "A briefing.pdf")).toBeNull();
+  });
+
+  /**
+   * MAR-740, end to end. A title carrying an em dash is what a model actually
+   * writes, and this is the whole path a saved-files click drives: the same
+   * name `briefFileName`/`unusedExportName` chose is the name a later click
+   * must resolve, and the containment check must still hold on it.
+   */
+  it("resolves a name built from a title with an em dash, containment intact", () => {
+    const root = dataDir();
+    const { folder, existing } = prepareAgentExports(root, "competitor-scout");
+    const name = unusedExportName(
+      existing,
+      briefFileName("Competitor brief — OpenClaw and Hermes Agent"),
+    );
+    expect(name).toBe("Competitor brief - OpenClaw and Hermes Agent.pdf");
+    writeFileSync(path.join(folder, name), "%PDF-1.7\n");
+
+    expect(resolveAgentExport(root, "competitor-scout", name)).toBe(path.join(folder, name));
+    // The fold does not loosen the containment check next to it.
+    expect(resolveAgentExport(root, "competitor-scout", "../elsewhere/" + name)).toBeNull();
   });
 });

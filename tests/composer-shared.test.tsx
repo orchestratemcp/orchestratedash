@@ -48,6 +48,14 @@ const chiefSource = readFileSync(
 );
 const askSource = readFileSync(path.join(repoRoot, "app", "_components", "ask.tsx"), "utf8");
 const globals = readFileSync(path.join(repoRoot, "app", "globals.css"), "utf8");
+const fleetListSource = readFileSync(
+  path.join(repoRoot, "app", "_components", "fleet-list.tsx"),
+  "utf8",
+);
+const agentPageSource = readFileSync(
+  path.join(repoRoot, "app", "agents", "detail", "page.tsx"),
+  "utf8",
+);
 
 describe("both surfaces route through the same component", () => {
   it("imports Composer rather than drawing its own room", () => {
@@ -127,6 +135,64 @@ describe("the stylesheet states composer chrome once, for both surfaces", () => 
       }
     });
   }
+});
+
+/* ---------------------------------------------------------------------- *
+ * MAR-741: the room's width is the content column's, on both surfaces
+ * ---------------------------------------------------------------------- */
+
+describe("the room is bounded to the content column, not the whole window", () => {
+  /*
+   * `.chief-room`/`.ask-room` is `left: 0; right: 0` from `.chief-composer`/
+   * `.ask-composer` (asserted above, in the combined-selector loop) — so the
+   * room is exactly as wide as its composer, and the composer sizes to
+   * *its own* content rather than the page. What decides the room's actual
+   * on-screen width is therefore which ancestor the composer sits inside,
+   * which a stylesheet or a render test cannot see: both are strings this
+   * test reads directly.
+   */
+  it("mounts the chief composer inside .fleet-stage, next to the cards rather than the rail", () => {
+    const stageOpen = fleetListSource.indexOf('"fleet-stage"');
+    const chiefMount = fleetListSource.indexOf("<ChiefChat");
+    expect(stageOpen).toBeGreaterThan(-1);
+    expect(chiefMount).toBeGreaterThan(stageOpen);
+  });
+
+  /*
+   * MAR-740's fix moved `AgentChatBar` off `.agent-cockpit` (where it spanned
+   * both the stage and rail columns) and into `.cockpit-content`, the same
+   * grid item as `AgentStageView`, beside `AgentRail` rather than under it.
+   * A future edit that pulled the chat bar back out to span the page again —
+   * even one that kept every class name — would still pass every check
+   * above; this is the one that would catch it.
+   */
+  it("mounts the agent's chat bar inside .cockpit-content, beside the rail rather than under it", () => {
+    const contentOpen = agentPageSource.indexOf('"cockpit-content"');
+    const chatMount = agentPageSource.indexOf("<AgentChatBar");
+    const railMount = agentPageSource.indexOf("<AgentRail");
+    expect(contentOpen).toBeGreaterThan(-1);
+    expect(chatMount).toBeGreaterThan(contentOpen);
+    // The rail is a sibling of `.cockpit-content`, not something inside it —
+    // so it is named after the chat bar in source order either way, and what
+    // this line actually pins is that the rail was not accidentally nested
+    // inside the same wrapper as the stage and the chat bar.
+    expect(railMount).toBeGreaterThan(chatMount);
+  });
+
+  it("gives the stage and the chat bar one grid column of their own", () => {
+    const rule = /\.cockpit-content\s*\{([^}]*)\}/.exec(globals);
+    expect(rule, ".cockpit-content has no rule in app/globals.css").not.toBeNull();
+    expect(rule?.[1]).toMatch(/grid-template-rows:\s*minmax\(0,\s*1fr\)\s*auto/);
+  });
+
+  it("no longer gives the chat bar its own full-width row of .agent-cockpit", () => {
+    const rule = /\.agent-cockpit\s*\{([^}]*)\}/.exec(globals);
+    expect(rule).not.toBeNull();
+    // Two rows — the identity band and the body — not three. A third `auto`
+    // row is exactly the shape that let the chat bar span both of
+    // `.cockpit-body`'s columns.
+    expect(rule?.[1]).toMatch(/grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)\s*;/);
+  });
 });
 
 /* ---------------------------------------------------------------------- *

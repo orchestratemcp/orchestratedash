@@ -1310,7 +1310,38 @@ function AgentWorkspace(): ReactNode {
       </div>
 
       <div className="cockpit-body">
-        <AgentStageView stage={stage} views={stages} />
+        {/*
+          MAR-741. The stage and the chat bar share this column so the rail
+          beside them keeps its own column all the way down, the way the
+          fleet's chief composer sits inside `.fleet-stage` rather than below
+          the whole page. `.cockpit-content` is layout only — see its rule in
+          `app/globals.css` — and carries no state of its own.
+        */}
+        <div className="cockpit-content">
+          <AgentStageView stage={stage} views={stages} />
+          {/* MAR-545's composer, pinned, MAR-711's own room. Focusing it opens
+              the room in place rather than moving the stage — the estimate, the
+              sentence that could change what somebody types, is the last thing
+              the room draws before the field either way. `onChatStage` keeps the
+              room from drawing the same content `AskThread` already shows in
+              full on that one stage; Escape closes the room by itself, so there
+              is no stage to put back and nothing for this page to track. */}
+          <AgentChatBar
+            agent={view.agent}
+            /* MAR-648. The same stored character the header's portrait draws, so
+               the O that animates while a question runs is recognisably this
+               agent rather than a second opinion about which costume it wears. */
+            agentAvatar={view.avatar}
+            /* MAR-659. The header's own name for this agent, so the composer's
+               visible label and the page it is pinned to agree on what to call it. */
+            agentTitle={view.title}
+            ask={view.ask}
+            canAct={canAct}
+            onChatStage={stage === "chat"}
+            onAsked={() => setRefreshKey((value) => value + 1)}
+            setFeedback={setFeedback}
+          />
+        </div>
         <AgentRail
           agent={view.agent}
           inbox={inbox}
@@ -1318,29 +1349,6 @@ function AgentWorkspace(): ReactNode {
           outputs={view.outputs}
         />
       </div>
-
-      {/* MAR-545's composer, pinned, MAR-711's own room. Focusing it opens
-          the room in place rather than moving the stage — the estimate, the
-          sentence that could change what somebody types, is the last thing
-          the room draws before the field either way. `onChatStage` keeps the
-          room from drawing the same content `AskThread` already shows in
-          full on that one stage; Escape closes the room by itself, so there
-          is no stage to put back and nothing for this page to track. */}
-      <AgentChatBar
-        agent={view.agent}
-        /* MAR-648. The same stored character the header's portrait draws, so
-           the O that animates while a question runs is recognisably this
-           agent rather than a second opinion about which costume it wears. */
-        agentAvatar={view.avatar}
-        /* MAR-659. The header's own name for this agent, so the composer's
-           visible label and the page it is pinned to agree on what to call it. */
-        agentTitle={view.title}
-        ask={view.ask}
-        canAct={canAct}
-        onChatStage={stage === "chat"}
-        onAsked={() => setRefreshKey((value) => value + 1)}
-        setFeedback={setFeedback}
-      />
     </div>
   );
 }

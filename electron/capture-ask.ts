@@ -756,8 +756,23 @@ async function run(): Promise<void> {
    * MAR-711. Composer parity: the agent's pinned composer and the fleet's
    * chief composer, both open, at 1280px, in both themes — the header's own
    * note on why this lives here rather than in a new harness.
+   *
+   * MAR-741's fix session found this scene false-negative on a machine with
+   * no interactive desktop session driving it: `input.focus()` below always
+   * lands `document.activeElement` (so `focused` reads true), but a
+   * `BrowserWindow` that never became the OS-focused window does not
+   * dispatch the native `focus` event React's `onFocus` listens for — so the
+   * room's own `open` state never flips and every parity frame reports
+   * `{"focused":true,"open":false}` though the field genuinely has focus.
+   * `window.show()`/`window.focus()` here make this window the one the OS
+   * hands focus to, which is the same fix `shoot()`'s own retry path already
+   * reaches for after a `capturePage()` failure, for the same underlying
+   * reason.
    */
   const parity: Array<{ theme: string; surface: string; focused: boolean; open: boolean }> = [];
+  window.show();
+  window.focus();
+  await settle(300);
   for (const theme of THEMES) {
     nativeTheme.themeSource = theme;
     await settle(300);
