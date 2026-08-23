@@ -109,11 +109,25 @@ describe("the view a page renders", () => {
     const view = notificationsView();
 
     expect(Object.keys(view).sort()).toEqual([
+      // MAR-743, ADR 0028. The chief's bridge, nested on this view rather than
+      // given one of its own — see `NotificationsView.chief` for why Discord is
+      // one page. Its keys are enumerated separately below, because a nested
+      // object is exactly where a field nobody listed could appear.
+      "chief",
       "configured",
       "configured_at",
       "masked_hint",
       "send_approvals",
       "send_reports",
+      "state_sentence",
+    ]);
+    expect(Object.keys(view.chief).sort()).toEqual([
+      "allowed_user_id",
+      "channel_id",
+      "configured",
+      "configured_at",
+      "enabled",
+      "masked_hint",
       "state_sentence",
     ]);
     expect(JSON.stringify(view)).not.toContain("discord.com");

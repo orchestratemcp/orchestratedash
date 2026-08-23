@@ -57,6 +57,12 @@ import {
   LAB_TELEMETRY_OFF,
   type LabTelemetrySettings,
 } from "./lab/settings";
+import {
+  NO_CHIEF_DISCORD,
+  isConfigured,
+  isSnowflake,
+  type ChiefDiscordSettings,
+} from "./chief/discord";
 import { checkManifestConstraints } from "./manifest-constraints";
 import { NO_NOTIFICATIONS, type NotificationSettings } from "./notify/settings";
 import { isMaskedHint } from "./secret-refs";
@@ -2030,6 +2036,117 @@ export function setNotificationKind(
  */
 export function forgetNotificationWebhook(): void {
   db().prepare("DELETE FROM notify_discord WHERE id = 1").run();
+}
+
+/* ---------------------------------------------------------------------- *
+ * The chief's second room (MAR-743, ADR 0028)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Where the chief may be spoken to, and by whom.
+ *
+ * `readNotificationSettings`' shape and its honesty: this reports what the store
+ * holds, and nothing here opens the vault. A row can exist while the token
+ * behind it has become unreadable — a profile move, a wiped vault — and this
+ * would still say `configured`, because `configured` is a claim about DASH's own
+ * record rather than about the credential. The runner is what finds out; a read
+ * that popped an OS unlock prompt because somebody opened a settings page would
+ * be the `BrokerRowView` mistake in a new place.
+ *
+ * `enabled` is separate from `configured` on purpose. Somebody who set this up
+ * and then wants the chief to stop listening for a week should not have to
+ * delete their token and re-do Discord's whole ceremony to get it back.
+ */
+export function readChiefDiscordSettings(): ChiefDiscordSettings {
+  const row = db()
+    .prepare(
+      "SELECT enabled, channel_id, allowed_user_id, masked_hint, configured_at " +
+        "FROM chief_discord WHERE id = 1",
+    )
+    .get() as Record<string, unknown> | undefined;
+
+  if (row === undefined) {
+    return NO_CHIEF_DISCORD;
+  }
+
+  // Re-checked on the way out, `readNotificationSettings`' discipline: these
+  // columns are on the user's disk and anything could have been written into
+  // them, so a value that would not have been accepted going in is not handed to
+  // a page as if DASH had produced it.
+  const hint = text(row, "masked_hint");
+  const channel = text(row, "channel_id");
+  const allowed = text(row, "allowed_user_id");
+  const configuredAt = text(row, "configured_at");
+  const settings = {
+    channel_id: isSnowflake(channel) ? channel : "",
+    allowed_user_id: isSnowflake(allowed) ? allowed : "",
+    masked_hint: isMaskedHint(hint) ? hint : null,
+  };
+  return {
+    ...settings,
+    configured: isConfigured(settings),
+    enabled: row["enabled"] !== 0,
+    // The column defaults to the empty string rather than to NULL, and the type
+    // says null — so the conversion happens here rather than leaving every
+    // reader to decide whether "" is a date.
+    configured_at: configuredAt.length === 0 ? null : configuredAt,
+  };
+}
+
+/**
+ * Record that a bot token is now in the vault, with the room and the one person.
+ *
+ * All three together, in one call, because a bridge is not usable with two of
+ * them — and a store that could hold a token with no allowed user id would be a
+ * store that could hold a bridge with no boundary. `recordNotificationWebhook`'s
+ * refusal is inherited for the same reason: a caller that reached here with a
+ * real credential in hand has made the one mistake this whole feature is shaped
+ * around, and it should fail loudly at the call rather than land in a column
+ * `tests/redaction.test.ts` then finds by scanning the database bytes.
+ *
+ * `enabled` is set to 1 here. Somebody who has just completed Discord's ceremony
+ * and pasted three values has asked for this to work, and leaving it off behind
+ * a second switch would be DASH inventing a step.
+ */
+export function recordChiefDiscordBridge(
+  maskedHint: string,
+  channelId: string,
+  allowedUserId: string,
+  at: string = new Date().toISOString(),
+): void {
+  if (!isMaskedHint(maskedHint)) {
+    throw new Error("recordChiefDiscordBridge was given something that is not a masked hint.");
+  }
+  if (!isSnowflake(channelId) || !isSnowflake(allowedUserId)) {
+    throw new Error("recordChiefDiscordBridge was given something that is not a Discord id.");
+  }
+  db()
+    .prepare(
+      "INSERT INTO chief_discord (id, enabled, channel_id, allowed_user_id, masked_hint, configured_at) " +
+        "VALUES (1, 1, ?, ?, ?, ?) " +
+        "ON CONFLICT (id) DO UPDATE SET enabled = 1, channel_id = excluded.channel_id, " +
+        "allowed_user_id = excluded.allowed_user_id, masked_hint = excluded.masked_hint, " +
+        "configured_at = excluded.configured_at",
+    )
+    .run(channelId, allowedUserId, maskedHint, at);
+}
+
+/** Stop listening without forgetting the setup, or start again. */
+export function setChiefDiscordEnabled(enabled: boolean): void {
+  db().prepare("UPDATE chief_discord SET enabled = ? WHERE id = 1").run(enabled ? 1 : 0);
+}
+
+/**
+ * Forget the bridge.
+ *
+ * The row goes, including the switch — `forgetNotificationWebhook`'s reasoning
+ * exactly: a person who disconnected asked DASH to stop knowing about their
+ * channel, and a surviving row would be DASH remembering something about a
+ * connection it was told to forget. Removing the vault entry is the caller's job
+ * and happens first.
+ */
+export function forgetChiefDiscordBridge(): void {
+  db().prepare("DELETE FROM chief_discord WHERE id = 1").run();
 }
 
 /* ---------------------------------------------------------------------- *

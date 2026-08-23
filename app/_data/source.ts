@@ -420,6 +420,21 @@ interface DashShellClient {
   testNotifications?(): Promise<CommandResult>;
   setNotificationKind?(args: { kind: string; enabled: boolean }): Promise<CommandResult>;
   /**
+   * The three chief-Discord commands (MAR-743, ADR 0028).
+   *
+   * Optional for the reason every method added since the host family is. Note
+   * what none of them takes: a bot token. Page script can name a channel and an
+   * allowed Discord identity and can ask main to raise the credential window;
+   * it cannot supply, read back or use the token — see the `chiefDiscord.*`
+   * entries in `lib/shell/ipc.ts`.
+   */
+  connectChiefDiscord?(args: {
+    channel_id: string;
+    allowed_user_id: string;
+  }): Promise<CommandResult>;
+  disconnectChiefDiscord?(): Promise<CommandResult>;
+  setChiefDiscordEnabled?(args: { enabled: boolean }): Promise<CommandResult>;
+  /**
    * The four LAB-telemetry commands (MAR-479, ADR 0026).
    *
    * Optional for the reason every method added since the host family is. Note
@@ -966,6 +981,53 @@ export async function disconnectNotifications(): Promise<CommandResult> {
 
 export async function testNotifications(): Promise<CommandResult> {
   return notifyCommand("testNotifications", "send a test message");
+}
+
+/**
+ * The chief's Discord bridge, from the page (MAR-743, ADR 0028).
+ *
+ * `setNotificationKind`'s shape, three times: resolve the bridge method, refuse
+ * with the read-only sentence when there is none, and otherwise hand the
+ * arguments straight over. Nothing is composed here — the two ids are what a
+ * person typed, and every check on them is main's.
+ */
+export async function connectChiefDiscord(args: {
+  channel_id: string;
+  allowed_user_id: string;
+}): Promise<CommandResult> {
+  const call = typeof window === "undefined" ? undefined : window.dashShell?.connectChiefDiscord;
+  if (call === undefined) {
+    return readOnly("set up the chief's Discord channel");
+  }
+  return call(args);
+}
+
+export async function disconnectChiefDiscord(): Promise<CommandResult> {
+  const call = typeof window === "undefined" ? undefined : window.dashShell?.disconnectChiefDiscord;
+  if (call === undefined) {
+    return readOnly("stop the chief listening in Discord");
+  }
+  return call();
+}
+
+export async function setChiefDiscordEnabled(args: {
+  enabled: boolean;
+}): Promise<CommandResult> {
+  const call = typeof window === "undefined" ? undefined : window.dashShell?.setChiefDiscordEnabled;
+  if (call === undefined) {
+    return readOnly("change whether the chief listens in Discord");
+  }
+  return call(args);
+}
+
+/** The one sentence a page outside the installed app gets back. */
+function readOnly(cannot: string): CommandResult {
+  return {
+    ok: false,
+    request_id: "",
+    reason: "read_only_host",
+    detail: `Open the installed DASH app to ${cannot}.`,
+  };
 }
 
 export async function setNotificationKind(args: {

@@ -226,6 +226,57 @@ export function recordBrokerCall(row: BrokerAuditRow): number | null {
 }
 
 /**
+ * Record one decision the **runner** took while DASH was closed (MAR-743, ADR
+ * 0028 decisions 6 and 7).
+ *
+ * A second function rather than a `decided_on` field on `BrokerAuditRow`, and
+ * the difference is the whole point. A field would be a value the caller
+ * supplies, so any caller could write a row claiming to have been decided
+ * somewhere it was not — provenance you can pass in is provenance that proves
+ * nothing. Here the column is a **constant of the function**: rows written by
+ * `recordBrokerCall` are `'dash'` by the schema's own default, and rows written
+ * by this one are `'runner'` because this is the one function DASH calls with
+ * what it pulled off the runner's spool.
+ *
+ * `account_hint` is null and the column stays, `HostBrokerAuditRow`'s reasoning:
+ * a fleet key identifies nobody, and a row shaped differently from the local one
+ * would be a row that needs its own renderer.
+ *
+ * No id is returned. `delivered` is about an answer reaching an agent, and there
+ * is no agent here — the answer went to Discord, and whether it arrived is a
+ * fact the runner had and did not spool.
+ */
+export function recordRunnerChiefCall(row: Omit<BrokerAuditRow, "account_hint">): void {
+  try {
+    db()
+      .prepare(
+        "INSERT INTO broker_audit " +
+          "(agent, connection_id, operation, request_id, decision, refusal, input_keys, " +
+          " result_count, account_hint, duration_ms, decided_at, decided_on) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 'runner')",
+      )
+      .run(
+        row.agent,
+        row.connection_id,
+        row.operation,
+        row.request_id,
+        row.decision,
+        row.refusal,
+        JSON.stringify(row.input_keys),
+        row.result_count,
+        row.duration_ms,
+        row.decided_at,
+      );
+  } catch (error: unknown) {
+    console.warn(
+      `[dash] could not record a chief decision the runner took: ${
+        error instanceof Error ? error.message : "unknown"
+      }`,
+    );
+  }
+}
+
+/**
  * Has this agent already had a request with this id adjudicated (MAR-469)?
  *
  * The durable half of replay protection, and it exists because a write appeared.

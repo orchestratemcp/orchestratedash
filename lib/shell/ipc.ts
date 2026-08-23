@@ -1228,6 +1228,55 @@ export const COMMANDS = {
   },
 
   /*
+   * MAR-743, ADR 0028. The chief's second room, as three commands.
+   *
+   * **The payload rule again, and this family tests it hardest.** The bot token
+   * is absent from every payload below and there is no fourth command that would
+   * carry one: it is typed into the window `electron/credential-prompt.ts` owns,
+   * the same window an API key and a webhook address go into. What *does* cross
+   * is two Discord snowflakes, and they are not credentials — a channel id names
+   * a room nobody can reach without the token, and a user id is what Discord
+   * shows anybody who right-clicks a name.
+   *
+   * The widest thing a compromised renderer can do with this family is therefore:
+   * open the credential window, point an already-held token at a different
+   * channel, name a different allowed speaker, or switch the whole thing off.
+   * The third is the one worth naming, because a renderer that could silently
+   * re-aim the allowlist would be a renderer that could hand the chief to
+   * somebody else. It cannot do it silently — the command goes through the
+   * credential window, which is a thing the person sees and can cancel.
+   */
+  "chiefDiscord.connect": {
+    effect:
+      "Ask for a Discord bot token, store it in this computer's vault, and let the chief answer you in one channel — you and nobody else.",
+    payload_keys: ["channel_id", "allowed_user_id"],
+    payload_types: { channel_id: "string", allowed_user_id: "string" },
+    required_keys: ["channel_id", "allowed_user_id"],
+    mutates: true,
+    // Replacing a bridge loses the old token, which DASH cannot recover, and
+    // nothing happens in the world at the moment it is stored. `notify.connect`'s
+    // own call about the same shape of act.
+    irreversible: false,
+  },
+  "chiefDiscord.disconnect": {
+    effect:
+      "Stop the chief listening in Discord and delete the bot token from this computer's vault. What it already said stays in Discord.",
+    payload_keys: [],
+    required_keys: [],
+    mutates: true,
+    irreversible: false,
+  },
+  "chiefDiscord.setEnabled": {
+    effect:
+      "Turn the chief's Discord listening on or off, keeping the setup. Changes nothing about the agents themselves.",
+    payload_keys: ["enabled"],
+    payload_types: { enabled: "boolean" },
+    required_keys: ["enabled"],
+    mutates: true,
+    irreversible: false,
+  },
+
+  /*
    * MAR-479, ADR 0026. The second family that can send something off this
    * machine, and the first whose subject is DASH itself rather than an agent.
    *
@@ -1905,6 +1954,36 @@ export function isNotifyCommandName(value: CommandName): value is NotifyCommandN
 }
 
 /**
+ * Where the chief may be spoken to from outside DASH (MAR-743, ADR 0028).
+ *
+ * A twelfth family, and its own rather than three more entries in
+ * `NOTIFY_ACTIONS`, on the terms every split in this file has been made under.
+ * That map answers *what can DASH send off this machine on its own?* and its
+ * answer is "a message about an agent, composed by DASH, to a channel". This one
+ * answers a different question — *what can reach in?* — and there is exactly one
+ * map for it, which is worth being able to read in one place.
+ *
+ * The two also differ in what a compromised renderer gets. `notify.*` cannot
+ * name an address at all. These carry two ids, because a channel and an allowed
+ * speaker are things a person has to be able to see and correct, and a
+ * credential is not.
+ */
+export const CHIEF_DISCORD_ACTIONS = {
+  "chiefDiscord.connect": "connect",
+  "chiefDiscord.disconnect": "disconnect",
+  "chiefDiscord.setEnabled": "set_enabled",
+} as const;
+
+export type ChiefDiscordCommandName = keyof typeof CHIEF_DISCORD_ACTIONS;
+export type ChiefDiscordAction = (typeof CHIEF_DISCORD_ACTIONS)[ChiefDiscordCommandName];
+
+export function isChiefDiscordCommandName(
+  value: CommandName,
+): value is ChiefDiscordCommandName {
+  return Object.hasOwn(CHIEF_DISCORD_ACTIONS, value);
+}
+
+/**
  * What DASH tells a LAB about its own agents' plans (MAR-479, ADR 0026).
  *
  * The tenth family, and the second half of the answer `NOTIFY_ACTIONS`' own
@@ -2071,6 +2150,7 @@ type UnroutedCommand = Exclude<
   | LabCommandName
   | AskCommandName
   | ChiefCommandName
+  | ChiefDiscordCommandName
   | "shell.ping"
 >;
 const _allCommandsAreRouted: UnroutedCommand extends never ? true : never = true;
@@ -2424,7 +2504,13 @@ export function executeCommand(review: CommandReview): CommandResult {
     // every row of a conversation through `node:sqlite`, and succeeding here
     // would tell somebody their transcript was forgotten while every word of it
     // was still on their disk.
-    isChiefCommandName(review.command)
+    isChiefCommandName(review.command) ||
+    // MAR-743, ADR 0028. Opens the vault, and on success hands a bot token and a
+    // model key to another process. Succeeding here would report a bridge
+    // connected while nothing was listening — and the person would go to Discord
+    // and talk to a channel that cannot hear them, which is the failure this
+    // whole feature is measured against.
+    isChiefDiscordCommandName(review.command)
   ) {
     // Not a denial and not a result: a caller that reached here bypassed the
     // trusted side entirely. Throwing is the only honest answer — returning a
@@ -2734,6 +2820,36 @@ export interface NotifyActionResult {
   detail?: string;
   /** `••••` plus four characters, after a connect. Absent otherwise. */
   masked_hint?: string;
+}
+
+/**
+ * What comes back from a chief-Discord command (MAR-743, ADR 0028).
+ *
+ * `NotifyActionResult`'s shape and its guarantee — nothing a credential could be
+ * assigned to crosses back — with one difference: the whole settings record
+ * comes back rather than only a masked hint.
+ *
+ * That is deliberate and is the point of decision 4's schema note. The two ids
+ * are configuration a person must be able to check, because the commonest way
+ * this feature fails is a right-click that copied the wrong id, and a page that
+ * could not show what DASH holds would leave them with no way to tell. Neither
+ * id is a credential, and the token's only representation here is the same four
+ * masked characters every other credential in DASH exposes.
+ */
+export interface ChiefDiscordActionResult {
+  ok: boolean;
+  refusal?: string;
+  /** Plain language, safe to render. Never contains the token. */
+  detail?: string;
+  /** What DASH holds now, for the page to draw without a second read. */
+  settings?: {
+    configured: boolean;
+    enabled: boolean;
+    channel_id: string;
+    allowed_user_id: string;
+    masked_hint: string | null;
+    configured_at: string | null;
+  };
 }
 
 /**
@@ -3090,6 +3206,24 @@ export interface DispatchContext {
     action: NotifyAction,
     target: { kind?: string; enabled?: boolean },
   ): Promise<NotifyActionResult>;
+  /**
+   * Connect, forget or switch the chief's Discord bridge (MAR-743, ADR 0028).
+   *
+   * `notifyAction`'s neighbour and its seam, carrying one thing more: a
+   * successful connect hands the *runner* a bot token and a model key, so this
+   * entry is the one line in this interface behind which a credential leaves
+   * Electron main for another process. Everything that bounds that is in
+   * `electron/chief-discord.ts` and `runner/chief-broker.ts`.
+   *
+   * **Nothing a credential could be assigned to crosses back**, the same
+   * guarantee `notifyAction` gives. The result carries whether it worked, a
+   * sentence, and the settings a person is entitled to read off their own page —
+   * two ids they typed and a masked hint.
+   */
+  chiefDiscordAction(
+    action: ChiefDiscordAction,
+    target: { channel_id?: string; allowed_user_id?: string; enabled?: boolean },
+  ): Promise<ChiefDiscordActionResult>;
   /**
    * Set up, switch, or run DASH's report to a LAB (MAR-479, ADR 0026).
    *
@@ -3617,6 +3751,54 @@ export async function dispatchCommand(
       // for the reason that field exists: primitives only, already safe to
       // render, already safe to log.
       data: result.masked_hint === undefined ? undefined : { masked_hint: result.masked_hint },
+    };
+  }
+
+  if (isChiefDiscordCommandName(review.command)) {
+    /*
+     * MAR-743, ADR 0028. Two ids and a boolean, and no credential anywhere.
+     *
+     * So the widest thing a compromised renderer can do with this family is ask
+     * for the credential window to open, aim an already-held token at a channel
+     * of its choosing, name a different allowed speaker, or switch the bridge
+     * off. It cannot learn the token DASH holds, cannot ask the chief anything,
+     * and cannot cause a message to be sent — the chief only ever answers, and
+     * only ever what the one allowed Discord identity said to it.
+     */
+    const result = await context.chiefDiscordAction(CHIEF_DISCORD_ACTIONS[review.command], {
+      channel_id:
+        review.payload["channel_id"] === undefined
+          ? undefined
+          : String(review.payload["channel_id"]),
+      allowed_user_id:
+        review.payload["allowed_user_id"] === undefined
+          ? undefined
+          : String(review.payload["allowed_user_id"]),
+      enabled:
+        review.payload["enabled"] === undefined ? undefined : review.payload["enabled"] === true,
+    });
+    return {
+      ok: result.ok,
+      request_id: review.audit.request_id,
+      reason: result.refusal,
+      detail: result.detail,
+      /*
+       * The settings ride `data` and are flattened to primitives, which is that
+       * field's own rule: already safe to render, already safe to log. A nested
+       * object would be the first thing in this file to break it, and the flat
+       * form is what the page reads anyway.
+       */
+      data:
+        result.settings === undefined
+          ? undefined
+          : {
+              configured: result.settings.configured,
+              enabled: result.settings.enabled,
+              channel_id: result.settings.channel_id,
+              allowed_user_id: result.settings.allowed_user_id,
+              masked_hint: result.settings.masked_hint ?? "",
+              configured_at: result.settings.configured_at ?? "",
+            },
     };
   }
 

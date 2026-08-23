@@ -43,6 +43,18 @@ const workspaceState = example("gmail-meeting-assistant.state.example.json");
  */
 const opened: Array<{ dataDir: string; closeDb: () => void }> = [];
 
+/**
+ * Where the migration loop finishes today, for the assertions that only mean
+ * "and then it ran to the end" (MAR-743).
+ *
+ * Deliberately **not** used by the schema pin below, which spells the number out
+ * as a literal so that appending a migration stays a deliberate edit somebody
+ * makes while reading the note beside it. These two uses are the other kind:
+ * they assert that a re-open, or a migration of an old store, lands at the head,
+ * and following the head is the whole content of that claim.
+ */
+const HEAD_VERSION = 32;
+
 async function freshStore(seed?: (dataDir: string) => void): Promise<{
   dataDir: string;
   db: typeof import("../lib/db");
@@ -167,14 +179,19 @@ describe("schema", () => {
     // plans to a LAB, and the verbatim record of everything it has sent.
     // Appended on the standing terms.
     //
-    // **This index was chosen by a worker session, which AGENTS.md says is not
-    // how serial-numbered resources get assigned.** It is the end of the list,
-    // which is the only position that leaves an already-migrated installed store
-    // alone, and this pin is what fails if a parallel packet took 31 first —
+    // 32 is MAR-743's `chief_discord` plus `chief_messages.origin` and
+    // `broker_audit.decided_on` (ADR 0028) — where the chief may be spoken to
+    // and by whom, and the two columns that stop a row drained out of the
+    // runner from losing the fact that the runner is what decided it.
+    //
+    // **These indexes were chosen by worker sessions, which AGENTS.md says is
+    // not how serial-numbered resources get assigned.** The end of the list is
+    // the only position that leaves an already-migrated installed store alone,
+    // and this pin is what fails if a parallel packet took 31 or 32 first —
     // exactly the blocking gate the note at 25 describes. Confirm the number at
     // the merge rather than assuming it survived.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(31);
+    expect(version.user_version).toBe(32);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -240,6 +257,48 @@ describe("schema", () => {
     // MAR-696. The chief's own model pin, one row, read before the fleet
     // default rather than instead of it.
     expect(tables).toContain("chief_model_choice");
+    // MAR-743, ADR 0028. The chief's second room: which channel, which one
+    // Discord identity may speak, and a masked hint of a bot token that is
+    // itself in the vault. Named here for `notify_discord`'s reason — which
+    // tables exist stays a list somebody reads.
+    expect(tables).toContain("chief_discord");
+  });
+
+  it("carries the provenance columns ADR 0028 added, defaulted to what was true before", async () => {
+    /*
+     * The two `ALTER TABLE`s in migration 32, asserted as *defaults* rather than
+     * as columns.
+     *
+     * A column somebody can add is not the property that matters. What matters
+     * is that every row already in an installed store answers the new question
+     * correctly without anybody backfilling it: every chief turn recorded before
+     * this migration was typed at the window, and every audit row before it was
+     * decided by DASH itself. Both are true statements, and a NULL here would
+     * have made a renderer choose a word for a row that never told it one.
+     */
+    const store = await freshStore();
+    const handle = store.db.db();
+
+    handle
+      .prepare(
+        "INSERT INTO chief_messages (asked_at, question, answer, receipt_json) VALUES (?, ?, ?, ?)",
+      )
+      .run("2026-08-23T09:00:00.000Z", "how is the fleet", "fine", "[]");
+    handle
+      .prepare(
+        "INSERT INTO broker_audit " +
+          "(agent, connection_id, operation, request_id, decision, input_keys, duration_ms, decided_at) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run("chief", "chief:model-provider", "anthropic.chat.completion", "r-1", "allowed", "[]", 3,
+        "2026-08-23T09:00:00.000Z");
+
+    const turn = handle.prepare("SELECT origin FROM chief_messages").get() as { origin: string };
+    expect(turn.origin).toBe("window");
+    const row = handle.prepare("SELECT decided_on FROM broker_audit").get() as {
+      decided_on: string;
+    };
+    expect(row.decided_on).toBe("dash");
   });
 
   it("migrates a copied real-shape v25 fleet row without re-entering its vault key", async () => {
@@ -326,7 +385,7 @@ describe("schema", () => {
     ).toEqual({ count: 0 });
     expect(
       (nextDb.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(31);
+    ).toBe(HEAD_VERSION);
   });
 
   it("adds the artifact table to a store that predates it", async () => {
@@ -686,7 +745,7 @@ describe("schema", () => {
     expect(store.listAgents()).toHaveLength(1);
     expect(
       (db.db().prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-    ).toBe(31);
+    ).toBe(HEAD_VERSION);
   });
 
   it("materialises row-only agents as manifest-only folders without acquiring author code", async () => {

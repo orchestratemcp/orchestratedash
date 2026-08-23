@@ -83,6 +83,7 @@ describe("a turn survives the page closing", () => {
       tokens_out: 30,
       amount_usd: 0.0001,
       receipt,
+      origin: "window",
     });
     expect(written).not.toBeNull();
 
@@ -114,6 +115,7 @@ describe("a turn survives the page closing", () => {
       tokens_out: null,
       amount_usd: null,
       receipt,
+      origin: "window",
     });
     recordChiefTurn({
       asked_at: "2026-08-16T10:01:00.000Z",
@@ -128,6 +130,7 @@ describe("a turn survives the page closing", () => {
       // ADR 0023 decision 7: a greeting reads no records, and its receipt says
       // so rather than being absent.
       receipt: [],
+      origin: "window",
     });
 
     const turns = readChiefTurns();
@@ -150,6 +153,7 @@ describe("a turn survives the page closing", () => {
       tokens_out: null,
       amount_usd: null,
       receipt: [],
+      origin: "window",
     });
     clearChiefThread();
     expect(readChiefTurns()).toEqual([]);
@@ -183,6 +187,7 @@ describe("the context sent with a fresh question", () => {
       tokens_out: 4,
       amount_usd: null,
       receipt,
+      origin: "window",
     });
 
     const context = recentChiefContext();
@@ -205,6 +210,7 @@ describe("the context sent with a fresh question", () => {
       tokens_out: null,
       amount_usd: null,
       receipt: [],
+      origin: "window",
     });
     expect(recentChiefContext()).toBe("");
   });
@@ -227,6 +233,7 @@ describe("the room a returning reader sees", () => {
       tokens_out: 30,
       amount_usd: 0.0001,
       receipt,
+      origin: "window",
     });
   }
 
@@ -290,6 +297,7 @@ describe("the room a returning reader sees", () => {
       tokens_out: null,
       amount_usd: null,
       receipt: briefingFor([row()]),
+      origin: "window",
     });
     const turn = chiefRoomView([row()]).turns[0];
     expect(turn?.from_records).toBe(true);
@@ -315,6 +323,7 @@ describe("the room a returning reader sees", () => {
       tokens_out: 10,
       amount_usd: null,
       receipt: briefingFor([row()]),
+      origin: "window",
     });
     const turn = chiefRoomView([row()]).turns[0];
     expect(turn?.handoffs.map((one) => one.agent)).toEqual(["ai-agent-news"]);
@@ -344,6 +353,7 @@ describe("the room a returning reader sees", () => {
       tokens_out: 72,
       amount_usd: 0.0023,
       receipt: briefingFor(fleet),
+      origin: "window",
     });
     const turn = chiefRoomView(fleet).turns[0];
     expect(turn?.handoffs).toEqual([]);

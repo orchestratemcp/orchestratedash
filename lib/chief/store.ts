@@ -68,7 +68,22 @@ export interface ChiefTurnRecord {
   amount_usd: number | null;
   /** The briefing rows sent with this question, frozen. Empty for a greeting. */
   receipt: ChiefBriefingRow[];
+  /**
+   * Which room this was asked in (MAR-743, ADR 0028 decision 7).
+   *
+   * `"window"` for the composer on this machine, `"discord"` for a message the
+   * runner carried while DASH may not even have been open.
+   *
+   * On the record rather than inferred from a gap in the timestamps, because a
+   * drained turn arrives long after it happened and the only thing that still
+   * knows where it came from is the row. ADR 0021's argument for `decided_on`,
+   * one table over.
+   */
+  origin: ChiefTurnOrigin;
 }
+
+/** The two rooms the chief answers in. There is no third, and adding one is an ADR. */
+export type ChiefTurnOrigin = "window" | "discord";
 
 export type ChiefTurnDraft = Omit<ChiefTurnRecord, "id">;
 
@@ -96,8 +111,8 @@ export function recordChiefTurn(draft: ChiefTurnDraft): ChiefTurnRecord | null {
       .prepare(
         "INSERT INTO chief_messages " +
           "(asked_at, question, answer, failure, provider_id, model_id, " +
-          "tokens_in, tokens_out, amount_usd, receipt_json) " +
-          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "tokens_in, tokens_out, amount_usd, receipt_json, origin) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         draft.asked_at,
@@ -110,6 +125,7 @@ export function recordChiefTurn(draft: ChiefTurnDraft): ChiefTurnRecord | null {
         draft.tokens_out,
         draft.amount_usd,
         JSON.stringify(draft.receipt),
+        draft.origin,
       );
     return { ...draft, id: Number(result.lastInsertRowid) };
   } catch (error: unknown) {
@@ -132,7 +148,7 @@ export function readChiefTurns(limit = CHIEF_HISTORY_LIMIT): ChiefTurnRecord[] {
     rows = db()
       .prepare(
         "SELECT id, asked_at, question, answer, failure, provider_id, model_id, " +
-          "tokens_in, tokens_out, amount_usd, receipt_json FROM chief_messages " +
+          "tokens_in, tokens_out, amount_usd, receipt_json, origin FROM chief_messages " +
           "ORDER BY id DESC LIMIT ?",
       )
       .all(limit) as unknown[];
@@ -240,6 +256,18 @@ function projectTurn(row: unknown): ChiefTurnRecord | null {
     tokens_out: wholeOrNull(record["tokens_out"]),
     amount_usd: amountOrNull(record["amount_usd"]),
     receipt: parseReceipt(record["receipt_json"]),
+    /*
+     * Anything that is not the one other word reads as the window, rather than
+     * as a third value or a null the renderer needs a branch for.
+     *
+     * That direction is the safe one and it is the direction the migration's
+     * default already chose: every row written before ADR 0028 genuinely was
+     * asked at the window, so "unrecognised means window" is true of every row
+     * that can actually occur, and the failure it admits — a Discord turn
+     * mislabelled as a window turn — understates the reach of a feature rather
+     * than overstating it.
+     */
+    origin: record["origin"] === "discord" ? "discord" : "window",
   };
 }
 

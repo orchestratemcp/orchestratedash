@@ -97,6 +97,7 @@ import { plainDay } from "../copy/when";
 import { payloadBody, pendingObservations } from "../lab/observation";
 import { ingestUrl } from "../lab/send";
 import { describeEndpointReach, describeLabTelemetryStanding } from "../lab/settings";
+import { describeChiefDiscordStanding } from "../chief/discord";
 import { describeNotificationState } from "../notify/settings";
 import { describeManifestGap } from "../sample-refresh";
 import { glanceReader } from "./glance";
@@ -126,6 +127,7 @@ import {
   listLabSends,
   readLabSentKeys,
   readLabTelemetrySettings,
+  readChiefDiscordSettings,
   readNotificationSettings,
   resolveArtifactAvailability,
   readStore,
@@ -949,6 +951,14 @@ export function hostsView(store: StoreShape = readStore()): HostsView {
  */
 export function notificationsView(): NotificationsView {
   const settings = readNotificationSettings();
+  /*
+   * MAR-743, ADR 0028. The second half of DASH's Discord, read on the same
+   * render and under the same rule: a masked hint, two snowflakes and two
+   * booleans out of SQLite, and the vault untouched. The bot token is not
+   * consulted to answer "is this set up" — that would pop an OS unlock prompt at
+   * the moment somebody merely looked at a settings page.
+   */
+  const chief = readChiefDiscordSettings();
   return {
     configured: settings.configured,
     masked_hint: settings.masked_hint,
@@ -956,6 +966,18 @@ export function notificationsView(): NotificationsView {
     send_approvals: settings.send_approvals,
     send_reports: settings.send_reports,
     state_sentence: describeNotificationState(settings),
+    chief: {
+      configured: chief.configured,
+      enabled: chief.enabled,
+      channel_id: chief.channel_id,
+      allowed_user_id: chief.allowed_user_id,
+      masked_hint: chief.masked_hint,
+      configured_at: chief.configured_at,
+      // Without the date: the page has `configured_at` and puts it through
+      // `plainDay` itself, and a builder that resolved a day here would be a
+      // second place a timestamp becomes prose.
+      state_sentence: describeChiefDiscordStanding(chief, null).sentence,
+    },
   };
 }
 

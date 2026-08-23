@@ -59,6 +59,8 @@ import {
   classifyStoreError,
   type RunnerStoreDamage,
 } from "./store-damage";
+import type { ChiefBridgeConfiguration } from "./chief";
+import type { ChiefAuditRow } from "./chief-broker";
 import type { NotifyConfiguration } from "./notify";
 import { buildAgentDomState, type ProcessReport } from "./state";
 import type { AdoptionResult, Supervisor } from "./supervisor";
@@ -118,6 +120,24 @@ export interface RunnerServerOptions {
    * costs nothing until DASH hands it an address.
    */
   configureNotifier?: (configuration: NotifyConfiguration | null) => void;
+  /**
+   * Take, replace or clear the chief's Discord bridge (MAR-743, ADR 0028).
+   *
+   * `configureNotifier`'s neighbour and its shape, carrying more: the notifier's
+   * credential can only post, and this one can also *spend*. Everything that
+   * follows from that is in `runner/chief.ts` and `runner/chief-broker.ts`; what
+   * this option is, is the one door it comes through.
+   */
+  configureChief?: (configuration: ChiefBridgeConfiguration | null) => void;
+  /**
+   * Everything the chief did while DASH was closed, and forget it (ADR 0028
+   * decision 6).
+   *
+   * `drainTelemetry`'s shape exactly. The runner cannot write `chief_messages`
+   * or `broker_audit` — one writer on `dash.sqlite`, ADR 0027 — so it spools and
+   * DASH pulls.
+   */
+  drainChief?: () => { turns: unknown[]; audit: ChiefAuditRow[] };
   /** Graceful process shutdown, supplied only by the standalone runner. */
   shutdown?: () => void;
   /**
@@ -447,6 +467,86 @@ async function handle(
     // can see that DASH handed one over without the log becoming the place the
     // credential ends up.
     log(`[runner] notifications ${parsed === null ? "cleared" : "configured"}`);
+    return;
+  }
+
+  // POST /chief/discord — hand the runner the chief's second room, or take it
+  // away (MAR-743, ADR 0028 decision 5).
+  //
+  // **The second route in this file that carries a credential inbound, and the
+  // first that carries one that can spend.** `POST /notify/discord` above is the
+  // precedent and the shape; what is different is worth stating rather than
+  // leaving to be noticed: this body holds a Discord bot token *and* a model
+  // provider key, and the second of those is somebody's money.
+  //
+  // The same three bounds hold it. It is on the authenticated channel, so a
+  // caller has to hold `runner.key`. The values are handed to
+  // `RunnerChief.configure` and nowhere else — never to the store, never to a
+  // file, never to a log, which is a property of that class rather than a
+  // promise here. And the reply says only whether a bridge is now configured,
+  // never with what.
+  //
+  // A fourth bound is specific to this route and is in `runner/chief-broker.ts`:
+  // the key that arrives here reaches exactly one operation. A runner holding a
+  // model key that could reach the whole catalogue would be a much larger thing
+  // than this feature asked for.
+  if (
+    request.method === "POST" &&
+    segments.length === 2 &&
+    segments[0] === "chief" &&
+    segments[1] === "discord"
+  ) {
+    if (options.configureChief === undefined) {
+      send(response, 501, {
+        ok: false,
+        detail: "This runner was started without the ability to carry the chief.",
+      });
+      return;
+    }
+    const raw = await readBody(request);
+    if (raw === null) {
+      send(response, 413, { ok: false, detail: "The request body was too large." });
+      return;
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      // No echo of the body. It held a token and may have held a key.
+      send(response, 400, { ok: false, detail: "The request body was not valid JSON." });
+      return;
+    }
+    const parsed = readChiefConfiguration(body);
+    if (parsed === "malformed") {
+      send(response, 400, { ok: false, detail: "The chief's Discord settings were not understood." });
+      return;
+    }
+    options.configureChief(parsed);
+    send(response, 200, { ok: true, configured: parsed !== null });
+    log(`[runner] the chief's Discord bridge ${parsed === null ? "cleared" : "configured"}`);
+    return;
+  }
+
+  // POST /chief/drain — everything the chief did while DASH was closed.
+  //
+  // `/telemetry/drain`'s shape and its terms: bounded, fire-and-forget, and the
+  // bodies are not interpreted here. What comes back are turns for
+  // `chief_messages` and decisions for `broker_audit`, and main is what writes
+  // them — including the `decided_on` stamp, which this route deliberately does
+  // not put on the rows. A runner that labelled its own rows would be a runner
+  // asserting its own provenance; DASH stamps what it pulled, which is the same
+  // arrangement ADR 0021 wrote for a host.
+  if (
+    request.method === "POST" &&
+    segments.length === 2 &&
+    segments[0] === "chief" &&
+    segments[1] === "drain"
+  ) {
+    if (options.drainChief === undefined) {
+      send(response, 200, { ok: true, turns: [], audit: [] });
+      return;
+    }
+    send(response, 200, { ok: true, ...options.drainChief() });
     return;
   }
 
@@ -1216,6 +1316,113 @@ function readNotifyConfiguration(body: unknown): NotifyConfiguration | null | "m
     send_approvals: record["send_approvals"] !== false,
     send_reports: record["send_reports"] !== false,
   };
+}
+
+/**
+ * The chief's bridge, out of a JSON body (MAR-743).
+ *
+ * `readNotifyConfiguration`'s shape and the note above it applies unchanged: the
+ * validation that matters happened in DASH, and a second policy here would be a
+ * second place for the two to disagree about what is allowed. What this does is
+ * make sure the object handed to `RunnerChief.configure` has the fields it
+ * claims — because everything downstream reads them without asking again.
+ *
+ * **Nothing here is defaulted permissively.** `readNotifyConfiguration` can
+ * default a switch to on, because the worst case is a message somebody did not
+ * want. A missing channel or a missing allowed id here would be a bridge with no
+ * boundary, so both are `malformed` — the one shape of failure this route must
+ * never absorb.
+ *
+ * The snapshot is the exception and is defaulted to empty rather than refused: a
+ * chief with no fleet facts answers "you have no agents", which is a true
+ * sentence about a DASH that has none, and refusing the whole bridge over an
+ * absent list would turn an empty fleet into a broken feature.
+ */
+function readChiefConfiguration(body: unknown): ChiefBridgeConfiguration | null | "malformed" {
+  if (typeof body !== "object" || body === null) {
+    return "malformed";
+  }
+  const record = body as Record<string, unknown>;
+  // `bot_token: null` clears it, the same way `webhook_url: null` does, and for
+  // the same reason: connect and disconnect are one setting with two values.
+  if (record["bot_token"] === null) {
+    return null;
+  }
+
+  const token = record["bot_token"];
+  const channel = record["channel_id"];
+  const allowed = record["allowed_user_id"];
+  if (
+    typeof token !== "string" ||
+    token.length === 0 ||
+    token.length > 512 ||
+    typeof channel !== "string" ||
+    !/^[0-9]{15,25}$/u.test(channel) ||
+    typeof allowed !== "string" ||
+    !/^[0-9]{15,25}$/u.test(allowed)
+  ) {
+    return "malformed";
+  }
+
+  const model = readChiefModel(record["model"]);
+  if (model === "malformed") {
+    return "malformed";
+  }
+
+  const snapshot = record["snapshot"];
+  const snapshotRecord =
+    typeof snapshot === "object" && snapshot !== null ? (snapshot as Record<string, unknown>) : {};
+
+  return {
+    bot_token: token,
+    channel_id: channel,
+    allowed_user_id: allowed,
+    model,
+    snapshot: {
+      fleet: Array.isArray(snapshotRecord["fleet"])
+        ? (snapshotRecord["fleet"] as ChiefBridgeConfiguration["snapshot"]["fleet"])
+        : [],
+      briefing: Array.isArray(snapshotRecord["briefing"])
+        ? (snapshotRecord["briefing"] as ChiefBridgeConfiguration["snapshot"]["briefing"])
+        : [],
+      taken_at:
+        typeof snapshotRecord["taken_at"] === "string" ? snapshotRecord["taken_at"] : "",
+    },
+  };
+}
+
+/**
+ * The model half, which is allowed to be absent and not allowed to be partial.
+ *
+ * Null means "Discord is connected and AI is not", which is an ordinary state
+ * somebody can be in for a week — ADR 0028 decision 9 is what makes it answer
+ * anyway. A *partial* model is not a state anything produces, so it is
+ * `malformed`: a key with no model id, or a model id with no key, would each
+ * reach the broker and be refused there with a word that describes the wrong
+ * problem.
+ */
+function readChiefModel(value: unknown): ChiefBridgeConfiguration["model"] | "malformed" {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value !== "object") {
+    return "malformed";
+  }
+  const record = value as Record<string, unknown>;
+  const provider = record["provider_id"];
+  const model = record["model_id"];
+  const key = record["api_key"];
+  if (
+    typeof provider !== "string" ||
+    provider.length === 0 ||
+    typeof model !== "string" ||
+    model.length === 0 ||
+    typeof key !== "string" ||
+    key.length === 0
+  ) {
+    return "malformed";
+  }
+  return { provider_id: provider, model_id: model, api_key: key };
 }
 
 /**
