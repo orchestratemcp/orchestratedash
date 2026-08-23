@@ -358,6 +358,20 @@ await Promise.all([
     format: "esm",
   }),
 
+  // Press-to-reaction latency and the duplicate-send count (MAR-746), on the
+  // same terms as every harness above — no `smoke-identity.ts`, so it runs
+  // beside a live DASH. Not a scene on any of them because it is not a picture:
+  // it drives real OS input through `sendInputEvent` and writes numbers, which
+  // is the only way to tell a renderer that is slow to commit from a main
+  // process that is not delivering the key press at all. See
+  // `electron/capture-lag.ts`.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-lag.ts")],
+    outfile: path.join(outDir, "capture-lag.mjs"),
+    format: "esm",
+  }),
+
   // Add agent (MAR-598), on `capture-settings-polish.ts`'s exact terms — no
   // `smoke-identity.ts`, so it runs beside a live DASH without claiming its lock
   // or its store. A harness of its own rather than a fourth page on that one,

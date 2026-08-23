@@ -19,6 +19,7 @@ import type { AgentAskView, AskExchangeView } from "../../lib/views/types";
 import { agentStageHref } from "../_data/routes";
 import { askAgentQuestion, submitConnectionCommand } from "../_data/source";
 import { Composer, filterAfterClear, type ComposerClassNames } from "./composer";
+import { useSingleFlight } from "./single-flight";
 import { OAvatar } from "./o-avatar";
 
 /**
@@ -285,6 +286,16 @@ export function AskComposer({
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   /*
+   * MAR-746. `ChiefChat`'s note, restated for this room with one difference
+   * worth naming: `busy` here is unconditional rather than predicted, so it
+   * already disabled the field and this surface never produced Henrik's three
+   * turns. It is still not a guard. A `useState` flag is settled at the next
+   * render, and the whole premise of MAR-746 is a burst arriving faster than a
+   * render — so this surface gets the same closure the chief's does rather than
+   * being left to rely on a race it happens to be winning. See `singleFlight`.
+   */
+  const { pending, start } = useSingleFlight();
+  /*
    * MAR-711. Clear's own state, `ChiefChat`'s `clearedThroughId` restated for
    * this room: session-only, filtered here rather than deleted anywhere, so
    * DASH still keeps every exchange the next time this agent is asked
@@ -393,7 +404,10 @@ export function AskComposer({
       placeholder={ask.placeholder}
       value={question}
       onChange={setQuestion}
-      onSubmit={() => void submit()}
+      onSubmit={() => {
+        start(submit);
+      }}
+      pending={pending}
       textareaDisabled={busy}
       modelLine={
         <div className="ask-model-line">

@@ -41,6 +41,7 @@ import { OutputsPanel } from "../../_components/outputs";
 import { AgentPanel } from "../../_components/panel";
 import { RemoveAgent } from "../../_components/remove-agent";
 import { RunProgress } from "../../_components/run-progress";
+import { useSingleFlight } from "../../_components/single-flight";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import { WorkingLine } from "../../_components/working";
 import { AGENT_WORKSPACE_PARAMS, agentStageHref, runDetailHref } from "../../_data/routes";
@@ -1994,6 +1995,30 @@ function InboxControl({
   // describes the question, not any one answer to it, and it is read at the
   // moment an option is pressed rather than driving a second control.
   const [remember, setRemember] = useState(false);
+  /*
+   * MAR-746. The window `pending` alone leaves open on this one control.
+   *
+   * Every other button on this page disables on `pending !== null`, and
+   * `pending` is set by `issue` — which, on the Remember path below, is not
+   * reached until `setStandingAnswer` has been to main and back. For that round
+   * trip the option buttons are live and unacknowledged, which is exactly the
+   * shape of Henrik's complaint ("I can press the button five times before it
+   * reacts") applied to a decision rather than to Enter. This closes it at the
+   * press, before the first await, so the acknowledgment cannot be later than
+   * the press whichever path it takes.
+   *
+   * Kept beside `pending` rather than folded into it: `pending` is the page's
+   * one-command-at-a-time fact and belongs to `issue`; this is one card's own
+   * "a press of mine is already running", and a card that owns it can be
+   * pressed while another card's command is not.
+   *
+   * `useSingleFlight` and not a `useState` flag, for its own header's reason: a
+   * flag is settled at the next render, and two clicks inside one render would
+   * both read it as false. The composer took the same guard for the same
+   * reason.
+   */
+  const { pending: answering, start } = useSingleFlight();
+  const held = pending !== null || answering;
 
   async function chooseOption(optionId: string, optionLabel: string): Promise<void> {
     const key = `choice:${item.id}:${optionId}`;
@@ -2056,9 +2081,11 @@ function InboxControl({
           <div className="choice-list" aria-label={item.label}>
             {item.options.map((option) => (
               <button
-                disabled={pending !== null}
+                disabled={held}
                 key={option.id}
-                onClick={() => void chooseOption(option.id, option.label)}
+                onClick={() => {
+                  start(() => chooseOption(option.id, option.label));
+                }}
                 type="button"
               >
                 <span>{option.label}</span>
@@ -2073,7 +2100,7 @@ function InboxControl({
           <label className="choice-remember">
             <input
               checked={remember}
-              disabled={pending !== null}
+              disabled={held}
               onChange={(event) => setRemember(event.target.checked)}
               type="checkbox"
             />
@@ -2092,30 +2119,34 @@ function InboxControl({
           <div className="button-row">
             <button
               className="button-danger"
-              disabled={pending !== null}
-              onClick={() =>
-                void issue(`reject:${item.id}`, "reject", {
-                  ...base,
-                  approval_id: item.id,
-                  action_id: item.action_id,
-                  reason: reason === "" ? undefined : reason,
-                })
-              }
+              disabled={held}
+              onClick={() => {
+                start(() =>
+                  issue(`reject:${item.id}`, "reject", {
+                    ...base,
+                    approval_id: item.id,
+                    action_id: item.action_id,
+                    reason: reason === "" ? undefined : reason,
+                  }),
+                );
+              }}
               type="button"
             >
               Reject
             </button>
             <button
               className="button-primary"
-              disabled={pending !== null}
-              onClick={() =>
-                void issue(`approve:${item.id}`, "approve", {
-                  ...base,
-                  approval_id: item.id,
-                  action_id: item.action_id,
-                  reason: reason === "" ? undefined : reason,
-                })
-              }
+              disabled={held}
+              onClick={() => {
+                start(() =>
+                  issue(`approve:${item.id}`, "approve", {
+                    ...base,
+                    approval_id: item.id,
+                    action_id: item.action_id,
+                    reason: reason === "" ? undefined : reason,
+                  }),
+                );
+              }}
               type="button"
             >
               Approve exact action

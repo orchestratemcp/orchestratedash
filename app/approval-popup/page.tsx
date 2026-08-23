@@ -25,6 +25,7 @@
 import { type ReactNode, useState } from "react";
 
 import { pendingApprovals } from "../../lib/shell/approval-popup";
+import { useSingleFlight } from "../_components/single-flight";
 import { submitAgentCommand, type AgentCommandArgs } from "../_data/source";
 import { useCanAct, useLiveView } from "../_data/use-view";
 
@@ -34,6 +35,14 @@ export default function ApprovalPopupPage(): ReactNode {
   const canAct = useCanAct();
   const state = useLiveView((source) => source.inbox(), "approval-popup", true);
   const [busy, setBusy] = useState<string | null>(null);
+  /*
+   * MAR-746. The same guard the composer and the work inbox took, for the same
+   * reason: `busy` below is settled at the next render, and two clicks inside
+   * one render would both read it as null. `disabled` has always covered the
+   * ordinary case here — this covers the case where a burst of clicks arrives
+   * faster than React commits, which is what a machine under load produces.
+   */
+  const { pending, start } = useSingleFlight();
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [reason, setReason] = useState("");
 
@@ -149,16 +158,20 @@ export default function ApprovalPopupPage(): ReactNode {
             <div className="button-row">
               <button
                 className="button-danger"
-                disabled={busy !== null}
-                onClick={() => void decide("reject")}
+                disabled={busy !== null || pending}
+                onClick={() => {
+                  start(() => decide("reject"));
+                }}
                 type="button"
               >
                 Reject
               </button>
               <button
                 className="button-primary"
-                disabled={busy !== null}
-                onClick={() => void decide("approve")}
+                disabled={busy !== null || pending}
+                onClick={() => {
+                  start(() => decide("approve"));
+                }}
                 type="button"
               >
                 Approve exact action

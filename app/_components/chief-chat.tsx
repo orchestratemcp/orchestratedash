@@ -6,6 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { agentStageHref } from "../_data/routes";
 import { askChief, listProviderModels, setChiefModel } from "../_data/source";
 import { Composer, filterAfterClear, type ComposerClassNames } from "./composer";
+import { useSingleFlight } from "./single-flight";
 import { OAvatar } from "./o-avatar";
 import { aiProviderById } from "../../lib/ai/providers";
 import { answeredFromRecords } from "../../lib/chief/records-answer";
@@ -247,6 +248,23 @@ export function ChiefChat({
   const [elapsed, setElapsed] = useState(0);
   const [feedback, setFeedback] = useState<string | null>(null);
   /*
+   * MAR-746. The send that is already happening, and why it is not `busy`.
+   *
+   * `busy` above is a *prediction about latency* — whether this question will
+   * wait on a provider — and it is deliberately false for a question records
+   * answer, because MAR-648's honesty rule forbids a loader on a path that
+   * returns before the next frame. It was therefore never a guard, and using it
+   * as one would have left the free path exactly as unguarded as it was: on the
+   * measured before-run, five Enters inside one in-flight ask wrote five rows to
+   * `chief_messages`, and every one of those questions was a free one.
+   *
+   * `pending` is the other fact — a send is in flight, whatever it costs and
+   * however fast it returns — and it is what closes the field. See
+   * `singleFlight`'s own header on why the guard behind it is a closure and not
+   * this flag.
+   */
+  const { pending, start } = useSingleFlight();
+  /*
    * MAR-696. The Clear button's own state, and the whole reason it is a
    * number here rather than a call into `lib/chief/store.ts`.
    *
@@ -350,7 +368,16 @@ export function ChiefChat({
       placeholder={CHIEF_CHAT_COPY.placeholder}
       value={question}
       onChange={setQuestion}
-      onSubmit={() => void ask()}
+      /*
+       * MAR-746. Through the guard rather than straight at `ask` — `start`
+       * drops a press that arrives while the last one is still in flight, and
+       * flips `pending` for the field. `void ask()` is what used to be here and
+       * is what let three Enters become three turns.
+       */
+      onSubmit={() => {
+        start(ask);
+      }}
+      pending={pending}
       textareaDisabled={false}
       /*
        * MAR-696. Perched on the field itself rather than beside it —
