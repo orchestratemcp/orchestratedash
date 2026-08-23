@@ -96,14 +96,15 @@
 import "./main.js";
 import { appWindow } from "./app-window.js";
 
-import { app, BrowserWindow, nativeTheme } from "electron";
+import { app, BrowserWindow, nativeTheme, shell } from "electron";
 
-import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { readFileSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { putAgentDomState } from "../lib/agent-dom/store.js";
 import { importManifest, ingestArtifacts, ingestEvents } from "../lib/store.js";
 import { fingerprintItems } from "../lib/brief/fingerprint.js";
+import { agentExportsPath } from "../lib/agent-exports.js";
 
 const OUT = path.resolve(
   process.cwd(),
@@ -143,6 +144,18 @@ const STAGES = ["overview", "run", "output", "chat", "settings", "logs"] as cons
 
 /** The one agent this scene is about. */
 const AGENT = "news-scout";
+
+/** MAR-691. `digest-scout-1`'s deep dive, seeded below and asserted after. */
+const DEEP_DIVE_HEADING_TEXT = "A closer look";
+const DEEP_DIVE_TEXT =
+  "Item 1 reports a supervisor for long-running agents; item 2 reports " +
+  "permission brokers replacing token pass-through. Read together, both " +
+  "point the same way: less trust handed to an agent up front, more of " +
+  "it checked at the moment it is spent. A model could just as easily " +
+  "have written https://not-a-real-source.example into this paragraph.";
+
+/** MAR-698. Embedded in `DEEP_DIVE_TEXT` above — model prose, never DASH's. */
+const MODEL_PROSE_URL = "https://not-a-real-source.example";
 
 function example(name: string): Record<string, unknown> {
   return JSON.parse(
@@ -222,6 +235,19 @@ function seed(): void {
           label: "About this scout",
           text: "It only runs when you ask it to. Nothing happens on a timer.",
         },
+        /*
+         * MAR-620. `draft` is an `ArtifactKind` this agent never produces, so
+         * this section resolves to `record === null` and `StatedEmpty` draws
+         * — the empty-state disclosure this issue gated is unreachable
+         * without a section that stays genuinely empty on a store that
+         * otherwise has four digests and a brief.
+         */
+        {
+          id: "draft_note",
+          type: "report",
+          label: "Draft in progress",
+          artifact_role: "draft",
+        },
       ],
     },
   };
@@ -277,6 +303,23 @@ function seed(): void {
         },
       ],
       items: digestItems,
+      /*
+       * MAR-691. `digest-scout-1` only, not `digest-scout-0` — the brief
+       * above is fingerprinted against `digest-scout-0`'s own item list, and
+       * a deep dive on that same artifact would leave one screenshot
+       * standing for two different fixes. `digest-scout-1` is never the
+       * stage's default open card and never the brief's citation source, so
+       * it is free to carry the deep dive without disturbing either.
+       */
+      ...(index === 1
+        ? {
+            deep_dive: {
+              state: "written",
+              model: "openai/gpt-5-mini",
+              text: DEEP_DIVE_TEXT,
+            },
+          }
+        : {}),
     })),
   );
   console.log(`[cockpit] ${String(accepted.accepted)} artifact(s) accepted`);
@@ -800,6 +843,28 @@ async function run(): Promise<void> {
   mkdirSync(OUT, { recursive: true });
   seed();
 
+  /*
+   * MAR-697 / MAR-698. Both features end at `shell.openPath` or
+   * `shell.openExternal` — a real PDF reader or a real browser launched on
+   * the machine this runs on, which is not a thing a capture harness may
+   * do, doubly so with a real DASH possibly open beside it. Both are
+   * recorded rather than performed: what crosses this boundary is proof
+   * enough (the exact path or URL main decided to open), and the OS-level
+   * launch itself is exactly the part MAR-740 already found broken for one
+   * character class, so a harness that actually launched it would be
+   * exercising the one thing not being claimed here.
+   */
+  const openPathCalls: string[] = [];
+  const openExternalCalls: string[] = [];
+  shell.openPath = (async (target: string) => {
+    openPathCalls.push(target);
+    return "";
+  }) as typeof shell.openPath;
+  shell.openExternal = (async (url: string) => {
+    openExternalCalls.push(url);
+    return undefined;
+  }) as typeof shell.openExternal;
+
   const window = await appWindowLoaded();
   window.setResizable(true);
   await settle(1200);
@@ -1043,6 +1108,410 @@ async function run(): Promise<void> {
     steps_in_panel: ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5", "Step 6"].every((label) =>
       String(aboutText).includes(label),
     ),
+  });
+
+  /*
+   * MAR-635's own scene: the live feed and telemetry panel, with real
+   * recorded facts behind every number — the busy half of the bar
+   * `electron/capture-deploy.ts`'s `agent-feed`/`agent-commands` surfaces
+   * only ever photograph empty, because that harness's own agent has never
+   * run. `run-scout-0`'s eight telemetry-v1 events (seeded above, used by
+   * the STAGES loop's own `run` stage) give this store a run with a model,
+   * token counts and a cost — this scrolls past `RunProgress`'s step list
+   * to the feed and telemetry grid underneath it.
+   */
+  nativeTheme.themeSource = "light";
+  await settle(300);
+  const feedRoute = `${agentRoute}&stage=run`;
+  await go(window, feedRoute);
+  await resizeTo(window, VIEWPORT.width, VIEWPORT.height);
+  await go(window, feedRoute);
+  await within(
+    "scroll to the live feed and telemetry grid",
+    5_000,
+    window.webContents.executeJavaScript(
+      `document.querySelector(".agent-command-grid")?.scrollIntoView({ block: "start" })`,
+    ),
+  );
+  await settle(400);
+  const feedFacts = (await within(
+    "read the live feed and telemetry panel",
+    5_000,
+    window.webContents.executeJavaScript(
+      `(() => {
+         const grid = document.querySelector(".agent-command-grid");
+         if (grid === null) return { found: false };
+         return { found: true, text: grid.textContent ?? "" };
+       })()`,
+    ),
+  )) as { found: boolean; text?: string };
+  await shoot(window, "agent-run-feed-telemetry");
+  console.log(`[cockpit] MAR-635 feed/telemetry: ${JSON.stringify(feedFacts)}`);
+  measurements.push({
+    stage: "run-feed-telemetry",
+    theme: "light",
+    viewport: VIEWPORT.name,
+    grid_found: feedFacts.found,
+    // The exact step name and model telemetry v1 recorded on run-scout-0's
+    // seeded events, not a placeholder — proof the numbers point at a fact.
+    feed_shows_recorded_step: (feedFacts.text ?? "").includes("Intent classifier"),
+    telemetry_shows_recorded_model: (feedFacts.text ?? "").includes("openai/gpt-5-mini"),
+    telemetry_shows_recorded_cost: (feedFacts.text ?? "").includes("0.0041")
+      || (feedFacts.text ?? "").replace(/[,.]/g, "").includes("0041"),
+  });
+
+  /*
+   * MAR-620's scene: the empty-state disclosure.
+   *
+   * `draft_note` (seeded above) is a `report` section bound to `draft`, a
+   * kind this agent never produces, so `StatedEmpty` draws unconditionally
+   * on every frame in this store — the one section here that stays
+   * genuinely empty beside four digests and a brief.
+   */
+  nativeTheme.themeSource = "light";
+  await settle(300);
+  const disclosureRoute = `${agentRoute}&stage=output`;
+  await go(window, disclosureRoute);
+  await resizeTo(window, VIEWPORT.width, VIEWPORT.height);
+  await go(window, disclosureRoute);
+  await within(
+    "scroll to the empty-state disclosure",
+    5_000,
+    window.webContents.executeJavaScript(
+      `document.querySelector(".agent-panel-empty-disclosure")?.scrollIntoView({ block: "center" })`,
+    ),
+  );
+  await settle(400);
+  const disclosureClosed = (await within(
+    "read the empty-state disclosure before opening it",
+    5_000,
+    window.webContents.executeJavaScript(
+      `(() => {
+         const el = document.querySelector(".agent-panel-empty-disclosure");
+         if (el === null) return { found: false };
+         return { found: true, open: el.open, summary: el.querySelector("summary")?.textContent ?? null };
+       })()`,
+    ),
+  )) as { found: boolean; open?: boolean; summary?: string | null };
+  await shoot(window, "agent-output-empty-disclosure-closed");
+  await within(
+    "open the empty-state disclosure with a real click on its summary",
+    5_000,
+    window.webContents.executeJavaScript(
+      `document.querySelector(".agent-panel-empty-disclosure > summary")?.click()`,
+    ),
+  );
+  await settle(400);
+  const disclosureOpen = (await within(
+    "read the empty-state disclosure and its revealed meaning",
+    5_000,
+    window.webContents.executeJavaScript(
+      `(() => {
+         const el = document.querySelector(".agent-panel-empty-disclosure");
+         if (el === null) return { found: false };
+         return { found: true, open: el.open, text: el.textContent ?? "" };
+       })()`,
+    ),
+  )) as { found: boolean; open?: boolean; text?: string };
+  await shoot(window, "agent-output-empty-disclosure-open");
+  console.log(
+    `[cockpit] MAR-620 disclosure: closed=${JSON.stringify(disclosureClosed)} open.open=${String(disclosureOpen.open)}`,
+  );
+  measurements.push({
+    stage: "empty-disclosure",
+    theme: "light",
+    viewport: VIEWPORT.name,
+    disclosure_found: disclosureClosed.found,
+    closed_before_press: disclosureClosed.open === false,
+    summary_is_dash_fixed_string: disclosureClosed.summary === "DASH explains this empty section",
+    open_after_press: disclosureOpen.open === true,
+    meaning_revealed: (disclosureOpen.text ?? "").length > (disclosureClosed.summary ?? "").length,
+  });
+
+  /*
+   * MAR-691's scene: `digest-scout-1`'s deep dive, drawn on both renderers.
+   *
+   * The first shot opens `digest-scout-1` directly, so `outputs.tsx`'s own
+   * card draws it. The second opens the brief instead, so `digest-scout-1`
+   * is "elsewhere" on the stage and the panel's `everything` outputs
+   * section draws its own full body rather than yielding — the same
+   * two-renderers trap MAR-668's brief scene above already argues, applied
+   * to the deep dive rather than the brief.
+   */
+  nativeTheme.themeSource = "light";
+  await settle(300);
+  const deepDiveOpenRoute = `${agentRoute}&stage=output&output=${encodeURIComponent("digest-scout-1")}`;
+  await go(window, deepDiveOpenRoute);
+  await resizeTo(window, VIEWPORT.width, VIEWPORT.height);
+  await go(window, deepDiveOpenRoute);
+  await settle(400);
+  const stageDeepDive = String(
+    await within(
+      "read the Output stage's own deep dive",
+      5_000,
+      window.webContents.executeJavaScript(`document.querySelector(".cockpit-stage")?.textContent ?? ""`),
+    ),
+  );
+  await shoot(window, "agent-output-deep-dive-stage");
+
+  const deepDiveElsewhereRoute = `${agentRoute}&stage=output&output=${encodeURIComponent("brief-scout-0")}`;
+  await go(window, deepDiveElsewhereRoute);
+  await resizeTo(window, VIEWPORT.width, VIEWPORT.height);
+  await go(window, deepDiveElsewhereRoute);
+  await within(
+    "scroll to the everything section",
+    5_000,
+    window.webContents.executeJavaScript(
+      `[...document.querySelectorAll(".agent-panel-section h3")].find((el) => el.textContent === "Everything it produced")?.scrollIntoView({ block: "start" })`,
+    ),
+  );
+  await settle(400);
+  const panelDeepDive = String(
+    await within(
+      "read the author panel's deep dive",
+      5_000,
+      window.webContents.executeJavaScript(`document.querySelector(".agent-panel")?.textContent ?? ""`),
+    ),
+  );
+  await shoot(window, "agent-output-deep-dive-panel");
+  console.log(
+    `[cockpit] MAR-691 deep dive: stage_heading=${String(stageDeepDive.includes(DEEP_DIVE_HEADING_TEXT))} ` +
+      `stage_text=${String(stageDeepDive.includes(DEEP_DIVE_TEXT))} ` +
+      `panel_heading=${String(panelDeepDive.includes(DEEP_DIVE_HEADING_TEXT))} ` +
+      `panel_text=${String(panelDeepDive.includes(DEEP_DIVE_TEXT))}`,
+  );
+  measurements.push({
+    stage: "deep-dive-stage",
+    theme: "light",
+    viewport: VIEWPORT.name,
+    heading_present: stageDeepDive.includes(DEEP_DIVE_HEADING_TEXT),
+    text_present: stageDeepDive.includes(DEEP_DIVE_TEXT),
+  });
+  measurements.push({
+    stage: "deep-dive-panel",
+    theme: "light",
+    viewport: VIEWPORT.name,
+    heading_present: panelDeepDive.includes(DEEP_DIVE_HEADING_TEXT),
+    text_present: panelDeepDive.includes(DEEP_DIVE_TEXT),
+  });
+
+  /*
+   * MAR-698's scene: a digest's own collected links, clicked for real.
+   *
+   * `digest-scout-0` carries no deep dive, so this is unrelated to the
+   * scene above. `LinkOut` intercepts the press and hands the address to
+   * main through `open.link`; `shell.openExternal` is stubbed above, so
+   * what proves the wiring is the exact URL that arrived there and the
+   * window's own address staying put — never a real browser launched on
+   * this machine.
+   */
+  nativeTheme.themeSource = "light";
+  await settle(300);
+  const digestOpenRouteForLinks = `${agentRoute}&stage=output&output=${encodeURIComponent("digest-scout-0")}`;
+  await go(window, digestOpenRouteForLinks);
+  await resizeTo(window, VIEWPORT.width, VIEWPORT.height);
+  await go(window, digestOpenRouteForLinks);
+  await settle(400);
+  const urlBeforeClick = window.webContents.getURL();
+  const linkFacts = (await within(
+    "read the first collected item's anchor before pressing it",
+    5_000,
+    window.webContents.executeJavaScript(
+      `(() => {
+         const a = document.querySelector(".cockpit-stage .output-card a[href^='https://']");
+         if (a === null) return { found: false };
+         return { found: true, href: a.getAttribute("href"), rel: a.getAttribute("rel"), text: a.textContent };
+       })()`,
+    ),
+  )) as { found: boolean; href?: string | null; rel?: string | null; text?: string | null };
+  await shoot(window, "agent-output-link-before-click");
+  await within(
+    "press the collected item's link for real",
+    5_000,
+    window.webContents.executeJavaScript(
+      `document.querySelector(".cockpit-stage .output-card a[href^='https://']")?.click()`,
+    ),
+  );
+  await settle(400);
+  const urlAfterClick = window.webContents.getURL();
+  console.log(
+    `[cockpit] MAR-698 link: href=${JSON.stringify(linkFacts.href)} rel=${JSON.stringify(linkFacts.rel)} ` +
+      `openExternalCalls=${JSON.stringify(openExternalCalls)} url_unchanged=${String(urlBeforeClick === urlAfterClick)}`,
+  );
+  measurements.push({
+    stage: "outbound-link",
+    theme: "light",
+    viewport: VIEWPORT.name,
+    anchor_found: linkFacts.found,
+    anchor_rel_noreferrer_noopener: linkFacts.rel === "noreferrer noopener",
+    window_did_not_navigate: urlBeforeClick === urlAfterClick,
+    open_external_called_once: openExternalCalls.length === 1,
+    open_external_url_matches_anchor: openExternalCalls[0] === linkFacts.href,
+  });
+
+  /*
+   * MAR-698's other half: a citation reference, and the control that proves
+   * model prose stays linkless.
+   *
+   * `brief-scout-0`'s two paragraphs cite `digestItems[0]`/`[1]`, both
+   * carrying `item_url`, so `BriefParagraphBody` must draw a real anchor
+   * under "Written from" (`.brief-cited`, `app/_components/digest.tsx`).
+   * `DEEP_DIVE_TEXT` (seeded on `digest-scout-1`, MAR-691) now carries a URL
+   * a model wrote — proving it stays text is this issue's other stated bar,
+   * and nothing above exercises it.
+   */
+  nativeTheme.themeSource = "light";
+  await settle(300);
+  const citationRoute = `${agentRoute}&stage=output&output=${encodeURIComponent("brief-scout-0")}`;
+  await go(window, citationRoute);
+  await resizeTo(window, VIEWPORT.width, VIEWPORT.height);
+  await go(window, citationRoute);
+  await settle(400);
+  const citationFacts = (await within(
+    "read the brief's own Written-from citation before pressing it",
+    5_000,
+    window.webContents.executeJavaScript(
+      `(() => {
+         const a = document.querySelector(".cockpit-stage .output-card .brief-cited a[href^='https://']");
+         if (a === null) return { found: false };
+         return { found: true, href: a.getAttribute("href"), rel: a.getAttribute("rel") };
+       })()`,
+    ),
+  )) as { found: boolean; href?: string | null; rel?: string | null };
+  await shoot(window, "agent-output-brief-citation-link");
+
+  const proseRoute = `${agentRoute}&stage=output&output=${encodeURIComponent("digest-scout-1")}`;
+  await go(window, proseRoute);
+  await resizeTo(window, VIEWPORT.width, VIEWPORT.height);
+  await go(window, proseRoute);
+  await settle(400);
+  const proseFacts = (await within(
+    "confirm the model's own URL in the deep dive drew no anchor",
+    5_000,
+    window.webContents.executeJavaScript(
+      `(() => {
+         const text = document.querySelector(".cockpit-stage")?.textContent ?? "";
+         const anchored = [...document.querySelectorAll(".cockpit-stage a")]
+           .some((a) => a.getAttribute("href") === ${JSON.stringify(MODEL_PROSE_URL)});
+         return { url_present_as_text: text.includes(${JSON.stringify(MODEL_PROSE_URL)}), anchored };
+       })()`,
+    ),
+  )) as { url_present_as_text: boolean; anchored: boolean };
+  await shoot(window, "agent-output-deep-dive-prose-url");
+
+  console.log(
+    `[cockpit] MAR-698 citation: href=${JSON.stringify(citationFacts.href)} rel=${JSON.stringify(citationFacts.rel)} ` +
+      `prose_url_present=${String(proseFacts.url_present_as_text)} prose_url_anchored=${String(proseFacts.anchored)}`,
+  );
+  measurements.push({
+    stage: "outbound-citation",
+    theme: "light",
+    viewport: VIEWPORT.name,
+    citation_anchor_found: citationFacts.found,
+    citation_rel_noreferrer_noopener: citationFacts.rel === "noreferrer noopener",
+    model_prose_url_present: proseFacts.url_present_as_text,
+    model_prose_url_stayed_unanchored: proseFacts.url_present_as_text && !proseFacts.anchored,
+  });
+
+  /*
+   * MAR-697's scene: Save as PDF, for real, into `exports/<agent>/`.
+   *
+   * The brief is the only artifact kind `outputs.tsx` shows the export
+   * button for. `shell.openPath` is stubbed above — the same auto-open
+   * `exportBriefAsPdf` performs after every save — so this proves the save
+   * half only: a real PDF lands on disk at the folder MAR-697 chose, and
+   * the Output stage's own list (`ExportsList`) reads it back after the
+   * page's refresh key bumps. What this scene deliberately does NOT do is
+   * press the resulting "Saved files" entry to reopen it — that is
+   * `openAgentExport`, the exact path MAR-740 found broken for a title
+   * carrying an em dash, and is left to the session fixing it.
+   */
+  nativeTheme.themeSource = "light";
+  await settle(300);
+  const exportRoute = `${agentRoute}&stage=output&output=${encodeURIComponent("brief-scout-0")}`;
+  await go(window, exportRoute);
+  await resizeTo(window, VIEWPORT.width, VIEWPORT.height);
+  await go(window, exportRoute);
+  await settle(400);
+  const exportsBefore = (await within(
+    "confirm no Saved files section exists yet",
+    5_000,
+    window.webContents.executeJavaScript(`document.querySelector(".agent-exports") === null`),
+  )) as boolean;
+  await shoot(window, "agent-output-exports-before-save");
+  await within(
+    "press Save as PDF for real",
+    5_000,
+    window.webContents.executeJavaScript(
+      `[...document.querySelectorAll(".output-footer button")].find((b) => b.textContent === "Save as PDF")?.click()`,
+    ),
+  );
+  const feedback = (await within(
+    "wait for and read the save feedback notice",
+    10_000,
+    (async () => {
+      const deadline = Date.now() + 8000;
+      while (Date.now() < deadline) {
+        const found: string | null = await window.webContents.executeJavaScript(
+          `document.querySelector(".notice")?.textContent ?? null`,
+        );
+        if (found !== null) return found;
+        await settle(200);
+      }
+      return null;
+    })(),
+  )) as string | null;
+  await settle(400);
+  await shoot(window, "agent-output-exports-feedback");
+
+  // A store read, not a screenshot: the folder MAR-697 chose, read directly
+  // off disk rather than trusted from the page's own sentence about it.
+  const exportsFolder = agentExportsPath(process.env.DASH_DATA_DIR ?? "", AGENT);
+  let savedFiles: string[] = [];
+  try {
+    savedFiles = readdirSync(exportsFolder);
+  } catch {
+    savedFiles = [];
+  }
+  const pdfMagicOk = savedFiles.length > 0
+    ? readFileSync(path.join(exportsFolder, savedFiles[0] as string)).subarray(0, 5).toString("latin1") === "%PDF-"
+    : false;
+
+  // Reloaded so the page's own poll of the folder is what draws the list
+  // below, not a stale render from before the save.
+  await go(window, exportRoute);
+  await settle(600);
+  const exportsAfter = (await within(
+    "read the Saved files list after the save",
+    5_000,
+    window.webContents.executeJavaScript(
+      `(() => {
+         const section = document.querySelector(".agent-exports");
+         if (section === null) return { found: false };
+         const rows = [...section.querySelectorAll(".export-row .export-open")].map((el) => el.textContent);
+         return { found: true, heading: section.querySelector("h2")?.textContent ?? null, rows };
+       })()`,
+    ),
+  )) as { found: boolean; heading?: string | null; rows?: string[] };
+  await shoot(window, "agent-output-exports-after-save");
+
+  console.log(
+    `[cockpit] MAR-697 export: feedback=${JSON.stringify(feedback)} savedFiles=${JSON.stringify(savedFiles)} ` +
+      `pdfMagicOk=${String(pdfMagicOk)} openPathCalls=${JSON.stringify(openPathCalls)} exportsAfter=${JSON.stringify(exportsAfter)}`,
+  );
+  measurements.push({
+    stage: "exports-save",
+    theme: "light",
+    viewport: VIEWPORT.name,
+    exports_section_absent_before_save: exportsBefore,
+    feedback_ok: (feedback ?? "").startsWith("Saved"),
+    file_written_to_disk: savedFiles.length > 0,
+    file_is_a_real_pdf: pdfMagicOk,
+    open_path_called_with_the_saved_file:
+      openPathCalls.length > 0 && savedFiles.length > 0 && (openPathCalls[0] ?? "").endsWith(savedFiles[0] as string),
+    exports_list_shows_it_after_reload: (exportsAfter.rows ?? []).length > 0,
+    // Deliberately not exercised — MAR-740's own bug, left to its fix session.
+    click_to_reopen_exercised: false,
   });
 
   writeFileSync(

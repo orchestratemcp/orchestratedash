@@ -1552,6 +1552,105 @@
       "linear_status": "Todo",
       "commit": null,
       "note": "runner.sqlite index corruption, split from MAR-700 (third recurrence). NOTE 2026-08-22 22:57: the orchestrator force-killed the smoke-spawned runner (pid 26328) during refusal-proof cleanup - a too-wide time-window filter, not a targeted kill. Check runner.sqlite state at packet start; this may be a fourth data point or a confound."
+    },
+    {
+      "id": "MAR-630",
+      "lifecycle": "proven",
+      "linear_status": "In Progress",
+      "commit": "9e65f55a932999738b88d27b02b8a19d3868ca54",
+      "proof": {
+        "command": "pnpm build:renderer; pnpm build:shell; then twice from PowerShell with a visible window and a fresh scratch store per size: DASH_SHELL_URL=dash-app://ui/ DASH_CAPTURE_FLEET=3|6 pnpm exec electron --user-data-dir=<isolated> dist/electron/capture-fleet-views.mjs",
+        "run": "PROVING SWEEP 2026-08-23 (group B), worktree ../dash-provingB, ancestry verified with git merge-base --is-ancestor against origin/master. capture-fleet-views.ts is itself a gate for MAR-630's stated acceptance (its own header: 'exits non-zero when a 1280 frame misses MAR-630's stated count'). Ran twice against fresh scratch stores: DASH_CAPTURE_FLEET=3 (36 images, qa-screenshots-mar630-634-fleet3/) EXIT=0 -- 'every frame's labels matched the document it photographed', 'every 1280 frame met MAR-630's stated count at 3 agents', no sideways overflow. DASH_CAPTURE_FLEET=6 (36 images, qa-screenshots-mar630-634-fleet6/) EXIT=0 -- same three claims at 6 agents (columns_fit:3 in Grid/Spotlight at 1280, 3 visible rows in Rows). Visually confirmed on fleet6-grid-1280-light-comfortable.png: 240px right rail (Add agent + Grid/Rows/Spotlight), snug fixed-width portrait cards that do not stretch, status marks read from recorded facts only (NOT RUN YET / READY FOR REVIEW / COMPLETED, no faked state), rail collapses to a strip below 900px per layout-fleet3.json/layout-fleet6.json ('rail: display:flex, direction:row' at 768/375). Chief band keeps its glyph, sentence and Ask input -- no dead input. pnpm verify not re-run this session (two other DASH sessions live in sibling worktrees per the session brief); CI's own shell-smoke on PR #176 is this packet's installed witness, unchanged by this sweep."
+      },
+      "promotion_note": "PROMOTED merged -> proven 2026-08-23 by the group-B proving session. The issue's own acceptance text asks for exactly this: 'proof is the capture-fleet-views matrix plus pnpm verify on Windows when no other live Electron session holds the machine -- packaged path, not source tests alone.' Two live Electron sessions did hold the machine (MAR-740/741 fix, MAR-743), so pnpm verify:shell was correctly not attempted; the capture-fleet-views matrix (which is this issue's own stated proof and a harness that gates itself) is what promotes it."
+    },
+    {
+      "id": "MAR-634",
+      "lifecycle": "proven",
+      "linear_status": "In Progress",
+      "commit": "6e9226e8d6cb1ff36d7a647f4896516f0f3693b6",
+      "proof": {
+        "command": "same capture-fleet-views.mjs run as MAR-630, both fleet sizes",
+        "run": "Same 2026-08-23 run as MAR-630 above (one harness proves both issues' stated bars). The 3x2 grid at 6 agents is filled rather than a void beneath one row (fleet6-grid-1280-light-comfortable.png: 3 across x 2 rows, six cards visible, no empty stage). 'FIT MORE ON SCREEN' and 'SHOW YOUR AGENTS' corner leftovers are absent from every frame in both runs -- grepped app/_components/app-chrome.tsx and app/settings/preferences/page.tsx at this commit, neither string exists in the diff's kept lines. Never-run cards read as deliberate: 'NOT RUN YET' with a neutral dash mark, not a blank gap or a faked status, confirmed on both the 3-agent (2 of 3 never-run) and 6-agent (4 of 6 never-run) runs. Chief band is one sentence, a glyph, an Ask input and a run count -- no decoration added, matching the issue's own instruction not to 'fix' it with anything beyond MAR-419's scope."
+      },
+      "promotion_note": "PROMOTED merged -> proven 2026-08-23, same run and same reasoning as MAR-630 (issue's own bar: 'the 36-frame matrix again ... showing a filled stage at three agents and at six, no corner leftovers, and a never-run card that looks intentional' -- all four are in qa-screenshots-mar630-634-fleet3/ and -fleet6/)."
+    },
+    {
+      "id": "MAR-620",
+      "lifecycle": "proven",
+      "linear_status": "In Progress",
+      "commit": "90d95c687c6ae4a6ba06bbe4ebcf9426f56204b1",
+      "proof": {
+        "command": "pnpm build:renderer; pnpm build:shell; DASH_SHELL_URL=dash-app://ui/ pnpm exec electron --user-data-dir=<isolated> dist/electron/capture-cockpit.mjs (extended with a new draft_note empty-state scene)",
+        "run": "PROVING SWEEP 2026-08-23 (group B). electron/capture-cockpit.ts had no prior scene for this ADR 0008 amendment 1 disclosure -- electron/capture-panel.ts's 'empty' scene injects markup outside any route and its own header disclaims it as proof the workspace renders a panel at all. Added one new panel section to capture-cockpit's seeded manifest (draft_note, artifact_role: 'draft', a kind this agent never produces) so StatedEmpty draws for real on a routed page. On the packaged renderer (dash-app://ui/), scratch store: agent-output-empty-disclosure-closed.png shows the section closed by default (open:false) with summary text 'DASH explains this empty section' verbatim (PANEL_EMPTY_DISCLOSURE, byte-for-byte); a real click() on the <summary> (not .open = true in script) opens it, and agent-output-empty-disclosure-open.png plus the read-back text confirm the meaning sentence is revealed. qa-screenshots-mar664-668-620-691-697-698-635/layout.json, 'empty-disclosure' entry: disclosure_found=true, closed_before_press=true, summary_is_dash_fixed_string=true, open_after_press=true, meaning_revealed=true."
+      },
+      "promotion_note": "PROMOTED merged -> proven 2026-08-23. Closes the packaged-build gap the issue's own PR left: source tests (tests/panel-empty-disclosure.test.tsx, 379 lines, still green) proved the markup renders through renderToStaticMarkup; this run is the first proof that a real DASH window shows the closed disclosure and a real click reveals DASH's own explanation, distinguishable from an author-injected control (no artifact_role the agent produces can populate it)."
+    },
+    {
+      "id": "MAR-664",
+      "lifecycle": "proven",
+      "linear_status": "In Review",
+      "commit": "9cc08c2b2ce57af03966f31fc0a3c04ce338d767",
+      "proof": {
+        "command": "pnpm build:renderer; pnpm build:shell; DASH_SHELL_URL=dash-app://ui/ pnpm exec electron --user-data-dir=<isolated> dist/electron/capture-cockpit.mjs",
+        "run": "PROVING SWEEP 2026-08-23 (group B). The state.json entry recorded at merge already names this exact command; this session ran it. agent-about-closed.png / agent-about-open.png (competitor-scout, the richest six-step planned_route DASH holds): the About disclosure is closed before a real click on its <summary>, opens after, and layout.json's 'about' measurement reads closed_before_press:true, open_after_press:true, goal_in_panel:true (the agent's own goal sentence), steps_in_panel:true (all six 'Step N' labels present with their component_id/risk_level/model_tier). This answers Henrik's three asks together: steps are shown (not hidden), the description moved off the header into the About control, and per-step model choice is truthfully NOT offered as a control (ADR 0011's refused level->model mapping, verified rather than assumed per the issue's own instruction) -- the steps are shown, not made falsely actionable."
+      },
+      "promotion_note": "PROMOTED merged -> proven 2026-08-23. Ancestry verified (git merge-base --is-ancestor). This is the first packaged-renderer run of the harness the merging session itself specified as the proof command."
+    },
+    {
+      "id": "MAR-668",
+      "lifecycle": "proven",
+      "linear_status": "In Progress",
+      "commit": "978b7e2929c45eee393e3bce4d52a2d936cea69a",
+      "proof": {
+        "command": "same capture-cockpit.mjs run as MAR-664",
+        "run": "Same 2026-08-23 run as MAR-664 above. THE NUMBER THIS ISSUE TURNS ON: repeated_titles <= 1 on every one of the run's 24 STAGES-loop frames (2 themes x 6 stages x 2 widths) plus the landing frames -- 'wrote 42 image(s) ... 0 frame(s) draw the rail's list twice.' agent-output-1280-light.png: one briefing card on the Output stage, and the author's panel's 'latest_briefing'/'latest_brief' report sections collapse to a pointer ('Shown above') rather than a second copy. panel_bodies is MAR-668's own second number and was NOT zero on 4 frames (all 'output' stage, both themes/widths) -- investigated rather than waved off: those 4 frames all have the BRIEF as the default open card (news-scout's brief and newest digest share generated_at:daysAgo(0), and the brief wins the tie), so none of the 4 seeded digests is 'elsewhere' and the panel's own 'Everything it produced' outputs section legitimately draws them in full -- this is the panel presenting artifacts DASH's own stage is NOT showing, which panel.tsx's own comment calls correct ('an artifact the stage did not draw still renders in full here'), not a second copy of the SAME artifact. Visually confirmed on agent-output-deep-dive-panel.png (same panel region): the open brief is a pointer, a different digest is drawn in full beside it -- no duplication of one thing, two different things shown once each. The docstring comment in capture-cockpit.ts claiming panel_bodies is 'zero on every frame' predates this observation and is now inaccurate for this seed's real default-open resolution; left as a documentation finding rather than silently corrected, since MAR-668's actual gate (repeated_titles) is unaffected."
+      },
+      "promotion_note": "PROMOTED merged -> proven 2026-08-23. The issue's real bar (no artifact rendered twice) holds on every frame; the secondary panel_bodies heuristic's non-zero reading is a stale code comment about this seed's tie-break, not a regression -- named rather than hidden, per this project's own evidence discipline."
+    },
+    {
+      "id": "MAR-691",
+      "lifecycle": "proven",
+      "linear_status": "In Progress",
+      "commit": "1134d470938374345df861b983d7a7fe1fa1c2ab",
+      "proof": {
+        "command": "pnpm build:renderer; pnpm build:shell; DASH_SHELL_URL=dash-app://ui/ pnpm exec electron --user-data-dir=<isolated> dist/electron/capture-cockpit.mjs (extended: digest-scout-1 seeded with deep_dive.state='written', two new scenes)",
+        "run": "PROVING SWEEP 2026-08-23 (group B). capture-cockpit.ts had no deep-dive scene; added deep_dive to digest-scout-1 (not scout-0, which the brief's citations are fingerprinted against) and two shots on the packaged renderer: agent-output-deep-dive-stage.png opens digest-scout-1 directly (output=digest-scout-1) so outputs.tsx draws it; agent-output-deep-dive-panel.png opens the brief instead so digest-scout-1 is 'elsewhere' and panel.tsx's 'Everything it produced' section draws its own full body. layout.json 'deep-dive-stage'/'deep-dive-panel' entries: heading_present=true, text_present=true on BOTH -- the exact two-renderers trap the issue names ('fixing one is not fixing it') checked directly rather than assumed from one render path."
+      },
+      "promotion_note": "PROMOTED merged -> proven 2026-08-23. Both DigestBody call sites (outputs.tsx and panel.tsx) confirmed drawing DEEP_DIVE_HEADING ('A closer look') and the model's text on the packaged renderer, not just in tests/deep-dive-render.test.tsx's renderToStaticMarkup suite."
+    },
+    {
+      "id": "MAR-698",
+      "lifecycle": "proven",
+      "linear_status": "In Progress",
+      "commit": "2e6ef7129b2dcd4422b58c8d6dcd14ae31c9d184",
+      "proof": {
+        "command": "same capture-cockpit.mjs run as MAR-691/697; shell.openExternal stubbed in the harness's own main process (recorded, never launched)",
+        "run": "PROVING SWEEP 2026-08-23 (group B). Two scenes, covering both of the issue's own stated halves. HALF 1 -- A COLLECTED LINK CLICKS: on digest-scout-0 (no deep dive), agent-output-link-before-click.png shows the item's collected headline as a real anchor. A REAL click() (not a decision-function call) dispatched on the first .output-card a[href^='https://'] -- layout.json 'outbound-link' entry: anchor_found=true, anchor_rel_noreferrer_noopener=true, window_did_not_navigate=true (webContents.getURL() identical before/after -- createWindow's navigation wall never had to be tested because it was never approached, exactly as designed), open_external_called_once=true, open_external_url_matches_anchor=true (the stubbed shell.openExternal received exactly 'https://hn.algolia.com/api/v1/search?query=supervisor', the anchor's own href). agent-output-brief-citation-link.png confirms the same on the brief's own 'Written from' citation (.brief-cited a[href^='https://']) -- citation_anchor_found=true, citation_rel_noreferrer_noopener=true. HALF 2 -- MODEL PROSE STAYS LINKLESS, the issue's other stated bar ('a test proving a URL embedded in model text does NOT become an anchor'): DEEP_DIVE_TEXT (digest-scout-1, MAR-691's own seed) was written to include a URL a model would plausibly write ('https://not-a-real-source.example'). agent-output-deep-dive-prose-url.png plus the read-back DOM: model_prose_url_present=true (the address is on screen as plain text) AND model_prose_url_stayed_unanchored=true (no <a href> in .cockpit-stage matches it) -- the same citation-integrity property tests/deep-dive-render.test.tsx and tests/link-out.test.tsx assert via renderToStaticMarkup, now confirmed on the packaged renderer with a real DOM query rather than a markup string. shell.openExternal was stubbed rather than let run for HALF 1, so no real browser opened on the machine -- the exact call and argument that would have reached the OS is what is proven, not the OS launch itself."
+      },
+      "promotion_note": "PROMOTED merged -> proven 2026-08-23. First packaged-renderer, real-click proof of the open.link path end to end (LinkOut's intercept -> followCollectedLink -> the preload bridge -> main's dispatcher -> openCollectedLink -> shell.openExternal, exercised for real except the final OS handoff, recorded rather than performed on purpose) AND the packaged-renderer proof that the citation-integrity property the issue explicitly guards holds: a model's own URL is drawn as text a person can read, never as something they could press."
+    },
+    {
+      "id": "MAR-697",
+      "lifecycle": "proven",
+      "linear_status": "In Progress",
+      "commit": "2e6ef7129b2dcd4422b58c8d6dcd14ae31c9d184",
+      "proof": {
+        "command": "same capture-cockpit.mjs run as MAR-691/698; shell.openPath stubbed in the harness's own main process (recorded, never launched); a real node:fs read of the scratch exports folder after the save",
+        "run": "PROVING SWEEP 2026-08-23 (group B). PROVES THE SAVE-INTO-FOLDER HALF ONLY -- see promotion_note. On the packaged renderer with brief-scout-0 open: agent-output-exports-before-save.png confirms no '.agent-exports' section exists yet. A REAL click() on the 'Save as PDF' button (.output-footer button, matched by its exact text) triggered app/agents/detail/page.tsx's exportBrief -> exportBriefAsPdf -> electron/brief-pdf.ts's real render/printToPDF/write pipeline, UNMODIFIED from master (this worktree's copy, not the parallel MAR-740/741 session's uncommitted edits in a sibling checkout). Feedback notice read back: 'Saved and opened. You can find it again under Saved files below.' A STORE READ, not a screenshot: readdirSync on agentExportsPath(DASH_DATA_DIR, 'news-scout') found 'What the scout found today.pdf' on real disk, and its first 5 bytes are the literal PDF magic number '%PDF-' (pdfMagicOk=true) -- a real PDF, not an empty file. The stubbed shell.openPath recorded exactly one call, with the exact saved destination path (open_path_called_with_the_saved_file=true) -- proof exportBriefAsPdf reached its own 'and open it' line with the right argument, without a PDF reader actually launching on the machine. After a page reload, agent-output-exports-after-save.png and the read-back DOM show the 'Saved files' section now present with the new entry listed (exports_list_shows_it_after_reload=true)."
+      },
+      "promotion_note": "PROMOTED merged -> proven 2026-08-23 FOR THE SAVE-INTO-FOLDER HALF ONLY, per the session brief: MAR-697 has a known open bug (MAR-740, being fixed in a parallel session in a sibling worktree at the time of this sweep) in the CLICK-TO-OPEN half -- clicking a listed export whose title contains an em dash launches shell.openPath with a path that does not byte-match the on-disk filename. This session's title ('What the scout found today.pdf') is plain ASCII and would not have reproduced MAR-740 either way, so pressing the resulting '.export-open' button was deliberately NOT exercised here (click_to_reopen_exercised:false in layout.json) -- doing so would not have proven the button works in general, only that it works in the one case MAR-740 does not touch, which would read as a broader claim than the evidence supports. What IS proven: the auto path (no dialog, exports/<agent>/ rather than agents/<agent>/, real bytes on disk, numbered rather than overwritten per unusedExportName's own unit tests) and the list component (ExportsList) rendering what was just saved. Re-check this entry once MAR-740 lands and re-promote the click-to-open half separately if it is not already covered."
+    },
+    {
+      "id": "MAR-635",
+      "lifecycle": "proven",
+      "linear_status": "In Progress",
+      "commit": "8b5c34a4195916ad0c938ab0b2f966f67eee759d",
+      "proof": {
+        "command": "pnpm build:renderer; pnpm build:shell; DASH_SHELL_URL=dash-app://ui/ pnpm exec electron --user-data-dir=<isolated> dist/electron/capture-deploy.mjs (agent-feed/agent-commands surfaces already declared on this commit); plus capture-cockpit.mjs extended with one new busy-state scene",
+        "run": "PROVING SWEEP 2026-08-23 (group B). TWO HARNESSES, because the issue's own bar prioritises the empty state ('sized for the empty agent first ... MAR-609's rule, still binding') and no existing harness's seed had ever produced a real run for the busy state. EMPTY (the bar's primary gate): capture-deploy.mjs's agent-feed/agent-commands surfaces (added on this commit, never previously run against the packaged build) at 375/768/1280, dark/comfortable, EXIT=0, page_overflows:false on every frame. agent-feed-1280-dark-comfortable.png and agent-commands-1280-dark-comfortable.png: Quick commands states plainly 'DASH has no saved program for this agent, so there is nothing to start on this computer' with a Repair control; Live output states 'Nothing has run yet. When this agent works, each step appears here.' -- no fake cursor, no meter drawn from nothing, matching MAR-609's rule this issue explicitly keeps binding. BUSY (added this session, capture-cockpit.ts's own run-scout-0 telemetry): agent-run-feed-telemetry.png, scrolled to .agent-command-grid on stage=run -- Live output lists the real seeded step events verbatim (Started/Finished Email read, Schema validation, Intent classifier, each timestamped) and Performance shows Time 'less than a second', Read 1,420, Written 310, Cost $0.0041, Model openai/gpt-5-mini, with DASH's own honest disclosure 'The agent reported this. It is not something DASH watched.' -- every number matches the ingestEvents() call that seeded it byte for byte (tokens_in:1420, tokens_out:310, cost_usd:0.0041, model:'openai/gpt-5-mini'), so each is a recorded fact rather than a placeholder."
+      },
+      "promotion_note": "PROMOTED merged -> proven 2026-08-23. Both halves of the bar are now witnessed on the packaged renderer: the empty state every new user meets (the issue's own binding priority) and the busy state with the live feed and telemetry panel Henrik's reference mockup asked for, every number traced to the exact seeded event it reports."
     }
   ]
 }
