@@ -1,0 +1,3207 @@
+{
+  "fleet": 6,
+  "views": [
+    "grid",
+    "rows",
+    "spotlight"
+  ],
+  "captured_at": "2026-08-23T08:19:07.257Z",
+  "measurements": [
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "comfortable",
+      "theme": "light",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "594.906px 113px",
+        "cards_height": 595,
+        "chief_height": null
+      },
+      "visible_cards": 6,
+      "visible_rows": 2,
+      "visible_columns": 4,
+      "list": {
+        "auto_rows": "minmax(min-content, 224px)",
+        "auto_columns": "auto",
+        "template_rows": "242.5px 224px",
+        "align_content": "safe center",
+        "gap": "18px",
+        "client_width": 751,
+        "client_height": 595
+      },
+      "card_heights": [
+        243,
+        224
+      ],
+      "stage_filled": 81,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "comfortable",
+      "theme": "light",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "419.906px 113px",
+        "cards_height": 420,
+        "chief_height": null
+      },
+      "visible_cards": 3,
+      "visible_rows": 1,
+      "visible_columns": 3,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "227.5px 242.5px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 665,
+        "client_height": 420
+      },
+      "card_heights": [
+        209,
+        228,
+        243
+      ],
+      "stage_filled": 54,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "comfortable",
+      "theme": "light",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "166.5px 130px",
+        "cards_height": 167,
+        "chief_height": null
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "208.5px 208.5px 227.5px 242.5px 208.5px 208.5px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 288,
+        "client_height": 167
+      },
+      "card_heights": [
+        209,
+        228,
+        243
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "comfortable",
+      "theme": "dark",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "594.906px 113px",
+        "cards_height": 595,
+        "chief_height": null
+      },
+      "visible_cards": 6,
+      "visible_rows": 2,
+      "visible_columns": 4,
+      "list": {
+        "auto_rows": "minmax(min-content, 224px)",
+        "auto_columns": "auto",
+        "template_rows": "242.5px 224px",
+        "align_content": "safe center",
+        "gap": "18px",
+        "client_width": 751,
+        "client_height": 595
+      },
+      "card_heights": [
+        243,
+        224
+      ],
+      "stage_filled": 81,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "comfortable",
+      "theme": "dark",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "419.906px 113px",
+        "cards_height": 420,
+        "chief_height": null
+      },
+      "visible_cards": 3,
+      "visible_rows": 1,
+      "visible_columns": 3,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "227.5px 242.5px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 665,
+        "client_height": 420
+      },
+      "card_heights": [
+        209,
+        228,
+        243
+      ],
+      "stage_filled": 54,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "comfortable",
+      "theme": "dark",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "166.5px 130px",
+        "cards_height": 167,
+        "chief_height": null
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "208.5px 208.5px 227.5px 242.5px 208.5px 208.5px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 288,
+        "client_height": 167
+      },
+      "card_heights": [
+        209,
+        228,
+        243
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "compact",
+      "theme": "light",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "610.906px 113px",
+        "cards_height": 611,
+        "chief_height": null
+      },
+      "visible_cards": 6,
+      "visible_rows": 2,
+      "visible_columns": 4,
+      "list": {
+        "auto_rows": "minmax(min-content, 224px)",
+        "auto_columns": "auto",
+        "template_rows": "242.5px 224px",
+        "align_content": "safe center",
+        "gap": "12px",
+        "client_width": 751,
+        "client_height": 611
+      },
+      "card_heights": [
+        243,
+        224
+      ],
+      "stage_filled": 78,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "compact",
+      "theme": "light",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "435.906px 113px",
+        "cards_height": 436,
+        "chief_height": null
+      },
+      "visible_cards": 3,
+      "visible_rows": 1,
+      "visible_columns": 3,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "227.5px 242.5px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 665,
+        "client_height": 436
+      },
+      "card_heights": [
+        209,
+        228,
+        243
+      ],
+      "stage_filled": 52,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "compact",
+      "theme": "light",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "174.5px 130px",
+        "cards_height": 175,
+        "chief_height": null
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "208.5px 208.5px 227.5px 242.5px 208.5px 208.5px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 288,
+        "client_height": 175
+      },
+      "card_heights": [
+        209,
+        228,
+        243
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "compact",
+      "theme": "dark",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "610.906px 113px",
+        "cards_height": 611,
+        "chief_height": null
+      },
+      "visible_cards": 6,
+      "visible_rows": 2,
+      "visible_columns": 4,
+      "list": {
+        "auto_rows": "minmax(min-content, 224px)",
+        "auto_columns": "auto",
+        "template_rows": "242.5px 224px",
+        "align_content": "safe center",
+        "gap": "12px",
+        "client_width": 751,
+        "client_height": 611
+      },
+      "card_heights": [
+        243,
+        224
+      ],
+      "stage_filled": 78,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "compact",
+      "theme": "dark",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "435.906px 113px",
+        "cards_height": 436,
+        "chief_height": null
+      },
+      "visible_cards": 3,
+      "visible_rows": 1,
+      "visible_columns": 3,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "227.5px 242.5px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 665,
+        "client_height": 436
+      },
+      "card_heights": [
+        209,
+        228,
+        243
+      ],
+      "stage_filled": 52,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "grid",
+      "density": "compact",
+      "theme": "dark",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        168,
+        168,
+        168,
+        168,
+        168,
+        168
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "174.5px 130px",
+        "cards_height": 175,
+        "chief_height": null
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "208.5px 208.5px 227.5px 242.5px 208.5px 208.5px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 288,
+        "client_height": 175
+      },
+      "card_heights": [
+        209,
+        228,
+        243
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "comfortable",
+      "theme": "light",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        751,
+        751,
+        751,
+        751,
+        751,
+        751
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "594.906px 113px",
+        "cards_height": 595,
+        "chief_height": null
+      },
+      "visible_cards": 6,
+      "visible_rows": 6,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "minmax(min-content, 72px)",
+        "auto_columns": "auto",
+        "template_rows": "72px 72px 72px 72px 72px 72px",
+        "align_content": "safe center",
+        "gap": "18px",
+        "client_width": 751,
+        "client_height": 595
+      },
+      "card_heights": [
+        72
+      ],
+      "stage_filled": 88,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "comfortable",
+      "theme": "light",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        665,
+        665,
+        665,
+        665,
+        665,
+        665
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "419.906px 113px",
+        "cards_height": 420,
+        "chief_height": null
+      },
+      "visible_cards": 1,
+      "visible_rows": 1,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "240.5px 240.5px 255.5px 255.5px 240.5px 240.5px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 665,
+        "client_height": 405
+      },
+      "card_heights": [
+        241,
+        256
+      ],
+      "stage_filled": 57,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "comfortable",
+      "theme": "light",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        288,
+        288,
+        288,
+        288,
+        288,
+        288
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "166.5px 130px",
+        "cards_height": 167,
+        "chief_height": null
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "240.5px 240.5px 255.5px 255.5px 240.5px 240.5px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 288,
+        "client_height": 152
+      },
+      "card_heights": [
+        241,
+        256
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "comfortable",
+      "theme": "dark",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        751,
+        751,
+        751,
+        751,
+        751,
+        751
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "594.906px 113px",
+        "cards_height": 595,
+        "chief_height": null
+      },
+      "visible_cards": 6,
+      "visible_rows": 6,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "minmax(min-content, 72px)",
+        "auto_columns": "auto",
+        "template_rows": "72px 72px 72px 72px 72px 72px",
+        "align_content": "safe center",
+        "gap": "18px",
+        "client_width": 751,
+        "client_height": 595
+      },
+      "card_heights": [
+        72
+      ],
+      "stage_filled": 88,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "comfortable",
+      "theme": "dark",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        665,
+        665,
+        665,
+        665,
+        665,
+        665
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "419.906px 113px",
+        "cards_height": 420,
+        "chief_height": null
+      },
+      "visible_cards": 1,
+      "visible_rows": 1,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "240.5px 240.5px 255.5px 255.5px 240.5px 240.5px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 665,
+        "client_height": 405
+      },
+      "card_heights": [
+        241,
+        256
+      ],
+      "stage_filled": 57,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "comfortable",
+      "theme": "dark",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        288,
+        288,
+        288,
+        288,
+        288,
+        288
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "166.5px 130px",
+        "cards_height": 167,
+        "chief_height": null
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "240.5px 240.5px 255.5px 255.5px 240.5px 240.5px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 288,
+        "client_height": 152
+      },
+      "card_heights": [
+        241,
+        256
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "compact",
+      "theme": "light",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        751,
+        751,
+        751,
+        751,
+        751,
+        751
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "610.906px 113px",
+        "cards_height": 611,
+        "chief_height": null
+      },
+      "visible_cards": 6,
+      "visible_rows": 6,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "minmax(min-content, 56px)",
+        "auto_columns": "auto",
+        "template_rows": "56px 56px 56px 56px 56px 56px",
+        "align_content": "safe center",
+        "gap": "12px",
+        "client_width": 751,
+        "client_height": 611
+      },
+      "card_heights": [
+        56
+      ],
+      "stage_filled": 65,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "compact",
+      "theme": "light",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        665,
+        665,
+        665,
+        665,
+        665,
+        665
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "435.906px 113px",
+        "cards_height": 436,
+        "chief_height": null
+      },
+      "visible_cards": 1,
+      "visible_rows": 1,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "232.5px 232.5px 247.5px 247.5px 232.5px 232.5px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 665,
+        "client_height": 421
+      },
+      "card_heights": [
+        233,
+        248
+      ],
+      "stage_filled": 53,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "compact",
+      "theme": "light",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        288,
+        288,
+        288,
+        288,
+        288,
+        288
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "174.5px 130px",
+        "cards_height": 175,
+        "chief_height": null
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "232.5px 232.5px 247.5px 247.5px 232.5px 232.5px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 288,
+        "client_height": 160
+      },
+      "card_heights": [
+        233,
+        248
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "compact",
+      "theme": "dark",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        751,
+        751,
+        751,
+        751,
+        751,
+        751
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": false,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "610.906px 113px",
+        "cards_height": 611,
+        "chief_height": null
+      },
+      "visible_cards": 6,
+      "visible_rows": 6,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "minmax(min-content, 56px)",
+        "auto_columns": "auto",
+        "template_rows": "56px 56px 56px 56px 56px 56px",
+        "align_content": "safe center",
+        "gap": "12px",
+        "client_width": 751,
+        "client_height": 611
+      },
+      "card_heights": [
+        56
+      ],
+      "stage_filled": 65,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "compact",
+      "theme": "dark",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        665,
+        665,
+        665,
+        665,
+        665,
+        665
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "435.906px 113px",
+        "cards_height": 436,
+        "chief_height": null
+      },
+      "visible_cards": 1,
+      "visible_rows": 1,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "232.5px 232.5px 247.5px 247.5px 232.5px 232.5px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 665,
+        "client_height": 421
+      },
+      "card_heights": [
+        233,
+        248
+      ],
+      "stage_filled": 53,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "rows",
+      "density": "compact",
+      "theme": "dark",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        288,
+        288,
+        288,
+        288,
+        288,
+        288
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 0,
+      "centred_index": -1,
+      "turned": 0,
+      "columns_fit": null,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "174.5px 130px",
+        "cards_height": 175,
+        "chief_height": null
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "auto",
+        "auto_columns": "auto",
+        "template_rows": "232.5px 232.5px 247.5px 247.5px 232.5px 232.5px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 288,
+        "client_height": 160
+      },
+      "card_heights": [
+        233,
+        248
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "comfortable",
+      "theme": "light",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        218,
+        190,
+        208,
+        208,
+        208,
+        208
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 3,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "594.906px 113px",
+        "cards_height": 595,
+        "chief_height": null
+      },
+      "visible_cards": 2,
+      "visible_rows": 1,
+      "visible_columns": 2,
+      "list": {
+        "auto_rows": "minmax(min-content, 352px)",
+        "auto_columns": "208px",
+        "template_rows": "352px",
+        "align_content": "safe center",
+        "gap": "18px",
+        "client_width": 667,
+        "client_height": 595
+      },
+      "card_heights": [
+        370,
+        323,
+        352
+      ],
+      "stage_filled": 62,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "comfortable",
+      "theme": "light",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        302,
+        268,
+        288,
+        288,
+        288,
+        288
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 2,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "419.906px 113px",
+        "cards_height": 420,
+        "chief_height": null
+      },
+      "visible_cards": 1,
+      "visible_rows": 1,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "minmax(0px, 1fr)",
+        "auto_columns": "288px",
+        "template_rows": "387.906px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 596,
+        "client_height": 420
+      },
+      "card_heights": [
+        219,
+        193,
+        228,
+        209
+      ],
+      "stage_filled": 52,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "comfortable",
+      "theme": "light",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        165,
+        142,
+        157,
+        157,
+        157,
+        157
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 1,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "166.5px 130px",
+        "cards_height": 167,
+        "chief_height": null
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "minmax(0px, 1fr)",
+        "auto_columns": "157.08px",
+        "template_rows": "134.5px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 303,
+        "client_height": 167
+      },
+      "card_heights": [
+        219,
+        190,
+        228,
+        243,
+        209
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "comfortable",
+      "theme": "dark",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        218,
+        190,
+        208,
+        208,
+        208,
+        208
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 3,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "594.906px 113px",
+        "cards_height": 595,
+        "chief_height": null
+      },
+      "visible_cards": 2,
+      "visible_rows": 1,
+      "visible_columns": 2,
+      "list": {
+        "auto_rows": "minmax(min-content, 352px)",
+        "auto_columns": "208px",
+        "template_rows": "352px",
+        "align_content": "safe center",
+        "gap": "18px",
+        "client_width": 667,
+        "client_height": 595
+      },
+      "card_heights": [
+        370,
+        323,
+        352
+      ],
+      "stage_filled": 62,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "comfortable",
+      "theme": "dark",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        302,
+        268,
+        288,
+        288,
+        288,
+        288
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 2,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "419.906px 113px",
+        "cards_height": 420,
+        "chief_height": null
+      },
+      "visible_cards": 1,
+      "visible_rows": 1,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "minmax(0px, 1fr)",
+        "auto_columns": "288px",
+        "template_rows": "387.906px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 596,
+        "client_height": 420
+      },
+      "card_heights": [
+        219,
+        193,
+        228,
+        209
+      ],
+      "stage_filled": 52,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "comfortable",
+      "theme": "dark",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        165,
+        142,
+        157,
+        157,
+        157,
+        157
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 1,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "166.5px 130px",
+        "cards_height": 167,
+        "chief_height": null
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "minmax(0px, 1fr)",
+        "auto_columns": "157.08px",
+        "template_rows": "134.5px",
+        "align_content": "start",
+        "gap": "18px",
+        "client_width": 303,
+        "client_height": 167
+      },
+      "card_heights": [
+        219,
+        190,
+        228,
+        243,
+        209
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "compact",
+      "theme": "light",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        218,
+        190,
+        208,
+        208,
+        208,
+        208
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 3,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "610.906px 113px",
+        "cards_height": 611,
+        "chief_height": null
+      },
+      "visible_cards": 2,
+      "visible_rows": 1,
+      "visible_columns": 2,
+      "list": {
+        "auto_rows": "minmax(min-content, 352px)",
+        "auto_columns": "208px",
+        "template_rows": "352px",
+        "align_content": "safe center",
+        "gap": "12px",
+        "client_width": 667,
+        "client_height": 611
+      },
+      "card_heights": [
+        370,
+        323,
+        352
+      ],
+      "stage_filled": 61,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "compact",
+      "theme": "light",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        302,
+        267,
+        288,
+        288,
+        288,
+        288
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 2,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "435.906px 113px",
+        "cards_height": 436,
+        "chief_height": null
+      },
+      "visible_cards": 1,
+      "visible_rows": 1,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "minmax(0px, 1fr)",
+        "auto_columns": "288px",
+        "template_rows": "403.906px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 596,
+        "client_height": 436
+      },
+      "card_heights": [
+        219,
+        193,
+        228,
+        209
+      ],
+      "stage_filled": 50,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "compact",
+      "theme": "light",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        165,
+        142,
+        157,
+        157,
+        157,
+        157
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 1,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "174.5px 130px",
+        "cards_height": 175,
+        "chief_height": null
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "minmax(0px, 1fr)",
+        "auto_columns": "157.08px",
+        "template_rows": "142.5px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 303,
+        "client_height": 175
+      },
+      "card_heights": [
+        219,
+        190,
+        228,
+        243,
+        209
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "compact",
+      "theme": "dark",
+      "viewport": 1279,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        218,
+        190,
+        208,
+        208,
+        208,
+        208
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 3,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "column",
+        "top": 41,
+        "left": 1039,
+        "width": 240,
+        "height": 868
+      },
+      "stage": {
+        "template_rows": "610.906px 113px",
+        "cards_height": 611,
+        "chief_height": null
+      },
+      "visible_cards": 2,
+      "visible_rows": 1,
+      "visible_columns": 2,
+      "list": {
+        "auto_rows": "minmax(min-content, 352px)",
+        "auto_columns": "208px",
+        "template_rows": "352px",
+        "align_content": "safe center",
+        "gap": "12px",
+        "client_width": 667,
+        "client_height": 611
+      },
+      "card_heights": [
+        370,
+        323,
+        352
+      ],
+      "stage_filled": 61,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "compact",
+      "theme": "dark",
+      "viewport": 767,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        302,
+        267,
+        288,
+        288,
+        288,
+        288
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 2,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 728,
+        "height": 219
+      },
+      "stage": {
+        "template_rows": "435.906px 113px",
+        "cards_height": 436,
+        "chief_height": null
+      },
+      "visible_cards": 1,
+      "visible_rows": 1,
+      "visible_columns": 1,
+      "list": {
+        "auto_rows": "minmax(0px, 1fr)",
+        "auto_columns": "288px",
+        "template_rows": "403.906px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 596,
+        "client_height": 436
+      },
+      "card_heights": [
+        219,
+        193,
+        228,
+        209
+      ],
+      "stage_filled": 50,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    },
+    {
+      "fleet": 6,
+      "view": "spotlight",
+      "density": "compact",
+      "theme": "dark",
+      "viewport": 374,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "cards": 6,
+      "card_widths": [
+        165,
+        142,
+        157,
+        157,
+        157,
+        157
+      ],
+      "marks": [
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Ready for review"
+        ],
+        [
+          "Cloud",
+          "Completed"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ],
+        [
+          "Local",
+          "Not run yet"
+        ]
+      ],
+      "chief": null,
+      "chief_action": null,
+      "chief_inputs": 0,
+      "centred": 1,
+      "centred_index": 0,
+      "turned": 1,
+      "columns_fit": 1,
+      "track_scrolls": true,
+      "options": 3,
+      "add_agent": "Add agent",
+      "rail": {
+        "display": "flex",
+        "hidden": false,
+        "direction": "row",
+        "top": 41,
+        "left": 39,
+        "width": 335,
+        "height": 261
+      },
+      "stage": {
+        "template_rows": "174.5px 130px",
+        "cards_height": 175,
+        "chief_height": null
+      },
+      "visible_cards": 0,
+      "visible_rows": 0,
+      "visible_columns": 0,
+      "list": {
+        "auto_rows": "minmax(0px, 1fr)",
+        "auto_columns": "157.08px",
+        "template_rows": "142.5px",
+        "align_content": "start",
+        "gap": "12px",
+        "client_width": 303,
+        "client_height": 175
+      },
+      "card_heights": [
+        219,
+        190,
+        228,
+        243,
+        209
+      ],
+      "stage_filled": null,
+      "density_toggle": 0,
+      "strip_toggle": 0,
+      "chief_buttons": 0
+    }
+  ]
+}
