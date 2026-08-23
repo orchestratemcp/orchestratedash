@@ -6043,10 +6043,32 @@ button:disabled {
   max-width: 70ch;
 }
 
+/*
+ * MAR-746, and combined for MAR-711's rule: this said `.ask-input` alone, which
+ * meant the chief's field had no disabled appearance at all — invisible while
+ * nothing ever disabled it, and exactly the gap
+ * `tests/composer-shared.test.tsx` exists to catch the moment `Composer`'s new
+ * `pending` started disabling both. The grey **is** the acknowledgment MAR-746
+ * asks for within one frame, so it has to be a fact about the shared field
+ * rather than about whichever surface happened to need it first.
+ */
+.chief-input:disabled,
 .ask-input:disabled {
   color: var(--text-faint);
   background: var(--surface-2);
   cursor: not-allowed;
+}
+
+/*
+ * The enter glyph, while the last press is still in flight. Dimmed rather than
+ * swapped for a spinner: the field beside it has already gone grey, and a
+ * second moving thing on a control this small reads as an error rather than as
+ * progress. `[aria-busy="true"]` is `Composer`'s own root attribute, so this
+ * rule and the screen reader are reading the same fact.
+ */
+.chief-composer[aria-busy="true"] .chief-enter-glyph,
+.ask-composer[aria-busy="true"] .ask-enter-glyph {
+  color: var(--text-faint);
 }
 
 /* Where the words go, said once, under the control rather than over it. */

@@ -1,0 +1,164 @@
+{
+  "captured_at": "2026-08-23T19:54:39.320Z",
+  "main_loop": {
+    "samples": 1955,
+    "worst_late_ms": 1993,
+    "late_over_100ms": 5,
+    "late_over_500ms": 1,
+    "timeline": [
+      {
+        "at": 1787514816338,
+        "late_ms": 343
+      },
+      {
+        "at": 1787514816565,
+        "late_ms": 101
+      },
+      {
+        "at": 1787514817794,
+        "late_ms": 132
+      },
+      {
+        "at": 1787514819209,
+        "late_ms": 195
+      },
+      {
+        "at": 1787514859482,
+        "late_ms": 1993
+      }
+    ]
+  },
+  "measurements": [
+    {
+      "scene": "latency",
+      "samples": 12,
+      "deliver": {
+        "median": 1,
+        "worst": 2
+      },
+      "react": {
+        "median": 14,
+        "worst": 17
+      },
+      "total": {
+        "median": 15,
+        "worst": 19
+      },
+      "presses": [
+        {
+          "dispatched_at": 1787514821687,
+          "deliver_ms": 2,
+          "react_ms": 17,
+          "total_ms": 19,
+          "long_tasks_ms": []
+        },
+        {
+          "dispatched_at": 1787514824547,
+          "deliver_ms": 1,
+          "react_ms": 13,
+          "total_ms": 14,
+          "long_tasks_ms": []
+        },
+        {
+          "dispatched_at": 1787514827407,
+          "deliver_ms": 1,
+          "react_ms": 13,
+          "total_ms": 14,
+          "long_tasks_ms": []
+        },
+        {
+          "dispatched_at": 1787514830263,
+          "deliver_ms": 1,
+          "react_ms": 12,
+          "total_ms": 13,
+          "long_tasks_ms": []
+        },
+        {
+          "dispatched_at": 1787514833113,
+          "deliver_ms": 1,
+          "react_ms": 15,
+          "total_ms": 16,
+          "long_tasks_ms": []
+        },
+        {
+          "dispatched_at": 1787514835975,
+          "deliver_ms": 1,
+          "react_ms": 13,
+          "total_ms": 14,
+          "long_tasks_ms": []
+        },
+        {
+          "dispatched_at": 1787514838828,
+          "deliver_ms": 2,
+          "react_ms": 14,
+          "total_ms": 16,
+          "long_tasks_ms": []
+        },
+        {
+          "dispatched_at": 1787514841686,
+          "deliver_ms": 2,
+          "react_ms": 13,
+          "total_ms": 15,
+          "long_tasks_ms": []
+        },
+        {
+          "dispatched_at": 1787514844538,
+          "deliver_ms": 1,
+          "react_ms": 11,
+          "total_ms": 12,
+          "long_tasks_ms": []
+        },
+        {
+          "dispatched_at": 1787514847389,
+          "deliver_ms": 1,
+          "react_ms": 16,
+          "total_ms": 17,
+          "long_tasks_ms": []
+        },
+        {
+          "dispatched_at": 1787514850248,
+          "deliver_ms": 1,
+          "react_ms": 14,
+          "total_ms": 15,
+          "long_tasks_ms": []
+        },
+        {
+          "dispatched_at": 1787514853100,
+          "deliver_ms": 1,
+          "react_ms": 16,
+          "total_ms": 17,
+          "long_tasks_ms": []
+        }
+      ]
+    },
+    {
+      "scene": "under-stall",
+      "main_blocked_ms": 2000,
+      "dispatched_at": 1787514857470,
+      "deliver_ms": 1,
+      "react_ms": 2018,
+      "total_ms": 2019,
+      "long_tasks_ms": []
+    },
+    {
+      "scene": "burst-gapless",
+      "presses": 5,
+      "press_gap_ms": 0,
+      "keydowns_seen_by_page": 5,
+      "turns_before": 14,
+      "turns_after": 19,
+      "turns_recorded": 5,
+      "burst_ms": 8012
+    },
+    {
+      "scene": "burst-spaced",
+      "presses": 5,
+      "press_gap_ms": 25,
+      "keydowns_seen_by_page": 5,
+      "turns_before": 19,
+      "turns_after": 20,
+      "turns_recorded": 1,
+      "burst_ms": 8160
+    }
+  ]
+}

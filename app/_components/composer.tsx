@@ -35,17 +35,54 @@ import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
  *
  * ## What this file owns behaviourally
  *
- * Three things neither surface has to reimplement: Escape closes the room
+ * Four things neither surface has to reimplement: Escape closes the room
  * from anywhere in it, not only from the field (bound to `document`, not the
  * textarea — `ChiefChat`'s own MAR-683 reasoning: a person reading a turn has
  * not necessarily left focus in the textarea); the room scrolls to its
  * newest content when `scrollSignal` grows, honouring
- * `prefers-reduced-motion`; and Enter sends while Shift+Enter is a newline.
+ * `prefers-reduced-motion`; Enter sends while Shift+Enter is a newline; and
+ * **a send in flight closes the field to further presses** (`pending`, below).
  * Each surface still owns its own `question` state, its own busy/elapsed
  * clock, and its own submit function — those are not chrome, they are what
  * "asking" means on that surface, and duplicating a few lines of
  * `useState`/`useEffect` per surface costs less than a generic async state
  * machine both surfaces would have to bend to fit.
+ *
+ * ## MAR-746: the in-flight guard, and why it is here rather than per surface
+ *
+ * Henrik, on the MAR-743 scratch instance: *"I pressed enter on chief chat and
+ * it didn't instantly send the message. I had time to press enter 3 times
+ * before any reaction and it sent the message three times."* Three turns, three
+ * charges, one question — visible in `chief_messages` as three rows seconds
+ * apart.
+ *
+ * Enter is this file's own key handler, so the surface that had no guard could
+ * not have added one without reaching into chrome it does not own. `pending`
+ * closes it in the one place both surfaces already share:
+ *
+ * - The textarea renders `disabled`, which is both the stop and the
+ *   acknowledgment. MAR-746's own bar is that a press is acknowledged *within
+ *   one frame* even when the work takes seconds, and a disabled field is a
+ *   frame-one fact: React commits the attribute in the same discrete update as
+ *   the press, before paint, with no round trip in between — measured at 7ms
+ *   with main's own thread deliberately blocked for two seconds, against
+ *   2018ms for the same press before this (`qa-lag-mar746/`). `aria-busy` on
+ *   the root says the same thing to a screen reader, which cannot see the grey.
+ * - `onKeyDown` refuses Enter anyway, **before** `onSubmit` is reached. A
+ *   disabled textarea receives no key events at all, so this is deliberately
+ *   the second lock and not the first: it is what holds if a surface ever
+ *   passes `pending` without letting the field go disabled, and it is the arm a
+ *   test can drive (`sendsOnEnter`) when no test in this repository can press a
+ *   key.
+ * - Focus comes back when the send finishes (the `pending` effect below).
+ *   Disabling a focused element blurs it, so without that a person who asked
+ *   one question would have to click back into the field to ask the next — the
+ *   guard trading one defect for a smaller one. The restore is conditional on
+ *   having had focus at the moment it was taken away, so somebody who
+ *   deliberately clicked elsewhere while waiting does not get yanked back.
+ *
+ * `useSingleFlight` (`single-flight.ts`) is the other half, and the half a
+ * test can drive.
  */
 
 export interface ComposerClassNames {
@@ -83,6 +120,7 @@ export function Composer({
   value,
   onChange,
   onSubmit,
+  pending,
   textareaDisabled,
   avatar = null,
   modelLine,
@@ -113,6 +151,15 @@ export function Composer({
   onChange: (value: string) => void;
   /** Called on Enter (not Shift+Enter). There is no submit button anywhere in this component. */
   onSubmit: () => void;
+  /**
+   * A send this surface has started and not yet finished (MAR-746).
+   *
+   * While true the field is disabled and Enter is refused before it can reach
+   * `onSubmit`. Callers get this from `useSingleFlight` (`single-flight.ts`)
+   * rather than inventing their own flag, so the thing that closes the field
+   * and the thing that drops the duplicate call are the same fact.
+   */
+  pending: boolean;
   textareaDisabled: boolean;
   /** A costume perched on the field, positioned by `classes.inputWrap`. Absent draws none. */
   avatar?: ReactNode;
@@ -120,6 +167,37 @@ export function Composer({
   modelLine: ReactNode;
 }): ReactNode {
   const thread = useRef<HTMLDivElement | null>(null);
+  const field = useRef<HTMLTextAreaElement | null>(null);
+  /*
+   * MAR-746. Whether the caret was in this field at the moment the send took it
+   * away, so the restore below can be conditional rather than a grab.
+   *
+   * A ref rather than state on purpose: nothing renders differently for it, and
+   * a state update here would schedule a second render inside the effect that
+   * reads it for no visible reason.
+   */
+  const hadFocus = useRef(false);
+
+  /*
+   * MAR-746. Give the field back when the send finishes.
+   *
+   * `disabled` blurs whatever it lands on, so without this the guard would fix
+   * "three questions asked" by costing a click before the next one — a trade a
+   * person types their way straight into. The `pending` branch records rather
+   * than restores, so the answer to "did they have focus" is taken at the
+   * moment focus was taken, not seconds later when the reply lands and the
+   * person may have clicked into something else entirely.
+   */
+  useEffect(() => {
+    if (pending) {
+      hadFocus.current = document.activeElement === field.current;
+      return;
+    }
+    if (hadFocus.current) {
+      hadFocus.current = false;
+      field.current?.focus();
+    }
+  }, [pending]);
 
   useEffect(() => {
     if (!open) {
@@ -145,14 +223,33 @@ export function Composer({
   }, [open, scrollSignal]);
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
+    if (event.key !== "Enter" || event.shiftKey) {
+      return;
+    }
+    /*
+     * MAR-746. `preventDefault` before the guard, not after it: a refused Enter
+     * must not fall through to the textarea's own newline either, or somebody
+     * pressing it three times while waiting would find two blank lines in front
+     * of their next question. Whether it *sends* is `sendsOnEnter` — pure and
+     * exported so a test can drive the refusal without a DOM, and called here
+     * rather than restated, so the tested condition is this condition.
+     */
+    event.preventDefault();
+    if (sendsOnEnter(event, pending)) {
       onSubmit();
     }
   }
 
   return (
-    <div className={open ? `${classes.root} is-open` : classes.root}>
+    <div
+      className={open ? `${classes.root} is-open` : classes.root}
+      /*
+       * MAR-746. What the grey field says to somebody who cannot see it. On the
+       * root rather than the textarea because the room below it is also waiting
+       * — the whole composer is mid-send, not one control inside it.
+       */
+      aria-busy={pending}
+    >
       {open ? (
         <div className={classes.room}>
           <div className={classes.roomHead} aria-label={heading}>
@@ -184,11 +281,20 @@ export function Composer({
           <span className={classes.subject}>{subjectLabel}</span>
           <span className={classes.inputWrap}>
             <textarea
+              ref={field}
               className={classes.input}
               rows={open ? 2 : 1}
               value={value}
               placeholder={placeholder}
-              disabled={textareaDisabled}
+              /*
+               * MAR-746. The acknowledgment, and the reason it is `disabled`
+               * rather than `readOnly`: read-only keeps the caret and the
+               * ordinary colours, which is precisely the state Henrik could not
+               * tell from a field that had ignored him. `disabled` is visible
+               * in one frame and it is what stops the key press at the browser
+               * rather than at a handler.
+               */
+              disabled={textareaDisabled || pending}
               onChange={(event) => onChange(event.target.value)}
               onFocus={onOpen}
               onKeyDown={onKeyDown}
@@ -205,6 +311,28 @@ export function Composer({
       {modelLine}
     </div>
   );
+}
+
+/**
+ * Whether this key press is a send (MAR-746).
+ *
+ * Pure, and exported for that reason: every render test in this repository is
+ * `renderToStaticMarkup`, so no key press ever reaches `Composer`'s own
+ * `onKeyDown`, and "the third Enter while the first is still in flight does
+ * nothing" is exactly the claim a render cannot exercise. Testing the condition
+ * directly is what proves the refusal, independent of whether a test harness can
+ * ever press a key.
+ *
+ * Shift+Enter is a newline and is *not* a send — and, deliberately, is not
+ * refused while pending either: a person composing the next paragraph while
+ * waiting for the last answer is doing something reasonable, and the field
+ * being disabled is what stops them rather than this.
+ */
+export function sendsOnEnter(
+  event: { key: string; shiftKey: boolean },
+  pending: boolean,
+): boolean {
+  return event.key === "Enter" && !event.shiftKey && !pending;
 }
 
 /**
