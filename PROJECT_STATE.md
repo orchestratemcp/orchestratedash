@@ -64,11 +64,15 @@ the packaged path.
 
 ## Lifecycle counts (from state.json, 2026-08-23)
 
-128 packet entries merged, 49 proven, 20 planned, after the 2026-08-23
+128 packet entries merged, 49 proven, 20 planned (plus MAR-740/741, added
+this session, both planned), after the 2026-08-23
 group-B proving sweep (agent page: MAR-630, 634, 620, 664, 668, 691, 698,
 635 promoted merged -> proven; MAR-697 promoted for its save-into-folder
-half only — its click-to-open half has a known bug, MAR-740, fixed by a
-parallel session, and is left for that session to promote). Evidence:
+half only — its click-to-open half was MAR-740's known bug. MAR-740
+(the em-dash fold) and MAR-741 (the agent-page rail spanning under the
+composer's room) are fixed and independently re-verified — PR #268, OPEN,
+not yet merged, 8f6ae8e; MAR-697's click-to-open half and MAR-741 promote
+once it merges). Evidence:
 `qa-screenshots-mar630-634-fleet3/`, `-fleet6/`, `qa-screenshots-mar635/`
 (`electron/capture-fleet-views.ts`, `capture-deploy.ts`, both pre-existing
 harnesses re-run against the packaged build) and
