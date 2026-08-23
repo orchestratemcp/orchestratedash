@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "project": "DASH",
-  "updated_at": "2026-08-22T19:55:00Z",
+  "updated_at": "2026-08-23",
   "current_wave": "Wave 2 - outside-app connections",
-  "lifecycle_note": "PROVING SWEEP 2026-08-22 (group A, chat front door): MAR-696, MAR-704, MAR-706, MAR-648, MAR-683 promoted merged -> proven on electron/capture-mar615.ts run against the packaged build (dash-app://ui/, scratch store) -- qa-screenshots-groupA-2026-08-22/ + layout.json. MAR-704 needed a new scene (askRecordsQuestion/measurePostAskState): asks the chief a STANDING_WORDS records-fast question and proves the room survives the post-answer refreshKey re-read without a live model/key. MAR-679 checked and left merged: its own 2026-08-17 comment scoped an interim de-clutter and a full indicator+popup ask; only the interim shipped (confirmed live, app/page.tsx:177-192), so it stays merged with the gap named rather than promoted. Linear updated to Done on the five promoted issues, with proof comments; MAR-679 got a finding comment instead. Group A is the chat front door (MAR-696/704/683/648/679/706) of the four-group proving-debt sweep AGENTS.md calls for; groups B (agent page), C (fleet+settings), D (runtime+keys) remain.",
+  "lifecycle_note": "2026-08-23: MAR-743 recorded as planned against a PR to master (ADR 0028, the runner-side Discord bridge). Proven-debt remains over budget; this packet is a MAR-742 epic child dispatched ahead of the proving wave and owes the attended five-step flow before it can move past merged.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -1552,6 +1552,13 @@
       "linear_status": "Todo",
       "commit": null,
       "note": "runner.sqlite index corruption, split from MAR-700 (third recurrence). NOTE 2026-08-22 22:57: the orchestrator force-killed the smoke-spawned runner (pid 26328) during refusal-proof cleanup - a too-wide time-window filter, not a targeted kill. Check runner.sqlite state at packet start; this may be a fourth data point or a confound."
+    },
+    {
+      "id": "MAR-743",
+      "lifecycle": "planned",
+      "linear_status": "Todo",
+      "commit": "29e279f4cb429899e6b9a80234cd4fa67a519fae",
+      "note": "PLANNED, NOT MERGED AND NOT PROVEN. Worktree ../dash-mar743, branch 000henrik/mar-743-adr-0028-discord-bridge, cut from origin/master 4701ef1. WHAT LANDS: ADR 0028 (chief residency + the Discord channel), the answering procedure extracted to lib/chief/answer.ts and hosted by both Electron main and the runner, an outbound-only gateway client, the narrowest broker in DASH (one principal, one connection, one operation, no run allowance), a spool DASH drains into chief_messages and broker_audit, migration 32 (chief_discord, chief_messages.origin, broker_audit.decided_on), and a second section on the Discord settings page. MIGRATION INDEX 32 WAS CHOSEN BY THIS SESSION, not assigned at dispatch - confirm it at the merge. EVIDENCE SO FAR: pnpm typecheck, pnpm brand:check, pnpm vitest run (234 files, 4408 passed, 11 skipped). PROOF STILL OWED: Henrik's attended flow - Connect AI, connect Discord, talk to the chief from Discord, close DASH, still talking with the computer on - with a timestamped transcript and the broker_audit rows carrying decided_on='runner'. No test asserts the runner outliving the window and none may be read as doing so."
     }
   ]
 }
