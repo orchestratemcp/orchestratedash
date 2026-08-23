@@ -8,6 +8,7 @@ import {
   CHIEF_DISCORD_LIVENESS,
   CHIEF_DISCORD_SETUP_STEPS,
   describeChiefDiscordStanding,
+  describeChiefRunnerHolds,
 } from "../../../lib/chief/discord";
 import { plainDay } from "../../../lib/copy/when";
 import {
@@ -389,6 +390,14 @@ function ChiefDiscordSection({
         <span className={standing.on ? "chip chip-ok" : "chip chip-muted"}>{standing.chip}</span>{" "}
         {standing.sentence}
       </p>
+
+      {/*
+       * MAR-745. What the runner actually has, read fresh on every render —
+       * separate from `standing` above, which is only DASH's own row. The two
+       * can disagree when a push failed or the runner restarted, and this is
+       * the sentence that makes that visible instead of silent.
+       */}
+      {view.configured ? <p className="notify-standing">{describeChiefRunnerHolds(view.runner_holds)}</p> : null}
 
       {view.configured ? null : (
         <>

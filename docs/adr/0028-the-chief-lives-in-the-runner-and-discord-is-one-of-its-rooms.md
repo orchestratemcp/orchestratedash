@@ -208,7 +208,11 @@ So:
   `briefingFor` builds today, plus the fleet model choice — on the same route as
   the credentials, at startup and whenever it changes. The runner answers from
   that snapshot, plus what it alone knows live: which agents it is supervising
-  right now.
+  right now. **"Whenever it changes" names every one of** an AI connection or its
+  default model changing, an agent's import or removal, and the bridge's own
+  settings being re-saved — not only the last of those, which is the gap
+  MAR-745 found: a runner still answering from whatever it was handed at
+  bridge-setup time, forever, regardless of what changed afterward.
 - **Out:** the runner writes each turn and each broker decision to its **own**
   store, `runner.sqlite`, in two spool tables. DASH drains them into
   `chief_messages` and `broker_audit` the next time it opens, over the runner's

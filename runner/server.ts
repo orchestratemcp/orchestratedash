@@ -138,6 +138,24 @@ export interface RunnerServerOptions {
    * DASH pulls.
    */
   drainChief?: () => { turns: unknown[]; audit: ChiefAuditRow[] };
+  /**
+   * What the runner currently holds for the chief, and never the credentials
+   * that let it answer (MAR-745).
+   *
+   * The read side of `configureChief`, on the same authenticated channel. It
+   * exists because the push in `configureChief` can fail silently — the runner
+   * was down, the request raced a restart — and a settings row with no way to
+   * ask the runner what it actually has is a settings row a person has to take
+   * on faith. `RunnerChief.describe` is the one function that can answer this
+   * without touching the token or the model key it holds.
+   */
+  describeChief?: () => {
+    configured: boolean;
+    connected: boolean;
+    snapshot_at: string | null;
+    fleet_count: number;
+    model: { provider_id: string; model_id: string; label: string } | null;
+  };
   /** Graceful process shutdown, supplied only by the standalone runner. */
   shutdown?: () => void;
   /**
@@ -524,6 +542,27 @@ async function handle(
     options.configureChief(parsed);
     send(response, 200, { ok: true, configured: parsed !== null });
     log(`[runner] the chief's Discord bridge ${parsed === null ? "cleared" : "configured"}`);
+    return;
+  }
+
+  // GET /chief/discord — what the runner currently holds for the chief, and
+  // never the credentials (MAR-745). `POST /chief/discord`'s read side, on the
+  // same authenticated channel, for the settings row that has no other way to
+  // ask whether a push actually landed.
+  if (
+    request.method === "GET" &&
+    segments.length === 2 &&
+    segments[0] === "chief" &&
+    segments[1] === "discord"
+  ) {
+    if (options.describeChief === undefined) {
+      send(response, 501, {
+        ok: false,
+        detail: "This runner was started without the ability to carry the chief.",
+      });
+      return;
+    }
+    send(response, 200, { ok: true, ...options.describeChief() });
     return;
   }
 

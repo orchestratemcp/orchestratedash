@@ -202,6 +202,7 @@ import {
   ingestChiefDrain,
   performChiefDiscordAction,
 } from "./chief-discord";
+import type { ChiefRunnerHolds } from "../lib/chief/discord";
 import { performLabAction, sendPending } from "./lab-telemetry";
 import { buildNotifyConfiguration, performNotifyAction } from "./notify-settings";
 import { providerOperations } from "./oauth-session";
@@ -915,8 +916,8 @@ export function registerCommandChannel(
       // MAR-383. The vault is reachable from exactly this one entry in exactly
       // this one context object, and the value the user types never comes back
       // through it — see `lib/connection-actions.ts` for what does.
-      connectionAction: (action, target) =>
-        performConnectionAction(action, target, {
+      connectionAction: async (action, target) => {
+        const result = await performConnectionAction(action, target, {
           store: secureStore(),
           readManifest: (agentId) =>
             readAgentManifest(agentId) as ConnectionSourceManifest | null,
@@ -956,7 +957,26 @@ export function registerCommandChannel(
           // already did, and no part of the answer beyond a status and a count —
           // see `probeModelProvider`, which is where all of that is enforced.
           ai: { probe: (profile, key, wantIds) => probeModelProvider(profile, key, fetch, wantIds) },
-        }),
+        });
+        /*
+         * MAR-745. This is the one entry an AI connection, disconnection or
+         * fleet default-model change comes through — `connect`/`disconnect` for
+         * a provider, `default` for the fleet's own row, `assign` for one
+         * agent's. None of those name the chief, and none of them used to tell
+         * the runner anything, which is exactly the gap MAR-745 found: connect
+         * AI after the Discord bridge is already up, and the runner goes on
+         * answering from whatever it was handed at bridge-setup time. Pushed on
+         * every successful call rather than only the ones that matter, for
+         * `pushChiefBridge`'s own reason: the runner rebuilds the whole
+         * configuration from the store on every push, so an extra one this
+         * cheap costs nothing and a missed one costs a chief that quietly does
+         * not know its own model.
+         */
+        if (result.ok) {
+          void pushChiefBridge(runner);
+        }
+        return result;
+      },
       // MAR-536. Main owns host keys, the host store and the SSH child. The
       // preload can name only an ordinary draft or an opaque host id; it never
       // reaches a key file, and this action returns only the public half.
@@ -1012,14 +1032,41 @@ export function registerCommandChannel(
       // MAR-584. The one route in DASH that accepts a document somebody else's
       // editor wrote. Every gate is inside `electron/folder-update.ts`, beside
       // the reads and the write it guards, for `refreshSampleAgent`'s reason.
-      folderAction: (action, target) =>
-        Promise.resolve(performFolderAction(dataDir, action, target.agent_id, runnerPort(runner))),
+      folderAction: async (action, target) => {
+        const result = await performFolderAction(dataDir, action, target.agent_id, runnerPort(runner));
+        /*
+         * MAR-745. `choose` is how an agent joins the fleet outside a handoff —
+         * see `electron/folder-import.ts`. The chief's snapshot is the fleet as
+         * main last read it, and an agent imported after the Discord bridge was
+         * set up used to sit invisibly outside it until something else happened
+         * to trigger a push. `repair` and the read-only three touch no roster
+         * and are left alone.
+         */
+        if (result.ok && action === "choose") {
+          void pushChiefBridge(runner);
+        }
+        return result;
+      },
       // MAR-583. Which model an agent uses. Two of the three touch only DASH's
       // own choice rows; the third opens the vault and makes one `GET` to a
       // provider — the same request `connection.test` makes, keeping more of the
       // answer. Every gate is inside `performModelAction`, beside the reads it
       // guards, for `refreshSampleAgent`'s reason.
-      modelAction: (action, target) => performModelAction(action, target),
+      modelAction: async (action, target) => {
+        const result = await performModelAction(action, target);
+        /*
+         * MAR-745. `default` sets the fleet's fallback model and `chief` sets
+         * the chief's own pin — the two rows `readEffectiveChiefModel` reads,
+         * in that order. Either one changing what the chief would be asked
+         * under is exactly the "default-model change" MAR-745 named, and
+         * `pushChiefBridge` is what actually reads the row and tells the
+         * runner; nothing did, before this.
+         */
+        if (result.ok && (action === "default" || action === "chief")) {
+          void pushChiefBridge(runner);
+        }
+        return result;
+      },
       // MAR-545. One of the two routes in DASH that can spend the person's
       // money, and one of the two callers anywhere that hand the broker
       // `"person"` rather than `"agent"`. Every gate is inside
@@ -1153,6 +1200,47 @@ async function pushChiefBridge(runner: RunnerHandle | null): Promise<void> {
         error instanceof Error ? error.message : String(error)
       }`,
     );
+  }
+}
+
+/**
+ * Ask the runner what it currently holds for the chief, and never for the
+ * credentials that let it answer (MAR-745).
+ *
+ * Read-only and best-effort, `pushChiefBridge`'s twin on the other direction:
+ * null whenever the runner is absent, unreachable, or was built without the
+ * route. Those are exactly the states `describeChiefRunnerHolds` already
+ * knows how to word as "not reachable" — this function's job stops at not
+ * throwing into a settings page render.
+ */
+async function queryChiefBridgeStatus(runner: RunnerHandle | null): Promise<ChiefRunnerHolds | null> {
+  if (runner === null) {
+    return null;
+  }
+  try {
+    const response = await runnerFetch(runner)(`${runner.origin}/chief/discord`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${runner.token}` },
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const body: unknown = await response.json();
+    if (typeof body !== "object" || body === null) {
+      return null;
+    }
+    const record = body as Record<string, unknown>;
+    const fleetCount = typeof record["fleet_count"] === "number" ? record["fleet_count"] : 0;
+    const model = record["model"];
+    const label =
+      typeof model === "object" && model !== null && typeof (model as Record<string, unknown>)["label"] === "string"
+        ? ((model as Record<string, unknown>)["label"] as string)
+        : null;
+    return { fleet_count: fleetCount, model_label: label };
+  } catch {
+    // The runner is down, starting, or the socket is momentarily busy. The
+    // same temporary state `pushChiefBridge` tolerates.
+    return null;
   }
 }
 
@@ -1859,7 +1947,7 @@ async function workspaceAction(
  * its own store because it could not host a process would be a worse failure
  * than the one it was reporting.
  */
-export function registerReadChannel(): void {
+export function registerReadChannel(runner: RunnerHandle | null): void {
   ipcMain.handle(SHELL_READ_CHANNEL, async (_event, request: unknown) => {
     const review = reviewRead(request);
     if (review.decision === "denied") {
@@ -1917,11 +2005,20 @@ export function registerReadChannel(): void {
         } satisfies ReadResponse<ReadResults["view.workspace"]>;
       case "view.hosts":
         return { ok: true, data: hostsView() } satisfies ReadResponse<ReadResults["view.hosts"]>;
-      case "view.notifications":
+      case "view.notifications": {
+        /*
+         * MAR-745. The one enrichment this view needs a runner for: what it
+         * actually holds for the chief right now, as against what DASH's own
+         * rows say it was handed. `view.connections`' pattern above — the pure
+         * projection stays synchronous and testable, and the live fact is
+         * merged in here, the only place that holds a runner handle.
+         */
+        const view = notificationsView();
         return {
           ok: true,
-          data: notificationsView(),
+          data: { ...view, chief: { ...view.chief, runner_holds: await queryChiefBridgeStatus(runner) } },
         } satisfies ReadResponse<ReadResults["view.notifications"]>;
+      }
       case "view.labTelemetry":
         return {
           ok: true,
@@ -2815,9 +2912,17 @@ async function runnerLifecycle(
     // DASH's own copy of the agent's files, "removeKeepFiles" stops here and
     // leaves them where `writeAgentFolder` put them. See `removeAgent`'s own
     // header in `lib/handoff-flow.ts` for what each one actually touches.
-    return removeAgentWithReport(agentId, handoffContext, {
+    const removed = await removeAgentWithReport(agentId, handoffContext, {
       deleteFiles: action === "remove",
     });
+    // MAR-745. The fleet the chief was handed is one agent smaller now, and
+    // nothing else on this path used to say so — the runner would go on
+    // naming an agent that is gone until some unrelated setting change
+    // happened to push again.
+    if (removed.ok) {
+      void pushChiefBridge(runner);
+    }
+    return removed;
   }
 
   if (runner === null) {
@@ -3273,7 +3378,7 @@ if (typeof app !== "undefined") {
     stopBrowser = startBrowserController(runner);
 
     registerCommandChannel(channels, runner);
-    registerReadChannel();
+    registerReadChannel(runner);
     // MAR-383. The third and last `ipcMain.handle` group. Registered here beside
     // the other two so every channel DASH answers is visible in one place.
     registerCredentialChannels();

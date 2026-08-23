@@ -37,6 +37,7 @@ const NO_CHIEF: NotificationsView["chief"] = {
   masked_hint: null,
   configured_at: null,
   state_sentence: "The chief answers only in DASH, on this computer.",
+  runner_holds: null,
 };
 
 const CONFIGURED: NotificationsView = {
