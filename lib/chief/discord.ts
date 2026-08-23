@@ -90,6 +90,20 @@ export interface ChiefDiscordSettings {
   configured_at: string | null;
 }
 
+/**
+ * What the runner reports holding for the chief, right now (MAR-745).
+ *
+ * Never a credential and never the fleet itself — a count and a label, which
+ * is all the settings row needs to tell the two hosts apart from a stale one.
+ * `null` model means the runner has a bridge but nothing to ask; a null
+ * `ChiefRunnerHolds` (see `describeChiefRunnerHolds`) means the runner itself
+ * could not be asked, which is a different and worse fact.
+ */
+export interface ChiefRunnerHolds {
+  fleet_count: number;
+  model_label: string | null;
+}
+
 /** What DASH holds before anybody has set anything up. */
 export const NO_CHIEF_DISCORD: ChiefDiscordSettings = {
   configured: false,
@@ -461,6 +475,35 @@ export function everyChiefDiscordStandingSentence(): string[] {
   ];
 }
 
+/**
+ * What the runner reports actually holding, right now (MAR-745).
+ *
+ * `describeChiefDiscordStanding` says what DASH's own row believes; this says
+ * what the runner behind it answers with, and the two can disagree — a push
+ * that never fired, or fired against a runner that has since restarted, is
+ * MAR-745's whole finding, and it produced no wrong sentence anywhere because
+ * there was no sentence at all. `null` is "the runner could not be asked" —
+ * down, starting, or built without the route — and is worded as its own state
+ * rather than folded into "no model", which would claim a live answer DASH
+ * does not have.
+ */
+export function describeChiefRunnerHolds(holds: ChiefRunnerHolds | null): string {
+  if (holds === null) {
+    return "Runner status: not reachable right now.";
+  }
+  const model = holds.model_label ?? "no model";
+  return `Runner holds: fleet of ${String(holds.fleet_count)} · ${model}`;
+}
+
+/** Every sentence `describeChiefRunnerHolds` composes, for the copy sweep. */
+export function everyChiefRunnerHoldsSentence(): string[] {
+  return [
+    describeChiefRunnerHolds(null),
+    describeChiefRunnerHolds({ fleet_count: 0, model_label: null }),
+    describeChiefRunnerHolds({ fleet_count: 3, model_label: "OpenRouter · anthropic/claude-sonnet-5" }),
+  ];
+}
+
 /** The prompt's own words, for the window `promptForSecret` opens. */
 export const CHIEF_DISCORD_PROMPT = {
   service: "Discord",
@@ -482,6 +525,7 @@ export function everyChiefDiscordSentence(): string[] {
     ...CHIEF_DISCORD_CONTENTS,
     ...CHIEF_DISCORD_SETUP_STEPS,
     ...everyChiefDiscordStandingSentence(),
+    ...everyChiefRunnerHoldsSentence(),
     CHIEF_DISCORD_CUSTODY,
     CHIEF_DISCORD_PROMPT.purpose,
     CHIEF_DISCORD_PROMPT.help,

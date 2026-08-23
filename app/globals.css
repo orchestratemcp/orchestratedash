@@ -6783,7 +6783,7 @@ main:has(.agent-cockpit) {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 /* The identity band and anything DASH has to say about the last press. Both
@@ -7204,6 +7204,25 @@ main:has(.agent-cockpit) {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--cockpit-rail);
+}
+
+/*
+ * MAR-741. The stage and the chat bar, stacked in the content column so the
+ * rail beside them (`.cockpit-rail`, stretched by the grid's default
+ * `align-items: stretch`) runs the full height of `.cockpit-body` — the
+ * fleet's own shape, where the chief's composer sits inside `.fleet-stage`
+ * rather than below the whole page. Before this, `AgentChatBar` was a third
+ * row of `.agent-cockpit` spanning *both* columns, so `.ask-composer` — and
+ * therefore `.ask-room`, which is exactly as wide as it (`left: 0; right: 0`
+ * on `.chief-room, .ask-room` above) — was as wide as the page and painted
+ * over the rail the moment it opened. Nesting the bar here bounds both to
+ * this column without touching `Composer` or its room CSS at all.
+ */
+.cockpit-content {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
 }
 
 .cockpit-stage {

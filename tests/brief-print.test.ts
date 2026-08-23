@@ -135,9 +135,24 @@ describe("the printed document", () => {
 
 describe("the filename DASH proposes", () => {
   it("uses the agent's own words for it", () => {
-    expect(briefFileName("Competitor briefing — 18 August")).toBe(
-      "Competitor briefing — 18 August.pdf",
+    expect(briefFileName("Weekly digest 18 August")).toBe("Weekly digest 18 August.pdf");
+  });
+
+  /**
+   * MAR-740. `dir` showed this exact name on disk, byte for byte, and the
+   * default PDF handler `shell.openPath` invoked still reported it missing —
+   * a Windows shell seam this repository does not own. The fold means DASH
+   * never hands that seam an em dash to begin with.
+   */
+  it("folds an em dash rather than carrying it into a path (MAR-740)", () => {
+    expect(briefFileName("Competitor brief — OpenClaw and Hermes Agent")).toBe(
+      "Competitor brief - OpenClaw and Hermes Agent.pdf",
     );
+  });
+
+  it("folds the rest of the class a model reaches for, not just the one caught", () => {
+    expect(briefFileName("It’s “big” news…")).toBe("It's big news....pdf");
+    expect(briefFileName("Q1–Q2 pipeline review")).toBe("Q1-Q2 pipeline review.pdf");
   });
 
   it("cannot propose a path", () => {
