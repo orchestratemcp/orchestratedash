@@ -72,6 +72,37 @@ import { prepareAgentExports, unusedExportName } from "../lib/agent-exports.js";
 const PRINT_TIMEOUT_MS = 30_000;
 
 /**
+ * Typographic punctuation folded to its ASCII equivalent before a title
+ * becomes a filename (MAR-740).
+ *
+ * An em dash from a model-written title matched the file `dir` showed on disk
+ * byte for byte, and `shell.openPath` still handed it to a default PDF
+ * handler that reported the file missing — a Windows shell/associated-app
+ * seam this repository does not own and cannot fix from here. What is owned
+ * is which characters DASH ever asks that seam to carry, so the fold removes
+ * the class of punctuation a model reaches for (dashes, curly quotes, an
+ * ellipsis) rather than chasing the one code point that was caught.
+ */
+const PUNCTUATION_FOLDS: ReadonlyMap<string, string> = new Map([
+  ["‐", "-"],
+  ["‑", "-"],
+  ["‒", "-"],
+  ["–", "-"],
+  ["—", "-"],
+  ["―", "-"],
+  ["‘", "'"],
+  ["’", "'"],
+  ["‚", "'"],
+  ["′", "'"],
+  ["“", '"'],
+  ["”", '"'],
+  ["„", '"'],
+  ["″", '"'],
+  ["…", "..."],
+  [" ", " "],
+]);
+
+/**
  * A filename a person will recognise, out of the agent's own title.
  *
  * The agent's words, not DASH's, on `workspaceDownload`'s rule — the name is
@@ -82,7 +113,10 @@ const PRINT_TIMEOUT_MS = 30_000;
  * proposed a path before; now it would be one.
  */
 export function briefFileName(title: string): string {
-  const cleaned = title
+  const folded = Array.from(title, (character) => PUNCTUATION_FOLDS.get(character) ?? character).join(
+    "",
+  );
+  const cleaned = folded
     .replace(/[\\/:*?"<>|]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
