@@ -1465,6 +1465,38 @@ export interface NotificationsView {
   send_reports: boolean;
   /** What DASH is doing right now, in one sentence. See `describeNotificationState`. */
   state_sentence: string;
+  /**
+   * The chief's second room, on the same page (MAR-743, ADR 0028).
+   *
+   * Nested on this view rather than given one of its own, because it is the same
+   * page and the same product question — *what does DASH do in Discord?* — and
+   * somebody who set up one half will look for the other where they found it. A
+   * separate view would have made Discord two surfaces a reader has to know to
+   * go looking for.
+   *
+   * The same rule holds as for the fields above it: **there is no field a
+   * credential could travel in.** `masked_hint` is four characters, and the two
+   * ids are snowflakes a person typed and has to be able to read back in order
+   * to correct.
+   */
+  chief: ChiefDiscordView;
+}
+
+/** What DASH holds about the chief's Discord bridge (MAR-743, ADR 0028). */
+export interface ChiefDiscordView {
+  /** True once a token, a channel and an allowed id are all stored. */
+  configured: boolean;
+  /** The person's own switch. False means the runner opens no socket at all. */
+  enabled: boolean;
+  /** The channel the chief answers in. A snowflake, not an address. */
+  channel_id: string;
+  /** The one Discord identity whose messages the chief hears. */
+  allowed_user_id: string;
+  /** `••••` plus four characters of the bot token, or null. Never a value. */
+  masked_hint: string | null;
+  configured_at: string | null;
+  /** What the chief is doing right now, in one sentence. Worded in `lib/copy/`. */
+  state_sentence: string;
 }
 
 /* ---------------------------------------------------------------------- *

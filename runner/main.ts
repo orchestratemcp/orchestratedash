@@ -48,6 +48,7 @@ import {
 } from "./endpoint";
 import { DASH_LOCAL_PRINCIPAL } from "./execute";
 import { hostBrokerFor } from "./host-broker";
+import { RunnerChief } from "./chief";
 import { DiscordNotifier } from "./notify";
 import { createRunnerServer } from "./server";
 import { RUNNER_BUILD_ID, RUNNER_PROTOCOL_VERSION } from "./identity";
@@ -192,6 +193,27 @@ async function main(): Promise<void> {
   const notifier = new DiscordNotifier();
 
   /**
+   * The chief, riding along (MAR-743, ADR 0028).
+   *
+   * Constructed unconditionally and idle for the same reason the notifier is:
+   * with no configuration it opens no socket, holds no credential and answers
+   * nothing, so there is no branch anywhere else in this file for "did somebody
+   * connect Discord". DASH posts one to `POST /chief/discord` and takes it away
+   * on the same route.
+   *
+   * `database` is a **function** rather than the handle, because a damaged store
+   * can be retired and re-opened under a running runner (MAR-506) — the same
+   * reason `createRunnerServer` takes one. A chief holding the old handle would
+   * spool into a database the runner had just abandoned.
+   */
+  const chief = new RunnerChief({
+    database: () => store?.database ?? null,
+    log: (line) => {
+      console.warn(line);
+    },
+  });
+
+  /**
    * The host broker, when this runner is on a host that has a pack (MAR-629,
    * ADR 0021).
    *
@@ -282,6 +304,10 @@ async function main(): Promise<void> {
     // longer running, arriving after the fact, from a process that is meant to
     // be gone (MAR-588).
     notifier.stop();
+    // Beside the notifier, for its reason and one of its own: a gateway socket
+    // left open would go on receiving messages the chief can no longer answer,
+    // and the person would be talking to a process that is on its way out.
+    chief.stop();
     const finish = (): never => {
       store?.close();
       releaseEndpoint(endpoint);
@@ -304,6 +330,12 @@ async function main(): Promise<void> {
     configureNotifier: (configuration) => {
       notifier.configure(configuration);
     },
+    // MAR-743, ADR 0028. The chief's second room, handed over on the same
+    // authenticated channel and on the same cadence as the notifier's.
+    configureChief: (configuration) => {
+      chief.configure(configuration);
+    },
+    drainChief: () => chief.drain(),
     storeDamage: () => storeDamage,
     // MAR-629, ADR 0021. The remote half of `electron/main.ts`'s one line: a
     // person's Run on this host opens the allowance on this host, and nothing

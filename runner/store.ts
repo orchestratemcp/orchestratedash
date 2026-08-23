@@ -179,6 +179,62 @@ const MIGRATIONS: readonly string[] = [
   CREATE INDEX workspace_artifacts_by_run ON workspace_artifacts (agent, run_id);
   CREATE INDEX workspace_artifacts_by_task ON workspace_artifacts (task_id);
   `,
+
+  // MAR-743, ADR 0028 decision 6: what the chief did while DASH was closed,
+  // waiting to be drained into DASH's own tables.
+  //
+  // ## These are queues, not homes
+  //
+  // The durable home of a chief conversation is `chief_messages` in
+  // `dash.sqlite`, and of a broker decision is `broker_audit` beside it. The
+  // runner cannot write either — two processes on one WAL store is the
+  // mechanism that destroyed that file twice — so it writes here and DASH
+  // drains it on its next open, exactly as `/telemetry/drain` and
+  // `/artifacts/drain` already work.
+  //
+  // A drained row is deleted. That is what makes these queues rather than a
+  // second copy of somebody's conversation living in a file with different
+  // permissions and a different lifetime.
+  //
+  // ## What is deliberately absent
+  //
+  // No token, no key, no webhook, no Discord message id and no author. The
+  // question and the answer are here because they are the turn; **who** sent it
+  // is not, because there is exactly one identity that may send one (ADR 0028
+  // decision 4) and recording it per row would turn this table into a log of
+  // one person's Discord activity for no gain.
+  `
+  CREATE TABLE chief_turn_spool (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    asked_at     TEXT NOT NULL,
+    question     TEXT NOT NULL,
+    answer       TEXT,
+    failure      TEXT,
+    provider_id  TEXT,
+    model_id     TEXT,
+    tokens_in    INTEGER,
+    tokens_out   INTEGER,
+    amount_usd   REAL,
+    receipt_json TEXT NOT NULL,
+    -- Always 'discord' today. Written rather than assumed at the drain, so a
+    -- row cannot lose its provenance by being copied -- ADR 0021's own rule.
+    origin       TEXT NOT NULL
+  );
+
+  CREATE TABLE chief_audit_spool (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_id TEXT NOT NULL,
+    operation     TEXT NOT NULL,
+    request_id    TEXT NOT NULL,
+    decision      TEXT NOT NULL,
+    refusal       TEXT,
+    -- The *names* of the fields, never their values. broker_audit's own rule.
+    input_keys    TEXT NOT NULL,
+    result_count  INTEGER,
+    duration_ms   INTEGER NOT NULL,
+    decided_at    TEXT NOT NULL
+  );
+  `,
 ];
 
 export interface RunnerStore {

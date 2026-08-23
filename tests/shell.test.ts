@@ -17,6 +17,7 @@ import type {
   HostAction,
   AskAction,
   ChiefAction,
+  ChiefDiscordAction,
   IdentityAction,
   ModelAction,
   LabAction,
@@ -351,6 +352,17 @@ describe("the audited command chokepoint", () => {
       "notify.disconnect",
       "notify.test",
       "notify.setKind",
+      // MAR-743, ADR 0028. The first family that lets something reach *in* — the
+      // chief answering in a Discord channel while DASH may be closed. Note the
+      // payloads once more: no token in any of them, and the two values that do
+      // cross are Discord snowflakes, which name a room and a person rather than
+      // authorising anything. What a compromised renderer can do with this
+      // family is open the credential window, re-aim an already-held token, or
+      // switch the bridge off; what it cannot do is learn the token, ask the
+      // chief anything, or make it say something.
+      "chiefDiscord.connect",
+      "chiefDiscord.disconnect",
+      "chiefDiscord.setEnabled",
       // MAR-479, ADR 0026. The second route that can send something off this
       // machine without an agent asking it to, and the first whose subject is
       // DASH itself. Note the payloads again: no token in any of them, one
@@ -727,7 +739,17 @@ describe("dispatch", () => {
       action: LabAction;
       target: { enabled?: boolean; endpoint?: string };
     }> = [];
+    // MAR-743, ADR 0028. Recorded, not performed, for both reasons above and a
+    // third that is stronger than either: the real implementation hands a bot
+    // token and a model key to the runner and opens a socket to Discord, so a
+    // fake that did anything at all would be a test suite that connects to a
+    // chat service on somebody's behalf.
+    const chiefDiscord: Array<{
+      action: ChiefDiscordAction;
+      target: { channel_id?: string; allowed_user_id?: string; enabled?: boolean };
+    }> = [];
     return {
+      chiefDiscord,
       audited,
       inputs,
       lifecycle,
@@ -822,6 +844,13 @@ describe("dispatch", () => {
       },
       labAction: (action: LabAction, target: { enabled?: boolean; endpoint?: string }) => {
         labTelemetry.push({ action, target });
+        return Promise.resolve({ ok: true });
+      },
+      chiefDiscordAction: (
+        action: ChiefDiscordAction,
+        target: { channel_id?: string; allowed_user_id?: string; enabled?: boolean },
+      ) => {
+        chiefDiscord.push({ action, target });
         return Promise.resolve({ ok: true });
       },
       // MAR-545. Recorded, not performed, for `sampleAction`'s reason — and here

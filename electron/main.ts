@@ -177,6 +177,7 @@ import {
   pinHostFingerprint,
   readAgentManifest,
   readHost,
+  readChiefDiscordSettings,
   readLabTelemetrySettings,
   readNotificationSettings,
   recordAgentDeploy,
@@ -196,6 +197,11 @@ import {
   registerCredentialChannels,
 } from "./credential-prompt";
 import { performFolderAction } from "./folder-update";
+import {
+  buildChiefBridgeConfiguration,
+  ingestChiefDrain,
+  performChiefDiscordAction,
+} from "./chief-discord";
 import { performLabAction, sendPending } from "./lab-telemetry";
 import { buildNotifyConfiguration, performNotifyAction } from "./notify-settings";
 import { providerOperations } from "./oauth-session";
@@ -1074,8 +1080,125 @@ export function registerCommandChannel(
               RENDERER_ORIGIN,
             ),
         }),
+      /*
+       * MAR-743, ADR 0028. The one entry in this object behind which a
+       * credential leaves main for another process.
+       *
+       * `notifyAction`'s standing and its shape — every gate is inside
+       * `electron/chief-discord.ts`, beside the vault reads and the writes they
+       * guard — plus one thing worth naming here as well as there: a successful
+       * connect causes `pushChiefBridge` below to read the **fleet model key**
+       * out of the vault and post it to the runner. That is the widest thing
+       * this packet does, it is argued in ADR 0028 decision 5, and it is
+       * reachable from exactly this one entry in exactly this one context
+       * object.
+       */
+      chiefDiscordAction: (action, target) =>
+        performChiefDiscordAction(action, target, {
+          store: secureStore(),
+          promptForSecret: (request) =>
+            promptForSecret(
+              request,
+              secureStore().describeBacking().label,
+              readChiefDiscordSettings().masked_hint !== null,
+              appWindow(),
+              RENDERER_ORIGIN,
+            ),
+          pushToRunner: () => pushChiefBridge(runner),
+        }),
     });
   });
+}
+
+/**
+ * Hand the runner the chief's second room, or take it away (MAR-743, ADR 0028).
+ *
+ * `pushNotifyConfiguration`'s twin and its cadence: after every settings change
+ * and once at startup, never throwing and never reporting. A runner that is
+ * down, starting, or built without the route is a temporary state, and refusing
+ * somebody's setting because of it would be DASH making a person's preference
+ * contingent on a process they cannot see.
+ *
+ * What it costs to be wrong here is a chief that has quietly stopped answering
+ * in Discord — so, like its twin, it is called more often than it strictly needs
+ * to be rather than less.
+ */
+async function pushChiefBridge(runner: RunnerHandle | null): Promise<void> {
+  if (runner === null) {
+    return;
+  }
+  try {
+    const body = await buildChiefBridgeConfiguration(secureStore());
+    const response = await runnerFetch(runner)(`${runner.origin}/chief/discord`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${runner.token}`,
+        "content-type": "application/json",
+      },
+      // `bot_token: null` is what clears it — the shape `readChiefConfiguration`
+      // reads, and the same one `/notify/discord` uses for the same reason.
+      body: JSON.stringify(body ?? { bot_token: null }),
+    });
+    if (!response.ok) {
+      // The status and nothing else. The body that failed held a token and a key.
+      console.warn(
+        `[dash-shell] the runner would not take the chief's Discord settings (status ${String(
+          response.status,
+        )})`,
+      );
+    }
+  } catch (error: unknown) {
+    console.warn(
+      `[dash-shell] the chief's Discord settings could not reach the runner: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
+
+/**
+ * Take everything the chief did while DASH was closed into DASH's own tables
+ * (MAR-743, ADR 0028 decision 6).
+ *
+ * Called once, at startup, after the runner is up — which is the only moment it
+ * is worth much. While DASH is open the transcript a person reads is written
+ * here directly, and the queue this empties holds exactly the conversation that
+ * happened while the window was closed.
+ *
+ * Never throws. A runner that cannot be reached is the same temporary state
+ * `pushChiefBridge` tolerates, and nothing is lost by waiting: the runner
+ * deletes a spooled row only after handing it over.
+ */
+async function drainChiefIntoStore(runner: RunnerHandle | null): Promise<void> {
+  if (runner === null) {
+    return;
+  }
+  try {
+    const response = await runnerFetch(runner)(`${runner.origin}/chief/drain`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${runner.token}` },
+    });
+    if (!response.ok) {
+      return;
+    }
+    const body: unknown = await response.json();
+    if (typeof body !== "object" || body === null) {
+      return;
+    }
+    const record = body as Record<string, unknown>;
+    const written = ingestChiefDrain({
+      turns: (Array.isArray(record["turns"]) ? record["turns"] : []) as never[],
+      audit: (Array.isArray(record["audit"]) ? record["audit"] : []) as never[],
+    });
+    if (written.turns > 0 || written.audit > 0) {
+      console.warn(
+        `[dash-shell] took ${String(written.turns)} chief turn(s) and ` +
+          `${String(written.audit)} decision(s) from the runner`,
+      );
+    }
+  } catch {
+    // A runner that is not up yet. The rows are still spooled.
+  }
 }
 
 /**
@@ -3077,6 +3200,23 @@ if (typeof app !== "undefined") {
      * throws and reports its own failures.
      */
     void pushNotifyConfiguration(runner);
+
+    /*
+     * MAR-743, ADR 0028. The chief's second room, in both directions.
+     *
+     * The drain comes **first** and the push second, and the order is the whole
+     * of what makes this correct rather than merely working. The push replaces
+     * the runner's configuration, which is the moment a fresh snapshot lands;
+     * pushing before draining would be safe today only because the two touch
+     * different tables, and would stop being safe the first time a configuration
+     * change clears anything. Emptying the queue before refilling the process is
+     * the ordering that stays true.
+     *
+     * Neither is awaited, `pushNotifyConfiguration`'s reason: nothing later in
+     * startup depends on either, a slow local socket must not hold up the
+     * window, and both report their own failures and never throw.
+     */
+    void drainChiefIntoStore(runner).then(() => pushChiefBridge(runner));
 
     /*
      * MAR-479, ADR 0026. Send the day's plan telemetry, if this DASH has been

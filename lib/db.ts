@@ -1737,7 +1737,112 @@ const MIGRATIONS: readonly Migration[] = [
     sent_at TEXT NOT NULL
   );
   `,
+
+  // MAR-743, ADR 0028: the chief's second room, and the two columns that keep a
+  // drained row honest about where it came from.
+  //
+  // ## `chief_discord`: where the chief may be spoken to, and by whom
+  //
+  // One row, like `notify_discord` and `lab_telemetry` beside it, and the same
+  // rule: **no column a credential could go in**. The bot token lives in the OS
+  // vault and the only part of it that exists out here is `masked_hint`.
+  //
+  // `channel_id` and `allowed_user_id` are Discord snowflakes and are *not*
+  // secrets — a channel id names a room nobody can reach without the token, and
+  // a user id is what Discord shows anybody who right-clicks a name. They are
+  // here rather than in the vault because they are configuration a person
+  // should be able to see and correct, and a value nobody can read back is a
+  // value nobody can correct.
+  //
+  // `allowed_user_id` is the whole of ADR 0028 decision 4 written into the
+  // schema, and its shape is the argument: one TEXT column, not a table,
+  // because there is exactly one identity and a table would be an invitation to
+  // add a second. A bridge with two allowed speakers is a bridge whose owner
+  // cannot say who asked.
+  //
+  // ## Why this one is a function, like MAR-611's before it
+  //
+  // Two `ALTER TABLE ... ADD COLUMN`s, and `tests/store-sqlite.test.ts`
+  // re-creates a pre-MAR-553 store by setting `user_version` back to 10 and
+  // letting every later migration run again. A bare `ADD COLUMN` fails on the
+  // second pass with `duplicate column name`, which is a store that will not
+  // open — the one migration failure this repository has already paid for
+  // twice. Asking first costs one pragma per column and cannot be the reason
+  // somebody's history becomes unreachable.
+  (database) => {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS chief_discord (
+        id              INTEGER PRIMARY KEY CHECK (id = 1),
+        -- Off until a person turns it on, and off is the absence of a row as
+        -- well as a 0 here: lab_telemetry's rule, for the same reason. Nothing
+        -- about this feature happens to somebody who has not asked for it.
+        enabled         INTEGER NOT NULL DEFAULT 0,
+        -- The channel the runner posts answers into. A snowflake, not an
+        -- address.
+        channel_id      TEXT NOT NULL DEFAULT '',
+        -- The one Discord user id whose messages become questions. Everybody
+        -- else's are ignored in silence -- ADR 0028 decision 4.
+        allowed_user_id TEXT NOT NULL DEFAULT '',
+        -- Four trailing characters of the bot token, masked, or '' for none.
+        -- Never a value: isMaskedHint in lib/secret-refs.ts is what a raw token
+        -- cannot pass, and recordChiefDiscordToken throws on anything that
+        -- would.
+        masked_hint     TEXT NOT NULL DEFAULT '',
+        configured_at   TEXT NOT NULL DEFAULT ''
+      );
+    `);
+
+    /*
+     * Which room the question was asked in (ADR 0028 decision 7).
+     *
+     * 'window' or 'discord'. Given a default rather than left to be filled,
+     * because every row already in somebody's store was asked at the window and
+     * backfilling them all to that value is a true statement about every one of
+     * them.
+     *
+     * The column exists so a transcript cannot misrepresent the conversation it
+     * is a record of. A turn that arrived from Discord while DASH was closed
+     * and was drained in afterwards is indistinguishable from one typed at the
+     * composer without it, and the two are not the same event.
+     */
+    addColumn(database, "chief_messages", "origin", "TEXT NOT NULL DEFAULT 'window'");
+
+    /*
+     * Which broker decided this (ADR 0028 decision 7, ADR 0021's own reason).
+     *
+     * 'dash' for a decision Electron main made, 'runner' for one the detached
+     * runner made while nobody was looking, and 'host' for a row eventually
+     * pulled off a machine ADR 0021 put a key on. The third value is written
+     * into the vocabulary now so that day is a value and not a migration.
+     *
+     * A drained row is evidence DASH **observed** a decision, not DASH making
+     * one. Carrying that on the row rather than adding it at ingest is what
+     * stops a row losing its provenance by being copied.
+     */
+    addColumn(database, "broker_audit", "decided_on", "TEXT NOT NULL DEFAULT 'dash'");
+  },
 ];
+
+/**
+ * Add one column, unless it is already there (MAR-743).
+ *
+ * MAR-611's guard, lifted into a helper the moment a second step needed it.
+ * `PRAGMA table_info` rather than catching the error, because a catch around
+ * `ALTER TABLE` swallows every other reason it can fail — a locked database, a
+ * table that is not there at all — and turns a migration that did not happen
+ * into one that silently claims it did.
+ */
+function addColumn(
+  database: DatabaseSync,
+  table: string,
+  column: string,
+  definition: string,
+): void {
+  const columns = database.prepare(`PRAGMA table_info(${table})`).all();
+  if (!columns.some((one) => String(one["name"]) === column)) {
+    database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
 
 /* ---------------------------------------------------------------------- *
  * Connection

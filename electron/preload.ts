@@ -232,6 +232,31 @@ function sendLabEnabled(enabled: boolean): Promise<CommandResult> {
   }) as Promise<CommandResult>;
 }
 
+/**
+ * The fourth (MAR-743). `sendNotificationKind`'s reason once more, for the two
+ * Discord ids that say which room the chief answers in and whose messages it
+ * hears. Both fields are copied explicitly rather than spread, so a caller that
+ * put a third key on its argument cannot get it onto the command channel.
+ */
+function sendChiefDiscordConnect(
+  channelId: string,
+  allowedUserId: string,
+): Promise<CommandResult> {
+  return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
+    command: "chiefDiscord.connect",
+    request_id: requestId(),
+    payload: { channel_id: channelId, allowed_user_id: allowedUserId },
+  }) as Promise<CommandResult>;
+}
+
+function sendChiefDiscordEnabled(enabled: boolean): Promise<CommandResult> {
+  return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
+    command: "chiefDiscord.setEnabled",
+    request_id: requestId(),
+    payload: { enabled },
+  }) as Promise<CommandResult>;
+}
+
 function sendFavourite(agentId: string, favourite: boolean): Promise<CommandResult> {
   return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
     command: "identity.favourite",
@@ -593,6 +618,26 @@ const dashShell = {
   testNotifications: () => send("notify.test", {}),
   setNotificationKind: (args: { kind: string; enabled: boolean }) =>
     sendNotificationKind(args.kind, args.enabled),
+
+  /**
+   * The three chief-Discord commands (MAR-743, ADR 0028).
+   *
+   * **The bot token is absent from all three**, the story `connectNotifications`
+   * tells about a channel address and for its reason: `connectChiefDiscord` asks
+   * main to *open the credential window*, and what a person types there reaches
+   * the vault without passing through this bridge or the renderer.
+   *
+   * The two ids page script does supply are not credentials. A channel id names
+   * a room nobody can reach without the token; a user id is what Discord shows
+   * anybody who right-clicks a name. What they can do at worst is aim an
+   * already-held token at a different channel and name a different speaker —
+   * bounded by the fact that doing it at all requires the credential window,
+   * which is a thing a person sees and can cancel.
+   */
+  connectChiefDiscord: (args: { channel_id: string; allowed_user_id: string }) =>
+    sendChiefDiscordConnect(args.channel_id, args.allowed_user_id),
+  disconnectChiefDiscord: () => send("chiefDiscord.disconnect", {}),
+  setChiefDiscordEnabled: (args: { enabled: boolean }) => sendChiefDiscordEnabled(args.enabled),
 
   /**
    * The four LAB-telemetry commands (MAR-479, ADR 0026).

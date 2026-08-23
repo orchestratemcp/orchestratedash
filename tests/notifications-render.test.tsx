@@ -22,6 +22,23 @@ import type { NotificationsView } from "../lib/views/types";
 
 const { NotificationSettings } = await import("../app/settings/notifications/page");
 
+/**
+ * The chief's half, unconfigured (MAR-743, ADR 0028).
+ *
+ * A constant of its own so the fixtures below still vary one thing at a time.
+ * Every assertion in this file is about the *alerts* half, and a chief bridge
+ * that moved with them would make a failure ambiguous about which section broke.
+ */
+const NO_CHIEF: NotificationsView["chief"] = {
+  configured: false,
+  enabled: false,
+  channel_id: "",
+  allowed_user_id: "",
+  masked_hint: null,
+  configured_at: null,
+  state_sentence: "The chief answers only in DASH, on this computer.",
+};
+
 const CONFIGURED: NotificationsView = {
   configured: true,
   masked_hint: "••••CDEF",
@@ -30,6 +47,7 @@ const CONFIGURED: NotificationsView = {
   send_reports: true,
   state_sentence:
     "DASH posts to Discord when an agent is waiting for your approval, and when one publishes a report.",
+  chief: NO_CHIEF,
 };
 
 /**
@@ -81,8 +99,20 @@ describe("the disclosures come before the field", () => {
     const contents = off.slice(off.indexOf('id="notify-contents"'));
     expect(off.slice(0, off.indexOf('id="notify-contents"'))).toContain("<details");
     expect(contents.length).toBeGreaterThan(0);
-    // The one open disclosure on the page is this one.
-    expect(off.match(/<details[^>]*open[^>]*>/gu)).toHaveLength(1);
+    /*
+     * Two open disclosures, one per live decision (MAR-743).
+     *
+     * This asserted one until ADR 0028 put the chief's bridge on the same page.
+     * There are now two credentials a person can hand over here and two channels
+     * that can end up carrying different things, so there are two consent
+     * disclosures — and both fixtures above are unconfigured, so both are live.
+     *
+     * The number is asserted rather than the shape because the failure this
+     * catches is a folded one: a disclosure shut at the moment somebody is
+     * choosing between a private channel and a shared one satisfies the
+     * ordering assertion above and loses the thing it was ordering.
+     */
+    expect(off.match(/<details[^>]*open[^>]*>/gu)).toHaveLength(2);
   });
 
   it("moves them below the controls once there is nothing left to decide", () => {
@@ -120,7 +150,21 @@ describe("what is on the screen", () => {
   it("shows the masked hint and never anything address-shaped", () => {
     const html = markup(CONFIGURED);
     expect(html).toContain("••••CDEF");
-    expect(html).not.toContain("discord.com");
+    /*
+     * `discord.com/api` rather than `discord.com` (MAR-743).
+     *
+     * This banned the bare domain until ADR 0028 put the chief's setup steps on
+     * this page, one of which has to name `discord.com/developers` — a person
+     * cannot make a bot without being told where to go, and DASH's window denies
+     * every link, so the address has to be readable text.
+     *
+     * Nothing is lost. A webhook address is
+     * `https://discord.com/api/webhooks/{id}/{token}`, and all three of its
+     * distinguishing parts are still banned below. The bare-domain check only
+     * ever caught the same string these do, and it is the one that a sentence
+     * about Discord can trip by accident.
+     */
+    expect(html).not.toContain("discord.com/api");
     expect(html).not.toContain("api/webhooks");
     expect(html).not.toContain("https://");
   });

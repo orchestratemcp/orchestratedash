@@ -2,6 +2,13 @@
 
 import { useState, type ReactNode } from "react";
 
+import {
+  CHIEF_DISCORD_CONTENTS,
+  CHIEF_DISCORD_CUSTODY,
+  CHIEF_DISCORD_LIVENESS,
+  CHIEF_DISCORD_SETUP_STEPS,
+  describeChiefDiscordStanding,
+} from "../../../lib/chief/discord";
 import { plainDay } from "../../../lib/copy/when";
 import {
   NOTIFY_CONTENTS,
@@ -13,8 +20,11 @@ import {
 import { InfoNote } from "../../_components/info-note";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import {
+  connectChiefDiscord,
   connectNotifications,
+  disconnectChiefDiscord,
   disconnectNotifications,
+  setChiefDiscordEnabled,
   setNotificationKind,
   testNotifications,
 } from "../../_data/source";
@@ -296,7 +306,226 @@ export function NotificationSettings({
       ) : null}
 
       {view.configured ? <NotificationNotes view={view} /> : null}
+
+      {/*
+        MAR-743, ADR 0028. The other half of DASH's Discord, on the same page.
+
+        Its own `<h2>` section rather than its own route, for the reason MAR-593
+        gave about Connections: a person who set up alerts and later wants to
+        *talk* to the chief will come back to the page where Discord already was.
+        A second settings tab called something like "Chief chat" is a feature
+        somebody has to know exists before they can find it.
+
+        Below alerts rather than above, because it is the newer and larger
+        commitment — this one hands the runner a key that can spend — and a
+        person meeting this page for the first time should meet the smaller
+        thing first.
+      */}
+      <ChiefDiscordSection view={view.chief} canAct={canAct} onChanged={onChanged} />
     </>
+  );
+}
+
+/**
+ * Talking to the chief from Discord (MAR-743, ADR 0028).
+ *
+ * The same page grammar as the section above it — a standing row, then the
+ * controls, then the notes — and the same rule about where the notes sit: open
+ * while there is still a decision to inform, folded once it has been taken.
+ * `lib/chief/discord.ts` owns every sentence.
+ *
+ * ## The two fields are on the page, not in the credential window
+ *
+ * The token goes into `electron/credential-prompt.ts`'s window, where every
+ * credential in DASH goes. The channel id and the user id do not, and that is a
+ * decision rather than an inconsistency: they are not secrets, they are the two
+ * values most likely to be pasted wrong, and somebody who cannot see what DASH
+ * holds cannot work out why the chief is ignoring them. So they are typed here,
+ * shown back here, and correctable here.
+ */
+function ChiefDiscordSection({
+  view,
+  canAct,
+  onChanged,
+}: {
+  view: NotificationsView["chief"];
+  canAct: boolean;
+  onChanged: () => void;
+}): ReactNode {
+  const [channelId, setChannelId] = useState(view.channel_id);
+  const [allowedUserId, setAllowedUserId] = useState(view.allowed_user_id);
+  const [outcome, setOutcome] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const run = (command: () => Promise<CommandResult>): void => {
+    setBusy(true);
+    setOutcome(null);
+    void command()
+      .then((result) => {
+        setOutcome({
+          ok: result.ok,
+          // Main words every refusal, `NotificationSettings`' rule: a page that
+          // supplied its own fallback would be inventing the one sentence it is
+          // least qualified to write.
+          detail: result.detail ?? (result.ok ? "Done." : "DASH could not do that."),
+        });
+        onChanged();
+      })
+      .finally(() => {
+        setBusy(false);
+      });
+  };
+
+  const standing = describeChiefDiscordStanding(
+    view,
+    view.configured_at === null ? null : plainDay(view.configured_at),
+  );
+
+  return (
+    <section aria-labelledby="chief-discord">
+      <h2 id="chief-discord">Talk to the chief in Discord</h2>
+
+      <p className="notify-standing">
+        <span className={standing.on ? "chip chip-ok" : "chip chip-muted"}>{standing.chip}</span>{" "}
+        {standing.sentence}
+      </p>
+
+      {view.configured ? null : (
+        <>
+          <section aria-labelledby="chief-discord-contents">
+            <details className="card-more section-disclosure" open>
+              <summary>
+                <h3 id="chief-discord-contents">What the chief says in that channel</h3>
+              </summary>
+              <ul className="plain-list">
+                {CHIEF_DISCORD_CONTENTS.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </details>
+          </section>
+          <section aria-labelledby="chief-discord-setup">
+            <details className="card-more section-disclosure">
+              <summary>
+                <h3 id="chief-discord-setup">Making the bot in Discord</h3>
+              </summary>
+              <ol className="plain-list">
+                {CHIEF_DISCORD_SETUP_STEPS.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ol>
+            </details>
+          </section>
+        </>
+      )}
+
+      <p className="field">
+        <label htmlFor="chief-channel">Channel id</label>
+        <input
+          id="chief-channel"
+          type="text"
+          inputMode="numeric"
+          value={channelId}
+          disabled={!canAct || busy}
+          onChange={(event) => {
+            setChannelId(event.target.value);
+          }}
+        />
+      </p>
+      <p className="field">
+        <label htmlFor="chief-user">Your Discord user id</label>
+        <input
+          id="chief-user"
+          type="text"
+          inputMode="numeric"
+          value={allowedUserId}
+          disabled={!canAct || busy}
+          onChange={(event) => {
+            setAllowedUserId(event.target.value);
+          }}
+        />
+      </p>
+
+      <div className="button-row">
+        <button
+          type="button"
+          className="button-primary"
+          disabled={!canAct || busy}
+          onClick={() => {
+            run(() =>
+              connectChiefDiscord({
+                channel_id: channelId.trim(),
+                allowed_user_id: allowedUserId.trim(),
+              }),
+            );
+          }}
+        >
+          {view.configured ? "Replace the bot token" : "Add a bot token"}
+        </button>
+        {view.configured ? (
+          <>
+            <button
+              type="button"
+              className="button-secondary"
+              disabled={!canAct || busy}
+              onClick={() => {
+                run(() => setChiefDiscordEnabled({ enabled: !view.enabled }));
+              }}
+            >
+              {view.enabled ? "Stop listening" : "Start listening"}
+            </button>
+            <button
+              type="button"
+              className="button-danger"
+              disabled={!canAct || busy}
+              onClick={() => {
+                run(disconnectChiefDiscord);
+              }}
+            >
+              Forget the bot
+            </button>
+          </>
+        ) : null}
+        {outcome === null ? null : (
+          <p className={outcome.ok ? "notice-ok" : "notice-warn"} role="status">
+            <span aria-hidden="true">{outcome.ok ? "✓ " : "✗ "}</span>
+            {outcome.detail}
+          </p>
+        )}
+      </div>
+      <p className="muted wrap">
+        The bot token is a credential.
+        <InfoNote>{CHIEF_DISCORD_CUSTODY}</InfoNote>
+      </p>
+
+      <section aria-labelledby="chief-discord-liveness">
+        <details className="card-more section-disclosure">
+          <summary>
+            <h3 id="chief-discord-liveness">When the chief answers, and when it does not</h3>
+          </summary>
+          <ul className="plain-list">
+            {CHIEF_DISCORD_LIVENESS.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </details>
+      </section>
+
+      {view.configured ? (
+        <section aria-labelledby="chief-discord-contents-after">
+          <details className="card-more section-disclosure">
+            <summary>
+              <h3 id="chief-discord-contents-after">What the chief says in that channel</h3>
+            </summary>
+            <ul className="plain-list">
+              {CHIEF_DISCORD_CONTENTS.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </details>
+        </section>
+      ) : null}
+    </section>
   );
 }
 
