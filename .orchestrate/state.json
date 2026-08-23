@@ -903,25 +903,10 @@
       "commit": "67a0b39af0b634fa80940ec60f08bc39a6b769e9"
     },
     {
-      "id": "MAR-630",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
-      "commit": "9e65f55a932999738b88d27b02b8a19d3868ca54"
-    },
-    {
       "id": "MAR-624",
       "lifecycle": "merged",
       "linear_status": "In Progress",
       "commit": "651cfed2b9ecb8a4a90c7f83c84b2770ec59d85f"
-    },
-    {
-      "id": "MAR-620",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
-      "commit": "90d95c687c6ae4a6ba06bbe4ebcf9426f56204b1",
-      "proof": {
-        "command": "pnpm state:check && pnpm typecheck && pnpm brand:check; pnpm vitest run tests/panel-render.test.tsx tests/panel-view.test.ts; pnpm test; pnpm vitest run tests/agent-folders.test.ts tests/brand-surfaces.test.tsx tests/store-sqlite.test.ts tests/store-damage.test.ts (PowerShell, dash-mar620 worktree). Gate session: pnpm install; pnpm state:check; pnpm typecheck; pnpm brand:check; pnpm test; and per mutation pnpm vitest run tests/panel-empty-disclosure.test.tsx followed by pnpm vitest run tests/panel-render.test.tsx tests/panel-view.test.ts (PowerShell, dash-mar620 worktree)"
-      }
     },
     {
       "id": "MAR-633",
@@ -930,22 +915,10 @@
       "commit": "f9e18c8742960901ea332fe5a6d755ab15b5e9df"
     },
     {
-      "id": "MAR-634",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
-      "commit": "6e9226e8d6cb1ff36d7a647f4896516f0f3693b6"
-    },
-    {
       "id": "MAR-629",
       "lifecycle": "merged",
       "linear_status": "In Progress",
       "commit": "211b73e"
-    },
-    {
-      "id": "MAR-635",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
-      "commit": "8b5c34a"
     },
     {
       "id": "MAR-639",
@@ -1081,15 +1054,6 @@
       "commit": "c77fa82",
       "proof": {
         "command": "pnpm typecheck (own command, never piped); pnpm brand:check; pnpm vitest run tests/agent-start.test.ts tests/agent-control.test.ts tests/copy-agent-page.test.ts tests/shell.test.ts tests/client-bundle.test.ts; pnpm vitest run; pnpm build:renderer && pnpm build:shell; then from PowerShell with a visible window, twice: DASH_SHELL_URL=dash-app://ui/ DASH_PROVE_AGENT=competitor-scout DASH_CAPTURE_DIR=qa-screenshots-mar657 DASH_DATA_DIR=<the real store, then a faithful scratch copy> pnpm exec electron --user-data-dir=<isolated profile> dist/electron/prove-start.mjs"
-      }
-    },
-    {
-      "id": "MAR-664",
-      "lifecycle": "merged",
-      "linear_status": "Backlog",
-      "commit": "9cc08c2",
-      "proof": {
-        "command": "pnpm typecheck (own command, not piped); pnpm brand:check; pnpm vitest run tests/agent-plan.test.ts tests/agent-about.test.tsx tests/agent-cockpit-render.test.tsx tests/agent-one-home.test.tsx tests/copy-agent-page.test.ts tests/client-bundle.test.ts tests/model-choice.test.ts tests/model-levels.test.ts; pnpm vitest run (full suite); pnpm build:renderer && pnpm build:shell; from PowerShell with a visible window: DASH_SHELL_URL=dash-app://ui/ DASH_DATA_DIR=<fresh scratch> DASH_CAPTURE_DIR=qa-screenshots-mar664 pnpm exec electron dist/electron/capture-cockpit.mjs --user-data-dir=<isolated>"
       }
     },
     {
@@ -1242,15 +1206,6 @@
       }
     },
     {
-      "id": "MAR-668",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
-      "commit": "978b7e2929c45eee393e3bce4d52a2d936cea69a",
-      "proof": {
-        "command": "pnpm typecheck; pnpm test; pnpm build:renderer; pnpm build:shell; electron dist/electron/capture-cockpit.mjs; pnpm verify:shell NOT RUN"
-      }
-    },
-    {
       "id": "MAR-654",
       "lifecycle": "merged",
       "linear_status": "In Progress",
@@ -1332,15 +1287,6 @@
       }
     },
     {
-      "id": "MAR-691",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
-      "commit": "1134d470938374345df861b983d7a7fe1fa1c2ab",
-      "proof": {
-        "command": "pnpm typecheck; pnpm exec vitest run tests/deep-dive-render.test.tsx tests/run-artifact.test.ts tests/outputs-render.test.tsx tests/panel-render.test.tsx tests/curated-digest.test.tsx; pnpm test; pnpm build:renderer; pnpm build:shell; pnpm verify:shell NOT RUN"
-      }
-    },
-    {
       "id": "MAR-674",
       "lifecycle": "proven",
       "linear_status": "Done",
@@ -1395,15 +1341,6 @@
       }
     },
     {
-      "id": "MAR-691",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
-      "commit": "1134d470938374345df861b983d7a7fe1fa1c2ab",
-      "proof": {
-        "command": "pnpm typecheck; pnpm exec vitest run tests/deep-dive-render.test.tsx tests/run-artifact.test.ts tests/outputs-render.test.tsx tests/panel-render.test.tsx tests/curated-digest.test.tsx; pnpm test; pnpm build:renderer; pnpm build:shell; pnpm verify:shell NOT RUN"
-      }
-    },
-    {
       "id": "MAR-674",
       "lifecycle": "merged",
       "linear_status": "Done",
@@ -1411,26 +1348,6 @@
       "proof": {
         "command": "pnpm typecheck; pnpm vitest run tests/brief-render.test.tsx tests/brief-citations.test.ts tests/client-bundle.test.ts tests/store.test.ts; pnpm test; pnpm brand:check; pnpm build:renderer; pnpm build:shell; DASH_PROVE_QUIT_SCENE=brief_print electron dist/electron/prove-quit.mjs; electron dist/electron/capture-cockpit.mjs"
       }
-    },
-    {
-      "id": "MAR-698",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
-      "commit": "2e6ef7129b2dcd4422b58c8d6dcd14ae31c9d184",
-      "proof": {
-        "command": "pnpm typecheck; pnpm vitest run tests/shell.test.ts tests/outbound-link.test.ts tests/agent-exports.test.ts tests/link-out.test.tsx tests/output-exports-render.test.tsx tests/panel-render.test.tsx tests/brief-render.test.tsx tests/deep-dive-render.test.tsx tests/outputs-render.test.tsx tests/brief-print.test.ts; pnpm test; pnpm brand:check; pnpm build:renderer; pnpm build:shell; pnpm verify:shell NOT RUN"
-      },
-      "note": "PLANNED, NOT MERGED AND NOT PROVEN: branch 000henrik/mar-697-698-outputs-usability, worktree ../dash-outputs-usability, cut from origin/master 8bf4671. Shares one mechanism with MAR-697 and ships in the same PR. THE WALL IS UNTOUCHED, WHICH IS THE POINT. createWindow still denies window.open and still refuses navigation off the renderer's origin; nothing in this change relaxes either. Clickable means an anchor that intercepts its own click and hands the address to main. WHAT LANDS: lib/shell/outbound.ts (inspectOutboundLink, pure, https-only); electron/open-out.ts (the ONE main-process seam both issues route through -- shell.openExternal for an address, shell.openPath for an export); a NINTH command family open.* with two members (open.link takes a url and no agent, open.export takes an agent and a FILE NAME and never a path), on the preload and in app/_data/source.ts; app/_components/link-out.tsx; digest.tsx's item_url anchors, its source list and BriefBody's Written-from citations all route through LinkOut. outputs.tsx and panel.tsx are BOTH fixed because both draw their artifact card bodies through digest.tsx -- tests/panel-render.test.tsx proves the second renderer rather than assuming it. ONE DECISION WORTH ARGUING WITH: an address DASH will not open is drawn as TEXT, not as an anchor whose press main refuses. The rule lives in one module and main still enforces it; the renderer asks the same question only to decide what to draw. Without it a feed publishing plain-http item addresses would have shipped Henrik's original complaint -- a link that does nothing -- back to him inside the fix for it. THE COST IS STATED: a plain-http item URL loses its anchor on screen AND in the exported PDF, where it was live before. CITATION INTEGRITY IS UNCHANGED AND NEWLY PINNED: model prose is still rendered as text and never as markup, so a URL a model wrote has no anchor to become. tests/link-out.tsx asserts it from the surface this issue touched, beside the existing assertion in tests/deep-dive-render.test.tsx, and lib/shell/outbound.ts's header says plainly that its gate is NOT that guarantee."
-    },
-    {
-      "id": "MAR-697",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
-      "commit": "2e6ef7129b2dcd4422b58c8d6dcd14ae31c9d184",
-      "proof": {
-        "command": "pnpm typecheck; pnpm vitest run tests/shell.test.ts tests/outbound-link.test.ts tests/agent-exports.test.ts tests/link-out.test.tsx tests/output-exports-render.test.tsx tests/panel-render.test.tsx tests/brief-render.test.tsx tests/deep-dive-render.test.tsx tests/outputs-render.test.tsx tests/brief-print.test.ts; pnpm test; pnpm brand:check; pnpm build:renderer; pnpm build:shell; pnpm verify:shell NOT RUN"
-      },
-      "note": "PLANNED, NOT MERGED AND NOT PROVEN: same branch, worktree and PR as MAR-698. WHAT LANDS: electron/brief-pdf.ts loses dialog.showSaveDialog entirely and writes into the agent's own exports folder; lib/agent-exports.ts (the folder, a pure name allocator and a containment-checked resolver); WorkspaceView.exports built in lib/views/build.ts from a readdir; app/_components/output-exports.tsx on the Output stage above AgentPanel; open.export shared with MAR-698. ONE DEVIATION FROM THE ISSUE, AND IT IS NOT COSMETIC. MAR-697 asked for the file to land under agents/<agent>/. THAT LOCATION WOULD LOSE THE FILES. writeAgentFolder commits by renaming the whole agent folder aside and a freshly staged one into its place, so anything under agents/<agent>/ that was not in the staged input is gone the moment somebody re-imports the agent, presses Accept on an outside edit, or lets DASH refresh a scaffolded agent from its own template -- ordinary actions, not repairs. Two smaller reasons point the same way: validateAgentFolderFiles caps that folder at 1024 files for deploy, and folder.check compares it against DASH's stored digest, so every export would read as an outside edit somebody has to accept. Exports live in exports/<agent>/ instead, beside agents/ rather than under it. What Henrik asked for is kept in full: no dialog, one predictable place, per agent, inside DASH's data directory. tests/agent-exports.test.ts pins the location so the deviation cannot be quietly undone. TWO SMALLER RULINGS: a second export of the same title is NUMBERED rather than overwritten, because a daily agent produces the same title every morning and silently replacing yesterday's document is the one way this could lose something; and the sentence after a save names the list on the stage rather than a path, because nobody chose this folder and an %APPDATA% path on a guided surface is what lib/copy/identifiers.ts exists to keep off one. The page bumps its refresh key after a successful export so the list is populated before the person looks down at it."
     },
     {
       "id": "MAR-696",
