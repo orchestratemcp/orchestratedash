@@ -164,11 +164,35 @@ export class RunnerChief {
     );
   }
 
-  /** Whether a bridge is configured, and never with what. */
-  describe(): { configured: boolean; connected: boolean; snapshot_at: string | null } {
+  /**
+   * Whether a bridge is configured, and what it is currently answering with —
+   * never the credentials themselves (MAR-745).
+   *
+   * `fleet_count` and `model` exist because ADR 0028 decision 6 pushes a
+   * snapshot rather than letting the runner pull one, and a push that never
+   * fired — the gap MAR-745 found — leaves DASH's settings row and the
+   * runner's actual memory disagreeing with nothing on screen to say so. This
+   * is the sentence that closes that gap: read fresh on every call, off the
+   * one object `#hear` answers from, so it cannot drift from what a Discord
+   * question would actually be asked under.
+   */
+  describe(): {
+    configured: boolean;
+    connected: boolean;
+    snapshot_at: string | null;
+    fleet_count: number;
+    model: { provider_id: string; model_id: string; label: string } | null;
+  } {
+    const model = this.#configuration?.model;
+    const profile = model === undefined || model === null ? null : aiProviderById(model.provider_id);
     return {
       ...this.#gateway.describe(),
       snapshot_at: this.#configuration?.snapshot.taken_at ?? null,
+      fleet_count: this.#configuration?.snapshot.fleet.length ?? 0,
+      model:
+        model === undefined || model === null
+          ? null
+          : { provider_id: model.provider_id, model_id: model.model_id, label: profile?.label ?? model.provider_id },
     };
   }
 

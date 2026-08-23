@@ -336,6 +336,9 @@ async function main(): Promise<void> {
       chief.configure(configuration);
     },
     drainChief: () => chief.drain(),
+    // MAR-745. The read side of `configureChief`, so DASH's settings row can
+    // ask what the runner actually has rather than trusting that a push landed.
+    describeChief: () => chief.describe(),
     storeDamage: () => storeDamage,
     // MAR-629, ADR 0021. The remote half of `electron/main.ts`'s one line: a
     // person's Run on this host opens the allowance on this host, and nothing

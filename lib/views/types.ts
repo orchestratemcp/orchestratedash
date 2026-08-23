@@ -42,6 +42,7 @@ import type { AgentHealthView } from "./agent-health";
 import type { AgentPlanStep } from "../agent-plan";
 import type { Recovery } from "../copy/recovery";
 import type { ConnectionRequirementRow } from "../connections";
+import type { ChiefRunnerHolds } from "../chief/discord";
 import type { ConnectionTravel } from "../deploy/connection-travel";
 import type { ManifestPermissions, PermissionGrant, RunArtifact, RunEvent } from "../contracts";
 import type { AgentCompliance } from "../insights";
@@ -1497,6 +1498,17 @@ export interface ChiefDiscordView {
   configured_at: string | null;
   /** What the chief is doing right now, in one sentence. Worded in `lib/copy/`. */
   state_sentence: string;
+  /**
+   * What the runner reports actually holding, right now (MAR-745).
+   *
+   * `null` when the runner could not be asked — down, starting, or the row was
+   * built by the pure `notificationsView()` a test calls directly, which has no
+   * runner to ask and says so rather than guessing. The live value is filled in
+   * at the read seam in `electron/main.ts`, which is the only place that holds
+   * a runner handle. See `describeChiefRunnerHolds` for the sentence this
+   * becomes.
+   */
+  runner_holds: ChiefRunnerHolds | null;
 }
 
 /* ---------------------------------------------------------------------- *

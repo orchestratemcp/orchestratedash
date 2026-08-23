@@ -97,6 +97,8 @@ interface Harness {
   store: RunnerStore;
   posts: string[];
   logs: string[];
+  /** Every request body sent to the model provider, in order. */
+  providerRequests: string[];
 }
 
 function harness(
@@ -114,6 +116,7 @@ function harness(
   const socket = new FakeSocket();
   const posts: string[] = [];
   const logs: string[] = [];
+  const providerRequests: string[] = [];
 
   const chief = new RunnerChief({
     database: () => opened.store.database,
@@ -125,6 +128,7 @@ function harness(
         posts.push(String(JSON.parse(request.body ?? "{}").content ?? ""));
         return new Response("{}", { status: 200 });
       }
+      providerRequests.push(request.body ?? "");
       return (
         options.respond?.() ??
         new Response(JSON.stringify(ANSWER_BODY), {
@@ -159,7 +163,7 @@ function harness(
   });
   socket.hello();
 
-  return { chief, socket, store: opened.store, posts, logs };
+  return { chief, socket, store: opened.store, posts, logs, providerRequests };
 }
 
 /** Let the message's async answer settle. */
@@ -317,6 +321,129 @@ describe("stopping", () => {
       configured: false,
       connected: false,
       snapshot_at: null,
+      fleet_count: 0,
+      model: null,
     });
+  });
+});
+
+describe("re-delivery after bridge setup (MAR-745)", () => {
+  /*
+   * The exact sequence MAR-745's scratch store showed: the Discord bridge is
+   * configured first, with nothing else set up yet. AI is connected second.
+   * An agent is imported third. Each of those is one more `configure()` call
+   * from DASH's side — `pushChiefBridge`'s whole job — and this proves what a
+   * caller of that function is entitled to assume: the runner's next answer
+   * reflects the latest configure, not the first one.
+   */
+  it("answers model-backed and names the new agent once both arrive after setup", async () => {
+    // Step 1: the bridge is configured before AI is connected or any agent
+    // beyond the starting fleet exists — MAR-745's "connect AI second" order.
+    const { chief, socket, posts, providerRequests } = harness({ model: null });
+
+    const scoutBriefing = {
+      agent: "scout",
+      title: "AI News Scout",
+      place: "Local",
+      standing: "All clear.",
+      runs: "Has run before.",
+      last_run: null,
+      capabilities: ["news.collect"],
+    };
+    const competitorScoutBriefing = {
+      agent: "competitor-scout",
+      title: "Competitor Scout",
+      place: "Local",
+      standing: "All clear.",
+      runs: "Has not run yet.",
+      last_run: null,
+      capabilities: ["news.collect"],
+    };
+
+    // Step 2: "connect AI second" — main pushes again with a model, the fleet
+    // unchanged. `pushChiefBridge` always sends the whole configuration, so
+    // this is what a real push looks like: everything from before, plus a
+    // model.
+    chief.configure({
+      bot_token: "bot.token.value",
+      channel_id: CHANNEL,
+      allowed_user_id: HENRIK,
+      model: { provider_id: "openrouter", model_id: "openai/gpt-5-mini", api_key: PLANTED_KEY },
+      snapshot: {
+        fleet: [
+          {
+            name: "scout",
+            title: "AI News Scout",
+            goal: "Collect the day's AI news and write a cited digest",
+            avatar: "explorer",
+            capabilities: ["news.collect"],
+            glance: [],
+            status: null,
+          },
+        ],
+        briefing: [scoutBriefing],
+        taken_at: new Date().toISOString(),
+      },
+    });
+
+    // Step 3: "import an agent third" — another push, the new agent now in
+    // the fleet main read off the store.
+    chief.configure({
+      bot_token: "bot.token.value",
+      channel_id: CHANNEL,
+      allowed_user_id: HENRIK,
+      model: { provider_id: "openrouter", model_id: "openai/gpt-5-mini", api_key: PLANTED_KEY },
+      snapshot: {
+        fleet: [
+          {
+            name: "scout",
+            title: "AI News Scout",
+            goal: "Collect the day's AI news and write a cited digest",
+            avatar: "explorer",
+            capabilities: ["news.collect"],
+            glance: [],
+            status: null,
+          },
+          {
+            name: "competitor-scout",
+            title: "Competitor Scout",
+            goal: "Watch competitors and report what changed",
+            avatar: "robot",
+            capabilities: ["news.collect"],
+            glance: [],
+            status: null,
+          },
+        ],
+        briefing: [scoutBriefing, competitorScoutBriefing],
+        taken_at: new Date().toISOString(),
+      },
+    });
+
+    expect(chief.describe().fleet_count).toBe(2);
+    expect(chief.describe().model).toEqual({
+      provider_id: "openrouter",
+      model_id: "openai/gpt-5-mini",
+      label: "OpenRouter",
+    });
+
+    // A question neither agent's declared goal or capabilities answers for —
+    // `tests/chief-runner.test.ts`'s own "nothing to ask" arm, reused here for
+    // the same reason: it is the one kind of question guaranteed to reach the
+    // model rather than being answered for free from records, which is what
+    // this test needs to prove.
+    socket.say({ content: "compare the two invoices I uploaded" });
+    await settle();
+
+    expect(posts).toHaveLength(1);
+    const drained = chief.drain();
+    expect(drained.turns).toHaveLength(1);
+    // The model-backed arm, not the records fallback MAR-745 found instead.
+    expect(drained.turns[0]?.provider_id).toBe("openrouter");
+    expect(drained.audit).toHaveLength(1);
+    expect(drained.audit[0]?.decision).toBe("allowed");
+    // "Names the agent" — the briefing the model was actually asked with
+    // carries the agent imported in step 3, not just the one present at
+    // bridge setup.
+    expect(providerRequests.join(" ")).toContain("Competitor Scout");
   });
 });

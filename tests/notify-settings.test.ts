@@ -128,6 +128,7 @@ describe("the view a page renders", () => {
       "configured_at",
       "enabled",
       "masked_hint",
+      "runner_holds",
       "state_sentence",
     ]);
     expect(JSON.stringify(view)).not.toContain("discord.com");

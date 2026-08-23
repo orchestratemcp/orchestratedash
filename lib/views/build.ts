@@ -977,6 +977,10 @@ export function notificationsView(): NotificationsView {
       // `plainDay` itself, and a builder that resolved a day here would be a
       // second place a timestamp becomes prose.
       state_sentence: describeChiefDiscordStanding(chief, null).sentence,
+      // Null here, always. This function is pure and has no runner to ask —
+      // MAR-745's live fact is filled in at the read seam in
+      // `electron/main.ts`, the only place that holds a runner handle.
+      runner_holds: null,
     },
   };
 }
