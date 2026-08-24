@@ -100,6 +100,38 @@ describe("what the report says about one connection", () => {
     }
   });
 
+  it("says so when the vault holds something it cannot use, rather than 'has not asked'", () => {
+    /*
+     * Found by pressing the button, not by reading the code. The first attended
+     * run reported *"DASH holds a key for OpenRouter and has not asked about
+     * it"* for an entry that was not a usable credential envelope — true,
+     * useless, and it hid a real fault: `performAiKeyAction`'s `test` refuses
+     * such an entry **before** it probes and never touches `ai_key_checks`, so
+     * reading the liveness row alone found it untouched.
+     *
+     * Its own leg, because it is its own next action: not a folder to check,
+     * and not a provider's verdict.
+     */
+    const sentence = describeRefreshEntry(
+      entry({ vault: { held: true, unusable: true, detail: "" }, liveness: null }),
+    );
+
+    expect(sentence.ok).toBe(false);
+    expect(sentence.headline).toContain("cannot use");
+    expect(sentence.detail).toContain("Nothing was asked of the service");
+    expect(sentence.next_action).toBe("Connect OpenRouter again");
+    // It must not read as the honest-but-useless line it replaced.
+    expect(sentence.headline).not.toContain("has not asked");
+    // And it carries no path: the entry was found, so there is no folder to
+    // send anybody to.
+    const rows = toRefreshRows({
+      checked_at: "",
+      entries: [entry({ vault: { held: true, unusable: true, detail: "" }, liveness: null })],
+      delivery: "delivered",
+    });
+    expect(rows[0]?.path).toBe("");
+  });
+
   it("says a refused key read back fine, so the vault is not blamed for the provider", () => {
     const refused = describeRefreshEntry(
       entry({ liveness: { state: "key_refused", checked_at: "2026-08-24T18:57:34.414Z", model_count: null } }),
@@ -133,7 +165,7 @@ describe("what the report says about all of them", () => {
     // The mixed case is the one the night produced, and it says how many need a
     // person rather than pronouncing on the fleet's health.
     expect(describeRefreshSummary(report([entry(), theNightItHappened()]))).toContain(
-      "1 of them need your attention",
+      "1 of them needs your attention",
     );
   });
 

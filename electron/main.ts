@@ -64,7 +64,7 @@ import {
 } from "../lib/connection-credentials";
 import { aiKeyConnections, pickAiKeyCard } from "../lib/ai/connection-view";
 import type { ConnectionSourceManifest } from "../lib/connections";
-import { listAiKeyModels, performAiKeyAction } from "../lib/ai/actions";
+import { listAiKeyModels, performAiKeyAction, type AiKeyActionResult } from "../lib/ai/actions";
 import { performAskAction } from "./ask-host";
 import { performChiefAction } from "./chief-host";
 import {
@@ -1317,8 +1317,9 @@ async function refreshFleetConnections(
 
     // Question 2. `test` never prompts, so the prompt dependency is one that
     // refuses rather than one that could raise a window on an unattended press.
+    let checked: AiKeyActionResult | null = null;
     try {
-      await performAiKeyAction("test", fleetCredentialTarget(connector, row), vaultLabel, {
+      checked = await performAiKeyAction("test", fleetCredentialTarget(connector, row), vaultLabel, {
         store,
         ai: { probe: (profile, key, wantIds) => probeModelProvider(profile, key, fetch, wantIds) },
         now: () => new Date(),
@@ -1331,6 +1332,21 @@ async function refreshFleetConnections(
       // fetch rejection can carry the request, and this request had a key in it.
       void error;
     }
+
+    /*
+     * The third vault outcome, and it was found by pressing the button
+     * (MAR-742). `test` refuses an entry that is not a usable key envelope
+     * **before** it probes — a bare value written before the envelope existed,
+     * or one filed against a different provider — and returns
+     * `not_connected` without touching `ai_key_checks`.
+     *
+     * Reading only the liveness row therefore reported *"DASH holds a key and
+     * has not asked about it"*, which is true, useless, and hides a real fault.
+     * The refusal is a fact about the vault's contents, so it goes in the vault
+     * leg where a person will read it as one.
+     */
+    const unusable = checked !== null && !checked.ok && checked.state === "not_connected";
+
     entries.push({
       provider_id: row.provider,
       account_id: row.account_id,
@@ -1338,8 +1354,8 @@ async function refreshFleetConnections(
       // Read back from the row `test` just wrote rather than returned from the
       // call, so the report and the standing chip cannot disagree: they are
       // reading the same observation.
-      liveness: readLivenessCheck(FLEET_PRINCIPAL, row.provider),
-      vault: { held: true },
+      liveness: unusable ? null : readLivenessCheck(FLEET_PRINCIPAL, row.provider),
+      vault: unusable ? { held: true, unusable: true, detail: checked?.detail ?? "" } : { held: true },
     });
   }
 

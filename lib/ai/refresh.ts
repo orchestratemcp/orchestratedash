@@ -63,6 +63,24 @@ import type { AiLivenessRecord } from "./liveness";
  */
 export type ConnectionVaultOutcome =
   | { held: true }
+  /**
+   * The vault handed something back and it is not a key this build can use
+   * (MAR-742, found by the attended run).
+   *
+   * A third state rather than either neighbour, because it is a third next
+   * action. `held: false` sends somebody looking for a folder; `held: true`
+   * promises a provider was asked. This is neither: the entry decrypted, the
+   * bytes are not a credential envelope — a value written before the envelope
+   * existed, or one filed under a different provider — so no provider was
+   * contacted and the fix is to connect the service again.
+   *
+   * It was found by pressing the button rather than by reading the code: the
+   * first attended run reported *"DASH holds a key for OpenRouter and has not
+   * asked about it"*, which is true and useless. `performAiKeyAction`'s `test`
+   * refuses an unusable envelope **before** it probes, and the report was
+   * throwing that refusal away and falling back to the untouched liveness row.
+   */
+  | { held: true; unusable: true; detail: string }
   | {
       held: false;
       /** The seam's code — `not_found`, `vault_locked`, `backend_unavailable`. */
@@ -177,6 +195,18 @@ export function describeRefreshEntry(entry: ConnectionRefreshEntry): RefreshSent
     }
   }
 
+  if ("unusable" in entry.vault) {
+    return {
+      headline: `DASH holds something for ${entry.service} that it cannot use`,
+      detail:
+        "The vault handed an entry back and it is not a key this version of DASH can " +
+        "present. Nothing was asked of the service, so nothing is claimed about your " +
+        "account. Connecting again replaces the entry.",
+      next_action: `Connect ${entry.service} again`,
+      ok: false,
+    };
+  }
+
   if (entry.liveness === null) {
     // Unreachable by construction — `liveness` is null exactly when the vault
     // did not hand a credential over, which every branch above has returned on.
@@ -285,7 +315,13 @@ export function describeRefreshSummary(report: ConnectionRefreshReport): string 
       ? "DASH re-read the one connection it holds and checked it with the service."
       : `DASH re-read all ${String(total)} connections it holds and checked each one with its service.`;
   }
-  return `DASH re-read ${String(total)} connections and ${String(total - ok)} of them need your attention.`;
+  const wrong = total - ok;
+  // Singular agreement, because this line is read most often when exactly one
+  // connection is broken — which is the shape of the failure the whole packet
+  // is about, and the one attended run produced it on the first press.
+  return wrong === 1
+    ? `DASH re-read ${String(total)} connections and 1 of them needs your attention.`
+    : `DASH re-read ${String(total)} connections and ${String(wrong)} of them need your attention.`;
 }
 
 /* ---------------------------------------------------------------------- *
@@ -349,6 +385,39 @@ export function toRefreshRows(report: ConnectionRefreshReport): ConnectionRefres
   });
 }
 
+/** Every leg of the report, for the copy sweep and the tests. */
+function refreshLegs(): ConnectionRefreshEntry[] {
+  const base = { provider_id: "openrouter", account_id: "account-1", service: "OpenRouter" };
+  const held = (state: AiLivenessRecord["state"]): ConnectionRefreshEntry => ({
+    ...base,
+    vault: { held: true },
+    liveness: {
+      state,
+      checked_at: "2026-08-24T18:57:34Z",
+      model_count: state === "live" ? 312 : null,
+    },
+  });
+  const failed = (code: string): ConnectionRefreshEntry => ({
+    ...base,
+    vault: { held: false, code, cause: "ENOENT", path: null },
+    liveness: null,
+  });
+
+  return [
+    failed("not_found"),
+    failed("vault_locked"),
+    failed("backend_unavailable"),
+    failed("unexpected_error"),
+    { ...base, vault: { held: true, unusable: true, detail: "" }, liveness: null },
+    held("live"),
+    held("key_refused"),
+    held("unreachable"),
+    held("provider_error"),
+    held("not_checked"),
+    { ...held("live"), liveness: null },
+  ];
+}
+
 /* ---------------------------------------------------------------------- *
  * The copy sweep
  * ---------------------------------------------------------------------- */
@@ -377,18 +446,7 @@ export function everyRefreshSentence(): string[] {
     liveness: null,
   });
 
-  const entries: ConnectionRefreshEntry[] = [
-    failed("not_found"),
-    failed("vault_locked"),
-    failed("backend_unavailable"),
-    failed("unexpected_error"),
-    held("live"),
-    held("key_refused"),
-    held("unreachable"),
-    held("provider_error"),
-    held("not_checked"),
-    { ...held("live"), liveness: null },
-  ];
+  const entries: ConnectionRefreshEntry[] = refreshLegs();
 
   const summaries = [
     describeRefreshSummary({ checked_at: "", entries: [], delivery: "no_runner" }),
@@ -401,6 +459,12 @@ export function everyRefreshSentence(): string[] {
     describeRefreshSummary({
       checked_at: "",
       entries: [held("live"), failed("not_found")],
+      delivery: "refused",
+    }),
+    // Both agreements of the mixed line, so the singular one is gated too.
+    describeRefreshSummary({
+      checked_at: "",
+      entries: [held("live"), failed("not_found"), failed("vault_locked")],
       delivery: "refused",
     }),
   ];
