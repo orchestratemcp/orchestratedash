@@ -64,8 +64,12 @@ the packaged path.
 
 ## Lifecycle counts (from state.json, 2026-08-24)
 
-118 packet entries merged, 55 proven, 24 planned — 197 entries over 168
-distinct issues, after the 2026-08-24 group-C proving sweep (fleet +
+122 packet entries merged, 58 proven, 20 planned — 200 entries, after the
+2026-08-24 morning reconciliation (overnight PRs #271/#272/#273 merged with
+state.json tail unions; MAR-740, MAR-741 and MAR-748 promoted proven;
+MAR-743/745/746 recorded merged, proven waiting on Henrik's 5-step Discord
+re-test; the MAR-697 legacy-exports packet merged — proven when the five
+real em-dash PDFs rename on his next launch) and the group-C proving sweep (fleet +
 settings: MAR-639, MAR-640, MAR-614, MAR-685, MAR-646 and MAR-622 promoted
 merged -> proven. MAR-642 checked and **left merged**: two of its Servers
 bullets were deferred by the PR that merged the rest — #197's own "Not in
@@ -91,17 +95,18 @@ rail's dated index, and a real press on a day).
 proven, 20 planned"; `state.json` itself held 118/49/24 at that moment. The
 proven figure was right and the other two were not, so they are restated
 from the file rather than carried forward. The number that actually
-measures the debt is neither: **91 distinct issues have a merged entry and
-no proven one.**
+measures the debt is neither: **94 distinct issues have a merged entry and
+no proven one** (up three from 91 because MAR-743/745/746 moved
+planned -> merged in the same reconciliation that promoted six).
 
 The preceding sweep, kept for the record: on 2026-08-23,
 group B (agent page: MAR-630, 634, 620, 664, 668, 691, 698,
 635 promoted merged -> proven; MAR-697 promoted for its save-into-folder
 half only — its click-to-open half was MAR-740's known bug. MAR-740
 (the em-dash fold) and MAR-741 (the agent-page rail spanning under the
-composer's room) are fixed and independently re-verified — PR #268, OPEN,
-not yet merged, 8f6ae8e; MAR-697's click-to-open half and MAR-741 promote
-once it merges). Evidence:
+composer's room) are fixed and independently re-verified — PR #268, merged
+2026-08-23, 8f6ae8e; both promoted proven 2026-08-24 alongside MAR-697's
+click-to-open half). Evidence:
 `qa-screenshots-mar630-634-fleet3/`, `-fleet6/`, `qa-screenshots-mar635/`
 (`electron/capture-fleet-views.ts`, `capture-deploy.ts`, both pre-existing
 harnesses re-run against the packaged build) and
