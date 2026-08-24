@@ -1439,6 +1439,24 @@ function readChiefConfiguration(body: unknown): ChiefBridgeConfiguration | null 
  * `malformed`: a key with no model id, or a model id with no key, would each
  * reach the broker and be refused there with a word that describes the wrong
  * problem.
+ *
+ * ## And the same argument, one step further (MAR-745)
+ *
+ * "Refused with a word that describes the wrong problem" is not hypothetical.
+ * Main sent this route a stored credential **envelope** in the `api_key` slot
+ * for a whole packet — a JSON document, not a key — and every consequence
+ * happened downstream: a real round trip to OpenRouter, a 401, and a
+ * `chief_audit_spool` row saying `revoked`, which is DASH telling somebody their
+ * working key had been withdrawn. `electron/chief-discord.ts` is where that is
+ * fixed and where it belongs. This is the second line, and it is here because
+ * this is the boundary: the runner cannot check a key, but it can check that
+ * what arrived is a key **shape** at all, and it is the last place to do so
+ * before the value is spent.
+ *
+ * Refused as *no model* rather than as a malformed bridge. A malformed bridge is
+ * a 400 that leaves the chief holding the previous configuration and silent in
+ * Discord; no model leaves it answering from records, and `GET /chief/discord`
+ * reports "no model" so Settings shows the gap instead of hiding it.
  */
 function readChiefModel(value: unknown): ChiefBridgeConfiguration["model"] | "malformed" {
   if (value === null || value === undefined) {
@@ -1461,7 +1479,34 @@ function readChiefModel(value: unknown): ChiefBridgeConfiguration["model"] | "ma
   ) {
     return "malformed";
   }
+  if (!looksLikeAKey(key)) {
+    return null;
+  }
   return { provider_id: provider, model_id: model, api_key: key };
+}
+
+/**
+ * Whether this is a key, or something DASH holds *about* a key (MAR-745).
+ *
+ * Two shapes, and main has actually sent one of them. A stored `AiKeyCredential`
+ * envelope is a JSON document, so it begins with `{`; a masked hint is four
+ * bullet characters and a tail, which is what a settings row carries so that a
+ * page can show a credential without holding one. No provider issues a key that
+ * is either. Both were named as candidates in MAR-745's diagnosis and the first
+ * one was the answer, so the check covers both rather than only the one that
+ * happened.
+ *
+ * Deliberately not a positive test. "Starts with `sk-`" would be this runner
+ * having an opinion about a provider's key format, which is a rule that breaks
+ * on the day a provider changes its prefix and refuses a key that works. What is
+ * excluded here is two things DASH itself constructs, and nothing else.
+ *
+ * The bullet is spelled out rather than imported: `isMaskedHint` lives in
+ * `lib/secret-refs.ts`, which imports `lib/db.ts` — and the store DASH's own
+ * process opens is the one file this process must never touch.
+ */
+function looksLikeAKey(key: string): boolean {
+  return !key.trimStart().startsWith("{") && !key.includes("••••");
 }
 
 /**
