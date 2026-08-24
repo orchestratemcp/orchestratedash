@@ -1228,6 +1228,169 @@ async function run(): Promise<void> {
     meaning_revealed: (disclosureOpen.text ?? "").length > (disclosureClosed.summary ?? "").length,
   });
 
+  /* ------------------------------------------------------------------ *
+   * MAR-622's scene: a history, not a growing list
+   *
+   * Henrik, 2026-08-11, verbatim: *"Today, yesterday, may 1st etc - Then you
+   * click it and a 'popup' with the content shows so we can read the daily
+   * news for that day. Not Everything in a list that just keeps growing."*
+   *
+   * Three claims, and only the first two are ones a still frame can carry:
+   * the entries are **dated**, and the newest is drawn in full while the rest
+   * are compact rows. The third — *then you click it* — is not a claim about
+   * a picture at all, and it is the one this scene exists for.
+   *
+   * ## Where the history actually is, which is not where this scene first
+   * looked
+   *
+   * The first draft of this scene pressed `<details class="output-history-
+   * entry">`, because that is what `output-history.tsx` draws and what the
+   * measurement loop's `dated_entries` counts. On this stage there are none,
+   * and the run said so: `entries: []`.
+   *
+   * That is not a defect — it is MAR-646, working. `OutputHistory`'s own
+   * header records the change: the agent page passed `collapsed` too, and the
+   * dated rows it produced *were the rail's list a second time*, side by side
+   * on one screen. So the cockpit's Output stage stopped drawing them. The
+   * rail is the dated index now and the stage is the reader, and
+   * `.output-history-entry` survives only where there is no rail beside it —
+   * the run detail page's flat list, and the author's panel under ADR 0008.
+   *
+   * So MAR-622's user-facing path on this page is: **the rail lists days, you
+   * press one, and that day's content is what the stage draws.** Henrik asked
+   * for "a popup with the content" and got a stage swap, which is the same
+   * act — pick a day, read that day — reached by a route MAR-646 chose after
+   * he asked. That is what this scene presses. Recording it against the wrong
+   * element would have produced a run that "passed" while pressing nothing.
+   *
+   * ## The store this runs against already has the right shape
+   *
+   * Four digests at days 0, 1, 2 and 3, seeded above for MAR-646's reasons —
+   * which is exactly the fixture MAR-622 needs, because
+   * `describeArtifactHistoryDay` turns those into "Today", "Yesterday" and two
+   * dated rows. Nothing was re-seeded for this scene, deliberately: a seed
+   * written to make a scene pass is the trap this repository already names as
+   * "a capture seed can hide the fix".
+   * ------------------------------------------------------------------ */
+  nativeTheme.themeSource = "light";
+  await settle(300);
+  const historyRoute = `${agentRoute}&stage=output`;
+  await go(window, historyRoute);
+  await resizeTo(window, VIEWPORT.width, VIEWPORT.height);
+  await go(window, historyRoute);
+  const readHistory = `(() => {
+         const stage = document.querySelector(".cockpit-stage");
+         const entries = [...document.querySelectorAll(".rail-output")];
+         const open = entries.find((one) => one.classList.contains("is-open"));
+         return {
+           url: window.location.href,
+           /* The index, as a list of days — MAR-622's own shape. */
+           days: entries.map((one) => ({
+             day: (one.querySelector(".rail-output-when")?.textContent ?? "").trim(),
+             title: (one.querySelector(".rail-output-title")?.textContent ?? "").trim(),
+             open: one.classList.contains("is-open"),
+           })),
+           open_day: open === undefined
+             ? null
+             : (open.querySelector(".rail-output-when")?.textContent ?? "").trim(),
+           open_title: open === undefined
+             ? null
+             : (open.querySelector(".rail-output-title")?.textContent ?? "").trim(),
+           /*
+            * One, not a list that keeps growing. This is the number
+            * MAR-622 was filed on and the number MAR-646 has to hold at.
+            */
+           stage_cards: stage === null ? 0 : stage.querySelectorAll(".output-card").length,
+           stage_card_title: stage === null
+             ? null
+             : (stage.querySelector(".output-card h2, .output-card h3")?.textContent ?? "").trim(),
+           /* A sentence only a digest body carries, so "the content is on
+              screen" is a fact about this artifact and not about any text. */
+           stage_has_the_report: stage === null
+             ? false
+             : (stage.textContent ?? "").includes("the thing a person opened this page to read"),
+         };
+       })()`;
+
+  await within(
+    "scroll the rail's dated index into view",
+    5_000,
+    window.webContents.executeJavaScript(
+      `document.querySelector(".rail-output")?.scrollIntoView({ block: "center" })`,
+    ),
+  );
+  await settle(400);
+  const historyBefore = (await within(
+    "read the dated index before pressing a day",
+    5_000,
+    window.webContents.executeJavaScript(readHistory),
+  )) as {
+    url: string;
+    days: { day: string; title: string; open: boolean }[];
+    open_day: string | null;
+    open_title: string | null;
+    stage_cards: number;
+    stage_card_title: string | null;
+    stage_has_the_report: boolean;
+  };
+  await shoot(window, "agent-output-history-index");
+
+  /*
+   * A real press on a day that is NOT the one already open. Pressing the
+   * open one would navigate to the page it is already on and produce a
+   * before/after pair that is identical for the most boring reason.
+   */
+  const historyPressed = (await within(
+    "press a dated entry that is not the open one",
+    5_000,
+    window.webContents.executeJavaScript(
+      `(() => {
+         const entry = [...document.querySelectorAll(".rail-output")].find(
+           (one) => !one.classList.contains("is-open"),
+         );
+         if (entry === undefined) return null;
+         const day = (entry.querySelector(".rail-output-when")?.textContent ?? "").trim();
+         const title = (entry.querySelector(".rail-output-title")?.textContent ?? "").trim();
+         entry.querySelector("a")?.click();
+         return { day: day, title: title };
+       })()`,
+    ),
+  )) as { day: string; title: string } | null;
+  await settle(2200);
+  const historyAfter = (await within(
+    "read what the stage drew for that day",
+    5_000,
+    window.webContents.executeJavaScript(readHistory),
+  )) as typeof historyBefore;
+  await shoot(window, "agent-output-history-day-open");
+  console.log(
+    `[cockpit] MAR-622 history: pressed=${JSON.stringify(historyPressed)} ` +
+      `before=${JSON.stringify(historyBefore)} after=${JSON.stringify(historyAfter)}`,
+  );
+  measurements.push({
+    stage: "output-history",
+    theme: "light",
+    viewport: VIEWPORT.name,
+    claim: "MAR-622 — a dated index, and pressing a day draws that day's content instead of a list that keeps growing",
+    /* "Today, yesterday, may 1st etc" — Henrik's own words, as drawn. */
+    index_days: historyBefore.days.map((one) => one.day),
+    index_titles: historyBefore.days.map((one) => one.title),
+    entries_in_index: historyBefore.days.length,
+    /* One at a time, before and after: the growing list is what this fixes. */
+    stage_cards_before: historyBefore.stage_cards,
+    stage_cards_after: historyAfter.stage_cards,
+    open_day_before: historyBefore.open_day,
+    pressed: historyPressed,
+    open_day_after: historyAfter.open_day,
+    /* The press changed which day is being read, and the stage followed. */
+    index_moved:
+      historyPressed !== null && historyAfter.open_day === historyPressed.day
+      && historyAfter.open_title === historyPressed.title,
+    stage_drew_the_pressed_day:
+      historyPressed !== null && historyAfter.stage_card_title === historyPressed.title,
+    content_on_screen: historyAfter.stage_has_the_report,
+  });
+
   /*
    * MAR-691's scene: `digest-scout-1`'s deep dive, drawn on both renderers.
    *
@@ -1550,15 +1713,29 @@ async function run(): Promise<void> {
    * entry, which the six real ones already cover — must show the cell that
    * takes a reader back to Overview, at both widths this harness now shoots.
    */
-  const missingOverviewAction = measurements.filter(
-    (entry) =>
-      (entry as { stage: string }).stage !== "(no stage named)" &&
-      // MAR-664's own scene, appended below — it is not one of `STAGES` and
-      // was not put through `measure()`, so it carries no verdict for this
-      // check to read.
-      (entry as { stage: string }).stage !== "about" &&
-      !(entry as { overview_action_visible: boolean }).overview_action_visible,
-  );
+  /*
+   * Only entries that actually carry a verdict.
+   *
+   * Every appended scene below pushes its own row into `measurements` without
+   * going through `measure()`, so `overview_action_visible` is *absent* on
+   * all of them — and absent is falsy. This filter used to name the one scene
+   * that existed when it was written (`about`) and exclude it by hand, which
+   * stopped scaling the moment there were six more: the run reported "8
+   * frame(s) had no visible way back to Overview" and listed
+   * `outbound-link`, `exports-save` and their siblings, none of which ever
+   * looked for the cell. All 26 frames that *did* measure it had it.
+   *
+   * A number that counts "did not answer" as "answered no" is worse than no
+   * number, because it reads as a finding. So the test is now whether the
+   * field is present, and a new scene can be appended without either
+   * silently inflating this count or having to be added to an exclusion list.
+   */
+  const missingOverviewAction = measurements.filter((entry) => {
+    const row = entry as { stage?: string; overview_action_visible?: boolean };
+    if (row.stage === "(no stage named)") return false;
+    if (row.overview_action_visible === undefined) return false;
+    return !row.overview_action_visible;
+  });
   const about = measurements.find((entry) => (entry as { stage: string }).stage === "about") as
     | { closed_before_press: boolean; open_after_press: boolean; goal_in_panel: boolean; steps_in_panel: boolean }
     | undefined;

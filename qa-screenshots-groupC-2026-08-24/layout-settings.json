@@ -1,0 +1,1735 @@
+{
+  "captured_at": "2026-08-24T07:49:47.689Z",
+  "measurements": [
+    {
+      "page": "connections",
+      "viewport": 1279,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "heading_text": "Accounts you connect",
+      "active_tab_text": "Connections",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [
+        {
+          "service": "Gmail",
+          "account": "2 accounts",
+          "chip": "Not connected",
+          "needed_by": 1
+        },
+        {
+          "service": "Ledger",
+          "account": null,
+          "chip": "Not connected",
+          "needed_by": 1
+        },
+        {
+          "service": "Google Calendar",
+          "account": null,
+          "chip": "Not connected",
+          "needed_by": 1
+        },
+        {
+          "service": "Model provider",
+          "account": null,
+          "chip": "DASH does not hold this",
+          "needed_by": 2
+        }
+      ],
+      "connector_card_systems": [
+        "service-list"
+      ],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [],
+      "main_paragraphs": 9,
+      "main_words": 257
+    },
+    {
+      "page": "connections",
+      "viewport": 767,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "heading_text": "Accounts you connect",
+      "active_tab_text": "Connections",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [
+        {
+          "service": "Gmail",
+          "account": "2 accounts",
+          "chip": "Not connected",
+          "needed_by": 1
+        },
+        {
+          "service": "Ledger",
+          "account": null,
+          "chip": "Not connected",
+          "needed_by": 1
+        },
+        {
+          "service": "Google Calendar",
+          "account": null,
+          "chip": "Not connected",
+          "needed_by": 1
+        },
+        {
+          "service": "Model provider",
+          "account": null,
+          "chip": "DASH does not hold this",
+          "needed_by": 2
+        }
+      ],
+      "connector_card_systems": [
+        "service-list"
+      ],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [],
+      "main_paragraphs": 9,
+      "main_words": 257
+    },
+    {
+      "page": "connections",
+      "viewport": 374,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "heading_text": "Accounts you connect",
+      "active_tab_text": "Connections",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [
+        {
+          "service": "Gmail",
+          "account": "2 accounts",
+          "chip": "Not connected",
+          "needed_by": 1
+        },
+        {
+          "service": "Ledger",
+          "account": null,
+          "chip": "Not connected",
+          "needed_by": 1
+        },
+        {
+          "service": "Google Calendar",
+          "account": null,
+          "chip": "Not connected",
+          "needed_by": 1
+        },
+        {
+          "service": "Model provider",
+          "account": null,
+          "chip": "DASH does not hold this",
+          "needed_by": 2
+        }
+      ],
+      "connector_card_systems": [
+        "service-list"
+      ],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [],
+      "main_paragraphs": 9,
+      "main_words": 257
+    },
+    {
+      "page": "ai",
+      "viewport": 1279,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "heading_text": "Models and keys",
+      "active_tab_text": "AI",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [
+        {
+          "service": "OpenRouter",
+          "chip": "Connected",
+          "buttons": [
+            "Replace the key",
+            "Check it still works",
+            "Disconnect"
+          ]
+        }
+      ],
+      "ai_add_key_button": "+ Add a key",
+      "model_default": {
+        "in_force": "No default yet. Until you pick one, each agent is on whatever its own page says, and an agent that says nothing runs each step at the strength its plan asked for.",
+        "provider_select": false,
+        "model_select": true
+      },
+      "service_rows": [],
+      "connector_card_systems": [
+        "fleet-connectors"
+      ],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [],
+      "main_paragraphs": 20,
+      "main_words": 402
+    },
+    {
+      "page": "ai",
+      "viewport": 767,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "heading_text": "Models and keys",
+      "active_tab_text": "AI",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [
+        {
+          "service": "OpenRouter",
+          "chip": "Connected",
+          "buttons": [
+            "Replace the key",
+            "Check it still works",
+            "Disconnect"
+          ]
+        }
+      ],
+      "ai_add_key_button": "+ Add a key",
+      "model_default": {
+        "in_force": "No default yet. Until you pick one, each agent is on whatever its own page says, and an agent that says nothing runs each step at the strength its plan asked for.",
+        "provider_select": false,
+        "model_select": true
+      },
+      "service_rows": [],
+      "connector_card_systems": [
+        "fleet-connectors"
+      ],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [],
+      "main_paragraphs": 20,
+      "main_words": 402
+    },
+    {
+      "page": "ai",
+      "viewport": 374,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "heading_text": "Models and keys",
+      "active_tab_text": "AI",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [
+        {
+          "service": "OpenRouter",
+          "chip": "Connected",
+          "buttons": [
+            "Replace the key",
+            "Check it still works",
+            "Disconnect"
+          ]
+        }
+      ],
+      "ai_add_key_button": "+ Add a key",
+      "model_default": {
+        "in_force": "No default yet. Until you pick one, each agent is on whatever its own page says, and an agent that says nothing runs each step at the strength its plan asked for.",
+        "provider_select": false,
+        "model_select": true
+      },
+      "service_rows": [],
+      "connector_card_systems": [
+        "fleet-connectors"
+      ],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [],
+      "main_paragraphs": 20,
+      "main_words": 402
+    },
+    {
+      "page": "servers",
+      "viewport": 1279,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "heading_text": "Remote machines",
+      "active_tab_text": "Servers",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": {
+        "rows": 1,
+        "headers": [
+          "Agent",
+          "Server",
+          "Standing"
+        ],
+        "first_row": [
+          "meeting-assistant",
+          "My server",
+          "DASH sent it on 10 August 2026."
+        ]
+      },
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [],
+      "main_paragraphs": 8,
+      "main_words": 173
+    },
+    {
+      "page": "servers",
+      "viewport": 767,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "heading_text": "Remote machines",
+      "active_tab_text": "Servers",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": {
+        "rows": 1,
+        "headers": [
+          "Agent",
+          "Server",
+          "Standing"
+        ],
+        "first_row": [
+          "meeting-assistant",
+          "My server",
+          "DASH sent it on 10 August 2026."
+        ]
+      },
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [],
+      "main_paragraphs": 8,
+      "main_words": 173
+    },
+    {
+      "page": "servers",
+      "viewport": 374,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "heading_text": "Remote machines",
+      "active_tab_text": "Servers",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": {
+        "rows": 1,
+        "headers": [
+          "Agent",
+          "Server",
+          "Standing"
+        ],
+        "first_row": [
+          "meeting-assistant",
+          "My server",
+          "DASH sent it on 10 August 2026."
+        ]
+      },
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [],
+      "main_paragraphs": 8,
+      "main_words": 173
+    },
+    {
+      "page": "notifications",
+      "viewport": 1279,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "heading_text": "Discord alerts",
+      "active_tab_text": "Notifications",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [
+        "Not set up Nothing about your agents leaves this computer.",
+        "Not set up The chief answers only in DASH, on this computer."
+      ],
+      "main_paragraphs": 6,
+      "main_words": 286
+    },
+    {
+      "page": "notifications",
+      "viewport": 767,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "heading_text": "Discord alerts",
+      "active_tab_text": "Notifications",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [
+        "Not set up Nothing about your agents leaves this computer.",
+        "Not set up The chief answers only in DASH, on this computer."
+      ],
+      "main_paragraphs": 6,
+      "main_words": 286
+    },
+    {
+      "page": "notifications",
+      "viewport": 374,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "heading_text": "Discord alerts",
+      "active_tab_text": "Notifications",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [
+        "Not set up Nothing about your agents leaves this computer.",
+        "Not set up The chief answers only in DASH, on this computer."
+      ],
+      "main_paragraphs": 6,
+      "main_words": 286
+    },
+    {
+      "page": "preferences",
+      "viewport": 1279,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "heading_text": "How DASH looks",
+      "active_tab_text": "Preferences",
+      "heading_repeats_tab": false,
+      "density_toggle_found": true,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [
+        {
+          "value": "system",
+          "label": "System",
+          "checked": true
+        },
+        {
+          "value": "light",
+          "label": "Light",
+          "checked": false
+        },
+        {
+          "value": "dark",
+          "label": "Dark",
+          "checked": false
+        }
+      ],
+      "notify_standings": [],
+      "main_paragraphs": 5,
+      "main_words": 123
+    },
+    {
+      "page": "preferences",
+      "viewport": 1279,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "heading_text": "How DASH looks",
+      "active_tab_text": "Preferences",
+      "heading_repeats_tab": false,
+      "density_toggle_found": true,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [
+        {
+          "value": "system",
+          "label": "System",
+          "checked": true
+        },
+        {
+          "value": "light",
+          "label": "Light",
+          "checked": false
+        },
+        {
+          "value": "dark",
+          "label": "Dark",
+          "checked": false
+        }
+      ],
+      "notify_standings": [],
+      "main_paragraphs": 5,
+      "main_words": 123
+    },
+    {
+      "page": "preferences",
+      "viewport": 767,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "heading_text": "How DASH looks",
+      "active_tab_text": "Preferences",
+      "heading_repeats_tab": false,
+      "density_toggle_found": true,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [
+        {
+          "value": "system",
+          "label": "System",
+          "checked": true
+        },
+        {
+          "value": "light",
+          "label": "Light",
+          "checked": false
+        },
+        {
+          "value": "dark",
+          "label": "Dark",
+          "checked": false
+        }
+      ],
+      "notify_standings": [],
+      "main_paragraphs": 5,
+      "main_words": 123
+    },
+    {
+      "page": "preferences",
+      "viewport": 767,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "heading_text": "How DASH looks",
+      "active_tab_text": "Preferences",
+      "heading_repeats_tab": false,
+      "density_toggle_found": true,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [
+        {
+          "value": "system",
+          "label": "System",
+          "checked": true
+        },
+        {
+          "value": "light",
+          "label": "Light",
+          "checked": false
+        },
+        {
+          "value": "dark",
+          "label": "Dark",
+          "checked": false
+        }
+      ],
+      "notify_standings": [],
+      "main_paragraphs": 5,
+      "main_words": 123
+    },
+    {
+      "page": "preferences",
+      "viewport": 374,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "heading_text": "How DASH looks",
+      "active_tab_text": "Preferences",
+      "heading_repeats_tab": false,
+      "density_toggle_found": true,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [
+        {
+          "value": "system",
+          "label": "System",
+          "checked": true
+        },
+        {
+          "value": "light",
+          "label": "Light",
+          "checked": false
+        },
+        {
+          "value": "dark",
+          "label": "Dark",
+          "checked": false
+        }
+      ],
+      "notify_standings": [],
+      "main_paragraphs": 5,
+      "main_words": 123
+    },
+    {
+      "page": "preferences",
+      "viewport": 374,
+      "theme": "light",
+      "density": "compact",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "heading_text": "How DASH looks",
+      "active_tab_text": "Preferences",
+      "heading_repeats_tab": false,
+      "density_toggle_found": true,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [
+        {
+          "value": "system",
+          "label": "System",
+          "checked": true
+        },
+        {
+          "value": "light",
+          "label": "Light",
+          "checked": false
+        },
+        {
+          "value": "dark",
+          "label": "Dark",
+          "checked": false
+        }
+      ],
+      "notify_standings": [],
+      "main_paragraphs": 5,
+      "main_words": 123
+    },
+    {
+      "page": "connections",
+      "viewport": 1279,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "heading_text": "Accounts you connect",
+      "active_tab_text": "Connections",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [
+        {
+          "service": "Gmail",
+          "account": "2 accounts",
+          "chip": "Not connected",
+          "needed_by": 1
+        },
+        {
+          "service": "Ledger",
+          "account": null,
+          "chip": "Not connected",
+          "needed_by": 1
+        },
+        {
+          "service": "Google Calendar",
+          "account": null,
+          "chip": "Not connected",
+          "needed_by": 1
+        },
+        {
+          "service": "Model provider",
+          "account": null,
+          "chip": "DASH does not hold this",
+          "needed_by": 2
+        }
+      ],
+      "connector_card_systems": [
+        "service-list"
+      ],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [],
+      "main_paragraphs": 9,
+      "main_words": 257
+    },
+    {
+      "page": "connections",
+      "viewport": 767,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "heading_text": "Accounts you connect",
+      "active_tab_text": "Connections",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [
+        {
+          "service": "Gmail",
+          "account": "2 accounts",
+          "chip": "Not connected",
+          "needed_by": 1
+        },
+        {
+          "service": "Ledger",
+          "account": null,
+          "chip": "Not connected",
+          "needed_by": 1
+        },
+        {
+          "service": "Google Calendar",
+          "account": null,
+          "chip": "Not connected",
+          "needed_by": 1
+        },
+        {
+          "service": "Model provider",
+          "account": null,
+          "chip": "DASH does not hold this",
+          "needed_by": 2
+        }
+      ],
+      "connector_card_systems": [
+        "service-list"
+      ],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [],
+      "main_paragraphs": 9,
+      "main_words": 257
+    },
+    {
+      "page": "connections",
+      "viewport": 374,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "heading_text": "Accounts you connect",
+      "active_tab_text": "Connections",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [
+        {
+          "service": "Gmail",
+          "account": "2 accounts",
+          "chip": "Not connected",
+          "needed_by": 1
+        },
+        {
+          "service": "Ledger",
+          "account": null,
+          "chip": "Not connected",
+          "needed_by": 1
+        },
+        {
+          "service": "Google Calendar",
+          "account": null,
+          "chip": "Not connected",
+          "needed_by": 1
+        },
+        {
+          "service": "Model provider",
+          "account": null,
+          "chip": "DASH does not hold this",
+          "needed_by": 2
+        }
+      ],
+      "connector_card_systems": [
+        "service-list"
+      ],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [],
+      "main_paragraphs": 9,
+      "main_words": 257
+    },
+    {
+      "page": "ai",
+      "viewport": 1279,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "heading_text": "Models and keys",
+      "active_tab_text": "AI",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [
+        {
+          "service": "OpenRouter",
+          "chip": "Connected",
+          "buttons": [
+            "Replace the key",
+            "Check it still works",
+            "Disconnect"
+          ]
+        }
+      ],
+      "ai_add_key_button": "+ Add a key",
+      "model_default": {
+        "in_force": "No default yet. Until you pick one, each agent is on whatever its own page says, and an agent that says nothing runs each step at the strength its plan asked for.",
+        "provider_select": false,
+        "model_select": true
+      },
+      "service_rows": [],
+      "connector_card_systems": [
+        "fleet-connectors"
+      ],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [],
+      "main_paragraphs": 20,
+      "main_words": 402
+    },
+    {
+      "page": "ai",
+      "viewport": 767,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "heading_text": "Models and keys",
+      "active_tab_text": "AI",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [
+        {
+          "service": "OpenRouter",
+          "chip": "Connected",
+          "buttons": [
+            "Replace the key",
+            "Check it still works",
+            "Disconnect"
+          ]
+        }
+      ],
+      "ai_add_key_button": "+ Add a key",
+      "model_default": {
+        "in_force": "No default yet. Until you pick one, each agent is on whatever its own page says, and an agent that says nothing runs each step at the strength its plan asked for.",
+        "provider_select": false,
+        "model_select": true
+      },
+      "service_rows": [],
+      "connector_card_systems": [
+        "fleet-connectors"
+      ],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [],
+      "main_paragraphs": 20,
+      "main_words": 402
+    },
+    {
+      "page": "ai",
+      "viewport": 374,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "heading_text": "Models and keys",
+      "active_tab_text": "AI",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [
+        {
+          "service": "OpenRouter",
+          "chip": "Connected",
+          "buttons": [
+            "Replace the key",
+            "Check it still works",
+            "Disconnect"
+          ]
+        }
+      ],
+      "ai_add_key_button": "+ Add a key",
+      "model_default": {
+        "in_force": "No default yet. Until you pick one, each agent is on whatever its own page says, and an agent that says nothing runs each step at the strength its plan asked for.",
+        "provider_select": false,
+        "model_select": true
+      },
+      "service_rows": [],
+      "connector_card_systems": [
+        "fleet-connectors"
+      ],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [],
+      "main_paragraphs": 20,
+      "main_words": 402
+    },
+    {
+      "page": "servers",
+      "viewport": 1279,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "heading_text": "Remote machines",
+      "active_tab_text": "Servers",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": {
+        "rows": 1,
+        "headers": [
+          "Agent",
+          "Server",
+          "Standing"
+        ],
+        "first_row": [
+          "meeting-assistant",
+          "My server",
+          "DASH sent it on 10 August 2026."
+        ]
+      },
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [],
+      "main_paragraphs": 8,
+      "main_words": 173
+    },
+    {
+      "page": "servers",
+      "viewport": 767,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "heading_text": "Remote machines",
+      "active_tab_text": "Servers",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": {
+        "rows": 1,
+        "headers": [
+          "Agent",
+          "Server",
+          "Standing"
+        ],
+        "first_row": [
+          "meeting-assistant",
+          "My server",
+          "DASH sent it on 10 August 2026."
+        ]
+      },
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [],
+      "main_paragraphs": 8,
+      "main_words": 173
+    },
+    {
+      "page": "servers",
+      "viewport": 374,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "heading_text": "Remote machines",
+      "active_tab_text": "Servers",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": {
+        "rows": 1,
+        "headers": [
+          "Agent",
+          "Server",
+          "Standing"
+        ],
+        "first_row": [
+          "meeting-assistant",
+          "My server",
+          "DASH sent it on 10 August 2026."
+        ]
+      },
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [],
+      "main_paragraphs": 8,
+      "main_words": 173
+    },
+    {
+      "page": "notifications",
+      "viewport": 1279,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "heading_text": "Discord alerts",
+      "active_tab_text": "Notifications",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [
+        "Not set up Nothing about your agents leaves this computer.",
+        "Not set up The chief answers only in DASH, on this computer."
+      ],
+      "main_paragraphs": 6,
+      "main_words": 286
+    },
+    {
+      "page": "notifications",
+      "viewport": 767,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "heading_text": "Discord alerts",
+      "active_tab_text": "Notifications",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [
+        "Not set up Nothing about your agents leaves this computer.",
+        "Not set up The chief answers only in DASH, on this computer."
+      ],
+      "main_paragraphs": 6,
+      "main_words": 286
+    },
+    {
+      "page": "notifications",
+      "viewport": 374,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "heading_text": "Discord alerts",
+      "active_tab_text": "Notifications",
+      "heading_repeats_tab": false,
+      "density_toggle_found": false,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [],
+      "notify_standings": [
+        "Not set up Nothing about your agents leaves this computer.",
+        "Not set up The chief answers only in DASH, on this computer."
+      ],
+      "main_paragraphs": 6,
+      "main_words": 286
+    },
+    {
+      "page": "preferences",
+      "viewport": 1279,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "heading_text": "How DASH looks",
+      "active_tab_text": "Preferences",
+      "heading_repeats_tab": false,
+      "density_toggle_found": true,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [
+        {
+          "value": "system",
+          "label": "System",
+          "checked": true
+        },
+        {
+          "value": "light",
+          "label": "Light",
+          "checked": false
+        },
+        {
+          "value": "dark",
+          "label": "Dark",
+          "checked": false
+        }
+      ],
+      "notify_standings": [],
+      "main_paragraphs": 5,
+      "main_words": 123
+    },
+    {
+      "page": "preferences",
+      "viewport": 1279,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "heading_text": "How DASH looks",
+      "active_tab_text": "Preferences",
+      "heading_repeats_tab": false,
+      "density_toggle_found": true,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [
+        {
+          "value": "system",
+          "label": "System",
+          "checked": true
+        },
+        {
+          "value": "light",
+          "label": "Light",
+          "checked": false
+        },
+        {
+          "value": "dark",
+          "label": "Dark",
+          "checked": false
+        }
+      ],
+      "notify_standings": [],
+      "main_paragraphs": 5,
+      "main_words": 123
+    },
+    {
+      "page": "preferences",
+      "viewport": 767,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "heading_text": "How DASH looks",
+      "active_tab_text": "Preferences",
+      "heading_repeats_tab": false,
+      "density_toggle_found": true,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [
+        {
+          "value": "system",
+          "label": "System",
+          "checked": true
+        },
+        {
+          "value": "light",
+          "label": "Light",
+          "checked": false
+        },
+        {
+          "value": "dark",
+          "label": "Dark",
+          "checked": false
+        }
+      ],
+      "notify_standings": [],
+      "main_paragraphs": 5,
+      "main_words": 123
+    },
+    {
+      "page": "preferences",
+      "viewport": 767,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "heading_text": "How DASH looks",
+      "active_tab_text": "Preferences",
+      "heading_repeats_tab": false,
+      "density_toggle_found": true,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [
+        {
+          "value": "system",
+          "label": "System",
+          "checked": true
+        },
+        {
+          "value": "light",
+          "label": "Light",
+          "checked": false
+        },
+        {
+          "value": "dark",
+          "label": "Dark",
+          "checked": false
+        }
+      ],
+      "notify_standings": [],
+      "main_paragraphs": 5,
+      "main_words": 123
+    },
+    {
+      "page": "preferences",
+      "viewport": 374,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "heading_text": "How DASH looks",
+      "active_tab_text": "Preferences",
+      "heading_repeats_tab": false,
+      "density_toggle_found": true,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [
+        {
+          "value": "system",
+          "label": "System",
+          "checked": true
+        },
+        {
+          "value": "light",
+          "label": "Light",
+          "checked": false
+        },
+        {
+          "value": "dark",
+          "label": "Dark",
+          "checked": false
+        }
+      ],
+      "notify_standings": [],
+      "main_paragraphs": 5,
+      "main_words": 123
+    },
+    {
+      "page": "preferences",
+      "viewport": 374,
+      "theme": "dark",
+      "density": "compact",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "heading_text": "How DASH looks",
+      "active_tab_text": "Preferences",
+      "heading_repeats_tab": false,
+      "density_toggle_found": true,
+      "ai_key_cards": [],
+      "ai_add_key_button": null,
+      "model_default": null,
+      "service_rows": [],
+      "connector_card_systems": [],
+      "deployed_table": null,
+      "send_here": [],
+      "send_here_links": 0,
+      "deploy_panels": 0,
+      "theme_options": [
+        {
+          "value": "system",
+          "label": "System",
+          "checked": true
+        },
+        {
+          "value": "light",
+          "label": "Light",
+          "checked": false
+        },
+        {
+          "value": "dark",
+          "label": "Dark",
+          "checked": false
+        }
+      ],
+      "notify_standings": [],
+      "main_paragraphs": 5,
+      "main_words": 123
+    }
+  ],
+  "scenes": [
+    {
+      "scene": "ai-mutation-light",
+      "claim": "MAR-685 — a settings mutation is reflected without navigating away and back",
+      "pressed": "Disconnect",
+      "url_before": "dash-app://ui/settings/ai",
+      "url_after": "dash-app://ui/settings/ai",
+      "navigated": false,
+      "before": {
+        "url": "dash-app://ui/settings/ai",
+        "summary": "DASH holds 1 key. 2 more can be added.",
+        "cards": [
+          {
+            "service": "OpenRouter",
+            "chip": "Connected",
+            "buttons": [
+              "Replace the key",
+              "Check it still works",
+              "Disconnect"
+            ]
+          }
+        ],
+        "card_count": 1
+      },
+      "after": {
+        "url": "dash-app://ui/settings/ai",
+        "summary": "DASH holds no key yet. 3 services can give you one, and a key from any of them is what lets your agents think.",
+        "cards": [
+          {
+            "service": "OpenRouter",
+            "chip": "Not connected",
+            "buttons": [
+              "Add your OpenRouter key"
+            ]
+          },
+          {
+            "service": "Anthropic",
+            "chip": "Not connected",
+            "buttons": [
+              "Add your Anthropic key"
+            ]
+          },
+          {
+            "service": "OpenAI",
+            "chip": "Not connected",
+            "buttons": [
+              "Add your OpenAI key"
+            ]
+          }
+        ],
+        "card_count": 3
+      },
+      "changed_in_place": true
+    },
+    {
+      "scene": "connections-mutation-light",
+      "claim": "MAR-685 — the Connections tab reflects its own mutation without a navigation",
+      "pressed": {
+        "label": "Disconnect",
+        "account": "wo••••@gmail.com, since 16 August 2026"
+      },
+      "url_before": "dash-app://ui/settings",
+      "url_after": "dash-app://ui/settings",
+      "navigated": false,
+      "before": {
+        "url": "dash-app://ui/settings",
+        "summary": "4 services DASH can connect for you. 1 of them is connected.",
+        "rows": [
+          {
+            "service": "Gmail",
+            "chip": "Not connected",
+            "account": "2 accounts",
+            "accounts": 2,
+            "account_hints": [
+              "he••••@gmail.com, since 16 August 2026",
+              "wo••••@gmail.com, since 16 August 2026"
+            ]
+          },
+          {
+            "service": "Ledger",
+            "chip": "Not connected",
+            "account": null,
+            "accounts": 0,
+            "account_hints": []
+          },
+          {
+            "service": "Google Calendar",
+            "chip": "Not connected",
+            "account": null,
+            "accounts": 0,
+            "account_hints": []
+          },
+          {
+            "service": "Model provider",
+            "chip": "DASH does not hold this",
+            "account": null,
+            "accounts": 0,
+            "account_hints": []
+          }
+        ],
+        "notices": [
+          "Google has no drafts-only permission: it also allows sending. DASH builds no send action, so no agent can ask DASH to send — you can revoke it in your Google account.Connecting Gmail connects it for meeting-assistant, each with its own record and only the actions it asked for."
+        ]
+      },
+      "after": {
+        "url": "dash-app://ui/settings",
+        "summary": "4 services DASH can connect for you. 1 of them is connected.",
+        "rows": [
+          {
+            "service": "Gmail",
+            "chip": "Not connected",
+            "account": "he••••@gmail.com, since 16 August 2026",
+            "accounts": 1,
+            "account_hints": [
+              "he••••@gmail.com, since 16 August 2026"
+            ]
+          },
+          {
+            "service": "Ledger",
+            "chip": "Not connected",
+            "account": null,
+            "accounts": 0,
+            "account_hints": []
+          },
+          {
+            "service": "Google Calendar",
+            "chip": "Not connected",
+            "account": null,
+            "accounts": 0,
+            "account_hints": []
+          },
+          {
+            "service": "Model provider",
+            "chip": "DASH does not hold this",
+            "account": null,
+            "accounts": 0,
+            "account_hints": []
+          }
+        ],
+        "notices": [
+          "Google has no drafts-only permission: it also allows sending. DASH builds no send action, so no agent can ask DASH to send — you can revoke it in your Google account.Connecting Gmail connects it for meeting-assistant, each with its own record and only the actions it asked for."
+        ]
+      },
+      "changed_in_place": true
+    },
+    {
+      "scene": "ai-mutation-dark",
+      "claim": "MAR-685 — a settings mutation is reflected without navigating away and back",
+      "pressed": "Disconnect",
+      "url_before": "dash-app://ui/settings/ai",
+      "url_after": "dash-app://ui/settings/ai",
+      "navigated": false,
+      "before": {
+        "url": "dash-app://ui/settings/ai",
+        "summary": "DASH holds 1 key. 2 more can be added.",
+        "cards": [
+          {
+            "service": "OpenRouter",
+            "chip": "Connected",
+            "buttons": [
+              "Replace the key",
+              "Check it still works",
+              "Disconnect"
+            ]
+          }
+        ],
+        "card_count": 1
+      },
+      "after": {
+        "url": "dash-app://ui/settings/ai",
+        "summary": "DASH holds no key yet. 3 services can give you one, and a key from any of them is what lets your agents think.",
+        "cards": [
+          {
+            "service": "OpenRouter",
+            "chip": "Not connected",
+            "buttons": [
+              "Add your OpenRouter key"
+            ]
+          },
+          {
+            "service": "Anthropic",
+            "chip": "Not connected",
+            "buttons": [
+              "Add your Anthropic key"
+            ]
+          },
+          {
+            "service": "OpenAI",
+            "chip": "Not connected",
+            "buttons": [
+              "Add your OpenAI key"
+            ]
+          }
+        ],
+        "card_count": 3
+      },
+      "changed_in_place": true
+    },
+    {
+      "scene": "connections-mutation-dark",
+      "claim": "MAR-685 — the Connections tab reflects its own mutation without a navigation",
+      "pressed": {
+        "label": "Disconnect",
+        "account": "wo••••@gmail.com, since 16 August 2026"
+      },
+      "url_before": "dash-app://ui/settings",
+      "url_after": "dash-app://ui/settings",
+      "navigated": false,
+      "before": {
+        "url": "dash-app://ui/settings",
+        "summary": "4 services DASH can connect for you. 1 of them is connected.",
+        "rows": [
+          {
+            "service": "Gmail",
+            "chip": "Not connected",
+            "account": "2 accounts",
+            "accounts": 2,
+            "account_hints": [
+              "he••••@gmail.com, since 16 August 2026",
+              "wo••••@gmail.com, since 16 August 2026"
+            ]
+          },
+          {
+            "service": "Ledger",
+            "chip": "Not connected",
+            "account": null,
+            "accounts": 0,
+            "account_hints": []
+          },
+          {
+            "service": "Google Calendar",
+            "chip": "Not connected",
+            "account": null,
+            "accounts": 0,
+            "account_hints": []
+          },
+          {
+            "service": "Model provider",
+            "chip": "DASH does not hold this",
+            "account": null,
+            "accounts": 0,
+            "account_hints": []
+          }
+        ],
+        "notices": [
+          "Google has no drafts-only permission: it also allows sending. DASH builds no send action, so no agent can ask DASH to send — you can revoke it in your Google account.Connecting Gmail connects it for meeting-assistant, each with its own record and only the actions it asked for."
+        ]
+      },
+      "after": {
+        "url": "dash-app://ui/settings",
+        "summary": "4 services DASH can connect for you. 1 of them is connected.",
+        "rows": [
+          {
+            "service": "Gmail",
+            "chip": "Not connected",
+            "account": "he••••@gmail.com, since 16 August 2026",
+            "accounts": 1,
+            "account_hints": [
+              "he••••@gmail.com, since 16 August 2026"
+            ]
+          },
+          {
+            "service": "Ledger",
+            "chip": "Not connected",
+            "account": null,
+            "accounts": 0,
+            "account_hints": []
+          },
+          {
+            "service": "Google Calendar",
+            "chip": "Not connected",
+            "account": null,
+            "accounts": 0,
+            "account_hints": []
+          },
+          {
+            "service": "Model provider",
+            "chip": "DASH does not hold this",
+            "account": null,
+            "accounts": 0,
+            "account_hints": []
+          }
+        ],
+        "notices": [
+          "Google has no drafts-only permission: it also allows sending. DASH builds no send action, so no agent can ask DASH to send — you can revoke it in your Google account.Connecting Gmail connects it for meeting-assistant, each with its own record and only the actions it asked for."
+        ]
+      },
+      "changed_in_place": true
+    }
+  ]
+}

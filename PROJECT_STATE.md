@@ -62,11 +62,40 @@ the packaged path.
   decision is filed where it is made; a brief is a document bound to its
   evidence (MAR-674, promoted to proven 2026-08-18, `8bf4671`).
 
-## Lifecycle counts (from state.json, 2026-08-23)
+## Lifecycle counts (from state.json, 2026-08-24)
 
-128 packet entries merged, 49 proven, 20 planned (plus MAR-740/741, added
-this session, both planned), after the 2026-08-23
-group-B proving sweep (agent page: MAR-630, 634, 620, 664, 668, 691, 698,
+118 packet entries merged, 55 proven, 24 planned — 197 entries over 168
+distinct issues, after the 2026-08-24 group-C proving sweep (fleet +
+settings: MAR-639, MAR-640, MAR-614, MAR-685, MAR-646 and MAR-622 promoted
+merged -> proven. MAR-642 checked and **left merged**: two of its Servers
+bullets were deferred by the PR that merged the rest — #197's own "Not in
+this packet" section names "Update DASH on this server" and the wizard
+prose diet — and there is still no `host.update` in `lib/shell/ipc.ts`'s
+command family, so four of its five bullets are proven and the packet is
+not. One defect filed from the frames: **MAR-752**, a fleet card reading
+"Ready for review" and "Not run yet" at once, the last-run line's guard
+being on status rather than on `run_count`). Evidence:
+`qa-screenshots-groupC-2026-08-24/` — 138 frames, `layout-fleet6.json`,
+`layout-settings.json`, `layout.json` (cockpit) and the three run logs.
+Three existing harnesses were extended rather than replaced, each with a
+scene block that runs **after** its matrix and presses things for real,
+because almost nothing group C promises is a layout:
+`capture-fleet-views.ts` (filters, favourites, the work-inbox badge, Down
+in Rows, and a UI-scale pair proving the spotlight card grows 218 → 269px
+at 80% instead of staying fixed), `capture-settings-polish.ts` (a seeded
+store, Connections and AI added to the page list, and a Disconnect pressed
+on each of the two surfaces MAR-685 names), and `capture-cockpit.ts` (the
+rail's dated index, and a real press on a day).
+
+**The count above is a recount.** The previous entry read "128 merged, 49
+proven, 20 planned"; `state.json` itself held 118/49/24 at that moment. The
+proven figure was right and the other two were not, so they are restated
+from the file rather than carried forward. The number that actually
+measures the debt is neither: **91 distinct issues have a merged entry and
+no proven one.**
+
+The preceding sweep, kept for the record: on 2026-08-23,
+group B (agent page: MAR-630, 634, 620, 664, 668, 691, 698,
 635 promoted merged -> proven; MAR-697 promoted for its save-into-folder
 half only — its click-to-open half was MAR-740's known bug. MAR-740
 (the em-dash fold) and MAR-741 (the agent-page rail spanning under the
@@ -81,9 +110,9 @@ extended with five new scenes: the empty-state disclosure, the deep dive
 on both renderers, a real collected-link click, a real Save-as-PDF into
 `exports/<agent>/`, and the busy-state live feed/telemetry panel).
 Group B is the agent page (MAR-630/634/620/664/668/691/697/698/635) of
-the four-group proving-debt sweep AGENTS.md calls for; groups C
-(fleet+settings) and D (runtime+keys) remain — group A (chat front door)
-was proven 2026-08-22.
+the four-group proving-debt sweep AGENTS.md calls for. Group A (chat front
+door) was proven 2026-08-22, group B on 2026-08-23 and group C
+(fleet+settings) on 2026-08-24; **group D (runtime+keys) remains.**
 **Proven-debt is still far over budget** — the proving wave continues,
 not new features. Merged-but-unproven work is inventory, not progress.
 
