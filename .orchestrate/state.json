@@ -1721,13 +1721,13 @@
     },
     {
       "id": "MAR-744",
-      "lifecycle": "planned",
-      "linear_status": "Todo",
-      "commit": null,
+      "lifecycle": "proven",
+      "linear_status": "Done",
+      "commit": "3b6c390",
       "note": "PR #277 OPEN, CI green (verify + shell-smoke), NOT merged. The chief's tool harness: reads any agent's outputs/briefs cited by item, the newest briefing as first-class context, and bounded allowlisted follow-up fetches. One harness on lib/chief/answer.ts serving both rooms (ADR 0028 decision 1); tools dispatched by DASH from the person's own words, never chosen by the model (MAR-419). Migration index 32 -> user_version 33 (chief_messages.evidence_json). Branch 000henrik/mar-744-chief-harness at 36f598b. Attended two-room proof already passed -- see proof below -- so this promotes to proven at merge without a second attended run.",
       "proof": {
-        "command": "attended two-room run on scratch store dash-scratch-5step, 2026-08-24 15:32 (window) and 15:37-15:39 (Discord)",
-        "run": "WINDOW: turn 9 'pull out the most current news' -> evidence outputs/basis=newest, 8 citations off the scout's real 30-item digest; turn 10 'find more sources about AI agent governance' -> evidence sources/topic='AI agent governance', all three sources ok (6 each), top hit published 90s before the question. broker_audit 11/12/13 chief.sources.fetch allowed n=6 [dash], 10/14 openrouter.chat.completion allowed. DISCORD (runner spool): spool 8 same question -> outputs/basis=newest, 12 citations; spool 10 -> sources/topic='AI agent governance', 3x chief.sources.fetch allowed n=6 + completion, all decided_on=runner. Spool 7 is the honest pre-push 'nothing saved yet'. GROUNDING: urls_written_by_model=0 on every turn in both rooms; the model referred to items by number and every link came off DASH's own record."
+        "command": "attended Discord ask on the scratch store, 2026-08-24 21:11, post-#277 build",
+        "run": "chief_turn_spool id 12: origin=discord, anthropic/claude-sonnet-5, 1758/400 tokens, $0.007516; chief_audit_spool 17-20: three chief.sources.fetch + one openrouter.chat.completion, all allowed. Model prose curated the 18 fetched sources and named what it excluded. Drain fix proven by spool rows 14-16 carrying fetch audits. Window half proven in the afternoon attended run (PR #277 handoff)."
       }
     }
   ]
