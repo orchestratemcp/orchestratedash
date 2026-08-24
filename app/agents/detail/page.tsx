@@ -1116,6 +1116,7 @@ function AgentWorkspace(): ReactNode {
         onClose={() => goToStage("overview")}
         onRenamed={() => setRefreshKey((value) => value + 1)}
         renamed={view.renamed}
+        schedule={view.schedule}
         setFeedback={setFeedback}
         title={view.title}
         trigger={view.snapshot?.overview.trigger_label ?? null}

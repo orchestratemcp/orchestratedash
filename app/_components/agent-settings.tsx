@@ -5,8 +5,15 @@ import { useState, type Dispatch, type ReactNode, type SetStateAction } from "re
 
 import { AGENT_SETTINGS_COPY, AGENT_TRIGGER_COPY } from "../../lib/copy/agent-page";
 import { O_FLEET, type OName } from "../../lib/brand/o-cast";
+import type { AgentScheduleView } from "../../lib/views/agent-schedule";
 import type { StandingAnswerView } from "../../lib/views/types";
-import { clearStandingAnswer, renameAgent, setAgentAvatar } from "../_data/source";
+import {
+  clearAgentSchedule,
+  clearStandingAnswer,
+  renameAgent,
+  setAgentAvatar,
+  setAgentSchedule,
+} from "../_data/source";
 import { OAvatar } from "./o-avatar";
 
 /**
@@ -62,6 +69,7 @@ export function AgentSettings({
   onClose,
   onRenamed,
   renamed,
+  schedule,
   setFeedback,
   title,
   trigger,
@@ -85,6 +93,14 @@ export function AgentSettings({
   title: string;
   /** What the agent's own manifest calls its trigger, or null if it says nothing. */
   trigger: string | null;
+  /**
+   * When DASH starts this agent on its own, and what became of the last time
+   * (MAR-742 item 8, ADR 0029).
+   *
+   * Never null: the view's "nothing standing" state carries its own sentence, so
+   * this drawer never has to decide what an absent schedule means.
+   */
+  schedule: AgentScheduleView;
   /** `ModelChoice`, `FolderUpdate` — the settings that can actually be written. */
   children?: ReactNode;
   /** `RemoveAgent`. Last, under its own heading. See the danger block below. */
@@ -141,7 +157,18 @@ export function AgentSettings({
         </dl>
       </section>
 
-      <TriggerSwitch declared={trigger} />
+      {/* MAR-742 item 8, ADR 0029. `onRenamed` is the re-read this drawer
+          already has — the panel needs the workspace re-read for the same reason
+          a rename does, so it rides the same one rather than adding a second
+          callback that means the same thing. */}
+      <TriggerSwitch
+        agentId={id}
+        canAct={canAct}
+        declared={trigger}
+        onChanged={onRenamed}
+        schedule={schedule}
+        setFeedback={setFeedback}
+      />
 
       <section className="agent-settings-block">
         <h3>{AGENT_SETTINGS_COPY.notifications.heading}</h3>
@@ -517,43 +544,116 @@ function StandingAnswerRow({
 }
 
 /**
- * The trigger switcher — the sixth ask, built to what ADR 0014 actually allows.
+ * The trigger switcher — the sixth ask, and the packet that finally answers it.
  *
  * > *"I want to be able to switch trigger. Trigger on command or set a time or
  * > how often it should trigger."*
  *
- * ## Why there is one working option and two disabled ones
+ * ## What this used to be, and why the change is careful
  *
- * ADR 0014 settled this in the same week and settled it against building the
- * other two: *"Trigger configuration — 'on command, at a time, on an interval'
- * — is a separate decision and a larger one. It is blocked on restart-on-boot,
- * which ADR 0007 left open on purpose, and it needs a scheduler that exists
- * nowhere in this repository."*
+ * MAR-641 built this with **one working option and two disabled ones**, because
+ * ADR 0014 had declined trigger configuration: *"It is blocked on
+ * restart-on-boot, which ADR 0007 left open on purpose, and it needs a scheduler
+ * that exists nowhere in this repository."* The disabled radios said "Not built
+ * yet" and named what they were waiting on, and for four months that was the
+ * most useful thing this panel could do.
  *
- * So this control does not schedule anything, and no schedule executor was
- * built behind it. What it does is the half that was missing and cost nothing:
- * the old page printed a trigger label in a definition list and offered no way
- * to reason about it, so *"can I make this run daily?"* had no answer on screen
- * at all. Now the three choices are visible, the one DASH honours is selected,
- * and the two it does not each say what they are waiting on.
+ * MAR-742 item 8 built the scheduler (ADR 0029) and the middle option became a
+ * control. **The restart-on-boot half of ADR 0014's sentence did not change**,
+ * which is why this component is not simply a time picker: a schedule fires from
+ * the runner, the runner is started by DASH, and a computer that has been off
+ * comes back with nothing running until DASH is opened once. The three liveness
+ * sentences under the control are that fact, and they are the reason this is an
+ * honest control rather than a promise.
  *
- * **These disabled radios are not the dead controls `lib/workspace.ts` forbids.**
- * That rule is about a control that looks like it would act and would not. These
- * are the page stating a limit of the product — information a person cannot get
- * any other way, and the alternative is that DASH silently appears to have
- * ignored the request.
+ * ## The two things on screen that are not the control
+ *
+ * `liveness` and `no_spend` are shown **only while a schedule is standing**.
+ * Under a panel with no schedule they would be DASH explaining the limits of a
+ * feature nobody has asked for, which is the *"describing its own internals at
+ * somebody who came to look at their agent"* failure `ModelChoice` names. Once
+ * one is standing they are load-bearing: the person has just decided to depend
+ * on something, and these are the two ways that dependence can surprise them.
+ *
+ * ## The disabled radio that remains
+ *
+ * A written schedule — cron — is still not offered, and the copy gives the new
+ * reason rather than keeping the old one, because the old one stopped being
+ * true. `lib/workspace.ts`'s rule against dead controls is not violated by it,
+ * for MAR-641's own reason: this radio does not look like it would act, it
+ * states a limit of the product, and hiding it would leave a person believing
+ * DASH had silently ignored half of what they asked for.
  *
  * ## The declared-trigger line
  *
- * An agent's author may declare a schedule in its manifest — `WorkspaceTrigger`
+ * An agent's author may declare a cadence in its manifest — `WorkspaceTrigger`
  * carries `type`, `label` and an optional `expected_interval_seconds`, and
  * `lib/workspace.ts` uses the interval only to decide whether an agent looks
- * stalled. DASH still starts it on command and nothing else. When the author's
- * word and DASH's behaviour disagree, both are shown: reporting only the
- * manifest would promise a cadence nothing delivers, and reporting only DASH's
- * behaviour would hide why the agent's own documentation says otherwise.
+ * stalled. **DASH still keeps no cadence it was not told to keep here.** When
+ * the author's word and DASH's behaviour disagree, both are shown: reporting
+ * only the manifest would promise something nothing delivers, and reporting only
+ * DASH's behaviour would hide why the agent's own documentation says otherwise.
  */
-export function TriggerSwitch({ declared }: { declared: string | null }): ReactNode {
+export function TriggerSwitch({
+  agentId,
+  canAct,
+  declared,
+  onChanged,
+  schedule,
+  setFeedback,
+}: {
+  agentId: string;
+  /** Whether this window may act, `ModelChoice`'s own gate. */
+  canAct: boolean;
+  declared: string | null;
+  /** Re-read the workspace, so the panel redraws with what it just saved. */
+  onChanged: () => void;
+  schedule: AgentScheduleView;
+  setFeedback: Dispatch<SetStateAction<{ ok: boolean; message: string } | null>>;
+}): ReactNode {
+  const standing = schedule.at_local !== null;
+  /*
+   * The draft starts at what is standing, or at a default nobody has to think
+   * about. 08:00 rather than the current time: a schedule is a morning habit far
+   * more often than it is "whenever I happened to open this drawer", and a
+   * default that changed with the clock would make two people setting the same
+   * thing get different answers.
+   */
+  const [draft, setDraft] = useState(schedule.at_local ?? "08:00");
+  const [busy, setBusy] = useState(false);
+
+  async function save(): Promise<void> {
+    setBusy(true);
+    setFeedback(null);
+    const result = await setAgentSchedule({ agent_id: agentId, at_local: draft });
+    setBusy(false);
+    setFeedback({
+      ok: result.ok,
+      message: result.ok
+        ? AGENT_TRIGGER_COPY.standing(draft)
+        : (result.detail ?? result.reason ?? "DASH could not save this schedule."),
+    });
+    if (result.ok) {
+      onChanged();
+    }
+  }
+
+  async function turnOff(): Promise<void> {
+    setBusy(true);
+    setFeedback(null);
+    const result = await clearAgentSchedule({ agent_id: agentId });
+    setBusy(false);
+    setFeedback({
+      ok: result.ok,
+      message: result.ok
+        ? AGENT_TRIGGER_COPY.none_standing
+        : (result.detail ?? result.reason ?? "DASH could not turn this schedule off."),
+    });
+    if (result.ok) {
+      onChanged();
+    }
+  }
+
   /*
    * A manual trigger's label is already what the radio says, so repeating it
    * would print "On command" twice under itself. Compared case-insensitively
@@ -566,23 +666,114 @@ export function TriggerSwitch({ declared }: { declared: string | null }): ReactN
   return (
     <section className="agent-settings-block agent-trigger">
       <h3>{AGENT_TRIGGER_COPY.heading}</h3>
+      <p className="wrap">{schedule.standing_line}</p>
+
       <ul className="trigger-options">
         <TriggerOption
           available
+          checked={!standing}
           detail={AGENT_TRIGGER_COPY.on_command.detail}
           label={AGENT_TRIGGER_COPY.on_command.label}
+          onSelect={standing && canAct && !busy ? () => void turnOff() : undefined}
         />
         <TriggerOption
-          available={false}
+          available
+          checked={standing}
           detail={AGENT_TRIGGER_COPY.at_a_time.detail}
           label={AGENT_TRIGGER_COPY.at_a_time.label}
-        />
+          /*
+           * Selecting this radio does not save. It is the same press as typing
+           * a time and pressing Save, and firing on the radio would mean a
+           * schedule created by a stray click on a list — for a control whose
+           * whole subject is a machine starting a process without anybody
+           * watching, the confirmation is the point.
+           */
+          onSelect={undefined}
+        >
+          {canAct ? (
+            <div className="trigger-time">
+              <label htmlFor={`agent-schedule-${agentId}`}>{AGENT_TRIGGER_COPY.time_label}</label>
+              <input
+                className="field"
+                disabled={busy}
+                id={`agent-schedule-${agentId}`}
+                onChange={(event) => {
+                  setDraft(event.target.value);
+                }}
+                type="time"
+                value={draft}
+              />
+              <span className="button-row">
+                <button
+                  className="button-primary"
+                  disabled={busy || draft.trim() === ""}
+                  onClick={() => void save()}
+                  type="button"
+                >
+                  {busy ? AGENT_TRIGGER_COPY.saving : AGENT_TRIGGER_COPY.save}
+                </button>
+                {standing ? (
+                  <button
+                    className="button-link"
+                    disabled={busy}
+                    onClick={() => void turnOff()}
+                    type="button"
+                  >
+                    {AGENT_TRIGGER_COPY.turn_off}
+                  </button>
+                ) : null}
+              </span>
+              <p className="muted wrap">{AGENT_TRIGGER_COPY.time_hint}</p>
+            </div>
+          ) : (
+            /*
+             * Said rather than drawn as a disabled field, `AgentNameField`'s
+             * reason: a greyed-out time picker here would read as a claim about
+             * this agent, and the true statement is about which window this is.
+             */
+            <p className="muted wrap">{AGENT_SETTINGS_COPY.identity.rename_read_only}</p>
+          )}
+        </TriggerOption>
         <TriggerOption
           available={false}
+          checked={false}
           detail={AGENT_TRIGGER_COPY.on_an_interval.detail}
           label={AGENT_TRIGGER_COPY.on_an_interval.label}
         />
       </ul>
+
+      {/* Only while something is standing. See the header. */}
+      {standing ? (
+        <>
+          <ul className="trigger-liveness">
+            {schedule.liveness.map((sentence) => (
+              <li className="muted wrap" key={sentence}>
+                {sentence}
+              </li>
+            ))}
+          </ul>
+          <p className="muted wrap">{schedule.no_spend}</p>
+        </>
+      ) : null}
+
+      {/* The record, and it outlives the schedule on purpose — somebody who
+          switched a cadence off because it kept failing is exactly the person
+          who still wants to read that it kept failing. Renders nothing at all
+          for a schedule that has not yet come round, which is every schedule on
+          the day it is set. */}
+      {schedule.last === null ? null : (
+        <div className="trigger-history">
+          <h4>{AGENT_TRIGGER_COPY.history_heading}</h4>
+          <p>
+            <span className={`chip chip-${schedule.last.outcome_tone}`}>
+              {schedule.last.outcome_label}
+            </span>{" "}
+            <time dateTime={schedule.last.due_at}>{schedule.last.due_at}</time>
+          </p>
+          <p className="muted wrap">{schedule.last.detail}</p>
+        </div>
+      )}
+
       {conflicts ? (
         <div className="notice" role="status">
           <p>{AGENT_TRIGGER_COPY.declared(declared)}</p>
@@ -595,34 +786,45 @@ export function TriggerSwitch({ declared }: { declared: string | null }): ReactN
 
 function TriggerOption({
   available,
+  checked,
+  children,
   detail,
   label,
+  onSelect,
 }: {
   available: boolean;
+  checked: boolean;
+  children?: ReactNode;
   detail: string;
   label: string;
+  onSelect?: () => void;
 }): ReactNode {
   return (
     <li className={available ? "trigger-option" : "trigger-option is-unavailable"}>
       <label>
         {/*
           A real radio, checked and disabled rather than a styled div. The group
-          is one group, so a screen reader reads "1 of 3" and hears the two it
-          cannot pick as disabled — which is exactly the fact this control
-          exists to communicate. `readOnly` because there is one enabled option
-          and therefore nothing for a change handler to do; React warns on a
+          is one group, so a screen reader reads "1 of 3" and hears the one it
+          cannot pick as disabled — which is exactly the fact that option exists
+          to communicate.
+
+          `readOnly` when there is nothing for a change handler to do, which is
+          both the disabled option and the enabled one whose selection is
+          confirmed by a button rather than by the radio. React warns on a
           checked input with neither.
         */}
         <input
-          checked={available}
+          checked={checked}
           disabled={!available}
           name="agent-trigger"
-          readOnly
+          onChange={onSelect === undefined ? undefined : () => { onSelect(); }}
+          readOnly={onSelect === undefined}
           type="radio"
         />
         <span className="trigger-option-label">{label}</span>
       </label>
       <p className="muted wrap">{detail}</p>
+      {children}
     </li>
   );
 }

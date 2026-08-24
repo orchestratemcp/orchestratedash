@@ -6321,9 +6321,9 @@ button:disabled {
   height: 50px;
 }
 
-/* The trigger switcher (ADR 0014). The two options DASH cannot honour are
-   dimmed rather than hidden — see `TriggerSwitch` for why that is information
-   and not a dead control. */
+/* The trigger switcher (ADR 0014, then ADR 0029). The one option DASH still
+   cannot honour is dimmed rather than hidden — see `TriggerSwitch` for why that
+   is information and not a dead control. */
 .trigger-options {
   list-style: none;
   margin: 0;
@@ -6348,6 +6348,54 @@ button:disabled {
 .trigger-option.is-unavailable p {
   opacity: 0.62;
 }
+
+/* The time picker, indented under the radio it belongs to so that the option
+   and its field read as one thing rather than as a control that happens to sit
+   below a list. Same left offset the detail sentence already uses. */
+.trigger-time {
+  margin: var(--space-2) 0 0 var(--space-5);
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.trigger-time .field {
+  /* A native `<input type="time">` sizes itself to its own control; left to
+     `.field`'s full width it stretches across the drawer with a clock stuck to
+     one end. */
+  width: auto;
+  min-width: 9ch;
+}
+
+/* ADR 0029's three liveness sentences. A list rather than a paragraph because
+   they are three separate claims — the third one, about a computer that is off,
+   is the one somebody has to be able to find again. */
+.trigger-liveness {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0 0 0 var(--space-3);
+  display: grid;
+  gap: var(--space-1);
+  border-left: 2px solid var(--line);
+  font-size: var(--text-sm);
+}
+
+/* What the schedule actually did. Above the manifest's declared-trigger notice
+   and below the control, which is the order of how much a person came here to
+   read it. */
+.trigger-history {
+  margin-top: var(--space-3);
+}
+
+.trigger-history h4 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+}
+
+/* No chip rule of its own: a settled window wears `.chip-ok`, `.chip-warn` or
+   `.chip-err`, which already exist and already mean exactly this. A fourth set
+   of three colours named after this feature would be three more places for
+   DASH's status palette to drift. `buildAgentScheduleView` picks which. */
 
 /* The record, behind one disclosure. Everything that was seven headings and
    seven empty-state sentences on every agent page. */

@@ -407,6 +407,18 @@ interface DashShellClient {
   }): Promise<CommandResult>;
   clearStandingAnswer?(args: { agent_id: string; question_key: string }): Promise<CommandResult>;
   /**
+   * Set — or clear — when DASH starts this agent on its own (MAR-742 item 8,
+   * ADR 0029).
+   *
+   * Optional for the same reason as everything above, and the optionality does
+   * more work here than usual: an older shell has no scheduler behind it *and*
+   * no runner that would fire one, so a page that assumed the method exists
+   * would tell somebody their agent runs nightly on an install where nothing
+   * ever will.
+   */
+  setAgentSchedule?(args: { agent_id: string; at_local: string }): Promise<CommandResult>;
+  clearAgentSchedule?(args: { agent_id: string }): Promise<CommandResult>;
+  /**
    * The four notification commands (MAR-588).
    *
    * Optional for the same reason as everything above. Note what three of them
@@ -1723,6 +1735,64 @@ export async function clearStandingAnswer(args: {
       request_id: "",
       reason: "read_only_host",
       detail: "This version of the DASH app cannot forget a standing answer yet.",
+    };
+  }
+  return call(args);
+}
+
+/**
+ * Start this agent every day at a time (MAR-742 item 8, ADR 0029).
+ *
+ * `setStandingAnswer`'s shape and its two refusals, which matter more here than
+ * anywhere else in this file: a browser tab and an older shell each answer
+ * honestly rather than reporting a cadence nothing will honour. Somebody told
+ * their agent runs at eight who finds out a week later that it never did is the
+ * exact outcome this feature exists to prevent, and a read-only host is the
+ * cheapest place for that lie to start.
+ */
+export async function setAgentSchedule(args: {
+  agent_id: string;
+  at_local: string;
+}): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to set a schedule.",
+    };
+  }
+  const call = bridge.setAgentSchedule;
+  if (call === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "This version of the DASH app cannot run an agent on a schedule yet.",
+    };
+  }
+  return call(args);
+}
+
+/** `setAgentSchedule`'s undo. What the schedule already did is kept. */
+export async function clearAgentSchedule(args: { agent_id: string }): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to turn a schedule off.",
+    };
+  }
+  const call = bridge.clearAgentSchedule;
+  if (call === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "This version of the DASH app cannot turn a schedule off yet.",
     };
   }
   return call(args);

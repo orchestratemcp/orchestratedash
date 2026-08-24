@@ -285,51 +285,109 @@ export const AGENT_TILE_COPY = {
  * The trigger switcher — Henrik's *"switch trigger. Trigger on command or set a
  * time or how often it should trigger."*
  *
- * ## What this is allowed to offer, and why it is one option
+ * ## What changed, and what had to survive changing
  *
- * ADR 0014 weighed trigger configuration and declined it, in terms this module
- * has to respect rather than reinterpret: *"Trigger configuration — 'on
- * command, at a time, on an interval' — is a separate decision and a larger
- * one. It is blocked on restart-on-boot, which ADR 0007 left open on purpose,
- * and it needs a scheduler that exists nowhere in this repository."*
+ * MAR-641 built this control with **one** option enabled, because ADR 0014 had
+ * weighed trigger configuration and declined it: *"It is blocked on
+ * restart-on-boot, which ADR 0007 left open on purpose, and it needs a scheduler
+ * that exists nowhere in this repository."* The two disabled radios said "Not
+ * built yet" and named what they were waiting on, and that was the honest state
+ * of the product for four months.
  *
- * So there is no schedule executor behind this control and this page does not
- * build one. What it does instead is the honest half that was missing: the old
- * page printed a `trigger_label` in a definition list two thirds of the way
- * down and offered nothing, so a person who wanted to change it had no idea
- * whether DASH could. Now the choice is *shown* — on command, at a time, on an
- * interval — with the two DASH cannot honour marked as not built and saying
- * what they are waiting on.
+ * MAR-742 item 8 built the scheduler (ADR 0029), so the middle option is now a
+ * control. **The half of ADR 0014's sentence about restart-on-boot did not
+ * change**, and that is why the rewrite here is careful rather than celebratory:
+ * a schedule fires from the runner, the runner is started by DASH, and a
+ * computer that has been switched off comes back with nothing running. Replacing
+ * a true sentence about what DASH cannot do with a time picker and silence would
+ * have taken information off the screen.
+ *
+ * So `liveness` is three sentences and they are not optional decoration. They
+ * are ADR 0029's own liveness list, in the person's words, on the surface where
+ * the decision to rely on a cadence is actually made.
+ *
+ * ## The disabled radio that stays
+ *
+ * A written schedule — cron — is still not offered, and now for a reason that is
+ * about product rather than capability: it is a power-user affordance and the
+ * novice default has to work first (ADR 0029 decision 9). The copy says the new
+ * reason rather than keeping the old one, because the old one stopped being
+ * true.
  *
  * **A disabled radio is not a dead control here, and the distinction matters.**
  * `lib/workspace.ts`'s rule is about buttons that would fire nothing while
- * looking like they would fire something. These are the opposite: they are the
- * page telling the truth about a capability the product does not have, which is
- * information, and hiding them would leave the person believing DASH had
- * silently ignored the ask.
+ * looking like they would fire something. This is the opposite: it is the page
+ * telling the truth about a capability the product does not have, which is
+ * information, and hiding it would leave the person believing DASH had silently
+ * ignored the ask.
+ *
+ * ## The sentence about money
+ *
+ * `no_spend` is here because ADR 0029 decision 6 refuses to open a spend
+ * allowance on an unattended run, and a person whose agent curates through a
+ * model would otherwise discover that from a refusal in a log at 03:00. It is
+ * shown next to the control that causes it rather than in a document.
  */
 export const AGENT_TRIGGER_COPY = {
   heading: "When this agent starts",
   on_command: {
     label: "On command",
-    detail: "You press Run now. This is the only way DASH starts an agent today.",
+    detail: "You press Run now. Nothing starts this agent unless you do.",
   },
   at_a_time: {
-    label: "At a set time",
-    detail: "Not built yet. DASH has no scheduler, and nothing would start it while DASH is closed.",
+    label: "Every day at a set time",
+    detail: "DASH starts it for you, on this computer, at the time you pick.",
   },
   on_an_interval: {
-    label: "Every so often",
-    detail: "Not built yet, for the same reason as a set time.",
+    label: "On a schedule you write",
+    detail:
+      "Not built yet. Every day at a time covers what most agents need, and that had to work first.",
+  },
+  /** The field beside the enabled radio. */
+  time_label: "Time of day",
+  time_hint: "This computer's own clock. 24-hour, like 08:00 or 17:30.",
+  save: "Save schedule",
+  turn_off: "Turn off",
+  saving: "Saving…",
+  /** What is standing right now, said back in the person's own terms. */
+  standing: (at: string): string => `DASH starts this agent every day at ${at}, on this computer.`,
+  none_standing: "No schedule. This agent only runs when you press Run now.",
+  /**
+   * The three liveness sentences (ADR 0029).
+   *
+   * Third one included and not softened. It is the whole of what ADR 0007 left
+   * open, and a person deciding whether to depend on a nightly run is owed it
+   * before they decide rather than after they notice.
+   */
+  liveness: [
+    "With DASH open, it runs at that time.",
+    "With DASH closed and this computer on, it still runs — DASH leaves a small helper running that starts it.",
+    "If this computer is asleep, off, or restarting, nothing runs. DASH will tell you it was missed, and it does not run it late.",
+  ] as readonly string[],
+  /**
+   * ADR 0029 decision 6, said where the decision is made.
+   *
+   * Deliberately not hidden behind a disclosure. The agent it is most true of is
+   * the one somebody is most likely to want on a timer.
+   */
+  no_spend:
+    "A scheduled run cannot spend on a model. Steps that need one are skipped; press Run now for those.",
+  /** The heading over what the schedule has actually done. */
+  history_heading: "Scheduled runs",
+  /** One settled window, in the person's words rather than the store's. */
+  outcome: {
+    ran: "Ran",
+    missed: "Missed",
+    refused: "Did not start",
   },
   /**
-   * What the agent's own manifest says, when it disagrees with what DASH can
-   * do. An author may declare a schedule; DASH still only starts on command,
-   * and the page says both rather than picking the flattering one.
+   * What the agent's own manifest says, when it disagrees with what DASH is
+   * doing. An author may declare a cadence DASH is not keeping; the page says
+   * both rather than picking the flattering one.
    */
   declared: (label: string): string => `This agent's author describes its trigger as “${label}”.`,
   declared_conflict:
-    "DASH starts it on command regardless. Nothing in DASH runs it on a timer.",
+    "That is the author's description, not a schedule DASH is keeping. What DASH does is what this panel says.",
 } as const;
 
 /**

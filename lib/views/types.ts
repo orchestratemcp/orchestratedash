@@ -39,6 +39,7 @@ import type { InputRoleView } from "./inputs";
 import type { PanelView } from "./panel";
 import type { ManifestGapView } from "../sample-refresh";
 import type { AgentHealthView } from "./agent-health";
+import type { AgentScheduleView } from "./agent-schedule";
 import type { AgentPlanStep } from "../agent-plan";
 import type { Recovery } from "../copy/recovery";
 import type { ConnectionRequirementRow } from "../connections";
@@ -1968,6 +1969,18 @@ export type WorkspaceView =
        * DASH's paraphrase of what was asked or chosen.
        */
       standing_answers: StandingAnswerView[];
+      /**
+       * When DASH starts this agent on its own, and what became of the last
+       * time it came round (MAR-742 item 8, ADR 0029).
+       *
+       * Never absent, `models`' reason: the union's "nothing standing" state
+       * carries its own sentence, so the Settings stage never has to decide what
+       * a missing field means. Built here rather than fetched by the drawer so
+       * the panel arrives with the rest of the page on the same five-second
+       * poll — which is how a window the runner settled at 03:00 appears on
+       * screen without anything asking for it.
+       */
+      schedule: AgentScheduleView;
       /**
        * The Health stage's stored-record verdicts (MAR-645).
        *

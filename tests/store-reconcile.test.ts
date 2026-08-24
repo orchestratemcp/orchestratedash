@@ -45,14 +45,15 @@ const opened: Array<{ dataDir: string; closeDb: () => void }> = [];
  * `divergeToPreRenumber` all describe stores that existed on real machines on
  * real days: they are frozen, and changing one changes what is under test. This
  * one only says "and then the loop ran to the end", so every appended migration
- * moves it — MAR-654 took it to 28, MAR-479 to 31, and ADR 0028's
- * `chief_discord` to 32.
+ * moves it — MAR-654 took it to 28, MAR-479 to 31, ADR 0028's `chief_discord`
+ * to 32, MAR-744's `evidence_json` to 33, and ADR 0029's two schedule tables to
+ * 34.
  *
  * A constant rather than nine literals, because the alternative makes appending
  * a migration look like nine broken assertions — which is how a signature
  * number gets "fixed" by somebody moving it.
  */
-const HEAD_VERSION = 33;
+const HEAD_VERSION = 34;
 
 async function freshStore(): Promise<{ dataDir: string; db: typeof import("../lib/db") }> {
   const dataDir = mkdtempSync(path.join(tmpdir(), "dash-reconcile-"));

@@ -37,6 +37,95 @@ if (process.env.AGENT_NOISE === "1") {
   console.log("{ not json either");
 }
 
+/*
+ * `AGENT_PENDING=1`: start idle with one task waiting to be run (MAR-742 item
+ * 8, ADR 0029).
+ *
+ * This is what the Agent Kit template actually does — it starts idle and stays
+ * idle on purpose (MAR-457), publishing the pending task that Run now binds — and
+ * it is the shape a schedule fires at. The default state below cannot stand in
+ * for it: its one task already carries a `run_id`, so it is a task that is
+ * *being* run rather than one waiting to be, and `buildAgentControl`'s predicate
+ * correctly refuses to bind it.
+ *
+ * A separate branch rather than a widened default, so every test that was
+ * written against the state below still gets exactly that state.
+ */
+if (process.env.AGENT_PENDING === "1") {
+  send({
+    type: "state",
+    state: {
+      status: "idle",
+      runs: [],
+      tasks: [
+        {
+          id: "task-waiting-01",
+          run_id: null,
+          label: "Waiting to be run",
+          status: "pending",
+          created_at: "2026-08-25T00:00:00Z",
+        },
+      ],
+      actions: [],
+      approval_requests: [],
+    },
+  });
+  process.stdin.setEncoding("utf8");
+  let pendingBuffer = "";
+  process.stdin.on("data", (chunk) => {
+    pendingBuffer += chunk;
+    let newline = pendingBuffer.indexOf("\n");
+    while (newline !== -1) {
+      const line = pendingBuffer.slice(0, newline);
+      pendingBuffer = pendingBuffer.slice(newline + 1);
+      newline = pendingBuffer.indexOf("\n");
+      let message;
+      try {
+        message = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (message.type !== "command") {
+        continue;
+      }
+      send({
+        type: "ack",
+        command_id: message.command_id,
+        ok: true,
+        detail: "handled by the fixture",
+      });
+      // The task binds to a run, which is what "the retry actually landed" looks
+      // like from outside this process.
+      send({
+        type: "state",
+        state: {
+          status: "running",
+          runs: [
+            {
+              id: "run-scheduled-01",
+              status: "running",
+              started_at: "2026-08-25T00:00:01Z",
+              progress: 0.1,
+            },
+          ],
+          tasks: [
+            {
+              id: "task-waiting-01",
+              run_id: "run-scheduled-01",
+              label: "Waiting to be run",
+              status: "in_progress",
+              created_at: "2026-08-25T00:00:00Z",
+            },
+          ],
+          actions: [],
+          approval_requests: [],
+        },
+      });
+    }
+  });
+  setInterval(() => {}, 60_000);
+} else {
+
 // The agent's contribution to its own Agent DOM state. The runner merges this
 // with what it observed; nothing here can claim the process is alive.
 send({
@@ -137,3 +226,5 @@ process.stdin.on("data", (chunk) => {
 // Stay alive until something stops us. This is what makes the process real
 // enough for a kill to mean something.
 setInterval(() => {}, 60_000);
+
+}

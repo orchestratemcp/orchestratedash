@@ -71,6 +71,8 @@ import {
   readCommandAudit,
 } from "../agent-dom/store";
 import { readStandingAnswers } from "../agent-dom/standing-answers";
+import { readAgentSchedule, readScheduleRuns } from "../schedule/store";
+import { buildAgentScheduleView } from "./agent-schedule";
 import { dataDir } from "../db";
 /* MAR-697. The exports folder and the two words DASH puts around a file in it.
    `listAgentExports` reaches `node:fs`, which is ordinary here — this module
@@ -1753,6 +1755,12 @@ export function workspaceView(
       option_label: answer.option_label,
       chosen_at: answer.chosen_at,
     })),
+    // MAR-742 item 8, ADR 0029. `standing_answers`' neighbour and the same
+    // reasoning: DASH's own record about this agent, read once here with every
+    // other setting on this page. Two reads rather than one because the
+    // instruction and what became of it are different rows with different
+    // lifetimes — turning a schedule off keeps the history.
+    schedule: buildAgentScheduleView(readAgentSchedule(agent), readScheduleRuns(agent)),
     // MAR-645. A projection of records already read or stored, with no probe
     // and no provider call. The page draws it only on the Health stage.
     health,

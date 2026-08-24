@@ -106,15 +106,49 @@ describe("the agent page's copy", () => {
   });
 
   /**
-   * ADR 0014 declined trigger configuration and this page must not imply
-   * otherwise. The two options DASH cannot honour say so in their own detail
-   * line; a future edit that made them read as available would be the page
-   * promising a scheduler that "exists nowhere in this repository".
+   * ADR 0014 declined trigger configuration, and until MAR-742 item 8 this page
+   * said so in both of the two options DASH could not honour.
+   *
+   * **One of them is a control now** (ADR 0029). The assertion moved with it
+   * rather than being deleted: the written-schedule option is still not built,
+   * still says so, and the two that are built must not claim otherwise.
    */
-  it("says the two triggers DASH cannot honour are not built", () => {
-    expect(AGENT_TRIGGER_COPY.at_a_time.detail).toContain("Not built yet");
+  it("says the one trigger DASH still cannot honour is not built", () => {
     expect(AGENT_TRIGGER_COPY.on_an_interval.detail).toContain("Not built yet");
+    expect(AGENT_TRIGGER_COPY.at_a_time.detail).not.toContain("Not built");
     expect(AGENT_TRIGGER_COPY.on_command.detail).not.toContain("Not built");
+  });
+
+  /**
+   * ADR 0029's three liveness sentences, and the third one in particular.
+   *
+   * The whole risk of this feature is that a page which used to say *"nothing
+   * would start it while DASH is closed"* now offers a time picker and says
+   * nothing — trading a true sentence for a control. The third sentence is what
+   * stops that, so it is asserted by what it has to admit rather than by its
+   * phrasing: a computer that is off runs nothing, DASH reports it, and DASH
+   * never quietly catches up.
+   */
+  it("keeps saying what a schedule cannot survive", () => {
+    expect(AGENT_TRIGGER_COPY.liveness).toHaveLength(3);
+    const sleeping = AGENT_TRIGGER_COPY.liveness[2] ?? "";
+    expect(sleeping).toContain("asleep");
+    expect(sleeping).toContain("nothing runs");
+    expect(sleeping).toContain("missed");
+    expect(sleeping).toContain("does not run it late");
+    // And the middle sentence still promises exactly what the runner delivers.
+    expect(AGENT_TRIGGER_COPY.liveness[1]).toContain("DASH closed");
+  });
+
+  /**
+   * ADR 0029 decision 6, said where the decision is made rather than in a
+   * document. The agent somebody is most likely to want on a timer is the one
+   * whose plan curates through a model, and the refusal would otherwise be
+   * discovered from a log at 03:00.
+   */
+  it("says a scheduled run cannot spend, and where to press instead", () => {
+    expect(AGENT_TRIGGER_COPY.no_spend).toContain("cannot spend");
+    expect(AGENT_TRIGGER_COPY.no_spend).toContain("Run now");
   });
 
   /**

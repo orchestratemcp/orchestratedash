@@ -62,6 +62,9 @@ import {
 import type { ChiefBridgeConfiguration } from "./chief";
 import type { ChiefAuditRow } from "./chief-broker";
 import type { NotifyConfiguration } from "./notify";
+import type { ScheduleConfiguration } from "./schedule";
+import type { AgentSchedule, ScheduleSettlement } from "../lib/schedule/plan";
+import { isLocalTime } from "../lib/schedule/plan";
 import { buildAgentDomState, type ProcessReport } from "./state";
 import type { AdoptionResult, Supervisor } from "./supervisor";
 import type { TaskWorkspaceApi } from "./task-api";
@@ -156,6 +159,25 @@ export interface RunnerServerOptions {
     fleet_count: number;
     model: { provider_id: string; model_id: string; label: string } | null;
   };
+  /**
+   * Take the whole set of schedules DASH holds (MAR-742 item 8, ADR 0029).
+   *
+   * `configureNotifier`'s and `configureChief`'s seam, and their reason: the
+   * runner is what fires, so it is what has to hold the instruction — a process
+   * that had to ask something else at 03:00 could not fire at all.
+   *
+   * Unlike those two, **nothing that arrives here is a credential.** A schedule
+   * is an agent id, a time of day and a flag, which is configuration a person is
+   * entitled to read back off their own page. So this route may say how many it
+   * took, where `POST /chief/discord` may only say that it took something.
+   *
+   * The push is the **whole set every time**, including the disabled rows. ADR
+   * 0029 decision 2: an incremental push needs a closed list of every event that
+   * must fire one, and MAR-745 is what happens when that list is one event short.
+   */
+  configureSchedules?: (configuration: ScheduleConfiguration) => void;
+  /** What the scheduler settled while DASH was closed (ADR 0029 decision 8). */
+  drainSchedules?: () => ScheduleSettlement[];
   /** Graceful process shutdown, supplied only by the standalone runner. */
   shutdown?: () => void;
   /**
@@ -586,6 +608,70 @@ async function handle(
       return;
     }
     send(response, 200, { ok: true, ...options.drainChief() });
+    return;
+  }
+
+  // POST /schedules — the whole set of standing instructions DASH holds
+  // (MAR-742 item 8, ADR 0029).
+  //
+  // `POST /chief/discord`'s shape with one difference stated at the seam: no
+  // credential arrives here, so this route may echo a count. A malformed member
+  // is **dropped rather than failing the batch** — the alternative is that one
+  // corrupt row on somebody's disk silently stops every other agent's schedule,
+  // and a scheduler that stops silently is the failure this feature is against.
+  // What DASH gets back is how many were taken, so a page could say so.
+  if (request.method === "POST" && segments.length === 1 && segments[0] === "schedules") {
+    if (options.configureSchedules === undefined) {
+      send(response, 501, {
+        ok: false,
+        detail: "This runner was started without a scheduler.",
+      });
+      return;
+    }
+    const raw = await readBody(request);
+    if (raw === null) {
+      send(response, 413, { ok: false, detail: "The request body was too large." });
+      return;
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      send(response, 400, { ok: false, detail: "The request body was not valid JSON." });
+      return;
+    }
+    const parsed = readScheduleConfiguration(body);
+    if (parsed === "malformed") {
+      send(response, 400, { ok: false, detail: "The schedules were not understood." });
+      return;
+    }
+    options.configureSchedules(parsed);
+    send(response, 200, {
+      ok: true,
+      taken: parsed.schedules.length,
+      enabled: parsed.schedules.filter((schedule) => schedule.enabled).length,
+    });
+    return;
+  }
+
+  // POST /schedules/drain — every window the scheduler settled while DASH was
+  // closed, and then forget them.
+  //
+  // `/chief/drain`'s terms exactly, including the one that matters most here:
+  // the runner does not stamp its own provenance. These rows say what happened
+  // to a window; that they came off a runner is DASH's observation to record,
+  // not the runner's claim to make.
+  if (
+    request.method === "POST" &&
+    segments.length === 2 &&
+    segments[0] === "schedules" &&
+    segments[1] === "drain"
+  ) {
+    if (options.drainSchedules === undefined) {
+      send(response, 200, { ok: true, settled: [] });
+      return;
+    }
+    send(response, 200, { ok: true, settled: options.drainSchedules() });
     return;
   }
 
@@ -1377,6 +1463,77 @@ function readNotifyConfiguration(body: unknown): NotifyConfiguration | null | "m
  * sentence about a DASH that has none, and refusing the whole bridge over an
  * absent list would turn an empty fleet into a broken feature.
  */
+/**
+ * The schedules DASH pushed, checked field by field (MAR-742 item 8, ADR 0029).
+ *
+ * `readChiefConfiguration`'s discipline with one deliberate difference in how it
+ * fails. That function refuses the whole bridge on a bad member, because a
+ * bridge with no boundary is worse than no bridge. This one **drops the bad
+ * member and keeps the rest**, because the thing on the other side of a refusal
+ * here is every *other* agent's schedule silently not firing — and a scheduler
+ * that stops without saying so is the one failure mode ADR 0029 is written
+ * against.
+ *
+ * The check is not a duplicate of DASH's. `lib/schedule/store.ts` re-checks these
+ * columns on the way out of the store and this re-checks them on the way into
+ * the process that will start an agent at the time they name. Two boundaries, on
+ * two sides of a channel — `runner/execute.ts`'s own argument for repeating
+ * DASH's checks rather than trusting them.
+ */
+function readScheduleConfiguration(body: unknown): ScheduleConfiguration | "malformed" {
+  if (typeof body !== "object" || body === null) {
+    return "malformed";
+  }
+  const record = body as Record<string, unknown>;
+  const rawSchedules = record["schedules"];
+  if (!Array.isArray(rawSchedules)) {
+    return "malformed";
+  }
+
+  const schedules: AgentSchedule[] = [];
+  for (const raw of rawSchedules) {
+    if (typeof raw !== "object" || raw === null) {
+      continue;
+    }
+    const entry = raw as Record<string, unknown>;
+    const agent = entry["agent"];
+    const at = entry["at_local"];
+    // `kind` is checked by value rather than coerced: a runner that met an
+    // unknown kind and treated it as daily would be honouring an instruction
+    // nobody wrote, at a time nobody picked.
+    if (
+      typeof agent !== "string" ||
+      agent.length === 0 ||
+      agent.length > 128 ||
+      entry["kind"] !== "daily" ||
+      typeof at !== "string" ||
+      !isLocalTime(at)
+    ) {
+      continue;
+    }
+    const createdAt = entry["created_at"];
+    schedules.push({
+      agent,
+      enabled: entry["enabled"] === true,
+      kind: "daily",
+      at_local: at,
+      created_at: typeof createdAt === "string" ? createdAt : "",
+    });
+  }
+
+  const rawSince = record["since"];
+  const since: Record<string, string> = {};
+  if (typeof rawSince === "object" && rawSince !== null) {
+    for (const [agent, value] of Object.entries(rawSince as Record<string, unknown>)) {
+      if (typeof value === "string" && value.length > 0) {
+        since[agent] = value;
+      }
+    }
+  }
+
+  return { schedules, since };
+}
+
 function readChiefConfiguration(body: unknown): ChiefBridgeConfiguration | null | "malformed" {
   if (typeof body !== "object" || body === null) {
     return "malformed";
