@@ -16,6 +16,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { plainMoment } from "../lib/copy/when";
 import { NOTIFY_CONTENTS, NOTIFY_LIVENESS } from "../lib/notify/settings";
 import { expectPlainLanguage } from "./helpers/plain-language";
 import type { NotificationsView } from "../lib/views/types";
@@ -203,6 +204,56 @@ describe("what is on the screen", () => {
     // Two checkboxes, exactly one checked.
     expect(html.match(/type="checkbox"/gu)).toHaveLength(2);
     expect(html.match(/checked=""/gu)).toHaveLength(1);
+  });
+
+  describe("what the runner holds (MAR-745, widened for the MAR-742 roadmap)", () => {
+    /*
+     * A configured chief bridge whose runner answered — the state the read
+     * seam in `electron/main.ts` produces once `queryChiefBridgeStatus`
+     * reaches a live runner. `NO_CHIEF` above stays the unconfigured fixture
+     * every other test uses; this one exists so the line's own content can be
+     * asserted without touching those.
+     */
+    const CHIEF_WITH_RUNNER: NotificationsView["chief"] = {
+      ...NO_CHIEF,
+      configured: true,
+      channel_id: "111111111111111111",
+      allowed_user_id: "222222222222222222",
+      masked_hint: "••••ABCD",
+      configured_at: "2026-08-20T10:00:00.000Z",
+      state_sentence: "The chief answers in your channel, to the Discord account ending 2345 and to nobody else.",
+      runner_holds: {
+        fleet_count: 3,
+        model_label: "OpenRouter · anthropic/claude-sonnet-5",
+        connected: true,
+        snapshot_at: "2026-08-24T14:32:00.000Z",
+      },
+    };
+
+    it("shows the runner's own fleet count, model, moment and socket state, in words", () => {
+      const html = markup({ ...CONFIGURED, chief: CHIEF_WITH_RUNNER });
+      expect(html).toContain("Runner holds: fleet of 3");
+      // Local time, so computed the same way the page computes it rather than
+      // hardcoded — `lib/copy/when.ts`'s whole point is that this varies by
+      // machine, and a fixed clock string here would just be another timezone
+      // bug waiting for a CI runner outside it.
+      expect(html).toContain(`taken ${plainMoment(CHIEF_WITH_RUNNER.runner_holds?.snapshot_at as string) as string}`);
+      expect(html).toContain("OpenRouter · anthropic/claude-sonnet-5");
+      expect(html).toContain("listening in Discord");
+      // The moment is said the way a person says it, never the raw stamp.
+      expect(html).not.toContain("2026-08-24T14:32");
+    });
+
+    it("says not reachable when the runner could not be asked, rather than staying silent", () => {
+      const html = markup({ ...CONFIGURED, chief: { ...CHIEF_WITH_RUNNER, runner_holds: null } });
+      expect(html).toContain("Runner status: not reachable right now.");
+    });
+
+    it("draws no runner line at all before the bridge is configured", () => {
+      const html = markup({ ...CONFIGURED, chief: NO_CHIEF });
+      expect(html).not.toContain("Runner holds:");
+      expect(html).not.toContain("Runner status:");
+    });
   });
 });
 

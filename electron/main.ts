@@ -1205,7 +1205,9 @@ async function pushChiefBridge(runner: RunnerHandle | null): Promise<void> {
 
 /**
  * Ask the runner what it currently holds for the chief, and never for the
- * credentials that let it answer (MAR-745).
+ * credentials that let it answer (MAR-745; widened for the MAR-742 roadmap's
+ * "connection resilience" ask to also carry whether the bridge's own socket
+ * is open and when the snapshot it is answering from was taken).
  *
  * Read-only and best-effort, `pushChiefBridge`'s twin on the other direction:
  * null whenever the runner is absent, unreachable, or was built without the
@@ -1236,7 +1238,9 @@ async function queryChiefBridgeStatus(runner: RunnerHandle | null): Promise<Chie
       typeof model === "object" && model !== null && typeof (model as Record<string, unknown>)["label"] === "string"
         ? ((model as Record<string, unknown>)["label"] as string)
         : null;
-    return { fleet_count: fleetCount, model_label: label };
+    const connected = record["connected"] === true;
+    const snapshotAt = typeof record["snapshot_at"] === "string" ? record["snapshot_at"] : null;
+    return { fleet_count: fleetCount, model_label: label, connected, snapshot_at: snapshotAt };
   } catch {
     // The runner is down, starting, or the socket is momentarily busy. The
     // same temporary state `pushChiefBridge` tolerates.

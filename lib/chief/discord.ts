@@ -92,17 +92,23 @@ export interface ChiefDiscordSettings {
 }
 
 /**
- * What the runner reports holding for the chief, right now (MAR-745).
+ * What the runner reports holding for the chief, right now (MAR-745, widened
+ * by the MAR-742 roadmap's "connection resilience" ask).
  *
- * Never a credential and never the fleet itself — a count and a label, which
- * is all the settings row needs to tell the two hosts apart from a stale one.
- * `null` model means the runner has a bridge but nothing to ask; a null
- * `ChiefRunnerHolds` (see `describeChiefRunnerHolds`) means the runner itself
- * could not be asked, which is a different and worse fact.
+ * Never a credential and never the fleet itself — a count, a label, a socket
+ * state and a moment, which is all the settings row needs to tell the two
+ * hosts apart from a stale one. `null` model means the runner has a bridge but
+ * nothing to ask; a null `ChiefRunnerHolds` (see `describeChiefRunnerHolds`)
+ * means the runner itself could not be asked, which is a different and worse
+ * fact.
  */
 export interface ChiefRunnerHolds {
   fleet_count: number;
   model_label: string | null;
+  /** Whether the runner's own Discord socket is open right now — `RunnerChief.describe()`'s `connected`. */
+  connected: boolean;
+  /** When the fleet snapshot the runner is answering from was taken, or null if it never received one. */
+  snapshot_at: string | null;
 }
 
 /** What DASH holds before anybody has set anything up. */
@@ -570,7 +576,8 @@ export function everyChiefDiscordStandingSentence(): string[] {
 }
 
 /**
- * What the runner reports actually holding, right now (MAR-745).
+ * What the runner reports actually holding, right now (MAR-745, widened by
+ * the MAR-742 roadmap's "connection resilience" ask).
  *
  * `describeChiefDiscordStanding` says what DASH's own row believes; this says
  * what the runner behind it answers with, and the two can disagree — a push
@@ -580,21 +587,37 @@ export function everyChiefDiscordStandingSentence(): string[] {
  * down, starting, or built without the route — and is worded as its own state
  * rather than folded into "no model", which would claim a live answer DASH
  * does not have.
+ *
+ * `takenAt` is `plainMoment(holds.snapshot_at)`, resolved by the caller — the
+ * same split `describeChiefDiscordStanding`'s own `since` argument makes, and
+ * for the same reason: this module stays pure of the clock and of ISO parsing,
+ * and a snapshot DASH never received (`snapshot_at: null`) says so by omitting
+ * the clause rather than by the caller inventing a placeholder date.
  */
-export function describeChiefRunnerHolds(holds: ChiefRunnerHolds | null): string {
+export function describeChiefRunnerHolds(holds: ChiefRunnerHolds | null, takenAt: string | null): string {
   if (holds === null) {
     return "Runner status: not reachable right now.";
   }
   const model = holds.model_label ?? "no model";
-  return `Runner holds: fleet of ${String(holds.fleet_count)} · ${model}`;
+  const when = takenAt === null ? "" : `, taken ${takenAt}`;
+  const listening = holds.connected ? "listening in Discord" : "not listening in Discord";
+  return `Runner holds: fleet of ${String(holds.fleet_count)}${when} · ${model} · ${listening}`;
 }
 
 /** Every sentence `describeChiefRunnerHolds` composes, for the copy sweep. */
 export function everyChiefRunnerHoldsSentence(): string[] {
   return [
-    describeChiefRunnerHolds(null),
-    describeChiefRunnerHolds({ fleet_count: 0, model_label: null }),
-    describeChiefRunnerHolds({ fleet_count: 3, model_label: "OpenRouter · anthropic/claude-sonnet-5" }),
+    describeChiefRunnerHolds(null, null),
+    describeChiefRunnerHolds({ fleet_count: 0, model_label: null, connected: false, snapshot_at: null }, null),
+    describeChiefRunnerHolds(
+      {
+        fleet_count: 3,
+        model_label: "OpenRouter · anthropic/claude-sonnet-5",
+        connected: true,
+        snapshot_at: "2026-08-24T14:32:00.000Z",
+      },
+      "24 August 2026 at 14:32",
+    ),
   ];
 }
 

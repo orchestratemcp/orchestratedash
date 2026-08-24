@@ -24,6 +24,7 @@ import {
   REPLY_CUT,
   admit,
   describeChiefDiscordStanding,
+  describeChiefRunnerHolds,
   everyChiefDiscordSentence,
   fitReply,
   isConfigured,
@@ -276,6 +277,35 @@ describe("the standing row", () => {
     // The allowed id is shown, because it is the field most likely to be wrong
     // and it is not a secret.
     expect(on.sentence).toContain(HENRIK.slice(-4));
+  });
+});
+
+describe("what the runner holds (MAR-745, widened for the MAR-742 roadmap)", () => {
+  it("says not reachable when the runner could not be asked", () => {
+    expect(describeChiefRunnerHolds(null, null)).toBe("Runner status: not reachable right now.");
+  });
+
+  it("names disagreement DASH's own row cannot see: no model and a closed socket", () => {
+    const sentence = describeChiefRunnerHolds(
+      { fleet_count: 0, model_label: null, connected: false, snapshot_at: null },
+      null,
+    );
+    expect(sentence).toContain("no model");
+    expect(sentence).toContain("not listening in Discord");
+    // No snapshot ever landed, so there is no "taken" clause to invent.
+    expect(sentence).not.toContain("taken");
+  });
+
+  it("carries the fleet count, the model, when the snapshot was taken, and a listening socket", () => {
+    const sentence = describeChiefRunnerHolds(
+      { fleet_count: 3, model_label: "OpenRouter · anthropic/claude-sonnet-5", connected: true, snapshot_at: "2026-08-24T14:32:00.000Z" },
+      "24 August 2026 at 14:32",
+    );
+    expect(sentence).toContain("fleet of 3");
+    expect(sentence).toContain("taken 24 August 2026 at 14:32");
+    expect(sentence).toContain("OpenRouter · anthropic/claude-sonnet-5");
+    expect(sentence).toContain("listening in Discord");
+    expect(sentence).not.toContain("not listening in Discord");
   });
 });
 
