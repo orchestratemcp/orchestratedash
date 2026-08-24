@@ -119,7 +119,11 @@ async function main() {
       verifyOutput += `\n[mar748-repro] failed to launch pnpm: ${error.message}\n`;
       resolve(null);
     });
-    verifyRun.on("close", (code) => resolve(code));
+    // 'exit', not 'close' — see the matching comment in scripts/verify-
+    // shell.mjs's runCaptured(). A left-running runner (this DASH's own, or
+    // one it adopted from the holder) can hold a duplicate handle to this
+    // pipe on Windows, and 'close' waits for every such handle to release.
+    verifyRun.on("exit", (code) => resolve(code));
   });
 
   // Independent check, not just "did verify-shell.mjs say FAIL": re-derive the

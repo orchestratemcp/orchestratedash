@@ -49,6 +49,18 @@ function pnpm(script, env = process.env) {
  * name, and it tees stdout/stderr to this process while also buffering them
  * — the developer still watches it live, and `describeSmokeFailure` gets to
  * see what was actually printed once the child exits.
+ *
+ * Resolves on `'exit'`, not `'close'`. `shell:smoke` deliberately leaves the
+ * agent runner running after it finishes (`runner/README.md`: "closing DASH
+ * leaves agents running"), and on Windows a detached grandchild spawned while
+ * this process's stdio was an inheritable pipe can end up holding a duplicate
+ * handle to that same pipe — which means Node's `'close'` event, which waits
+ * for every process sharing the stream to release it, never fires. `'exit'`
+ * reflects the electron process itself terminating and is unaffected; by the
+ * time it fires, `flushOutputThenExit` in `electron/smoke.ts` has already
+ * finished draining everything this function needs into the `data` handlers
+ * below. Confirmed the hard way: this exact wait hung a real CI run for over
+ * an hour before this fix.
  */
 function runCaptured(command, args, env) {
   return new Promise((resolve) => {
@@ -65,7 +77,7 @@ function runCaptured(command, args, env) {
     child.on("error", (error) => {
       resolve({ status: null, error, output });
     });
-    child.on("close", (code) => {
+    child.on("exit", (code) => {
       resolve({ status: code, error: undefined, output });
     });
   });
