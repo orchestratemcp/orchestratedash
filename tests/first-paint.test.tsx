@@ -166,7 +166,20 @@ describe("every page that reads a view uses the marked loading state", () => {
    * badge at all (`AppChrome`'s own comment), which is the product decision
    * here exactly as it is there.
    */
-  const SILENT_CHROME = ["app/_components/fleet-strip.tsx", "app/_components/app-chrome.tsx"];
+  /*
+   * MAR-742. The settings tab strip reads a view now too, to decide whether
+   * Reporting belongs in it, and the same argument applies without change:
+   * the strip sits beside whichever settings page is already announcing its
+   * own loading state, so a placeholder tab appearing and vanishing in the
+   * strip would be a second one. Rendering the strip without Reporting until
+   * the read resolves is also the correct steady state for an unconfigured
+   * DASH, not just the loading one — see `SettingsTabs`' own comment.
+   */
+  const SILENT_CHROME = [
+    "app/_components/fleet-strip.tsx",
+    "app/_components/app-chrome.tsx",
+    "app/_components/settings-tabs.tsx",
+  ];
 
   /**
    * MAR-628, ADR 0019. The watched browser's panel, on `SILENT_CHROME`'s terms
