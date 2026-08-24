@@ -221,7 +221,7 @@ async function holdOpenRouterKey(): Promise<void> {
 }
 
 /**
- * A connected Gmail account, for the Connections half of MAR-685.
+ * TWO connected Gmail accounts, for the Connections half of MAR-685.
  *
  * The issue names two surfaces — "the AI tab … and the Connections tab" —
  * and they are two page components with two copies of the same `revision`
@@ -234,36 +234,57 @@ async function holdOpenRouterKey(): Promise<void> {
  * Connections page whose only row was a key would be photographing the
  * arrangement this packet replaced.
  *
- * The refresh token is a fixture string. Nothing in this run talks to
+ * ## Why two, and what the first draft's one account proved instead
+ *
+ * With a single account the scene pressed Disconnect and **nothing changed**
+ * — correctly. `lib/fleet/actions.ts:536` refuses to disconnect an account an
+ * agent still depends on, and the page said so in a red notice: *"Choose
+ * another Gmail account for meeting-assistant before disconnecting this
+ * one."* The store was untouched, so a re-read would have had nothing to
+ * show, and the scene could not have told a working `bump()` from a broken
+ * one. A refusal is not a mutation.
+ *
+ * So the second account exists to give the scene something DASH will
+ * actually do. `account-2` is not the default and no agent is assigned to
+ * it, which is exactly the condition `assignedAgents` checks — disconnecting
+ * it leaves `meeting-assistant` with the account it had and lets the
+ * mutation through.
+ *
+ * The refresh tokens are fixture strings. Nothing in this run talks to
  * Google, and the pressed control is a local disconnect.
  */
 async function holdGmailAccount(): Promise<void> {
   const at = "2026-08-16T08:00:00.000Z";
-  const secretName = fleetSecretName("google-gmail", "sign_in", "account-1");
-  recordFleetConnection(
-    {
-      provider: "google-gmail",
-      account_id: "account-1",
-      connector_kind: "google_oauth_broker",
-      field_id: "sign_in",
-      secret_name: secretName,
-      masked_hint: "he••••@gmail.com",
-      account_hint: "he••••@gmail.com",
-      scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
-      backend: "os_keychain",
-      is_default: true,
-    },
-    at,
-  );
-  await secureStore().set(
-    secretName,
-    JSON.stringify({
-      format_version: 1,
-      refresh_token: "capture-fixture-account-1",
-      scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
-      obtained_at: at,
-    }),
-  );
+  for (const account of [
+    { id: "account-1", hint: "he••••@gmail.com", isDefault: true },
+    { id: "account-2", hint: "wo••••@gmail.com", isDefault: false },
+  ]) {
+    const secretName = fleetSecretName("google-gmail", "sign_in", account.id);
+    recordFleetConnection(
+      {
+        provider: "google-gmail",
+        account_id: account.id,
+        connector_kind: "google_oauth_broker",
+        field_id: "sign_in",
+        secret_name: secretName,
+        masked_hint: account.hint,
+        account_hint: account.hint,
+        scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+        backend: "os_keychain",
+        is_default: account.isDefault,
+      },
+      at,
+    );
+    await secureStore().set(
+      secretName,
+      JSON.stringify({
+        format_version: 1,
+        refresh_token: `capture-fixture-${account.id}`,
+        scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+        obtained_at: at,
+      }),
+    );
+  }
 }
 
 function settle(ms: number): Promise<void> {
@@ -693,10 +714,30 @@ async function readConnectionsTab(target: BrowserWindow): Promise<unknown> {
            summary: (document.querySelector(".service-list .page-summary")?.textContent ?? "").trim(),
            rows: rows.map((row) => ({
              service: (row.querySelector(".service-name")?.textContent ?? "").trim(),
-             chip: (row.querySelector(".chip")?.textContent ?? "").trim(),
+             /*
+              * The row's OWN standing chip, which is the first chip inside
+              * .service-head — not the first chip anywhere in the row. A
+              * plain ".chip" also matches the per-agent chip in the
+              * needed-by list below it, and the two legitimately disagree:
+              * a service DASH holds an account for can still be un-granted
+              * for a particular agent.
+              */
+             chip: (row.querySelector(".service-head .chip")?.textContent ?? "").trim(),
              account: (row.querySelector(".service-account")?.textContent ?? "").trim() || null,
              accounts: row.querySelectorAll(".service-account-row").length,
+             account_hints: [...row.querySelectorAll(".service-account-row")].map((one) =>
+               (one.querySelector("p")?.textContent ?? "").trim(),
+             ),
            })),
+           /*
+            * What DASH said about the last press. A refusal renders here and
+            * leaves the store alone, so a scene that did not read it could
+            * mistake "DASH declined" for "the view did not refresh" — which
+            * is precisely what the first draft of this scene did.
+            */
+           notices: [...document.querySelectorAll(".service-row .notice")].map((one) =>
+             (one.textContent ?? "").trim(),
+           ),
          };
        })()`,
     ),
@@ -727,21 +768,36 @@ async function connectionsMutationScene(target: BrowserWindow, theme: string): P
   const before = (await readConnectionsTab(target)) as { url: string };
   await shoot(target, `connections-mutation-before-1280-${theme}`);
 
+  /*
+   * The NON-default account's Disconnect.
+   *
+   * Any Disconnect would be a press; only this one is a mutation. The
+   * default account is the one `meeting-assistant` resolves to, and
+   * disconnecting it is refused before the store is touched (see
+   * `holdGmailAccount`'s header) — so pressing it would produce a
+   * before/after pair that is identical because nothing was meant to change,
+   * and the scene could not tell that from a view that failed to re-read.
+   */
   const pressed = (await within(
-    "press Disconnect on the Gmail account",
+    "press Disconnect on the account no agent depends on",
     10_000,
     target.webContents.executeJavaScript(
       `(() => {
-         const button = [...document.querySelectorAll(".service-account-actions button")].find(
+         const row = [...document.querySelectorAll(".service-account-row")].find(
+           (one) => one.querySelector(".chip") === null,
+         );
+         if (row === undefined) return null;
+         const button = [...row.querySelectorAll("button")].find(
            (one) => (one.textContent ?? "").trim().toLowerCase().startsWith("disconnect"),
          );
          if (button === undefined) return null;
          const label = (button.textContent ?? "").trim();
+         const account = (row.querySelector("p")?.textContent ?? "").trim();
          button.click();
-         return label;
+         return { label: label, account: account };
        })()`,
     ),
-  )) as string | null;
+  )) as { label: string; account: string } | null;
   await settle(2500);
 
   const after = (await readConnectionsTab(target)) as { url: string };
@@ -824,8 +880,23 @@ async function run(): Promise<void> {
     await connectionsMutationScene(window, theme);
   }
 
+  /*
+   * `layout-settings.json`, not `layout.json`.
+   *
+   * `DASH_CAPTURE_DIR` is chosen by the caller and a proving sweep points
+   * several harnesses at ONE directory on purpose, so a reviewer finds a
+   * packet's evidence in one place. Two of them writing `layout.json` means
+   * the second run silently deletes the first one's measurements — which is
+   * exactly what happened here: this harness's numbers were overwritten by
+   * `capture-cockpit.ts`'s, with 40 images still sitting beside them looking
+   * like evidence that had a JSON to back it.
+   *
+   * The images never collided, because every filename here is prefixed by
+   * its page. This one file was not, and a stale or missing measurement file
+   * is the same class of failure as a stale log faking a successful run.
+   */
   writeFileSync(
-    path.join(OUT, "layout.json"),
+    path.join(OUT, "layout-settings.json"),
     `${JSON.stringify(
       { captured_at: new Date().toISOString(), measurements, scenes: scenesLog },
       null,
@@ -839,7 +910,7 @@ async function run(): Promise<void> {
     (entry) => (entry as { heading_repeats_tab: boolean }).heading_repeats_tab,
   );
   console.log(
-    `\n[settings-polish] wrote ${String(written.length)} images and layout.json to ${OUT}\n` +
+    `\n[settings-polish] wrote ${String(written.length)} images and layout-settings.json to ${OUT}\n` +
       `[settings-polish] ${overflowed.length === 0 ? "no frame overflowed sideways" : `${String(overflowed.length)} FRAMES OVERFLOWED`}\n` +
       `[settings-polish] ${repeated.length === 0 ? "no heading repeats its active tab" : `${String(repeated.length)} HEADINGS REPEAT THEIR TAB`}`,
   );
