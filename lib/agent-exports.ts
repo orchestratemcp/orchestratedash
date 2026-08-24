@@ -38,10 +38,52 @@
  * is ADR 0008's test for what may live in DASH's part of a stage.
  */
 
-import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, statSync } from "node:fs";
 import path from "node:path";
 
 import { containedIn, inspectComponent } from "../runner/path-guard";
+
+/**
+ * Typographic punctuation folded to its ASCII equivalent (MAR-740, MAR-697).
+ *
+ * The table `briefFileName` folds a new title through, moved here because a
+ * legacy file already on disk needs the identical fold: the point is that a
+ * name built today and a name built a year ago converge on the same string,
+ * not that each caller keeps its own idea of what an em dash becomes.
+ */
+const PUNCTUATION_FOLDS: ReadonlyMap<string, string> = new Map([
+  ["‐", "-"],
+  ["‑", "-"],
+  ["‒", "-"],
+  ["–", "-"],
+  ["—", "-"],
+  ["―", "-"],
+  ["‘", "'"],
+  ["’", "'"],
+  ["‚", "'"],
+  ["′", "'"],
+  ["“", '"'],
+  ["”", '"'],
+  ["„", '"'],
+  ["″", '"'],
+  ["…", "..."],
+  [" ", " "],
+]);
+
+/**
+ * A name's own words, folded and cleaned to what a filesystem will take —
+ * the shared half of `briefFileName`'s rule, without the extension or the
+ * length cap either side of an extension applies differently.
+ */
+export function foldExportBaseName(base: string): string {
+  const folded = Array.from(base, (character) => PUNCTUATION_FOLDS.get(character) ?? character).join(
+    "",
+  );
+  return folded
+    .replace(/[\\/:*?"<>|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 export const EXPORTS_DIRECTORY = "exports";
 
@@ -148,7 +190,7 @@ export function prepareAgentExports(dataDir: string, agent: string): {
 } {
   const folder = agentExportsPath(dataDir, agent);
   mkdirSync(folder, { recursive: true });
-  return { folder, existing: readExportNames(folder) };
+  return { folder, existing: readFoldedExportNames(folder) };
 }
 
 /**
@@ -176,7 +218,7 @@ export function listAgentExports(
   }
 
   const found: AgentExportFile[] = [];
-  for (const file of readExportNames(folder)) {
+  for (const file of readFoldedExportNames(folder)) {
     let stats;
     try {
       stats = statSync(path.join(folder, file));
@@ -250,4 +292,52 @@ function readExportNames(folder: string): string[] {
   } catch {
     return [];
   }
+}
+
+/** What a name already on disk becomes once its punctuation is folded. */
+function foldedExportFileName(name: string): string {
+  const extension = path.extname(name);
+  const stem = name.slice(0, name.length - extension.length);
+  const cleaned = foldExportBaseName(stem).slice(0, 80);
+  return `${cleaned.length === 0 ? "briefing" : cleaned}${extension}`;
+}
+
+/**
+ * Every name MAR-740 would have written differently, renamed in place to the
+ * name it would write today.
+ *
+ * One-time and idempotent: a name that already equals its own folded form is
+ * untouched, so a folder that has already converged costs nothing but a
+ * string comparison per file on every list. `unusedExportName` is reused for
+ * the same reason it exists on the write path — two mangled names (an en
+ * dash and an em dash in the same title, say) can fold to the same string,
+ * and the second one must not silently take the first one's place.
+ *
+ * A rename that fails — another process holding the file, a permission this
+ * account does not have — leaves that one entry under its old name rather
+ * than dropping it from the list; the fold is a courtesy, not a requirement
+ * for the entry to keep being openable by the name it already has.
+ */
+function foldLegacyExportNames(folder: string, names: string[]): string[] {
+  const held = new Set(names.map((name) => name.toLowerCase()));
+  return names.map((name) => {
+    const folded = foldedExportFileName(name);
+    if (folded === name) {
+      return name;
+    }
+    held.delete(name.toLowerCase());
+    const finalName = unusedExportName(held, folded);
+    try {
+      renameSync(path.join(folder, name), path.join(folder, finalName));
+      held.add(finalName.toLowerCase());
+      return finalName;
+    } catch {
+      held.add(name.toLowerCase());
+      return name;
+    }
+  });
+}
+
+function readFoldedExportNames(folder: string): string[] {
+  return foldLegacyExportNames(folder, readExportNames(folder));
 }
