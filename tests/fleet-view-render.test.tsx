@@ -222,6 +222,28 @@ describe("the list a cold render draws", () => {
   });
 });
 
+describe("a genuinely empty fleet (MAR-742 roadmap item 2)", () => {
+  const markup = renderToStaticMarkup(<FleetList agents={[]} />);
+
+  it("draws the chief's composer rather than skipping the band", () => {
+    // `app/page.tsx` used to skip `FleetList` whole when `agents.length === 0`,
+    // which took the chief room down with it. It now mounts unconditionally so
+    // the chief stays reachable ("Chief is our orchestrator and he should
+    // always be reachable and active" — Henrik, 2026-08-24).
+    expect(markup).toContain("chief-composer");
+  });
+
+  it("says nothing in the cards pane, rather than naming a filter nobody applied", () => {
+    // `visible.length === 0` is also true for a fleet hidden entirely by a
+    // filter, and that state draws "Nothing matches this filter." A fleet with
+    // no agents at all is a different fact — `app/page.tsx`'s own "Nothing
+    // here yet" card already says so above this component — so this draws
+    // neither sentence.
+    expect(markup).not.toContain("Nothing matches this filter");
+    expect(markup).not.toContain('<ol class="row-list fleet-grid"');
+  });
+});
+
 describe("a card for an agent that has never run (MAR-634)", () => {
   const markup = renderToStaticMarkup(
     <FleetList agents={[agent({ run_count: 0 })]} />,

@@ -361,15 +361,19 @@ export function FleetList({
     <div className="fleet-stage">
       <div className="fleet-cards">
         {/*
-          MAR-640. A filter that hides everybody says so rather than leaving a
-          bare pane — the same argument the page-level "no agents yet" empty
-          state already makes, for a narrower cause. `agents.length` (the
-          whole fleet) is what distinguishes this from that state: an empty
-          fleet never reaches `FleetList` at all (`app/page.tsx` draws its own
-          empty state first), so an empty `visible` here is always a filter's
-          doing.
+          MAR-640, corrected by MAR-742 roadmap item 2. A filter that hides
+          everybody says so rather than leaving a bare pane — the same argument
+          the page-level "no agents yet" empty state already makes, for a
+          narrower cause. `agents.length` (the whole fleet) is what
+          distinguishes the two: `FleetList` now mounts even for a genuinely
+          empty fleet, so DASH's own room (below) can answer, and an empty
+          `visible` with an empty `agents` is that state rather than a filter's
+          doing — `app/page.tsx`'s "Nothing here yet" already says so, and
+          repeating "Nothing matches this filter" underneath it would name a
+          filter that was never applied. Nothing is drawn in the cards pane at
+          all rather than a second empty sentence.
         */}
-        {visible.length === 0 ? (
+        {agents.length === 0 ? null : visible.length === 0 ? (
           <p className="empty">Nothing matches this filter. Choose another in the rail.</p>
         ) : (
           cardsPane

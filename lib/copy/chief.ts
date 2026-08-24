@@ -149,14 +149,20 @@ function pickChip(glance: readonly GlanceChip[]): GlanceChip | null {
 }
 
 /**
- * What the band says when the fleet is empty — the one state that is not
- * supposed to reach this band at all, since `app/page.tsx` draws its own
- * "nothing here yet" before `FleetList` ever mounts. Kept as the fallback of
- * last resort for `describeFleetSummary` below rather than deleted, on
- * `describeChief`'s own rule for an agent with no chips: the honest answer to
- * a state that should not exist is silence about *why*, not a guess.
+ * What the band says when the fleet is empty (MAR-742 roadmap item 2).
+ *
+ * Reachable now on purpose: Henrik, 2026-08-24, *"Chief is our orchestrator
+ * and he should always be reachable and active"* — a fresh DASH with no agents
+ * still opens the chief's room, and a standing question ("how's my fleet")
+ * lands here. `app/page.tsx` still draws its own "Nothing here yet" onboarding
+ * card above the fleet, so this sentence does not have to repeat that card's
+ * job — it names how to add an agent because a person asking the chief
+ * directly should not have to scroll up to find out, the same reasoning
+ * `describeChiefNoModel` already applies to a missing model.
  */
-export const CHIEF_WAITING = "The chief is waiting for an agent to talk about.";
+export const CHIEF_WAITING =
+  "Your fleet is empty — no agents added yet. Choose \"Try a sample agent\" from the menu " +
+  "button at the top left of the window, or add one you built yourself from Settings.";
 
 /**
  * What the band says when nothing is selected, summarising the fleet instead

@@ -135,7 +135,7 @@ export function undeclaredAnswer(
     // one arm that makes no claim about what any agent is for.
     return standingText(describeFleetSummary(fleet.map((agent) => agent.status)), 0);
   }
-  const declared = describeUndeclared(reply.declared);
+  const declared = describeUndeclared(reply.declared, fleet.length);
   const capabilities =
     declared.values.length === 0 ? "" : `\n\n${declared.values.join(", ")}`;
   return `${declared.sentence}\n\n${reply.summary}${capabilities}`;
