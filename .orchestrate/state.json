@@ -1729,6 +1729,13 @@
         "command": "attended Discord ask on the scratch store, 2026-08-24 21:11, post-#277 build",
         "run": "chief_turn_spool id 12: origin=discord, anthropic/claude-sonnet-5, 1758/400 tokens, $0.007516; chief_audit_spool 17-20: three chief.sources.fetch + one openrouter.chat.completion, all allowed. Model prose curated the 18 fetched sources and named what it excluded. Drain fix proven by spool rows 14-16 carrying fetch audits. Window half proven in the afternoon attended run (PR #277 handoff)."
       }
+    },
+    {
+      "id": "MAR-742",
+      "lifecycle": "planned",
+      "linear_status": "Todo",
+      "commit": null,
+      "note": "PLANNED 2026-08-24: roadmap item 2, chief reachable with zero agents. Roadmap intake on this epic (2026-08-24 midday comment): the chief is our orchestrator and must always be reachable and active -- today the chat surface reads as gated on having an agent. Bar: fresh store, zero agents -> the chief room exists, accepts a question, and answers honestly from records (your fleet is empty; here is how to add an agent), model-backed when AI is connected, records-only when not. Branch 000henrik/chief-zero-agents. Re-keys to its own Linear issue once the workspace free-issue limit clears; tracked here meanwhile so the work is not lost."
     }
   ]
 }

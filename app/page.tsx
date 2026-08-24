@@ -136,44 +136,54 @@ export default function AgentsPage(): ReactNode {
             on screen — which is the failure this whole change exists to undo.
           */}
           {display.data.damage !== null ? <ViewFailed recovery={display.data.damage} /> : null}
-          {display.data.agents.length === 0 ? (
+          {display.data.agents.length === 0 && display.data.damage === null ? (
             /*
              * "No agents yet" is a claim about history, and it is false when the
              * agents are in the store and unreadable. The recovery above already
              * says what happened, so this says only what is true either way.
              */
-            display.data.damage !== null ? null : (
-              <div className="empty">
-                <p>
-                  Nothing here yet. Start with AI News Scout above, or{" "}
-                  <a href="/settings/add-agent">add an agent you built yourself</a>.
-                </p>
-              </div>
-            )
-          ) : (
-        /*
-          MAR-547's concept composition, taken (Henrik, 2026-08-09: "I want the
-          fleet cards to fit like 3 in a row. And the avatar to be bigger") — and
-          since MAR-612 the *shape* of it is the reader's decision rather than
-          this page's.
+            <div className="empty">
+              <p>
+                Nothing here yet. Start with AI News Scout above, or{" "}
+                <a href="/settings/add-agent">add an agent you built yourself</a>.
+              </p>
+            </div>
+          ) : null}
+          {/*
+            MAR-547's concept composition, taken (Henrik, 2026-08-09: "I want the
+            fleet cards to fit like 3 in a row. And the avatar to be bigger") — and
+            since MAR-612 the *shape* of it is the reader's decision rather than
+            this page's.
 
-          `FleetList` owns the track, the portrait card and the chief in every
-          view; what stays here is whether there is anything to lay out at all.
-          The list is still an `<ol>` and still `.row-list`: the Runs and
-          Connections pages lay records on that class too, and theirs are wide
-          rows of prose, so every fleet-specific rule remains a `fleet-grid`
-          modifier rather than a change to the shared class.
-        */
-        <FleetList
-          agents={agents}
-          chief={display.data.chief}
-          canAct={canAct}
-          onAsked={() => {
-            setRefreshKey((value) => value + 1);
-          }}
-          onToggleFavourite={toggleFavourite}
-        />
-          )}
+            `FleetList` owns the track, the portrait card and the chief in every
+            view; what stays here is whether there is anything to lay out at all.
+            The list is still an `<ol>` and still `.row-list`: the Runs and
+            Connections pages lay records on that class too, and theirs are wide
+            rows of prose, so every fleet-specific rule remains a `fleet-grid`
+            modifier rather than a change to the shared class.
+
+            Mounted unconditionally now (MAR-742 roadmap item 2, Henrik: "Chief
+            is our orchestrator and he should always be reachable and active").
+            `FleetList` used to be skipped whenever `agents.length === 0`, on the
+            reasoning that an empty fleet has nothing to lay a track over — true
+            of the cards, false of the chief room `FleetList` also owns, which
+            has always been able to answer from a zero-agent fleet
+            (`chiefRoomView`/`answerChief` take `readonly AgentRow[]` and never
+            required a nonempty one). The empty-cards case is handled inside
+            `FleetList` itself (`agents.length === 0 ? null : ...`) so a
+            genuinely empty fleet does not draw "Nothing matches this filter",
+            which is a sentence about a *filter*, not about having no agents at
+            all — the onboarding copy above already says that.
+          */}
+          <FleetList
+            agents={agents}
+            chief={display.data.chief}
+            canAct={canAct}
+            onAsked={() => {
+              setRefreshKey((value) => value + 1);
+            }}
+            onToggleFavourite={toggleFavourite}
+          />
           {/*
             MAR-679 interim. The decisions log used to mount here — a full-width
             `<FleetDecisions>` section, sometimes five screens of it, sitting

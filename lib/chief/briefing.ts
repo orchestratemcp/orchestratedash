@@ -149,9 +149,22 @@ function mostPressing(agent: AgentRow): string {
  * operation's own non-empty rule intact without a special case in it, and it
  * tells the model the true thing rather than leaving it to infer one from a
  * blank fence.
+ *
+ * `briefingFor` maps agents one row per agent (`MAX_BRIEFING_AGENTS` aside), so
+ * `rows.length === 0` has exactly one cause in practice: the fleet has no
+ * agents in it (MAR-742 roadmap item 2 — the chief is reachable with a fresh,
+ * empty DASH now, where it never was before). The sentence says that plainly,
+ * rather than the vaguer "records were not read for it" a decision-7 greeting
+ * would have been just as honestly described by, because `CHIEF_SYSTEM_PROMPT`
+ * answers only from what is here — a model that cannot tell "no agents" from
+ * "not a fleet question" cannot say the one thing an empty-fleet question
+ * actually needs: how to add one.
  */
 export const EMPTY_BRIEFING =
-  "There are no fleet facts attached to this question. This person's records were not read for it.";
+  "This person's fleet has no agents in it yet — nothing has been added, run, or connected. " +
+  "There is nothing to report about runs, approvals or connections. To add one: choose " +
+  '"Try a sample agent" from the menu button at the top left of the window, or add one they ' +
+  "built themselves from Settings.";
 
 /**
  * The briefing as one string.
