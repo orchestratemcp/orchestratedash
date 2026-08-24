@@ -16,6 +16,8 @@
 import { describe, expect, it } from "vitest";
 
 import { answerChief, asksAboutStanding, type ChiefFleetAgent } from "../lib/chief/reply";
+import { recordsAnswer, undeclaredAnswer } from "../lib/chief/records-answer";
+import { CHIEF_WAITING } from "../lib/copy/chief";
 import { GLANCE_ALL_CLEAR, type GlanceChip } from "../lib/copy/glance";
 
 const NEEDS_YOU: GlanceChip = {
@@ -113,6 +115,41 @@ describe("which kind of answer a question gets", () => {
 
   it("has a reply for a question with no words worth matching", () => {
     expect(answerChief("the a of", [agent()]).kind).toBe("nothing_asked");
+  });
+});
+
+/*
+ * MAR-742 roadmap item 2. The chief's room now mounts for a genuinely empty
+ * fleet (`app/page.tsx` no longer skips `FleetList` when `agents.length === 0`),
+ * so this is a real, reachable state rather than the one `CHIEF_WAITING` used to
+ * document as impossible. What matters here is that DASH tells the truth about
+ * *which* absence it is looking at — no agents at all is a different fact from
+ * agents that declare nothing — and that the records-only path (no model
+ * connected) says how to add one rather than just naming the gap.
+ */
+describe("the empty fleet (MAR-742)", () => {
+  it("answers from records rather than refusing", () => {
+    const reply = answerChief("what agents do I have?", []);
+    expect(reply.kind).toBe("undeclared");
+    if (reply.kind !== "undeclared") {
+      return;
+    }
+    expect(reply.declared).toEqual([]);
+    expect(reply.summary).toBe(CHIEF_WAITING);
+  });
+
+  it("names the fleet as empty rather than as undeclared, records-only", () => {
+    // `recordsAnswer` returns null for the "undeclared" kind either way — the
+    // caller's fallback, `undeclaredAnswer`, is what a DASH with no model to
+    // ask actually shows, and it is where the two absences must not blur.
+    expect(recordsAnswer("what agents do I have?", [])).toBeNull();
+    const empty = undeclaredAnswer("what agents do I have?", []);
+    expect(empty).toContain("Your fleet is empty");
+    expect(empty).not.toContain("None of your agents has declared");
+
+    const undeclared = undeclaredAnswer("book me a flight", [agent({ goal: "", capabilities: [] })]);
+    expect(undeclared).toContain("None of your agents has declared");
+    expect(undeclared).not.toContain("Your fleet is empty");
   });
 });
 

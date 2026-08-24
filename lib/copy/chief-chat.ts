@@ -403,9 +403,32 @@ export function describeAmbiguous(titles: readonly string[]): ChiefSentence {
  * is `ChiefReply`'s own note: somebody who asked the chief anything at all is
  * standing on a page about how their fleet is doing, and an answer that was only
  * a refusal would send them away with less than they arrived with.
+ *
+ * `fleetSize` (MAR-742 roadmap item 2) is what tells the empty-capabilities arm
+ * below which of two different facts it is looking at: an empty fleet has no
+ * agent to have declared anything, and *"none of your agents has declared what
+ * it can do"* would be a claim about agents that are not there. Both fall
+ * through the same `capabilities.length === 0` branch — `declaredCapabilities`
+ * returns `[]` either way — so the count is the only thing that can tell them
+ * apart without a second `ChiefReply` arm to carry the same distinction.
  */
-export function describeUndeclared(capabilities: readonly string[]): ChiefSentence {
+export function describeUndeclared(
+  capabilities: readonly string[],
+  fleetSize = 1,
+): ChiefSentence {
   if (capabilities.length === 0) {
+    if (fleetSize === 0) {
+      // Deliberately does not say "empty" itself — `standingText` always
+      // appends `describeFleetSummary`'s own sentence underneath (`CHIEF_WAITING`
+      // for this exact state), and repeating the one new fact this reply has to
+      // give in two adjacent sentences would read as a stutter rather than as
+      // two different things DASH is telling the person.
+      return {
+        sentence: "There is nothing I can point you at for that yet. Here is where things stand:",
+        quoted: null,
+        values: [],
+      };
+    }
     return {
       sentence:
         "None of your agents has declared what it can do, so there is nothing I can point " +

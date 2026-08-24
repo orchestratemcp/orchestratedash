@@ -1729,6 +1729,13 @@
         "command": "attended two-room run on scratch store dash-scratch-5step, 2026-08-24 15:32 (window) and 15:37-15:39 (Discord)",
         "run": "WINDOW: turn 9 'pull out the most current news' -> evidence outputs/basis=newest, 8 citations off the scout's real 30-item digest; turn 10 'find more sources about AI agent governance' -> evidence sources/topic='AI agent governance', all three sources ok (6 each), top hit published 90s before the question. broker_audit 11/12/13 chief.sources.fetch allowed n=6 [dash], 10/14 openrouter.chat.completion allowed. DISCORD (runner spool): spool 8 same question -> outputs/basis=newest, 12 citations; spool 10 -> sources/topic='AI agent governance', 3x chief.sources.fetch allowed n=6 + completion, all decided_on=runner. Spool 7 is the honest pre-push 'nothing saved yet'. GROUNDING: urls_written_by_model=0 on every turn in both rooms; the model referred to items by number and every link came off DASH's own record."
       }
+    },
+    {
+      "id": "MAR-742",
+      "lifecycle": "planned",
+      "linear_status": "Todo",
+      "commit": null,
+      "note": "PLANNED 2026-08-24: roadmap item 2, chief reachable with zero agents. Roadmap intake on this epic (2026-08-24 midday comment): the chief is our orchestrator and must always be reachable and active -- today the chat surface reads as gated on having an agent. Bar: fresh store, zero agents -> the chief room exists, accepts a question, and answers honestly from records (your fleet is empty; here is how to add an agent), model-backed when AI is connected, records-only when not. Branch 000henrik/chief-zero-agents. Re-keys to its own Linear issue once the workspace free-issue limit clears; tracked here meanwhile so the work is not lost."
     }
   ]
 }

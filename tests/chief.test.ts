@@ -158,9 +158,8 @@ describe("the fleet summary, for when nothing is selected (MAR-639)", () => {
   });
 
   it("falls back to the waiting line for a fleet with nothing in it", () => {
-    // Not a state `FleetList` produces — `app/page.tsx` draws its own empty
-    // state before this band ever mounts — kept as the honest answer to a
-    // state that should not exist rather than deleted.
+    // Reachable now (MAR-742 roadmap item 2): the chief's room mounts even
+    // for a genuinely empty fleet, and a standing question on it lands here.
     expect(describeFleetSummary([])).toBe(CHIEF_WAITING);
   });
 });
@@ -257,10 +256,11 @@ describe("the chief's costume, wherever it stands", () => {
 });
 
 describe("the chief's quiet state", () => {
-  it("does not become a second empty state", () => {
-    // `app/page.tsx` already says "nothing here yet" where a person can act on
-    // it. This says where the chief is and stops.
-    expect(CHIEF_WAITING).toMatch(/chief/i);
-    expect(CHIEF_WAITING).not.toMatch(/add|create|start/i);
+  it("names the fleet as empty and says how to add an agent", () => {
+    // MAR-742 roadmap item 2: the chief is always reachable, so a person who
+    // asks it directly must not have to scroll up to `app/page.tsx`'s own
+    // "Nothing here yet" card to find out what to do next.
+    expect(CHIEF_WAITING).toMatch(/empty/i);
+    expect(CHIEF_WAITING).toMatch(/add/i);
   });
 });

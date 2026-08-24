@@ -358,6 +358,19 @@ await Promise.all([
     format: "esm",
   }),
 
+  // The chief's room on a store with zero agents (MAR-742 roadmap item 2), on
+  // the same no-`smoke-identity.ts` terms. Its own harness rather than a scene
+  // on `capture-mar615.ts` because that one's seed deliberately puts five
+  // agents into the store, which is the exact state this proof needs the
+  // *absence* of — the two harnesses' claims are opposites and cannot share a
+  // seed. See `electron/capture-chief-zero-agents.ts`.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-chief-zero-agents.ts")],
+    outfile: path.join(outDir, "capture-chief-zero-agents.mjs"),
+    format: "esm",
+  }),
+
   // Press-to-reaction latency and the duplicate-send count (MAR-746), on the
   // same terms as every harness above — no `smoke-identity.ts`, so it runs
   // beside a live DASH. Not a scene on any of them because it is not a picture:
