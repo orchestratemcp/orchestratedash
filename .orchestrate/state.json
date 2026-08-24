@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-08-24",
   "current_wave": "Wave 2 - outside-app connections",
-  "lifecycle_note": "2026-08-24 midday: MAR-742 5-step bar MET on the attended scratch-store run — chief answered model-backed from Discord with DASH closed (receipts in the spool). MAR-743+745 proven (both packets); MAR-746 stays merged (lag numbers still from a worktree, not the bar today). Two first-run bugs found and fixed on the way: MAR-755 (fresh DASH_DATA_DIR refuses the runner) and the MAR-745 envelope-as-Bearer 401, both in PR #275. Next: dispatch MAR-744 (chief harness). Open follow-ups: ai_key_checks cannot refuse a bad key (needs a Linear slot), Linear free-issue limit reached.",
+  "lifecycle_note": "2026-08-24 evening: MAR-744 proven (Discord ask 21:11, receipted). PRs #279 (chief answers with zero agents), #280 (chat-UI design proposal, captures+doc only), #281 (runner-holds status line + relaunch-scratch script) merged; both MAR-742 packet entries merged. MAR-755 proven via the #279 fresh-store proof run. New evidence on MAR-742 for the vault-integrity packet: an existing blob read ENOENT once (20:57) then worked after disconnect/re-add; SEE WHAT OPENROUTER OFFERS fired nothing. Next dispatched: vault integrity + Refresh Connections (opus), chat-UI implementation (sonnet), reporting-tab production gate (sonnet). Linear free-issue limit still blocks new issues; roadmap lives in MAR-742 comments.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -1743,9 +1743,9 @@
     },
     {
       "id": "MAR-742",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Todo",
-      "commit": null,
+      "commit": "7cf3871",
       "note": "roadmap item 3 (posted on MAR-742 2026-08-24 midday): runner-holds status + relaunch script. Worktree wt-reconnect-status-f2, branch 000henrik/runner-holds-status, cut from origin/master 3b6c390. PR open, not yet merged. TWO HALVES. (1) THE STATUS LINE WAS ALREADY MOSTLY WIRED, NOT MISSING: MAR-745 (PR #275, already on master) shipped the whole plumbing -- ChiefRunnerHolds type, describeChiefRunnerHolds, the GET /chief/discord route, RunnerChief.describe(), electron/main.ts's queryChiefBridgeStatus read seam, and the rendered line on the Notifications page -- but the runner's describe() already returns connected and snapshot_at and DASH's own parsing silently dropped both, so the line only ever showed fleet count and model. Henrik's own comment named this correctly ('only partially exists'), and Linear's MAR-745 row still reads Backlog even though git shows it Done -- both are examples of the drift AGENTS.md already warns about (Linear lags Git). WHAT SHIPS: ChiefRunnerHolds widened with connected: boolean and snapshot_at: string | null; queryChiefBridgeStatus parses both off the runner's existing response (no runner-side change); describeChiefRunnerHolds takes a second pre-formatted takenAt argument (plainMoment(snapshot_at), resolved by the caller -- the same purity split describeChiefDiscordStanding already uses for its own since argument) and renders 'Runner holds: fleet of N, taken <day> at <time> ・ <model or no model> ・ listening/not listening in Discord'. (2) THE RELAUNCH SCRIPT: scripts/relaunch-scratch.cmd, a dev/test tool (documented as such in its own header, not a product surface) -- refuses if the real checkout is not on master or is dirty, otherwise git pull --ff-only, pnpm build:renderer, pnpm build:shell, then launches Electron with BOTH DASH_DATA_DIR and Electron's own --user-data-dir set to a named scratch dir under %TEMP%. The --user-data-dir flag is load-bearing and was not obvious going in: DASH_DATA_DIR alone does not move Electron's single-instance lock (electron/secure-store.ts's useUserDataDirectory only seeds DASH_DATA_DIR FROM userData when unset, it never calls app.setPath), so a scratch launch without it silently quits (exit 0, MAR-428's clean second-instance path) the instant a real DASH is already open -- which, per the 'leave DASH open for Henrik' session ritual, it usually is. scripts/verify-shell.mjs already carries this exact pattern; this script now matches it. CONFIRMED NOT A GAP: MAR-755 (fresh DASH_DATA_DIR refuses the runner) reads Backlog in Linear but is already fixed on master (electron/runner-process.ts's ensureRunner mkdirSync's dataDir before ensureChannelSecret, landed in bebc6da/PR #275) -- the script does not need to and does not work around it; this was checked by reading the code rather than trusting either Linear or the roadmap comment.",
       "proof": {
         "command": "pnpm typecheck && pnpm brand:check && pnpm test (PowerShell); live-runner proof scripted separately, not a repo command",
@@ -1754,6 +1754,17 @@
     },
     {
       "note": "PLANNED 2026-08-24: roadmap item 2, chief reachable with zero agents. Roadmap intake on this epic (2026-08-24 midday comment): the chief is our orchestrator and must always be reachable and active -- today the chat surface reads as gated on having an agent. Bar: fresh store, zero agents -> the chief room exists, accepts a question, and answers honestly from records (your fleet is empty; here is how to add an agent), model-backed when AI is connected, records-only when not. Branch 000henrik/chief-zero-agents. Re-keys to its own Linear issue once the workspace free-issue limit clears; tracked here meanwhile so the work is not lost."
+    },
+    {
+      "id": "MAR-755",
+      "lifecycle": "proven",
+      "linear_status": "Done",
+      "commit": "a309683",
+      "note": "First-launch fresh-DASH_DATA_DIR runner refusal. Fix carried in PR #275 (mkdirSync before ensureChannelSecret, endpoint_refused detail carries the underlying error, tests/runner-first-launch.test.ts).",
+      "proof": {
+        "command": "electron/capture-chief-zero-agents.ts against a completely fresh unseeded DASH_DATA_DIR (PR #279 proof run)",
+        "run": "The runner spawned first-try on a directory nothing had created — MAR-755 exact named path; plus both regression-test halves red against pre-fix master."
+      }
     }
   ]
 }
