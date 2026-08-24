@@ -1,0 +1,273 @@
+﻿
+node.exe : [dash-shell] not claiming dash:// from capture-ask.mjs — only the app's own entry point may be the handler
+At C:\Users\henri\AppData\Roaming\npm\pnpm.ps1:24 char:5
++     & "node$exe"  "$basedir/node_modules/pnpm/bin/pnpm.cjs" $args
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([dash-shell] no... be the handler:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[dash-shell] DASH_DATA_DIR override in effect: C:\Users\henri\AppData\Local\Temp\scratch-chatui-ask
+[dash-shell] store: C:\Users\henri\AppData\Local\Temp\scratch-chatui-ask (app_name=Electron)
+[dash-shell] secure store: Windows Credential Manager (DPAPI) os_backed=true
+[dash-shell] contracts: C:\Users\henri\AppData\Local\Temp\wt-chatui-design-f3\contracts (unpackaged)
+[ask] seeded 5 agents: answered, no-key, no-model, nothing-saved, no-provider
+[dash-shell] runner: pipe \\.\pipe\orchestratedash-runner-3fa693904b903fc1c2f875b2 pid=11468
+[dash-shell] vault self-check: canary=ok, 0/0 fleet reads ok
+[dash-shell] allowed command=runner.status id=bd313ec2-b8d5-4a04-b3ae-ff4cc6d68eee mutates=false
+[dash-shell] allowed command=glance.looked id=fa958838-c22b-4a01-ad12-7b2cf225da40 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=9cfd6fe9-e07a-4ac9-ad82-a13d3621b82b keys=[agent_id] mutates=true
+[ask] no density control on this page — 1280 shot at comfortable, the document's own
+[ask] answered 1280/light/comfortable (window reports 1279px) {"viewport":1279,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":true,"blocked_next_action":false,"turns":2,"answers":1,"answer_is_text":true,"sources_open":true,"cited_links":2,"says_charged":true,"says_agents_own_figure":true,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-answered-1280-light-comfortable.png 2558x1800
+[dash-shell] allowed command=glance.looked id=39588eda-0cb6-40b1-9d7e-c515b2a4db1c keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=da4435a3-2cb2-4d64-a16e-5edbd18280b8 keys=[agent_id] mutates=true
+[ask] no density control on this page — 1280 shot at comfortable, the document's own
+[ask] no-key 1280/light/comfortable (window reports 1279px) {"viewport":1279,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":true,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-no-key-1280-light-comfortable did not compose on attempt 1; retrying
+[ask] ask-no-key-1280-light-comfortable.png 2558x1800
+[dash-shell] allowed command=glance.looked id=0d99b385-a11e-4e4d-948d-1807670816de keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=b0ae2d56-0719-4a51-9f95-c8506b2d5983 keys=[agent_id] mutates=true
+[ask] no density control on this page — 1280 shot at comfortable, the document's own
+[ask] no-model 1280/light/comfortable (window reports 1279px) {"viewport":1279,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":false,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-no-model-1280-light-comfortable did not compose on attempt 1; retrying
+[ask] ask-no-model-1280-light-comfortable.png 2558x1800
+[dash-shell] allowed command=glance.looked id=e9ab972b-4e77-4a18-9ba7-dfd71fbc200b keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=6812d9bc-8de9-43f5-9e33-dbf2390bdcde keys=[agent_id] mutates=true
+[ask] no density control on this page — 1280 shot at comfortable, the document's own
+[ask] nothing-saved 1280/light/comfortable (window reports 1279px) {"viewport":1279,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":true,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-nothing-saved-1280-light-comfortable did not compose on attempt 1; retrying
+[ask] ask-nothing-saved-1280-light-comfortable.png 2558x1800
+[dash-shell] allowed command=glance.looked id=c59f4d87-f2a0-47b6-933c-dc22ae80c115 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=0a58ce44-a854-41c1-ae4d-827d210b0957 keys=[agent_id] mutates=true
+[ask] no density control on this page — 1280 shot at comfortable, the document's own
+[ask] no-provider 1280/light/comfortable (window reports 1279px) {"viewport":1279,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":false,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-no-provider-1280-light-comfortable did not compose on attempt 1; retrying
+[ask] ask-no-provider-1280-light-comfortable.png 2558x1800
+[dash-shell] allowed command=glance.looked id=ed9dd419-37d8-473a-ac17-7a220687bd3f keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=3706fc3d-55fb-4d72-b024-07dc1315fac2 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=1a97d406-fb00-4bc0-b217-623873f5f775 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=be575714-13d8-4798-a53a-9fd2ef324cae keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=2d9ab987-a923-40aa-87f1-6493159e0870 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=8d5bbdf9-6deb-4222-bd1f-7f62e2a4e593 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=62a3ceb1-6beb-4382-91d2-fed52c178949 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=b20d1cb7-756b-4f74-9fca-99da36f61ff5 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=35806963-1461-4e7d-ad53-46a2f02177f0 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=334a6a11-dc8f-4667-8609-d7280a602bea keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=eccbec4d-050e-4740-a7dd-1bdd959fb03d keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=bfe2e066-27d7-44f4-832c-2eeee79ae0b3 keys=[agent_id] mutates=true
+[ask] no density control on this page — 768 shot at comfortable, the document's own
+[ask] answered 768/light/comfortable (window reports 767px) {"viewport":767,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":true,"blocked_next_action":false,"turns":2,"answers":1,"answer_is_text":true,"sources_open":true,"cited_links":2,"says_charged":true,"says_agents_own_figure":true,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-answered-768-light-comfortable did not compose on attempt 1; retrying
+[ask] ask-answered-768-light-comfortable.png 1534x2048
+[dash-shell] allowed command=glance.looked id=6728373e-0506-42e9-b58d-73e53c6733a1 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=c817d21b-966e-41ee-bf7b-82d88d594334 keys=[agent_id] mutates=true
+[ask] no density control on this page — 768 shot at comfortable, the document's own
+[ask] no-key 768/light/comfortable (window reports 767px) {"viewport":767,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":true,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-no-key-768-light-comfortable did not compose on attempt 1; retrying
+[ask] ask-no-key-768-light-comfortable.png 1534x2048
+[dash-shell] allowed command=glance.looked id=8f8f3306-8c7c-4c9d-989d-7cbcf162776e keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=892b4e32-3832-4776-80db-71b04ca41547 keys=[agent_id] mutates=true
+[ask] no density control on this page — 768 shot at comfortable, the document's own
+[ask] no-model 768/light/comfortable (window reports 767px) {"viewport":767,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":false,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-no-model-768-light-comfortable did not compose on attempt 1; retrying
+[ask] ask-no-model-768-light-comfortable.png 1534x2048
+[dash-shell] allowed command=glance.looked id=23b23874-7e82-4bd6-b5ee-51eb0703ebd7 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=b056b995-ae22-4a4b-8fdd-bb710445c682 keys=[agent_id] mutates=true
+[ask] no density control on this page — 768 shot at comfortable, the document's own
+[ask] nothing-saved 768/light/comfortable (window reports 767px) {"viewport":767,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":true,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-nothing-saved-768-light-comfortable did not compose on attempt 1; retrying
+[ask] ask-nothing-saved-768-light-comfortable.png 1534x2048
+[dash-shell] allowed command=glance.looked id=43a45761-6ba3-4fb8-ad3c-cedeb4d3732b keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=b602a3ec-744a-40f4-8aad-2446ad52bc95 keys=[agent_id] mutates=true
+[ask] no density control on this page — 768 shot at comfortable, the document's own
+[ask] no-provider 768/light/comfortable (window reports 767px) {"viewport":767,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":false,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-no-provider-768-light-comfortable did not compose on attempt 1; retrying
+[ask] ask-no-provider-768-light-comfortable.png 1534x2048
+[dash-shell] allowed command=glance.looked id=268640bc-1f23-4103-89c6-906b387ce406 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=18b799f1-f46a-46cb-aa61-0e93c0bc3d69 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=00ebca0b-1ecd-4cec-a888-5c39ff6e46f2 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=00be316d-3dc7-4cbd-90e8-38ff33561253 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=0af19c4b-d73b-4631-a159-cae433a187b2 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=21ff0b33-9146-4fb8-a737-ba5b7d6e573a keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=f4cd14c1-85bd-4c0d-8be7-631b4c9cc87a keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=701eb61b-38a3-47ae-8c10-64f49e8352bf keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=c6a4de12-ae3d-4cc7-88d5-a030b3d79c80 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=a35d1884-35c2-41b5-b17c-ca65f7b84b6f keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=bde4275a-0158-45d6-8892-e9f0ee9cd8a0 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=ee5b5d23-0f38-4176-9d1a-4ae3653dc850 keys=[agent_id] mutates=true
+[ask] no density control on this page — 375 shot at comfortable, the document's own
+[ask] answered 375/light/comfortable (window reports 374px) {"viewport":374,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":true,"blocked_next_action":false,"turns":2,"answers":1,"answer_is_text":true,"sources_open":true,"cited_links":2,"says_charged":true,"says_agents_own_figure":true,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-answered-375-light-comfortable did not compose on attempt 1; retrying
+[ask] ask-answered-375-light-comfortable.png 748x1624
+[dash-shell] allowed command=glance.looked id=d991b683-69b9-4aa4-b752-65efa142d089 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=c353164a-5e01-4426-9922-d827681d001d keys=[agent_id] mutates=true
+[ask] no density control on this page — 375 shot at comfortable, the document's own
+[ask] no-key 375/light/comfortable (window reports 374px) {"viewport":374,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":true,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-no-key-375-light-comfortable did not compose on attempt 1; retrying
+[ask] ask-no-key-375-light-comfortable.png 748x1624
+[dash-shell] allowed command=glance.looked id=77e4a16b-c629-4142-985b-0214b19323f0 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=d023aa7b-2049-4921-8241-8bb388a53f04 keys=[agent_id] mutates=true
+[ask] no density control on this page — 375 shot at comfortable, the document's own
+[ask] no-model 375/light/comfortable (window reports 374px) {"viewport":374,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":false,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-no-model-375-light-comfortable did not compose on attempt 1; retrying
+[ask] ask-no-model-375-light-comfortable.png 748x1624
+[dash-shell] allowed command=glance.looked id=229c7d1d-17dd-4d85-983e-e0e232eb3189 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=e1b6850f-8315-4ff1-a88c-33848205baec keys=[agent_id] mutates=true
+[ask] no density control on this page — 375 shot at comfortable, the document's own
+[ask] nothing-saved 375/light/comfortable (window reports 374px) {"viewport":374,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":true,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-nothing-saved-375-light-comfortable did not compose on attempt 1; retrying
+[ask] ask-nothing-saved-375-light-comfortable.png 748x1624
+[dash-shell] allowed command=glance.looked id=b4624475-5830-43b6-8f19-0f2a62041ba6 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=24c42eca-9188-4d13-87c1-7c9fa97e0796 keys=[agent_id] mutates=true
+[ask] no density control on this page — 375 shot at comfortable, the document's own
+[ask] no-provider 375/light/comfortable (window reports 374px) {"viewport":374,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":false,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-no-provider-375-light-comfortable did not compose on attempt 1; retrying
+[ask] ask-no-provider-375-light-comfortable.png 748x1624
+[dash-shell] allowed command=glance.looked id=abc12e8a-2079-4b82-9cfb-b3d07193dfae keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=68e8ab08-f60d-42e6-9642-89d389907604 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=fcd1facb-6910-40ae-a14e-1787a1520f61 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=20fe0157-0513-46ea-bf2c-c20fd4016fa9 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=9ea3a4db-f695-4848-8d75-c47db4e8963b keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=27a01484-abd8-42ab-8759-6f6572b56498 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=e475f2e1-4ee7-45cf-8090-c3fe005212f2 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=f2a0de8d-5c8a-45a6-90b3-92759aa98b01 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=a039617d-1037-4f0e-b688-af5ba19da21a keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=a5eea57d-7ed7-4783-a804-4eb3795c34f3 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=970284dc-db55-4555-809f-edbac7967ef2 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=9411339c-b8a9-4896-bebd-fe05cbaebb11 keys=[agent_id] mutates=true
+[ask] no density control on this page — 1280 shot at comfortable, the document's own
+[ask] answered 1280/dark/comfortable (window reports 1279px) {"viewport":1279,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":true,"blocked_next_action":false,"turns":2,"answers":1,"answer_is_text":true,"sources_open":true,"cited_links":2,"says_charged":true,"says_agents_own_figure":true,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-answered-1280-dark-comfortable did not compose on attempt 1; retrying
+[ask] ask-answered-1280-dark-comfortable.png 2558x1800
+[dash-shell] allowed command=glance.looked id=9b13f770-c3a8-4dc0-b4d6-4d5b0fa15c91 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=60110909-4705-4c7d-8e6f-54e2cc6682da keys=[agent_id] mutates=true
+[ask] no density control on this page — 1280 shot at comfortable, the document's own
+[ask] no-key 1280/dark/comfortable (window reports 1279px) {"viewport":1279,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":true,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-no-key-1280-dark-comfortable did not compose on attempt 1; retrying
+[ask] ask-no-key-1280-dark-comfortable.png 2558x1800
+[dash-shell] allowed command=glance.looked id=edc6ee8d-8608-4512-a81a-6bc7bdae67b3 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=6d4443c4-61bc-497f-9860-a20e51641a80 keys=[agent_id] mutates=true
+[ask] no density control on this page — 1280 shot at comfortable, the document's own
+[ask] no-model 1280/dark/comfortable (window reports 1279px) {"viewport":1279,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":false,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-no-model-1280-dark-comfortable did not compose on attempt 1; retrying
+[ask] ask-no-model-1280-dark-comfortable.png 2558x1800
+[dash-shell] allowed command=glance.looked id=9e650a35-a272-4c67-99b8-4a14526dfd7a keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=038811e6-1a1d-4ffa-b5b4-b2f8a3f26b3d keys=[agent_id] mutates=true
+[ask] no density control on this page — 1280 shot at comfortable, the document's own
+[ask] nothing-saved 1280/dark/comfortable (window reports 1279px) {"viewport":1279,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":true,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-nothing-saved-1280-dark-comfortable did not compose on attempt 1; retrying
+[ask] ask-nothing-saved-1280-dark-comfortable.png 2558x1800
+[dash-shell] allowed command=glance.looked id=17b425e7-b1c3-4e96-8ea0-5f2c5d6fec68 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=ea7e3ee3-2e15-4249-ab88-8623499da791 keys=[agent_id] mutates=true
+[ask] no density control on this page — 1280 shot at comfortable, the document's own
+[ask] no-provider 1280/dark/comfortable (window reports 1279px) {"viewport":1279,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":false,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-no-provider-1280-dark-comfortable did not compose on attempt 1; retrying
+[ask] ask-no-provider-1280-dark-comfortable.png 2558x1800
+[dash-shell] allowed command=glance.looked id=4287f5b9-cf6a-4281-baa3-c40df3efd7a6 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=9646dbbc-8746-4029-b98e-19ca607e5caa keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=67b4bcfd-e647-4d82-a6c7-f20b0f60a404 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=b8438305-31eb-4200-accb-b29d94be6e19 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=429f0fb2-8b73-48c9-82dd-080a21ea81e6 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=d8d7905f-867d-4584-82fd-59a696a909af keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=f913be29-603c-46b6-959e-c17af0e9ecce keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=435e043d-8793-44e9-8743-84ce30f095a9 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=3b1cbfd5-a9d5-4393-b22c-d1e099f783e1 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=c2e165e3-24c8-4288-b583-6c1699b27c9d keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=2cb2a1e1-a29b-4693-b78c-133481a3327c keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=189239c0-8117-4780-b751-fc0ab3af81bd keys=[agent_id] mutates=true
+[ask] no density control on this page — 768 shot at comfortable, the document's own
+[ask] answered 768/dark/comfortable (window reports 767px) {"viewport":767,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":true,"blocked_next_action":false,"turns":2,"answers":1,"answer_is_text":true,"sources_open":true,"cited_links":2,"says_charged":true,"says_agents_own_figure":true,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-answered-768-dark-comfortable did not compose on attempt 1; retrying
+[ask] ask-answered-768-dark-comfortable.png 1534x2048
+[dash-shell] allowed command=glance.looked id=302db781-5046-437f-9711-31a72633d9de keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=64898221-b53b-4151-a2e9-8b61107dfd27 keys=[agent_id] mutates=true
+[ask] no density control on this page — 768 shot at comfortable, the document's own
+[ask] no-key 768/dark/comfortable (window reports 767px) {"viewport":767,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":true,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-no-key-768-dark-comfortable did not compose on attempt 1; retrying
+[ask] ask-no-key-768-dark-comfortable.png 1534x2048
+[dash-shell] allowed command=glance.looked id=b744add4-86d5-419b-bd53-8032eafd6dbe keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=78bab9e2-36f3-478c-a6fa-e577ae71d71e keys=[agent_id] mutates=true
+[ask] no density control on this page — 768 shot at comfortable, the document's own
+[ask] no-model 768/dark/comfortable (window reports 767px) {"viewport":767,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":false,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-no-model-768-dark-comfortable did not compose on attempt 1; retrying
+[ask] ask-no-model-768-dark-comfortable.png 1534x2048
+[dash-shell] allowed command=glance.looked id=c62dec32-5141-4beb-866a-af686e99d830 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=86be1b87-fe64-4d5d-8dae-2315dce54fa8 keys=[agent_id] mutates=true
+[ask] no density control on this page — 768 shot at comfortable, the document's own
+[ask] nothing-saved 768/dark/comfortable (window reports 767px) {"viewport":767,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":true,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-nothing-saved-768-dark-comfortable did not compose on attempt 1; retrying
+[ask] ask-nothing-saved-768-dark-comfortable.png 1534x2048
+[dash-shell] allowed command=glance.looked id=a75fde28-cdfb-41c5-a5c8-1d0cdb9f8a2f keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=6437826a-74d1-4eb1-98d8-366814e22222 keys=[agent_id] mutates=true
+[ask] no density control on this page — 768 shot at comfortable, the document's own
+[ask] no-provider 768/dark/comfortable (window reports 767px) {"viewport":767,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":false,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-no-provider-768-dark-comfortable did not compose on attempt 1; retrying
+[ask] ask-no-provider-768-dark-comfortable.png 1534x2048
+[dash-shell] allowed command=glance.looked id=b7fc91e2-6e9f-4c37-bca5-8603fd3a9bf7 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=3c8f9a76-5f6f-4217-aed8-3c98a6233e5c keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=5c144380-7367-4991-9d71-682d8f49666b keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=45fd10d7-b13e-4ef5-823e-417d6e605d62 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=b3665e62-9d4f-4839-9e42-6b448ecba230 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=bb0396d4-7186-42de-8e58-1e62a8762a59 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=3b936c4e-08b2-49d6-8d4a-c68fa8dfebae keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=2561ebbd-6b77-4680-a7d9-a4b97de1fa76 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=517a0bf1-eed4-46b8-91eb-70f10f0a1c76 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=408c91b5-db3a-4860-b6ed-114aaf9222fa keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=5f0707d1-ff2b-4436-bb2a-5bb82b530249 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=430c00fe-29a8-4ff7-9038-41bbcf320808 keys=[agent_id] mutates=true
+[ask] no density control on this page — 375 shot at comfortable, the document's own
+[ask] answered 375/dark/comfortable (window reports 374px) {"viewport":374,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":true,"blocked_next_action":false,"turns":2,"answers":1,"answer_is_text":true,"sources_open":true,"cited_links":2,"says_charged":true,"says_agents_own_figure":true,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-answered-375-dark-comfortable did not compose on attempt 1; retrying
+[ask] ask-answered-375-dark-comfortable.png 748x1624
+[dash-shell] allowed command=glance.looked id=09247a40-cfdf-4027-934d-03cab90f66c9 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=4f6ea677-a531-4ba6-ba34-89fd3864d262 keys=[agent_id] mutates=true
+[ask] no density control on this page — 375 shot at comfortable, the document's own
+[ask] no-key 375/dark/comfortable (window reports 374px) {"viewport":374,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":true,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-no-key-375-dark-comfortable did not compose on attempt 1; retrying
+[ask] ask-no-key-375-dark-comfortable.png 748x1624
+[dash-shell] allowed command=glance.looked id=d89fbf20-c6b5-4cdd-b0f0-97f952e66203 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=0d6310f0-f0aa-4a63-9d93-95fd4721c656 keys=[agent_id] mutates=true
+[ask] no density control on this page — 375 shot at comfortable, the document's own
+[ask] no-model 375/dark/comfortable (window reports 374px) {"viewport":374,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":false,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-no-model-375-dark-comfortable did not compose on attempt 1; retrying
+[ask] ask-no-model-375-dark-comfortable.png 748x1624
+[dash-shell] allowed command=glance.looked id=84bf18d4-d536-4ff6-bcd4-d6a2de5b8487 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=08f6701a-65f1-43a7-9f43-5a0d61b2241a keys=[agent_id] mutates=true
+[ask] no density control on this page — 375 shot at comfortable, the document's own
+[ask] nothing-saved 375/dark/comfortable (window reports 374px) {"viewport":374,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":true,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-nothing-saved-375-dark-comfortable did not compose on attempt 1; retrying
+[ask] ask-nothing-saved-375-dark-comfortable.png 748x1624
+[dash-shell] allowed command=glance.looked id=ebe469ea-3519-4ff6-a1b6-7f30a98739e0 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=c79dbaec-c96d-475a-8db0-3a1ace80a850 keys=[agent_id] mutates=true
+[ask] no density control on this page — 375 shot at comfortable, the document's own
+[ask] no-provider 375/dark/comfortable (window reports 374px) {"viewport":374,"density":null,"page_overflows":false,"section_drawn":true,"input_drawn":false,"blocked_next_action":true,"turns":0,"answers":0,"answer_is_text":true,"sources_open":null,"cited_links":0,"says_charged":false,"says_agents_own_figure":false,"says_artifact":false,"says_run_id":false,"widest_overflow":407,"widest_overflow_node":"span.visually-hidden"}
+[ask] ask-no-provider-375-dark-comfortable did not compose on attempt 1; retrying
+[ask] ask-no-provider-375-dark-comfortable.png 748x1624
+[dash-shell] allowed command=glance.looked id=95486665-1143-4b86-802a-62e30d2c1c76 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=d5e41cae-1099-4d9f-a2f7-3ee53e08c9ea keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=21859eb9-ca0d-438f-9609-2a6e00d40637 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=539c9c64-f9dc-4223-9198-0dec0362af20 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=918247d6-c8de-4448-9715-646cccf884b5 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=908dd53e-5818-4c82-b932-31a838ad2e2e keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=0df37c28-23a3-4dd4-8572-ee0798c1d6d9 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=e3a980a2-69af-418a-b4e3-6e4ea847c40f keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=10233476-4ac6-4c20-a004-37e260db2665 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=a8e95c30-ce25-41da-89ee-5958e0147ac2 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=044f32ce-8bcd-486f-a34d-85e7aa60462a keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=b3da4d8a-2f84-4875-be0e-ebae594f0b02 keys=[agent_id] mutates=true
+[ask] composer parity, agent, light: {"focused":true,"open":true}
+[ask] composer-parity-agent-light.png 2558x1800
+[dash-shell] allowed command=runner.status id=7b1725d1-6485-4513-aaa7-8b09233b3264 mutates=false
+[dash-shell] allowed command=runner.status id=1afae888-207d-4e3b-8c45-d51dfd3fad28 mutates=false
+[ask] composer parity, chief, light: {"focused":true,"open":true}
+[ask] composer-parity-chief-light.png 2558x1800
+[dash-shell] allowed command=glance.looked id=1dc7b3e6-37ac-47c0-afe7-9bd57ef72818 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=36bb9b74-55a9-4d8c-bfdd-b8481b616f46 keys=[agent_id] mutates=true
+[ask] composer parity, agent, dark: {"focused":true,"open":true}
+[ask] composer-parity-agent-dark.png 2558x1800
+[dash-shell] allowed command=runner.status id=81a63f4d-999a-410f-bdef-77967e67131e mutates=false
+[dash-shell] allowed command=runner.status id=cb287819-3ea4-4b84-a50a-9fc82affd025 mutates=false
+[ask] composer parity, chief, dark: {"focused":true,"open":true}
+[ask] composer-parity-chief-dark.png 2558x1800
+[ask] both composers opened in every parity frame
+[ask] wrote 34 image(s) to C:\Users\henri\AppData\Local\Temp\wt-chatui-design-f3\qa-screenshots-chatui-proposal\current-both-surfaces; 0 frame(s) overflowed sideways; 0 frame(s) with no conversation section; 0 frame(s) with neither an input nor a next action; 0 frame(s) where an answer was not plain text; 0 frame(s) using DASH's own filing words; 30 compact frame(s) skipped for want of a density control
