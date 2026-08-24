@@ -18,7 +18,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { LAB_TELEMETRY_CONTENTS, LAB_TELEMETRY_RECEIPT } from "../lib/lab/settings";
+import { LAB_TELEMETRY_CONTENTS, LAB_TELEMETRY_INTRO, LAB_TELEMETRY_RECEIPT } from "../lib/lab/settings";
 import { expectPlainLanguage } from "./helpers/plain-language";
 import type { LabTelemetryView } from "../lib/views/types";
 
@@ -145,6 +145,21 @@ describe("the payload is on the page before anybody consents", () => {
   });
 });
 
+describe("what LAB is, before anything about what DASH tells it", () => {
+  it("opens on the plain sentence, in both states — MAR-742's tab gate is the reason nobody arrives here without asking", () => {
+    expect(markup(OFF)).toContain(asMarkup(LAB_TELEMETRY_INTRO));
+    expect(markup(SENDING)).toContain(asMarkup(LAB_TELEMETRY_INTRO));
+  });
+
+  it("says it before the standing row, not after", () => {
+    const html = markup(OFF);
+    const intro = html.indexOf(asMarkup(LAB_TELEMETRY_INTRO));
+    const standing = html.indexOf(asMarkup(OFF.standing_sentence));
+    expect(intro).toBeGreaterThan(-1);
+    expect(intro).toBeLessThan(standing);
+  });
+});
+
 describe("the receipt says what it is not", () => {
   it("keeps the limiting sentence on the page, in both states", () => {
     const limit = LAB_TELEMETRY_RECEIPT[2] as string;
@@ -189,6 +204,7 @@ describe("the page is written in plain language", () => {
     // the standing rule rather than an exemption: `lib/lab/settings.ts` owns
     // every one of them and `tests/lab-telemetry.test.ts` scans that module too.
     expectPlainLanguage([
+      LAB_TELEMETRY_INTRO,
       OFF.standing_sentence,
       OFF.reach_sentence,
       SENDING.standing_sentence,

@@ -1765,6 +1765,17 @@
         "command": "electron/capture-chief-zero-agents.ts against a completely fresh unseeded DASH_DATA_DIR (PR #279 proof run)",
         "run": "The runner spawned first-try on a directory nothing had created — MAR-755 exact named path; plus both regression-test halves red against pre-fix master."
       }
+    },
+    {
+      "id": "MAR-742",
+      "lifecycle": "planned",
+      "linear_status": "Todo",
+      "commit": null,
+      "note": "roadmap: reporting tab production gate. Worktree wt-reporting-gate-g3, branch 000henrik/reporting-gate, cut from origin/master 1dfae7c. Settings -> Reporting was ADR 0026/MAR-479's correct-by-design DASH->LAB telemetry receipt, but a production user who never configured a LAB saw it cold with no context -- developer-loop plumbing surfaced as a top-level tab. Fix: the tab is invisible in the strip (app/_components/settings-tabs.tsx) until a LAB address is configured (masked_hint !== null on the labTelemetry view, i.e. the lab_telemetry row exists); when configured the page is unchanged from ADR 0026 plus one new opening sentence (LAB_TELEMETRY_INTRO in lib/lab/settings.ts, rendered first in ReportingSettings) saying plainly what LAB is, ahead of what DASH sends it. The receipt's third limiting line is untouched. Split SettingsTabsStrip out of the hook-connected SettingsTabs (ReportingSettings's own pattern) so tests can render both configured states without a data source. Updated tests/settings-tabs.test.tsx (dedicated visibility-gate block, generic checks now assume configured) and tests/reporting-render.test.tsx (new opening-line assertions); added settings-tabs.tsx to first-paint.test.tsx's SILENT_CHROME exemption list since it now reads a view as chrome beside the page, not as the page itself.",
+      "proof": {
+        "command": "pnpm typecheck && pnpm test (PowerShell)",
+        "run": "typecheck clean; pnpm test 244 files / 4615 passed / 11 skipped / 0 failed (PowerShell). No verify:shell per session scope."
+      }
     }
   ]
 }
