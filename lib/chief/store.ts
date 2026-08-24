@@ -32,6 +32,7 @@ import { isModelId } from "../broker/operations";
 import { db } from "../db";
 import { aiProviderById } from "../ai/providers";
 import type { ChiefBriefingRow } from "./briefing";
+import { readChiefEvidence, type ChiefEvidence } from "./evidence";
 
 /* ---------------------------------------------------------------------- *
  * One turn
@@ -68,6 +69,15 @@ export interface ChiefTurnRecord {
   amount_usd: number | null;
   /** The briefing rows sent with this question, frozen. Empty for a greeting. */
   receipt: ChiefBriefingRow[];
+  /**
+   * What the tool on this turn produced, frozen (MAR-744).
+   *
+   * `{ kind: "none" }` for a turn where no tool ran, for every row written
+   * before the column existed, and for one this build cannot read. See
+   * `readChiefEvidence` on why all three collapse to the same weaker claim, and
+   * the migration in `lib/db.ts` on why this is not `receipt` widened.
+   */
+  evidence: ChiefEvidence;
   /**
    * Which room this was asked in (MAR-743, ADR 0028 decision 7).
    *
@@ -111,8 +121,8 @@ export function recordChiefTurn(draft: ChiefTurnDraft): ChiefTurnRecord | null {
       .prepare(
         "INSERT INTO chief_messages " +
           "(asked_at, question, answer, failure, provider_id, model_id, " +
-          "tokens_in, tokens_out, amount_usd, receipt_json, origin) " +
-          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "tokens_in, tokens_out, amount_usd, receipt_json, origin, evidence_json) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         draft.asked_at,
@@ -126,6 +136,12 @@ export function recordChiefTurn(draft: ChiefTurnDraft): ChiefTurnRecord | null {
         draft.amount_usd,
         JSON.stringify(draft.receipt),
         draft.origin,
+        /*
+         * Null rather than `'{"kind":"none"}'` for a turn with no tool, so a
+         * store carries one representation of "nothing here" rather than two --
+         * the column's own default and what every pre-MAR-744 row already says.
+         */
+        draft.evidence.kind === "none" ? null : JSON.stringify(draft.evidence),
       );
     return { ...draft, id: Number(result.lastInsertRowid) };
   } catch (error: unknown) {
@@ -148,7 +164,8 @@ export function readChiefTurns(limit = CHIEF_HISTORY_LIMIT): ChiefTurnRecord[] {
     rows = db()
       .prepare(
         "SELECT id, asked_at, question, answer, failure, provider_id, model_id, " +
-          "tokens_in, tokens_out, amount_usd, receipt_json, origin FROM chief_messages " +
+          "tokens_in, tokens_out, amount_usd, receipt_json, origin, evidence_json " +
+          "FROM chief_messages " +
           "ORDER BY id DESC LIMIT ?",
       )
       .all(limit) as unknown[];
@@ -268,6 +285,9 @@ function projectTurn(row: unknown): ChiefTurnRecord | null {
      * than overstating it.
      */
     origin: record["origin"] === "discord" ? "discord" : "window",
+    evidence: readChiefEvidence(
+      typeof record["evidence_json"] === "string" ? record["evidence_json"] : null,
+    ),
   };
 }
 

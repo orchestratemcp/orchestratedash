@@ -1718,6 +1718,13 @@
         "command": "attended MAR-742 5-step flow on scratch store dash-scratch-5step, 2026-08-24 12:33",
         "run": "Same attended run. The 11:53 turns 401d (envelope-as-Bearer, fixed in PR #275 a309683); the 12:33 turn succeeded with DASH closed. Failed turns drained honestly into chief_messages."
       }
+    },
+    {
+      "id": "MAR-744",
+      "lifecycle": "planned",
+      "linear_status": "Todo",
+      "commit": null,
+      "note": "The chief's tool harness: read any agent's outputs/briefs cited by item, the newest briefing as first-class context, and bounded allowlisted follow-up fetches. One harness serving both rooms (window + Discord) per ADR 0028 decision 1 -- the tool surface lives in lib/chief/ with runner and main as hosts. Branch 000henrik/mar-744-chief-harness."
     }
   ]
 }

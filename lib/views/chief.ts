@@ -20,13 +20,19 @@
 import { readChiefModelChoice, readFleetModelDefault } from "../ai/model-store";
 import { aiProviderById } from "../ai/providers";
 import { briefingFor, fleetChangedSince, type ChiefBriefingRow } from "../chief/briefing";
+import type { ChiefEvidence } from "../chief/evidence";
+import {
+  describeChiefFetched,
+  describeChiefItemsRead,
+  describeChiefSourceStatus,
+} from "../copy/chief-sources";
 import { chiefFleetFrom } from "../chief/records-answer";
 import { answerChief, type ChiefFleetAgent } from "../chief/reply";
 import { readChiefTurns, type ChiefTurnRecord } from "../chief/store";
 import { describeAskFailure, describeCharge, type AskFailureReason } from "../copy/ask";
 import { describeChiefNoModel, describeChiefReceipt } from "../copy/chief-chat";
 import { plainMoment } from "../copy/when";
-import type { AgentRow, ChiefRoomView, ChiefTurnView } from "./types";
+import type { AgentRow, ChiefEvidenceView, ChiefRoomView, ChiefTurnView } from "./types";
 
 /**
  * Where a person goes to fix the one thing that blocks this room.
@@ -167,6 +173,7 @@ function toTurnView(
         : [],
     receipt: turn.receipt.map((row) => ({ ...row, capabilities: [...row.capabilities] })),
     receipt_note: describeChiefReceipt(turn.receipt.length).sentence,
+    evidence: evidenceView(turn.evidence),
     stale: fleetChangedSince(turn.receipt, now),
     model: turn.model_id,
     charge:
@@ -206,4 +213,83 @@ function failureReason(stored: string | null): AskFailureReason {
     default:
       return "dash_error";
   }
+}
+
+/* ---------------------------------------------------------------------- *
+ * The evidence under a turn (MAR-744)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What the chief read or fetched, as the room draws it.
+ *
+ * Read out of the row and **never recomputed**, exactly as `receipt` is and for
+ * the same reason: this is the record of what was actually sent, so a turn from
+ * last Tuesday shows the six headlines that answer was built on rather than the
+ * six that would be chosen for the same question today.
+ *
+ * The *sentences* are composed here from the stored facts rather than stored —
+ * `toExchangeView`'s discipline. What is in the database is a basis, a count and
+ * a status; the words come from `lib/copy/chief-sources.ts` on every render, so
+ * correcting one corrects it for every answer already on screen.
+ *
+ * Null for a turn with no tool, which the room draws as nothing at all rather
+ * than as an empty panel with a heading over it.
+ */
+function evidenceView(evidence: ChiefEvidence): ChiefEvidenceView | null {
+  if (evidence.kind === "none") {
+    return null;
+  }
+
+  if (evidence.kind === "outputs") {
+    return {
+      kind: "outputs",
+      note: describeChiefItemsRead(evidence.basis, evidence.citations.length, evidence.terms)
+        .sentence,
+      citations: evidence.citations.map((citation) => ({
+        index: citation.index,
+        headline: citation.headline,
+        /*
+         * Which agent found it, and out of which source. Composed rather than
+         * stored, so a renamed agent reads correctly under an old answer -- the
+         * title comes off the citation, which froze `agentDisplayName`'s answer
+         * at the time, and this only decides how the two are joined.
+         */
+        where:
+          citation.source_name === null
+            ? `${citation.agent_title} — ${citation.report_title}`
+            : `${citation.source_name}, found by ${citation.agent_title}`,
+        href: citation.item_url,
+        agent: citation.agent,
+        output: citation.artifact_id,
+      })),
+      sources: [],
+    };
+  }
+
+  const answered = evidence.sources.filter((source) => source.item_count > 0);
+  const missed = evidence.sources.filter((source) => source.item_count === 0);
+  return {
+    kind: "sources",
+    note: describeChiefFetched(
+      evidence.citations.length,
+      answered.map((source) => source.name),
+      missed.map((source) => source.name),
+    ).sentence,
+    citations: evidence.citations.map((citation) => ({
+      index: citation.index,
+      headline: citation.headline,
+      where: citation.source_name,
+      href: citation.item_url,
+      // Nothing DASH fetched belongs to an agent, or to a report of one. Null
+      // rather than an empty string, so a renderer linking out has one thing to
+      // test.
+      agent: null,
+      output: null,
+    })),
+    sources: evidence.sources.map((source) => ({
+      name: source.name,
+      outcome: describeChiefSourceStatus(source.status, source.item_count),
+      count: source.item_count,
+    })),
+  };
 }

@@ -58,6 +58,7 @@ const TURN: import("../lib/chief/store").ChiefTurnDraft = {
   tokens_out: 30,
   amount_usd: 0.0003,
   receipt: [],
+  evidence: { kind: "none" },
   origin: "discord",
 };
 

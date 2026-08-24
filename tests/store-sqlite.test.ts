@@ -53,7 +53,7 @@ const opened: Array<{ dataDir: string; closeDb: () => void }> = [];
  * they assert that a re-open, or a migration of an old store, lands at the head,
  * and following the head is the whole content of that claim.
  */
-const HEAD_VERSION = 32;
+const HEAD_VERSION = 33;
 
 async function freshStore(seed?: (dataDir: string) => void): Promise<{
   dataDir: string;
@@ -184,6 +184,13 @@ describe("schema", () => {
     // and by whom, and the two columns that stop a row drained out of the
     // runner from losing the fact that the runner is what decided it.
     //
+    // 33 is MAR-744's `chief_messages.evidence_json` — what the chief's tools
+    // read or fetched for one turn, frozen with it. Appended on the standing
+    // terms: an installed store that has recorded 0 to 32 runs exactly one
+    // more. Deliberately not `receipt_json` widened; the migration's own note
+    // in `lib/db.ts` argues why, and the short version is that only one of the
+    // two claims can go stale.
+    //
     // **These indexes were chosen by worker sessions, which AGENTS.md says is
     // not how serial-numbered resources get assigned.** The end of the list is
     // the only position that leaves an already-migrated installed store alone,
@@ -191,7 +198,7 @@ describe("schema", () => {
     // exactly the blocking gate the note at 25 describes. Confirm the number at
     // the merge rather than assuming it survived.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(32);
+    expect(version.user_version).toBe(33);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -211,6 +218,10 @@ describe("schema", () => {
     expect(tables).toContain("broker_grants");
     expect(tables).toContain("broker_audit");
     expect(tables).toContain("workspace_artifacts");
+    // MAR-744 adds a column rather than a table, so there is nothing to name
+    // here — the column is asserted by `tests/chief-transcript.test.ts`, which
+    // writes a turn carrying evidence and reads it back.
+
     // MAR-588. Named here beside the rest so that "which tables exist" stays a
     // list somebody reads rather than one the schema reports about itself.
     expect(tables).toContain("notify_discord");
@@ -610,6 +621,10 @@ describe("schema", () => {
       .all()
       .map((row) => String(row["name"]));
     expect(tables).toContain("workspace_artifacts");
+    // MAR-744 adds a column rather than a table, so there is nothing to name
+    // here — the column is asserted by `tests/chief-transcript.test.ts`, which
+    // writes a turn carrying evidence and reads it back.
+
     expect(store.listAgents()).toHaveLength(1);
   });
 

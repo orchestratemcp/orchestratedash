@@ -1424,6 +1424,19 @@ function readChiefConfiguration(body: unknown): ChiefBridgeConfiguration | null 
       briefing: Array.isArray(snapshotRecord["briefing"])
         ? (snapshotRecord["briefing"] as ChiefBridgeConfiguration["snapshot"]["briefing"])
         : [],
+      /*
+       * The fleet's own output (MAR-744).
+       *
+       * Absent rather than malformed when it is missing, which is the whole
+       * reason it is read the same shallow way `fleet` and `briefing` are: an
+       * older DASH pushes no library, and refusing the whole configuration over
+       * it would turn a downgrade into a bridge that stops answering entirely.
+       * An empty list means *nothing of your agents' to read here*, which the
+       * chief says in words.
+       */
+      library: Array.isArray(snapshotRecord["library"])
+        ? (snapshotRecord["library"] as ChiefBridgeConfiguration["snapshot"]["library"])
+        : [],
       taken_at:
         typeof snapshotRecord["taken_at"] === "string" ? snapshotRecord["taken_at"] : "",
     },

@@ -37,6 +37,7 @@ import { readEffectiveChiefModel } from "../lib/ai/model-store";
 import { aiProviderById } from "../lib/ai/providers";
 import { recordRunnerChiefCall } from "../lib/broker/store";
 import { briefingFor } from "../lib/chief/briefing";
+import { chiefLibraryFor } from "../lib/views/chief-library";
 import { CHIEF_CONNECTION_ID, chiefOperationId } from "../lib/chief/manifest";
 import { chiefFleetFrom } from "../lib/chief/records-answer";
 import { recordChiefTurn, type ChiefTurnDraft } from "../lib/chief/store";
@@ -316,6 +317,25 @@ export async function buildChiefBridgeConfiguration(
     snapshot: {
       fleet: chiefFleetFrom(agents),
       briefing: briefingFor(agents),
+      /*
+       * What the fleet has produced (MAR-744).
+       *
+       * Read here, on main's side, because ADR 0028 decision 6 keeps
+       * `dash.sqlite` to one writer and this is the moment DASH is already
+       * holding it open. It rides the same push as the briefing for
+       * `ChiefSnapshot`'s reason: two projections of one read must describe the
+       * same instant, and a library pushed separately from the briefing would
+       * be a bridge answering from two different Tuesdays.
+       *
+       * Which means it is re-pushed on exactly the cadence MAR-745 established
+       * — AI connection or default model changing, an agent imported or
+       * removed, the bridge's settings re-saved — and **not** when a run
+       * finishes. So a scout that ran an hour ago while DASH was closed is not
+       * in the room's library until DASH is next opened, which is the same
+       * sentence decision 6 already makes about the fleet and is honestly the
+       * sharpest edge this packet leaves. See the handoff on MAR-744.
+       */
+      library: chiefLibraryFor(agents),
       taken_at: new Date().toISOString(),
     },
   };

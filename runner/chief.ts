@@ -38,6 +38,10 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { aiProviderById } from "../lib/ai/providers";
 import { answerChiefQuestion, type ChiefSnapshot } from "../lib/chief/answer";
+import { readChiefEvidence } from "../lib/chief/evidence";
+import { fetchChiefSources } from "../lib/chief/fetch-sources";
+import type { ChiefItem } from "../lib/chief/library";
+import { CHIEF_SOURCES } from "../lib/chief/sources";
 import type { ChiefBriefingRow } from "../lib/chief/briefing";
 import {
   admit,
@@ -81,6 +85,26 @@ export interface ChiefBridgeConfiguration {
 export interface PushedSnapshot {
   fleet: ChiefFleetAgent[];
   briefing: ChiefBriefingRow[];
+  /**
+   * What the fleet has produced, newest first (MAR-744).
+   *
+   * Pushed rather than read, and this is the clause of ADR 0028 decision 6 that
+   * MAR-744 leans hardest on: the answer to *"pull out the most current news"*
+   * lives in `run_artifacts` in `dash.sqlite`, and the runner may not open that
+   * file. So main flattens it into items on its way past and hands them over
+   * with the briefing.
+   *
+   * The cost is the one decision 6 already states, arriving somewhere it bites
+   * harder: a Discord answer is grounded in the fleet **as of the last push**,
+   * and for news that is the difference between today's headlines and
+   * Tuesday's. `#asOf` says so on any model answer past the threshold, which is
+   * what stops the staleness being silent.
+   *
+   * Bounded at `MAX_LIBRARY_ITEMS` by `chiefLibrary` before it is pushed, so
+   * this stays a small object on a local HTTP channel however long somebody has
+   * owned their agents.
+   */
+  library: ChiefItem[];
   taken_at: string;
 }
 
@@ -219,7 +243,8 @@ export class RunnerChief {
       const turns = database
         .prepare(
           "SELECT asked_at, question, answer, failure, provider_id, model_id, tokens_in, " +
-            "tokens_out, amount_usd, receipt_json, origin FROM chief_turn_spool ORDER BY id",
+            "tokens_out, amount_usd, receipt_json, origin, evidence_json " +
+            "FROM chief_turn_spool ORDER BY id",
         )
         .all()
         .map((row) => readTurn(row as Record<string, unknown>));
@@ -317,6 +342,15 @@ export class RunnerChief {
     const snapshot: ChiefSnapshot = {
       fleet: configuration.snapshot.fleet,
       briefing: configuration.snapshot.briefing,
+      /*
+       * An older DASH pushes no library, so this is the field that has to
+       * survive a version skew: an empty list means *this room has nothing of
+       * your agents' to read*, and `selectChiefMaterial` answers
+       * `nothing_saved`, which the chief says in words. A missing field read as
+       * a fault would make a perfectly working bridge look broken after a
+       * downgrade.
+       */
+      library: configuration.snapshot.library ?? [],
       taken_at: configuration.snapshot.taken_at,
     };
 
@@ -340,6 +374,35 @@ export class RunnerChief {
        */
       context: "",
       ask: (request) => this.#broker.handle(request),
+      /*
+       * Discord can search too, and it is the same implementation (MAR-744).
+       *
+       * ADR 0028 decision 1's rule, one layer down: a second fetcher in the
+       * runner is a place for the allowlist, the byte ceiling or the audit row
+       * to quietly not be true on the path where nobody is watching. Main hands
+       * `fetchChiefSources` its `recordBrokerCall`; this hands it the audit
+       * spool, and `recordRunnerChiefCall` stamps `decided_on = 'runner'` on
+       * every row when DASH drains them.
+       *
+       * This is a read and it opens no allowance. ADR 0028 decision 8 bounds
+       * what a Discord message may cause to exactly one chief completion; a
+       * fetch of three public feeds spends nothing at all, so the sentence that
+       * decision makes about somebody's money is unchanged by this packet.
+       */
+      fetchSources: async (topic: string) =>
+        (
+          await fetchChiefSources(
+            topic,
+            {
+              fetchImpl: this.#options.fetchImpl ?? fetch,
+              audit: (row) => {
+                this.#spoolAudit(row);
+              },
+              now: this.#options.now,
+            },
+            CHIEF_SOURCES,
+          )
+        ).sources,
       record: (draft) => this.#spoolTurn(draft),
       now: this.#options.now,
     });
@@ -394,8 +457,8 @@ export class RunnerChief {
       database
         .prepare(
           "INSERT INTO chief_turn_spool (asked_at, question, answer, failure, provider_id, " +
-            "model_id, tokens_in, tokens_out, amount_usd, receipt_json, origin) " +
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "model_id, tokens_in, tokens_out, amount_usd, receipt_json, origin, " +
+            "evidence_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .run(
           draft.asked_at,
@@ -409,6 +472,9 @@ export class RunnerChief {
           draft.amount_usd,
           JSON.stringify(draft.receipt),
           draft.origin,
+          // Null for a turn with no tool, the same representation
+          // `recordChiefTurn` writes on the far side of the drain.
+          draft.evidence.kind === "none" ? null : JSON.stringify(draft.evidence),
         );
       trim(database, "chief_turn_spool", MAX_SPOOLED_TURNS);
       return true;
@@ -480,6 +546,9 @@ function readTurn(row: Record<string, unknown>): ChiefTurnDraft {
     // The column, not a constant. A row that lost its origin at the drain would
     // be exactly the copy-loses-provenance failure the column exists to stop.
     origin: row["origin"] === "discord" ? "discord" : "window",
+    evidence: readChiefEvidence(
+      typeof row["evidence_json"] === "string" ? row["evidence_json"] : null,
+    ),
   };
 }
 

@@ -157,6 +157,7 @@ function harness(
         },
       ] as ChiefBridgeConfiguration["snapshot"]["fleet"],
       briefing: [],
+      library: [],
       taken_at: new Date().toISOString(),
     },
     ...over,
@@ -382,6 +383,7 @@ describe("re-delivery after bridge setup (MAR-745)", () => {
           },
         ],
         briefing: [scoutBriefing],
+        library: [],
         taken_at: new Date().toISOString(),
       },
     });
@@ -415,6 +417,7 @@ describe("re-delivery after bridge setup (MAR-745)", () => {
           },
         ],
         briefing: [scoutBriefing, competitorScoutBriefing],
+        library: [],
         taken_at: new Date().toISOString(),
       },
     });

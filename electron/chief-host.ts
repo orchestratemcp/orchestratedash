@@ -48,12 +48,17 @@ import { aiProviderById } from "../lib/ai/providers";
 import { CHIEF } from "../lib/broker/principal";
 import { answerChiefQuestion, type ChiefAnswerDeps } from "../lib/chief/answer";
 import { briefingFor } from "../lib/chief/briefing";
+import { fetchChiefSources } from "../lib/chief/fetch-sources";
+import { CHIEF_SOURCES } from "../lib/chief/sources";
 import { chiefFleetFrom } from "../lib/chief/records-answer";
 import { clearChiefThread, recentChiefContext, recordChiefTurn } from "../lib/chief/store";
 import { describeAskFailure } from "../lib/copy/ask";
 import { describeChiefNoModel } from "../lib/copy/chief-chat";
 import type { Recovery } from "../lib/copy/recovery";
+import { recordBrokerCall } from "../lib/broker/store";
+import { FLEET_PRINCIPAL } from "../lib/fleet/principal";
 import { agentsView } from "../lib/views/build";
+import { chiefLibraryFor } from "../lib/views/chief-library";
 import { hostBroker } from "./broker-host";
 
 export interface ChiefActionResult {
@@ -132,6 +137,13 @@ function mainDeps(): ChiefAnswerDeps {
     snapshot: {
       fleet: chiefFleetFrom(agents),
       briefing: briefingFor(agents),
+      /*
+       * The fleet's own reports, read from the same store in the same breath
+       * (MAR-744). Main can afford this per question where the runner cannot:
+       * ADR 0028 decision 6 keeps `dash.sqlite` to one writer, so the runner is
+       * pushed whatever this produced the last time DASH was open.
+       */
+      library: chiefLibraryFor(agents),
       // Null: main reads the store at the moment it answers, so there is no age
       // to declare. See `ChiefSnapshot.taken_at`.
       taken_at: null,
@@ -139,6 +151,53 @@ function mainDeps(): ChiefAnswerDeps {
     model: chosen === null || profile === null ? null : { profile, model_id: chosen.model_id },
     context: recentChiefContext(),
     ask: (request) => hostBroker().handle(CHIEF, request, "person"),
+    /*
+     * The window can search, so it supplies one (MAR-744).
+     *
+     * Note what main hands over and what it does not. It hands over `fetch`, an
+     * audit sink and a clock; it does **not** hand over an address, a source
+     * list a caller could widen, or the person's question. The three sources are
+     * `CHIEF_SOURCES` — frozen in `lib/chief/sources.ts` — and the topic reached
+     * `fetchChiefSources` only by passing `topicFrom`.
+     *
+     * Audited through `recordBrokerCall`, the same function every brokered call
+     * in main goes through, so a fetch lands in `broker_audit` beside the model
+     * calls and under the same `FLEET_PRINCIPAL` label. `decided_on` is that
+     * function's own constant `'dash'`, which is what makes provenance a thing
+     * the writer asserts rather than a thing a caller supplies.
+     */
+    fetchSources: async (topic: string) =>
+      (
+        await fetchChiefSources(
+          topic,
+          {
+            fetchImpl: fetch,
+            audit: (row) => {
+              recordBrokerCall({
+                // A label in DASH's own tables and never a principal — see
+                // `lib/broker/principal.ts`, and `execute.ts`' `auditName`,
+                // which fills this column with the same value for the chief's
+                // model calls.
+                agent: FLEET_PRINCIPAL,
+                connection_id: row.connection_id,
+                operation: row.operation,
+                request_id: row.request_id,
+                decision: row.decision,
+                refusal: row.refusal,
+                input_keys: row.input_keys,
+                result_count: row.result_count,
+                // A public feed identifies nobody. `ChiefDecisionRow` has no
+                // field for it and this is where that absence becomes a null.
+                account_hint: null,
+                duration_ms: row.duration_ms,
+                decided_at: row.decided_at,
+              });
+            },
+            now: () => new Date(),
+          },
+          CHIEF_SOURCES,
+        )
+      ).sources,
     record: (draft) => recordChiefTurn(draft) !== null,
     now: () => new Date(),
   };

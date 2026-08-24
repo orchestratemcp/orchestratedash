@@ -52,7 +52,7 @@ const opened: Array<{ dataDir: string; closeDb: () => void }> = [];
  * a migration look like nine broken assertions — which is how a signature
  * number gets "fixed" by somebody moving it.
  */
-const HEAD_VERSION = 32;
+const HEAD_VERSION = 33;
 
 async function freshStore(): Promise<{ dataDir: string; db: typeof import("../lib/db") }> {
   const dataDir = mkdtempSync(path.join(tmpdir(), "dash-reconcile-"));
