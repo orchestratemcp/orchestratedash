@@ -159,6 +159,8 @@ import {
   recordAgentLook,
   saveHost,
 } from "../lib/store.js";
+/* The scenes' own door — see `seedWaitingWork`. */
+import { putAgentDomState } from "../lib/agent-dom/store.js";
 import {
   DENSITY_ATTRIBUTE,
   DENSITY_STORAGE_KEY,
@@ -684,10 +686,25 @@ async function layout(target: BrowserWindow): Promise<unknown> {
            marks: cards.map((node) =>
              [...node.querySelectorAll(".fleet-mark")].map((mark) => mark.textContent.trim()),
            ),
-           /* The chief stands under every view, and says one thing. */
+           /*
+            * The chief stands under every view, and says one thing.
+            *
+            * The container is \`.chief-composer\` (and \`.chief-room\` once it is
+            * open), not \`.chief-band\`. MAR-659 replaced the band with the chat
+            * and this measurement was never moved with it, so every \`chief_*\`
+            * reading below was taken inside an element that has not existed
+            * for several packets — three fields reporting 0/null as though
+            * that were a finding about the page rather than about the
+            * selector. Read against the classes \`chief-chat.tsx\` actually
+            * names, per the rule this harness already follows for its
+            * \`localStorage\` keys: match what the component states, so a rename
+            * breaks the harness instead of quietly emptying it.
+            */
            chief: document.querySelector(".chief-says")?.textContent?.trim() ?? null,
-           chief_action: document.querySelector(".chief-band .button-link")?.textContent ?? null,
-           chief_inputs: document.querySelectorAll(".chief-band input, .chief-band textarea").length,
+           chief_action: document.querySelector(".chief-composer .button-link")?.textContent ?? null,
+           chief_inputs: document.querySelectorAll(
+             ".chief-composer input, .chief-composer textarea",
+           ).length,
            centred: document.querySelectorAll("li.is-centred").length,
            /*
             * *Which* card the spotlight has in the middle, because the count
@@ -764,6 +781,151 @@ async function layout(target: BrowserWindow): Promise<unknown> {
                     - Math.min(...inside.map((c) => c.getBoundingClientRect().top)))
              / cardsBox.height,
            ),
+           /* ------------------------------------------------------------ *
+            * MAR-639 / MAR-640 / MAR-614 — what the counts above cannot say
+            *
+            * Every reading below is a claim one of those three issues makes
+            * about what a card, the rail or the sidebar *says*, and not one
+            * of them is settled by a rectangle. They are recorded rather than
+            * asserted, on the same footing as \`marks\` above: this harness
+            * gates only MAR-630's counts, and a new gate written in a proving
+            * session would be a bar nobody agreed to.
+            * ------------------------------------------------------------ */
+
+           /*
+            * MAR-639's status-tinted portrait, read as the tone class the
+            * component chose rather than as a colour sampled off the frame. A
+            * pixel value would have to be re-derived against both themes and
+            * would prove the paint; the claim the issue makes is about the
+            * mapping from status to tone, which is what this reads.
+            */
+           portrait_tones: cards.map((card) => {
+             const portrait = card.querySelector(".fleet-portrait");
+             if (portrait === null) return null;
+             const tones = [...portrait.classList]
+               .filter((name) => name.startsWith("fleet-portrait-"))
+               .map((name) => name.slice("fleet-portrait-".length));
+             return tones.length === 0 ? null : tones[0];
+           }),
+
+           /*
+            * MAR-639's last-run line, recorded beside the status mark that
+            * stands directly above it on the same card — as a pair, on
+            * purpose. \`fleet-card.tsx\`'s own header forbids the two saying
+            * the same thing twice ("the exact two-copies-that-can-disagree"),
+            * and only the pair can show whether they do. A list of every
+            * \`.fleet-mark\` on the card, as \`marks\` already collects, cannot:
+            * it flattens the place mark, the status mark and the never-run
+            * mark into one array with no note of which slot each came from.
+            */
+           card_lines: cards.map((card) => ({
+             name: card.querySelector(".fleet-name")?.textContent?.trim() ?? null,
+             status: [...card.querySelectorAll(".fleet-identity .fleet-mark")].map((mark) =>
+               mark.textContent.trim(),
+             ),
+             last_run: card.querySelector(".fleet-last-run")?.textContent?.trim() ?? null,
+             goal: card.querySelector(".fleet-goal")?.textContent?.trim() ?? null,
+           })),
+
+           /*
+            * MAR-639's whole-card click-through, and MAR-660's visible twin.
+            *
+            * The second class is \`.fleet-open\` — the component is called
+            * FleetOpenLink and the class is not. The first draft of this
+            * measurement guessed \`.fleet-open-link\` from the component name
+            * and reported 0 on a frame where "Open this agent" is plainly
+            * printed on all six cards: a harness disagreeing with the thing
+            * it measures, which is the exact failure this file's header
+            * describes for the \`localStorage\` keys and answers by importing
+            * them. There is no module to import a class name from, so it is
+            * read off \`fleet-card.tsx\` and named here instead.
+            */
+           card_links: document.querySelectorAll(".fleet-card-link").length,
+           open_links: document.querySelectorAll(".fleet-open").length,
+
+           /*
+            * MAR-640's rail filters and the counts they draw unfiltered —
+            * "the rail becomes a status summary" is the issue's own framing,
+            * and six numbers in a photograph cannot be checked against a
+            * store unless they are also written down.
+            */
+           filters: [...document.querySelectorAll(".fleet-filter-option")].map((option) => ({
+             label: option.querySelector("span:not(.fleet-filter-count)")?.textContent?.trim() ?? null,
+             count: Number(option.querySelector(".fleet-filter-count")?.textContent ?? "-1"),
+             checked: option.querySelector("input")?.checked === true,
+           })),
+
+           /* MAR-640's favourite star: one per card, and how many are lit. */
+           favourite_buttons: document.querySelectorAll(".fleet-favourite").length,
+           favourited: document.querySelectorAll(".fleet-favourite.is-favourite").length,
+
+           /*
+            * MAR-640's work-inbox badge. Absent is a reading rather than a
+            * failure: \`app-chrome.tsx\` draws nothing at zero on purpose, so
+            * null here and a number here are both correct answers depending
+            * on what the store holds.
+            */
+           inbox_badge: document.querySelector(".sidebar-badge")?.textContent?.trim() ?? null,
+
+           /*
+            * MAR-639's text axe, read where it was swung. The page lede is
+            * the paragraph that sat under the <h1>; one coming back would be
+            * a <p> immediately after the heading, which is exactly this.
+            */
+           lede: (() => {
+             const heading = document.querySelector("main h1");
+             const next = heading === null ? null : heading.nextElementSibling;
+             return next === null || next.tagName !== "P" ? null : next.textContent.trim();
+           })(),
+
+           /*
+            * MAR-639 asked for the view legend to go. It is still in the
+            * markup as a \`<legend class="visually-hidden">\`, because a radio
+            * fieldset needs an accessible name — so the honest reading is
+            * *visible* legends, which is the screen the issue was talking
+            * about. Recorded this way rather than as a bare absence, per this
+            * repository's own rule that hidden text is still in the markup:
+            * a measurement that could not tell "deleted" from "relocated"
+            * would report a removal that did not happen.
+            */
+           visible_legends: [...document.querySelectorAll("legend")]
+             .filter((node) => !node.classList.contains("visually-hidden"))
+             .map((node) => node.textContent.trim()),
+
+           /*
+            * MAR-614 item 3, and the only honest way a still frame can reach
+            * it.
+            *
+            * "Animation. None of consequence exists today. He wants motion
+            * that makes the product feel alive." A photograph cannot witness
+            * motion — that is what makes this the one item on the issue a
+            * capture sweep would otherwise have to skip and quietly claim.
+            *
+            * What IS checkable from a frozen page is whether the elements
+            * that should be moving are *running an animation*: the computed
+            * animation-name resolved by the packaged renderer against its own
+            * compiled stylesheet. That is a stronger statement than "the CSS
+            * file contains keyframes", which would only prove the bytes
+            * shipped, and a weaker one than "it moved", which is not
+            * available here and is not claimed.
+            *
+            * animation-play-state comes with it, because it is exactly how a
+            * running animation and a paused one differ while both report a
+            * name — and app/globals.css pauses these deliberately when
+            * nobody is looking.
+            */
+           motion: [...document.querySelectorAll(".o-avatar, .fleet-strip-o .o-avatar")].map(
+             (node) => {
+               const style = getComputedStyle(node);
+               return {
+                 name: style.animationName,
+                 duration: style.animationDuration,
+                 running: style.animationPlayState,
+               };
+             },
+           ).filter((one) => one.name !== "none"),
+           motion_elements: document.querySelectorAll(".o-avatar").length,
+
            /*
             * MAR-634 item 2. Both corner leftovers, counted where they stood:
             * the density button under the sidebar and the strip's own toggle.
@@ -773,8 +935,16 @@ async function layout(target: BrowserWindow): Promise<unknown> {
             */
            density_toggle: document.querySelectorAll(".app-sidebar .density-toggle").length,
            strip_toggle: document.querySelectorAll(".fleet-strip-toggle").length,
-           /* MAR-634 item 4. The band stays as it is until MAR-419. */
-           chief_buttons: document.querySelectorAll(".chief-band button, .chief-band .button-link").length,
+           /*
+            * MAR-634 item 4, against the container that exists. The band it
+            * was written for is gone (see \`chief\` above); MAR-419 arrived as
+            * \`.chief-composer\`, so what this counts now is the chat's own
+            * controls rather than a band's — a real number instead of a zero
+            * from an empty selector.
+            */
+           chief_buttons: document.querySelectorAll(
+             ".chief-composer button, .chief-composer .button-link",
+           ).length,
          };
        })()`,
     ),
@@ -915,6 +1085,354 @@ async function go(target: BrowserWindow, route: string): Promise<void> {
   await settle(1800);
 }
 
+/* ====================================================================== *
+ * The scenes: MAR-640's controls, pressed (proving sweep, group C)
+ *
+ * The matrix above is thirty-six cold renders of a stored preference, and
+ * that is the right shape for a *layout* claim — it is the shape this file's
+ * header argues for at length. It is the wrong shape for the half of MAR-640
+ * that is not a layout at all. "Counts match the store", "the badge updates
+ * when an approval arrives", "↑/↓ moves selection in Rows" and MAR-639's
+ * whole-card click-through are claims about what happens when somebody
+ * *presses something*, and a cold render can no more prove those than a
+ * photograph of a light switch proves the bulb works.
+ *
+ * So the scenes run after the matrix, never inside it, for two reasons:
+ *
+ * 1. **They change the store.** A pending approval has to exist for the badge
+ *    to have anything to count, and a seventh agent seeded before frame one
+ *    would silently move every count `shortfall()` gates — the exact "a
+ *    capture seed can hide the fix" trap this repository has already paid
+ *    for. After the last matrix frame, nothing downstream reads those counts.
+ * 2. **They change persisted preferences.** The filter is stored and applied
+ *    pre-paint, exactly like the view and the density, so a scene that left
+ *    one set would mislabel a later frame in precisely the way this file's
+ *    header refuses to allow.
+ *
+ * Every press here is a real one — `element.click()` for the controls and
+ * `sendInputEvent` for the arrow keys, so the key travels Chromium's own
+ * input pipeline rather than arriving as a synthetic object React was handed.
+ * Each scene reads the page back *after* the press and records both sides, so
+ * what is written down is a transition rather than a state that might always
+ * have been that way.
+ * ====================================================================== */
+
+/** The agent that gives the work inbox something to hold. */
+const NEEDS_YOU = "budget-approver";
+
+/**
+ * One pending, runner-enforceable approval — `electron/capture-actions.ts`'s
+ * recipe, for its reason: `buildWorkInbox` counts pending `choices` and
+ * `approval_requests` that `approvalIsEnforceable` accepts, and a row written
+ * by hand could stage a request DASH would refuse to honour. The example's own
+ * deadline is in the past and an expired request draws a different sentence,
+ * so the one timestamp this moves is the one that decides which branch is on
+ * screen.
+ */
+function seedWaitingWork(): void {
+  importManifest(
+    renamed("gmail-meeting-assistant.manifest.v2.example.json", NEEDS_YOU, "Budget Approver"),
+  );
+  const state = example("gmail-meeting-assistant.state.example.json");
+  state["agent_id"] = NEEDS_YOU;
+  state["observed_at"] = daysAgo(0);
+  for (const request of (state["approval_requests"] ?? []) as Array<Record<string, unknown>>) {
+    request["expires_at"] = new Date(Date.now() + 2 * 86_400_000).toISOString();
+  }
+  for (const choice of (state["choices"] ?? []) as Array<Record<string, unknown>>) {
+    choice["expires_at"] = new Date(Date.now() + 2 * 86_400_000).toISOString();
+  }
+  const put = putAgentDomState(state);
+  if (!put.ok) {
+    throw new Error(`the seeded snapshot was refused: ${put.errors.join("; ")}`);
+  }
+  console.log(`[views] scenes: seeded ${NEEDS_YOU} with a pending approval`);
+}
+
+/** Run a snippet in the page and hand back whatever it returns. */
+async function ask(target: BrowserWindow, what: string, script: string): Promise<unknown> {
+  return within(what, 10_000, target.webContents.executeJavaScript(script));
+}
+
+/**
+ * Press one of the rail's filter radios by the words on it, and say whether it
+ * was found. A press that silently did nothing is the failure mode worth
+ * naming: the frame after it would look exactly like the frame before.
+ */
+async function pressFilter(target: BrowserWindow, label: string): Promise<boolean> {
+  const pressed = (await ask(
+    target,
+    `press the ${label} filter`,
+    `(() => {
+       const option = [...document.querySelectorAll(".fleet-filter-option")].find(
+         (node) => (node.textContent ?? "").trim().startsWith(${JSON.stringify(label)}),
+       );
+       if (option === undefined) return false;
+       const radio = option.querySelector("input");
+       if (radio === null) return false;
+       radio.click();
+       return true;
+     })()`,
+  )) as boolean;
+  await settle(900);
+  return pressed;
+}
+
+/** What the fleet is showing right now, in the terms the scenes argue in. */
+async function fleetState(target: BrowserWindow): Promise<unknown> {
+  return ask(
+    target,
+    "read the fleet back",
+    `(() => {
+       const cards = [...document.querySelectorAll(".fleet-card")];
+       const chosen = [...document.querySelectorAll(".fleet-filter-option")].find(
+         (node) => node.querySelector("input")?.checked === true,
+       );
+       return {
+         filter: chosen === undefined
+           ? null
+           : (chosen.querySelector("span:not(.fleet-filter-count)")?.textContent ?? "").trim(),
+         filter_count: chosen === undefined
+           ? null
+           : Number(chosen.querySelector(".fleet-filter-count")?.textContent ?? "-1"),
+         counts: [...document.querySelectorAll(".fleet-filter-option")].map((node) => ({
+           label: (node.querySelector("span:not(.fleet-filter-count)")?.textContent ?? "").trim(),
+           count: Number(node.querySelector(".fleet-filter-count")?.textContent ?? "-1"),
+         })),
+         drawn: cards.length,
+         names: cards.map((card) => (card.querySelector(".fleet-name")?.textContent ?? "").trim()),
+         favourited: cards
+           .filter((card) => card.querySelector(".fleet-favourite.is-favourite") !== null)
+           .map((card) => (card.querySelector(".fleet-name")?.textContent ?? "").trim()),
+         selected_index: cards.findIndex((card) => card.classList.contains("is-selected")),
+         selected_name: (() => {
+           const card = cards.find((one) => one.classList.contains("is-selected"));
+           return card === undefined ? null : (card.querySelector(".fleet-name")?.textContent ?? "").trim();
+         })(),
+         focus_is_a_pick: document.activeElement?.classList.contains("fleet-pick") === true,
+         inbox_badge: document.querySelector(".sidebar-badge")?.textContent?.trim() ?? null,
+       };
+     })()`,
+  );
+}
+
+/** The scene log, written beside the matrix's own measurements. */
+const scenesLog: object[] = [];
+
+function note(name: string, body: object): void {
+  scenesLog.push({ scene: name, ...body });
+  console.log(`[views] SCENE ${name} ${JSON.stringify(body)}`);
+}
+
+/**
+ * One pass of every pressed claim, in one theme.
+ *
+ * Run per theme rather than once, because MAR-614's own text records that
+ * light mode is the part Henrik said he likes and a density or filter pass
+ * that works in dark and breaks light is a regression. The pass leaves the
+ * fleet as it found it — filter back to All, the star pressed off again — so
+ * the second theme starts from the same place the first did rather than
+ * inheriting its favourite.
+ */
+async function scenePass(target: BrowserWindow, theme: string): Promise<void> {
+  await go(target, "/");
+  await resizeTo(target, 1280, 980);
+  await choose(target, "grid", "comfortable");
+
+  /* ---- MAR-640: the badge counts work that arrived ---- */
+  const arrived = (await fleetState(target)) as { inbox_badge: string | null; counts: unknown };
+  note(`inbox-badge-${theme}`, {
+    claim: "MAR-640 — a live count of waiting work on the sidebar's Work inbox row",
+    inbox_badge: arrived.inbox_badge,
+    filter_counts: arrived.counts,
+  });
+  await shoot(target, `scene-inbox-badge-1280-${theme}`);
+
+  /* ---- MAR-640: a filter draws exactly the number the rail promised ---- */
+  const before = (await fleetState(target)) as { counts: { label: string; count: number }[] };
+  const promised = before.counts.find((one) => one.label === "Needs action")?.count ?? -1;
+  const found = await pressFilter(target, "Needs action");
+  const after = (await fleetState(target)) as { drawn: number; names: string[]; filter: string | null };
+  note(`filter-needs-action-${theme}`, {
+    claim: "MAR-640 — filter counts match the store",
+    control_found: found,
+    /* The two halves of "the counts match": what the rail said before the
+       press, and what the stage actually drew after it. */
+    rail_promised: promised,
+    stage_drew: after.drawn,
+    matches: found && promised === after.drawn,
+    filter_now: after.filter,
+    names: after.names,
+  });
+  await shoot(target, `scene-filter-needs-action-1280-${theme}`);
+
+  /* ---- MAR-640: the favourite star, pressed ---- */
+  await pressFilter(target, "All");
+  const starred = (await ask(
+    target,
+    "press a favourite star",
+    `(() => {
+       const card = [...document.querySelectorAll(".fleet-card")].find(
+         (one) => one.querySelector(".fleet-favourite") !== null,
+       );
+       if (card === undefined) return null;
+       const star = card.querySelector(".fleet-favourite");
+       const name = (card.querySelector(".fleet-name")?.textContent ?? "").trim();
+       const wasPressed = star.getAttribute("aria-pressed");
+       star.click();
+       return { name: name, was: wasPressed, label: star.getAttribute("aria-label") };
+     })()`,
+  )) as { name: string; was: string; label: string } | null;
+  await settle(1200);
+  const lit = (await fleetState(target)) as { favourited: string[] };
+  note(`favourite-${theme}`, {
+    claim: "MAR-640 — a star toggle on card hover, and Favourites as a filter",
+    pressed_on: starred?.name ?? null,
+    aria_pressed_before: starred?.was ?? null,
+    aria_label_before: starred?.label ?? null,
+    favourited_after: lit.favourited,
+  });
+  await shoot(target, `scene-favourite-pressed-1280-${theme}`);
+
+  const favFound = await pressFilter(target, "Favourites");
+  const only = (await fleetState(target)) as {
+    drawn: number;
+    names: string[];
+    filter_count: number | null;
+  };
+  note(`filter-favourites-${theme}`, {
+    claim: "MAR-640 — the Favourites filter draws the starred agent and nothing else",
+    control_found: favFound,
+    rail_promised: only.filter_count,
+    stage_drew: only.drawn,
+    matches: favFound && only.filter_count === only.drawn,
+    names: only.names,
+  });
+  await shoot(target, `scene-filter-favourites-1280-${theme}`);
+
+  /* ---- MAR-640: ↑/↓ moves the selection in Rows ---- */
+  await pressFilter(target, "All");
+  await choose(target, "rows", "comfortable");
+  await ask(
+    target,
+    "focus the first row",
+    `(() => {
+       const pick = document.querySelector(".fleet-card .fleet-pick");
+       if (pick !== null) pick.focus();
+       return true;
+     })()`,
+  );
+  await settle(400);
+  const atRest = (await fleetState(target)) as { selected_index: number; selected_name: string | null };
+  /*
+   * A real key, through Chromium's input pipeline. `dispatchEvent` would
+   * reach React's root listener too, but it would prove that React's handler
+   * runs when handed an event — not that pressing Down on this page moves the
+   * selection, which is the sentence MAR-640 actually wrote.
+   */
+  for (let press = 0; press < 2; press += 1) {
+    target.webContents.sendInputEvent({ type: "keyDown", keyCode: "Down" });
+    target.webContents.sendInputEvent({ type: "keyUp", keyCode: "Down" });
+    await settle(500);
+  }
+  const moved = (await fleetState(target)) as {
+    selected_index: number;
+    selected_name: string | null;
+    focus_is_a_pick: boolean;
+  };
+  note(`rows-arrow-keys-${theme}`, {
+    claim: "MAR-640 — ↑/↓ moves selection in Rows, and focus follows it",
+    selected_before: atRest.selected_index,
+    name_before: atRest.selected_name,
+    presses: 2,
+    selected_after: moved.selected_index,
+    name_after: moved.selected_name,
+    moved: moved.selected_index !== atRest.selected_index,
+    focus_followed: moved.focus_is_a_pick,
+  });
+  await shoot(target, `scene-rows-arrow-keys-1280-${theme}`);
+
+  /* ---- MAR-639: the spotlight sizes with the stage, not against it ---- */
+  /*
+   * The issue's third bullet and the only one of its acceptance items the
+   * cold matrix cannot reach: *"spotlight focused card measurably larger at
+   * 80% scale than before."*
+   *
+   * The defect it names is mechanical. The track was a fixed `13rem` above
+   * 901px, so turning the UI scale down grew the stage — more CSS pixels of
+   * room — while the card stayed the same number of them. The fix sizes it
+   * `clamp(14rem, 26vw, 22rem)`, which is a *proportion* of the viewport.
+   *
+   * "Than before" is a comparison against a build this session cannot run,
+   * so it is not what is measured. What is measured is the property that
+   * makes the fix a fix: at 80% scale the viewport is wider in CSS pixels,
+   * and a card that sizes with the stage must therefore be wider too. A card
+   * that came back to a fixed rem would report the identical width at both
+   * scales, and that is the reading that would fail.
+   *
+   * `setZoomFactor` rather than the ui-scale.json preference: this is the
+   * same knob MAR-614's control turns, and writing the person's stored
+   * preference from a capture run is what `run()` above already refuses to
+   * do. Pinned back to 1 afterwards for the same reason.
+   */
+  await choose(target, "spotlight", "comfortable");
+  const spotlightAt = async (zoom: number): Promise<unknown> => {
+    target.webContents.setZoomFactor(zoom);
+    await settle(1200);
+    return ask(
+      target,
+      `measure the spotlight at ${String(zoom)}`,
+      `(() => {
+         const track = document.querySelector(".row-list.fleet-grid");
+         const centred = document.querySelector("li.is-centred");
+         const style = track === null ? null : getComputedStyle(track);
+         return {
+           viewport: window.innerWidth,
+           auto_columns: style === null ? null : style.gridAutoColumns,
+           centred_width: centred === null
+             ? null
+             : Math.round(centred.getBoundingClientRect().width),
+           track_width: track === null ? null : track.clientWidth,
+         };
+       })()`,
+    );
+  };
+  const atFull = (await spotlightAt(1)) as { viewport: number; centred_width: number | null };
+  await shoot(target, `scene-spotlight-scale-100-1280-${theme}`);
+  const atEighty = (await spotlightAt(0.8)) as { viewport: number; centred_width: number | null };
+  await shoot(target, `scene-spotlight-scale-80-1280-${theme}`);
+  target.webContents.setZoomFactor(1);
+  await settle(800);
+  note(`spotlight-ui-scale-${theme}`, {
+    claim: "MAR-639 — the spotlight card is sized from the viewport, so turning the UI scale down grows it instead of shrinking it",
+    at_100: atFull,
+    at_80: atEighty,
+    /* The viewport really did grow, or the comparison below means nothing. */
+    stage_grew: atEighty.viewport > atFull.viewport,
+    card_grew_with_it:
+      atFull.centred_width !== null
+      && atEighty.centred_width !== null
+      && atEighty.centred_width > atFull.centred_width,
+    /* The reading that would mean the fixed track is back. */
+    card_stayed_fixed: atFull.centred_width === atEighty.centred_width,
+  });
+
+  /* Leave it as it was found — see this function's own header. */
+  await choose(target, "grid", "comfortable");
+  await ask(
+    target,
+    "unstar",
+    `(() => {
+       const star = document.querySelector(".fleet-favourite.is-favourite");
+       if (star === null) return false;
+       star.click();
+       return true;
+     })()`,
+  );
+  await settle(1000);
+  await pressFilter(target, "All");
+}
+
 async function run(): Promise<void> {
   await app.whenReady();
   mkdirSync(OUT, { recursive: true });
@@ -1008,10 +1526,33 @@ async function run(): Promise<void> {
     }
   }
 
+  /*
+   * The pressed half, after the last cold frame and never before it — see the
+   * scenes block's own header for both reasons. Skipped when the run was
+   * narrowed to one view with `DASH_CAPTURE_VIEW`, because a re-shoot of the
+   * spotlight should not also re-seed the store and re-press every control.
+   */
+  if (ONLY === undefined) {
+    seedWaitingWork();
+    for (const theme of THEMES) {
+      nativeTheme.themeSource = theme;
+      await settle(300);
+      await scenePass(window, theme);
+    }
+  } else {
+    console.log(`[views] scenes skipped — this run was narrowed to ${ONLY}`);
+  }
+
   writeFileSync(
     path.join(OUT, `layout-fleet${String(FLEET)}.json`),
     `${JSON.stringify(
-      { fleet: FLEET, views: VIEWS, captured_at: new Date().toISOString(), measurements },
+      {
+        fleet: FLEET,
+        views: VIEWS,
+        captured_at: new Date().toISOString(),
+        measurements,
+        scenes: scenesLog,
+      },
       null,
       2,
     )}\n`,
