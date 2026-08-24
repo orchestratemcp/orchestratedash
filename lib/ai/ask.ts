@@ -105,16 +105,27 @@ export function savedItems(
  * Question words are in it because "what did you find about tariffs" should
  * select on `tariffs` alone — `what`, `did`, `you` and `find` appear in every
  * digest ever written and would otherwise match everything with equal force.
+ *
+ * `pull` and `current` joined them in MAR-744, beside `latest` and `recent`
+ * which were always here for the same reason. *"Pull out the most current
+ * news"* is Henrik's own sentence for the chief and it is a request for the
+ * newest thing rather than a search for a subject — so it must select on
+ * nothing. Without these two it selected on `pull` and `current`, matched no
+ * report, and was told *"nothing your agents saved mentions what you asked
+ * about"*: a true sentence about two words nobody meant as a subject, and a
+ * confusing answer to a question DASH understood perfectly well.
  */
 const COMMON_WORDS: ReadonlySet<string> = new Set([
   "about", "after", "again", "against", "all", "and", "any", "anything", "are", "been",
-  "before", "being", "between", "both", "but", "can", "could", "did", "does", "doing",
+  "before", "being", "between", "both", "but", "can", "could", "current", "did", "does",
+  "doing",
   "done", "down", "during", "each", "everything", "few", "find", "for", "found", "from",
   "further", "get", "give", "had", "has", "have", "having", "her", "here", "hers", "him",
   "his", "how", "into", "its", "itself", "just", "know", "latest", "less", "like", "make",
   "many", "may", "me", "more", "most", "much", "must", "my", "new", "news", "nor", "not",
-  "now", "off", "once", "one", "only", "onto", "other", "our", "ours", "out", "over",
-  "own", "please", "recent", "said", "same", "say", "see", "she", "should", "since",
+  "now", "off", "once", "one", "only", "onto", "other", "our", "ours", "over",
+  "out", "own", "please", "pull", "recent", "said", "same", "say", "see", "she",
+  "should", "since",
   "some", "such", "tell", "than", "that", "the", "their", "them", "then", "there",
   "these", "they", "thing", "things", "this", "those", "through", "too", "under",
   "until", "very", "was", "way", "were", "what", "when", "where", "which", "while",

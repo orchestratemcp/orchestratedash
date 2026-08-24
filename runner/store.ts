@@ -235,6 +235,23 @@ const MIGRATIONS: readonly string[] = [
     decided_at    TEXT NOT NULL
   );
   `,
+
+  /*
+   * What the chief's tools produced on a turn the runner answered (MAR-744).
+   *
+   * Its own step rather than a widened `CREATE TABLE` above, because a runner
+   * that has already been run once has that table and will never see the
+   * original statement again -- this store's migration loop is the same
+   * `user_version` walk `lib/db.ts` uses, and a schema edited in place is a
+   * schema only a fresh install ever gets.
+   *
+   * NULL for a turn where no tool ran, which is what `recordChiefTurn` writes
+   * on the other side of the drain for the same case. One representation of
+   * nothing, on both sides of the queue.
+   */
+  `
+  ALTER TABLE chief_turn_spool ADD COLUMN evidence_json TEXT;
+  `,
 ];
 
 export interface RunnerStore {

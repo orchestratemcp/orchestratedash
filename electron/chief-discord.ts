@@ -37,6 +37,8 @@ import { readEffectiveChiefModel } from "../lib/ai/model-store";
 import { aiProviderById } from "../lib/ai/providers";
 import { recordRunnerChiefCall } from "../lib/broker/store";
 import { briefingFor } from "../lib/chief/briefing";
+import { CHIEF_SOURCES_CONNECTION_ID, CHIEF_SOURCES_OPERATION } from "../lib/chief/audit";
+import { chiefLibraryFor } from "../lib/views/chief-library";
 import { CHIEF_CONNECTION_ID, chiefOperationId } from "../lib/chief/manifest";
 import { chiefFleetFrom } from "../lib/chief/records-answer";
 import { recordChiefTurn, type ChiefTurnDraft } from "../lib/chief/store";
@@ -316,6 +318,25 @@ export async function buildChiefBridgeConfiguration(
     snapshot: {
       fleet: chiefFleetFrom(agents),
       briefing: briefingFor(agents),
+      /*
+       * What the fleet has produced (MAR-744).
+       *
+       * Read here, on main's side, because ADR 0028 decision 6 keeps
+       * `dash.sqlite` to one writer and this is the moment DASH is already
+       * holding it open. It rides the same push as the briefing for
+       * `ChiefSnapshot`'s reason: two projections of one read must describe the
+       * same instant, and a library pushed separately from the briefing would
+       * be a bridge answering from two different Tuesdays.
+       *
+       * Which means it is re-pushed on exactly the cadence MAR-745 established
+       * — AI connection or default model changing, an agent imported or
+       * removed, the bridge's settings re-saved — and **not** when a run
+       * finishes. So a scout that ran an hour ago while DASH was closed is not
+       * in the room's library until DASH is next opened, which is the same
+       * sentence decision 6 already makes about the fleet and is honestly the
+       * sharpest edge this packet leaves. See the handoff on MAR-744.
+       */
+      library: chiefLibraryFor(agents),
       taken_at: new Date().toISOString(),
     },
   };
@@ -411,6 +432,34 @@ async function resolveChiefModel(
  * never see a charge for a turn that is not there yet. The reverse would be a
  * moment in which the audit says money was spent on a question DASH cannot show.
  */
+/**
+ * Whether a drained row names something this chief can actually have done
+ * (MAR-743; widened by MAR-744).
+ *
+ * Two pairs, and no third. The check is a **closed list of (connection,
+ * operation) pairs** rather than two independent tests, because the two must
+ * not be mixable: a row claiming `chief:public-sources` for a completion, or
+ * `chief:model-provider` for a fetch, is not a decision this bridge could have
+ * taken and is exactly the false record the guard exists to keep out.
+ *
+ * MAR-744 is why this is a function. The rule used to be a single comparison
+ * against `CHIEF_CONNECTION_ID`, and the chief gained a second thing it can
+ * genuinely do -- read the allowlisted public sources -- whose rows the drain
+ * then silently refused. That cost three real audit rows on the attended run:
+ * the runner recorded three fetches, DASH dropped all three, and the only trace
+ * was a warning nobody was reading. The lesson is in the shape rather than the
+ * fix: a guard written as *the one thing* has to be re-read every time the set
+ * grows, so it is now a list with both members named.
+ */
+function drainable(connectionId: string, operation: string): boolean {
+  if (connectionId === CHIEF_CONNECTION_ID) {
+    return isChiefOperation(operation);
+  }
+  return (
+    connectionId === CHIEF_SOURCES_CONNECTION_ID && operation === CHIEF_SOURCES_OPERATION
+  );
+}
+
 export function ingestChiefDrain(payload: {
   turns: readonly ChiefTurnDraft[];
   audit: readonly {
@@ -441,7 +490,7 @@ export function ingestChiefDrain(payload: {
      * this bridge cannot perform would be a false record of a spend — the one
      * kind of wrong entry that is worse than a missing one.
      */
-    if (row.connection_id !== CHIEF_CONNECTION_ID || !isChiefOperation(row.operation)) {
+    if (!drainable(row.connection_id, row.operation)) {
       console.warn("[dash-shell] a drained chief decision named something the chief cannot do");
       continue;
     }

@@ -222,6 +222,7 @@ function seed(): void {
       tokens_out: null,
       amount_usd: null,
       receipt: [],
+      evidence: { kind: "none" },
       origin: "window",
     });
   }

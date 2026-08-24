@@ -480,6 +480,75 @@ export interface ChiefHandoffView {
 }
 
 /** One turn of the chief's kept conversation. */
+/**
+ * One thing the chief cited, as the room draws it (MAR-744).
+ *
+ * Every field is DASH's own record. `href` is the item's own address out of the
+ * feed that carried it, and it is **never** anything read out of an answer —
+ * `lib/chief/evidence.ts` argues why at length, and `lib/chief/library.ts` and
+ * `lib/chief/evidence.ts` between them make sure no address is ever sent to a
+ * model in the first place.
+ *
+ * `where` is composed rather than stored: which agent found it and out of which
+ * source, or which public source DASH fetched it from. One field because the
+ * room draws one line under a headline and the two cases fill it differently.
+ */
+export interface ChiefCitationView {
+  /** The number the material used, so a mention resolves to a row on screen. */
+  index: number;
+  headline: string;
+  /** Who found it and where it came from, in words. Never an identifier. */
+  where: string;
+  /** The item's own link, or null. DASH's record, drawn by DASH. */
+  href: string | null;
+  /**
+   * The agent whose report this came out of, or null for a fetched entry.
+   *
+   * A value, for the link out to that agent's page — never printed into a
+   * sentence, which is `lib/copy/identifiers.ts`' rule.
+   */
+  agent: string | null;
+  /**
+   * The report this came out of, or null for a fetched entry.
+   *
+   * Carried so the link opens the document itself rather than the agent's front
+   * page. *"Unfindable is the same as missing"* — a citation that lands a person
+   * on a list of every report and leaves them to find the right one is a
+   * citation that has not really cited anything.
+   */
+  output: string | null;
+}
+
+/**
+ * The evidence under one turn, as the room draws it (MAR-744).
+ *
+ * `note` is the sentence that accounts for the list — `describeChiefReceipt`'s
+ * job for the briefing rows, done by `lib/copy/chief-sources.ts` for this one.
+ * A list with no sentence over it is a list a reader has to interpret.
+ */
+export interface ChiefEvidenceView {
+  /** Which tool produced this. Drives the heading, not the trust. */
+  kind: "outputs" | "sources";
+  note: string;
+  citations: ChiefCitationView[];
+  /**
+   * The public sources DASH tried, for a fetched turn. Empty for a read turn.
+   *
+   * Includes the ones that did not answer, because *"arXiv did not respond"* is
+   * a sentence the person is owed and a list of only the two that worked would
+   * imply DASH asked two.
+   */
+  sources: ChiefSourceView[];
+}
+
+/** One public source DASH tried, and whether it answered. */
+export interface ChiefSourceView {
+  name: string;
+  /** `describeChiefSourceStatus`'s words. Never a status code. */
+  outcome: string;
+  count: number;
+}
+
 export interface ChiefTurnView {
   id: number;
   question: string;
@@ -516,6 +585,18 @@ export interface ChiefTurnView {
   receipt: ChiefReceiptRow[];
   /** `describeChiefReceipt`'s sentence for this row count. */
   receipt_note: string;
+  /**
+   * What the chief read or fetched for this turn, frozen with it (MAR-744).
+   *
+   * Beside `receipt` rather than folded into it, because the two are different
+   * claims and only one of them can go stale. `receipt` is the fleet as it stood
+   * and `stale` above is DASH noticing it has moved; these are headlines an
+   * agent saved and pages DASH fetched, and neither stops being what it was
+   * because an agent was renamed.
+   *
+   * Null for every turn where no tool ran, which is most of them.
+   */
+  evidence: ChiefEvidenceView | null;
   /**
    * A fact in the frozen receipt differs from the same fact now.
    *

@@ -58,6 +58,7 @@ import {
   type BrokerResponse,
 } from "../lib/broker/protocol";
 import { AI_AUTH_HEADERS, aiAuthHeaders, aiProviderById } from "../lib/ai/providers";
+import type { ChiefDecisionRow } from "../lib/chief/audit";
 import { CHIEF_CONNECTION_ID, chiefOperationId } from "../lib/chief/manifest";
 
 /**
@@ -74,18 +75,15 @@ import { CHIEF_CONNECTION_ID, chiefOperationId } from "../lib/chief/manifest";
  * What it never records: the key, a digest of it, authorization headers, request
  * bodies, provider payloads, model prose, or the person's question. Only the
  * *names* of the input fields.
+ *
+ * **The shape moved to `lib/chief/audit.ts` in MAR-744** and this is an alias.
+ * It lived here while a model call was the only thing that produced one; a
+ * public source fetch now produces one too, in a module both hosts import, and
+ * a type several layers must name should not oblige any of them to import a
+ * runner file to name it. Everything the paragraphs above argue is unchanged
+ * and is argued at the new home.
  */
-export interface ChiefAuditRow {
-  connection_id: string;
-  operation: string;
-  request_id: string;
-  decision: "allowed" | "refused";
-  refusal: BrokerRefusal | null;
-  input_keys: string[];
-  result_count: number | null;
-  duration_ms: number;
-  decided_at: string;
-}
+export type ChiefAuditRow = ChiefDecisionRow;
 
 export interface ChiefBrokerDeps {
   /**

@@ -1821,6 +1821,33 @@ const MIGRATIONS: readonly Migration[] = [
      */
     addColumn(database, "broker_audit", "decided_on", "TEXT NOT NULL DEFAULT 'dash'");
   },
+
+  /*
+   * What the chief's tools produced on one turn (MAR-744).
+   *
+   * `receipt_json` already holds the fleet briefing a turn was built from, and
+   * this is deliberately **not** that column widened. The two are different
+   * claims about an answer and only one of them can go stale: `fleetChangedSince`
+   * compares a frozen briefing against the fleet today and marks the turn when
+   * they disagree, which is a sentence about agents. A citation is a sentence
+   * about a headline an agent saved or a page DASH fetched, and neither of those
+   * changes because an agent was renamed. Folding them into one column would
+   * have made every news answer report *your fleet changed* the next time
+   * somebody imported an agent.
+   *
+   * NULL is the ordinary state for every row already in somebody's store and
+   * for every turn where no tool ran. `readChiefEvidence` reads NULL, unparsable
+   * JSON and an unknown `kind` all as "no evidence to show" -- the weaker claim,
+   * which is the right one for a row this build did not write.
+   *
+   * A column rather than a table, `broker_audit`'s own reasoning inverted: the
+   * evidence has no life apart from the turn it belongs to, is never queried
+   * across turns, and is deleted when the thread is cleared. A join would be a
+   * second place for a turn's receipt to go missing from.
+   */
+  (database: DatabaseSync): void => {
+    addColumn(database, "chief_messages", "evidence_json", "TEXT");
+  },
 ];
 
 /**

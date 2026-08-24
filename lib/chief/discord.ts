@@ -57,6 +57,7 @@
  */
 import { describeAskFailure } from "../copy/ask";
 import type { ChiefOutcome } from "./answer";
+import type { ChiefEvidence } from "./evidence";
 
 /* ---------------------------------------------------------------------- *
  * What DASH holds
@@ -312,8 +313,10 @@ export const REPLY_CUT = "\n\n— cut to fit Discord. The whole answer is in DAS
  */
 export function replyFor(outcome: ChiefOutcome): string {
   switch (outcome.kind) {
-    case "answered":
-      return outcome.no_model ? `${outcome.text}\n\n${NO_MODEL_NOTE}` : outcome.text;
+    case "answered": {
+      const answer = outcome.no_model ? `${outcome.text}\n\n${NO_MODEL_NOTE}` : outcome.text;
+      return `${answer}${citationLines(outcome.evidence)}`;
+    }
 
     case "empty":
       // `admit` drops an empty message before it becomes a question, so this is
@@ -327,7 +330,16 @@ export function replyFor(outcome: ChiefOutcome): string {
         service: outcome.service,
         model_setting: MODEL_SETTING_ELSEWHERE,
       });
-      return `${recovery.headline}\n\n${recovery.meaning}\n\n${recovery.next_action}`;
+      /*
+       * The citations survive a refusal (MAR-744).
+       *
+       * A fetch that worked and a model that then refused is a turn where
+       * DASH genuinely holds new sources for somebody, and sending the
+       * refusal alone would be throwing away work they can use. The links
+       * are DASH's own record either way -- no model was involved in
+       * producing them.
+       */
+      return `${recovery.headline}\n\n${recovery.meaning}\n\n${recovery.next_action}${citationLines(outcome.evidence)}`;
     }
 
     case "not_recorded":
@@ -362,6 +374,88 @@ export const NO_MODEL_NOTE =
 
 /** Where a refusal sends somebody, said from a room that is not DASH. */
 const MODEL_SETTING_ELSEWHERE = "the default model on the AI tab in DASH, on your computer";
+
+/**
+ * How many citations ride along with a Discord answer (MAR-744).
+ *
+ * Fewer than the window shows, and `fitReply` is the reason: a Discord message
+ * is 2000 characters, the answer needs most of them, and a list long enough to
+ * push the answer past the cut would be citations displacing the thing they
+ * cite. Five keeps an answer checkable and makes the cut, when it comes, land
+ * in the list rather than in the prose.
+ */
+const MAX_DISCORD_CITATIONS = 5;
+
+/**
+ * The receipt, as lines under a chat message (MAR-744).
+ *
+ * The window draws citations in a panel beside the answer; Discord has no panel,
+ * so they are lines. They are **still DASH's own record**, which is the property
+ * that matters and the reason this reads `ChiefEvidence` rather than anything
+ * parsed out of the reply: a model that invents a source cannot make that source
+ * appear here, and a model cannot write a link into its prose that DASH will
+ * render, because the material it was given carried no addresses at all.
+ *
+ * Numbered to match the material, so *"the second one"* in an answer resolves to
+ * the second line here.
+ *
+ * An address is printed plainly rather than as markdown. `CHIEF_SYSTEM_PROMPT`
+ * forbids the model markdown and this file should not be the one place it
+ * appears; Discord makes a bare address clickable on its own.
+ */
+function citationLines(evidence: ChiefEvidence): string {
+  if (evidence.kind === "none" || evidence.citations.length === 0) {
+    return "";
+  }
+
+  const lines: string[] = [];
+  if (evidence.kind === "sources") {
+    for (const citation of evidence.citations.slice(0, MAX_DISCORD_CITATIONS)) {
+      lines.push(renderCitation(citation.index, citation.headline, citation.source_name, citation.item_url));
+    }
+  } else {
+    for (const citation of evidence.citations.slice(0, MAX_DISCORD_CITATIONS)) {
+      lines.push(
+        renderCitation(
+          citation.index,
+          citation.headline,
+          citation.source_name === null
+            ? citation.agent_title
+            : `${citation.source_name}, via ${citation.agent_title}`,
+          citation.item_url,
+        ),
+      );
+    }
+  }
+
+  const more = evidence.citations.length - lines.length;
+  const tail =
+    more > 0
+      ? `\n\n...and ${String(more)} more. The whole list is in DASH, on this computer.`
+      : "";
+  return `\n\n${lines.join(NEWLINE)}${tail}`;
+}
+
+function renderCitation(
+  index: number,
+  headline: string,
+  where: string,
+  address: string | null,
+): string {
+  const link = address === null ? "" : `${NEWLINE}${address}`;
+  return `[${String(index)}] ${headline} -- ${where}${link}`;
+}
+
+/**
+ * One line break, as a value.
+ *
+ * A named constant rather than an escape inside a template, because every other
+ * template in this file writes its breaks as escapes and a citation list is the
+ * one place they are joined rather than written -- and `join` with the
+ * escape spelled wrong is a bug that renders as one long line rather than as a
+ * compile error.
+ */
+const NEWLINE = "\n";
 
 /* ---------------------------------------------------------------------- *
  * The words

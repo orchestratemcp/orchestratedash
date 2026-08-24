@@ -114,6 +114,15 @@ export const CHIEF_CHAT_COPY = {
    */
   receipt_heading: "What I read before answering",
   /**
+   * The link from a citation to the report it came out of (MAR-744).
+   *
+   * Deliberately not the agent's name. The name is already in the line above it
+   * — `ChiefCitationView.where` says who found this — and repeating it as the
+   * link text would print the same words twice on one row, which is the defect
+   * MAR-609 took a Status tile off the agent page for.
+   */
+  citation_report_link: "Open the report",
+  /**
    * The receipt under an answer that used no records at all (decision 7).
    *
    * The structural half of what keeps small talk from becoming speculation. A

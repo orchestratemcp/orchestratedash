@@ -49,6 +49,9 @@ function message(over: Partial<InboundMessage> = {}): InboundMessage {
   };
 }
 
+/** A turn where no tool ran. MAR-744's evidence union, at its empty arm. */
+const NO_EVIDENCE = { kind: "none" } as const;
+
 describe("who the chief hears", () => {
   it("answers the one allowed identity, in the one channel", () => {
     expect(admit(message(), BRIDGE)).toEqual({
@@ -188,12 +191,12 @@ describe("what comes back", () => {
      * indistinguishable from "the computer is off".
      */
     const outcomes = [
-      { kind: "answered", text: "Four agents, all quiet.", from: "records", no_model: false },
-      { kind: "answered", text: "Four agents, all quiet.", from: "records", no_model: true },
-      { kind: "answered", text: "Written for you.", from: "model", no_model: false },
-      { kind: "refused", reason: "not_connected", service: "OpenRouter" },
-      { kind: "refused", reason: "provider_unavailable", service: "OpenRouter" },
-      { kind: "refused", reason: "too_many", service: "OpenRouter" },
+      { kind: "answered", text: "Four agents, all quiet.", from: "records", no_model: false, evidence: NO_EVIDENCE },
+      { kind: "answered", text: "Four agents, all quiet.", from: "records", no_model: true, evidence: NO_EVIDENCE },
+      { kind: "answered", text: "Written for you.", from: "model", no_model: false, evidence: NO_EVIDENCE },
+      { kind: "refused", reason: "not_connected", service: "OpenRouter", evidence: NO_EVIDENCE },
+      { kind: "refused", reason: "provider_unavailable", service: "OpenRouter", evidence: NO_EVIDENCE },
+      { kind: "refused", reason: "too_many", service: "OpenRouter", evidence: NO_EVIDENCE },
       { kind: "empty" },
       { kind: "not_recorded", reason: "answer_lost", service: "OpenRouter" },
       { kind: "not_recorded", reason: "dash_error", service: "DASH" },
@@ -213,6 +216,7 @@ describe("what comes back", () => {
       text: "Four agents, all quiet.",
       from: "records",
       no_model: true,
+      evidence: NO_EVIDENCE,
     });
     expect(reply).toContain("Four agents, all quiet.");
     expect(reply).toContain(NO_MODEL_NOTE);

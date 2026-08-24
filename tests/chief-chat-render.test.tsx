@@ -65,6 +65,7 @@ function turn(over: Partial<ChiefTurnView> = {}): ChiefTurnView {
     matched: [],
     receipt: [],
     receipt_note: "Nothing from your records was used for this one.",
+    evidence: null,
     stale: false,
     model: null,
     charge: null,

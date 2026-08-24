@@ -6,6 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { agentStageHref } from "../_data/routes";
 import { askChief, listProviderModels, setChiefModel } from "../_data/source";
 import { Composer, filterAfterClear, type ComposerClassNames } from "./composer";
+import { LinkOut } from "./link-out";
 import { useSingleFlight } from "./single-flight";
 import { OAvatar } from "./o-avatar";
 import { aiProviderById } from "../../lib/ai/providers";
@@ -757,6 +758,94 @@ function ChiefHandoff({
  * draws for exactly this. The empty-receipt case skips the disclosure
  * altogether — one reassuring sentence is not the table this is about.
  */
+/**
+ * What the chief read or fetched for this turn (MAR-744).
+ *
+ * Above the briefing receipt and below the answer, which is the same ordering
+ * rule `ChiefTurnBody` states: the thing a reader checks the answer against goes
+ * underneath the claim. Of the two receipts this is the closer one — a citation
+ * backs a sentence in the answer directly, where a briefing row backs the fact
+ * that the fleet was read at all.
+ *
+ * ## Every link here is DASH's own record
+ *
+ * `href` came out of a feed, through `lib/chief/evidence.ts`, into a column, and
+ * back. It was never in the answer text and was never sent to the model —
+ * `renderChiefItem` and `renderFetchedMaterial` both omit addresses on purpose,
+ * so there is no path by which a model could put a link on this list. That is
+ * the same grounding discipline `AskCitation` has, and it is the reason a
+ * citation panel is worth showing at all.
+ *
+ * `LinkOut` rather than a bare anchor, for the reason that component exists: an
+ * `<a href>` in DASH's window is denied by the navigation wall and reads to a
+ * person as a dead link. It routes the press to main, which opens the person's
+ * own browser.
+ *
+ * The list is open rather than behind a disclosure, unlike the briefing rows.
+ * Henrik's bar for this packet is *"new fetched sources listed and linked"* —
+ * a list nobody can see without a click is not that, and unlike the briefing it
+ * is short by construction.
+ */
+function ChiefEvidence({ turn }: { turn: ChiefTurnView }): ReactNode {
+  const evidence = turn.evidence;
+  if (evidence === null) {
+    return null;
+  }
+
+  return (
+    <div className="chief-evidence">
+      <p className="muted wrap">{evidence.note}</p>
+      {evidence.sources.length === 0 ? null : (
+        <ul className="chief-evidence-sources">
+          {evidence.sources.map((source) => (
+            <li key={source.name}>
+              {source.name}
+              {/* The outcome, in `lib/copy/chief-sources.ts`' words rather than
+                  a status code. The ones that did not answer are listed too,
+                  which is what stops a list of two implying DASH asked two. */}
+              <span className="muted"> · {source.outcome}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {evidence.citations.length === 0 ? null : (
+        <ol className="chief-citations">
+          {evidence.citations.map((citation) => (
+            <li key={`${String(turn.id)}-${String(citation.index)}`}>
+              {/* The number the model was given, so a mention of "the second
+                  one" in the answer above resolves to a row on screen. */}
+              <span className="chief-cite-index">{citation.index}</span>{" "}
+              {citation.href === null ? (
+                <span className="wrap">{citation.headline}</span>
+              ) : (
+                <LinkOut className="wrap" href={citation.href}>
+                  {citation.headline}
+                </LinkOut>
+              )}
+              <span className="muted wrap"> · {citation.where}</span>
+              {citation.agent === null ? null : (
+                <>
+                  {" "}
+                  <Link
+                    className="chief-demand-agent"
+                    href={agentStageHref(
+                      citation.agent,
+                      "output",
+                      citation.output === null ? {} : { output: citation.output },
+                    )}
+                  >
+                    {CHIEF_CHAT_COPY.citation_report_link}
+                  </Link>
+                </>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 function ChiefReceipt({ turn }: { turn: ChiefTurnView }): ReactNode {
   return (
     <div className="chief-receipt">
@@ -770,8 +859,20 @@ function ChiefReceipt({ turn }: { turn: ChiefTurnView }): ReactNode {
           </>
         )}
       </p>
+      <ChiefEvidence turn={turn} />
       {turn.receipt.length === 0 ? (
-        <p className="muted wrap">{turn.receipt_note}</p>
+        /*
+         * Silent when a tool ran (MAR-744, attended run).
+         *
+         * `describeChiefReceipt(0)` says "nothing from your records was used for
+         * this one", which was true of every turn that could reach it before
+         * this packet. A tool turn sends no briefing, so it lands here too --
+         * and printed that sentence directly underneath a panel listing twelve
+         * things read out of the person's own records. The evidence panel
+         * carries its own accounting sentence, so the honest thing here is to
+         * say nothing rather than to contradict it.
+         */
+        turn.evidence === null ? <p className="muted wrap">{turn.receipt_note}</p> : null
       ) : (
         <details className="chief-sources">
           <summary>{CHIEF_CHAT_COPY.receipt_heading}</summary>

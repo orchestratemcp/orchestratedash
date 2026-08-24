@@ -83,6 +83,7 @@ describe("a turn survives the page closing", () => {
       tokens_out: 30,
       amount_usd: 0.0001,
       receipt,
+      evidence: { kind: "none" },
       origin: "window",
     });
     expect(written).not.toBeNull();
@@ -115,6 +116,7 @@ describe("a turn survives the page closing", () => {
       tokens_out: null,
       amount_usd: null,
       receipt,
+      evidence: { kind: "none" },
       origin: "window",
     });
     recordChiefTurn({
@@ -130,6 +132,7 @@ describe("a turn survives the page closing", () => {
       // ADR 0023 decision 7: a greeting reads no records, and its receipt says
       // so rather than being absent.
       receipt: [],
+      evidence: { kind: "none" },
       origin: "window",
     });
 
@@ -153,6 +156,7 @@ describe("a turn survives the page closing", () => {
       tokens_out: null,
       amount_usd: null,
       receipt: [],
+      evidence: { kind: "none" },
       origin: "window",
     });
     clearChiefThread();
@@ -187,6 +191,7 @@ describe("the context sent with a fresh question", () => {
       tokens_out: 4,
       amount_usd: null,
       receipt,
+      evidence: { kind: "none" },
       origin: "window",
     });
 
@@ -210,6 +215,7 @@ describe("the context sent with a fresh question", () => {
       tokens_out: null,
       amount_usd: null,
       receipt: [],
+      evidence: { kind: "none" },
       origin: "window",
     });
     expect(recentChiefContext()).toBe("");
@@ -233,6 +239,7 @@ describe("the room a returning reader sees", () => {
       tokens_out: 30,
       amount_usd: 0.0001,
       receipt,
+      evidence: { kind: "none" },
       origin: "window",
     });
   }
@@ -297,6 +304,7 @@ describe("the room a returning reader sees", () => {
       tokens_out: null,
       amount_usd: null,
       receipt: briefingFor([row()]),
+      evidence: { kind: "none" },
       origin: "window",
     });
     const turn = chiefRoomView([row()]).turns[0];
@@ -323,6 +331,7 @@ describe("the room a returning reader sees", () => {
       tokens_out: 10,
       amount_usd: null,
       receipt: briefingFor([row()]),
+      evidence: { kind: "none" },
       origin: "window",
     });
     const turn = chiefRoomView([row()]).turns[0];
@@ -353,10 +362,139 @@ describe("the room a returning reader sees", () => {
       tokens_out: 72,
       amount_usd: 0.0023,
       receipt: briefingFor(fleet),
+      evidence: { kind: "none" },
       origin: "window",
     });
     const turn = chiefRoomView(fleet).turns[0];
     expect(turn?.handoffs).toEqual([]);
     expect(turn?.matched).toEqual([]);
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * The evidence column (MAR-744)
+ * ---------------------------------------------------------------------- */
+
+describe("what a tool read or fetched survives with the turn", () => {
+  const CITED = {
+    kind: "outputs" as const,
+    basis: "newest" as const,
+    terms: [],
+    available: 2,
+    citations: [
+      {
+        index: 1,
+        agent: "ai-agent-news",
+        agent_title: "AI agent news",
+        from: "digest" as const,
+        headline: "Tariffs reshape the chip supply chain",
+        source_name: "Google News",
+        item_url: "https://collected.example/story",
+        report_title: "AI agents roundup",
+        run_id: "run-2",
+        artifact_id: "artifact-digest",
+      },
+    ],
+  };
+
+  const FETCHED = {
+    kind: "sources" as const,
+    topic: "tariffs",
+    sources: [
+      {
+        id: "google-news",
+        name: "Google News",
+        address: "https://news.google.com/rss/search?q=tariffs",
+        status: "ok" as const,
+        item_count: 1,
+      },
+      { id: "arxiv", name: "arXiv", address: null, status: "unreachable" as const, item_count: 0 },
+    ],
+    citations: [
+      {
+        index: 1,
+        source_name: "Google News",
+        headline: "Fresh tariff ruling lands",
+        item_url: "https://news.google.example/fresh",
+        published_at: "2026-08-24T08:00:00.000Z",
+      },
+    ],
+  };
+
+  function write(evidence: Parameters<typeof recordChiefTurn>[0]["evidence"]): void {
+    recordChiefTurn({
+      asked_at: "2026-08-24T10:00:00.000Z",
+      question: "pull out the most current news",
+      answer: "Your scout found one thing worth reading.",
+      failure: null,
+      provider_id: "openrouter",
+      model_id: "openai/gpt-5-mini",
+      tokens_in: 90,
+      tokens_out: 30,
+      amount_usd: 0.0001,
+      receipt: [],
+      evidence,
+      origin: "window",
+    });
+  }
+
+  /*
+   * The migration and the JSON round trip, which is what this file is against a
+   * real database for. A column added by `addColumn` on an existing store is
+   * the case a fake would never exercise.
+   */
+  it("round-trips a citation through the column", () => {
+    write(CITED);
+    expect(readChiefTurns()[0]?.evidence).toEqual(CITED);
+  });
+
+  it("round-trips a fetch, including the source that did not answer", () => {
+    write(FETCHED);
+    const back = readChiefTurns()[0]?.evidence;
+    expect(back).toEqual(FETCHED);
+    if (back?.kind === "sources") {
+      expect(back.sources[1]?.status).toBe("unreachable");
+      expect(back.sources[1]?.address).toBeNull();
+    }
+  });
+
+  /*
+   * One representation of nothing. A turn with no tool writes NULL, which is
+   * what every row already in somebody's store says, so a reader cannot tell a
+   * pre-MAR-744 row from a tool-less one -- and does not need to.
+   */
+  it("writes no evidence at all for a turn where no tool ran", () => {
+    write({ kind: "none" });
+    const stored = db()
+      .prepare("SELECT evidence_json FROM chief_messages ORDER BY id DESC LIMIT 1")
+      .get() as { evidence_json: string | null };
+    expect(stored.evidence_json).toBeNull();
+    expect(readChiefTurns()[0]?.evidence).toEqual({ kind: "none" });
+  });
+
+  /*
+   * The weaker claim, `projectExchange`'s rule. Unreadable JSON, and a `kind`
+   * this build does not know, both mean *nothing to show* rather than taking
+   * the room down -- which is `readStore`'s whole design.
+   */
+  it("reads an unreadable or unknown evidence column as nothing to show", () => {
+    write(CITED);
+    for (const stored of ['{"kind":"outputs"', "null", '{"kind":"telepathy","citations":[]}', "[]"]) {
+      db().prepare("UPDATE chief_messages SET evidence_json = ?").run(stored);
+      expect(readChiefTurns()[0]?.evidence).toEqual({ kind: "none" });
+    }
+  });
+
+  /*
+   * The receipt and the evidence are different claims, and only one of them can
+   * go stale. A news answer must not report *your fleet changed* the next time
+   * somebody imports an agent.
+   */
+  it("does not mark a tool turn stale when the fleet moves", () => {
+    write(CITED);
+    const view = chiefRoomView([row({ name: "someone-new", title: "Someone new" })]);
+    expect(view.turns[0]?.stale).toBe(false);
+    expect(view.turns[0]?.evidence?.kind).toBe("outputs");
+    expect(view.turns[0]?.evidence?.citations[0]?.href).toBe("https://collected.example/story");
   });
 });

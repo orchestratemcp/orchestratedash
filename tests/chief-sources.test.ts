@@ -1,0 +1,240 @@
+/**
+ * Where the chief can reach on the internet, and what a question may contribute
+ * to it (MAR-744).
+ *
+ * This is the packet's threat-model file. `tests/broker-threat-model.test.ts` is
+ * the shape and the reason is the same: the interesting attacks are all about
+ * what a URL becomes, both halves are pure functions of an untrusted input, and
+ * neither needs a network to drive.
+ *
+ * The rule under test, stated once: **the person contributes a subject, and DASH
+ * contributes the address.** A topic that could add a path segment, open a query,
+ * escape upward or name a different host would be MAR-419's injection path with
+ * the last guard removed.
+ */
+
+import { describe, expect, it } from "vitest";
+
+import {
+  addressFor,
+  CHIEF_SOURCES,
+  CHIEF_SOURCE_ORIGINS,
+  MAX_TOPIC_LENGTH,
+  readFeed,
+  topicFrom,
+} from "../lib/chief/sources";
+
+describe("the allowlist is knowable by reading one array", () => {
+  /*
+   * Pinned by value, `WRITE_PATHS`' own test and its reason: this array is the
+   * complete answer to "what can the chief reach on the internet", and widening
+   * it should be a diff a reviewer has to look at rather than a consequence of
+   * somebody editing a template.
+   */
+  it("names exactly three origins", () => {
+    expect([...CHIEF_SOURCE_ORIGINS]).toEqual([
+      "https://news.google.com",
+      "https://hn.algolia.com",
+      "https://export.arxiv.org",
+    ]);
+  });
+
+  it("reaches every one of them over https", () => {
+    for (const origin of CHIEF_SOURCE_ORIGINS) {
+      expect(origin.startsWith("https://")).toBe(true);
+    }
+  });
+
+  it("has one source per origin and no source off the list", () => {
+    expect(CHIEF_SOURCES).toHaveLength(CHIEF_SOURCE_ORIGINS.length);
+    for (const source of CHIEF_SOURCES) {
+      const address = addressFor(source, "agents");
+      expect(address).not.toBeNull();
+      expect(CHIEF_SOURCE_ORIGINS).toContain(new URL(String(address)).origin);
+    }
+  });
+
+  it("carries no credential of any kind in the address", () => {
+    for (const source of CHIEF_SOURCES) {
+      const url = new URL(String(addressFor(source, "agents")));
+      expect(url.username).toBe("");
+      expect(url.password).toBe("");
+      for (const [, value] of url.searchParams) {
+        expect(value).not.toMatch(/^(sk-|Bearer |ghp_)/u);
+      }
+    }
+  });
+});
+
+describe("a topic cannot become an address", () => {
+  /*
+   * Every one of these is a real shape somebody could type, or that a hostile
+   * headline would contain if a model were ever allowed to choose a topic — and
+   * the second is the reason the list is this long even though `lib/chief/tools.ts`
+   * only ever passes it the person's own words.
+   */
+  const REFUSED = [
+    "https://evil.example/steal",
+    "//evil.example",
+    "../../../etc/passwd",
+    "agents&tags=story&hitsPerPage=99999",
+    "agents#fragment",
+    "agents?q=other",
+    "agents%2F..%2F",
+    "agents\nX-Injected: yes",
+    "agents\u0000null",
+    "agents:8080",
+    "user:pass@evil.example",
+    "a",
+    "",
+    "   ",
+    "x".repeat(MAX_TOPIC_LENGTH + 1),
+  ];
+
+  for (const candidate of REFUSED) {
+    it(`refuses ${JSON.stringify(candidate.slice(0, 40))}`, () => {
+      expect(topicFrom(candidate)).toBeNull();
+      for (const source of CHIEF_SOURCES) {
+        expect(addressFor(source, candidate)).toBeNull();
+      }
+    });
+  }
+
+  /*
+   * Refused rather than stripped, and this is the assertion that pins the
+   * decision. Stripping would turn `https://evil.example/?x=` into the topic
+   * `httpsevilexamplex`, search for it, find nothing, and tell somebody DASH
+   * found no sources -- a false answer to a question DASH declined to ask.
+   */
+  it("does not silently clean a refused topic into a different one", () => {
+    expect(topicFrom("https://evil.example/steal")).toBeNull();
+    expect(topicFrom("https://evil.example/steal")).not.toBe("httpsevilexamplesteal");
+  });
+
+  const ACCEPTED = [
+    "AI agents",
+    "tariffs",
+    "open-source models",
+    "GPT-4.5",
+    "C++",
+    "künstliche Intelligenz",
+    "半導体",
+  ];
+
+  for (const topic of ACCEPTED) {
+    it(`searches for ${JSON.stringify(topic)} on the allowlist and nowhere else`, () => {
+      expect(topicFrom(topic)).toBe(topic);
+      for (const source of CHIEF_SOURCES) {
+        const address = addressFor(source, topic);
+        expect(address).not.toBeNull();
+        const url = new URL(String(address));
+        expect(CHIEF_SOURCE_ORIGINS).toContain(url.origin);
+        // The topic reached the query and nothing else. A value that had
+        // escaped would show up as a changed path.
+        expect(url.pathname).toBe(new URL(String(addressFor(source, "agents"))).pathname);
+      }
+    });
+  }
+
+  it("collapses whitespace rather than refusing a pasted subject", () => {
+    expect(topicFrom("  AI\n  agents  ")).toBe("AI agents");
+  });
+
+  /*
+   * MAR-744, from the attended run. `search_query=all:AI agent governance` is
+   * three loose terms sorted by date, so arXiv answered a governance question
+   * with a visual-artifact benchmark and a paper on quantum hypothesis testing.
+   * `DEFAULT_SOURCES` quotes its subject on both of these hosts and the first
+   * cut of `lib/chief/sources.ts` dropped the quotes.
+   */
+  it("searches Google News and arXiv for the exact phrase", () => {
+    for (const id of ["google-news", "arxiv"]) {
+      const source = CHIEF_SOURCES.find((one) => one.id === id);
+      expect(source).toBeDefined();
+      const address = String(addressFor(source!, "AI agent governance"));
+      expect(address).toContain("%22AI%20agent%20governance%22");
+    }
+  });
+
+  /*
+   * And not Hacker News. Algolia's `query` is already a relevance search over a
+   * much smaller corpus, and an exact-phrase constraint turns a good short list
+   * into an empty one.
+   */
+  it("does not force an exact phrase on Hacker News", () => {
+    const source = CHIEF_SOURCES.find((one) => one.id === "hacker-news");
+    const address = String(addressFor(source!, "AI agent governance"));
+    expect(address).not.toContain("%22");
+  });
+
+  it("still refuses a quote somebody typed into the subject themselves", () => {
+    // The quoting above is DASH's, applied after the narrowing -- a topic
+    // carrying its own quote is still refused, so the two cannot be confused.
+    expect(topicFrom('AI "agent" governance')).toBeNull();
+  });
+});
+
+describe("a feed is parsed by what it declared, never by what it resembles", () => {
+  const RSS =
+    '<rss><channel><item><title>First story</title><link>https://example.com/a</link>' +
+    "<pubDate>Tue, 19 Aug 2026 09:00:00 GMT</pubDate></item>" +
+    "<item><title><![CDATA[AT&amp;T moves]]></title><link>https://example.com/b</link></item>" +
+    "</channel></rss>";
+
+  it("reads an RSS feed", () => {
+    const items = readFeed(RSS, "rss");
+    expect(items).not.toBeNull();
+    expect(items?.[0]?.headline).toBe("First story");
+    expect(items?.[0]?.item_url).toBe("https://example.com/a");
+    expect(items?.[0]?.published_at).toBe("2026-08-19T09:00:00.000Z");
+    // CDATA unwrapped and the entity decoded, so a headline does not read
+    // `AT&amp;T`.
+    expect(items?.[1]?.headline).toBe("AT&T moves");
+  });
+
+  it("reads an Atom feed's link out of the attribute", () => {
+    const atom =
+      '<feed><entry><title>Paper</title><link rel="alternate" href="https://arxiv.example/1"/>' +
+      "<published>2026-08-19T00:00:00Z</published></entry></feed>";
+    expect(readFeed(atom, "atom")?.[0]?.item_url).toBe("https://arxiv.example/1");
+  });
+
+  it("reads an Algolia body", () => {
+    const body = JSON.stringify({
+      hits: [
+        { title: "Story", url: "https://news.example/1", created_at: "2026-08-19T00:00:00Z" },
+        { title: "", url: "https://news.example/2" },
+      ],
+    });
+    const items = readFeed(body, "hn_algolia");
+    // The titleless hit is dropped rather than rendered as an empty citation.
+    expect(items).toHaveLength(1);
+    expect(items?.[0]?.headline).toBe("Story");
+  });
+
+  /*
+   * The wrong answer this whole pattern exists to avoid. An error page parsed
+   * as "an empty feed" tells somebody there is no news today; null tells the
+   * caller the address is not a feed, and `fetchChiefSources` keeps the two
+   * outcomes apart all the way to the sentence.
+   */
+  it("reads an error page as not-a-feed rather than as no news", () => {
+    expect(readFeed("<html><body>502 Bad Gateway</body></html>", "rss")).toBeNull();
+    expect(readFeed("<html><body>502 Bad Gateway</body></html>", "atom")).toBeNull();
+    expect(readFeed("not json at all", "hn_algolia")).toBeNull();
+    expect(readFeed(JSON.stringify({ error: "nope" }), "hn_algolia")).toBeNull();
+  });
+
+  it("reads a genuinely empty feed as empty and not as a failure", () => {
+    expect(readFeed('<rss><channel><item></item></channel></rss>', "rss")).toEqual([]);
+    expect(readFeed(JSON.stringify({ hits: [] }), "hn_algolia")).toEqual([]);
+  });
+
+  it("never throws, whatever the body is", () => {
+    for (const body of ["", "\u0000", "<item", "{", "]]>", "<entry><title>"]) {
+      for (const format of ["rss", "atom", "hn_algolia"] as const) {
+        expect(() => readFeed(body, format)).not.toThrow();
+      }
+    }
+  });
+});
