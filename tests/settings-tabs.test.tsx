@@ -21,6 +21,14 @@
  * 4. **The add-agent entrance survived leaving the sidebar.** It is under a
  *    hold and being tried by a person today. Losing the way in would not fail
  *    any other test here, because the page itself would still be perfect.
+ *
+ * The generic checks below (routes exist, nothing dropped, headings, current
+ * tab) all render the strip through `SettingsTabsStrip` with
+ * `reportingConfigured: true` — a DASH that has configured a LAB, which is
+ * the state where all seven tabs are the true membership. MAR-742's own gate
+ * — Reporting is invisible until then — has its own describe block below,
+ * against both booleans directly, since that is the one property the
+ * hook-connected `SettingsTabs` cannot be asked for without a data source.
  */
 
 import { existsSync } from "node:fs";
@@ -55,11 +63,12 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-const { SettingsTabs } = await import("../app/_components/settings-tabs");
+const { SettingsTabsStrip } = await import("../app/_components/settings-tabs");
 
+/** Every generic check below assumes a DASH that has configured a LAB. */
 function markupAt(route: string): string {
   pathname = route;
-  return renderToStaticMarkup(<SettingsTabs />);
+  return renderToStaticMarkup(<SettingsTabsStrip reportingConfigured={true} />);
 }
 
 describe("every tab is a route with a page behind it", () => {
@@ -163,6 +172,46 @@ describe("which tab is current", () => {
     for (const tab of SETTINGS_TABS) {
       expect(markup).toContain(`href="${tab.href}"`);
     }
+  });
+});
+
+/**
+ * MAR-742: the tab a person who has never heard of LAB should never see.
+ *
+ * `SettingsTabsStrip` takes the decided boolean as a prop rather than reading
+ * a view itself, so both states render synchronously here — no data source,
+ * no `useEffect` to flush — the same split `ReportingSettings` uses so
+ * `tests/reporting-render.test.tsx` can render it without one.
+ */
+describe("the reporting tab is invisible until a LAB is configured", () => {
+  it("leaves it out of the strip on an unconfigured DASH", () => {
+    pathname = SETTINGS_ROOT;
+    const html = renderToStaticMarkup(<SettingsTabsStrip reportingConfigured={false} />);
+    expect(html).not.toContain("/settings/reporting");
+    expect(html).not.toContain(">Reporting<");
+  });
+
+  it("draws every other tab regardless", () => {
+    pathname = SETTINGS_ROOT;
+    const html = renderToStaticMarkup(<SettingsTabsStrip reportingConfigured={false} />);
+    for (const tab of SETTINGS_TABS) {
+      if (tab.href === "/settings/reporting") {
+        continue;
+      }
+      expect(html, tab.label).toContain(`href="${tab.href}"`);
+    }
+  });
+
+  it("draws it, in its usual place, once a LAB is configured", () => {
+    pathname = SETTINGS_ROOT;
+    const html = renderToStaticMarkup(<SettingsTabsStrip reportingConfigured={true} />);
+    expect(html).toContain('href="/settings/reporting"');
+    expect(html).toContain(">Reporting<");
+  });
+
+  it("still marks it current when it is the tab somebody is standing on", () => {
+    const html = markupAt("/settings/reporting");
+    expect(html).toContain('href="/settings/reporting" class="settings-tab is-active" aria-current="page"');
   });
 });
 
