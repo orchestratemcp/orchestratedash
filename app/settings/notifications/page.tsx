@@ -10,7 +10,7 @@ import {
   describeChiefDiscordStanding,
   describeChiefRunnerHolds,
 } from "../../../lib/chief/discord";
-import { plainDay } from "../../../lib/copy/when";
+import { plainDay, plainMoment } from "../../../lib/copy/when";
 import {
   NOTIFY_CONTENTS,
   NOTIFY_CUSTODY,
@@ -392,12 +392,22 @@ function ChiefDiscordSection({
       </p>
 
       {/*
-       * MAR-745. What the runner actually has, read fresh on every render —
-       * separate from `standing` above, which is only DASH's own row. The two
-       * can disagree when a push failed or the runner restarted, and this is
-       * the sentence that makes that visible instead of silent.
+       * MAR-745, widened by the MAR-742 roadmap's "connection resilience" ask.
+       * What the runner actually has, read fresh on every render — separate
+       * from `standing` above, which is only DASH's own row. The two can
+       * disagree when a push failed or the runner restarted, and this is the
+       * sentence that makes that visible instead of silent: a fleet count and
+       * model from a stale snapshot, or a bridge DASH believes is listening
+       * while the runner's own socket is not.
        */}
-      {view.configured ? <p className="notify-standing">{describeChiefRunnerHolds(view.runner_holds)}</p> : null}
+      {view.configured ? (
+        <p className="notify-standing">
+          {describeChiefRunnerHolds(
+            view.runner_holds,
+            view.runner_holds?.snapshot_at == null ? null : plainMoment(view.runner_holds.snapshot_at),
+          )}
+        </p>
+      ) : null}
 
       {view.configured ? null : (
         <>
