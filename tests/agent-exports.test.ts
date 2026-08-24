@@ -244,3 +244,116 @@ describe("what a file name from the renderer may resolve to", () => {
     expect(resolveAgentExport(root, "competitor-scout", "../elsewhere/" + name)).toBeNull();
   });
 });
+
+describe("folding a legacy file already on disk (MAR-697)", () => {
+  /**
+   * Henrik's five real files, in miniature: MAR-740 stopped writing an em
+   * dash into a new export's name, but did nothing for the ones already on
+   * disk from before it landed. `list`/`prepare` are the only two places
+   * that ever read the folder, so folding there — a rename, once — is what
+   * makes every listed export openable rather than relying on a person to
+   * have re-exported the same briefing after the fix shipped.
+   */
+  it("renames a legacy em-dash file on list, and resolves under its new name", () => {
+    const root = dataDir();
+    save(root, "competitor-scout", "Competitor brief — OpenClaw and Hermes Agent.pdf", 5);
+
+    const listed = listAgentExports(root, "competitor-scout");
+    expect(listed.map((entry) => entry.file)).toEqual([
+      "Competitor brief - OpenClaw and Hermes Agent.pdf",
+    ]);
+
+    expect(
+      resolveAgentExport(root, "competitor-scout", "Competitor brief - OpenClaw and Hermes Agent.pdf"),
+    ).not.toBeNull();
+    // The mangled name is gone from disk, not merely shadowed by the new one.
+    expect(
+      resolveAgentExport(root, "competitor-scout", "Competitor brief — OpenClaw and Hermes Agent.pdf"),
+    ).toBeNull();
+  });
+
+  it("folds curly quotes and an ellipsis the same way a new export would", () => {
+    const root = dataDir();
+    save(root, "ai-news-scout", "The “state of the art”… so far.pdf", 5);
+
+    const listed = listAgentExports(root, "ai-news-scout");
+    // The straight quote a curly quote folds to is itself a forbidden
+    // Windows filename character, so `foldExportBaseName` strips it to a
+    // space the same way `briefFileName` would for a brand-new title.
+    expect(listed.map((entry) => entry.file)).toEqual(["The state of the art ... so far.pdf"]);
+  });
+
+  it("leaves an already-ASCII name alone", () => {
+    const root = dataDir();
+    save(root, "ai-news-scout", "Plain briefing.pdf", 5);
+
+    expect(listAgentExports(root, "ai-news-scout").map((entry) => entry.file)).toEqual([
+      "Plain briefing.pdf",
+    ]);
+  });
+
+  /**
+   * Two legacy files that fold to the same string — an en dash and an em
+   * dash in twins of the same title — must not have the second rename land
+   * on top of the first. `unusedExportName` is the same numbering a same-day
+   * re-export already gets.
+   */
+  it("numbers a collision between two legacy names that fold to the same string", () => {
+    const root = dataDir();
+    save(root, "ai-news-scout", "Weekly digest – part one.pdf", 10);
+    save(root, "ai-news-scout", "Weekly digest — part one.pdf", 5);
+
+    const names = listAgentExports(root, "ai-news-scout")
+      .map((entry) => entry.file)
+      .sort();
+    expect(names).toEqual([
+      "Weekly digest - part one (2).pdf",
+      "Weekly digest - part one.pdf",
+    ]);
+  });
+
+  it("folds a legacy name against an existing correctly-named file without overwriting it", () => {
+    const root = dataDir();
+    save(root, "ai-news-scout", "Morning brief.pdf", 10);
+    save(root, "ai-news-scout", "Morning brief—.pdf", 5);
+
+    const names = listAgentExports(root, "ai-news-scout")
+      .map((entry) => entry.file)
+      .sort();
+    expect(names).toEqual(["Morning brief-.pdf", "Morning brief.pdf"]);
+  });
+
+  it("folds on prepareAgentExports too, so a same-session export sees the renamed name", () => {
+    const root = dataDir();
+    save(root, "competitor-scout", "Competitor brief — OpenClaw and Hermes Agent.pdf", 5);
+
+    const { existing } = prepareAgentExports(root, "competitor-scout");
+    expect(existing).toEqual(["Competitor brief - OpenClaw and Hermes Agent.pdf"]);
+  });
+
+  it("is idempotent: a second list does not rename anything further", () => {
+    const root = dataDir();
+    save(root, "competitor-scout", "Competitor brief — OpenClaw and Hermes Agent.pdf", 5);
+
+    listAgentExports(root, "competitor-scout");
+    const second = listAgentExports(root, "competitor-scout");
+    expect(second.map((entry) => entry.file)).toEqual([
+      "Competitor brief - OpenClaw and Hermes Agent.pdf",
+    ]);
+  });
+
+  it("keeps the containment check holding on a name that was just folded", () => {
+    const root = dataDir();
+    save(root, "competitor-scout", "Competitor brief — OpenClaw and Hermes Agent.pdf", 5);
+    listAgentExports(root, "competitor-scout");
+
+    expect(
+      resolveAgentExport(
+        root,
+        "competitor-scout",
+        "../elsewhere/Competitor brief - OpenClaw and Hermes Agent.pdf",
+      ),
+    ).toBeNull();
+    expect(resolveAgentExport(root, "competitor-scout", "..\\..\\dash.sqlite")).toBeNull();
+  });
+});

@@ -3185,8 +3185,19 @@ if (typeof app !== "undefined") {
    *
    * The lock is taken before `whenReady` on purpose: the losing copy should not
    * get as far as creating a window to then destroy.
+   *
+   * MAR-748: this exit stays 0 by design — a clean second-instance quit, not a
+   * failure. The line below changes nothing about that; it only names the
+   * cause, so a caller watching this process's output (the shell smoke proof,
+   * launched exactly this way when another DASH already holds the lock for its
+   * userData) can tell "quit because another instance owns this" apart from
+   * every other reason a run produced no output. `scripts/verify-shell-lib.mjs`
+   * matches this string literally — do not reword it without updating that.
    */
   if (!app.requestSingleInstanceLock()) {
+    console.error(
+      `[dash-shell] single-instance lock already held for userData "${app.getPath("userData")}" — quitting (exit 0 by design, MAR-428).`,
+    );
     app.quit();
   } else {
     registerProtocolClient();

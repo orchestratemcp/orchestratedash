@@ -66,41 +66,10 @@ import { resolveBriefCitations } from "../lib/brief/fingerprint.js";
 import { isBriefArtifact, isDigestArtifact } from "../lib/contracts.js";
 import { artifactRecordsForAgent } from "../lib/store.js";
 import { BRIEF_EXPORT_COPY, describeReceiptMoment } from "../lib/copy/artifacts.js";
-import { prepareAgentExports, unusedExportName } from "../lib/agent-exports.js";
+import { foldExportBaseName, prepareAgentExports, unusedExportName } from "../lib/agent-exports.js";
 
 /** How long a print may take before DASH stops waiting and says so. */
 const PRINT_TIMEOUT_MS = 30_000;
-
-/**
- * Typographic punctuation folded to its ASCII equivalent before a title
- * becomes a filename (MAR-740).
- *
- * An em dash from a model-written title matched the file `dir` showed on disk
- * byte for byte, and `shell.openPath` still handed it to a default PDF
- * handler that reported the file missing — a Windows shell/associated-app
- * seam this repository does not own and cannot fix from here. What is owned
- * is which characters DASH ever asks that seam to carry, so the fold removes
- * the class of punctuation a model reaches for (dashes, curly quotes, an
- * ellipsis) rather than chasing the one code point that was caught.
- */
-const PUNCTUATION_FOLDS: ReadonlyMap<string, string> = new Map([
-  ["‐", "-"],
-  ["‑", "-"],
-  ["‒", "-"],
-  ["–", "-"],
-  ["—", "-"],
-  ["―", "-"],
-  ["‘", "'"],
-  ["’", "'"],
-  ["‚", "'"],
-  ["′", "'"],
-  ["“", '"'],
-  ["”", '"'],
-  ["„", '"'],
-  ["″", '"'],
-  ["…", "..."],
-  [" ", " "],
-]);
 
 /**
  * A filename a person will recognise, out of the agent's own title.
@@ -111,16 +80,16 @@ const PUNCTUATION_FOLDS: ReadonlyMap<string, string> = new Map([
  * be a *suggestion* in a save dialog somebody could edit, and it is now the
  * name of a file DASH writes unattended. A title carrying a slash would have
  * proposed a path before; now it would be one.
+ *
+ * The fold itself (MAR-740: an em dash from a model-written title matched the
+ * file `dir` showed on disk byte for byte, and `shell.openPath` still handed
+ * it to a default PDF handler that reported the file missing — a Windows
+ * shell/associated-app seam this repository does not own) now lives in
+ * `lib/agent-exports.ts`, shared with the rename MAR-697 gives a legacy file
+ * already on disk under the mangled name this function used to write.
  */
 export function briefFileName(title: string): string {
-  const folded = Array.from(title, (character) => PUNCTUATION_FOLDS.get(character) ?? character).join(
-    "",
-  );
-  const cleaned = folded
-    .replace(/[\\/:*?"<>|]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 80);
+  const cleaned = foldExportBaseName(title).slice(0, 80);
   return `${cleaned.length === 0 ? "briefing" : cleaned}.pdf`;
 }
 
