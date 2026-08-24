@@ -64,7 +64,7 @@ import {
 } from "../lib/connection-credentials";
 import { aiKeyConnections, pickAiKeyCard } from "../lib/ai/connection-view";
 import type { ConnectionSourceManifest } from "../lib/connections";
-import { listAiKeyModels } from "../lib/ai/actions";
+import { listAiKeyModels, performAiKeyAction } from "../lib/ai/actions";
 import { performAskAction } from "./ask-host";
 import { performChiefAction } from "./chief-host";
 import {
@@ -89,6 +89,14 @@ import {
   writeStepLevelOverride,
 } from "../lib/ai/model-store";
 import { fleetCredentialTarget } from "../lib/fleet/actions";
+import { FLEET_PRINCIPAL } from "../lib/fleet/principal";
+import { notChecked } from "../lib/ai/liveness";
+import { readLivenessCheck } from "../lib/ai/store";
+import type {
+  ConnectionRefreshEntry,
+  ConnectionRefreshReport,
+  RunnerDeliveryOutcome,
+} from "../lib/ai/refresh";
 import { fleetConnectorFor } from "../lib/fleet/catalogue";
 import { withFleetSecretStandings } from "../lib/fleet/secret-read";
 import { listFleetConnections, readFleetConnection } from "../lib/fleet/store";
@@ -1151,8 +1159,26 @@ export function registerCommandChannel(
               appWindow(),
               RENDERER_ORIGIN,
             ),
-          pushToRunner: () => pushChiefBridge(runner),
+          // Awaited and discarded: this seam wants the push *done*, not judged.
+          // Whether the runner took it is `refreshConnections`' question, and
+          // that is the one surface which reports an answer rather than acting
+          // on it.
+          pushToRunner: async () => {
+            await pushChiefBridge(runner);
+          },
         }),
+      /*
+       * MAR-742, item 3b. The worst-case recovery, and the only entry in this
+       * object that touches every credential DASH holds in one press.
+       *
+       * It takes nothing from the renderer — see the command's catalogue entry
+       * — and it is the *narrowest* wide thing here: of the three questions it
+       * asks, two only read, and the third posts a configuration `pushToRunner`
+       * above already posts on every connect. Nothing in it can write, replace
+       * or delete a credential, which is the whole difference between it and
+       * the disconnect-and-re-add it exists to replace.
+       */
+      refreshConnections: () => refreshFleetConnections(runner),
     });
   });
 }
@@ -1170,9 +1196,9 @@ export function registerCommandChannel(
  * in Discord — so, like its twin, it is called more often than it strictly needs
  * to be rather than less.
  */
-async function pushChiefBridge(runner: RunnerHandle | null): Promise<void> {
+async function pushChiefBridge(runner: RunnerHandle | null): Promise<boolean> {
   if (runner === null) {
-    return;
+    return false;
   }
   try {
     const body = await buildChiefBridgeConfiguration(secureStore());
@@ -1193,14 +1219,147 @@ async function pushChiefBridge(runner: RunnerHandle | null): Promise<void> {
           response.status,
         )})`,
       );
+      return false;
     }
+    return true;
   } catch (error: unknown) {
     console.warn(
       `[dash-shell] the chief's Discord settings could not reach the runner: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
+    return false;
   }
+}
+
+/**
+ * Re-read every connection, re-check it, and re-deliver it (MAR-742, item 3b).
+ *
+ * ## The three questions, in this order and separately
+ *
+ * The order is the point. Henrik's recovery on 2026-08-24 was disconnect and
+ * re-add, which *destroys and replaces a credential* in order to find out
+ * whether it was broken — and the answer, that time, was that the vault had it
+ * all along. So each question is asked and reported on its own, and none of
+ * them writes a credential:
+ *
+ * 1. **Does the vault still hand this back?** A bare `get`, and the one place
+ *    this whole packet's hardening shows up on a surface: what comes out of a
+ *    failure is the seam's code, its `cause_code` and — new — the path it
+ *    actually looked at. That last field is the answer to the question that
+ *    took a night of filesystem archaeology, and here it is one line on a page.
+ * 2. **Does the provider still accept it?** `performAiKeyAction`'s `test`, the
+ *    same verb the per-card check runs, so the observation this records is the
+ *    same row the card reads. A second probe path would be a second opinion for
+ *    the standing chip to disagree with.
+ * 3. **Does the runner have it?** `pushChiefBridge`, which rebuilds the whole
+ *    configuration from the store — the state Henrik was actually stuck in was a
+ *    working key and a runner still holding the broken one, and nothing in DASH
+ *    could see the difference.
+ *
+ * ## Never throws, and never writes a credential
+ *
+ * A refused key, an unreachable provider and a locked vault are all *findings*
+ * — the report's content, not its failure. The only thing this can do to the
+ * vault is read it. Nothing here prompts, and nothing here deletes: an
+ * unattended press must not be able to cost somebody a credential, which is the
+ * property the disconnect-and-re-add recovery did not have.
+ */
+async function refreshFleetConnections(
+  runner: RunnerHandle | null,
+): Promise<ConnectionRefreshReport> {
+  const store = secureStore();
+  const vaultLabel = store.describeBacking().label;
+  const entries: ConnectionRefreshEntry[] = [];
+
+  for (const row of listFleetConnections()) {
+    const connector = fleetConnectorFor(row.provider);
+    // A stored connection whose connector this build has dropped. Reported as
+    // a row rather than skipped: a person looking for the connection they can
+    // see on the page must not find it silently missing from the report.
+    const service = connector?.service ?? row.provider;
+
+    /*
+     * Question 1, and it is `await`ed and discarded — `resolves`' discipline.
+     * No local in this function ever holds a credential, which is what lets the
+     * whole report be handed to a renderer without a further gate.
+     */
+    try {
+      await store.get(row.secret_name);
+    } catch (error: unknown) {
+      entries.push({
+        provider_id: row.provider,
+        account_id: row.account_id,
+        service,
+        vault: {
+          held: false,
+          code: isSecureStoreError(error) ? error.code : "unexpected_error",
+          cause: isSecureStoreError(error) ? error.cause_code ?? null : null,
+          path: isSecureStoreError(error) ? error.resolved_path ?? null : null,
+        },
+        liveness: null,
+      });
+      continue;
+    }
+
+    if (connector === null) {
+      // The vault has it and nothing in this build knows what to do with it.
+      // `not_checked` rather than a probe against a provider DASH cannot name.
+      entries.push({
+        provider_id: row.provider,
+        account_id: row.account_id,
+        service,
+        vault: { held: true },
+        liveness: notChecked(),
+      });
+      continue;
+    }
+
+    // Question 2. `test` never prompts, so the prompt dependency is one that
+    // refuses rather than one that could raise a window on an unattended press.
+    try {
+      await performAiKeyAction("test", fleetCredentialTarget(connector, row), vaultLabel, {
+        store,
+        ai: { probe: (profile, key, wantIds) => probeModelProvider(profile, key, fetch, wantIds) },
+        now: () => new Date(),
+        promptForSecret: () => Promise.resolve(null),
+      });
+    } catch (error: unknown) {
+      // Documented not to throw for `test`; this holds the documentation to
+      // something rather than letting one bad connection end the sweep. The
+      // caught value is dropped rather than inspected, `runProbe`'s reason: a
+      // fetch rejection can carry the request, and this request had a key in it.
+      void error;
+    }
+    entries.push({
+      provider_id: row.provider,
+      account_id: row.account_id,
+      service,
+      // Read back from the row `test` just wrote rather than returned from the
+      // call, so the report and the standing chip cannot disagree: they are
+      // reading the same observation.
+      liveness: readLivenessCheck(FLEET_PRINCIPAL, row.provider),
+      vault: { held: true },
+    });
+  }
+
+  /*
+   * Question 3. Skipped when nothing read back, and that is a decision rather
+   * than an optimisation: pushing a configuration built from a vault that just
+   * refused everything would replace whatever the runner is working from with
+   * the same nothing — turning a report into an outage.
+   */
+  const worthSending = entries.some((entry) => entry.vault.held);
+  let delivery: RunnerDeliveryOutcome = "not_attempted";
+  if (worthSending) {
+    if (runner === null) {
+      delivery = "no_runner";
+    } else {
+      delivery = (await pushChiefBridge(runner)) ? "delivered" : "refused";
+    }
+  }
+
+  return { checked_at: new Date().toISOString(), entries, delivery };
 }
 
 /**
@@ -3120,14 +3279,44 @@ async function vaultSelfCheck(): Promise<void> {
         ok: false,
         code: isSecureStoreError(error) ? error.code : "unexpected_error",
         cause: isSecureStoreError(error) ? error.cause_code ?? null : null,
+        /*
+         * MAR-742. **The field whose absence cost the investigation.**
+         *
+         * The 2026-08-24 record said `not_found:ENOENT` for a blob that was on
+         * disk, and settling *which directory that process actually looked in*
+         * afterwards meant reading mtimes off five scratch stores and their
+         * userData twins — and still could not be settled, because DASH
+         * resolves its store from `DASH_DATA_DIR` and its vault from
+         * `app.getPath("userData")`: two roots one launch can move
+         * independently, neither of them written down.
+         *
+         * A path, never a value — `dash-secret-<name>.enc` under the vault
+         * directory, and the name is the log-safe identifier the seam already
+         * guarantees.
+         */
+        path: isSecureStoreError(error) ? error.resolved_path ?? null : null,
       });
     }
   }
+
+  /*
+   * Where the vault is, recorded whether or not anything failed (MAR-742).
+   *
+   * `path` above answers it for a failed read; this answers it for the launch,
+   * which is the half that makes two records comparable. "These names read fine
+   * on Monday and not on Tuesday" is a mystery until the two records show
+   * different directories, at which point it is not a vault fault at all.
+   *
+   * Beside it, the store's own root — because the whole failure mode is the two
+   * disagreeing, and a record carrying one of them proves nothing.
+   */
+  const vaultDirectory = store.describeLocation?.() ?? null;
 
   const failed = results.filter((entry) => entry["ok"] !== true);
   console.warn(
     `[dash-shell] vault self-check: canary=${canary}, ` +
       `${String(results.length - failed.length)}/${String(results.length)} fleet reads ok` +
+      ` — vault=${vaultDirectory ?? "not file-backed"} store=${dataDir}` +
       (failed.length === 0
         ? ""
         : ` — failed: ${failed
@@ -3138,7 +3327,13 @@ async function vaultSelfCheck(): Promise<void> {
     setMeta(
       db(),
       "vault_self_check",
-      JSON.stringify({ checked_at: new Date().toISOString(), canary, reads: results }),
+      JSON.stringify({
+        checked_at: new Date().toISOString(),
+        canary,
+        vault_directory: vaultDirectory,
+        store_directory: dataDir,
+        reads: results,
+      }),
     );
   } catch (error: unknown) {
     // A store that cannot take the record is its own, separately-surfaced

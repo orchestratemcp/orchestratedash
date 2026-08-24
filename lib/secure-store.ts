@@ -104,18 +104,38 @@ export class SecureStoreError extends Error {
    * is how a healthy vault spent a day being called locked.
    */
   readonly cause_code?: string;
+  /**
+   * Where the implementation actually looked (MAR-742).
+   *
+   * `cause_code` says *what* happened; this says *where*, and the second
+   * question turned out to be the expensive one. A blob that had been on disk
+   * since 15:30 was reported `not_found:ENOENT` at 20:57 while its siblings read
+   * fine, and answering "which directory did that process resolve?" afterwards
+   * took hours of filesystem archaeology — because DASH derives its store root
+   * from `DASH_DATA_DIR` and its vault root from `app.getPath("userData")`, two
+   * roots one launch can move independently. One recorded path answers it in a
+   * second.
+   *
+   * A filesystem path, never a value: a directory plus `dash-secret-<name>.enc`,
+   * and the name is already the log-safe identifier `assertValidSecretName`
+   * guarantees. Optional because a store that is not file-backed has no
+   * meaningful answer and must not invent one.
+   */
+  readonly resolved_path?: string;
 
   constructor(
     code: SecureStoreErrorCode,
     message: string,
     secretName?: string,
     causeCode?: string,
+    resolvedPath?: string,
   ) {
     super(message);
     this.name = "SecureStoreError";
     this.code = code;
     this.secret_name = secretName;
     this.cause_code = causeCode;
+    this.resolved_path = resolvedPath;
   }
 }
 
@@ -226,4 +246,22 @@ export interface SecureStore {
    * @throws SecureStoreError `vault_locked` | `backend_unavailable`
    */
   listNames(): Promise<string[]>;
+
+  /**
+   * Where this store keeps what it keeps, when that is a place (MAR-742).
+   *
+   * The standing half of `SecureStoreError.resolved_path`: the error names a
+   * path only when something failed, and the question "which vault is this
+   * process actually using?" needs an answer on the successful launches too —
+   * that is what turns a self-check record from *these names failed* into
+   * *these names failed, in this directory*, which is the difference between a
+   * diagnosis and an archaeology dig.
+   *
+   * Optional, and returning `null` is a real answer. A `MemorySecureStore` has
+   * no location and must say so rather than invent a plausible path; callers
+   * treat the absence as "not file-backed", never as "unknown".
+   *
+   * Never a value, and never prompts: a path, or null.
+   */
+  describeLocation?(): string | null;
 }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
+import { describeCatalogueResult } from "../../lib/ai/model-choice";
 import { DEFAULT_MODEL_LEVELS, levelLabel } from "../../lib/ai/model-levels";
 import type { AgentModelSettingsView, ModelStepView } from "../../lib/views/types";
 import { chooseAgentModel, listAgentModels, setAgentStepLevel } from "../_data/source";
@@ -271,11 +272,13 @@ function ModelPicker({
           {models === null ? `See what ${provider} offers` : `Ask ${provider} again`}
         </button>
         <p className="muted wrap">
-          {models === null
-            ? `DASH will present the key it holds to ${provider} and list what that key can reach. It keeps no copy of the list.`
-            : options.length === 0
-              ? `${provider} answered, and named nothing this key can reach.`
-              : `${options.length} to choose from, as ${provider} answered a moment ago. DASH keeps no copy of the list.`}
+          {/* MAR-742. One wording, three pickers — see
+              `describeCatalogueResult` for the renderer that did not have it,
+              and what its silence cost. The count is `options` rather than
+              `models` because this picker prepends the model already in force
+              when a provider did not name it, and the sentence must count what
+              the dropdown actually offers. */}
+          {describeCatalogueResult(provider, models === null ? null : options)}
         </p>
       </div>
     </div>

@@ -465,6 +465,13 @@ interface DashShellClient {
   defaultFleet?(args: FleetCommandArgs & { account_id: string }): Promise<CommandResult>;
   assignFleet?(args: FleetAssignmentCommandArgs): Promise<CommandResult>;
   /**
+   * MAR-742. Takes nothing, and see the preload method for why that is the
+   * security property rather than a convenience. Optional on this interface for
+   * every other fleet method's reason: a shell built before this command draws
+   * the page and refuses the press, which is the right way round.
+   */
+  refreshConnections?(): Promise<CommandResult>;
+  /**
    * Optional for the same reason as the workspace and runner methods: a shell
    * built before the host command family has a bridge, but cannot make, check
    * or forget a server. Calling through would throw instead of refusing.
@@ -1200,6 +1207,33 @@ export async function listProviderModels(args: {
   provider_id: string;
 }): Promise<CommandResult> {
   return modelCommand("listProviderModels", args, "ask that provider which models it offers");
+}
+
+/**
+ * Re-read, re-check and re-deliver every connection DASH holds (MAR-742).
+ *
+ * Its own function rather than a seventh arm of `submitFleetCommand`, because
+ * that switch exists to stop page script addressing a verb it was not given —
+ * and this verb takes no target at all. Threading it through a function whose
+ * whole signature is "which provider" would mean inventing an argument for it
+ * to ignore.
+ *
+ * A missing method is a shell older than this command, and it refuses with the
+ * sentence naming the actual next step rather than throwing on a control the
+ * person just pressed — `submitFleetCommand`'s rule.
+ */
+export async function refreshConnections(): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  const method = bridge?.refreshConnections;
+  if (bridge === undefined || method === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to refresh your connections.",
+    };
+  }
+  return method.call(bridge);
 }
 
 /**
