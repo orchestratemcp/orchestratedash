@@ -110,6 +110,7 @@ import path from "node:path";
 
 import { importManifest, ingestArtifacts, recordAgentLook } from "../lib/store.js";
 import { recordChiefTurn } from "../lib/chief/store.js";
+import { writeChiefModelChoice } from "../lib/ai/model-store.js";
 
 const OUT = path.resolve(process.cwd(), process.env.DASH_CAPTURE_DIR ?? "qa-screenshots-mar615");
 
@@ -202,6 +203,15 @@ function seed(): void {
     ],
   });
   recordAgentLook(WIZARD, new Date().toISOString());
+
+  /*
+   * MAR-742 roadmap item 1. A pin of the chief's own, so the model line's
+   * SWAP control has something under it to open — the proposal's own §4.3
+   * note that the seed these frames were shot against had no model, so the
+   * picker's in-flow push-down was derived rather than measured. This is the
+   * before-shot's whole reason to seed one.
+   */
+  writeChiefModelChoice("anthropic", "claude-opus-5", daysAgo(0));
 
   /*
    * MAR-706. Ten turns, through the same `recordChiefTurn` door the product
@@ -400,6 +410,16 @@ async function measureComposer(target: BrowserWindow): Promise<unknown> {
          const input = box(inputEl);
          const field = box(document.querySelector(".chief-input-wrap"));
          const room = box(document.querySelector(".chief-room"));
+         const picker = box(document.querySelector(".chief-model-picker"));
+         /*
+          * MAR-742 roadmap item 1. chips_box, model_chip_box and foot_box,
+          * so the before/after geometry table in the proposal's own §4.3 is
+          * a measured claim on the after-shot too, not only on the before
+          * one.
+          */
+         const chips = box(document.querySelector(".chief-composer-chips"));
+         const modelChip = box(document.querySelector(".chief-model-chip"));
+         const foot = box(document.querySelector(".chief-composer-foot"));
          const strip = document.querySelectorAll(".fleet-strip-o .o-avatar");
          let animated = 0;
          strip.forEach((el) => { if (el.classList.contains("is-action")) animated += 1; });
@@ -428,7 +448,19 @@ async function measureComposer(target: BrowserWindow): Promise<unknown> {
            overlap_area: intersect(o, input),
            overlap_past_padding: overlapPastPadding,
            overlap_with_field: intersect(o, field),
-           model_line_found: document.querySelector(".chief-model-line") !== null,
+           model_chip_found: document.querySelector(".chief-model-chip") !== null,
+           chips_box: chips,
+           model_chip_box: modelChip,
+           foot_box: foot,
+           /*
+            * MAR-742 roadmap item 1. On the before-shot this sat below the
+            * field, in flow, pushing everything under it down — measured in
+            * the before run's own layout.json. On the after-shot it is
+            * absolutely positioned, so a real box here that overlaps the
+            * composer's own bottom edge rather than sitting below it is the
+            * proof the push-down is gone.
+            */
+           picker_box: picker,
            room_heading_visible: (() => {
              const el = document.querySelector(".chief-room-heading");
              return el === null ? null : el.textContent;
@@ -539,6 +571,28 @@ async function focusComposer(target: BrowserWindow): Promise<boolean> {
   )) as boolean;
   await settle(600);
   return focused;
+}
+
+/**
+ * Open the chief's model picker by pressing the chip that opens it
+ * (MAR-742 roadmap item 1). `button.chip-model` only renders once a model is
+ * set and a person can act (`ChiefModelChip`'s own `canAct` branch, and this
+ * harness's own window always can) — `seed()` pins one for exactly this
+ * reason. Named `openModelSwap` still: the frames this writes
+ * (`composer-swap-open-*`) are the same names the before-shot used, so the
+ * two directories pair up file-for-file for a side-by-side review.
+ */
+async function openModelSwap(target: BrowserWindow): Promise<boolean> {
+  const opened = (await target.webContents.executeJavaScript(
+    `(() => {
+       const button = document.querySelector("button.chip-model");
+       if (button === null) return false;
+       button.click();
+       return true;
+     })()`,
+  )) as boolean;
+  await settle(500);
+  return opened;
 }
 
 /** Open the avatar picker by pressing the control that opens it. */
@@ -685,6 +739,34 @@ async function run(): Promise<void> {
       });
       console.log(`[mar615] composer expanded ${viewport.name}/${theme} ${JSON.stringify(open)}`);
       await shoot(window, `composer-expanded-${viewport.name}-${theme}`);
+
+      /*
+       * ---- MAR-742 roadmap item 1: the model chip's popover, open ----
+       *
+       * Before this packet, `.chief-model-picker` was `flex-basis: 100%`
+       * **in the composer's flow**, so opening it pushed everything under it
+       * down rather than overlaying — a state no capture had ever
+       * photographed until this harness's own before-run
+       * (`qa-screenshots-chatui-proposal-followup/before/`, seeded with a
+       * model for exactly this reason: every earlier run of this harness
+       * seeded none, and the control never rendered). Now `.chief-model-
+       * picker` is `position: absolute`, anchored to `.chief-model-chip`
+       * — `picker_box` in `layout.json` sitting inside/above `.chief-
+       * composer`'s own box, never below it, is the after-run's proof the
+       * push-down is gone.
+       */
+      const swapOpened = await openModelSwap(window);
+      const popoverOpen = await measureComposer(window);
+      measurements.push({
+        surface: "composer",
+        state: "swap-open",
+        viewport: viewport.name,
+        theme,
+        swap_opened: swapOpened,
+        ...(popoverOpen as object),
+      });
+      console.log(`[mar615] composer swap-open ${viewport.name}/${theme} ${JSON.stringify(popoverOpen)}`);
+      await shoot(window, `composer-swap-open-${viewport.name}-${theme}`);
 
       /*
        * ---- MAR-706: the room scrolled to its latest turn, header still pinned ----

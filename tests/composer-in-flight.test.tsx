@@ -203,12 +203,15 @@ const CLASSES: ComposerClassNames = {
   roomClear: "chief-room-clear",
   roomClose: "chief-room-close",
   roomScroll: "chief-room-scroll",
+  chips: "chief-composer-chips",
   compose: "chief-compose",
   field: "chief-field",
-  subject: "chief-subject",
   inputWrap: "chief-input-wrap",
   input: "chief-input",
   enterGlyph: "chief-enter-glyph",
+  foot: "chief-composer-foot",
+  modelChip: "chief-model-chip",
+  hint: "chief-composer-hint",
 };
 
 function draw(pending: boolean): string {
@@ -225,6 +228,7 @@ function draw(pending: boolean): string {
       clearDisabled
       onClear={() => {}}
       scrollSignal={0}
+      chips={null}
       subjectLabel="The whole fleet"
       placeholder="Ask about your fleet…"
       value="How is the fleet doing?"
@@ -232,7 +236,8 @@ function draw(pending: boolean): string {
       onSubmit={() => {}}
       pending={pending}
       textareaDisabled={false}
-      modelLine={null}
+      modelChip={null}
+      recallQuestions={[]}
     >
       {null}
     </Composer>,
@@ -269,6 +274,7 @@ describe("a press is acknowledged in the markup, not by the answer arriving", ()
         clearDisabled
         onClear={() => {}}
         scrollSignal={0}
+        chips={null}
         subjectLabel="The whole fleet"
         placeholder="Ask about your fleet…"
         value=""
@@ -276,7 +282,8 @@ describe("a press is acknowledged in the markup, not by the answer arriving", ()
         onSubmit={() => {}}
         pending={false}
         textareaDisabled
-        modelLine={null}
+        modelChip={null}
+        recallQuestions={[]}
       >
         {null}
       </Composer>,

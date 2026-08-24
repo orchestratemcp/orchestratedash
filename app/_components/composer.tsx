@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 /**
  * The chrome every DASH composer-with-a-room draws, factored out of the
@@ -9,21 +9,50 @@ import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
  *
  * ## What is shared, and what stays per surface
  *
- * A rounded field with an enter glyph standing in for a submit button, a room
- * that expands **upward** above the field on focus with its own heading, a
- * pinned Close and Clear, and a model line always drawn beneath the field —
- * that shape is this file, once, and both surfaces render through it. What
- * differs between a question to the fleet and a question to one agent is
- * everything the shape does not decide: what asking means, what a turn looks
- * like, whose model line this is, and whether there is a costume perched on
- * the field. Those stay in `chief-chat.tsx` and `ask.tsx`, each supplying its
- * own `children` (the transcript, in whatever shape its turns take), its own
- * `modelLine`, and its own `classes` — a per-surface class-name table rather
- * than a per-surface stylesheet, so `app/globals.css` states each rule once,
- * against both a surface's classes at once, and a restyle of one composer
- * that forgot the other fails the stylesheet-reading half of
- * `tests/composer-shared.test.tsx` the way `tests/fleet-view.test.ts` catches
- * a view rule that forgot a track.
+ * A row of chips above the field, a rounded field with an enter glyph
+ * standing in for a submit button, a room that expands **upward** above the
+ * field on focus with its own heading, a pinned Close and Clear, and a
+ * footer row — the model chip and a send hint — always drawn beneath the
+ * field: that shape is this file, once, and both surfaces render through it.
+ * What differs between a question to the fleet and a question to one agent
+ * is everything the shape does not decide: what asking means, what a turn
+ * looks like, which chips this surface has a fact for, whose model chip this
+ * is (a control on the fleet's room, a link on the agent's), and whether
+ * there is a costume perched on the field. Those stay in `chief-chat.tsx`
+ * and `ask.tsx`, each supplying its own `children` (the transcript, in
+ * whatever shape its turns take), its own `chips` and `modelChip`, and its
+ * own `classes` — a per-surface class-name table rather than a per-surface
+ * stylesheet, so `app/globals.css` states each rule once, against both a
+ * surface's classes at once, and a restyle of one composer that forgot the
+ * other fails the stylesheet-reading half of `tests/composer-shared.test.tsx`
+ * the way `tests/fleet-view.test.ts` catches a view rule that forgot a track.
+ *
+ * ## MAR-742 roadmap item 1: the chip row replaces the full-width sentences
+ *
+ * Henrik, with a side-by-side screenshot of Claude Code's own composer:
+ * *"Again your chat and layout and functions are the model... Can you mimic
+ * it please."* Three named deltas — a compact model dropdown rather than a
+ * boxed SWAP row, chips above the composer, tighter overall geometry — are
+ * one delta seen from three sides: this file used to spend a full-width row
+ * on every fact the reference spends a chip on. `docs/proposals/chief-chat-
+ * composer-2026-08-24.md` is the design work this packet executes; see it
+ * for the arithmetic and the annotated comparison.
+ *
+ * The old `.chief-subject`/`.ask-subject` visible line is gone — its words
+ * move into the scope chip a caller passes through `chips`, and its
+ * accessible-name job moves onto `subjectLabel`, now an `aria-label` on the
+ * field's own `<label>` rather than a line a sighted reader had to parse
+ * past. Nothing is deleted: `subjectLabel` still carries the same sentence a
+ * caller supplies, and a reader who wants the fuller words gets them from the
+ * chip's own `title`. `hidden text is still in the markup` is exactly what a
+ * *removed* fact would risk; an `aria-label` is the ordinary, idiomatic way
+ * to name a control, not that trap in a smaller costume.
+ *
+ * The old `modelLine` prop is `modelChip` now — still always drawn, still a
+ * `ReactNode` a caller controls, but `chief-chat.tsx`'s picker no longer
+ * pushes the row below it down: an anchored popover replaces the in-flow
+ * `flex-basis: 100%` panel, and `app/globals.css`'s own rule says why the old
+ * one cost `≈116px` at 375 every time somebody opened it.
  *
  * `classes` is a lookup table and not a `surface` string this component
  * switches on, on purpose: the chief's markup already shipped and is
@@ -94,12 +123,20 @@ export interface ComposerClassNames {
   roomClear: string;
   roomClose: string;
   roomScroll: string;
+  /** The row of chips above the field (MAR-742 roadmap item 1). */
+  chips: string;
   compose: string;
   field: string;
-  subject: string;
   inputWrap: string;
   input: string;
   enterGlyph: string;
+  /** The row below the field: the model chip, and the send hint. */
+  foot: string;
+  /** Wraps whatever `modelChip` renders — the chip button or link, plus the
+   *  inherited-model companion chip when there is one. */
+  modelChip: string;
+  /** The `↵ to ask` hint, always drawn at the footer's right end. */
+  hint: string;
 }
 
 export function Composer({
@@ -115,6 +152,7 @@ export function Composer({
   onClear,
   children,
   scrollSignal,
+  chips,
   subjectLabel,
   placeholder,
   value,
@@ -123,7 +161,8 @@ export function Composer({
   pending,
   textareaDisabled,
   avatar = null,
-  modelLine,
+  modelChip,
+  recallQuestions,
 }: {
   classes: ComposerClassNames;
   /** Whether the room is showing. Owned by the caller, which dims whatever it sits over. */
@@ -144,7 +183,16 @@ export function Composer({
   children: ReactNode;
   /** Grows when there is more to scroll to — the room scrolls to its own bottom when this changes. */
   scrollSignal: number;
-  /** Above the field, visible rather than announcement-only — whose composer this is. */
+  /**
+   * Above the field, always (MAR-742 roadmap item 1): the scope chip, and
+   * whatever else this surface has a fact for — the decisions chip on the
+   * chief's own room, nothing extra on the agent's. See `composer.tsx`'s own
+   * header for why this is per-surface content passed in rather than a
+   * `surface` string switched on here.
+   */
+  chips: ReactNode;
+  /** The composer's accessible name — `<label>`'s own `aria-label` now, not a
+   *  visible line (the visible half moved into `chips`' own scope chip). */
   subjectLabel: string;
   placeholder: string;
   value: string;
@@ -164,7 +212,13 @@ export function Composer({
   /** A costume perched on the field, positioned by `classes.inputWrap`. Absent draws none. */
   avatar?: ReactNode;
   /** Always drawn, open or closed — whose model this composer asks under, and how to change it. */
-  modelLine: ReactNode;
+  modelChip: ReactNode;
+  /**
+   * The kept questions, oldest first, for `↑`/`↓` to walk (MAR-742 roadmap
+   * item 1). The raw questions only — not a turn or an exchange type, which
+   * differ per surface — so this file stays ignorant of what a turn is.
+   */
+  recallQuestions: readonly string[];
 }): ReactNode {
   const thread = useRef<HTMLDivElement | null>(null);
   const field = useRef<HTMLTextAreaElement | null>(null);
@@ -177,6 +231,15 @@ export function Composer({
    * reads it for no visible reason.
    */
   const hadFocus = useRef(false);
+  /*
+   * MAR-742 roadmap item 1. How many `↑`s deep the current recall walk is —
+   * 0 means the field holds whatever was actually typed, not a recalled
+   * question. `draftBeforeRecall` is what the first `↑` overwrote, so `↓`
+   * walking past the newest question and `Escape` mid-walk both have
+   * something honest to restore rather than leaving the field empty.
+   */
+  const [recallIndex, setRecallIndex] = useState(0);
+  const draftBeforeRecall = useRef("");
 
   /*
    * MAR-746. Give the field back when the send finishes.
@@ -206,6 +269,15 @@ export function Composer({
     function onDocumentKeyDown(event: globalThis.KeyboardEvent): void {
       if (event.key === "Escape") {
         onClose();
+        /*
+         * MAR-742 roadmap item 1, §4.6 addition 2. Escape used to close the
+         * room and leave focus wherever it was — a person reading a turn had
+         * to click back into the field to type the next question. This
+         * branch never fires for the recall's own Escape (that one is
+         * handled, and stopped from bubbling here, in `onKeyDown` below),
+         * so it only runs when Escape is genuinely closing the room.
+         */
+        field.current?.focus();
       }
     }
     document.addEventListener("keydown", onDocumentKeyDown);
@@ -223,6 +295,52 @@ export function Composer({
   }, [open, scrollSignal]);
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    /*
+     * MAR-742 roadmap item 1, §4.6 addition 1. `↑` recalls the previous
+     * question on an *empty* field only — on a non-empty one it is an
+     * ordinary caret move, because a recall that ate somebody's half-typed
+     * question would be the MAR-746 defect in another costume. Once a walk
+     * has started (`recallIndex > 0`) every further `↑`/`↓` belongs to it
+     * regardless of what the field holds, since the field's own text is now
+     * the recalled question rather than a draft.
+     */
+    if (event.key === "ArrowUp" && !event.shiftKey) {
+      if (recallIndex === 0 && value !== "") {
+        return;
+      }
+      event.preventDefault();
+      const next = recallIndex + 1;
+      if (recallIndex === 0) {
+        draftBeforeRecall.current = value;
+      }
+      setRecallIndex(next);
+      onChange(recallAt(recallQuestions, next, draftBeforeRecall.current));
+      return;
+    }
+    if (event.key === "ArrowDown" && !event.shiftKey) {
+      if (recallIndex === 0) {
+        return;
+      }
+      event.preventDefault();
+      const next = recallIndex - 1;
+      setRecallIndex(next);
+      onChange(recallAt(recallQuestions, next, draftBeforeRecall.current));
+      return;
+    }
+    /*
+     * MAR-742 roadmap item 1, §4.6 addition 1. Escape mid-walk restores the
+     * pre-recall draft and stays in the field — it does not close the room.
+     * `stopPropagation` is why: the room's own Escape handler is bound to
+     * `document` (above), so without this an Escape meant to back out of a
+     * recall would also collapse the room underneath it.
+     */
+    if (event.key === "Escape" && recallIndex > 0) {
+      event.preventDefault();
+      event.stopPropagation();
+      setRecallIndex(0);
+      onChange(draftBeforeRecall.current);
+      return;
+    }
     if (event.key !== "Enter" || event.shiftKey) {
       return;
     }
@@ -236,6 +354,7 @@ export function Composer({
      */
     event.preventDefault();
     if (sendsOnEnter(event, pending)) {
+      setRecallIndex(0);
       onSubmit();
     }
   }
@@ -276,9 +395,17 @@ export function Composer({
         </div>
       ) : null}
 
+      {/*
+        MAR-742 roadmap item 1. Above the field, always — the reference's own
+        placement for what it will send along with the message. Wraps
+        unconditionally rather than truncating at 375: a chip nobody can act
+        on for want of screen space is `unfindable-is-the-same-as-missing` in
+        another costume.
+      */}
+      <div className={classes.chips}>{chips}</div>
+
       <div className={classes.compose}>
-        <label className={classes.field}>
-          <span className={classes.subject}>{subjectLabel}</span>
+        <label className={classes.field} aria-label={subjectLabel}>
           <span className={classes.inputWrap}>
             <textarea
               ref={field}
@@ -295,7 +422,10 @@ export function Composer({
                * rather than at a handler.
                */
               disabled={textareaDisabled || pending}
-              onChange={(event) => onChange(event.target.value)}
+              onChange={(event) => {
+                setRecallIndex(0);
+                onChange(event.target.value);
+              }}
               onFocus={onOpen}
               onKeyDown={onKeyDown}
             />
@@ -308,9 +438,44 @@ export function Composer({
         </label>
       </div>
 
-      {modelLine}
+      {/*
+        MAR-742 roadmap item 1. The model chip and the send hint, replacing
+        the old always-drawn model line — one compact row instead of a
+        sentence, with the `.chip .value` rule keeping the model id itself
+        uncased. `↵ to ask` is decorative chrome, `.chief-enter-glyph`'s own
+        precedent: never a sentence a copy sweep has to hold, just the key
+        this composer has always sent on.
+      */}
+      <div className={classes.foot}>
+        <div className={classes.modelChip}>{modelChip}</div>
+        <span className={classes.hint} aria-hidden="true">
+          ↵ to ask
+        </span>
+      </div>
     </div>
   );
+}
+
+/**
+ * What `↑`/`↓` should show in the field, given how many steps back from the
+ * newest question the reader has already walked (MAR-742 roadmap item 1,
+ * §4.6 addition 1).
+ *
+ * Pure, and exported for `sendsOnEnter`'s own reason: every render test here
+ * is `renderToStaticMarkup`, which fires no key event, so the walk itself has
+ * to be provable without one. `questions` is oldest-first — every view's own
+ * order — and `index` is how many `↑`s deep the walk is: 0 means "not
+ * recalling", still `draft`. Past the oldest question, further `↑`s keep
+ * returning that same oldest one rather than wrapping or going blank —
+ * `Math.min` clamps rather than modulo, because a repeat is a less surprising
+ * floor than a walk that suddenly loops back to the newest.
+ */
+export function recallAt(questions: readonly string[], index: number, draft: string): string {
+  if (index <= 0 || questions.length === 0) {
+    return draft;
+  }
+  const clamped = Math.min(index, questions.length);
+  return questions[questions.length - clamped] ?? draft;
 }
 
 /**

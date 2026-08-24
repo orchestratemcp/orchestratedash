@@ -86,13 +86,15 @@ describe("the stylesheet states composer chrome once, for both surfaces", () => 
     "room-actions",
     "room-clear",
     "room-close",
+    "composer-chips",
     "compose",
     "field",
-    "subject",
     "input-wrap",
     "input",
     "enter-glyph",
-    "model-line",
+    "composer-foot",
+    "model-chip",
+    "composer-hint",
   ];
 
   /*
@@ -102,9 +104,11 @@ describe("the stylesheet states composer chrome once, for both surfaces", () => 
    * arm naming `.chief-<part>` (optionally with pseudo-classes chained after
    * it) shares its rule with an arm naming `.ask-<part>` the same way.
    *
-   * A *descendant* selector — `.chief-model-line p`, one legitimate chief-
-   * only exception this stylesheet keeps — is deliberately not an arm this
-   * matches: the class has to be the whole of the arm (plus pseudo-classes),
+   * A rule that names only `.chief-<part>` and no `.ask-` arm at all —
+   * `.chief-model-picker`, a chief-only exception this stylesheet keeps
+   * (the agent's own model chip is a link with no picker to open) — is not
+   * one of the `CHROME_PARTS` above, so it is never checked here: the class
+   * has to be the whole of the arm (plus pseudo-classes),
    * not the first step of a longer one, or this would demand an `.ask-`
    * sibling for a rule that was never meant to have one.
    */
@@ -325,12 +329,12 @@ describe("the two composers draw the same shape, open", () => {
     }
   });
 
-  it("draws a model line, whether or not the room is open", () => {
+  it("draws a model chip, whether or not the room is open", () => {
     for (const html of [chief, ask]) {
-      expect(html).toMatch(/model-line/);
+      expect(html).toMatch(/model-chip/);
     }
     // And each says whose model it is, in the words that surface already used.
-    expect(chief).toContain(CHIEF_CHAT_COPY.no_model);
+    expect(chief).toContain(CHIEF_CHAT_COPY.no_model_chip);
     expect(ask).toContain("anthropic/claude-sonnet-5");
   });
 });

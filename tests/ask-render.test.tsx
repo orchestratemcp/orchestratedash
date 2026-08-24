@@ -40,7 +40,7 @@ import {
   ASK_CUSTODY,
   ASK_HEADING,
   ASK_MODEL_CHANGE,
-  ASK_MODEL_LABEL,
+  ASK_MODEL_CHIP_LABEL,
   ASK_PLACEHOLDER,
   ASK_SOURCES_HEADING,
   describeAskActivity,
@@ -299,9 +299,9 @@ describe("the composer, collapsed", () => {
     expect(/<textarea[^>]*\sdisabled/.test(html)).toBe(false);
   });
 
-  it("names this agent, visibly, above the box", () => {
+  it("names this agent as the composer's accessible name", () => {
     const html = composer(askable(), {});
-    expect(html).toContain("Message this agent");
+    expect(html).toContain('aria-label="Message this agent"');
     expect(html).not.toContain('<span class="visually-hidden">Message');
 
     const named = renderToStaticMarkup(
@@ -316,7 +316,33 @@ describe("the composer, collapsed", () => {
         setFeedback={NOOP}
       />,
     );
-    expect(named).toContain("Message AI agent news");
+    expect(named).toContain('aria-label="Message AI agent news"');
+  });
+
+  /*
+   * MAR-742 roadmap item 1. Henrik's own ruling on the design proposal's open
+   * question 3: the agent page's scope chip reads the agent's own name —
+   * shorter than `describeChatSubject`'s "Message X", which stays the
+   * composer's accessible name (above) rather than the chip's visible text.
+   */
+  it("draws the scope chip with the agent's own name, above the field", () => {
+    const html = composer(askable(), {});
+    expect(html).toContain('class="chip" title="Message this agent"');
+    expect(html).toContain(">This agent<");
+
+    const named = renderToStaticMarkup(
+      <AskComposer
+        agentTitle="AI agent news"
+        ask={askable()}
+        canAct
+        onAsked={NOOP}
+        open={false}
+        onOpen={NOOP}
+        onClose={NOOP}
+        setFeedback={NOOP}
+      />,
+    );
+    expect(named).toContain(">AI agent news<");
   });
 
   it("draws an enter glyph, decorative and never a control", () => {
@@ -347,16 +373,16 @@ describe("the composer, collapsed", () => {
   });
 });
 
-describe("the model line, always drawn (MAR-648, adopted by MAR-711)", () => {
+describe("the model chip, always drawn (MAR-648, adopted by MAR-711, compacted by MAR-742 roadmap item 1)", () => {
   it("names the model this question will be asked under", () => {
     const html = composer(askable());
-    expect(html).toContain(ASK_MODEL_LABEL);
+    expect(html).toContain(ASK_MODEL_CHIP_LABEL);
     expect(html).toContain("anthropic/claude-sonnet-5");
   });
 
   it("is drawn whether the room is open or closed", () => {
-    expect(composer(askable(), { open: false })).toContain(ASK_MODEL_LABEL);
-    expect(composer(askable(), { open: true })).toContain(ASK_MODEL_LABEL);
+    expect(composer(askable(), { open: false })).toContain(ASK_MODEL_CHIP_LABEL);
+    expect(composer(askable(), { open: true })).toContain(ASK_MODEL_CHIP_LABEL);
   });
 
   it("sets the model id as a value rather than writing it into a sentence", () => {
@@ -364,7 +390,15 @@ describe("the model line, always drawn (MAR-648, adopted by MAR-711)", () => {
     expect(/<code class="value"[^>]*>anthropic\/claude-sonnet-5<\/code>/.test(html)).toBe(true);
   });
 
-  it("says whose decision the model was, in text rather than only on hover", () => {
+  /*
+   * MAR-742 roadmap item 1. `describeAskModel`'s distinction used to be a
+   * sentence beside the id; it is the chip's `title` now — `hidden text is
+   * still in the markup` does not apply here the way it did for the chief's
+   * own FLEET DEFAULT case, because there is only one control on this
+   * surface for a reader to inspect, not a second control that silently
+   * changed shape.
+   */
+  it("says whose decision the model was, reachable as the chip's title", () => {
     const mine = composer(askable());
     expect(mine).toContain(describeAskModel(false));
 
@@ -382,8 +416,10 @@ describe("the model line, always drawn (MAR-648, adopted by MAR-711)", () => {
     expect(describeAskModel(true)).not.toBe(describeAskModel(false));
   });
 
-  it("offers the way to change it", () => {
-    expect(composer(askable())).toContain(ASK_MODEL_CHANGE);
+  it("is the way to change it — a link, since this surface has no picker of its own", () => {
+    const html = composer(askable());
+    expect(html).toMatch(/<a[^>]*class="chip chip-model chip-link"[^>]*href="[^"]*stage=settings[^"]*"/);
+    expect(html).toContain(ASK_MODEL_CHANGE);
   });
 });
 
