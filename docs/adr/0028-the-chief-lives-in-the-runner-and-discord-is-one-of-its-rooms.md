@@ -169,6 +169,19 @@ They are held on one object, in memory, in one process. Never written to
 that received them — the reply says whether a bridge is now configured, never
 which.
 
+**"Read from the vault" is not "read the key" (MAR-745).** The two secrets come
+out of the vault in different shapes, and the sentence above hid that for a whole
+packet. The bot token is stored as the value the user pasted; a model key is
+stored as an `AiKeyCredential` **envelope**, because `lib/ai/credential.ts` needs
+a discriminator to stop an OAuth grant left under the same name being sent to a
+provider as a bearer token. So main must open the envelope before it fills the
+`api_key` slot, exactly as `electron/broker-host.ts` does on the window path.
+Handing the document over instead produces a 401 that the broker can only record
+as `revoked` — DASH telling somebody their working key has been withdrawn — while
+the same key goes on answering in the window. The runner refuses a value of that
+shape at intake as a second line, and reports it as *no model* rather than
+spending it.
+
 **What this costs, stated rather than designed around.** The credentials exist in
 a second process. That is a real widening and it is the same one MAR-588 already
 accepted for the webhook address, with a larger blast radius because one of these

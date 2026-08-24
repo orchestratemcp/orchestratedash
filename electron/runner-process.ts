@@ -40,7 +40,7 @@
 
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, openSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -248,6 +248,15 @@ async function adopt(dataDir: string, token: string): Promise<AdoptOutcome> {
 export async function ensureRunner(dataDir: string): Promise<EnsureRunnerResult> {
   let token: string;
   try {
+    /*
+     * The directory first, because `ensureChannelSecret` writes a file into it
+     * and does not create it (MAR-755). On every ordinary launch `lib/db.ts` has
+     * already made this directory, which is why nothing noticed for months — but
+     * the first launch on a fresh `DASH_DATA_DIR` reaches here before any store
+     * is opened, `writeFileSync` throws `ENOENT`, and the runner is refused on a
+     * machine where nothing at all is wrong.
+     */
+    mkdirSync(dataDir, { recursive: true });
     token = ensureChannelSecret(dataDir);
   } catch (error: unknown) {
     // The one remaining reason a machine cannot host agents, and it is a much
@@ -257,10 +266,20 @@ export async function ensureRunner(dataDir: string): Promise<EnsureRunnerResult>
     return {
       ok: false,
       reason: "endpoint_refused",
+      /*
+       * Anything else carries its own message too (MAR-755). The two named
+       * errors are written for a person to read and go through unchanged; the
+       * rest — an `ENOENT`, an `EPERM`, a full disk — used to be flattened into
+       * one sentence that named no cause, which is how MAR-755 cost a session to
+       * find. The underlying text is appended rather than substituted, so the
+       * sentence somebody can act on still comes first.
+       */
       detail:
         error instanceof ChannelSecretError || error instanceof EndpointError
           ? error.message
-          : "The runner's channel credential could not be prepared.",
+          : `The runner's channel credential could not be prepared: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
     };
   }
 

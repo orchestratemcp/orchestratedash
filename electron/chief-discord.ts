@@ -32,6 +32,7 @@
 
 import type { BrowserWindow } from "electron";
 
+import { parseAiKeyCredential } from "../lib/ai/credential";
 import { readEffectiveChiefModel } from "../lib/ai/model-store";
 import { aiProviderById } from "../lib/ai/providers";
 import { recordRunnerChiefCall } from "../lib/broker/store";
@@ -330,9 +331,28 @@ export async function buildChiefBridgeConfiguration(
  * ship a third copy of.
  *
  * Null when there is no model, no provider profile, no fleet connection, or no
- * readable key. All four are the same fact to the runner — *there is nothing to
+ * usable key. All four are the same fact to the runner — *there is nothing to
  * ask* — and ADR 0028 decision 9 makes that an answer from records rather than a
  * silence.
+ *
+ * ## The envelope is opened here, and MAR-745 is what happens when it is not
+ *
+ * `store.get` does not return a key. It returns whatever `lib/ai/actions.ts`
+ * wrote under that name, and since MAR-582 that is an `AiKeyCredential`
+ * **envelope** — a JSON document with the key as one of its fields, wrapped so
+ * that an OAuth grant left under the same name can never be mistaken for a
+ * bearer credential. `electron/broker-host.ts` opens it before building a
+ * header; this function did not, and handed the whole document to the runner as
+ * `api_key`. The runner then sent `Authorization: Bearer {"version":1,...}`,
+ * OpenRouter answered 401, and `runner/chief-broker.ts` recorded the one word it
+ * can record for a 401 — `revoked` — which told Henrik his working key had been
+ * withdrawn. The window kept answering on the same vault row the whole time.
+ *
+ * So the parse is not defensive tidying; it is the difference between the two
+ * rooms asking under the same credential and one of them blaming the user for a
+ * document DASH built. And the provider is checked against the profile for
+ * `lib/ai/actions.ts`' stated reason — a key filed against one provider must not
+ * be presented to another — rather than coerced.
  */
 async function resolveChiefModel(
   store: Pick<SecureStore, "get">,
@@ -349,15 +369,29 @@ async function resolveChiefModel(
   if (connection === null) {
     return null;
   }
+  let stored: string;
   try {
-    const key = await store.get(connection.secret_name);
-    return { provider_id: profile.id, model_id: chosen.model_id, api_key: key };
+    stored = await store.get(connection.secret_name);
   } catch {
     // The fleet row points at a vault entry the OS will not decrypt — MAR-676's
     // exact failure. Reported as no model rather than as a broken bridge,
     // because the repair is the same one the Settings page already offers.
     return null;
   }
+
+  const credential = parseAiKeyCredential(stored);
+  if (credential === null || credential.provider !== profile.id) {
+    /*
+     * Not an envelope this build can read, or one filed against a different
+     * provider. The same refusal `lib/ai/actions.ts` makes on the window path
+     * and deliberately so: the two rooms must agree about whether there is a
+     * usable key, or a person is told "connected" in one place and "revoked" in
+     * the other. A bare pre-MAR-582 value lands here too, and is refused rather
+     * than sent — DASH cannot tell which provider it belongs to.
+     */
+    return null;
+  }
+  return { provider_id: profile.id, model_id: chosen.model_id, api_key: credential.key };
 }
 
 /* ---------------------------------------------------------------------- *
