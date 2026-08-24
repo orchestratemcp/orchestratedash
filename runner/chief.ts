@@ -312,6 +312,15 @@ export class RunnerChief {
 
     this.#busy = true;
     try {
+      /*
+       * Say it was heard, before the work starts (MAR-744).
+       *
+       * Not awaited on the way to the answer -- the indicator is a courtesy and
+       * the reply is the point, so a slow or refused typing call must not add
+       * latency to what the person actually asked for. `showTyping` swallows its
+       * own failures for the same reason.
+       */
+      void this.#gateway.showTyping();
       await this.#answer(admission.question, configuration);
     } catch (error: unknown) {
       /*

@@ -861,7 +861,18 @@ function ChiefReceipt({ turn }: { turn: ChiefTurnView }): ReactNode {
       </p>
       <ChiefEvidence turn={turn} />
       {turn.receipt.length === 0 ? (
-        <p className="muted wrap">{turn.receipt_note}</p>
+        /*
+         * Silent when a tool ran (MAR-744, attended run).
+         *
+         * `describeChiefReceipt(0)` says "nothing from your records was used for
+         * this one", which was true of every turn that could reach it before
+         * this packet. A tool turn sends no briefing, so it lands here too --
+         * and printed that sentence directly underneath a panel listing twelve
+         * things read out of the person's own records. The evidence panel
+         * carries its own accounting sentence, so the honest thing here is to
+         * say nothing rather than to contradict it.
+         */
+        turn.evidence === null ? <p className="muted wrap">{turn.receipt_note}</p> : null
       ) : (
         <details className="chief-sources">
           <summary>{CHIEF_CHAT_COPY.receipt_heading}</summary>

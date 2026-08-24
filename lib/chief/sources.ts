@@ -173,7 +173,7 @@ export const CHIEF_SOURCES: readonly ChiefSource[] = Object.freeze([
     name: "Google News",
     format: "rss" as const,
     address: (topic: string) =>
-      `https://news.google.com/rss/search?q=${encodeURIComponent(topic)}&hl=en-US&gl=US&ceid=US:en`,
+      `https://news.google.com/rss/search?q=${quoted(topic)}&hl=en-US&gl=US&ceid=US:en`,
   }),
   Object.freeze({
     id: "hacker-news",
@@ -188,10 +188,33 @@ export const CHIEF_SOURCES: readonly ChiefSource[] = Object.freeze([
     name: "arXiv",
     format: "atom" as const,
     address: (topic: string) =>
-      `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(topic)}` +
+      `https://export.arxiv.org/api/query?search_query=all:${quoted(topic)}` +
       `&sortBy=submittedDate&sortOrder=descending&max_results=15`,
   }),
 ]);
+
+/**
+ * A topic as an exact phrase, encoded (MAR-744).
+ *
+ * `DEFAULT_SOURCES` quotes its subject on both of these hosts and the first cut
+ * of this file dropped the quotes, which is a defect the attended run found
+ * rather than a style difference. `search_query=all:AI agent governance` is
+ * three loose terms sorted by submission date, so arXiv answered a question
+ * about governance with a visual-artifact benchmark and a paper on quantum
+ * hypothesis testing -- six of eighteen results were noise, and the chief
+ * correctly but uselessly reported that most of them were not about the
+ * subject.
+ *
+ * Not applied to Hacker News: Algolia's `query` is already a relevance search
+ * over a much smaller corpus, and an exact-phrase constraint there turns a good
+ * short list into an empty one.
+ *
+ * `encodeURIComponent` escapes the quotes to `%22`, so the phrase stays inside
+ * the one query parameter and the narrowing in `topicFrom` is untouched.
+ */
+function quoted(topic: string): string {
+  return encodeURIComponent(`"${topic}"`);
+}
 
 /**
  * The address one source is fetched at for one topic, or null.

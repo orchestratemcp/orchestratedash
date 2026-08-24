@@ -96,6 +96,7 @@ interface Harness {
   socket: FakeSocket;
   store: RunnerStore;
   posts: string[];
+  typingCalls: string[];
   logs: string[];
   /** Every request body sent to the model provider, in order. */
   providerRequests: string[];
@@ -115,6 +116,7 @@ function harness(
 
   const socket = new FakeSocket();
   const posts: string[] = [];
+  const typingCalls: string[] = [];
   const logs: string[] = [];
   const providerRequests: string[] = [];
 
@@ -125,6 +127,17 @@ function harness(
     fetchImpl: (async (url: unknown, init: unknown) => {
       const request = init as { body?: string };
       if (String(url).includes("discord.com/api")) {
+        /*
+         * Only the replies are collected. MAR-744 added a typing indicator, so
+         * a turn now makes two Discord calls -- `POST .../typing` before the
+         * work and `POST .../messages` after it -- and counting both would make
+         * every "it answered once" assertion in this file count the courtesy as
+         * an answer.
+         */
+        if (String(url).endsWith("/typing")) {
+          typingCalls.push(String(url));
+          return new Response("", { status: 204 });
+        }
         posts.push(String(JSON.parse(request.body ?? "{}").content ?? ""));
         return new Response("{}", { status: 200 });
       }
@@ -164,7 +177,7 @@ function harness(
   });
   socket.hello();
 
-  return { chief, socket, store: opened.store, posts, logs, providerRequests };
+  return { chief, socket, store: opened.store, posts, typingCalls, logs, providerRequests };
 }
 
 /** Let the message's async answer settle. */
@@ -448,5 +461,39 @@ describe("re-delivery after bridge setup (MAR-745)", () => {
     // carries the agent imported in step 3, not just the one present at
     // bridge setup.
     expect(providerRequests.join(" ")).toContain("Competitor Scout");
+  });
+});
+
+describe("saying it was heard (MAR-744)", () => {
+  /*
+   * Henrik, on the attended run: *"it would be cool if the bot had like a
+   * writing feedback while it thinks so you know its working."* A chief turn is
+   * a records read, a fetch and a completion -- four to nine seconds on the
+   * attended run -- and a chat room with nothing happening in it reads as a bot
+   * that did not hear you.
+   */
+  it("shows the typing indicator before the answer, on the same channel", async () => {
+    const { socket, posts, typingCalls } = harness();
+    socket.say();
+    await settle();
+
+    expect(typingCalls).toHaveLength(1);
+    expect(typingCalls[0]).toContain(`/channels/${CHANNEL}/typing`);
+    expect(posts).toHaveLength(1);
+  });
+
+  /*
+   * Nobody who is not the allowed id gets so much as a typing indicator. It
+   * would be a reply of a kind -- ADR 0028 decision 4 refuses those precisely
+   * because they tell anybody who can post in the channel that this bridge
+   * exists and who it belongs to.
+   */
+  it("stays silent for a stranger", async () => {
+    const { socket, posts, typingCalls } = harness();
+    socket.say({ author: { id: "999000999000999000" } });
+    await settle();
+
+    expect(typingCalls).toEqual([]);
+    expect(posts).toEqual([]);
   });
 });

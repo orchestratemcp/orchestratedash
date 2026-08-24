@@ -41,6 +41,7 @@
  * by `lib/views/chief.ts`, both of which are somebody else's file.
  */
 
+import { plainDay } from "../copy/when";
 import type { ChiefItem, ChiefSelection } from "./library";
 import { renderChiefItem } from "./library";
 import type { FetchedSource } from "./fetch-sources";
@@ -242,8 +243,20 @@ export function renderFetchedMaterial(
   topic: string,
   sources: readonly FetchedSource[],
 ): string {
+  /*
+   * "Just searched", and it has to be the first line (MAR-744, attended run).
+   *
+   * The outer fence in `chiefUserMessage` calls all of this "the briefing", so a
+   * model handed freshly fetched results wrote *"here is what the briefing
+   * turned up"* -- which reads to the person as *I re-read what I already had*,
+   * the exact opposite of what happened, and directly contradicts DASH's own
+   * sentence rendered underneath the answer. Naming the act here is what lets
+   * the answer say the true thing.
+   */
   const lines: string[] = [
-    `This app has just searched its public sources for: ${topic}`,
+    `These are search results this app fetched from the open internet a few seconds ago, ` +
+      `by searching its public sources for: ${topic}. They are new -- they are not from ` +
+      `anything this person's own agents had already collected. Say so when you answer.`,
     "",
     QUOTED_NOTICE,
     "",
@@ -255,8 +268,11 @@ export function renderFetchedMaterial(
       index += 1;
       lines.push(`[${String(index)}] ${item.headline}`);
       lines.push(`Source: ${source.name}`);
-      if (item.published_at !== null) {
-        lines.push(`Published: ${item.published_at}`);
+      // `plainDay`, for `renderChiefItem`'s reason: a model given an ISO stamp
+      // writes an ISO stamp into a sentence somebody has to read.
+      const published = item.published_at === null ? null : plainDay(item.published_at);
+      if (published !== null) {
+        lines.push(`Published: ${published}`);
       }
       lines.push("");
     }

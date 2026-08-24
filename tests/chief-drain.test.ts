@@ -170,3 +170,69 @@ describe("taking the runner's night shift into the store", () => {
     expect(row.decided_on).toBe("dash");
   });
 });
+
+/* ---------------------------------------------------------------------- *
+ * What a drained decision may name (MAR-744)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * One store for the whole block, deliberately.
+ *
+ * `freshStore` resets the module graph and migrates a new SQLite file, which is
+ * most of a second each; the three assertions below are all about one pure
+ * guard and share nothing that a second store would isolate. Three of them
+ * pushed this file's first test past vitest's 5s budget on a cold import --
+ * a self-inflicted CI flake, for granularity nothing here needed.
+ */
+describe("a drained decision names something the chief can actually do", () => {
+  const FETCH = {
+    ...DECISION,
+    connection_id: "chief:public-sources",
+    operation: "chief.sources.fetch",
+    request_id: "chief-sources-1",
+    result_count: 6,
+  };
+
+  /*
+   * The regression this block exists for.
+   *
+   * MAR-743 wrote the guard as a single comparison against the one connection
+   * the chief had. MAR-744 gave it a second -- the allowlisted public sources --
+   * and on the attended run the runner recorded three real fetches and DASH
+   * dropped all three at the drain, leaving nothing but a warning nobody was
+   * reading. The audit trail is the whole point of that table, so a decision
+   * silently not arriving in it is the worst kind of miss.
+   *
+   * The pairs are closed and not mixable: a row claiming the sources connection
+   * for a completion, or the model connection for a fetch, is not a decision
+   * this bridge could have taken, and a false record of a spend is worse than a
+   * missing one.
+   */
+  it("takes both pairs it can have taken, and no mixture of them", async () => {
+    const { db, drain } = await freshStore();
+
+    expect(drain.ingestChiefDrain({ turns: [], audit: [FETCH, DECISION] }).audit).toBe(2);
+
+    const mixed = [
+      { connection_id: "chief:public-sources", operation: "openrouter.chat.completion" },
+      { connection_id: CHIEF_CONNECTION_ID, operation: "chief.sources.fetch" },
+      { connection_id: "chief:public-sources", operation: "gmail.draft.create" },
+      { connection_id: "gmail", operation: "chief.sources.fetch" },
+      { connection_id: "chief:public-sources", operation: "chief.sources.fetch.evil" },
+    ].map((one, index) => ({ ...DECISION, ...one, request_id: `mixed-${String(index)}` }));
+
+    expect(drain.ingestChiefDrain({ turns: [], audit: mixed }).audit).toBe(0);
+
+    // And the table holds exactly the two that were admitted, both stamped with
+    // the provenance only `recordRunnerChiefCall` can write.
+    const rows = db
+      .db()
+      .prepare("SELECT operation, decided_on FROM broker_audit ORDER BY id")
+      .all() as { operation: string; decided_on: string }[];
+    expect(rows.map((row) => row.operation)).toEqual([
+      "chief.sources.fetch",
+      "openrouter.chat.completion",
+    ]);
+    expect(rows.every((row) => row.decided_on === "runner")).toBe(true);
+  });
+});

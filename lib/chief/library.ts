@@ -62,6 +62,7 @@ import {
   questionTerms,
 } from "../ai/ask";
 import type { RunArtifact } from "../contracts";
+import { plainDay } from "../copy/when";
 import { isBriefArtifact, isDigestArtifact } from "../contracts";
 
 /* ---------------------------------------------------------------------- *
@@ -323,6 +324,13 @@ export function selectChiefMaterial(
  * feed is a link a person might click. The link lives on the citation, which is
  * DASH's own record and is drawn by DASH.
  *
+ * The date is `plainDay`'s and not the feed's own stamp, which is a correction
+ * the attended run forced: given `2026-08-24T13:17:57.000Z` a model writes
+ * `2026-08-24T13:17:57.000Z` into its answer, and a chat reply reciting ISO
+ * timestamps at somebody is the opposite of the plain-sentence register the rest
+ * of DASH is written in. The exact instant stays on the citation, where DASH
+ * renders it.
+ *
  * The agent's title **is** sent, unlike the per-agent version where there is
  * only one agent to be talking about. It is `agentDisplayName`'s answer, the one
  * name DASH prints anywhere, so a model repeating it repeats a string a person
@@ -336,8 +344,9 @@ export function renderChiefItem(item: ChiefItem, index: number): string {
   if (item.source_name !== null) {
     lines.push(`Source: ${item.source_name}`);
   }
-  if (item.published_at !== null) {
-    lines.push(`Published: ${item.published_at}`);
+  const published = item.published_at === null ? null : plainDay(item.published_at);
+  if (published !== null) {
+    lines.push(`Published: ${published}`);
   }
   if (item.summary !== null) {
     lines.push(item.summary);

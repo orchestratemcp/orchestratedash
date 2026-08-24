@@ -232,6 +232,59 @@ export class DiscordGateway {
    * reaching into somebody's Discord through DASH. With this, a mention is
    * rendered as the literal characters and notifies nobody.
    */
+/**
+   * Show Discord's own "ChiefAPP is typing…" while the answer is being written.
+   *
+   * Henrik asked for this on the attended run: *"it would be cool if the bot had
+   * like a writing feedback while it thinks so you know its working."* A chief
+   * turn is a records read, a fetch of three feeds and a model completion, which
+   * on the attended run took between four and nine seconds -- long enough that a
+   * chat room with nothing happening in it reads as a bot that did not hear you.
+   *
+   * ## Why this is allowed to be here at all
+   *
+   * ADR 0028 decision 2 says the bridge makes **no REST call other than posting
+   * a reply**: no channel listing, no history fetch, no member lookup. That
+   * sentence is about what the bridge may *learn*, and this call learns nothing
+   * -- it sends the channel id it was already given and reads no response body.
+   * It is the same channel, the same credential, and the same direction as the
+   * reply it precedes. Widening the sentence to "post a reply, and say it is
+   * coming" costs no reach.
+   *
+   * ## Best effort, and never in the way
+   *
+   * Nothing branches on the outcome. A failure here must not stop an answer
+   * being sent -- a person would rather have the reply without the indicator
+   * than neither -- so the result is discarded and a failure is not even logged:
+   * it would be a line per turn on a path where nothing is wrong with the
+   * feature the person is using.
+   *
+   * Discord clears the indicator after ten seconds or when a message arrives,
+   * whichever is first, so there is nothing to turn off.
+   */
+  async showTyping(): Promise<void> {
+    const configuration = this.#configuration;
+    if (configuration === null) {
+      return;
+    }
+    try {
+      await this.#options.fetchImpl(
+        `${API_ORIGIN}/api/v10/channels/${configuration.channel_id}/typing`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bot ${configuration.bot_token}`,
+            "content-length": "0",
+          },
+          signal: AbortSignal.timeout(5_000),
+        },
+      );
+    } catch {
+      /* Dropped, and not logged. See the docblock: a rejection can carry the
+         request, and this one has a credential on it. */
+    }
+  }
+
   async post(content: string): Promise<boolean> {
     const configuration = this.#configuration;
     if (configuration === null) {
