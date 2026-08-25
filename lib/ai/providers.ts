@@ -98,14 +98,31 @@ export interface AiProviderProfile {
   /** The API origin every request for this profile is built against. */
   api_origin: string;
   /**
-   * The path of the one question DASH asks to find out whether a key works.
+   * The path DASH reads to list the models a key can reach.
    *
    * A literal on the profile, in `WriteOperation.path`'s shape and for the same
    * reason: the set of paths DASH will ever reach with a model key is the set
    * written down here, readable in ten seconds, and pinned by value in a test.
    * Nothing computes it and nothing an agent supplies reaches it.
+   *
+   * **Not, on its own, proof the key works** (MAR-787). OpenRouter answers this
+   * path with its public catalogue whether or not the key presented is valid —
+   * a 200 here proves the provider is reachable, not that the credential was
+   * checked. `key_check_path` is the path that actually stands behind "live".
    */
   models_path: string;
+  /**
+   * The path whose answer actually validates the key: a bad key gets a 401 or
+   * 403 here, every time, for every profile (MAR-787).
+   *
+   * Equal to `models_path` for Anthropic and OpenAI, whose models list already
+   * refuses an invalid key — so probing it costs one request and answers both
+   * questions at once. OpenRouter's models list does not, so its liveness
+   * question is asked at a different, key-scoped path (`/api/v1/key`), and
+   * `probeModelProvider` reaches for the models list separately, and only once
+   * this path has said the key is good.
+   */
+  key_check_path: string;
   auth: AiAuthScheme;
   /**
    * Where a person gets a key, in words rather than a link.
@@ -186,6 +203,9 @@ const OPENROUTER: AiProviderProfile = {
   label: "OpenRouter",
   api_origin: "https://openrouter.ai",
   models_path: "/api/v1/models",
+  // Key-scoped: reports the credential's own usage and limits, and refuses a
+  // key that is not valid rather than answering for anyone (MAR-787).
+  key_check_path: "/api/v1/key",
   auth: { kind: "bearer" },
   key_source: "Your OpenRouter account has a keys page; a key made there is what DASH needs.",
   completion: {
@@ -205,6 +225,9 @@ const ANTHROPIC: AiProviderProfile = {
   label: "Anthropic",
   api_origin: "https://api.anthropic.com",
   models_path: "/v1/models",
+  // Anthropic's models list already refuses an invalid key, so the liveness
+  // question and the models question are the same request (MAR-787).
+  key_check_path: "/v1/models",
   auth: {
     kind: "header",
     header: "x-api-key",
@@ -226,6 +249,9 @@ const OPENAI: AiProviderProfile = {
   label: "OpenAI",
   api_origin: "https://api.openai.com",
   models_path: "/v1/models",
+  // Same reason as Anthropic's: OpenAI's models list already refuses an
+  // invalid key (MAR-787).
+  key_check_path: "/v1/models",
   auth: { kind: "bearer" },
   key_source: "Your OpenAI account has an API keys page; a key made there is what DASH needs.",
   completion: {
@@ -329,6 +355,18 @@ export function aiModelsUrl(profile: AiProviderProfile): string {
 }
 
 /**
+ * The one URL DASH will ask to find out whether a key is actually accepted
+ * (MAR-787).
+ *
+ * Built exactly as `aiModelsUrl` is, from the profile's own origin and its own
+ * frozen `key_check_path`. Equal to `aiModelsUrl(profile)` for every profile
+ * except OpenRouter's — see `AiProviderProfile.key_check_path`.
+ */
+export function aiKeyCheckUrl(profile: AiProviderProfile): string {
+  return new URL(profile.key_check_path, profile.api_origin).toString();
+}
+
+/**
  * The one URL DASH will send a question to for this profile (MAR-545).
  *
  * Built exactly as `aiModelsUrl` is, from two frozen literals, and exported for
@@ -359,6 +397,11 @@ for (const profile of PROFILES) {
   if (!profile.models_path.startsWith("/") || profile.models_path.startsWith("//")) {
     throw new Error(`AI provider ${profile.id} has a models path that is not rooted at its origin`);
   }
+  if (!profile.key_check_path.startsWith("/") || profile.key_check_path.startsWith("//")) {
+    throw new Error(
+      `AI provider ${profile.id} has a key-check path that is not rooted at its origin`,
+    );
+  }
   if (!profile.completion.path.startsWith("/") || profile.completion.path.startsWith("//")) {
     throw new Error(
       `AI provider ${profile.id} has a completion path that is not rooted at its origin`,
@@ -370,6 +413,9 @@ for (const profile of PROFILES) {
   if (new URL(aiModelsUrl(profile)).origin !== profile.api_origin) {
     throw new Error(`AI provider ${profile.id} builds a models URL off its own origin`);
   }
+  if (new URL(aiKeyCheckUrl(profile)).origin !== profile.api_origin) {
+    throw new Error(`AI provider ${profile.id} builds a key-check URL off its own origin`);
+  }
   if (new URL(aiCompletionUrl(profile)).origin !== profile.api_origin) {
     throw new Error(`AI provider ${profile.id} builds a completion URL off its own origin`);
   }
@@ -377,6 +423,11 @@ for (const profile of PROFILES) {
     // The two are different questions with different costs, and a profile that
     // conflated them would make the free one bill and the billed one look free.
     throw new Error(`AI provider ${profile.id} asks its two questions at one path`);
+  }
+  if (profile.completion.path === profile.key_check_path) {
+    // Same argument as above, for the path that decides "live": it must never
+    // be the one that bills.
+    throw new Error(`AI provider ${profile.id} checks its key at its billed path`);
   }
   for (const header of Object.keys(aiAuthHeaders(profile, "probe"))) {
     if (!AI_AUTH_HEADERS.includes(header.toLowerCase())) {

@@ -1,5 +1,5 @@
 /**
- * The one request DASH makes with a model key on its own behalf (MAR-582).
+ * The request or two DASH makes with a model key on its own behalf (MAR-582).
  *
  * Not on an agent's behalf — that path is the broker, and it is audited,
  * rate-limited and adjudicated per call. This is DASH asking a question a person
@@ -7,6 +7,13 @@
  * because there is no agent to attribute it to and a table of DASH's own health
  * checks would dilute the one table whose every row is a decision DASH made
  * about an agent's request.
+ *
+ * One request for two of the three providers (MAR-787): Anthropic and OpenAI
+ * both refuse a bad key at the same path DASH reads for the models list, so
+ * asking it once answers both "is this accepted" and "how many models".
+ * OpenRouter's models list answers the same for any key, so its liveness
+ * question goes to a key-scoped path first, and the models list is asked only
+ * once that has said yes. See `AiProviderProfile.key_check_path`.
  *
  * ## Why it is here and not in `electron/`
  *
@@ -26,7 +33,7 @@
  */
 
 import { isModelId } from "../broker/operations";
-import { aiAuthHeaders, aiModelsUrl, type AiProviderProfile } from "./providers";
+import { aiAuthHeaders, aiKeyCheckUrl, aiModelsUrl, type AiProviderProfile } from "./providers";
 import type { AiProbeOutcome } from "./liveness";
 
 /** How long DASH will wait for a provider to answer a health question. */
@@ -56,6 +63,15 @@ const MAX_PROBE_BYTES = 2_097_152;
  * The distinction between "could not ask" and "was told no" is the whole point
  * of the return shape. `classifyProbe` turns it into a state; nothing here
  * decides what a status code means.
+ *
+ * **Asks `key_check_path` first, and its status is the outcome's status**
+ * (MAR-787). A models list that answers the same for any key — OpenRouter's
+ * does — is not evidence about the credential; `key_check_path` is the path
+ * `lib/ai/providers.ts` names as the one that actually refuses a bad key. Only
+ * once that has said the key is good does this go on to ask how many models it
+ * reaches, which for Anthropic and OpenAI is the same request (their
+ * `key_check_path` and `models_path` are equal) and for OpenRouter is a second
+ * one, asked only because the first said yes.
  */
 export async function probeModelProvider(
   profile: AiProviderProfile,
@@ -63,9 +79,59 @@ export async function probeModelProvider(
   fetchImpl: typeof fetch = fetch,
   wantIds = false,
 ): Promise<AiProbeOutcome> {
-  let response: Response;
+  const check = await getWithKey(aiKeyCheckUrl(profile), profile, key, fetchImpl);
+  if (check === null) {
+    return { status: null, model_count: null };
+  }
+  if (!check.ok) {
+    // The status crosses and the body does not. 401 and 403 are the key's
+    // verdict; everything else is the provider having a bad day, and
+    // `classifyProbe` is what says so.
+    return { status: check.status, model_count: null };
+  }
+
+  const modelsResponse =
+    profile.key_check_path === profile.models_path
+      ? check
+      : await getWithKey(aiModelsUrl(profile), profile, key, fetchImpl);
+
+  if (modelsResponse === null || !modelsResponse.ok) {
+    // The key is accepted and DASH could not go on to count what it reaches.
+    // Reported as accepted with no count, which `classifyProbe` resolves to
+    // `provider_error` — honest for "the key is good and DASH cannot say how
+    // many models it reaches", not a reason to call the key bad.
+    return { status: check.status, model_count: null };
+  }
+
+  const text = await readBounded(modelsResponse);
+  if (text === null) {
+    // Answered, unreadably. Reported as a success status with no count, which
+    // `classifyProbe` resolves to `provider_error` — the honest state for "it
+    // said yes and DASH cannot tell what it said yes to".
+    return { status: check.status, model_count: null };
+  }
+
+  const listed = readModels(text);
+  return {
+    status: check.status,
+    model_count: listed === null ? null : listed.length,
+    // Only when somebody asked (MAR-583). A probe run to answer "does this key
+    // still work" hands back no catalogue at all, so the ids cannot reach a
+    // caller that did not want them and would have nowhere to put them. The
+    // durable record never carries them either way — see `AiProbeOutcome`.
+    model_ids: wantIds ? listed : null,
+  };
+}
+
+/** One GET, with this profile's auth headers, dropped to null on any failure to ask. */
+async function getWithKey(
+  url: string,
+  profile: AiProviderProfile,
+  key: string,
+  fetchImpl: typeof fetch,
+): Promise<Response | null> {
   try {
-    response = await fetchImpl(aiModelsUrl(profile), {
+    return await fetchImpl(url, {
       method: "GET",
       headers: {
         // Spread first, so a provider's auth headers can never displace the
@@ -76,34 +142,8 @@ export async function probeModelProvider(
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
   } catch {
-    return { status: null, model_count: null };
+    return null;
   }
-
-  if (!response.ok) {
-    // The status crosses and the body does not. 401 and 403 are the key's
-    // verdict; everything else is the provider having a bad day, and
-    // `classifyProbe` is what says so.
-    return { status: response.status, model_count: null };
-  }
-
-  const text = await readBounded(response);
-  if (text === null) {
-    // Answered, unreadably. Reported as a success status with no count, which
-    // `classifyProbe` resolves to `provider_error` — the honest state for "it
-    // said yes and DASH cannot tell what it said yes to".
-    return { status: response.status, model_count: null };
-  }
-
-  const listed = readModels(text);
-  return {
-    status: response.status,
-    model_count: listed === null ? null : listed.length,
-    // Only when somebody asked (MAR-583). A probe run to answer "does this key
-    // still work" hands back no catalogue at all, so the ids cannot reach a
-    // caller that did not want them and would have nowhere to put them. The
-    // durable record never carries them either way — see `AiProbeOutcome`.
-    model_ids: wantIds ? listed : null,
-  };
 }
 
 /**

@@ -16,6 +16,7 @@ import {
   AI_AUTH_HEADERS,
   AI_PROVIDER_IDS,
   aiAuthHeaders,
+  aiKeyCheckUrl,
   aiModelsUrl,
   aiProviderById,
   aiProviderFor,
@@ -35,6 +36,23 @@ describe("the registry", () => {
       "https://api.anthropic.com/v1/models",
       "https://api.openai.com/v1/models",
     ]);
+  });
+
+  it("checks a key at a path that actually refuses a bad one (MAR-787)", () => {
+    // OpenRouter's models list answers the same whether or not the key is
+    // valid, so its liveness question goes to a key-scoped path instead.
+    // Anthropic and OpenAI already refuse a bad key at their models list, so
+    // their key-check path is that same path — one request answers both.
+    expect(aiProviders().map((profile) => aiKeyCheckUrl(profile))).toEqual([
+      "https://openrouter.ai/api/v1/key",
+      "https://api.anthropic.com/v1/models",
+      "https://api.openai.com/v1/models",
+    ]);
+    expect(aiKeyCheckUrl(aiProviderById("anthropic")!)).toBe(aiModelsUrl(aiProviderById("anthropic")!));
+    expect(aiKeyCheckUrl(aiProviderById("openai")!)).toBe(aiModelsUrl(aiProviderById("openai")!));
+    expect(aiKeyCheckUrl(aiProviderById("openrouter")!)).not.toBe(
+      aiModelsUrl(aiProviderById("openrouter")!),
+    );
   });
 
   it("names no service DASH has not built a flow for", () => {
@@ -92,6 +110,8 @@ describe("the key on the wire", () => {
     for (const profile of aiProviders()) {
       expect(aiModelsUrl(profile)).not.toContain("sk-");
       expect(new URL(aiModelsUrl(profile)).search).toBe("");
+      expect(aiKeyCheckUrl(profile)).not.toContain("sk-");
+      expect(new URL(aiKeyCheckUrl(profile)).search).toBe("");
     }
   });
 });
