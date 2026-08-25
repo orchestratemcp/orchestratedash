@@ -1416,7 +1416,19 @@ export function fleetConnectorViews(
       // and a card offering to hand out a credential DASH does not have would be
       // the dead button this codebase keeps closing vocabularies to prevent.
       waiting: stored === null ? [] : agents.filter((one) => !one.connected).map((one) => one.agent),
-      reach_sentence: describeFleetReach(connector, reach),
+      // MAR-792. `reach` names every agent this connector *could* materialize,
+      // and stays true for its other reader — `skipped` above answers "why
+      // not" off the same pass. The sentence is a different promise, "what
+      // will pressing Connect do", so it has to drop the agents `agents`
+      // above already marked `connected`: those already hold this
+      // credential, and a sentence still promising to connect them after the
+      // press that did it is a claim about the past dressed as the future.
+      reach_sentence: describeFleetReach(connector, {
+        ...reach,
+        materializes: reach.materializes.filter(
+          (one) => !agents.find((agent) => agent.agent === one.agent_id)?.connected,
+        ),
+      }),
     };
   });
 }
@@ -1874,7 +1886,15 @@ export function workspaceView(
       question_key: answer.question_key,
       question_label: answer.question_label,
       option_label: answer.option_label,
-      chosen_at: answer.chosen_at,
+      // MAR-793. `answer.chosen_at` is `writeStandingAnswer`'s own ISO instant,
+      // and `set_on` used to interpolate it straight onto the screen — "Set
+      // 2026-08-25T16:47:25.128Z" sitting directly above two human dates in the
+      // same list. `plainDay`'s own fallback rather than a thrown error: this
+      // row is DASH's own record, not a field somebody typed, so a parse
+      // failure here would be a DASH bug, and the raw stamp is a more honest
+      // symptom of that than a swallowed one — `sent_on` takes the same
+      // fallback elsewhere in this file.
+      chosen_at: plainDay(answer.chosen_at) ?? answer.chosen_at,
     })),
     // MAR-742 item 8, ADR 0029. `standing_answers`' neighbour and the same
     // reasoning: DASH's own record about this agent, read once here with every

@@ -675,6 +675,36 @@ describe("the panel on the workspace view", () => {
   });
 });
 
+/* ---------------------------------------------------------------------- *
+ * Standing answers say when in words (MAR-793)
+ * ---------------------------------------------------------------------- */
+
+describe("standing answers on the workspace view", () => {
+  const AGENT = "synthetic-gmail-meeting-assistant";
+
+  it("carries chosen_at as a plain day, never the stored ISO instant", async () => {
+    const { writeStandingAnswer } = await import("../lib/agent-dom/standing-answers");
+    importManifest(workspaceManifest);
+    writeStandingAnswer(
+      AGENT,
+      "Which competitor should I focus on?",
+      "opt-a",
+      "Widget Co",
+      "2026-08-25T16:47:25.128Z",
+    );
+
+    const view = workspaceView(AGENT, BEFORE_WORK_EXPIRY);
+    expect(view.found).toBe(true);
+    if (!view.found) return;
+
+    expect(view.standing_answers).toHaveLength(1);
+    expect(view.standing_answers[0]?.chosen_at).toBe("25 August 2026");
+    // The regression itself: a raw instant has a `T` and a `Z` in it, and
+    // `lib/copy/when.ts` exists precisely so nothing on a guided surface does.
+    expect(view.standing_answers[0]?.chosen_at).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+  });
+});
+
 describe("every view", () => {
   it("survives the boundary it has to cross", () => {
     importManifest(manifest);

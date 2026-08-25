@@ -105,13 +105,15 @@ frames, `layout.json`, `layout-settings.json`, the four run logs and the two
 runner-retirement records. Three existing
 harnesses were extended with scenes that run **after** their matrix and press
 things for real, rather than new harnesses being added. Four defects filed from
-the frames and none fixed: **MAR-791** (`.model-picker`'s 46ch cap, written for
+the frames: **MAR-791** (`.model-picker`'s 46ch cap, written for
 a dropdown, contains MAR-654's prose, so its own `60ch` rules are unreachable
 and the explanation wraps at ~44 characters in a third of the page — already
 visible, unnoticed, in the group-C frames), **MAR-792** (the fleet card's
 per-agent chip stretches the whole card because a three-column rule sits over a
 two-child row; and its reach sentence outlives the connection it offers),
-**MAR-793** (a standing answer is stamped `Set 2026-08-25T16:47:25.128Z`).
+**MAR-793** (a standing answer is stamped `Set 2026-08-25T16:47:25.128Z`) — all
+three fixed on PR #297 (`000henrik/mar-791-792-793`, open and not merged),
+frames re-shot against the fix.
 
 ## Lifecycle counts (from state.json, 2026-08-24)
 
