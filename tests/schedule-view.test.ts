@@ -18,11 +18,16 @@ const standing: AgentSchedule = {
   kind: "daily",
   at_local: "08:00",
   created_at: "2026-08-24T12:00:00.000Z",
+  allowance_calls: 0,
 };
+
+/** MAR-784. The same schedule with the switch on. */
+const allowing: AgentSchedule = { ...standing, allowance_calls: 2 };
 
 function settled(
   outcome: ScheduleSettlement["outcome"],
   due = "2026-08-25T06:00:00.000Z",
+  allowance = 0,
 ): ScheduleSettlement {
   return {
     agent: "scout",
@@ -30,6 +35,7 @@ function settled(
     settled_at: "2026-08-25T06:00:12.000Z",
     outcome,
     detail: "A sentence the runner wrote.",
+    allowance_calls: allowance,
   };
 }
 
@@ -52,7 +58,10 @@ describe("an agent nobody has scheduled", () => {
   it("does not explain the limits of a feature nobody has asked for", () => {
     const view = buildAgentScheduleView(null, []);
     expect(view.liveness).toEqual([]);
-    expect(view.no_spend).toBe("");
+    expect(view.spend_line).toBe("");
+    // MAR-784. The bound on a permission nobody has is not a sentence anybody
+    // needs, and printing it would be the same failure with an extra line.
+    expect(view.spend_bound).toBe("");
   });
 });
 
@@ -67,7 +76,15 @@ describe("an agent with a schedule", () => {
   it("carries all three liveness sentences and the spend one", () => {
     const view = buildAgentScheduleView(standing, []);
     expect(view.liveness).toHaveLength(3);
-    expect(view.no_spend).toBe(AGENT_TRIGGER_COPY.no_spend);
+    expect(view.spend_line).toBe(AGENT_TRIGGER_COPY.spend.none);
+    /*
+     * MAR-784. The default schedule says exactly what it said before the
+     * ceiling existed — the whole of ADR 0029 decision 6, on screen, for
+     * anybody who has not opted in. And no second sentence: the "only while
+     * DASH is open" bound is about an allowance, and there is not one.
+     */
+    expect(view.allowance_calls).toBe(0);
+    expect(view.spend_bound).toBe("");
   });
 
   /**

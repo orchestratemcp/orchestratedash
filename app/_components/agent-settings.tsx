@@ -566,14 +566,33 @@ function StandingAnswerRow({
  * sentences under the control are that fact, and they are the reason this is an
  * honest control rather than a promise.
  *
- * ## The two things on screen that are not the control
+ * ## The things on screen that are not the control
  *
- * `liveness` and `no_spend` are shown **only while a schedule is standing**.
+ * `liveness` and `spend_line` are shown **only while a schedule is standing**.
  * Under a panel with no schedule they would be DASH explaining the limits of a
  * feature nobody has asked for, which is the *"describing its own internals at
  * somebody who came to look at their agent"* failure `ModelChoice` names. Once
  * one is standing they are load-bearing: the person has just decided to depend
- * on something, and these are the two ways that dependence can surprise them.
+ * on something, and these are the ways that dependence can surprise them.
+ *
+ * `spend_bound` is a third, shown only when there is an allowance for it to
+ * bound (MAR-784, ADR 0029 amendment 1). It is the sentence that costs this
+ * feature something — *a scheduled run can use your model while DASH is open,
+ * and not while it is closed* — and it is on screen for the same reason the
+ * third liveness sentence is: the person setting a 03:00 schedule is exactly the
+ * person it is about.
+ *
+ * ## The switch beside the time
+ *
+ * MAR-784, on Henrik's ruling that *"some agents really need to use AI and some
+ * don't"*. It is **inside** the timed option's block and **above** Save, which
+ * makes it part of one press rather than a control of its own: the ceiling and
+ * the cadence are one decision, and a switch that saved on its own would be a
+ * machine given permission to spend by a stray click on a list.
+ *
+ * Off is the default and off is what every existing schedule reads as. What the
+ * switch writes is a *number* — see `AgentScheduleView.allowance_choice` — so
+ * that offering the quantity later is a control rather than a migration.
  *
  * ## The disabled radio that remains
  *
@@ -620,12 +639,38 @@ export function TriggerSwitch({
    * thing get different answers.
    */
   const [draft, setDraft] = useState(schedule.at_local ?? "08:00");
+  /*
+   * MAR-784. The ceiling, as a switch rather than a number.
+   *
+   * The stored value is a count of model calls and the panel offers exactly two
+   * of them — off, and `allowance_choice`, which is what a person's own press of
+   * Run now buys. That is the novice-first reading of Henrik's ruling: the
+   * question somebody actually has is *"may this one use AI?"*, and a number
+   * field would ask them to have an opinion about a quantity whose only honest
+   * ceiling is a constant they cannot see. The column stays a number so that
+   * offering the quantity later is a control and not a migration — the argument
+   * `agent_schedules.kind` already makes about itself.
+   *
+   * Seeded from what is standing so the switch reflects the store on open, and
+   * re-seeded by nothing: like `draft`, this is a draft, and a poll landing
+   * mid-edit must not move a control somebody is looking at.
+   */
+  const [allow, setAllow] = useState(schedule.allowance_calls > 0);
   const [busy, setBusy] = useState(false);
 
   async function save(): Promise<void> {
     setBusy(true);
     setFeedback(null);
-    const result = await setAgentSchedule({ agent_id: agentId, at_local: draft });
+    const result = await setAgentSchedule({
+      agent_id: agentId,
+      at_local: draft,
+      /*
+       * Stated on every save, never omitted. `schedule.set` replaces the whole
+       * row, so leaving this out would switch a ceiling off as a side effect of
+       * changing a time — see the field's own note in `electron/preload.ts`.
+       */
+      allowance_calls: allow ? schedule.allowance_choice : 0,
+    });
     setBusy(false);
     setFeedback({
       ok: result.ok,
@@ -724,6 +769,28 @@ export function TriggerSwitch({
                 ) : null}
               </span>
               <p className="muted wrap">{AGENT_TRIGGER_COPY.time_hint}</p>
+              {/* MAR-784. Where the time is set, because that is where the
+                  decision is — the ceiling and the cadence are one press. It is
+                  above Save and inside the same block for that reason: turning
+                  it on is not a save on its own, exactly as picking the radio
+                  is not, and for the same argument spelled out on `onSelect`
+                  above. A control whose subject is a machine spending money
+                  without anybody watching gets a confirmation. */}
+              <label className="trigger-allowance" htmlFor={`agent-schedule-spend-${agentId}`}>
+                <input
+                  checked={allow}
+                  disabled={busy}
+                  id={`agent-schedule-spend-${agentId}`}
+                  onChange={(event) => {
+                    setAllow(event.target.checked);
+                  }}
+                  type="checkbox"
+                />
+                <span>{AGENT_TRIGGER_COPY.allowance_label}</span>
+              </label>
+              <p className="muted wrap">
+                {AGENT_TRIGGER_COPY.allowance_hint(schedule.allowance_choice)}
+              </p>
             </div>
           ) : (
             /*
@@ -752,7 +819,13 @@ export function TriggerSwitch({
               </li>
             ))}
           </ul>
-          <p className="muted wrap">{schedule.no_spend}</p>
+          <p className="muted wrap">{schedule.spend_line}</p>
+          {/* Only under the allowance sentence, and never under the no-spend
+              one. See `AgentScheduleView.spend_bound` — an empty string here is
+              the view saying there is nothing to bound, not a missing value. */}
+          {schedule.spend_bound === "" ? null : (
+            <p className="muted wrap">{schedule.spend_bound}</p>
+          )}
         </>
       ) : null}
 
@@ -771,6 +844,19 @@ export function TriggerSwitch({
             <time dateTime={schedule.last.due_at}>{schedule.last.due_at}</time>
           </p>
           <p className="muted wrap">{schedule.last.detail}</p>
+          {/* MAR-784. The receipt, and it is absent rather than zeroed for a
+              window that was allowed nothing — which is every window under the
+              default. `ceiling_line` appears only when DASH actually refused a
+              call in that window, so it names a degrade that happened rather
+              than one the arithmetic implies. */}
+          {schedule.last.spend === null ? null : (
+            <>
+              <p className="muted wrap">{schedule.last.spend.line}</p>
+              {schedule.last.spend.ceiling_line === null ? null : (
+                <p className="muted wrap">{schedule.last.spend.ceiling_line}</p>
+              )}
+            </>
+          )}
         </div>
       )}
 

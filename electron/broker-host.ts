@@ -49,6 +49,8 @@ import { chiefManifest } from "../lib/chief/manifest";
 import { isKeyCredential, type BrokerCredential } from "../lib/broker/grant";
 import { createBroker, type Broker, type BrokerAuditRow, type CredentialRead } from "../lib/broker/execute";
 import { agentPrincipal } from "../lib/broker/principal";
+import { SPEND_ALLOWANCE_MS } from "../lib/broker/spend-allowance";
+import { readAgentSchedule } from "../lib/schedule/store";
 import {
   hasBrokerRequest,
   markBrokerAnswerUndelivered,
@@ -124,6 +126,62 @@ function parseDroppedDetail(candidate: unknown): DroppedTally[] {
     tallies.push({ agent_id: agentId, count, first_at: firstAt, last_at: lastAt });
   }
   return tallies;
+}
+
+/**
+ * One ceiling the runner says it opened, read out of an untrusted drain body
+ * (MAR-784, ADR 0029 amendment 1).
+ *
+ * `parseDroppedDetail`'s discipline and one of its two reasons, sharpened. That
+ * function calls the runner "DASH's own child and not a security boundary"
+ * because a drop tally can only ever make DASH write a row about a lapse. This
+ * field decides whether an agent may spend somebody's money, so it is read as if
+ * the sender were hostile even though it is not — and then, having been read, it
+ * is still not believed: `openScheduledAllowances` grants the smaller of this
+ * number and the ceiling in DASH's own store.
+ *
+ * A member that does not parse is skipped, which means no allowance, which means
+ * the scheduled run behaves exactly as it did before this feature existed. Every
+ * failure of this parser degrades to ADR 0029 decision 6.
+ */
+interface DrainedAllowance {
+  agent_id: string;
+  fire_id: string;
+  opened_at: string;
+  calls: number;
+}
+
+function parseScheduledAllowances(candidate: unknown): DrainedAllowance[] {
+  if (!Array.isArray(candidate)) {
+    return [];
+  }
+  const allowances: DrainedAllowance[] = [];
+  for (const entry of candidate) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+    const {
+      agent_id: agentId,
+      fire_id: fireId,
+      opened_at: openedAt,
+      calls,
+    } = entry as Record<string, unknown>;
+    if (
+      typeof agentId !== "string" ||
+      agentId.length === 0 ||
+      typeof fireId !== "string" ||
+      fireId.length === 0 ||
+      typeof openedAt !== "string" ||
+      Number.isNaN(new Date(openedAt).getTime()) ||
+      typeof calls !== "number" ||
+      !Number.isInteger(calls) ||
+      calls <= 0
+    ) {
+      continue;
+    }
+    allowances.push({ agent_id: agentId, fire_id: fireId, opened_at: openedAt, calls });
+  }
+  return allowances;
 }
 
 /**
@@ -415,6 +473,91 @@ export function startBroker(
   let stopped = false;
   let timer: NodeJS.Timeout | null = null;
 
+  /**
+   * Scheduled fires this loop has already opened an allowance for (MAR-784).
+   *
+   * **The whole reason `ScheduledAllowance` carries a `fire_id`.** The runner
+   * reports a live ceiling on every drain for as long as it lasts — it has to,
+   * because a drain that failed must not cost somebody their run — and
+   * `allowRunSpend` *replaces* what it holds rather than topping it up. Opening
+   * on every mention would therefore restore the ceiling to full several times a
+   * minute, which is not a ceiling. Opening on the first mention of each fire id
+   * and ignoring the rest is what makes "at most N calls per scheduled run" true.
+   *
+   * Bounded, and the bound is generous because the entries are tiny and the cost
+   * of forgetting one is real: a fire id dropped from this set while its window
+   * is still open would let the next drain re-open the allowance. Twenty times
+   * `BROKER_REPLAY_MEMORY` would still be nothing; two hundred is far more fires
+   * than can exist inside one ten-minute window on a machine with a sane number
+   * of agents, and dropping the oldest first means the entry that goes is the one
+   * whose window closed longest ago.
+   */
+  const openedFires: string[] = [];
+  const openedFireSet = new Set<string>();
+  const MAX_REMEMBERED_FIRES = 200;
+
+  /**
+   * Believe the runner exactly as far as DASH's own store already agrees
+   * (MAR-784, ADR 0029 amendment 1).
+   *
+   * Three things have to be true before a call is opened, and each one is a
+   * separate sentence rather than a combined condition because they fail for
+   * different reasons and a reader should be able to tell which:
+   *
+   * 1. **DASH has not already opened this fire.** See `openedFires`.
+   * 2. **DASH's own `agent_schedules` row says this agent has a standing
+   *    schedule.** A runner still holding an instruction the person deleted a
+   *    minute ago — which ADR 0029 decision 2's five-second re-assertion makes
+   *    a real, if brief, state — opens nothing.
+   * 3. **The ceiling granted is the smaller of the two numbers.** So the field on
+   *    the wire can only ever *narrow* what the person set on their own page,
+   *    never widen it, and a compromised runner's best move is to ask for less.
+   *
+   * The clock is DASH's own. `opened_at` is read only to check the window has
+   * not already passed — a stale report from a runner whose fire is long over
+   * opens nothing — and never used as the allowance's start, because
+   * `openRunSpend` times from the moment DASH opens it and a timestamp a caller
+   * supplies is a timestamp a caller could choose.
+   */
+  function openScheduledAllowances(candidate: unknown): void {
+    const allowances = parseScheduledAllowances(candidate);
+    if (allowances.length === 0) {
+      return;
+    }
+    const at = new Date();
+    for (const allowance of allowances) {
+      if (openedFireSet.has(allowance.fire_id)) {
+        continue;
+      }
+      if (at.getTime() - new Date(allowance.opened_at).getTime() >= SPEND_ALLOWANCE_MS) {
+        continue;
+      }
+      const standing = readAgentSchedule(allowance.agent_id);
+      if (standing === null || !standing.enabled || standing.allowance_calls <= 0) {
+        continue;
+      }
+      const granted = Math.min(allowance.calls, standing.allowance_calls);
+      if (granted <= 0) {
+        continue;
+      }
+
+      openedFireSet.add(allowance.fire_id);
+      openedFires.push(allowance.fire_id);
+      while (openedFires.length > MAX_REMEMBERED_FIRES) {
+        const oldest = openedFires.shift();
+        if (oldest !== undefined) {
+          openedFireSet.delete(oldest);
+        }
+      }
+
+      broker.allowRunSpend(allowance.agent_id, at, granted);
+      log(
+        `[dash-shell] ${allowance.agent_id}'s scheduled run may spend ${String(granted)} model ` +
+          `call${granted === 1 ? "" : "s"}, which is the ceiling on its schedule`,
+      );
+    }
+  }
+
   async function pass(): Promise<boolean> {
     written.length = 0;
     let drained: DrainedRequest[];
@@ -430,6 +573,7 @@ export function startBroker(
         requests?: unknown;
         dropped?: unknown;
         dropped_detail?: unknown;
+        scheduled_allowances?: unknown;
       };
       if (typeof body.dropped === "number" && body.dropped > 0) {
         log(
@@ -454,6 +598,17 @@ export function startBroker(
           observed_by: "runner",
         });
       }
+      /*
+       * MAR-784. Before the requests are looked at and before the early return
+       * below, which is the ordering the whole feature rests on: every request in
+       * this body was written by a child of the process that reported these
+       * ceilings, so opening them first means no scheduled request can be
+       * adjudicated before the allowance that covers it exists. A pass that
+       * carries an allowance and no requests still opens it — the agent's first
+       * ask may land in the next pass, and an allowance that waited for a request
+       * to justify it would be one poll too late.
+       */
+      openScheduledAllowances(body.scheduled_allowances);
       drained = Array.isArray(body.requests) ? (body.requests as DrainedRequest[]) : [];
     } catch {
       // A runner that stopped answering is reported by the state poll, not by a

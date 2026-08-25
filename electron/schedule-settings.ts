@@ -7,6 +7,19 @@
  * credential**: no vault read, no prompt, no window, no bytes on a network. A
  * schedule is an agent id and a time of day.
  *
+ * ## The one gate that is about money (MAR-784)
+ *
+ * A schedule may now carry a ceiling — *this may spend at most N model calls per
+ * scheduled run* — and this file is where a person's press turns into that
+ * number. It still touches **no credential**: the sentence above is unchanged,
+ * because a ceiling is a count and not a key, and nothing here reads the vault,
+ * opens an allowance, or contacts a provider. What it writes is a number that
+ * `electron/broker-host.ts` will later refuse to exceed.
+ *
+ * The bound itself lives in `writeAgentSchedule`, beside the write, for the
+ * reason the paragraph below gives about `at_local`: a gate stated at the seam
+ * is a gate a second implementation could forget.
+ *
  * ## Why this is a module and not four lines in `main.ts`
  *
  * `refreshSampleAgent`'s reason, which every settings action in this directory
@@ -35,7 +48,7 @@ import { listAgentNames } from "../lib/store";
 
 export function performScheduleAction(
   action: ScheduleAction,
-  target: { agent_id: string; at_local?: string },
+  target: { agent_id: string; at_local?: string; allowance_calls?: number },
 ): { ok: boolean; refusal?: string } {
   const agent = target.agent_id.trim();
   if (agent.length === 0) {
@@ -70,5 +83,27 @@ export function performScheduleAction(
     return { ok: false, refusal: "DASH has no saved setup for that agent." };
   }
 
-  return writeAgentSchedule(agent, target.at_local ?? "", new Date().toISOString());
+  /*
+   * MAR-784. An unstated ceiling is refused rather than read as zero.
+   *
+   * Zero would be the *safe* default and it is still the wrong one, because this
+   * command replaces the whole row: a caller that forgot the field would quietly
+   * switch off a ceiling the person had set, on a save they made for some other
+   * reason, with a success message. `reviewCommand` already refuses the command
+   * when the key is absent — this is the sentence somebody would read if a later
+   * caller reached `performScheduleAction` directly.
+   */
+  if (target.allowance_calls === undefined) {
+    return {
+      ok: false,
+      refusal: "A schedule has to say whether its runs may use a model.",
+    };
+  }
+
+  return writeAgentSchedule(
+    agent,
+    target.at_local ?? "",
+    new Date().toISOString(),
+    target.allowance_calls,
+  );
 }

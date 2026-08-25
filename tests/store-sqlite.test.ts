@@ -53,7 +53,7 @@ const opened: Array<{ dataDir: string; closeDb: () => void }> = [];
  * they assert that a re-open, or a migration of an old store, lands at the head,
  * and following the head is the whole content of that claim.
  */
-const HEAD_VERSION = 34;
+const HEAD_VERSION = 35;
 
 async function freshStore(seed?: (dataDir: string) => void): Promise<{
   dataDir: string;
@@ -209,8 +209,21 @@ describe("schema", () => {
     // and this pin is what fails if a parallel packet took 31 or 32 first —
     // exactly the blocking gate the note at 25 describes. Confirm the number at
     // the merge rather than assuming it survived.
+    //
+    // 35 is MAR-784's two `allowance_calls` columns (ADR 0029 amendment 1) —
+    // what a scheduled run of an agent may spend, and what the window that
+    // already happened was handed. Appended on the standing terms: an installed
+    // store that has recorded 0 to 34 runs exactly one more, and both columns
+    // arrive at zero, which is ADR 0029 decision 6 kept for every schedule
+    // somebody set under it.
+    //
+    // The index was **assigned as 34 and confirmed against this pin before it
+    // was written**, which is the check the paragraph above asks for and the one
+    // the previous packet's assignment failed. `user_version` was 34 at that
+    // branch point, so the next step is index 34 and produces 35 — the
+    // off-by-one that note at the top of this file exists to keep straight.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(34);
+    expect(version.user_version).toBe(35);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
