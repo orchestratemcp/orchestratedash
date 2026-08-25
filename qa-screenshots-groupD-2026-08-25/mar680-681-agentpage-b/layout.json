@@ -1,0 +1,1357 @@
+{
+  "captured_at": "2026-08-25T16:47:32.898Z",
+  "agent": "news-scout",
+  "measurements": [
+    {
+      "stage": "overview",
+      "theme": "light",
+      "viewport": "1280",
+      "reported_width": 1279,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Overview",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "Waiting for you",
+        "Schedule a synthetic project review"
+      ],
+      "stage_sections": 1,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 58,
+      "frame_words": 83,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 262.1015625,
+        "height": 34.5,
+        "top": 130
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "run",
+      "theme": "light",
+      "viewport": "1280",
+      "reported_width": 1279,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Run",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "Quick commands",
+        "Where this run is",
+        "Live output",
+        "Performance"
+      ],
+      "stage_sections": 4,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 139,
+      "frame_words": 83,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 262.1015625,
+        "height": 34.5,
+        "top": 130
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "output",
+      "theme": "light",
+      "viewport": "1280",
+      "reported_width": 1279,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Output",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 1,
+      "repeated": [
+        "What the scout found today"
+      ],
+      "panel_bodies": 2,
+      "stage_headings": [
+        "Generated assets",
+        "What the scout found today",
+        "Agent supervision is moving fast",
+        "What the scout found",
+        "Latest briefing",
+        "A supervisor for long-running agents lands in beta",
+        "Permission brokers replace token pass-through",
+        "Written up",
+        "Everything it produced",
+        "A supervisor for long-running agents lands in beta",
+        "Permission brokers replace token pass-through",
+        "About this scout",
+        "Draft in progress"
+      ],
+      "stage_sections": 2,
+      "stage_cards": 7,
+      "dated_entries": 3,
+      "tiles": 0,
+      "stage_words": 395,
+      "frame_words": 83,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 262.1015625,
+        "height": 34.5,
+        "top": 130
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "chat",
+      "theme": "light",
+      "viewport": "1280",
+      "reported_width": 1279,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Chat",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "Ask about what it found"
+      ],
+      "stage_sections": 1,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 75,
+      "frame_words": 73,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 262.1015625,
+        "height": 34.5,
+        "top": 130
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "settings",
+      "theme": "light",
+      "viewport": "1280",
+      "reported_width": 1279,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Settings",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "Settings",
+        "Name and character",
+        "When this agent starts",
+        "Notifications",
+        "DASH does not choose this agent's model",
+        "Run this agent on your server",
+        "Change this agent with your own editor",
+        "This agent will not run",
+        "Remove this agent"
+      ],
+      "stage_sections": 4,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 395,
+      "frame_words": 83,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 262.1015625,
+        "height": 34.5,
+        "top": 130
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "logs",
+      "theme": "light",
+      "viewport": "1280",
+      "reported_width": 1279,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Logs",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "State",
+        "Runs",
+        "Started 2026-07-16T09:01:00Z",
+        "Tasks",
+        "Schedule a synthetic project review",
+        "Connections",
+        "gmail",
+        "calendar",
+        "Memory",
+        "Meeting duration",
+        "Plan-vs-actual",
+        "Audit history",
+        "Approval decisions"
+      ],
+      "stage_sections": 7,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 127,
+      "frame_words": 83,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 262.1015625,
+        "height": 34.5,
+        "top": 130
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "(no stage named)",
+      "theme": "light",
+      "viewport": "1280",
+      "reported_width": 1279,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Run",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "Quick commands",
+        "Where this run is",
+        "Live output",
+        "Performance"
+      ],
+      "stage_sections": 4,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 139,
+      "frame_words": 83,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 262.1015625,
+        "height": 34.5,
+        "top": 130
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "overview",
+      "theme": "light",
+      "viewport": "375",
+      "reported_width": 374,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Overview",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "Waiting for you",
+        "Schedule a synthetic project review"
+      ],
+      "stage_sections": 1,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 58,
+      "frame_words": 81,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 263,
+        "height": 34.5,
+        "top": 242
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "run",
+      "theme": "light",
+      "viewport": "375",
+      "reported_width": 374,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Run",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "Quick commands",
+        "Where this run is",
+        "Live output",
+        "Performance"
+      ],
+      "stage_sections": 4,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 139,
+      "frame_words": 81,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 263,
+        "height": 34.5,
+        "top": 242
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "output",
+      "theme": "light",
+      "viewport": "375",
+      "reported_width": 374,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Output",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 1,
+      "repeated": [
+        "What the scout found today"
+      ],
+      "panel_bodies": 2,
+      "stage_headings": [
+        "Generated assets",
+        "What the scout found today",
+        "Agent supervision is moving fast",
+        "What the scout found",
+        "Latest briefing",
+        "A supervisor for long-running agents lands in beta",
+        "Permission brokers replace token pass-through",
+        "Written up",
+        "Everything it produced",
+        "A supervisor for long-running agents lands in beta",
+        "Permission brokers replace token pass-through",
+        "About this scout",
+        "Draft in progress"
+      ],
+      "stage_sections": 2,
+      "stage_cards": 7,
+      "dated_entries": 3,
+      "tiles": 0,
+      "stage_words": 395,
+      "frame_words": 81,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 263,
+        "height": 34.5,
+        "top": 242
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "chat",
+      "theme": "light",
+      "viewport": "375",
+      "reported_width": 374,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Chat",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "Ask about what it found"
+      ],
+      "stage_sections": 1,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 75,
+      "frame_words": 71,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 263,
+        "height": 34.5,
+        "top": 242
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "settings",
+      "theme": "light",
+      "viewport": "375",
+      "reported_width": 374,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Settings",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "Settings",
+        "Name and character",
+        "When this agent starts",
+        "Notifications",
+        "DASH does not choose this agent's model",
+        "Run this agent on your server",
+        "Change this agent with your own editor",
+        "This agent will not run",
+        "Remove this agent"
+      ],
+      "stage_sections": 4,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 395,
+      "frame_words": 81,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 263,
+        "height": 34.5,
+        "top": 242
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "logs",
+      "theme": "light",
+      "viewport": "375",
+      "reported_width": 374,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Logs",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "State",
+        "Runs",
+        "Started 2026-07-16T09:01:00Z",
+        "Tasks",
+        "Schedule a synthetic project review",
+        "Connections",
+        "gmail",
+        "calendar",
+        "Memory",
+        "Meeting duration",
+        "Plan-vs-actual",
+        "Audit history",
+        "Approval decisions"
+      ],
+      "stage_sections": 7,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 127,
+      "frame_words": 81,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 263,
+        "height": 34.5,
+        "top": 242
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "overview",
+      "theme": "dark",
+      "viewport": "1280",
+      "reported_width": 1279,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Overview",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "Waiting for you",
+        "Schedule a synthetic project review"
+      ],
+      "stage_sections": 1,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 58,
+      "frame_words": 83,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 262.1015625,
+        "height": 34.5,
+        "top": 130
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "run",
+      "theme": "dark",
+      "viewport": "1280",
+      "reported_width": 1279,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Run",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "Quick commands",
+        "Where this run is",
+        "Live output",
+        "Performance"
+      ],
+      "stage_sections": 4,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 139,
+      "frame_words": 83,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 262.1015625,
+        "height": 34.5,
+        "top": 130
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "output",
+      "theme": "dark",
+      "viewport": "1280",
+      "reported_width": 1279,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Output",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 1,
+      "repeated": [
+        "What the scout found today"
+      ],
+      "panel_bodies": 2,
+      "stage_headings": [
+        "Generated assets",
+        "What the scout found today",
+        "Agent supervision is moving fast",
+        "What the scout found",
+        "Latest briefing",
+        "A supervisor for long-running agents lands in beta",
+        "Permission brokers replace token pass-through",
+        "Written up",
+        "Everything it produced",
+        "A supervisor for long-running agents lands in beta",
+        "Permission brokers replace token pass-through",
+        "About this scout",
+        "Draft in progress"
+      ],
+      "stage_sections": 2,
+      "stage_cards": 7,
+      "dated_entries": 3,
+      "tiles": 0,
+      "stage_words": 395,
+      "frame_words": 83,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 262.1015625,
+        "height": 34.5,
+        "top": 130
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "chat",
+      "theme": "dark",
+      "viewport": "1280",
+      "reported_width": 1279,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Chat",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "Ask about what it found"
+      ],
+      "stage_sections": 1,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 75,
+      "frame_words": 73,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 262.1015625,
+        "height": 34.5,
+        "top": 130
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "settings",
+      "theme": "dark",
+      "viewport": "1280",
+      "reported_width": 1279,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Settings",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "Settings",
+        "Name and character",
+        "When this agent starts",
+        "Notifications",
+        "DASH does not choose this agent's model",
+        "Run this agent on your server",
+        "Change this agent with your own editor",
+        "This agent will not run",
+        "Remove this agent"
+      ],
+      "stage_sections": 4,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 395,
+      "frame_words": 83,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 262.1015625,
+        "height": 34.5,
+        "top": 130
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "logs",
+      "theme": "dark",
+      "viewport": "1280",
+      "reported_width": 1279,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Logs",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "State",
+        "Runs",
+        "Started 2026-07-16T09:01:00Z",
+        "Tasks",
+        "Schedule a synthetic project review",
+        "Connections",
+        "gmail",
+        "calendar",
+        "Memory",
+        "Meeting duration",
+        "Plan-vs-actual",
+        "Audit history",
+        "Approval decisions"
+      ],
+      "stage_sections": 7,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 127,
+      "frame_words": 83,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 262.1015625,
+        "height": 34.5,
+        "top": 130
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "(no stage named)",
+      "theme": "dark",
+      "viewport": "1280",
+      "reported_width": 1279,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Run",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "Quick commands",
+        "Where this run is",
+        "Live output",
+        "Performance"
+      ],
+      "stage_sections": 4,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 139,
+      "frame_words": 83,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 262.1015625,
+        "height": 34.5,
+        "top": 130
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "overview",
+      "theme": "dark",
+      "viewport": "375",
+      "reported_width": 374,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Overview",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "Waiting for you",
+        "Schedule a synthetic project review"
+      ],
+      "stage_sections": 1,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 58,
+      "frame_words": 81,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 263,
+        "height": 34.5,
+        "top": 242
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "run",
+      "theme": "dark",
+      "viewport": "375",
+      "reported_width": 374,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Run",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "Quick commands",
+        "Where this run is",
+        "Live output",
+        "Performance"
+      ],
+      "stage_sections": 4,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 139,
+      "frame_words": 81,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 263,
+        "height": 34.5,
+        "top": 242
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "output",
+      "theme": "dark",
+      "viewport": "375",
+      "reported_width": 374,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Output",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 1,
+      "repeated": [
+        "What the scout found today"
+      ],
+      "panel_bodies": 2,
+      "stage_headings": [
+        "Generated assets",
+        "What the scout found today",
+        "Agent supervision is moving fast",
+        "What the scout found",
+        "Latest briefing",
+        "A supervisor for long-running agents lands in beta",
+        "Permission brokers replace token pass-through",
+        "Written up",
+        "Everything it produced",
+        "A supervisor for long-running agents lands in beta",
+        "Permission brokers replace token pass-through",
+        "About this scout",
+        "Draft in progress"
+      ],
+      "stage_sections": 2,
+      "stage_cards": 7,
+      "dated_entries": 3,
+      "tiles": 0,
+      "stage_words": 395,
+      "frame_words": 81,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 263,
+        "height": 34.5,
+        "top": 242
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "chat",
+      "theme": "dark",
+      "viewport": "375",
+      "reported_width": 374,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Chat",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "Ask about what it found"
+      ],
+      "stage_sections": 1,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 75,
+      "frame_words": 71,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 263,
+        "height": 34.5,
+        "top": 242
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "settings",
+      "theme": "dark",
+      "viewport": "375",
+      "reported_width": 374,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Settings",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "Settings",
+        "Name and character",
+        "When this agent starts",
+        "Notifications",
+        "DASH does not choose this agent's model",
+        "Run this agent on your server",
+        "Change this agent with your own editor",
+        "This agent will not run",
+        "Remove this agent"
+      ],
+      "stage_sections": 4,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 395,
+      "frame_words": 81,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 263,
+        "height": 34.5,
+        "top": 242
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "logs",
+      "theme": "dark",
+      "viewport": "375",
+      "reported_width": 374,
+      "page_overflows": false,
+      "widest_overflow": 423,
+      "stage_label": "Logs",
+      "rail_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "rail_work": [
+        "Schedule a synthetic project review. Open this decision"
+      ],
+      "rail_count": "1",
+      "repeated_titles": 0,
+      "repeated": [],
+      "panel_bodies": 0,
+      "stage_headings": [
+        "State",
+        "Runs",
+        "Started 2026-07-16T09:01:00Z",
+        "Tasks",
+        "Schedule a synthetic project review",
+        "Connections",
+        "gmail",
+        "calendar",
+        "Memory",
+        "Meeting duration",
+        "Plan-vs-actual",
+        "Audit history",
+        "Approval decisions"
+      ],
+      "stage_sections": 7,
+      "stage_cards": 0,
+      "dated_entries": 0,
+      "tiles": 0,
+      "stage_words": 127,
+      "frame_words": 81,
+      "overview_action_present": true,
+      "overview_action_box": {
+        "width": 263,
+        "height": 34.5,
+        "top": 242
+      },
+      "overview_action_visible": true
+    },
+    {
+      "stage": "about",
+      "theme": "light",
+      "viewport": "1280",
+      "closed_before_press": true,
+      "open_after_press": true,
+      "goal_in_panel": true,
+      "steps_in_panel": true
+    },
+    {
+      "stage": "run-feed-telemetry",
+      "theme": "light",
+      "viewport": "1280",
+      "grid_found": true,
+      "feed_shows_recorded_step": true,
+      "telemetry_shows_recorded_model": true,
+      "telemetry_shows_recorded_cost": true
+    },
+    {
+      "stage": "empty-disclosure",
+      "theme": "light",
+      "viewport": "1280",
+      "disclosure_found": true,
+      "closed_before_press": true,
+      "summary_is_dash_fixed_string": true,
+      "open_after_press": true,
+      "meaning_revealed": true
+    },
+    {
+      "stage": "output-history",
+      "theme": "light",
+      "viewport": "1280",
+      "claim": "MAR-622 — a dated index, and pressing a day draws that day's content instead of a list that keeps growing",
+      "index_days": [
+        "Today",
+        "Today",
+        "Yesterday",
+        "23 August",
+        "22 August"
+      ],
+      "index_titles": [
+        "What the scout found today",
+        "AI agent news for today",
+        "AI agent news for yesterday",
+        "AI agent news for Monday",
+        "AI agent news for Sunday"
+      ],
+      "entries_in_index": 5,
+      "stage_cards_before": 7,
+      "stage_cards_after": 7,
+      "open_day_before": "Today",
+      "pressed": {
+        "day": "Today",
+        "title": "AI agent news for today"
+      },
+      "open_day_after": "Today",
+      "index_moved": true,
+      "stage_drew_the_pressed_day": true,
+      "content_on_screen": true
+    },
+    {
+      "stage": "deep-dive-stage",
+      "theme": "light",
+      "viewport": "1280",
+      "heading_present": true,
+      "text_present": true
+    },
+    {
+      "stage": "deep-dive-panel",
+      "theme": "light",
+      "viewport": "1280",
+      "heading_present": true,
+      "text_present": true
+    },
+    {
+      "stage": "outbound-link",
+      "theme": "light",
+      "viewport": "1280",
+      "anchor_found": true,
+      "anchor_rel_noreferrer_noopener": true,
+      "window_did_not_navigate": true,
+      "open_external_called_once": true,
+      "open_external_url_matches_anchor": true
+    },
+    {
+      "stage": "outbound-citation",
+      "theme": "light",
+      "viewport": "1280",
+      "citation_anchor_found": true,
+      "citation_rel_noreferrer_noopener": true,
+      "model_prose_url_present": true,
+      "model_prose_url_stayed_unanchored": true
+    },
+    {
+      "stage": "exports-save",
+      "theme": "light",
+      "viewport": "1280",
+      "exports_section_absent_before_save": true,
+      "feedback_ok": true,
+      "file_written_to_disk": true,
+      "file_is_a_real_pdf": true,
+      "open_path_called_with_the_saved_file": true,
+      "exports_list_shows_it_after_reload": true,
+      "click_to_reopen_exercised": false
+    },
+    {
+      "stage": "mar680-running",
+      "theme": "light",
+      "viewport": "1280",
+      "panel_drawn": true,
+      "position": "Step 3 of 8",
+      "headline": "Working",
+      "state_class": "run-progress-state is-running",
+      "is_running": true,
+      "is_finished": false,
+      "working_pips": 2,
+      "step_count": 8,
+      "steps_running": 1,
+      "steps_done": 2,
+      "safe_to_leave_shown": true,
+      "open_output_link": true,
+      "late_output_present": false
+    },
+    {
+      "stage": "mar680-finished",
+      "theme": "light",
+      "viewport": "1280",
+      "panel_drawn": true,
+      "position": "3 of 8 steps ran",
+      "headline": "Finished",
+      "state_class": "run-progress-state is-finished",
+      "is_running": false,
+      "is_finished": true,
+      "working_pips": 0,
+      "step_count": 8,
+      "steps_running": 0,
+      "steps_done": 3,
+      "safe_to_leave_shown": false,
+      "open_output_link": true,
+      "late_output_present": true
+    },
+    {
+      "stage": "mar681-before",
+      "theme": "light",
+      "viewport": "1280",
+      "focused": true,
+      "block_drawn": true,
+      "card_count": 3,
+      "questions": [
+        "Skip anything older than a week?",
+        "Which competitor should I focus on?",
+        "Include pricing pages?"
+      ],
+      "answers": [
+        "Skip them",
+        "All of them",
+        "Yes, include them"
+      ],
+      "forget_buttons": 3,
+      "detail": "DASH will not ask these questions again until you forget the answer."
+    },
+    {
+      "stage": "mar681-after",
+      "theme": "light",
+      "viewport": "1280",
+      "pressed_forget": true,
+      "block_drawn": true,
+      "card_count": 2,
+      "questions": [
+        "Which competitor should I focus on?",
+        "Include pricing pages?"
+      ],
+      "answers": [
+        "All of them",
+        "Yes, include them"
+      ],
+      "forget_buttons": 2,
+      "detail": "DASH will not ask these questions again until you forget the answer."
+    }
+  ]
+}

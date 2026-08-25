@@ -95,9 +95,17 @@ import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { connectionSecretName } from "../lib/connection-credentials.js";
+import { fleetSecretName } from "../lib/fleet/catalogue.js";
+import { recordFleetConnection } from "../lib/fleet/store.js";
 import { maskSecret, recordSecretReference } from "../lib/secret-refs.js";
 import { importManifest } from "../lib/store.js";
-import { writeAgentModelChoice, writeStepLevelOverride } from "../lib/ai/model-store.js";
+import {
+  writeAgentModelChoice,
+  writeFleetLevelModel,
+  writeFleetModelDefault,
+  writeStepLevelOverride,
+} from "../lib/ai/model-store.js";
+import { secureStore } from "./secure-store.js";
 
 const OUT = path.resolve(process.cwd(), process.env.DASH_CAPTURE_DIR ?? "qa-screenshots-mar583");
 
@@ -512,6 +520,226 @@ async function layout(target: BrowserWindow): Promise<unknown> {
   );
 }
 
+/* ---------------------------------------------------------------------- *
+ * MAR-654's scene: a level is turned into a model, and two steps of one
+ * plan run on two different ones
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The two models the level map points at, and the third that catches the rest.
+ *
+ * Three distinct ids on purpose. MAR-654's complaint was not "the wrong model
+ * ran" — it was that *one* model answered every step however the plan had
+ * declared them, so the only refutation a picture can carry is more than one id
+ * on one plan. Two would prove the map fires; three proves the map and the
+ * fallback are different rungs rather than the same row read twice.
+ */
+const CHEAP_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+const FRONTIER_MODEL = "anthropic/claude-opus-5";
+const DEFAULT_MODEL = "openai/gpt-4o-mini";
+
+/**
+ * The fleet key and the level map, written after the matrix above has run.
+ *
+ * Deliberately not part of `seed()`. The twenty-four frames above are the
+ * states this harness has always photographed and they are photographed with no
+ * fleet connection at all — dropping these rows into `seed()` would silently
+ * change every one of them, and a proving sweep that moved the baseline it was
+ * checking against would be worth nothing. Every page re-reads its view on
+ * mount and `go()` is a real `loadURL`, so writing here and navigating
+ * afterwards reaches the same renderer state a person reaches by saving.
+ *
+ * `standard` is left unmapped on purpose: `plan-writer`'s step 2 is overridden
+ * to that level by `seed()`, so the frame carries the *empty* row's sentence and
+ * the step that falls through to the default, beside the row that answers.
+ */
+async function seedLevelMap(): Promise<void> {
+  const at = "2026-08-25T08:00:00.000Z";
+  const secretName = fleetSecretName("openrouter", "api_key", "account-1");
+  recordFleetConnection(
+    {
+      provider: "openrouter",
+      account_id: "account-1",
+      connector_kind: "api_key",
+      field_id: "api_key",
+      secret_name: secretName,
+      // Masked at the door, `capture-settings-polish.ts`' reason: the store
+      // throws on a raw hint, so the mask is applied here rather than a
+      // pre-masked literal being pasted in.
+      masked_hint: maskSecret("sk-or-v1-capture-scene-only-2f8c"),
+      account_hint: null,
+      scopes: [],
+      backend: "file",
+      is_default: true,
+    },
+    at,
+  );
+  /*
+   * A real vault write through the ordinary door, so the launch's own vault
+   * self-check has something to read and the run log says `1/1 fleet reads ok`
+   * against a named directory. The bytes are a fixture and OpenRouter would
+   * refuse them, which is why nothing in this scene presses *See what
+   * OpenRouter offers* — see the header's point 2.
+   */
+  await secureStore().set(secretName, "sk-or-v1-capture-scene-only-2f8c");
+
+  const wrote = [
+    writeFleetLevelModel("openrouter", "cheap", CHEAP_MODEL, at),
+    writeFleetLevelModel("openrouter", "frontier", FRONTIER_MODEL, at),
+    writeFleetModelDefault("openrouter", DEFAULT_MODEL, at),
+  ];
+  if (wrote.some((ok) => !ok)) {
+    // Each door returns false rather than throwing for an unknown provider, an
+    // unknown level or a model id that fails `isModelId`. A silent false here
+    // would produce a full set of images of the state this scene exists to
+    // disprove, under filenames claiming the opposite.
+    throw new Error(`a level-map door refused the seed: ${JSON.stringify(wrote)}`);
+  }
+  console.log(
+    `[models] level map seeded: cheap=${CHEAP_MODEL} frontier=${FRONTIER_MODEL} ` +
+      `standard=(none) default=${DEFAULT_MODEL}`,
+  );
+}
+
+/**
+ * What the level map draws, and what one plan's steps then resolve to.
+ *
+ * Two measurements, because MAR-654 has two halves and only one of them is on
+ * the settings page. The first reads the three rows a person sets. The second
+ * reads the sentence under each step of an agent that never named a model, and
+ * the whole claim rests on the set of ids in those sentences having more than
+ * one member.
+ */
+async function measureLevelMap(target: BrowserWindow): Promise<unknown> {
+  return within(
+    "measure the level map",
+    10_000,
+    target.webContents.executeJavaScript(
+      `(() => {
+         const rows = [...document.querySelectorAll("li.level-model")];
+         const block = document.querySelector("div.level-models");
+         return {
+           block_drawn: block !== null,
+           row_count: rows.length,
+           rows: rows.map((row) => {
+             const select = row.querySelector("select");
+             return {
+               id: select === null ? null : select.id,
+               value: select === null ? null : select.value,
+               label: (row.querySelector("label") || {}).textContent || null,
+             };
+           }),
+         };
+       })()`,
+    ),
+  );
+}
+
+/**
+ * The sentence under each step, which is where a resolved model is named.
+ *
+ * `p.model-step-resolved` is composed by `describeStepModel` on the trusted
+ * side and names both the model and the rung that answered ("which you chose
+ * for balanced steps", "DASH's default model"). Reading the text rather than
+ * the store is the point: this is the surface a person reads, and the defect
+ * was that it and the run disagreed.
+ */
+async function measureStepModels(target: BrowserWindow): Promise<unknown> {
+  return within(
+    "measure the step resolutions",
+    10_000,
+    target.webContents.executeJavaScript(
+      `(() => {
+         const steps = [...document.querySelectorAll("li.model-step")];
+         const said = steps.map((step) => {
+           const line = step.querySelector("p.model-step-resolved");
+           const number = step.querySelector(".model-step-number");
+           return {
+             step: number === null ? null : number.textContent,
+             resolved: line === null ? null : line.textContent,
+           };
+         });
+         /*
+          * Every model id named anywhere in those sentences. A bare count of
+          * steps proves nothing — MAR-654's run record had two steps and one
+          * model — so what is counted is the DISTINCT ids the page names.
+          */
+         const ids = new Set();
+         for (const row of said) {
+           if (row.resolved === null) continue;
+           for (const hit of row.resolved.matchAll(/[A-Za-z0-9][A-Za-z0-9._-]*\\/[A-Za-z0-9][A-Za-z0-9._:-]*/g)) {
+             ids.add(hit[0]);
+           }
+         }
+         const text = document.body.innerText.toLowerCase();
+         return {
+           step_rows: steps.length,
+           said,
+           distinct_models: [...ids].sort(),
+           distinct_model_count: ids.size,
+           says_you_chose_for: text.includes("which you chose for"),
+           says_dash_default: text.includes("dash's default model"),
+           link_to_level_map: document.querySelector('a[href="/settings/ai"]') !== null,
+         };
+       })()`,
+    ),
+  );
+}
+
+/**
+ * MAR-654, photographed on both surfaces and in both themes.
+ *
+ * Runs after the matrix so the twenty-four frames above stay what they were.
+ * Light and dark both, because the settings page is where Henrik actually sets
+ * this and MAR-614 records that light is the half he uses.
+ */
+async function proveLevelMap(target: BrowserWindow): Promise<void> {
+  await seedLevelMap();
+
+  const route = `/agents/detail?agent=${encodeURIComponent(MATCHED)}&stage=settings`;
+
+  for (const theme of THEMES) {
+    nativeTheme.themeSource = theme;
+    await settle(300);
+
+    /* 1. The three rows a person sets, on the AI tab. */
+    await go(target, "/settings/ai");
+    await resizeTo(target, 1280, 900);
+    await go(target, "/settings/ai");
+    const focusedRows = await scrollTo(target, "div.level-models");
+    const map = await measureLevelMap(target);
+    measurements.push({
+      scene: "level-map-settings",
+      agent: null,
+      viewport: "1280",
+      theme,
+      focused: focusedRows,
+      ...(map as object),
+    });
+    console.log(`[models] level-map settings ${theme} ${JSON.stringify(map)}`);
+    await shoot(target, `mar654-level-map-settings-1280-${theme}`);
+
+    /* 2. What one plan's steps then resolve to, on the agent's own page. */
+    await go(target, route);
+    await resizeTo(target, 1280, 900);
+    await go(target, route);
+    const opened = await openSteps(target);
+    const focusedSteps = await scrollTo(target, "li.model-step");
+    const resolved = await measureStepModels(target);
+    measurements.push({
+      scene: "level-map-steps",
+      agent: MATCHED,
+      viewport: "1280",
+      theme,
+      steps_open: opened,
+      focused: focusedSteps,
+      ...(resolved as object),
+    });
+    console.log(`[models] level-map steps ${theme} ${JSON.stringify(resolved)}`);
+    await shoot(target, `mar654-level-map-steps-1280-${theme}`);
+  }
+}
+
 async function run(): Promise<void> {
   await app.whenReady();
   mkdirSync(OUT, { recursive: true });
@@ -558,6 +786,10 @@ async function run(): Promise<void> {
     }
   }
 
+  // MAR-654's own scene, after the matrix and never inside it — see
+  // `seedLevelMap` for why the baseline above must not move.
+  await proveLevelMap(window);
+
   writeFileSync(
     path.join(OUT, "layout.json"),
     `${JSON.stringify({ captured_at: new Date().toISOString(), measurements }, null, 2)}\n`,
@@ -577,6 +809,27 @@ async function run(): Promise<void> {
     (entry) => entry["picker_drawn"] === true && entry["recommended_first"] !== true,
   );
   const amounts = seen.filter((entry) => entry["says_an_amount"] === true);
+
+  /*
+   * MAR-654's claim, checked rather than eyeballed. The issue's evidence was a
+   * run record with two steps at two declared strengths and one model id on
+   * both, so the one number that answers it is how many DISTINCT models the
+   * step sentences name. One is the defect, still standing; two or more is the
+   * level map doing what it was built to do.
+   */
+  const stepScenes = seen.filter((entry) => entry["scene"] === "level-map-steps");
+  const oneModelStill = stepScenes.filter(
+    (entry) => Number(entry["distinct_model_count"] ?? 0) < 2,
+  );
+  const rowsMissing = seen.filter(
+    (entry) => entry["scene"] === "level-map-settings" && Number(entry["row_count"] ?? 0) !== 3,
+  );
+
+  console.log(
+    `[models] MAR-654: ${String(stepScenes.length)} step frame(s); ` +
+      `${String(oneModelStill.length)} still naming fewer than two distinct models; ` +
+      `${String(rowsMissing.length)} settings frame(s) without three level rows`,
+  );
 
   console.log(
     `[models] wrote ${String(written.length)} image(s) to ${OUT}; ` +

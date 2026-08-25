@@ -60,7 +60,8 @@ import path from "node:path";
  * validators could stage a state the product cannot actually reach.
  */
 import { fleetSecretName } from "../lib/fleet/catalogue.js";
-import { recordFleetConnection } from "../lib/fleet/store.js";
+import { readFleetGrants, recordFleetConnection } from "../lib/fleet/store.js";
+import { heldCredentials } from "../lib/connection-actions.js";
 import { maskSecret } from "../lib/secret-refs.js";
 import { importManifest, recordAgentDeploy, saveHost } from "../lib/store.js";
 import { secureStore } from "./secure-store.js";
@@ -821,6 +822,278 @@ async function connectionsMutationScene(target: BrowserWindow, theme: string): P
   );
 }
 
+/* ---------------------------------------------------------------------- *
+ * MAR-624's scene: the fleet grant fan-out, pressed, and checked against
+ * what it actually materialized
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Two agents that want a model and hold nothing.
+ *
+ * Built the way `electron/capture-models.ts` builds its scenes — the shipped
+ * **v2** example with only the connection block replaced, because `agent_dom`
+ * requires seven blocks and hand-building them here would be this harness
+ * carrying a second copy of a contract it does not own. `importManifest` is
+ * checked, for that file's reason: a refused import produces a full set of
+ * images of a page saying it has no such agent.
+ *
+ * No `recordSecretReference` for either of them. That absence is the whole
+ * scene — it is what puts them in the connector's `waiting` list, and it is
+ * the row MAR-624 says the fan-out claimed to write and did not.
+ */
+const WAITING_ONE = "digest-writer";
+const WAITING_TWO = "market-watcher";
+
+function waitingAgent(name: string, displayName: string): void {
+  const manifest = example("dash-managed.manifest.v2.example.json");
+  const agent = manifest["agent"] as Record<string, unknown>;
+  agent["name"] = name;
+  agent["display_name"] = displayName;
+  (manifest["agent_dom"] as Record<string, unknown>)["connections"] = [
+    {
+      id: "models",
+      provider: "openrouter",
+      label: "Your model provider",
+      purpose: "Turn the day's articles into a digest",
+      ownership: "dash_managed",
+      capabilities: [{ id: "model.completion", label: "Write the digest", access: "write" }],
+      fields: [
+        {
+          id: "key",
+          label: "API key",
+          purpose: "So DASH can reach the provider on this agent's behalf",
+          kind: "secret",
+          required: true,
+          help: "Your OpenRouter account has a keys page.",
+        },
+      ],
+      validation_action: { id: "check", label: "Check", behavior: "test" },
+    },
+  ];
+  const imported = importManifest(manifest);
+  if (!imported.ok) {
+    throw new Error(`${name} was refused: ${(imported.errors ?? []).join("; ")}`);
+  }
+}
+
+/**
+ * What the OpenRouter card says about who has the key and who is waiting.
+ *
+ * `textContent` and never `innerText`: `.chip` uppercases its text in CSS and
+ * `innerText` returns what was rendered, so a harness grepping for "waiting"
+ * reads false while the chip is in the picture. This repository has recorded
+ * that correction twice and it is cheaper to obey than to rediscover.
+ */
+async function readFleetCard(target: BrowserWindow, service: string): Promise<unknown> {
+  return within(
+    `read the ${service} card`,
+    10_000,
+    target.webContents.executeJavaScript(
+      `(() => {
+         const cards = [...document.querySelectorAll("article.fleet-connector")];
+         const card = cards.find((node) => {
+           const heading = node.querySelector("h3");
+           return heading !== null && (heading.textContent || "").trim() === ${JSON.stringify(service)};
+         }) || null;
+         if (card === null) return { card_drawn: false };
+         const rows = [...card.querySelectorAll("li.connector-agent")];
+         const readChip = (row) => {
+           const chip = row.querySelector(".chip");
+           return chip === null ? null : (chip.textContent || "").trim();
+         };
+         const notice = card.querySelector(".notice");
+         const share = [...card.querySelectorAll("button")].find(
+           (b) => (b.textContent || "").trim().startsWith("Give it to"),
+         ) || null;
+         return {
+           card_drawn: true,
+           standing: (card.querySelector(".card-head .chip") || {}).textContent || null,
+           agents: rows.map((row) => ({
+             name: ((row.querySelector(".connector-agent-name") || {}).textContent || "").trim(),
+             chip: readChip(row),
+           })),
+           waiting: rows.filter((row) => readChip(row) === "waiting").length,
+           has_this: rows.filter((row) => readChip(row) === "has this").length,
+           share_label: share === null ? null : (share.textContent || "").trim(),
+           notice: notice === null ? null : (notice.textContent || "").trim(),
+           notice_ok: notice !== null && notice.classList.contains("notice-ok"),
+           notice_err: notice !== null && notice.classList.contains("notice-err"),
+         };
+       })()`,
+    ),
+  );
+}
+
+/**
+ * Bring one connector card into the frame.
+ *
+ * The cards live under "Your keys", well below the AI tab's default picker, so
+ * the first pass of this scene measured the right DOM and photographed the top
+ * of the page — four frames of a heading, filed under names claiming to show a
+ * fan-out. Reading and shooting are separate acts and only one of them needs
+ * the element on screen.
+ */
+async function scrollToCard(target: BrowserWindow, service: string): Promise<boolean> {
+  const found = (await target.webContents.executeJavaScript(
+    `(() => {
+       const cards = [...document.querySelectorAll("article.fleet-connector")];
+       const card = cards.find((node) => {
+         const heading = node.querySelector("h3");
+         return heading !== null && (heading.textContent || "").trim() === ${JSON.stringify(service)};
+       }) || null;
+       if (card === null) return false;
+       card.scrollIntoView({ block: "center" });
+       return true;
+     })()`,
+  )) as boolean;
+  await settle(400);
+  return found;
+}
+
+/** Press one card's "Give it to …", the way a person does. */
+async function pressGiveItTo(target: BrowserWindow, service: string): Promise<string | null> {
+  const label = (await within(
+    `press Give it to on ${service}`,
+    10_000,
+    target.webContents.executeJavaScript(
+      `(() => {
+         const cards = [...document.querySelectorAll("article.fleet-connector")];
+         const card = cards.find((node) => {
+           const heading = node.querySelector("h3");
+           return heading !== null && (heading.textContent || "").trim() === ${JSON.stringify(service)};
+         }) || null;
+         if (card === null) return null;
+         const button = [...card.querySelectorAll("button")].find(
+           (b) => (b.textContent || "").trim().startsWith("Give it to"),
+         ) || null;
+         if (button === null) return null;
+         const text = (button.textContent || "").trim();
+         button.click();
+         return text;
+       })()`,
+    ),
+  )) as string | null;
+  /* The fan-out writes a vault entry per agent, then the view re-reads. */
+  await settle(3000);
+  return label;
+}
+
+/**
+ * What the store actually holds, which is the half a screenshot cannot show.
+ *
+ * MAR-624's defect was not a wrong sentence — it was a *true-looking* sentence
+ * with nothing behind it: `fleet_grants` recorded `granted` while
+ * `connection_secrets` stayed empty, so the requirement cards went on saying
+ * NOT CONNECTED and the person who did the right thing was told it had not
+ * worked. The only measurement that separates the fix from the bug is reading
+ * both tables after the press.
+ */
+function readMaterialization(agents: readonly string[]): unknown {
+  return {
+    grants: readFleetGrants("openrouter").map((row) => ({
+      agent: row.agent,
+      standing: row.standing,
+    })),
+    held: agents.map((agent) => ({
+      agent,
+      connections: heldCredentials(agent).map((row) => `${row.connection_id}/${row.field_id}`),
+    })),
+  };
+}
+
+/**
+ * MAR-624, in three presses and two tables.
+ *
+ * Runs after the matrix, on `capture-cockpit.ts`' rule, so the frames the
+ * earlier passes photographed stay what they were.
+ *
+ * The second half is the one worth the extra minute. A fan-out that reports
+ * success is easy to draw; a fan-out that reports success *and cannot* is the
+ * failure this issue is named after. So `anthropic` is seeded the way
+ * `capture-vault-refresh.ts` seeds it — a `fleet_connections` row with no
+ * vault blob behind it — and its button is pressed too. The honest refusal is
+ * as much a part of the fix as the success.
+ */
+async function proveFleetFanOut(target: BrowserWindow): Promise<void> {
+  nativeTheme.themeSource = "light";
+  await settle(300);
+
+  waitingAgent(WAITING_ONE, "Digest Writer");
+  waitingAgent(WAITING_TWO, "Market Watcher");
+
+  /* A row naming a secret this vault has never held — the unreadable leg. */
+  const orphan = fleetSecretName("anthropic", "api_key", "account-1");
+  recordFleetConnection(
+    {
+      provider: "anthropic",
+      account_id: "account-1",
+      connector_kind: "api_key",
+      field_id: "api_key",
+      secret_name: orphan,
+      masked_hint: maskSecret("sk-ant-capture-scene-only-9d31"),
+      account_hint: null,
+      scopes: [],
+      backend: "file",
+      is_default: false,
+    },
+    "2026-08-25T08:05:00.000Z",
+  );
+
+  const before = await (async (): Promise<unknown> => {
+    await go(target, "/settings/ai");
+    await resizeTo(target, 1280, 900);
+    await go(target, "/settings/ai");
+    await scrollToCard(target, "OpenRouter");
+    return readFleetCard(target, "OpenRouter");
+  })();
+  const storeBefore = readMaterialization([WAITING_ONE, WAITING_TWO]);
+  console.log(`[settings-polish] MAR-624 before ${JSON.stringify(before)} store=${JSON.stringify(storeBefore)}`);
+  await shoot(target, "mar624-fanout-before");
+
+  const pressed = await pressGiveItTo(target, "OpenRouter");
+  await scrollToCard(target, "OpenRouter");
+  const after = await readFleetCard(target, "OpenRouter");
+  const storeAfter = readMaterialization([WAITING_ONE, WAITING_TWO]);
+  await shoot(target, "mar624-fanout-after");
+
+  scenesLog.push({
+    scene: "mar624-fanout",
+    claim:
+      "MAR-624 — the fleet grant fan-out materializes what it reports: a granted standing " +
+      "comes with a connection_secrets row per agent, and the card stops saying waiting",
+    pressed,
+    before,
+    after,
+    store_before: storeBefore,
+    store_after: storeAfter,
+  });
+  console.log(
+    `[settings-polish] MAR-624 after pressed=${String(pressed)} ${JSON.stringify(after)} ` +
+      `store=${JSON.stringify(storeAfter)}`,
+  );
+
+  /* The unreadable leg: a row with nothing behind it must refuse, not claim. */
+  await scrollToCard(target, "Anthropic");
+  const unreadableBefore = await readFleetCard(target, "Anthropic");
+  const pressedAnthropic = await pressGiveItTo(target, "Anthropic");
+  await scrollToCard(target, "Anthropic");
+  const unreadableAfter = await readFleetCard(target, "Anthropic");
+  await shoot(target, "mar624-fanout-unreadable");
+  scenesLog.push({
+    scene: "mar624-fanout-unreadable",
+    claim:
+      "MAR-624 — a held-but-unreadable key refuses out loud and gives nothing away, " +
+      "rather than reporting a success it cannot deliver",
+    pressed: pressedAnthropic,
+    before: unreadableBefore,
+    after: unreadableAfter,
+  });
+  console.log(
+    `[settings-polish] MAR-624 unreadable pressed=${String(pressedAnthropic)} ` +
+      `${JSON.stringify(unreadableAfter)}`,
+  );
+}
+
 async function run(): Promise<void> {
   await app.whenReady();
   mkdirSync(OUT, { recursive: true });
@@ -879,6 +1152,17 @@ async function run(): Promise<void> {
     await holdGmailAccount();
     await connectionsMutationScene(window, theme);
   }
+
+  /*
+   * MAR-624's scene, after the matrix and the two mutation scenes.
+   *
+   * `holdOpenRouterKey()` first and not optionally: the loop above ends having
+   * pressed Disconnect, so at this point DASH holds no OpenRouter key at all.
+   * Without this line the fan-out scene would photograph a card with no share
+   * button and report it as a fan-out that gave nothing away.
+   */
+  await holdOpenRouterKey();
+  await proveFleetFanOut(window);
 
   /*
    * `layout-settings.json`, not `layout.json`.

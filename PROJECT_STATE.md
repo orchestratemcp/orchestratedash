@@ -62,6 +62,51 @@ the packaged path.
   decision is filed where it is made; a brief is a document bound to its
   evidence (MAR-674, promoted to proven 2026-08-18, `8bf4671`).
 
+## Lifecycle counts (from state.json, 2026-08-25)
+
+124 merged, 69 proven, 20 planned — 213 entries, after the group-D proving
+sweep (runtime + keys), which is the **last of the four groups** AGENTS.md
+calls for. **90 distinct issues have a merged entry and no proven one.**
+
+Group D promoted merged -> proven: **MAR-654** (a declared level now reaches a
+model id — two steps of one plan resolving to two different models, one by the
+`level_map` rung and one by the fleet default), **MAR-680** (a run staged
+mid-flight and then finished *under the open page*, so its own 5s poll had to
+notice: step indicator, finish signal, and a new output appearing with no
+reload — all three in one page instance), **MAR-681** (three standing answers
+listed, then one revoked by a real `Forget` press), **MAR-624** (the fleet
+fan-out pressed for real, with `connection_secrets` read on both sides: empty
+before, `models/key` for both agents after — the row the issue says was never
+written), and **MAR-520**, proven differently and better: this sweep's own
+capture runs left five orphan runners, and all five were retired over
+`POST /shutdown` with the runner-written session key, fingerprint-checked
+before connecting. No process was force-killed.
+
+Left merged, with the reason on each entry's `lifecycle_check`: **MAR-625,
+MAR-629, MAR-633** — ADR and library packets with no packaged path a person can
+reach (`lib/mcp/` is complete and imported by nothing; the host pack runs on an
+enrolled host); **MAR-611, MAR-487** — both need an attended run against a real
+server, and MAR-487's own exit evidence demands one. Note that MAR-487 was
+archived in Linear on 2026-08-24 while still In Progress, so it carries live
+proven-debt where nobody counting it will look.
+
+**Three of group D's ten can never reach `proven` under the current rule**,
+because they are documentation. That is a lifecycle question for the
+orchestrator, not a gap in the work — see the handoff on MAR-742.
+
+Evidence: `qa-screenshots-groupD-2026-08-25/` — four run directories, 147
+frames, `layout.json`, `layout-settings.json`, the four run logs and the two
+runner-retirement records. Three existing
+harnesses were extended with scenes that run **after** their matrix and press
+things for real, rather than new harnesses being added. Four defects filed from
+the frames and none fixed: **MAR-791** (`.model-picker`'s 46ch cap, written for
+a dropdown, contains MAR-654's prose, so its own `60ch` rules are unreachable
+and the explanation wraps at ~44 characters in a third of the page — already
+visible, unnoticed, in the group-C frames), **MAR-792** (the fleet card's
+per-agent chip stretches the whole card because a three-column rule sits over a
+two-child row; and its reach sentence outlives the connection it offers),
+**MAR-793** (a standing answer is stamped `Set 2026-08-25T16:47:25.128Z`).
+
 ## Lifecycle counts (from state.json, 2026-08-24)
 
 122 packet entries merged, 58 proven, 20 planned — 200 entries, after the
@@ -116,10 +161,15 @@ on both renderers, a real collected-link click, a real Save-as-PDF into
 `exports/<agent>/`, and the busy-state live feed/telemetry panel).
 Group B is the agent page (MAR-630/634/620/664/668/691/697/698/635) of
 the four-group proving-debt sweep AGENTS.md calls for. Group A (chat front
-door) was proven 2026-08-22, group B on 2026-08-23 and group C
-(fleet+settings) on 2026-08-24; **group D (runtime+keys) remains.**
-**Proven-debt is still far over budget** — the proving wave continues,
-not new features. Merged-but-unproven work is inventory, not progress.
+door) was proven 2026-08-22, group B on 2026-08-23, group C
+(fleet+settings) on 2026-08-24 and **group D (runtime+keys) on 2026-08-25 —
+the sweep is complete across all four groups.**
+**Proven-debt is still far over budget** at 90 distinct issues — completing
+the sweep named the debt rather than clearing it, and five of group D's ten
+could not be promoted for reasons that are about the lifecycle rule and about
+missing hardware, not about the work. The proving wave's four groups are done;
+what the next dispatch does about the remainder is Henrik's call.
+Merged-but-unproven work is inventory, not progress.
 
 The group-A promotions rest on `electron/capture-mar615.ts` run against
 the **packaged build** (`dash-app://ui/`, `pnpm build:renderer` +
