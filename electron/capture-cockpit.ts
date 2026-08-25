@@ -102,6 +102,7 @@ import { readFileSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { putAgentDomState } from "../lib/agent-dom/store.js";
+import { writeStandingAnswer } from "../lib/agent-dom/standing-answers.js";
 import { importManifest, ingestArtifacts, ingestEvents } from "../lib/store.js";
 import { fingerprintItems } from "../lib/brief/fingerprint.js";
 import { agentExportsPath } from "../lib/agent-exports.js";
@@ -836,6 +837,392 @@ async function measure(target: BrowserWindow): Promise<unknown> {
        })()`,
     ),
   );
+}
+
+/* ---------------------------------------------------------------------- *
+ * MAR-680's scene: a run that is happening, and a finish the page notices
+ * by itself
+ * ---------------------------------------------------------------------- */
+
+/**
+ * A second run on the same agent, deliberately left unfinished.
+ *
+ * `selectCurrentRun` takes the newest run by its earliest event timestamp, so
+ * stamping these at `now` puts this one in front of `run-scout-0` without
+ * touching it — the finished run stays in the store as the thing the earlier
+ * frames photographed.
+ *
+ * Three of the manifest's eight steps are reported and the third is left with
+ * a `step_started` and no completion, which is what "Step 3 of 8" is made of.
+ * The names are `component_id`s off this manifest's own `planned_route`, for
+ * the reason the seed above records at length: telemetry v1 defines no
+ * `step_id`, and a seed whose fields no renderer reads photographs the wrong
+ * page.
+ */
+const LIVE_RUN = "run-scout-live";
+
+/**
+ * The title of the output that lands *while the page is open*.
+ *
+ * Distinct from every seeded digest on purpose. MAR-680's third ask is that a
+ * finish "should trigger a reload so a new output lands", and the only way a
+ * picture can carry that is a string that was not on the page when the frame
+ * before it was taken.
+ */
+const LATE_OUTPUT_TITLE = "The digest that landed while nobody reloaded";
+
+function startLiveRun(): void {
+  const startedAt = new Date().toISOString();
+  const accepted = ingestEvents([
+    { event_version: 1, agent: AGENT, run_id: LIVE_RUN, seq: 0, ts: startedAt, type: "run_started" },
+    {
+      event_version: 1, agent: AGENT, run_id: LIVE_RUN, seq: 1, ts: startedAt,
+      type: "step_started", component_id: "email_read",
+    },
+    {
+      event_version: 1, agent: AGENT, run_id: LIVE_RUN, seq: 2, ts: startedAt,
+      type: "step_completed", component_id: "email_read", status: "ok",
+    },
+    {
+      event_version: 1, agent: AGENT, run_id: LIVE_RUN, seq: 3, ts: startedAt,
+      type: "step_started", component_id: "schema_validation",
+    },
+    {
+      event_version: 1, agent: AGENT, run_id: LIVE_RUN, seq: 4, ts: startedAt,
+      type: "step_completed", component_id: "schema_validation", status: "ok",
+    },
+    /* The one that is happening. No completion, and no terminal event. */
+    {
+      event_version: 1, agent: AGENT, run_id: LIVE_RUN, seq: 5, ts: startedAt,
+      type: "step_started", component_id: "intent_classifier",
+    },
+  ]);
+  if (accepted.accepted !== 6) {
+    throw new Error(`the live run's events were not all accepted: ${JSON.stringify(accepted)}`);
+  }
+
+  /*
+   * The agent's own snapshot, saying it is running.
+   *
+   * Not decoration. `resolvePhase` reads a terminal event first, the snapshot
+   * second and the clock only if neither speaks — and its silence rule turns a
+   * run with no terminal event and no snapshot row into `unfinished` after two
+   * minutes. Seeding the row is what makes this frame the same picture on a
+   * fast machine and a slow one.
+   */
+  putRunSnapshot("running", 0.3, "intent_classifier");
+}
+
+/** The same snapshot, with one run in whatever state the scene needs next. */
+function putRunSnapshot(status: string, progress: number, currentStep: string | null): void {
+  const state = example("gmail-meeting-assistant.state.example.json");
+  state["agent_id"] = AGENT;
+  state["observed_at"] = new Date().toISOString();
+  const soon = new Date(Date.now() + 2 * 86_400_000).toISOString();
+  for (const request of (state["approval_requests"] ?? []) as Array<Record<string, unknown>>) {
+    request["expires_at"] = soon;
+  }
+  for (const choice of (state["choices"] ?? []) as Array<Record<string, unknown>>) {
+    choice["expires_at"] = soon;
+  }
+  state["runs"] = [
+    {
+      id: LIVE_RUN,
+      status,
+      started_at: new Date(Date.now() - 60_000).toISOString(),
+      progress,
+      ...(currentStep === null ? {} : { current_step: currentStep }),
+    },
+  ];
+  const put = putAgentDomState(state);
+  if (!put.ok) {
+    throw new Error(`the ${status} snapshot was refused: ${put.errors.join("; ")}`);
+  }
+}
+
+/**
+ * End the run under the open page, and give it something new to show.
+ *
+ * Nothing here touches the renderer. That is the entire point of the scene: if
+ * the next frame differs from the last one, the page found this out on its own.
+ */
+function finishLiveRun(): void {
+  const at = new Date().toISOString();
+  const accepted = ingestEvents([
+    {
+      event_version: 1, agent: AGENT, run_id: LIVE_RUN, seq: 6, ts: at,
+      type: "step_completed", component_id: "intent_classifier", status: "ok",
+      model: "openai/gpt-5-mini", tokens_in: 980, tokens_out: 210, cost_usd: 0.0027,
+    },
+    { event_version: 1, agent: AGENT, run_id: LIVE_RUN, seq: 7, ts: at, type: "run_completed", status: "ok" },
+  ]);
+  if (accepted.accepted !== 2) {
+    throw new Error(`the finishing events were not accepted: ${JSON.stringify(accepted)}`);
+  }
+  const artifacts = ingestArtifacts([
+    {
+      artifact_version: 1,
+      agent: AGENT,
+      run_id: LIVE_RUN,
+      artifact_id: "digest-scout-live",
+      kind: "digest",
+      title: LATE_OUTPUT_TITLE,
+      generated_at: at,
+      sources_fetched: [
+        {
+          source_name: "Hacker News",
+          source_url: "https://hn.algolia.com/api/v1/search",
+          status: "ok",
+          item_count: 1,
+        },
+      ],
+      items: [
+        {
+          headline: "An output that arrived after the frame above was taken",
+          summary: "Seeded while the page was already open, so its presence is the proof.",
+          source_name: "Hacker News",
+          source_url: "https://hn.algolia.com/api/v1/search",
+          item_url: "https://hn.algolia.com/api/v1/search?query=late",
+        },
+      ],
+    },
+  ]);
+  if (artifacts.accepted !== 1) {
+    throw new Error(`the late output was refused: ${JSON.stringify(artifacts)}`);
+  }
+  putRunSnapshot("completed", 1, null);
+}
+
+/**
+ * What the run panel says, and whether the late output has arrived.
+ *
+ * `textContent` and not `innerText`: the chips on this page are uppercased by
+ * CSS, and `innerText` returns what was rendered, so a harness grepping for
+ * copy reads false while the words are in the picture. The repository has paid
+ * for that one twice.
+ */
+async function measureRunProgress(target: BrowserWindow): Promise<unknown> {
+  return within(
+    "measure the run panel",
+    10_000,
+    target.webContents.executeJavaScript(
+      `(() => {
+         const section = document.querySelector("section.run-progress");
+         const state = document.querySelector("p.run-progress-state");
+         const steps = [...document.querySelectorAll("li.run-progress-step")];
+         const body = document.body.textContent || "";
+         return {
+           panel_drawn: section !== null,
+           position: (document.querySelector("p.run-progress-position") || {}).textContent || null,
+           headline: state === null ? null : (state.textContent || "").trim(),
+           state_class: state === null ? null : state.className,
+           is_running: state !== null && state.classList.contains("is-running"),
+           is_finished: state !== null && state.classList.contains("is-finished"),
+           /* The animated "Working" line, which only a live phase draws. */
+           working_pips: document.querySelectorAll("span.working-pips").length,
+           step_count: steps.length,
+           steps_running: steps.filter((s) => s.classList.contains("is-running")).length,
+           steps_done: steps.filter((s) => s.classList.contains("is-done")).length,
+           safe_to_leave_shown: document.querySelector("p.run-progress-leave") !== null,
+           open_output_link: document.querySelector("a.output-run-link") !== null,
+           late_output_present: body.includes(${JSON.stringify(LATE_OUTPUT_TITLE)}),
+         };
+       })()`,
+    ),
+  );
+}
+
+/**
+ * MAR-680, in three frames and one uninterrupted page instance.
+ *
+ * The middle of it is the part worth the trouble. Henrik asked for an
+ * indicator, a finish signal, and a reload he does not have to press. A harness
+ * that navigated between the running frame and the finished one would prove the
+ * first two and quietly assume the third — so this one loads the page once,
+ * changes the store underneath it, and waits out the page's own poll
+ * (`LIVE_REFRESH_MS` is 5 s, and the outputs settle 2 s behind it) without
+ * touching the window. If the second frame differs from the first, nothing but
+ * the page did it.
+ */
+async function proveRunProgress(target: BrowserWindow): Promise<void> {
+  nativeTheme.themeSource = "light";
+  await settle(300);
+  startLiveRun();
+
+  const route = `/agents/detail?agent=${encodeURIComponent(AGENT)}&stage=run`;
+  await go(target, route);
+  await resizeTo(target, VIEWPORT.width, VIEWPORT.height);
+  await go(target, route);
+
+  const running = await measureRunProgress(target);
+  measurements.push({ stage: "mar680-running", theme: "light", viewport: VIEWPORT.name, ...(running as object) });
+  console.log(`[cockpit] MAR-680 running ${JSON.stringify(running)}`);
+  await shoot(target, "mar680-run-progress-running");
+
+  /* The store moves. The window is not touched again until the wait is over. */
+  finishLiveRun();
+  console.log("[cockpit] MAR-680 the run was finished under the open page; waiting for its own poll");
+  await settle(14_000);
+
+  const finished = await measureRunProgress(target);
+  measurements.push({ stage: "mar680-finished", theme: "light", viewport: VIEWPORT.name, ...(finished as object) });
+  console.log(`[cockpit] MAR-680 finished-without-reload ${JSON.stringify(finished)}`);
+  await shoot(target, "mar680-run-progress-finished-no-reload");
+}
+
+/* ---------------------------------------------------------------------- *
+ * MAR-681's scene: a question answered once, listed, and forgotten on a
+ * real press
+ * ---------------------------------------------------------------------- */
+
+const STANDING_QUESTION = "Which competitor should I focus on?";
+
+/**
+ * Two standing answers, written through the door main writes them through.
+ *
+ * `writeStandingAnswer` derives `question_key` itself, so this cannot invent a
+ * key the product would never produce. Two rows rather than one because the
+ * block is a list and a single row photographs as a card.
+ *
+ * `chosen_at` is a bare date and not an ISO stamp: the renderer interpolates
+ * this column verbatim, so a real row reads "Set 2026-08-18T10:23:14.512Z" on
+ * screen. That is worth knowing and is recorded on the issue rather than
+ * staged away here — these two are dated plainly so the *control* is what the
+ * frame is about.
+ */
+function seedStandingAnswers(): void {
+  writeStandingAnswer(PLAN_AGENT, STANDING_QUESTION, "opt-all", "All of them", "2026-08-18");
+  writeStandingAnswer(PLAN_AGENT, "Include pricing pages?", "opt-yes", "Yes, include them", "2026-08-17");
+  /*
+   * The third row carries what the product itself writes.
+   *
+   * `performStandingAnswerAction` passes `new Date().toISOString()` into this
+   * same door, and `AgentSettings` interpolates the column with no formatting
+   * at all — so this is not a staged ugly string, it is the only stamp a real
+   * press can produce. The two rows above are hand-dated so the *control* is
+   * what those cards are about; this one exists so the frame carries the
+   * format a person will actually meet, rather than leaving it to be inferred
+   * from two files.
+   */
+  writeStandingAnswer(
+    PLAN_AGENT,
+    "Skip anything older than a week?",
+    "opt-skip",
+    "Skip them",
+    new Date().toISOString(),
+  );
+}
+
+/** The list, and whether the control that revokes one is reachable. */
+async function measureStandingAnswers(target: BrowserWindow): Promise<unknown> {
+  return within(
+    "measure the standing answers",
+    10_000,
+    target.webContents.executeJavaScript(
+      `(() => {
+         const blocks = [...document.querySelectorAll("section.agent-settings-block")];
+         const block = blocks.find((node) => {
+           const heading = node.querySelector("h3");
+           return heading !== null && (heading.textContent || "").trim() === "Standing answers";
+         }) || null;
+         const cards = block === null ? [] : [...block.querySelectorAll("article.row-card")];
+         return {
+           block_drawn: block !== null,
+           card_count: cards.length,
+           questions: cards.map((card) => (card.querySelector("h3") || {}).textContent || null),
+           answers: cards.map((card) => (card.querySelector("p") || {}).textContent || null),
+           forget_buttons: block === null ? 0 : [...block.querySelectorAll("button.button-link")]
+             .filter((b) => (b.textContent || "").trim() === "Forget").length,
+           detail: block === null ? null : (block.querySelector("p.muted") || {}).textContent || null,
+         };
+       })()`,
+    ),
+  );
+}
+
+/** Press the first Forget, the way a person does. */
+async function pressForget(target: BrowserWindow): Promise<boolean> {
+  const pressed = (await target.webContents.executeJavaScript(
+    `(() => {
+       const blocks = [...document.querySelectorAll("section.agent-settings-block")];
+       const block = blocks.find((node) => {
+         const heading = node.querySelector("h3");
+         return heading !== null && (heading.textContent || "").trim() === "Standing answers";
+       }) || null;
+       if (block === null) return false;
+       const button = [...block.querySelectorAll("button.button-link")]
+         .find((b) => (b.textContent || "").trim() === "Forget") || null;
+       if (button === null) return false;
+       button.click();
+       return true;
+     })()`,
+  )) as boolean;
+  /* The press is a real command over the channel, then a refresh key bump. */
+  await settle(2500);
+  return pressed;
+}
+
+/**
+ * MAR-681, before and after a press that actually revokes one.
+ *
+ * The list on its own would be a photograph of two rows in a store this run
+ * wrote. What makes it evidence is the second half: `Forget` is pressed, the
+ * command crosses the real channel to `standing_answer.clear`, and the frame
+ * afterwards is short one row. A harness that only seeded and shot would pass
+ * identically against a block that renders and does nothing.
+ */
+async function proveStandingAnswers(target: BrowserWindow): Promise<void> {
+  nativeTheme.themeSource = "light";
+  await settle(300);
+  seedStandingAnswers();
+
+  const route = `/agents/detail?agent=${encodeURIComponent(PLAN_AGENT)}&stage=settings`;
+  await go(target, route);
+  await resizeTo(target, VIEWPORT.width, VIEWPORT.height);
+  await go(target, route);
+
+  const focused = await scrollToStandingAnswers(target);
+  const before = await measureStandingAnswers(target);
+  measurements.push({
+    stage: "mar681-before",
+    theme: "light",
+    viewport: VIEWPORT.name,
+    focused,
+    ...(before as object),
+  });
+  console.log(`[cockpit] MAR-681 before ${JSON.stringify(before)}`);
+  await shoot(target, "mar681-standing-answers-listed");
+
+  const pressed = await pressForget(target);
+  await scrollToStandingAnswers(target);
+  const after = await measureStandingAnswers(target);
+  measurements.push({
+    stage: "mar681-after",
+    theme: "light",
+    viewport: VIEWPORT.name,
+    pressed_forget: pressed,
+    ...(after as object),
+  });
+  console.log(`[cockpit] MAR-681 after-forget pressed=${String(pressed)} ${JSON.stringify(after)}`);
+  await shoot(target, "mar681-standing-answers-after-forget");
+}
+
+/** Bring the block into the frame; it sits well down the Settings stage. */
+async function scrollToStandingAnswers(target: BrowserWindow): Promise<boolean> {
+  const found = (await target.webContents.executeJavaScript(
+    `(() => {
+       const blocks = [...document.querySelectorAll("section.agent-settings-block")];
+       const block = blocks.find((node) => {
+         const heading = node.querySelector("h3");
+         return heading !== null && (heading.textContent || "").trim() === "Standing answers";
+       }) || null;
+       if (block === null) return false;
+       block.scrollIntoView({ block: "start" });
+       return true;
+     })()`,
+  )) as boolean;
+  await settle(400);
+  return found;
 }
 
 async function run(): Promise<void> {
@@ -1676,6 +2063,10 @@ async function run(): Promise<void> {
     // Deliberately not exercised — MAR-740's own bug, left to its fix session.
     click_to_reopen_exercised: false,
   });
+
+  /* MAR-680 and MAR-681, the group-D proving sweep's two agent-page scenes. */
+  await proveRunProgress(window);
+  await proveStandingAnswers(window);
 
   writeFileSync(
     path.join(OUT, "layout.json"),

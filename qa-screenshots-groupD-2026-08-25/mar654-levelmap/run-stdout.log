@@ -1,0 +1,80 @@
+
+[models] seeded 4 agents: matched, named, unconnected, own
+[models] matched 1280/light (window reports 1279px) {"viewport":1279,"page_scroll_width":1279,"page_overflows":false,"section_drawn":true,"picker_drawn":true,"option_count":1,"recommended_first":true,"first_group":"Recommended","chosen":"","step_rows":2,"steps_disabled":0,"says_set_aside":false,"says_you_changed":true,"says_connect":false,"says_dash_does_not_choose":false,"says_an_amount":false,"widest_overflow":407}
+[models] models-matched-1280-light.png 2558x1800
+[models] named 1280/light (window reports 1279px) {"viewport":1279,"page_scroll_width":1279,"page_overflows":false,"section_drawn":true,"picker_drawn":true,"option_count":2,"recommended_first":true,"first_group":"Recommended","chosen":"anthropic/claude-sonnet-5","step_rows":2,"steps_disabled":2,"says_set_aside":true,"says_you_changed":false,"says_connect":false,"says_dash_does_not_choose":false,"says_an_amount":false,"widest_overflow":407}
+[models] models-named-1280-light.png 2558x1800
+[models] unconnected 1280/light (window reports 1279px) {"viewport":1279,"page_scroll_width":1279,"page_overflows":false,"section_drawn":true,"picker_drawn":false,"option_count":0,"recommended_first":false,"first_group":null,"chosen":null,"step_rows":2,"steps_disabled":0,"says_set_aside":false,"says_you_changed":false,"says_connect":true,"says_dash_does_not_choose":false,"says_an_amount":false,"widest_overflow":407}
+[models] models-unconnected-1280-light.png 2558x1800
+[models] own 1280/light (window reports 1279px) {"viewport":1279,"page_scroll_width":1279,"page_overflows":false,"section_drawn":true,"picker_drawn":false,"option_count":0,"recommended_first":false,"first_group":null,"chosen":null,"step_rows":2,"steps_disabled":0,"says_set_aside":false,"says_you_changed":false,"says_connect":false,"says_dash_does_not_choose":true,"says_an_amount":false,"widest_overflow":407}
+[models] models-own-1280-light did not compose on attempt 1; retrying
+[models] models-own-1280-light.png 2558x1800
+[models] matched 768/light (window reports 767px) {"viewport":767,"page_scroll_width":767,"page_overflows":false,"section_drawn":true,"picker_drawn":true,"option_count":1,"recommended_first":true,"first_group":"Recommended","chosen":"","step_rows":2,"steps_disabled":0,"says_set_aside":false,"says_you_changed":true,"says_connect":false,"says_dash_does_not_choose":false,"says_an_amount":false,"widest_overflow":407}
+[models] models-matched-768-light.png 1534x2048
+[models] named 768/light (window reports 767px) {"viewport":767,"page_scroll_width":767,"page_overflows":false,"section_drawn":true,"picker_drawn":true,"option_count":2,"recommended_first":true,"first_group":"Recommended","chosen":"anthropic/claude-sonnet-5","step_rows":2,"steps_disabled":2,"says_set_aside":true,"says_you_changed":false,"says_connect":false,"says_dash_does_not_choose":false,"says_an_amount":false,"widest_overflow":407}
+[models] models-named-768-light.png 1534x2048
+[models] unconnected 768/light (window reports 767px) {"viewport":767,"page_scroll_width":767,"page_overflows":false,"section_drawn":true,"picker_drawn":false,"option_count":0,"recommended_first":false,"first_group":null,"chosen":null,"step_rows":2,"steps_disabled":0,"says_set_aside":false,"says_you_changed":false,"says_connect":true,"says_dash_does_not_choose":false,"says_an_amount":false,"widest_overflow":407}
+[models] models-unconnected-768-light.png 1534x2048
+[models] own 768/light (window reports 767px) {"viewport":767,"page_scroll_width":767,"page_overflows":false,"section_drawn":true,"picker_drawn":false,"option_count":0,"recommended_first":false,"first_group":null,"chosen":null,"step_rows":2,"steps_disabled":0,"says_set_aside":false,"says_you_changed":false,"says_connect":false,"says_dash_does_not_choose":true,"says_an_amount":false,"widest_overflow":407}
+[models] models-own-768-light.png 1534x2048
+[models] matched 375/light (window reports 374px) {"viewport":374,"page_scroll_width":374,"page_overflows":false,"section_drawn":true,"picker_drawn":true,"option_count":1,"recommended_first":true,"first_group":"Recommended","chosen":"","step_rows":2,"steps_disabled":0,"says_set_aside":false,"says_you_changed":true,"says_connect":false,"says_dash_does_not_choose":false,"says_an_amount":false,"widest_overflow":407}
+[models] models-matched-375-light.png 748x1624
+[models] named 375/light (window reports 374px) {"viewport":374,"page_scroll_width":374,"page_overflows":false,"section_drawn":true,"picker_drawn":true,"option_count":2,"recommended_first":true,"first_group":"Recommended","chosen":"anthropic/claude-sonnet-5","step_rows":2,"steps_disabled":2,"says_set_aside":true,"says_you_changed":false,"says_connect":false,"says_dash_does_not_choose":false,"says_an_amount":false,"widest_overflow":407}
+[models] models-named-375-light.png 748x1624
+[models] unconnected 375/light (window reports 374px) {"viewport":374,"page_scroll_width":374,"page_overflows":false,"section_drawn":true,"picker_drawn":false,"option_count":0,"recommended_first":false,"first_group":null,"chosen":null,"step_rows":2,"steps_disabled":0,"says_set_aside":false,"says_you_changed":false,"says_connect":true,"says_dash_does_not_choose":false,"says_an_amount":false,"widest_overflow":407}
+[models] models-unconnected-375-light did not compose on attempt 1; retrying
+[models] models-unconnected-375-light.png 748x1624
+[models] own 375/light (window reports 374px) {"viewport":374,"page_scroll_width":374,"page_overflows":false,"section_drawn":true,"picker_drawn":false,"option_count":0,"recommended_first":false,"first_group":null,"chosen":null,"step_rows":2,"steps_disabled":0,"says_set_aside":false,"says_you_changed":false,"says_connect":false,"says_dash_does_not_choose":true,"says_an_amount":false,"widest_overflow":407}
+[models] models-own-375-light did not compose on attempt 1; retrying
+[models] models-own-375-light.png 748x1624
+[models] matched 1280/dark (window reports 1279px) {"viewport":1279,"page_scroll_width":1279,"page_overflows":false,"section_drawn":true,"picker_drawn":true,"option_count":1,"recommended_first":true,"first_group":"Recommended","chosen":"","step_rows":2,"steps_disabled":0,"says_set_aside":false,"says_you_changed":true,"says_connect":false,"says_dash_does_not_choose":false,"says_an_amount":false,"widest_overflow":407}
+[models] models-matched-1280-dark did not compose on attempt 1; retrying
+[models] models-matched-1280-dark.png 2558x1800
+[models] named 1280/dark (window reports 1279px) {"viewport":1279,"page_scroll_width":1279,"page_overflows":false,"section_drawn":true,"picker_drawn":true,"option_count":2,"recommended_first":true,"first_group":"Recommended","chosen":"anthropic/claude-sonnet-5","step_rows":2,"steps_disabled":2,"says_set_aside":true,"says_you_changed":false,"says_connect":false,"says_dash_does_not_choose":false,"says_an_amount":false,"widest_overflow":407}
+[models] models-named-1280-dark did not compose on attempt 1; retrying
+[models] models-named-1280-dark.png 2558x1800
+[models] unconnected 1280/dark (window reports 1279px) {"viewport":1279,"page_scroll_width":1279,"page_overflows":false,"section_drawn":true,"picker_drawn":false,"option_count":0,"recommended_first":false,"first_group":null,"chosen":null,"step_rows":2,"steps_disabled":0,"says_set_aside":false,"says_you_changed":false,"says_connect":true,"says_dash_does_not_choose":false,"says_an_amount":false,"widest_overflow":407}
+[models] models-unconnected-1280-dark did not compose on attempt 1; retrying
+[models] models-unconnected-1280-dark.png 2558x1800
+[models] own 1280/dark (window reports 1279px) {"viewport":1279,"page_scroll_width":1279,"page_overflows":false,"section_drawn":true,"picker_drawn":false,"option_count":0,"recommended_first":false,"first_group":null,"chosen":null,"step_rows":2,"steps_disabled":0,"says_set_aside":false,"says_you_changed":false,"says_connect":false,"says_dash_does_not_choose":true,"says_an_amount":false,"widest_overflow":407}
+[models] models-own-1280-dark did not compose on attempt 1; retrying
+[models] models-own-1280-dark.png 2558x1800
+[models] matched 768/dark (window reports 767px) {"viewport":767,"page_scroll_width":767,"page_overflows":false,"section_drawn":true,"picker_drawn":true,"option_count":1,"recommended_first":true,"first_group":"Recommended","chosen":"","step_rows":2,"steps_disabled":0,"says_set_aside":false,"says_you_changed":true,"says_connect":false,"says_dash_does_not_choose":false,"says_an_amount":false,"widest_overflow":407}
+[models] models-matched-768-dark did not compose on attempt 1; retrying
+[models] models-matched-768-dark.png 1534x2048
+[models] named 768/dark (window reports 767px) {"viewport":767,"page_scroll_width":767,"page_overflows":false,"section_drawn":true,"picker_drawn":true,"option_count":2,"recommended_first":true,"first_group":"Recommended","chosen":"anthropic/claude-sonnet-5","step_rows":2,"steps_disabled":2,"says_set_aside":true,"says_you_changed":false,"says_connect":false,"says_dash_does_not_choose":false,"says_an_amount":false,"widest_overflow":407}
+[models] models-named-768-dark did not compose on attempt 1; retrying
+[models] models-named-768-dark.png 1534x2048
+[models] unconnected 768/dark (window reports 767px) {"viewport":767,"page_scroll_width":767,"page_overflows":false,"section_drawn":true,"picker_drawn":false,"option_count":0,"recommended_first":false,"first_group":null,"chosen":null,"step_rows":2,"steps_disabled":0,"says_set_aside":false,"says_you_changed":false,"says_connect":true,"says_dash_does_not_choose":false,"says_an_amount":false,"widest_overflow":407}
+[models] models-unconnected-768-dark did not compose on attempt 1; retrying
+[models] models-unconnected-768-dark.png 1534x2048
+[models] own 768/dark (window reports 767px) {"viewport":767,"page_scroll_width":767,"page_overflows":false,"section_drawn":true,"picker_drawn":false,"option_count":0,"recommended_first":false,"first_group":null,"chosen":null,"step_rows":2,"steps_disabled":0,"says_set_aside":false,"says_you_changed":false,"says_connect":false,"says_dash_does_not_choose":true,"says_an_amount":false,"widest_overflow":407}
+[models] models-own-768-dark did not compose on attempt 1; retrying
+[models] models-own-768-dark.png 1534x2048
+[models] matched 375/dark (window reports 374px) {"viewport":374,"page_scroll_width":374,"page_overflows":false,"section_drawn":true,"picker_drawn":true,"option_count":1,"recommended_first":true,"first_group":"Recommended","chosen":"","step_rows":2,"steps_disabled":0,"says_set_aside":false,"says_you_changed":true,"says_connect":false,"says_dash_does_not_choose":false,"says_an_amount":false,"widest_overflow":407}
+[models] models-matched-375-dark did not compose on attempt 1; retrying
+[models] models-matched-375-dark.png 748x1624
+[models] named 375/dark (window reports 374px) {"viewport":374,"page_scroll_width":374,"page_overflows":false,"section_drawn":true,"picker_drawn":true,"option_count":2,"recommended_first":true,"first_group":"Recommended","chosen":"anthropic/claude-sonnet-5","step_rows":2,"steps_disabled":2,"says_set_aside":true,"says_you_changed":false,"says_connect":false,"says_dash_does_not_choose":false,"says_an_amount":false,"widest_overflow":407}
+[models] models-named-375-dark did not compose on attempt 1; retrying
+[models] models-named-375-dark.png 748x1624
+[models] unconnected 375/dark (window reports 374px) {"viewport":374,"page_scroll_width":374,"page_overflows":false,"section_drawn":true,"picker_drawn":false,"option_count":0,"recommended_first":false,"first_group":null,"chosen":null,"step_rows":2,"steps_disabled":0,"says_set_aside":false,"says_you_changed":false,"says_connect":true,"says_dash_does_not_choose":false,"says_an_amount":false,"widest_overflow":407}
+[models] models-unconnected-375-dark did not compose on attempt 1; retrying
+[models] models-unconnected-375-dark.png 748x1624
+[models] own 375/dark (window reports 374px) {"viewport":374,"page_scroll_width":374,"page_overflows":false,"section_drawn":true,"picker_drawn":false,"option_count":0,"recommended_first":false,"first_group":null,"chosen":null,"step_rows":2,"steps_disabled":0,"says_set_aside":false,"says_you_changed":false,"says_connect":false,"says_dash_does_not_choose":true,"says_an_amount":false,"widest_overflow":407}
+[models] models-own-375-dark did not compose on attempt 1; retrying
+[models] models-own-375-dark.png 748x1624
+[models] level map seeded: cheap=meta-llama/llama-3.3-70b-instruct:free frontier=anthropic/claude-opus-5 standard=(none) default=openai/gpt-4o-mini
+[models] level-map settings light {"block_drawn":true,"row_count":3,"rows":[{"id":"level-model-cheap","value":"meta-llama/llama-3.3-70b-instruct:free","label":"Small and cheap"},{"id":"level-model-standard","value":"","label":"Balanced"},{"id":"level-model-frontier","value":"anthropic/claude-opus-5","label":"The best available"}]}
+[models] mar654-level-map-settings-1280-light did not compose on attempt 1; retrying
+[models] mar654-level-map-settings-1280-light.png 2558x1800
+[models] level-map steps light {"step_rows":2,"said":[{"step":"Step 2","resolved":"Runs on openai/gpt-4o-mini, DASH's default model. Nothing is set for balanced steps yet."},{"step":"Step 3","resolved":"Runs on anthropic/claude-opus-5, which you chose for the best available steps."}],"distinct_models":["anthropic/claude-opus-5","openai/gpt-4o-mini"],"distinct_model_count":2,"says_you_chose_for":true,"says_dash_default":true,"link_to_level_map":true}
+[models] mar654-level-map-steps-1280-light did not compose on attempt 1; retrying
+[models] mar654-level-map-steps-1280-light.png 2558x1800
+[models] level-map settings dark {"block_drawn":true,"row_count":3,"rows":[{"id":"level-model-cheap","value":"meta-llama/llama-3.3-70b-instruct:free","label":"Small and cheap"},{"id":"level-model-standard","value":"","label":"Balanced"},{"id":"level-model-frontier","value":"anthropic/claude-opus-5","label":"The best available"}]}
+[models] mar654-level-map-settings-1280-dark did not compose on attempt 1; retrying
+[models] mar654-level-map-settings-1280-dark.png 2558x1800
+[models] level-map steps dark {"step_rows":2,"said":[{"step":"Step 2","resolved":"Runs on openai/gpt-4o-mini, DASH's default model. Nothing is set for balanced steps yet."},{"step":"Step 3","resolved":"Runs on anthropic/claude-opus-5, which you chose for the best available steps."}],"distinct_models":["anthropic/claude-opus-5","openai/gpt-4o-mini"],"distinct_model_count":2,"says_you_chose_for":true,"says_dash_default":true,"link_to_level_map":true}
+[models] mar654-level-map-steps-1280-dark did not compose on attempt 1; retrying
+[models] mar654-level-map-steps-1280-dark.png 2558x1800
+[models] MAR-654: 2 step frame(s); 0 still naming fewer than two distinct models; 0 settings frame(s) without three level rows
+[models] wrote 28 image(s) to C:\Users\henri\AppData\Local\Temp\wt-provingD-k2\qa-screenshots-groupD-2026-08-25\mar654-levelmap; 0 frame(s) overflowed sideways; 4 frame(s) with no model section; 0 frame(s) where the recommended option was not first; 0 frame(s) showing an amount

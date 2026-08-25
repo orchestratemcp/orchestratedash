@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-08-25",
   "current_wave": "Wave 2 - outside-app connections",
-  "lifecycle_note": "2026-08-25 midday: MAR-784 (per-schedule spend allowance, DASH-open half; DASH-closed spending is Henriks open decision — runner-side narrow broker, ADR 0028 d5 widening at N keys) and MAR-785 (ADR 0030 restart-on-boot, runner-only autostart + schedule_standing persistence) merged. The #289 resolution repaired a move-vs-edit semantic collision (stale parser copy) and a runner-store migration slot collision (ALTER first). MCP MAR-786 merged (b144d0c). Attended queue: spend proof with a real key, the autostart+schedule evening combo, Refresh press, composer eyeballs.",
+  "lifecycle_note": "PROVING SWEEP 2026-08-25 (group D, runtime + keys), the last of the four groups AGENTS.md calls for. PROMOTED merged -> proven: MAR-654, MAR-680, MAR-681, MAR-624, MAR-520. LEFT MERGED with the reason recorded on each entry's lifecycle_check: MAR-625, MAR-629, MAR-633 (ADR/library packets with no packaged path a person can reach), MAR-611 and MAR-487 (need an attended run against a real host). Three existing harnesses were extended with scenes that run AFTER their matrix and press things for real — capture-models.ts (a level mapped to a model, and two steps of one plan resolving to two different models), capture-cockpit.ts (a run staged mid-flight, then finished under the open page so its own poll had to notice; and standing answers listed then revoked by a real Forget), capture-settings-polish.ts (the fleet fan-out pressed, with connection_secrets read on both sides). MAR-520 was proven differently and better: this sweep's own capture runs left five orphan runners, and all five were retired over POST /shutdown with the runner-written session key — no Stop-Process anywhere. Evidence: qa-screenshots-groupD-2026-08-25/ (four run directories, 147 frames, layout.json and layout-settings.json) plus the two retirement records. Four defects filed from the frames, none fixed: MAR-791 (the level-map prose is clamped by a dropdown's 46ch cap, so its own 60ch rules are dead), MAR-792 (the fleet card's per-agent chip stretches the card, and its reach sentence outlives the connection it offers), MAR-793 (a standing answer is stamped with a raw ISO timestamp). The proving-debt sweep is now complete across all four groups; the remaining debt is named rather than reduced to zero, and three of group D's ten can never reach proven under the current rule because they are documentation.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -369,12 +369,14 @@
     },
     {
       "id": "MAR-520",
-      "lifecycle": "merged",
+      "lifecycle": "proven",
       "linear_status": "In Progress",
       "commit": "8371f07",
       "proof": {
-        "command": "pnpm typecheck && pnpm brand:check && pnpm test"
-      }
+        "command": "node scripts/retire-groupD-runners.mjs against the five runners this sweep's own capture runs left behind (results: <scratch>/mar520-retire.json and mar520-retire-final.json)",
+        "run": "PROVING SWEEP 2026-08-25 (group D). Proven on REAL ORPHANS rather than a fixture, because this sweep produced them by doing ordinary work: every capture harness in this tree spawns a detached runner that outlives it, which is the observed behaviour the issue was filed on. Five runners were left alive across five capture runs. THE MECHANISM, checked on disk first: each scratch store holds runner.session.key (44 bytes) beside runner.json, and runner.json carries channel_secret_fingerprint (e.g. '58caf1be22f74332'). The probe recomputes SHA-256 over the session key, truncated to 16 hex, and compares it BEFORE connecting — fingerprint_matches=true on every runner, which is the half that turns a bare 401 into a diagnosis. THE RETIREMENT: POST /shutdown over each runner's own named pipe with the session key as a Bearer token answered 202 with {'ok':true,'detail':'The runner is shutting down gracefully.'} for all five (pids 25396, 43780, 16076, 32852, 42096). Before this packet that request answered 401 and the only remedy was Stop-Process, which AGENTS.md forbids. NO PROCESS WAS FORCE-KILLED IN THIS SWEEP. THE SECOND HALF, confirmed by re-running the probe: all five report alive=false afterwards and their runner.session.key files are gone — the file is removed on graceful shutdown, so a session key on disk means 'a runner was alive with this credential' rather than 'a runner once was', exactly as runner/session-key.ts's header claims. A CORRECTION WORTH RECORDING: the probe's first draft expected 200 and labelled three successful retirements 'unexpected'. 202 is the honest code for a shutdown the process completes itself; the label was wrong, not the product, and both codes are now accepted so a label can never again decide whether this looks fixed. ALSO LEARNED THE HARD WAY, and now guarded in scripts/run-capture-groupD.ps1: deleting a scratch store to re-run a slug removed runner.json and runner.session.key while failing on the locked runner.sqlite — which MANUFACTURES the unretirable runner this issue is about. A fresh slug per run is enforced instead."
+      },
+      "promotion_note": "PROMOTED merged -> proven 2026-08-25 by the group-D proving sweep (runtime + keys). Ancestry verified against origin/master 69a9158; the named path was exercised on the packaged build, not reasoned about."
     },
     {
       "id": "MAR-487",
@@ -383,7 +385,8 @@
       "commit": "5a8a4e8",
       "proof": {
         "command": "pnpm typecheck && pnpm brand:check && pnpm test && pnpm build:runner-standalone"
-      }
+      },
+      "lifecycle_check": "CHECKED, LEFT MERGED 2026-08-25 (group D). The named paths are all present at HEAD (lib/deploy/bundle.ts, lib/deploy/verbs.ts, electron/ssh-host.ts, scripts/host-helper/main.ts, tests/deploy-bridge.test.ts). The blocker is the issue's own exit evidence, which does not admit a substitute: 'a dated attended dry-run against a real VPS recorded in the issue (deploy -> process running -> stop -> remove)'. No VPS is reachable from this unattended session. Note also that Linear ARCHIVED this issue on 2026-08-24 while leaving it In Progress, which is worth a human decision — an archived issue carrying live proven-debt is invisible to the people counting it."
     },
     {
       "id": "MAR-501",
@@ -867,7 +870,8 @@
       "id": "MAR-611",
       "lifecycle": "merged",
       "linear_status": "In Progress",
-      "commit": "e1c36a4"
+      "commit": "e1c36a4",
+      "lifecycle_check": "CHECKED, LEFT MERGED 2026-08-25 (group D). The controls exist and render from local rows alone — agentDeployTargets reads agent_deploys + hosts, and describeWhatIsOnHost accepts seen:null, so both 'Bring this agent home' (agent page) and 'Bring it home' (server card) draw with nothing asked of any server. But the issue's heart is evidence custody — 'say it has some output that its nice it follows home' — and that half cannot be honestly captured here: electron/main.ts:2749 refuses without ssh, electron/host-bring-home.ts spawns six or more ssh children, and the success path blocks on a native dialog.showOpenDialog an unattended run cannot answer. Capturing the buttons and the confirmation disclosure would photograph the easy half and leave the claim the issue is actually about untested, which is the substitution ADR 0002 amendment 1 names. Needs an attended run against a real host, with MAR-487."
     },
     {
       "id": "MAR-626",
@@ -894,7 +898,8 @@
       "id": "MAR-625",
       "lifecycle": "merged",
       "linear_status": "In Progress",
-      "commit": "3bd27db0a7bcba001c0ac8de66741da0073cdedf"
+      "commit": "3bd27db0a7bcba001c0ac8de66741da0073cdedf",
+      "lifecycle_check": "CHECKED, LEFT MERGED 2026-08-25 (group D). The packet is ADR 0018 and nothing else — 3bd27db changed docs/adr/0018-a-key-crosses-only-on-a-persons-press.md, PROJECT_STATE.md and state.json, with no lib/, app/ or electron/ file touched. The ADR is present at HEAD and its decision holds, but a decision has no packaged path to execute, so there is nothing a capture or a runner probe could witness. It cannot become proven under the current rule and should not sit in proven-debt pretending otherwise — see the handoff note on MAR-742."
     },
     {
       "id": "MAR-628",
@@ -904,21 +909,28 @@
     },
     {
       "id": "MAR-624",
-      "lifecycle": "merged",
+      "lifecycle": "proven",
       "linear_status": "In Progress",
-      "commit": "651cfed2b9ecb8a4a90c7f83c84b2770ec59d85f"
+      "commit": "651cfed2b9ecb8a4a90c7f83c84b2770ec59d85f",
+      "proof": {
+        "command": "pnpm build:renderer; pnpm build:shell; DASH_SHELL_URL=dash-app://ui/ DASH_DATA_DIR=<scratch>/store pnpm exec electron dist/electron/capture-settings-polish.mjs --user-data-dir=<scratch>/ud (harness extended with proveFleetFanOut)",
+        "run": "PROVING SWEEP 2026-08-25 (group D). 47 frames in qa-screenshots-groupD-2026-08-25/mar624-fanout-b/ + layout-settings.json. WHAT THE FIX ACTUALLY WAS, and what therefore had to be measured: the defect was not a wrong sentence but a TRUE-LOOKING one with nothing behind it — the fan-out reported success while connection_secrets stayed empty, so the requirement cards went on saying NOT CONNECTED and the person who did the right thing was told it had not worked. A screenshot alone cannot separate the fix from the bug, so the scene reads the store on both sides of the press as well as the card. BEFORE: two agents declaring a dash_managed openrouter connection and holding nothing — waiting=2, has_this=0, share_label='Give it to 2 waiting agents'; heldCredentials empty for both. AFTER one real press: waiting=0, has_this=2, the share button correctly gone, and heldCredentials returning ['models/key'] for BOTH agents. The row the issue says was never written is written. THE TITLE'S OTHER HALF IS MOOT AND IS NOT CLAIMED: the 'MODEL tile' the issue names no longer exists — app/_components/agent-tiles.tsx and the agent page's modelTile() were deleted by MAR-646 (fb5df56). Its replacement, the ModelChoice section, reads the same heldCredentials rows this press wrote, and MAR-654's frames in this same sweep show that section resolving a model for an agent whose key arrived this way. THE THIRD CARD: anthropic was seeded as a fleet_connections row with NO vault blob, and draws 'DASH cannot read this' with its recovery paragraph rather than a claim. Recorded honestly — no agent waits on anthropic in this scene, so its share button is absent because nobody is waiting, and these frames do NOT establish how the fan-out refuses when an unreadable key does have agents waiting. The launch's vault self-check read 3/3 fleet reads ok against a named directory. DEFECTS FILED, NOT FIXED: MAR-792 — (1) .connector-agent declares three grid columns over a two-child row, so the per-agent chip lands in the 1fr column and stretches the full card width at 1280; (2) the reach sentence still reads 'Connecting OpenRouter connects it for digest-writer and market-watcher' AFTER both hold it and the button is gone, because describeFleetReach lists reach.materializes without filtering on connected."
+      },
+      "promotion_note": "PROMOTED merged -> proven 2026-08-25 by the group-D proving sweep (runtime + keys). Ancestry verified against origin/master 69a9158; the named path was exercised on the packaged build, not reasoned about."
     },
     {
       "id": "MAR-633",
       "lifecycle": "merged",
       "linear_status": "In Progress",
-      "commit": "f9e18c8742960901ea332fe5a6d755ab15b5e9df"
+      "commit": "f9e18c8742960901ea332fe5a6d755ab15b5e9df",
+      "lifecycle_check": "CHECKED, LEFT MERGED 2026-08-25 (group D). f9e18c8 shipped ADR 0020 and a complete lib/mcp/ library (admission, audit, card, catalogue, reach, result, tools, transport) with 1196 lines of tests — and no wiring. Nothing under app/, lib/views/ or lib/shell/ipc.ts imports lib/mcp, and PROJECT_STATE.md records that the curated catalogue ships empty. The issue's own bar is 'one real MCP server connected through the product, its tools listed, an agent using it in a run, and the audit afterwards naming the server and the tool'. None of that is reachable by a person today, so there is no packaged path to photograph."
     },
     {
       "id": "MAR-629",
       "lifecycle": "merged",
       "linear_status": "In Progress",
-      "commit": "211b73e"
+      "commit": "211b73e",
+      "lifecycle_check": "CHECKED, LEFT MERGED 2026-08-25 (group D). Two entries, neither reachable from this machine. 211b73e is ADR 0021, documentation only. ef23289 is the host-broker install pack — runner/host-broker.ts, runner/host-pack.ts, lib/deploy/host-pack.ts, lib/broker/host-operations.ts, scripts/host-helper/main.ts — all of which exist at HEAD and none of which has a renderer surface: grepping app/, lib/views/ and lib/shell/ipc.ts for host-pack returns nothing. It runs on an enrolled host, so proving it needs a real server, which this unattended session does not have. PROJECT_STATE.md still describes ADR 0021 as 'planned, documentation only', which ef23289 made stale."
     },
     {
       "id": "MAR-639",
@@ -1095,7 +1107,8 @@
       "id": "MAR-629",
       "lifecycle": "merged",
       "linear_status": "In Progress",
-      "commit": "ef23289"
+      "commit": "ef23289",
+      "lifecycle_check": "CHECKED, LEFT MERGED 2026-08-25 (group D). Two entries, neither reachable from this machine. 211b73e is ADR 0021, documentation only. ef23289 is the host-broker install pack — runner/host-broker.ts, runner/host-pack.ts, lib/deploy/host-pack.ts, lib/broker/host-operations.ts, scripts/host-helper/main.ts — all of which exist at HEAD and none of which has a renderer surface: grepping app/, lib/views/ and lib/shell/ipc.ts for host-pack returns nothing. It runs on an enrolled host, so proving it needs a real server, which this unattended session does not have. PROJECT_STATE.md still describes ADR 0021 as 'planned, documentation only', which ef23289 made stale."
     },
     {
       "id": "MAR-643",
@@ -1180,12 +1193,14 @@
     },
     {
       "id": "MAR-680",
-      "lifecycle": "merged",
+      "lifecycle": "proven",
       "linear_status": "In Progress",
       "commit": "978b7e2929c45eee393e3bce4d52a2d936cea69a",
       "proof": {
-        "command": "pnpm typecheck; pnpm test; pnpm build:renderer; pnpm build:shell; electron dist/electron/capture-cockpit.mjs; pnpm verify:shell NOT RUN"
-      }
+        "command": "pnpm build:renderer; pnpm build:shell; DASH_SHELL_URL=dash-app://ui/ DASH_DATA_DIR=<scratch>/store pnpm exec electron dist/electron/capture-cockpit.mjs --user-data-dir=<scratch>/ud (harness extended with proveRunProgress)",
+        "run": "PROVING SWEEP 2026-08-25 (group D). 48 frames in qa-screenshots-groupD-2026-08-25/mar680-681-agentpage-b/ + layout.json. Henrik asked for three things and the scene is built so that ONE page instance answers all three, because the third cannot be proven any other way. THE METHOD, which is the point: a second run is seeded on news-scout stopping at step_started on step 3 of the manifest's eight, with an agent_dom_state snapshot saying running (seeded deliberately — resolvePhase's silence rule turns a terminal-event-less run into 'unfinished' after 120s, so the snapshot is what makes the frame the same picture on a fast machine and a slow one). The page is loaded ONCE. Then the store is changed underneath it — run_completed plus a new digest — and the window is not touched again for 14 seconds. A harness that navigated between the two frames would have proven the indicator and the finish and quietly ASSUMED the refresh. (1) STEP INDICATOR: position='Step 3 of 8', headline='Working', state_class='run-progress-state is-running', working_pips=2, steps_running=1, steps_done=2, and the step list drawing Email read / Schema validation as Done, Intent classifier as HAPPENING NOW, and Email draft / Human approval gate as Not started. (2) FINISH SIGNAL, with no reload: position='3 of 8 steps ran', headline='Finished', is_finished=true, working_pips=0, steps_done=3, safe_to_leave_shown flipping true -> false, and the header's 'Watching for changes. Updated 18:22:31.' live note correctly gone once the run left flight. (3) OUTPUTS REFRESH: late_output_present false -> true. The new digest is titled 'The digest that landed while nobody reloaded' precisely so the assertion is a string that was demonstrably not on the page when the previous frame was taken; it appears at the top of the rail's LATEST OUTPUT list in mar680-run-progress-finished-no-reload.png. No live runner and no model were involved — buildRunProgress is a pure projection over the events and snapshot tables, which is what makes the staging honest rather than a mock."
+      },
+      "promotion_note": "PROMOTED merged -> proven 2026-08-25 by the group-D proving sweep (runtime + keys). Ancestry verified against origin/master 69a9158; the named path was exercised on the packaged build, not reasoned about."
     },
     {
       "id": "MAR-685",
@@ -1207,21 +1222,25 @@
     },
     {
       "id": "MAR-654",
-      "lifecycle": "merged",
+      "lifecycle": "proven",
       "linear_status": "In Progress",
       "commit": "430369dfabeac34fac181744d0c78b115b661eff",
       "proof": {
-        "command": "pnpm typecheck; pnpm exec vitest run tests/store-sqlite.test.ts tests/model-choice.test.ts tests/broker-threat-model.test.ts; pnpm test; pnpm brand:check; pnpm build:renderer; pnpm build:shell; pnpm verify:shell NOT RUN"
-      }
+        "command": "pnpm build:renderer; pnpm build:shell; DASH_SHELL_URL=dash-app://ui/ DASH_DATA_DIR=<scratch>/store pnpm exec electron dist/electron/capture-models.mjs --user-data-dir=<scratch>/ud (harness extended with seedLevelMap/measureLevelMap/measureStepModels)",
+        "run": "PROVING SWEEP 2026-08-25 (group D, runtime + keys). 28 frames in qa-screenshots-groupD-2026-08-25/mar654-levelmap/ + layout.json. THE NUMBER THIS ISSUE TURNS ON: the issue's evidence was a run record with two steps at two declared strengths and ONE model id on both — 'step_completed digest_curate model=meta-llama/... / step_completed deep_dive_synthesis model=meta-llama/...'. So the measurement is how many DISTINCT models the step sentences name on one plan, and the harness computes it rather than leaving it to the eye: distinct_model_count=2 on both step frames, distinct_models=['anthropic/claude-opus-5','openai/gpt-4o-mini']. One would be the defect still standing. WHAT THE TWO SENTENCES SAY, and they name their own rung: step 3, declared frontier, reads 'Runs on anthropic/claude-opus-5, which you chose for the best available steps.' — the level_map rung. Step 2, overridden to standard and deliberately left unmapped, reads 'Runs on openai/gpt-4o-mini, DASH's default model. Nothing is set for balanced steps yet.' — the fleet_default rung. Two steps, two models, two different rungs of applyFleetDefault's ladder, on an agent that has named no model of its own. THE MAP ITSELF: /settings/ai draws three rows, #level-model-cheap / -standard / -frontier, row_count=3 in both themes, carrying the seeded ids with the middle row empty and naming the default it falls through to. THE SEAM: the agent page carries a link to /settings/ai ('Choose what each kind of step runs on'), link_to_level_map=true, so the map is findable from the agent that needs it. WHAT IS NOT CLAIMED: no completion call was made and no provider was contacted. The vault holds a fixture string, so 'See what OpenRouter offers' would fail and was not pressed. This proves the declared level reaches a model id and is shown as such; that the chosen id is what the broker then sends is tests/model-choice.ts's ground, not a screenshot's. THE UNION'S OTHER ENTRY: this issue's ADR-amendment entry (3c424f9, docs only) is left merged — a decision document has no packaged path to execute. DEFECT FILED, NOT FIXED (read-only on product code): MAR-791 — .model-picker's 46ch cap, written for a dropdown, contains MAR-654's three paragraphs of prose, so app/globals.css:5860 and :5876 (`max-width: 60ch`) are unreachable and the whole explanation wraps at ~44 characters in a third of the page. Visible in this sweep's frames and already visible, unnoticed, in qa-screenshots-groupC-2026-08-24/ai-1280-light-comfortable.png."
+      },
+      "promotion_note": "PROMOTED merged -> proven 2026-08-25 by the group-D proving sweep (runtime + keys). Ancestry verified against origin/master 69a9158; the named path was exercised on the packaged build, not reasoned about."
     },
     {
       "id": "MAR-681",
-      "lifecycle": "merged",
+      "lifecycle": "proven",
       "linear_status": "In Progress",
       "commit": "28b423b5f2a9cc1f4d83bf3b625df3c5be8d0570",
       "proof": {
-        "command": "pnpm typecheck; pnpm vitest run tests/standing-answers.test.ts tests/fleet-decisions.test.ts tests/store-sqlite.test.ts tests/shell.test.ts tests/store.test.ts tests/workspace.test.ts tests/decision-identity.test.ts; pnpm test; pnpm build:renderer; pnpm build:shell; pnpm verify:shell NOT RUN"
-      }
+        "command": "same capture-cockpit.mjs run as MAR-680, extended with proveStandingAnswers",
+        "run": "PROVING SWEEP 2026-08-25 (group D). Frames in qa-screenshots-groupD-2026-08-25/mar680-681-agentpage-b/. THE HALF A SEEDED LIST CANNOT PROVE: three standing answers written through writeStandingAnswer — the same door electron/main.ts:1999 writes them through, which derives question_key itself so the seed cannot invent a key the product would never produce — then a REAL press of Forget. A harness that only seeded and shot would pass identically against a block that renders and does nothing. BEFORE: card_count=3, questions=['Skip anything older than a week?','Which competitor should I focus on?','Include pricing pages?'], each with its chosen option and its own Forget control (forget_buttons=3), under the heading 'Standing answers' and the sentence 'DASH will not ask these questions again until you forget the answer.' AFTER one press, pressed_forget=true: card_count=2, forget_buttons=2, and the removed row is the one whose button was pressed — the command crossed the real channel to standing_answer.clear and the row is gone from the store, not hidden. WHAT IS NOT PROVEN HERE: the SET side. 'Always answer this way' lives on the work card and needs an unanswered, unexpired Agent DOM choice; this scene proves the remembering and the revoking, which is the half the issue calls 'visible and revocable in the agent's Settings stage'. Part 2 of the issue — whether the sample agent should ask at all — is a design question, not a packaged path, and is not claimed. DEFECT FILED, NOT FIXED: MAR-793 — chosen_at is printed with no formatting, so a real press produces 'Set 2026-08-25T16:47:25.128Z'. The third seeded row carries exactly what main writes, so the frame photographs the format rather than inferring it from two files, and it sits directly above two human dates in the same list."
+      },
+      "promotion_note": "PROMOTED merged -> proven 2026-08-25 by the group-D proving sweep (runtime + keys). Ancestry verified against origin/master 69a9158; the named path was exercised on the packaged build, not reasoned about."
     },
     {
       "id": "MAR-690",
