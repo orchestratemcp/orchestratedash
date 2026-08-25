@@ -107,6 +107,20 @@ interface HostTrustTarget extends HostTarget {
   fingerprint: string;
 }
 
+/**
+ * A saved host, one agent copy on it, one declared need, and the identity the
+ * person confirmed on the consent frame (MAR-794, ADR 0018).
+ *
+ * Four names and no value. There is nowhere in this shape for a key, which is
+ * why it has a name of its own rather than being `HostDeployTarget` with two
+ * more fields bolted on: a reviewer counting the ways a credential could leave
+ * this process should find that this one cannot carry it.
+ */
+interface HostKeyTarget extends HostDeployTarget {
+  connection_id: string;
+  fingerprint: string;
+}
+
 function send(command: string, payload: Record<string, string>): Promise<CommandResult> {
   return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
     command,
@@ -509,6 +523,26 @@ const dashShell = {
    */
   bringAgentHome: ({ host_id, agent_id }: HostDeployTarget) =>
     send("host.bringHome", { host_id, agent_id }),
+  /**
+   * Put one key on one server, for one agent copy (MAR-794, ADR 0018).
+   *
+   * Its own named method, and the narrowest one on this object: four strings,
+   * every one of them a **name**. In particular there is no key here and no
+   * parameter a key could be passed as — the renderer has never held the value,
+   * and this signature is where that stops being a convention. Main reads it
+   * from the vault, hands it to `ssh` on stdin, and drops it.
+   *
+   * `fingerprint` is the identity the consent frame displayed, carried back the
+   * way `trustHost` carries it, so main can refuse when the machine answering
+   * now is not the one the person was shown. It is the only structural evidence
+   * the trusted side has that the ceremony named the right server.
+   *
+   * A separate method rather than a flag on `deployAgentToHost`, for
+   * `bringAgentHome`'s reason and a sharper one: they are different acts, and
+   * this is the one whose consequence no later press can undo.
+   */
+  installKeyOnHost: ({ host_id, agent_id, connection_id, fingerprint }: HostKeyTarget) =>
+    send("host.installKey", { host_id, agent_id, connection_id, fingerprint }),
   forgetHost: ({ host_id }: HostTarget) => send("host.forget", { host_id }),
 
   /**

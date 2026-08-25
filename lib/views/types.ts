@@ -1486,6 +1486,76 @@ export interface SavedServerView {
    * Empty for a server nobody has deployed to, which is most of them.
    */
   sent: SentToServerView[];
+  /**
+   * Every key DASH has placed on this server, newest first (MAR-794, ADR 0018).
+   *
+   * DASH's memory of its own outbound act, like `sent` beside it and bounded the
+   * same way: *"DASH last proved placement at that time and has not proved
+   * removal since."* Nothing here is read from the server, because nothing on
+   * either plane asks a host to enumerate its secret store — and nothing here is
+   * the value, a digest of one, or anything derived from one.
+   *
+   * Empty for every server today, which is the honest state of a verb that has
+   * just shipped.
+   */
+  placed_keys: PlacedKeyView[];
+  /**
+   * The keys this server could be given, one per (agent copy, declared need).
+   *
+   * What makes an entry: DASH sent that agent here and has not brought it home,
+   * the agent's own document declares the connection as a model-provider need,
+   * and DASH is actually holding a credential for it. All three, because each
+   * one removes a way the offer could be a dead end — an agent that is not there
+   * has no bundle for the helper to validate against, a need the document does
+   * not name is refused on the far side, and a connection nothing is held for
+   * has no value to send.
+   *
+   * That last clause is MAR-626's finding, pointed at a different surface: the
+   * vault is the gate, never the manifest alone, because a plan that *wants* a
+   * model is not the same fact as a key somebody has typed in.
+   */
+  key_offers: KeyOfferView[];
+}
+
+/**
+ * One key DASH placed on one server (MAR-794, ADR 0018).
+ *
+ * Names, a date and nothing else. `service` is the author's friendly name for
+ * the connection — "Your OpenRouter key" — resolved from the agent's own
+ * document here rather than in the renderer, so both hosts say it the same way
+ * and a page never has to know what a connection id is.
+ */
+export interface PlacedKeyView {
+  /** The agent copy the key was placed for, by the name a person reads. */
+  agent: string;
+  /** The declared need. Technical, carried so a press can name it. Never rendered. */
+  connection_id: string;
+  /** The author's friendly name for the service. Never an id. */
+  service: string;
+  /** DASH's own clock at the moment the helper proved the write. */
+  placed_at: string;
+  /** The same moment as a person would say it, or null for an unreadable date. */
+  placed_on: string | null;
+}
+
+/**
+ * One key this server could be given (MAR-794, ADR 0018).
+ *
+ * The ingredients of the consent frame, and no more: the frame itself is
+ * `describeKeyPlacementFrame`, which the card calls with these plus the server's
+ * own label, address and fingerprint. Split that way for
+ * `describeKeyPlacementFrame`'s stated reason — four facts have to be on screen
+ * together, and a component that assembled them from four places is one somebody
+ * can ship with three.
+ */
+export interface KeyOfferView {
+  agent: string;
+  connection_id: string;
+  service: string;
+  /** What the agent's own document says it needs this for. Rendered on the frame. */
+  need: string;
+  /** True when a key is already in this slot, so the press is a replacement. */
+  already_placed: boolean;
 }
 
 /**

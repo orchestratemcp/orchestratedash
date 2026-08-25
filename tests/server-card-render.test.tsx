@@ -16,7 +16,13 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { SendAnAgentHere, ServerCard } from "../app/_components/server-card";
+import {
+  KeyPlacementCeremony,
+  KeysOnThisServer,
+  SendAnAgentHere,
+  ServerCard,
+} from "../app/_components/server-card";
+import { HOST_READY_AND_EMPTY } from "../lib/copy/host-pack";
 import { DeployedCopies } from "../app/settings/servers/page";
 import { MANIFEST_ONLY_DEPLOY_REFUSAL } from "../lib/agent-folders";
 import { NOTHING_STRANDED } from "../lib/deploy/connection-travel";
@@ -42,6 +48,8 @@ const SERVER: SavedServerView = {
   same_server_index: 1,
   same_server_count: 1,
   sent: [],
+  placed_keys: [],
+  key_offers: [],
 };
 
 const NOTHING = {
@@ -51,6 +59,7 @@ const NOTHING = {
   trust: () => undefined,
   setup: () => Promise.resolve(null),
   bringHome: () => undefined,
+  installKey: () => undefined,
 };
 
 /**
@@ -575,5 +584,170 @@ describe("agents on servers, at the top of the page", () => {
 
   it("counts what it drew rather than asserting it", () => {
     expect(table([SENT])).toContain("2 agent copies DASH sent, on one server");
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * The key-placement ceremony (MAR-794, ADR 0018)
+ * ---------------------------------------------------------------------- */
+
+describe("what this server holds of yours", () => {
+  const OFFER = {
+    agent: "News Scout",
+    connection_id: "models",
+    service: "Your OpenRouter key",
+    need: "a language model",
+    already_placed: false,
+  };
+
+  it("says the server is ready and empty rather than leaving the section blank", () => {
+    /*
+     * A blank reads as "nothing to know here", and the thing a person needs to
+     * know before they press anything is that this server is holding nothing of
+     * theirs. ADR 0018's whole surface argument in one negative assertion.
+     */
+    const html = renderToStaticMarkup(
+      <KeysOnThisServer
+        server={SERVER}
+        standing={{ step: "not_checked", label: "My server" }}
+        busy={false}
+        canAct
+        onPlace={() => undefined}
+      />,
+    );
+    expect(html).toContain(HOST_READY_AND_EMPTY);
+  });
+
+  it("offers a press per key the server could be given, naming the key", () => {
+    const html = renderToStaticMarkup(
+      <KeysOnThisServer
+        server={{ ...SERVER, key_offers: [OFFER] }}
+        standing={{ step: "not_checked", label: "My server" }}
+        busy={false}
+        canAct
+        onPlace={() => undefined}
+      />,
+    );
+    expect(html).toContain("Your OpenRouter key");
+    expect(html).toContain("<button");
+  });
+
+  it("draws the orphan line only once the server itself has said what is installed", () => {
+    /*
+     * Null is not empty. An unchecked server has told DASH nothing, and a card
+     * that announced an orphan on that evidence would be reporting DASH's own
+     * silence as a finding — the distinction `describeWhatIsOnHost` draws one
+     * section up, kept here because this line asks somebody to rotate a key.
+     */
+    const withKey = {
+      ...SERVER,
+      placed_keys: [
+        {
+          agent: "News Scout",
+          connection_id: "models",
+          service: "Your OpenRouter key",
+          placed_at: "2026-08-25T09:00:00Z",
+          placed_on: "25 August 2026",
+        },
+      ],
+    };
+
+    const unchecked = renderToStaticMarkup(
+      <KeysOnThisServer
+        server={withKey}
+        standing={{ step: "not_checked", label: "My server" }}
+        busy={false}
+        canAct
+        onPlace={() => undefined}
+      />,
+    );
+    expect(unchecked).toContain("Your OpenRouter key");
+    expect(unchecked).not.toContain("no longer installed here");
+
+    const answered = renderToStaticMarkup(
+      <KeysOnThisServer
+        server={withKey}
+        standing={{
+          step: "reachable",
+          label: "My server",
+          runner_build: "fixture",
+          agents_running: 0,
+          agents_there: [],
+        }}
+        busy={false}
+        canAct
+        onPlace={() => undefined}
+      />,
+    );
+    expect(answered).toContain("no longer installed here");
+    expect(answered).toContain("Rotating at the provider");
+  });
+});
+
+describe("the consent ceremony", () => {
+  const OFFER = {
+    agent: "News Scout",
+    connection_id: "models",
+    service: "Your OpenRouter key",
+    need: "a language model",
+    already_placed: false,
+  };
+
+  it("puts the key, the server, the agent and the custody sentence on one frame", () => {
+    /*
+     * ADR 0018 rule 1: *"The confirm press is unavailable until all three are on
+     * screen, together with this sentence."* Asserted over the markup rather
+     * than over the copy module, because the failure this guards is a component
+     * that renders three of the four.
+     */
+    const html = renderToStaticMarkup(
+      <KeyPlacementCeremony
+        server={{ ...SERVER, fingerprint: "SHA256:fixture" }}
+        offer={OFFER}
+        busy={false}
+        onKeep={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+    expect(html).toContain("Your OpenRouter key");
+    expect(html).toContain("My server");
+    expect(html).toContain("example.com");
+    expect(html).toContain("SHA256:fixture");
+    expect(html).toContain("News Scout");
+    expect(html).toContain("a language model");
+    expect(html).toContain("not by a keychain");
+    expect(html).toContain("rotating at the provider");
+  });
+
+  it("names the movement on the button, and does not say Continue or Allow", () => {
+    const html = renderToStaticMarkup(
+      <KeyPlacementCeremony
+        server={SERVER}
+        offer={OFFER}
+        busy={false}
+        onKeep={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+    expect(html).toContain("Put this key on My server");
+    expect(html).not.toContain(">Continue<");
+    expect(html).not.toContain(">Allow<");
+  });
+
+  it("says the press is one attempt", () => {
+    // *"The press authorises one attempt […] the approval is spent and no
+    // automatic retry waits for the host to return."* On the frame, because a
+    // person told a press is one attempt reads a failure as a thing that did not
+    // happen rather than as a thing that might still.
+    const html = renderToStaticMarkup(
+      <KeyPlacementCeremony
+        server={SERVER}
+        offer={OFFER}
+        busy={false}
+        onKeep={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+    expect(html).toContain("nothing is retried on its own");
   });
 });

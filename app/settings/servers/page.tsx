@@ -1071,6 +1071,46 @@ export default function HostsPage(): ReactNode {
     }
   }
 
+  /**
+   * Put one key DASH holds onto this server, for one agent copy (MAR-794,
+   * ADR 0018).
+   *
+   * `ServerCard` has already drawn the consent frame and taken the affirmative
+   * press — this only runs afterwards, which is `bringHome`'s shape and, here,
+   * ADR 0018 rule 1: *"Consent happens before the key leaves this machine."*
+   *
+   * **The press authorises one attempt.** ADR 0018 again: if the server is
+   * unreachable, the helper refuses, or the owner-and-mode proof fails, *"the
+   * approval is spent and no automatic retry waits for the host to return."*
+   * So there is no retry here, no queue, and no state that survives the failure
+   * — pressing again puts the frame back in front of the person, which is the
+   * point, because the host pin, the local key and the installed bundle may all
+   * have changed meanwhile.
+   *
+   * The notice carries main's own sentence either way, success or refusal, like
+   * every other host command on this page. On success the page re-reads: a
+   * placement changes what `server.placed_keys` says and that is computed from
+   * the store rather than kept here.
+   */
+  async function installKey(
+    server: SavedServerView,
+    offer: { agent: string; connection_id: string; fingerprint: string },
+  ): Promise<void> {
+    setBusyHost(server.host_id);
+    setNotice(server.host_id, null);
+    const result = await submitHostCommand("installKey", {
+      host_id: server.host_id,
+      agent_id: offer.agent,
+      connection_id: offer.connection_id,
+      fingerprint: offer.fingerprint,
+    });
+    setBusyHost(null);
+    setNotice(server.host_id, result.detail ?? null);
+    if (result.ok) {
+      setRevision((current) => current + 1);
+    }
+  }
+
   async function forget(server: SavedServerView): Promise<void> {
     setBusyHost(server.host_id);
     setNotice(server.host_id, null);
@@ -1197,6 +1237,7 @@ export default function HostsPage(): ReactNode {
                     trust: (fingerprint) => void trust(server, fingerprint),
                     setup: () => setup(server),
                     bringHome: (agentId) => void bringHome(server, agentId),
+                    installKey: (offer) => void installKey(server, offer),
                   }}
                 />
               </li>

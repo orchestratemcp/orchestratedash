@@ -50,6 +50,8 @@ const SERVER: SavedServerView = {
   same_server_index: 1,
   same_server_count: 1,
   sent: [],
+  placed_keys: [],
+  key_offers: [],
 };
 
 const SECOND: SavedServerView = { ...SERVER, host_id: "host-2", label: "The spare" };

@@ -1966,6 +1966,67 @@ const MIGRATIONS: readonly Migration[] = [
     addColumn(database, "agent_schedules", "allowance_calls", "INTEGER NOT NULL DEFAULT 0");
     addColumn(database, "agent_schedule_runs", "allowance_calls", "INTEGER NOT NULL DEFAULT 0");
   },
+
+  /**
+   * MAR-794, ADR 0018: which of the user's keys DASH has placed on which server.
+   *
+   * ## What this table is a record of, and what it is not
+   *
+   * It is DASH's memory of **its own outbound act** — this key record, to this
+   * server, for this installed copy, at this time — which is exactly what
+   * `agent_deploys` is for a bundle, one custody class over. ADR 0010's rule
+   * carries across unchanged: a row is written after the helper proved the
+   * placement and never on an attempt, and no column here may become a claim
+   * about the state of somebody else's machine.
+   *
+   * So there is deliberately **no `present` column and no `last_seen`**. DASH
+   * never asks a host to enumerate its secret store — `pack`'s answer has no
+   * room to reply if it did, on purpose (ADR 0021 section 4) — so the only
+   * honest reading of a row is the one ADR 0018 writes: *"DASH last proved
+   * placement at that time and has not proved removal since."* An unreachable
+   * host makes a row stale, not false.
+   *
+   * ## And no value, no digest, and nothing derived from one
+   *
+   * `connection_id` and `field_id` name the *local key record* the placement
+   * satisfied, which is what every receipt in ADR 0018 is a projection of.
+   * ADR 0018 refuses a fingerprint by name — *"a stable fingerprint of a
+   * low-entropy or reused credential would become another identifier to
+   * protect"* — and DASH already knows which of its own records it sent, so
+   * there is nothing a digest would buy.
+   *
+   * ## The primary key is the slot, because a slot holds one key
+   *
+   * `(host_id, bundle_id, connection_id)` — the same triple the host stores by.
+   * A replacement overwrites, which is what a replacement is: ADR 0018 says a
+   * successful replacement *"earns a new receipt and makes the old receipt
+   * historical"*, and two rows for one file would be two receipts claiming one
+   * placement.
+   *
+   * `bundle_id` is carried beside nothing else that could stand in for it. It
+   * is the agent id for every placement this build can make, and it is
+   * `RESERVED_HOST_BUNDLE_ID` for a slot that belongs to no agent — which is why
+   * this is not a foreign key onto `agents`, and why `lib/deploy/key-placement.ts`
+   * is the one place that knows the reserved id is never orphaned.
+   */
+  `
+  CREATE TABLE IF NOT EXISTS host_key_placements (
+    host_id       TEXT NOT NULL,
+    -- The installed bundle the key was placed for, or the reserved id for a
+    -- slot that belongs to no agent. Never a path.
+    bundle_id     TEXT NOT NULL,
+    -- The declared need it satisfies, and the field of it. Names a local key
+    -- record; never the value, never a digest of one.
+    connection_id TEXT NOT NULL,
+    field_id      TEXT NOT NULL,
+    -- When the helper proved the owner-only write. DASH's clock, ISO 8601.
+    placed_at     TEXT NOT NULL,
+    PRIMARY KEY (host_id, bundle_id, connection_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS host_key_placements_by_host
+    ON host_key_placements (host_id, placed_at DESC);
+  `,
 ];
 
 /**
