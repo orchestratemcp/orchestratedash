@@ -65,7 +65,7 @@ const { parseOAuthCredential } = await import("../lib/oauth/credential");
 const { checkRequestedScopes, oauthProviderFor } = await import("../lib/oauth/providers");
 const { operationsForProvider } = await import("../lib/broker/operations");
 const { listReceipts } = await import("../lib/broker/store");
-const { listSecretReferences } = await import("../lib/secret-refs");
+const { listSecretReferences, maskSecret } = await import("../lib/secret-refs");
 const { fleetConnectorViews } = await import("../lib/views/build");
 
 const GMAIL = "google-gmail";
@@ -1073,5 +1073,63 @@ describe("MAR-624: an honest fan-out for an api-key connector", () => {
     for (const row of granted) {
       await expect(store.get(secretFor(row.agent))).resolves.not.toHaveLength(0);
     }
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * MAR-800. `materialize` masks the fleet vault's envelope, not the key
+ * ---------------------------------------------------------------------- */
+
+/**
+ * MAR-800's headline claim — that the fan-out "may never resolve an API-key
+ * connector to connected" — does not reproduce: `resolveKeyGrantWithoutCredential`
+ * never reads the credential's content, so `share`/`adoptFleetCredential`
+ * resolving a grant (proven above, and by MAR-624's own fix) does not depend on
+ * what `hintFor` masks. The narrower bug is real: `deps.store.get` on the fleet
+ * account's own secret name returns the whole `AiKeyCredential` envelope
+ * `performAiKeyAction` wrote — `{version, kind, provider, key, obtained_at}` —
+ * and `hintFor`'s `connector.oauth === null` branch masked that raw JSON string
+ * instead of the `key` field inside it. The per-agent card ends up with a hint
+ * ending in the envelope's tail (`…Z"}`) rather than the key's.
+ */
+describe("MAR-800: the per-agent masked hint reflects the key, not its envelope", () => {
+  const secretFor = (agentId: string) => connectionSecretName(agentId, "model_provider", "api_key");
+
+  it("masks the key the fan-out actually stored, not the JSON envelope it lives in", async () => {
+    const store = vault();
+    await performConnectionAction("connect", fleetTarget(OPENROUTER), keyDeps(store, {}));
+
+    const world = { [SCOUT]: keyScout() };
+    await performConnectionAction("share", fleetTarget(OPENROUTER), keyDeps(store, world));
+
+    // The fan-out did resolve this agent to connected — MAR-800's headline claim
+    // does not hold — but the hint it recorded must match the key, not the
+    // envelope the key was read out of.
+    const reference = listSecretReferences(SCOUT).find(
+      (one) => one.connection_id === "model_provider" && one.field_id === "api_key",
+    );
+    expect(reference?.masked_hint).toBe(maskSecret("sk-or-test-key-0000"));
+  });
+
+  it("falls back to masking the raw value when the fleet vault holds no readable key envelope", async () => {
+    // The twin: a fleet secret that is not (or no longer) a valid key envelope —
+    // the absence this fix must not turn into a thrown error or a leaked value.
+    const store = vault();
+    await performConnectionAction("connect", fleetTarget(OPENROUTER), keyDeps(store, {}));
+    const stored = readFleetConnection(OPENROUTER);
+    await store.set(stored!.secret_name, "not-an-envelope");
+
+    const world = { [SCOUT]: keyScout() };
+    const shared = await performConnectionAction(
+      "share",
+      fleetTarget(OPENROUTER),
+      keyDeps(store, world),
+    );
+
+    expect(shared.ok).toBe(true);
+    const reference = listSecretReferences(SCOUT).find(
+      (one) => one.connection_id === "model_provider" && one.field_id === "api_key",
+    );
+    expect(reference?.masked_hint).toBe(maskSecret("not-an-envelope"));
   });
 });

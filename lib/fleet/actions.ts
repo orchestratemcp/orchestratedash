@@ -39,6 +39,7 @@
  */
 
 import { performAiKeyAction, type AiKeyOperations } from "../ai/actions";
+import { parseAiKeyCredential } from "../ai/credential";
 import { forgetReceipt, recordReceipt } from "../broker/store";
 import { describeFleetGrant } from "../copy/decisions";
 import { describeFleetSecretUnreadable } from "../copy/fleet-standing";
@@ -1020,13 +1021,26 @@ function listAgentNames(names: readonly string[]): string {
     : `${names.slice(0, -1).join(", ")} and ${last}`;
 }
 
-/** The masked hint for a materialized row: the account for a sign-in, the value's tail for a key. */
+/**
+ * The masked hint for a materialized row: the account for a sign-in, the
+ * value's tail for a key.
+ *
+ * `raw` is what the vault actually holds, and for an api-key connector that is
+ * the `AiKeyCredential` envelope `performAiKeyAction` wrote — `{version, kind,
+ * provider, key, obtained_at}` — not the key by itself (MAR-800). Masking `raw`
+ * directly hid that shape and hinted at the envelope's own tail instead of the
+ * key's.
+ */
 function hintFor(
   connector: FleetConnector,
   parsed: OAuthCredential | null,
   raw: string,
 ): string {
-  if (connector.oauth === null || parsed === null) {
+  if (connector.oauth === null) {
+    const credential = parseAiKeyCredential(raw);
+    return maskSecret(credential === null ? raw : credential.key);
+  }
+  if (parsed === null) {
     return maskSecret(raw);
   }
   return parsed.account === null ? maskSecret(parsed.refresh_token) : maskAccount(parsed.account);
