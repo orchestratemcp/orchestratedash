@@ -21,6 +21,7 @@ import {
   AUTOSTART_SWITCH,
   autostartCommand,
   autostartMatches,
+  autostartMatchesRawValue,
   autostartRefusal,
   autostartStateData,
   describeAutostartCommand,
@@ -93,6 +94,66 @@ describe("the command a login entry holds", () => {
     ).toBe(false);
     // A shorter argument list is not a prefix match.
     expect(autostartMatches({ path: "C:\\e\\electron.exe", args: [] }, expected)).toBe(false);
+  });
+});
+
+describe("matching the Run value's own text (MAR-789)", () => {
+  // `app.getLoginItemSettings().launchItems[].args` drops a trailing switch on
+  // read-back on Electron 43.2.0/Windows. `RAW_FIXTURE` below is not invented —
+  // it is the literal output of `reg.exe query
+  // "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v OrchestrateDASH` on
+  // Henrik's machine while this fix was written, the same healthy, enabled entry
+  // the issue's evidence quotes. The old `autostartMatches(entry.command, ...)`
+  // path called it foreign because Electron's parse of it drops
+  // `--dash-start-runner`; `autostartMatchesRawValue` reads this text directly
+  // and must call it mine.
+  const RAW_FIXTURE =
+    '"C:\\Users\\henri\\Desktop\\projekt\\MCP\\orchestratedash\\node_modules\\.pnpm\\electron@43.2.0\\node_modules\\electron\\dist\\electron.exe" ' +
+    '"C:\\Users\\henri\\Desktop\\projekt\\MCP\\orchestratedash" --dash-start-runner';
+
+  const devExpected = autostartCommand({
+    execPath:
+      "C:\\Users\\henri\\Desktop\\projekt\\MCP\\orchestratedash\\node_modules\\.pnpm\\electron@43.2.0\\node_modules\\electron\\dist\\electron.exe",
+    appPath: "C:\\Users\\henri\\Desktop\\projekt\\MCP\\orchestratedash",
+    packaged: false,
+  });
+
+  it("recognises the healthy dev-checkout entry the launchItems parse drops a switch from", () => {
+    expect(autostartMatchesRawValue(RAW_FIXTURE, devExpected)).toBe(true);
+  });
+
+  it("recognises a packaged install's single-switch value, the other shape the issue flags", () => {
+    // Packaged installs pass only `[AUTOSTART_SWITCH]` (no app path), so the
+    // same launchItems bug would read back `args: []` — verified here against
+    // the raw text instead, which still carries the switch.
+    const packagedExpected = autostartCommand({
+      execPath: "C:\\Program Files\\DASH\\DASH.exe",
+      appPath: "C:\\Program Files\\DASH\\resources\\app",
+      packaged: true,
+    });
+    const raw = '"C:\\Program Files\\DASH\\DASH.exe" --dash-start-runner';
+    expect(autostartMatchesRawValue(raw, packagedExpected)).toBe(true);
+  });
+
+  it("is case-insensitive, for the same drive-letter reason as autostartMatches", () => {
+    // `process.execPath` and a value read back out of the registry routinely
+    // differ in case alone — most often the drive letter, but this asserts the
+    // whole line survives a case change, not just that one letter.
+    expect(autostartMatchesRawValue(RAW_FIXTURE.toLowerCase(), devExpected)).toBe(true);
+  });
+
+  it("still calls the genuinely-foreign twin foreign — a different checkout's entry", () => {
+    // Same executable, a sibling directory instead of this checkout's — the
+    // moved-checkout / two-copies case `autostartRefusal`'s docblock names.
+    const raw = RAW_FIXTURE.replace(
+      '"C:\\Users\\henri\\Desktop\\projekt\\MCP\\orchestratedash" --dash-start-runner',
+      '"C:\\Users\\henri\\Desktop\\projekt\\MCP\\orchestratedash-old" --dash-start-runner',
+    );
+    expect(autostartMatchesRawValue(raw, devExpected)).toBe(false);
+  });
+
+  it("reads an unparsable or missing value as not mine, never as a guess", () => {
+    expect(autostartMatchesRawValue("", devExpected)).toBe(false);
   });
 });
 
