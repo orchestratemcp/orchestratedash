@@ -1,0 +1,94 @@
+[dash-shell] not claiming dash:// from capture-cockpit.mjs — only the app's own entry point may be the handler
+[dash-shell] DASH_DATA_DIR override in effect: C:\Users\henri\AppData\Local\Temp\gD-2026-08-25\mar793-after\store
+[dash-shell] store: C:\Users\henri\AppData\Local\Temp\gD-2026-08-25\mar793-after\store (app_name=Electron)
+[dash-shell] secure store: Windows Credential Manager (DPAPI) os_backed=true
+[dash-shell] contracts: C:\Users\henri\AppData\Local\Temp\wt-frame-defects-k5\contracts (unpackaged)
+[dash-shell] runner: pipe \\.\pipe\orchestratedash-runner-3e283434ba6428eeeaaacb4a pid=43836
+[dash-shell] vault self-check: canary=ok, 0/0 fleet reads ok — vault=C:\Users\henri\AppData\Local\Temp\gD-2026-08-25\mar793-after\ud\vault store=C:\Users\henri\AppData\Local\Temp\gD-2026-08-25\mar793-after\store
+[dash-shell] allowed command=runner.status id=1341fa0e-fad3-4235-a417-6800875ecfd1 mutates=false
+[dash-shell] allowed command=glance.looked id=ebe1b324-59f2-43a1-b109-c949f491f780 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=4a8c1685-0617-4cd8-98a3-df08ea5b7abe keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=b2950da8-bdea-4d65-8524-5245b4156bdf keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=06baafcf-ed23-4927-a5e0-4d5413dab95f keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=d181cb81-aa13-4914-93c5-4332ca5774ec keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=09edb9fd-f883-48c1-9425-a569fffad7b2 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=e5d74bfd-0f18-4302-ab37-30dd5abbf0d3 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=ba397e7d-eb60-4153-b33d-c49d765b5ca3 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=3a46875e-80d6-4078-ad91-2d8b56911377 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=8b937ecc-3dab-44df-95d9-ccf996bf4756 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=42d5ed6f-4207-4244-a0db-92360c639ef0 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=485dcf2a-a259-47e6-bc70-a710215c052b keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=c06ac296-5856-4fc8-b1eb-f82cd6b94c54 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=3ba71044-d525-4242-b3d5-e0cfce7fc8d1 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=eeac7ccd-7416-4900-b949-c697c4c1d0fb keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=887eebc6-5de2-4e0b-b831-3da27e29f6a0 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=53592268-fb27-42d7-9d07-c8f56513b7e6 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=329b9c3b-27f8-403e-a7d9-0d4c86ce9ec6 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=7cfd7424-f5d4-4b2a-b167-11ee5740eb2f keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=e76415b9-687d-4bd7-ac97-2295e1bee4cf keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=69ee4eec-e4ff-49d9-a347-5f3951c2a626 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=4a1d7829-e1a4-475a-bbfc-c014c63d8079 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=45513715-78b5-47ec-a55f-285a092bbd44 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=7df926a1-41eb-4bb9-bade-ced955865d07 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=3c05636d-b328-4f58-820c-63f527a039a5 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=4b1e87b1-ff79-410f-a358-d49588745692 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=136d8034-ca4e-4c48-bcd1-1864b78205f4 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=dfc938ec-5a3a-46e8-a6d7-3463b5eb3fe2 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=4c461a4d-efb3-4d52-8501-50001378104f keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=aca6c284-ab8d-45ae-8f94-16891d744493 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=d9a0b2c6-04c3-4785-997a-6f0db22e610b keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=ab42924d-b33b-42bf-ae76-647eb333d528 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=b92bd04f-2ff1-414d-8382-148b50a1ab8d keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=02392152-c659-41e9-ab7a-7fb7bf935711 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=21d04bef-a2b9-400a-858a-2d7b74d50612 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=09233544-c771-47a5-a567-f6645dfc13d0 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=a9618c11-a2ca-413d-8f8e-898ed1d6f270 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=a5705470-fe75-4441-9567-429549724add keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=ed19fc29-8953-4041-8152-bc4c4f9e1e18 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=3c35a518-f95d-4ad3-b4ad-586bc67696f9 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=47220ba4-87eb-4c12-8a6c-2a6c105a9626 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=7d9496f5-2777-4a45-966e-86ed170995a0 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=c02be799-d7ad-4533-ae7a-d5256ba08c7f keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=9620c599-da50-4072-a4b0-2aa7dd93b5af keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=371058be-314a-4e2c-9b84-d0e2a3a47014 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=af8c52fa-7eab-4fc3-bd84-9a8bc2cfd351 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=95fb5547-f1f9-4313-9292-2770d3fa249f keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=e8d5fd84-7142-4554-af5d-1ad3506cdab6 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=83665801-313d-4151-8346-c67aadae61b1 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=52794660-8ac1-4bcc-9c27-7ce0fddc153b keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=166a17b6-2468-4684-a36e-d9c87f97672e keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=4205af79-f284-4a9e-9fcb-0c41b83ee48e keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=420de4ac-844a-44d2-b70f-239f60e46fcf keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=a604761a-a3a6-4505-aae3-c06d0a90ea4d keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=c1cb17cc-34b0-47e7-962f-ab804ca724f3 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=c33a380f-5cc6-4cc0-8cff-894a760bd640 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=0afa92a4-abc9-4a76-b217-af4710c82648 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=70b92f7f-28e5-4dab-8d56-7e690e900c85 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=8a6a3a98-fc9c-4ae5-86bd-d18653736de6 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=ecca8cd0-49ce-4909-990c-d4d702bed63b keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=6a414307-786c-41e9-a6f4-d4869c951b07 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=df3b8817-7682-483c-b02d-6546691c8099 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=dca868aa-a977-45c2-a079-26a72d426cc5 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=2d8ae745-0ac5-4184-be2d-f24ac95eba31 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=89f207b6-b91e-4f90-ba9a-c957c60e9cc3 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=1114ad4d-86b0-4733-8a9e-b008eab4e499 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=3b860d29-de73-4c70-993a-96ce1f8158c2 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=588138fa-ab26-45aa-89f2-50a1250f10a5 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=fe478360-c8a2-45d4-adf2-da781dbf0f30 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=c64b208f-eb78-4398-8979-afc285d12fec keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=2203e588-2c58-4bf9-ac73-d8613756a055 keys=[agent_id] mutates=true
+[dash-shell] allowed command=open.link id=e7d94ab5-53e3-473e-9008-6031424de3d1 keys=[url] mutates=false
+[dash-shell] allowed command=glance.looked id=95421378-c61a-4513-b1c5-e182ac6f8b19 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=e15c32b1-980f-4098-aeba-8ac7489bb90c keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=6182ab6b-44e2-497c-bd43-05f707becc55 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=0cc06bba-925a-4056-a606-0e64120b1268 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=bc22da45-2ca7-420e-8ef3-817eceb65a8f keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=9949cf55-0b43-4abc-9639-18218ddb76a1 keys=[agent_id] mutates=true
+[dash-shell] allowed command=workspace.exportBrief id=f03bf40a-0779-43f6-96e2-3981b9c5ed14 keys=[agent_id,artifact_id] mutates=false
+[dash-shell] allowed command=glance.looked id=c318c4a6-f697-432e-b5f3-d4fa24db0bff keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=cfc3914a-6468-4775-b094-b03b3bf9191f keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=f6506955-0ac0-41b7-8720-8bf76ccee6de keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=70ccc195-8e6d-4609-8bd5-563eb1883628 keys=[agent_id] mutates=true
+[dash-shell] allowed command=glance.looked id=b9ea8baa-3d0a-48a1-9739-7ee71272d608 keys=[agent_id] mutates=true
+[dash-shell] allowed command=standing_answer.clear id=a3da7484-659e-4dc4-bd6b-28b27ccab61c keys=[agent_id,question_key] mutates=true
+[dash-shell] the approval popup could not load its page: Error: ERR_FAILED (-2) loading 'dash-app://ui/approval-popup'

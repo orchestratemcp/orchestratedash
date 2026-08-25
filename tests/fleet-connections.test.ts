@@ -656,6 +656,38 @@ describe("which agents a fleet connection reaches", () => {
     await expect(store.get(connectionSecretName(SCOUT, "mail", "gmail-account"))).rejects.toThrow();
   });
 
+  it("MAR-792: the reach sentence stops naming an agent once it already has this", async () => {
+    /*
+     * The scene `qa-screenshots-groupD-2026-08-25/mar624-fanout-b/
+     * mar624-fanout-unreadable.png` photographed: two agents both already
+     * reading "has this", directly under a sentence still promising to
+     * connect them. `describeFleetReach` names every agent `fleetReach`
+     * *could* materialize, which is right for the sentence read before the
+     * press and wrong for the one read after it.
+     */
+    const store = vault();
+    const world = { [SCOUT]: scout(), [OTHER_SCOUT]: namedGmailScout(OTHER_SCOUT) };
+    const capable = Object.entries(world).map(([name, manifest]) => ({ name, manifest }));
+
+    // Before the sign-in, the sentence is the promise the press is about to
+    // keep — both names, because signing in would reach both.
+    const before = fleetConnectorViews(capable).find((one) => one.provider === GMAIL);
+    expect(before?.reach_sentence).toContain(SCOUT);
+    expect(before?.reach_sentence).toContain(OTHER_SCOUT);
+
+    // One sign-in reaches every agent that qualifies — `performFleetSignIn`
+    // materializes the whole reach, not just the account holder.
+    const connected = await performConnectionAction("connect", fleetTarget(GMAIL), deps(store, world));
+    expect(connected.ok).toBe(true);
+
+    // Once both already have this, "Connecting Gmail connects it for <both>"
+    // is a claim about the past dressed as the future — the sentence has
+    // nobody left to promise it to.
+    const after = fleetConnectorViews(capable).find((one) => one.provider === GMAIL);
+    expect(after?.agents.map((one) => one.connected)).toEqual([true, true]);
+    expect(after?.reach_sentence).toBeNull();
+  });
+
   it("gives it back when the person presses Connect on that agent again", async () => {
     // Restoring is the button the agent's own row already had. It reuses the
     // consent DASH holds rather than opening a second consent screen.

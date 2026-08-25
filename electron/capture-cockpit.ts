@@ -1084,11 +1084,14 @@ const STANDING_QUESTION = "Which competitor should I focus on?";
  * key the product would never produce. Two rows rather than one because the
  * block is a list and a single row photographs as a card.
  *
- * `chosen_at` is a bare date and not an ISO stamp: the renderer interpolates
- * this column verbatim, so a real row reads "Set 2026-08-18T10:23:14.512Z" on
- * screen. That is worth knowing and is recorded on the issue rather than
- * staged away here — these two are dated plainly so the *control* is what the
- * frame is about.
+ * `chosen_at` used to be a bare date and not an ISO stamp: the renderer
+ * interpolated the column verbatim, so a real row read
+ * "Set 2026-08-18T10:23:14.512Z" on screen (MAR-793). `workspaceView` now
+ * runs it through `plainDay` before it ever reaches the component, so these
+ * two hand-dated strings and the real stamp below all arrive worded the same
+ * way — "Set 18 August 2026" — and this seed is unchanged because the *fix*
+ * is not something a seed can stage around: it has to survive whatever this
+ * writes.
  */
 function seedStandingAnswers(): void {
   writeStandingAnswer(PLAN_AGENT, STANDING_QUESTION, "opt-all", "All of them", "2026-08-18");
@@ -1131,6 +1134,11 @@ async function measureStandingAnswers(target: BrowserWindow): Promise<unknown> {
            card_count: cards.length,
            questions: cards.map((card) => (card.querySelector("h3") || {}).textContent || null),
            answers: cards.map((card) => (card.querySelector("p") || {}).textContent || null),
+           // MAR-793. The "Set …" line, not the answers field above: a card
+           // has two p elements, the option label first and this one second
+           // inside its own button-row, so a plain querySelector("p") always
+           // finds the label — .muted is what actually picks this one out.
+           set_on: cards.map((card) => (card.querySelector("p.muted") || {}).textContent || null),
            forget_buttons: block === null ? 0 : [...block.querySelectorAll("button.button-link")]
              .filter((b) => (b.textContent || "").trim() === "Forget").length,
            detail: block === null ? null : (block.querySelector("p.muted") || {}).textContent || null,
@@ -1191,6 +1199,14 @@ async function proveStandingAnswers(target: BrowserWindow): Promise<void> {
     ...(before as object),
   });
   console.log(`[cockpit] MAR-681 before ${JSON.stringify(before)}`);
+  const setOn = (before as { set_on?: unknown[] }).set_on ?? [];
+  const rawStamp = setOn.find((one) => typeof one === "string" && /\d{4}-\d{2}-\d{2}T/.test(one));
+  if (rawStamp !== undefined) {
+    // MAR-793. The third seeded row carries a real `new Date().toISOString()`
+    // stamp, exactly what a press produces — if this line fires, `set_on`
+    // is back to interpolating it verbatim.
+    throw new Error(`a standing answer's "Set …" line carries a raw ISO instant: ${String(rawStamp)}`);
+  }
   await shoot(target, "mar681-standing-answers-listed");
 
   const pressed = await pressForget(target);

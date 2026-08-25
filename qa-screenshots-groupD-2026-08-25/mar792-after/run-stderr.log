@@ -1,0 +1,40 @@
+[dash-shell] not claiming dash:// from capture-settings-polish.mjs — only the app's own entry point may be the handler
+[dash-shell] DASH_DATA_DIR override in effect: C:\Users\henri\AppData\Local\Temp\gD-2026-08-25\mar792-after\store
+[dash-shell] store: C:\Users\henri\AppData\Local\Temp\gD-2026-08-25\mar792-after\store (app_name=Electron)
+[dash-shell] secure store: Windows Credential Manager (DPAPI) os_backed=true
+[dash-shell] contracts: C:\Users\henri\AppData\Local\Temp\wt-frame-defects-k5\contracts (unpackaged)
+[dash-shell] runner: pipe \\.\pipe\orchestratedash-runner-8ff0a56a8d6c2f15c00fee85 pid=39344
+[dash-shell] vault self-check: canary=ok, 3/3 fleet reads ok — vault=C:\Users\henri\AppData\Local\Temp\gD-2026-08-25\mar792-after\ud\vault store=C:\Users\henri\AppData\Local\Temp\gD-2026-08-25\mar792-after\store
+[dash-shell] allowed command=runner.status id=751a6fc4-520b-487d-9291-c83b0101e296 mutates=false
+[dash-shell] allowed command=shell.scale id=dc2543c9-6736-45ef-a727-21511cd04826 mutates=false
+[dash-shell] allowed command=shell.scale id=db869045-3b96-43ce-a7ae-e8f7429c78b8 mutates=false
+[dash-shell] allowed command=shell.scale id=0da72f8c-229a-4525-bb3f-3c548ec31031 mutates=false
+[dash-shell] allowed command=shell.scale id=091cd8f2-d10f-479a-b68d-cbe2ec106534 mutates=false
+[dash-shell] allowed command=shell.scale id=08e427eb-78a3-4a08-983b-7f28f6d04f4e mutates=false
+[dash-shell] allowed command=shell.scale id=9c016b10-6eb2-48af-ad86-3a6252d50d8a mutates=false
+[dash-shell] allowed command=shell.scale id=a58204bf-2118-425b-a207-0a160d2e8d18 mutates=false
+[dash-shell] allowed command=shell.scale id=aa03f1f0-9eb2-4a47-abd7-18086ab28601 mutates=false
+[dash-shell] allowed command=shell.scale id=f56b8b98-9ad7-4d9e-8508-4fa1c80d5526 mutates=false
+[dash-shell] allowed command=shell.scale id=628c3741-0b8d-4f87-a90f-0bfc3f0e642c mutates=false
+[dash-shell] allowed command=shell.scale id=3ef73afb-112f-4e47-9d4d-ed302b934346 mutates=false
+[dash-shell] allowed command=shell.scale id=99729d41-c9d6-4888-95ce-f66476f183d3 mutates=false
+[dash-shell] allowed command=shell.scale id=d9b50592-7463-48be-aeab-64a56f346d60 mutates=false
+[dash-shell] allowed command=shell.scale id=eeb48b13-1099-4b7d-9122-f05f5f2f7729 mutates=false
+[dash-shell] allowed command=shell.scale id=73518758-6a67-475c-9d90-e60d486434ae mutates=false
+[dash-shell] allowed command=shell.scale id=9c66343f-2d80-4630-a4b2-368bd2ef0670 mutates=false
+[dash-shell] allowed command=shell.scale id=2f31b685-52b4-486b-90b2-351906f1c3c5 mutates=false
+[dash-shell] allowed command=shell.scale id=32098a8b-5717-40be-bb95-f3f96542e84e mutates=false
+[dash-shell] allowed command=shell.scale id=fe332dfc-7097-415e-be0c-c10e7e692b8d mutates=false
+[dash-shell] allowed command=shell.scale id=20d5e7f5-1f40-4af9-89fc-80b1f361331b mutates=false
+[dash-shell] allowed command=shell.scale id=9e41645f-5145-4dee-90e6-d0e9d0259c32 mutates=false
+[dash-shell] allowed command=shell.scale id=14997dbe-72b0-4019-8102-111e1d366585 mutates=false
+[dash-shell] allowed command=shell.scale id=d23b7c66-78f0-43cc-8c8b-ca821ac68cdb mutates=false
+[dash-shell] allowed command=shell.scale id=eeaa1498-283c-4a98-bece-561b465827e5 mutates=false
+[dash-shell] allowed command=fleet.disconnect id=e8715ffc-dfb9-4793-8da8-d6dba4863caf keys=[provider] mutates=true
+[dash-shell] allowed command=fleet.disconnect id=00d0bb37-354b-43a2-9a12-538bc56129ca keys=[provider,account_id] mutates=true
+[dash-shell] allowed command=fleet.disconnect id=fa51e964-e17e-4bbf-a4b0-35adb4678cd5 keys=[provider] mutates=true
+[dash-shell] allowed command=fleet.disconnect id=81df5d17-7bdf-4c21-a8e5-ecb2bfa7834a keys=[provider,account_id] mutates=true
+[dash-shell] vault read failed for "dash.fleet.anthropic.account-1.api_key": not_found (ENOENT)
+[dash-shell] vault read failed for "dash.fleet.anthropic.account-1.api_key": not_found (ENOENT)
+[dash-shell] allowed command=fleet.share id=705aa852-7cfe-49e8-8e56-b1ef6e73d9fc keys=[provider] mutates=true
+[dash-shell] vault read failed for "dash.fleet.anthropic.account-1.api_key": not_found (ENOENT)
