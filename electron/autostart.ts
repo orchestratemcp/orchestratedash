@@ -38,6 +38,7 @@
  * line saying so, and exits. It is ordinarily alive for two or three seconds.
  */
 
+import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import path from "node:path";
 
@@ -46,7 +47,7 @@ import { app } from "electron";
 import {
   AUTOSTART_ENTRY_NAME,
   autostartCommand,
-  autostartMatches,
+  autostartMatchesRawValue,
   autostartRefusal,
   describeAutostartCommand,
   type AutostartCommand,
@@ -78,14 +79,46 @@ function commandForThisInstall(): AutostartCommand {
  * On anything that is not Windows this is empty and every caller falls through
  * to `autostartRefusal`'s first case, which is the honest answer there.
  */
-function findEntry(): { command: AutostartCommand; enabled: boolean } | null {
+function findEntry(): { enabled: boolean } | null {
   const settings = app.getLoginItemSettings();
   const items = settings.launchItems ?? [];
   const mine = items.find((item) => item.name === AUTOSTART_ENTRY_NAME);
   if (mine === undefined) {
     return null;
   }
-  return { command: { path: mine.path, args: mine.args }, enabled: mine.enabled };
+  return { enabled: mine.enabled };
+}
+
+/**
+ * The raw text of DASH's Run value, read directly rather than through
+ * Electron's `launchItems` parse (MAR-789).
+ *
+ * `app.getLoginItemSettings()` splits the value into `path`/`args`, and on
+ * Electron 43.2.0/Windows that split drops a trailing switch — see
+ * `autostartMatchesRawValue`'s docblock for the evidence. `reg.exe query`
+ * returns the value's literal text instead, which is exactly what
+ * `app.setLoginItemSettings` wrote and carries no such bug.
+ *
+ * `null` when there is no value under this name, or `reg.exe` itself did not
+ * run — either way the caller treats the entry as not provably this install's
+ * rather than trusting a read it cannot get.
+ */
+function readRawRunValue(): string | null {
+  try {
+    const output = execFileSync(
+      "reg.exe",
+      ["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "/v", AUTOSTART_ENTRY_NAME],
+      { encoding: "utf8", windowsHide: true },
+    );
+    const line = output.split(/\r?\n/).find((entry) => entry.includes("REG_SZ"));
+    if (line === undefined) {
+      return null;
+    }
+    const marker = line.indexOf("REG_SZ");
+    return line.slice(marker + "REG_SZ".length).trim();
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -140,7 +173,8 @@ export function readAutostartState(dataDir: string): AutostartState {
     };
   }
 
-  const mine = autostartMatches(entry.command, expected);
+  const raw = readRawRunValue();
+  const mine = raw !== null && autostartMatchesRawValue(raw, expected);
   return {
     available: true,
     refusal: null,

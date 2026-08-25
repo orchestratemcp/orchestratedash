@@ -114,6 +114,46 @@ export function autostartMatches(recorded: AutostartCommand, expected: Autostart
 }
 
 /**
+ * Whether the Run value's own text — not Electron's parse of it — is the
+ * command line this install would write.
+ *
+ * MAR-789: `app.getLoginItemSettings().launchItems[].args` drops a trailing
+ * switch on read-back on Electron 43.2.0/Windows — the registry held
+ * `... --dash-start-runner` and the parse returned an `args` array one entry
+ * short, with the switch simply gone. `autostartMatches` compared against that
+ * dropped array and called a healthy, correctly-written entry foreign. The
+ * registry's own text has no such bug: it is exactly what
+ * `app.setLoginItemSettings` wrote. This tokenizes that text the way
+ * `describeAutostartCommand` renders it — the only shape a value this module
+ * wrote can take — and reuses `autostartMatches`'s case-insensitive comparison
+ * on the result, so a genuinely foreign entry (a different path, a different
+ * app directory) still reads as foreign.
+ *
+ * The tokenizer does not unescape an embedded quote, because a Run value this
+ * module writes never carries one — every token is either a bare switch or a
+ * whole quoted path.
+ */
+export function autostartMatchesRawValue(rawValue: string, expected: AutostartCommand): boolean {
+  const tokens = tokenizeCommandLine(rawValue);
+  if (tokens.length === 0) {
+    return false;
+  }
+  const [path, ...args] = tokens;
+  return autostartMatches({ path, args }, expected);
+}
+
+/** A plain quoted-or-bare command-line splitter — see `autostartMatchesRawValue`. */
+function tokenizeCommandLine(value: string): string[] {
+  const tokens: string[] = [];
+  const pattern = /"([^"]*)"|(\S+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(value)) !== null) {
+    tokens.push(match[1] ?? match[2] ?? "");
+  }
+  return tokens;
+}
+
+/**
  * Why this copy of DASH may not write a login entry, when it may not.
  *
  * `null` is the permission. Every other value is a refusal with a reason a
