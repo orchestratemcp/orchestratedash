@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-08-25",
   "current_wave": "Wave 2 - outside-app connections",
-  "lifecycle_note": "PROVING SWEEP 2026-08-25 (group D, runtime + keys), the last of the four groups AGENTS.md calls for. PROMOTED merged -> proven: MAR-654, MAR-680, MAR-681, MAR-624, MAR-520. LEFT MERGED with the reason recorded on each entry's lifecycle_check: MAR-625, MAR-629, MAR-633 (ADR/library packets with no packaged path a person can reach), MAR-611 and MAR-487 (need an attended run against a real host). Three existing harnesses were extended with scenes that run AFTER their matrix and press things for real — capture-models.ts (a level mapped to a model, and two steps of one plan resolving to two different models), capture-cockpit.ts (a run staged mid-flight, then finished under the open page so its own poll had to notice; and standing answers listed then revoked by a real Forget), capture-settings-polish.ts (the fleet fan-out pressed, with connection_secrets read on both sides). MAR-520 was proven differently and better: this sweep's own capture runs left five orphan runners, and all five were retired over POST /shutdown with the runner-written session key — no Stop-Process anywhere. Evidence: qa-screenshots-groupD-2026-08-25/ (four run directories, 147 frames, layout.json and layout-settings.json) plus the two retirement records. Four defects filed from the frames, none fixed: MAR-791 (the level-map prose is clamped by a dropdown's 46ch cap, so its own 60ch rules are dead), MAR-792 (the fleet card's per-agent chip stretches the card, and its reach sentence outlives the connection it offers), MAR-793 (a standing answer is stamped with a raw ISO timestamp). The proving-debt sweep is now complete across all four groups; the remaining debt is named rather than reduced to zero, and three of group D's ten can never reach proven under the current rule because they are documentation.",
+  "lifecycle_note": "2026-08-25 evening: the four-group proving sweep is COMPLETE (A chat front door, B agent page, C fleet+settings, D runtime+keys). Group D: 5 proven (654/680/681/624/520), 5 stay merged with reasons; MAR-787 keycheck merged (73c1fb6) — the live check now asks a credential-validating endpoint per provider. Doc-only packets 625/629/633 marked debt-exempt pending the VPS epic; MAR-487+611+629 form one attended sitting against the first enrolled host. Debt after exemptions: ~87 distinct. New defects from frames: MAR-791/792/793.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -899,7 +899,9 @@
       "lifecycle": "merged",
       "linear_status": "In Progress",
       "commit": "3bd27db0a7bcba001c0ac8de66741da0073cdedf",
-      "lifecycle_check": "CHECKED, LEFT MERGED 2026-08-25 (group D). The packet is ADR 0018 and nothing else — 3bd27db changed docs/adr/0018-a-key-crosses-only-on-a-persons-press.md, PROJECT_STATE.md and state.json, with no lib/, app/ or electron/ file touched. The ADR is present at HEAD and its decision holds, but a decision has no packaged path to execute, so there is nothing a capture or a runner probe could witness. It cannot become proven under the current rule and should not sit in proven-debt pretending otherwise — see the handoff note on MAR-742."
+      "lifecycle_check": "CHECKED, LEFT MERGED 2026-08-25 (group D). The packet is ADR 0018 and nothing else — 3bd27db changed docs/adr/0018-a-key-crosses-only-on-a-persons-press.md, PROJECT_STATE.md and state.json, with no lib/, app/ or electron/ file touched. The ADR is present at HEAD and its decision holds, but a decision has no packaged path to execute, so there is nothing a capture or a runner probe could witness. It cannot become proven under the current rule and should not sit in proven-debt pretending otherwise — see the handoff note on MAR-742.",
+      "debt": "exempt",
+      "debt_reason": "documentation/library packet with no user-reachable path; provable only when ADR 0020/0021 implementation lands (VPS epic)"
     },
     {
       "id": "MAR-628",
@@ -923,7 +925,9 @@
       "lifecycle": "merged",
       "linear_status": "In Progress",
       "commit": "f9e18c8742960901ea332fe5a6d755ab15b5e9df",
-      "lifecycle_check": "CHECKED, LEFT MERGED 2026-08-25 (group D). f9e18c8 shipped ADR 0020 and a complete lib/mcp/ library (admission, audit, card, catalogue, reach, result, tools, transport) with 1196 lines of tests — and no wiring. Nothing under app/, lib/views/ or lib/shell/ipc.ts imports lib/mcp, and PROJECT_STATE.md records that the curated catalogue ships empty. The issue's own bar is 'one real MCP server connected through the product, its tools listed, an agent using it in a run, and the audit afterwards naming the server and the tool'. None of that is reachable by a person today, so there is no packaged path to photograph."
+      "lifecycle_check": "CHECKED, LEFT MERGED 2026-08-25 (group D). f9e18c8 shipped ADR 0020 and a complete lib/mcp/ library (admission, audit, card, catalogue, reach, result, tools, transport) with 1196 lines of tests — and no wiring. Nothing under app/, lib/views/ or lib/shell/ipc.ts imports lib/mcp, and PROJECT_STATE.md records that the curated catalogue ships empty. The issue's own bar is 'one real MCP server connected through the product, its tools listed, an agent using it in a run, and the audit afterwards naming the server and the tool'. None of that is reachable by a person today, so there is no packaged path to photograph.",
+      "debt": "exempt",
+      "debt_reason": "documentation/library packet with no user-reachable path; provable only when ADR 0020/0021 implementation lands (VPS epic)"
     },
     {
       "id": "MAR-629",
@@ -1108,7 +1112,9 @@
       "lifecycle": "merged",
       "linear_status": "In Progress",
       "commit": "ef23289",
-      "lifecycle_check": "CHECKED, LEFT MERGED 2026-08-25 (group D). Two entries, neither reachable from this machine. 211b73e is ADR 0021, documentation only. ef23289 is the host-broker install pack — runner/host-broker.ts, runner/host-pack.ts, lib/deploy/host-pack.ts, lib/broker/host-operations.ts, scripts/host-helper/main.ts — all of which exist at HEAD and none of which has a renderer surface: grepping app/, lib/views/ and lib/shell/ipc.ts for host-pack returns nothing. It runs on an enrolled host, so proving it needs a real server, which this unattended session does not have. PROJECT_STATE.md still describes ADR 0021 as 'planned, documentation only', which ef23289 made stale."
+      "lifecycle_check": "CHECKED, LEFT MERGED 2026-08-25 (group D). Two entries, neither reachable from this machine. 211b73e is ADR 0021, documentation only. ef23289 is the host-broker install pack — runner/host-broker.ts, runner/host-pack.ts, lib/deploy/host-pack.ts, lib/broker/host-operations.ts, scripts/host-helper/main.ts — all of which exist at HEAD and none of which has a renderer surface: grepping app/, lib/views/ and lib/shell/ipc.ts for host-pack returns nothing. It runs on an enrolled host, so proving it needs a real server, which this unattended session does not have. PROJECT_STATE.md still describes ADR 0021 as 'planned, documentation only', which ef23289 made stale.",
+      "debt": "exempt",
+      "debt_reason": "documentation/library packet with no user-reachable path; provable only when ADR 0020/0021 implementation lands (VPS epic)"
     },
     {
       "id": "MAR-643",
@@ -1868,9 +1874,9 @@
     },
     {
       "id": "MAR-787",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null,
+      "commit": "73c1fb6",
       "note": "PLANNED 2026-08-25: the AI key 'live' check cannot refuse a bad key, because OpenRouter's models list (`/api/v1/models`) answers 200 with a real catalogue for any key, valid or not -- confirmed live against OpenRouter with a fixture bearer token (curl, no auth and a fixture key both got 200; Anthropic and OpenAI's own /v1/models both 401 a fixture key already). Worktree wt-keycheck-k3, branch 000henrik/mar-787-keycheck, cut from origin/master 69a9158. FIX: `lib/ai/providers.ts` gains `key_check_path`, a second path per provider distinct from `models_path` -- OpenRouter's is `/api/v1/key` (a key-scoped endpoint that 401s a bad key, confirmed live), Anthropic's and OpenAI's are their existing models_path since that already validates. `probeModelProvider` (lib/ai/probe.ts) now asks `key_check_path` FIRST and its status is the outcome's status; only once that says the key is accepted does it go on to ask `models_path` for a count (skipped entirely as one request when the two paths are equal, i.e. for Anthropic/OpenAI). `classifyProbe` (lib/ai/liveness.ts) is UNCHANGED -- its 401/403-is-the-verdict rule was already correct, the outcome it was fed was wrong. Since `lib/ai/actions.ts`'s `check`/`connect`/`listAiKeyModels` and `lib/ai/refresh.ts`'s Refresh connections all resolve through the same injected `AiKeyOperations.probe` (wired to `probeModelProvider` at all three electron/main.ts call sites), the standing chip, the per-card check and Refresh connections inherit the fix from one place -- verified by grep, no second call site found. NEW TEST: tests/ai-key-broker.test.ts, 'refuses a fixture key even though the models list would have taken it (MAR-787)' -- a loopback server that answers /api/v1/models with a real 3-model catalogue and /api/v1/key with 401, proving the fixture key now reads key_refused, not live, and that the models path is never even asked once the key check refuses. Confirmed this test fails against the pre-fix code (200/3-models/live) by temporarily stashing the lib/ changes and re-running it. tests/ai-providers.test.ts pins the new key_check_path/aiKeyCheckUrl values by literal, same discipline as the existing models_path pin.",
       "proof": {
         "command": "pnpm typecheck && pnpm test (PowerShell)",
