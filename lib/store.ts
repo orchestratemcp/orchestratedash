@@ -65,6 +65,7 @@ import {
 } from "./chief/discord";
 import { checkManifestConstraints } from "./manifest-constraints";
 import type { KeyPlacement } from "./deploy/key-placement";
+import type { ResidentHost } from "./schedule/delegation";
 import { NO_NOTIFICATIONS, type NotificationSettings } from "./notify/settings";
 import { isMaskedHint } from "./secret-refs";
 import {
@@ -2032,6 +2033,137 @@ export function readHostKeyPlacements(hostId: string): KeyPlacement[] {
  */
 export function forgetHostKeyPlacements(hostId: string): void {
   db().prepare("DELETE FROM host_key_placements WHERE host_id = ?").run(hostId);
+}
+
+/* ---------------------------------------------------------------------- *
+ * Residency (MAR-795, ADR 0031)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * One server a person asked to keep running by itself, and what DASH last told
+ * it.
+ *
+ * `asked_at` is a press on this computer. `told_at` and `told_count` are DASH's
+ * own record of its own act — the migration in `lib/db.ts` argues why nothing
+ * here mirrors the server's live state.
+ */
+export interface HostResidency {
+  host_id: string;
+  asked_at: string;
+  told_at: string | null;
+  told_count: number | null;
+}
+
+/**
+ * Write down that residency was turned on for this server.
+ *
+ * Idempotent, and it deliberately does **not** move `asked_at` on a second call.
+ * The column answers *when did this person decide this*, and a switch pressed
+ * again after a failed enable would otherwise rewrite the date of a decision
+ * taken once — the distinction `#remember` draws in `runner/schedule.ts` between
+ * when a message arrived and when a process started.
+ *
+ * It does not clear `told_at` either. What DASH last told the server is still
+ * true after a second press, and clearing it would make the card claim the
+ * server knows nothing at the moment somebody re-confirmed that it should.
+ */
+export function recordHostResidency(hostId: string, at: string = new Date().toISOString()): void {
+  db()
+    .prepare(
+      "INSERT INTO host_residency (host_id, asked_at) VALUES (?, ?) " +
+        "ON CONFLICT (host_id) DO NOTHING",
+    )
+    .run(hostId, at);
+}
+
+/**
+ * Write down that DASH pushed the standing set to this server.
+ *
+ * An `UPDATE` and not an upsert, so it writes nothing when residency is off.
+ * That is the guard rather than a caller's check: a push to a server whose
+ * switch is off is a push that should not have happened, and a row appearing
+ * from one would make the local partition in `electron/agent-adapters.ts` start
+ * excluding an agent nobody asked to move.
+ */
+export function recordHostSchedulesTold(
+  hostId: string,
+  count: number,
+  at: string = new Date().toISOString(),
+): void {
+  db()
+    .prepare("UPDATE host_residency SET told_at = ?, told_count = ? WHERE host_id = ?")
+    .run(at, count, hostId);
+}
+
+/** What DASH asked of one server, or null when residency is off for it. */
+export function readHostResidency(hostId: string): HostResidency | null {
+  const row = db()
+    .prepare("SELECT host_id, asked_at, told_at, told_count FROM host_residency WHERE host_id = ?")
+    .get(hostId) as Record<string, unknown> | undefined;
+  return row === undefined ? null : residencyRow(row);
+}
+
+/**
+ * Every server residency is on for.
+ *
+ * Read on every schedule push — twelve times a minute — which is why it is one
+ * query over a table with at most as many rows as a person has servers, and why
+ * it returns whole records rather than a set of ids: the caller that needs the
+ * list also needs `told_at` to decide whether it has anything to say.
+ */
+export function listHostResidency(): HostResidency[] {
+  return db()
+    .prepare("SELECT host_id, asked_at, told_at, told_count FROM host_residency ORDER BY asked_at")
+    .all()
+    .map((row) => residencyRow(row as Record<string, unknown>));
+}
+
+/**
+ * Turn residency off for one server, and forget it when the server is forgotten.
+ *
+ * One function for both, because the row means the same thing in both cases and
+ * a second would be a second place to remember. The **order** matters at the
+ * call sites and is stated there: the switch is turned off on the server first
+ * and the row is deleted after, so a failed `disable` leaves DASH still
+ * excluding that agent from the local push rather than firing it in two places
+ * at once.
+ */
+export function forgetHostResidency(hostId: string): void {
+  db().prepare("DELETE FROM host_residency WHERE host_id = ?").run(hostId);
+}
+
+/**
+ * Every resident server and the agents whose copies are on it.
+ *
+ * The one join `lib/schedule/delegation.ts` needs and deliberately does not
+ * make: that module is pure so the partition can be argued about without a
+ * database, and this is where its two inputs are read.
+ *
+ * `brought_home_at === null` is the filter, and it is the same one
+ * `lib/views/build.ts` applies when it decides which agents a server can be
+ * offered a key for. An agent DASH has taken back is an agent whose copy is gone
+ * from that machine, so its schedule belongs here again — and because the whole
+ * set is re-read on every push, that reverts on the next tick with nothing to
+ * turn off.
+ */
+export function readResidentHosts(): ResidentHost[] {
+  return listHostResidency().map((one) => ({
+    host_id: one.host_id,
+    agents: readHostDeploys(one.host_id)
+      .filter((deploy) => deploy.brought_home_at === null)
+      .map((deploy) => deploy.agent),
+  }));
+}
+
+function residencyRow(row: Record<string, unknown>): HostResidency {
+  const told = row["told_at"];
+  const count = row["told_count"];
+  return {
+    host_id: text(row, "host_id"),
+    asked_at: text(row, "asked_at"),
+    told_at: typeof told === "string" ? told : null,
+    told_count: typeof count === "number" ? count : null,
+  };
 }
 
 /* ---------------------------------------------------------------------- *

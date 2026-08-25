@@ -1515,6 +1515,40 @@ export interface SavedServerView {
    * model is not the same fact as a key somebody has typed in.
    */
   key_offers: KeyOfferView[];
+  /**
+   * Whether this person asked this server to keep running by itself, and when
+   * DASH last told it what to run (MAR-795, ADR 0031).
+   *
+   * **DASH's own record of its own acts, and nothing off the server.** The
+   * server's live answer — is the boot entry there, will its service manager act
+   * on it, does the account linger — arrives on a press and is held by the page,
+   * because it is a fact about a machine that may be asleep and a view function
+   * may not go and ask. `lib/db.ts`'s `host_residency` migration argues why
+   * mirroring it here would be a cache that reads *On* over a boot that does
+   * nothing.
+   *
+   * So this carries two things a person still needs when the server is
+   * unreachable: that they turned it on, and when DASH last managed to hand it
+   * the schedules.
+   */
+  residency: ServerResidencyView;
+}
+
+/**
+ * What DASH asked of one server, and when it last told it anything (MAR-795,
+ * ADR 0031).
+ *
+ * Three nullable fields and no live state. `asked_on` is null when residency is
+ * off, which is the whole of that fact — there is no state meaning *was on
+ * once*, because turning it off deletes the row.
+ */
+export interface ServerResidencyView {
+  /** The day the person turned it on, or null when it is off. */
+  asked_on: string | null;
+  /** The day DASH last pushed the standing set, or null before the first one. */
+  told_on: string | null;
+  /** How many schedules that push carried. Null alongside `told_on`. */
+  told_count: number | null;
 }
 
 /**

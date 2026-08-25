@@ -180,6 +180,7 @@ import {
   forgetHost,
   forgetHostDeploys,
   forgetHostKeyPlacements,
+  forgetHostResidency,
   importManifest,
   listAgentNames,
   listHosts,
@@ -259,6 +260,12 @@ import {
 } from "./ssh-host";
 import { runAgentOnHost } from "./host-run";
 import { installKeyOnHost } from "./host-install-key";
+import {
+  pushResidentSchedules,
+  readHostResidencyState,
+  setHostResidency,
+} from "./host-residency";
+import { describeResidency } from "../lib/copy/host-residency";
 import { bringAgentHomeFromHost } from "./host-bring-home";
 import { authorizedKeysLine, buildBootstrapScript } from "../lib/host-bootstrap";
 import { classifyHostFailure, type HostReachProblem } from "../lib/host-connect";
@@ -2656,6 +2663,22 @@ async function hostAction(
       // ADR 0018's *"unresolved custody warning"* is honoured on the card,
       // before the press, while the server still has a name to put in it.
       forgetHostKeyPlacements(record.host_id);
+      /*
+       * MAR-795, ADR 0031. The residency row goes with them, and this one has a
+       * consequence the other two do not.
+       *
+       * While the row exists, `splitSchedules` keeps those agents out of the
+       * local runner's push — so a forgotten server whose row survived would
+       * leave a person's schedules firing nowhere, on a machine DASH can no
+       * longer name or reach. Deleting it hands them straight back to the local
+       * runner on the next tick.
+       *
+       * The boot entry on the server is **not** removed, and cannot be: DASH is
+       * about to delete the key that reaches it. The forget confirmation is
+       * where that is said, beside the placed-key warning, while the server
+       * still has a name to put in the sentence.
+       */
+      forgetHostResidency(record.host_id);
       forgetHost(record.host_id);
     } catch {
       return { ok: false, detail: "DASH could not forget this server safely." };
@@ -2790,6 +2813,75 @@ async function hostAction(
       manifest: readAgentManifest(target.agent_id),
       dataDir,
     });
+  }
+
+  /*
+   * MAR-795, ADR 0031. What this server does when it restarts, and the switch.
+   *
+   * One arm for both presses, because they differ in one place — whether a state
+   * is being asked for or set — and everything around that is identical: the
+   * same enrolment gate above, the same `ssh` probe, the same record, the same
+   * translation of one answer into one card. Two arms would be two places to
+   * keep that translation in step.
+   *
+   * The state word is narrowed **here**, on the trusted side, to one of two
+   * literals. Anything else is refused rather than defaulted: defaulting a
+   * switch is choosing for somebody, and this one changes what a machine does
+   * when nobody is watching it.
+   */
+  if (action === "residency" || action === "residencyState") {
+    const asked = "state" in target ? target.state : "read";
+    if (action === "residency" && asked !== "on" && asked !== "off") {
+      return { ok: false, detail: "DASH did not receive whether to turn this on or off." };
+    }
+    const toolsForResidency = probeSshTools();
+    if (!toolsForResidency.present) {
+      return {
+        ok: false,
+        detail: toolsForResidency.detail ?? "This computer cannot reach a server.",
+        problem: "no_ssh_on_this_computer",
+      };
+    }
+    const answered =
+      action === "residency"
+        ? await setHostResidency(record, dataDir, asked === "on")
+        : await readHostResidencyState(record, dataDir);
+    if (!answered.ok) {
+      return { ok: false, detail: answered.detail };
+    }
+    /*
+     * The set, handed over on the same press that turned it on.
+     *
+     * Only on the way on, and only after the server agreed. A server that has
+     * just been told to start its agents at boot is a server holding whatever it
+     * was last told — which on a first press is nothing at all — so the boot
+     * entry would come up honouring an empty document. ADR 0030 found the same
+     * gap on this machine before shipping: *"a login mechanism is therefore
+     * necessary and not sufficient."*
+     *
+     * Its outcome does not change the answer. The switch is on either way, the
+     * card says when the server was last told rather than claiming it is
+     * current, and the next Check tells it again.
+     */
+    if (action === "residency" && asked === "on") {
+      await pushResidentSchedules(record, dataDir);
+    }
+    return {
+      ok: true,
+      action,
+      host_id: record.host_id,
+      label: record.label,
+      state: answered.report.state,
+      starts_at_boot: answered.report.starts_at_boot,
+      /*
+       * One row per installed bundle, because there is one runner per bundle and
+       * therefore one entry each. The card prints the removal lines for every
+       * one of them: an operator who has to undo this without DASH needs all the
+       * names, and a card that showed the first would leave the rest behind.
+       */
+      units: answered.report.units.map((name) => ({ name })),
+      detail: describeResidency(answered.report.state, answered.report.starts_at_boot).headline,
+    };
   }
 
   if (action === "bringHome") {
@@ -2951,6 +3043,29 @@ async function hostAction(
   }
   if (answer.verb !== "status") {
     return { ok: false, detail: "The server did not answer the check DASH sent." };
+  }
+
+  /*
+   * MAR-795, ADR 0031. A Check is also when DASH re-tells a resident server what
+   * to run.
+   *
+   * `electron/host-residency.ts` argues why the standing set is not on the
+   * five-second cadence the local runner gets — two `ssh` children per push —
+   * and this is the other half of that argument: the push rides the presses that
+   * already reach this machine, and Check is the one a person makes when they
+   * want to know their server is in order.
+   *
+   * It does nothing at all for a server residency is off for, which is every
+   * server until somebody presses the switch. Awaited rather than fired and
+   * forgotten so that a Check that says "reached" has finished everything it
+   * does, and swallowed so that a push which could not land never turns a
+   * successful check into a failed one — the card's own freshness sentence is
+   * where an unsuccessful push shows up.
+   */
+  try {
+    await pushResidentSchedules(record, dataDir);
+  } catch {
+    // The push reports its own failures by leaving `told_at` where it was.
   }
 
   const running = answer.bundles.filter((bundle) => bundle.running);

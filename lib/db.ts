@@ -2027,6 +2027,66 @@ const MIGRATIONS: readonly Migration[] = [
   CREATE INDEX IF NOT EXISTS host_key_placements_by_host
     ON host_key_placements (host_id, placed_at DESC);
   `,
+  /**
+   * Which servers a person asked to keep running by themselves, and when DASH
+   * last told each one what to run (MAR-795, ADR 0031).
+   *
+   * ## What this is a record of, and what it is deliberately not
+   *
+   * **What DASH asked for**, never what the server is doing. The server's own
+   * service manager is the authority on whether a boot entry is enabled, and the
+   * card reads it live on every check — ADR 0030 decision 2's rule, one machine
+   * over. A column mirroring it here would be a cache that goes stale the moment
+   * somebody runs `systemctl --user disable` on their own machine, and a card
+   * rendering the cache would say *On* over a boot that does nothing.
+   *
+   * So a row means one thing: *the person turned residency on for this server
+   * and DASH has not been told otherwise.* That is a fact about a press on this
+   * computer, which is the only kind of fact this store gets to hold about a
+   * machine it does not administer.
+   *
+   * ## Why the row has to be durable, when the live state is read anyway
+   *
+   * Because it decides something DASH does twelve times a minute with the server
+   * unreachable: which agents are left out of the **local** runner's schedule
+   * push. An agent whose schedule this server has been given must not also fire
+   * here, and that decision is made on every tick, on a laptop that may not have
+   * spoken to the server since the last reboot. Keeping it in memory would mean
+   * a DASH restart quietly resumed firing the same schedule on two machines —
+   * the double-run ADR 0031 decision 4 exists to prevent.
+   *
+   * ## `told_at` and `told_count`, which are an observation and not a claim
+   *
+   * When DASH last pushed the set to this server, and how many schedules it
+   * pushed. `describeSchedulesTold` renders exactly those two and nothing more,
+   * because "the server is honouring them" is not something DASH can see. It is
+   * `evidence_pulls`' habit — record the looking, not a conclusion — applied to
+   * the telling.
+   *
+   * Null until the first push. Null is a real state: a server that has never
+   * been told anything is running nothing on a schedule, which is a different
+   * sentence from one holding a set from last month.
+   *
+   * Appended on the standing terms: an installed store that has recorded 0 to 36
+   * runs exactly one more, and the step is a bare `CREATE TABLE IF NOT EXISTS`,
+   * so a store the tests rewind runs it again without complaint. The index was
+   * assigned as 36 and confirmed against the literal pin in
+   * `tests/store-sqlite.test.ts` before it was written — `user_version` was 36
+   * at this branch point, so this step is index 36 and produces 37.
+   */
+  `
+  CREATE TABLE IF NOT EXISTS host_residency (
+    host_id     TEXT PRIMARY KEY,
+    -- When the person turned it on. DASH's clock, ISO 8601. A row exists only
+    -- while residency is on; turning it off deletes the row rather than
+    -- flagging it, so there is no state meaning "was on once".
+    asked_at    TEXT NOT NULL,
+    -- When DASH last pushed the standing set to this server, and how many
+    -- schedules that push carried. Null until the first one.
+    told_at     TEXT,
+    told_count  INTEGER
+  );
+  `,
 ];
 
 /**

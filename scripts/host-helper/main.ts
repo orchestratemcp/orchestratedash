@@ -13,6 +13,7 @@
  * ssh host uninstall  <- takes one bundle off this machine
  * ssh host pack       <- which host pack these bytes carry
  * ssh host install-key <- put one declared provider key in the secret store
+ * ssh host service    <- whether this bundle's runner comes back at boot
  * ```
  *
  * ## The pack, and why this program lays it down (MAR-629, ADR 0021)
@@ -78,7 +79,7 @@
  * so there is no arithmetic by which a request escapes.
  */
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -96,6 +97,14 @@ import path from "node:path";
 
 import { PACK_UNPROVED } from "../../lib/deploy/host-pack";
 import { checkKeySlot, describeKeySlotRefusal } from "../../lib/deploy/key-placement";
+import {
+  hostServiceReduction,
+  hostServiceState,
+  readIsEnabled,
+  readLinger,
+  serviceUnitName,
+  serviceUnitText,
+} from "../../lib/deploy/service-unit";
 import type { ConnectionSourceManifest } from "../../lib/connections";
 import {
   MAX_COLLECT_LINES,
@@ -106,6 +115,7 @@ import {
   type HostBundleStatus,
   type InstallKeyRequest,
   type InstallRequest,
+  type ServiceRequest,
 } from "../../lib/deploy/verbs";
 import { ensureHostPack, proveHostPack, writeHostKey } from "../../runner/host-pack";
 import { containedIn, inspectComponent } from "../../runner/path-guard";
@@ -159,6 +169,55 @@ function writeRecord(root: string, record: BundleRecord): void {
     encoding: "utf8",
     mode: 0o600,
   });
+}
+
+/**
+ * Which runner is actually up for this bundle, whoever started it (MAR-795,
+ * ADR 0031).
+ *
+ * ## The bug this exists to prevent, which arrives with the boot entry
+ *
+ * Until ADR 0031 the helper was the only thing on this machine that could start
+ * a runner, so `BundleRecord.pid` was the whole truth and `start`, `status` and
+ * `channel` could each read it alone. A unit the service manager brings up at
+ * boot breaks that in one step: the record still names the pid of a process that
+ * died with the previous uptime, so
+ *
+ * - `status` reports `running: false` about a runner that is running;
+ * - `channel` refuses with `not_running` and DASH cannot reach a live runner;
+ * - and `start` — the one that matters — sees a dead pid and **spawns a second
+ *   runner over the first one's data directory and socket**, which is two
+ *   processes writing one `runner.sqlite` and the shape this project has already
+ *   destroyed a store with.
+ *
+ * So the record is no longer the only witness. `runner/main.ts` writes its own
+ * pid into `data/runner.json` at the moment it starts listening, and that file
+ * is written by whichever process is actually serving — the helper's child or
+ * the service manager's. Reading it second, and only when the record's pid is
+ * gone, keeps every existing path unchanged on a host with no unit and makes all
+ * three honest on a host with one.
+ *
+ * Null means nothing is up. A file that cannot be read, is not JSON, or names a
+ * pid that is not alive is *nothing is up* rather than an error: this answers a
+ * question about the machine's present state, and the caller that needs a reason
+ * (`channel`) has its own sentence for what it could not read.
+ */
+function livePid(root: string, bundleId: string): number | null {
+  const record = readRecord(root, bundleId);
+  if (record !== null && record.pid !== null && processAlive(record.pid)) {
+    return record.pid;
+  }
+  const endpointFile = path.join(bundleDirectory(root, bundleId), "data", "runner.json");
+  if (!existsSync(endpointFile)) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(endpointFile, "utf8"));
+    const pid = (parsed as { pid?: unknown } | null)?.pid;
+    return typeof pid === "number" && Number.isInteger(pid) && processAlive(pid) ? pid : null;
+  } catch {
+    return null;
+  }
 }
 
 /* ---------------------------------------------------------------------- *
@@ -307,8 +366,17 @@ function start(root: string, bundleId: string): DeployAnswer {
       detail: "The installed bundle has no entry point, so there is nothing to start.",
     };
   }
-  if (record.pid !== null && processAlive(record.pid)) {
-    return { ok: true, verb: "start", bundle_id: bundleId, pid: record.pid };
+  /*
+   * Already up is already up, whoever started it (MAR-795, ADR 0031).
+   *
+   * `livePid` rather than `record.pid` alone, and this is the branch that made
+   * that function necessary: after a reboot the record names a dead process and
+   * the service manager's runner is the live one, so reading only the record
+   * here would spawn a second runner over the first one's socket and store.
+   */
+  const alreadyUp = livePid(root, bundleId);
+  if (alreadyUp !== null) {
+    return { ok: true, verb: "start", bundle_id: bundleId, pid: alreadyUp };
   }
 
   const dataDir = path.join(directory, "data");
@@ -376,7 +444,11 @@ async function stop(root: string, bundleId: string): Promise<DeployAnswer> {
   if (record === null) {
     return { ok: false, problem: "not_installed", detail: "No bundle is installed under that name." };
   }
-  if (record.pid === null || !processAlive(record.pid)) {
+  // MAR-795, ADR 0031. `livePid`, so a runner the service manager started can be
+  // asked to stop. Reading only the record would have answered "it was not
+  // running" about a live process and left it running, which is the same lie as
+  // `status`' and costs more: DASH would think it had stopped an agent.
+  if (livePid(root, bundleId) === null) {
     writeRecord(root, { ...record, pid: null });
     return { ok: true, verb: "stop", bundle_id: bundleId, stopped: true, detail: "It was not running." };
   }
@@ -441,15 +513,18 @@ function status(root: string, bundleId?: string): DeployAnswer {
     if (record === null) {
       continue;
     }
-    const running = record.pid !== null && processAlive(record.pid);
+    // MAR-795, ADR 0031. Whoever started it — see `livePid`. Before the boot
+    // entry existed the record was the only witness; after it, a host that had
+    // just restarted would have reported every runner as stopped.
+    const pid = livePid(root, id);
     bundles.push({
       bundle_id: record.bundle_id,
       agent_id: record.agent_id,
       runner_build: record.runner_build,
       installed_at: record.installed_at,
-      running,
+      running: pid !== null,
       // Reported as gone rather than as a number that no longer names anything.
-      pid: running ? record.pid : null,
+      pid,
     });
   }
   return { ok: true, verb: "status", bundles };
@@ -644,7 +719,11 @@ function channel(root: string, bundleId: string): DeployAnswer {
   if (record === null) {
     return { ok: false, problem: "not_installed", detail: "No bundle is installed under that name." };
   }
-  if (record.pid === null || !processAlive(record.pid)) {
+  // MAR-795, ADR 0031. `livePid`, so a runner the service manager brought up at
+  // boot can be signed in to. Without it DASH would answer `not_running` about a
+  // runner that is listening on its socket right now, and every control-plane
+  // route would be unreachable until somebody pressed something.
+  if (livePid(root, bundleId) === null) {
     return {
       ok: false,
       problem: "not_running",
@@ -884,6 +963,300 @@ function installKey(root: string, request: InstallKeyRequest): DeployAnswer {
 }
 
 /* ---------------------------------------------------------------------- *
+ * service — the boot entry (MAR-795, ADR 0031)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Where a user unit lives, by the platform's own convention.
+ *
+ * `$XDG_CONFIG_HOME/systemd/user`, falling back to `~/.config/systemd/user`,
+ * which is the pair systemd itself reads — so this is not a location DASH
+ * invented and an operator looking for it will find it where their own
+ * documentation says it is.
+ *
+ * Reading `XDG_CONFIG_HOME` is the helper reading **its own** environment, the
+ * same way `hostRoot()` reads `DASH_HOST_ROOT`. It is not a caller-supplied
+ * path: nothing on either plane can set an environment variable on this process,
+ * and ADR 0018's refusal of caller-named environment is about a *request*
+ * carrying one. The practical value of honouring it is that the blocking proof
+ * can point this at a scratch directory and watch a real file being written, on
+ * a machine with no systemd at all.
+ */
+function serviceUnitDirectory(): string {
+  const configured = process.env["XDG_CONFIG_HOME"];
+  const base =
+    configured !== undefined && configured.length > 0
+      ? configured
+      : path.join(os.homedir(), ".config");
+  return path.join(base, "systemd", "user");
+}
+
+/** One `systemctl`/`loginctl` call, with a fixed program and a fixed argv. */
+function runInit(program: "systemctl" | "loginctl", args: readonly string[]): {
+  ok: boolean;
+  stdout: string;
+} {
+  /*
+   * `spawnSync` with an argument array and **no shell**, which is this file's
+   * standing rule seen from the one place it could plausibly be broken. Neither
+   * the program nor any argument below comes from a request: the two program
+   * names are literals, the flags are literals, and the only variable token is a
+   * unit name built by `serviceUnitName` from an identifier that has already
+   * been through the alphabet in `lib/deploy/verbs.ts`.
+   *
+   * `XDG_RUNTIME_DIR` is set explicitly. A forced command over `ssh` runs
+   * without a login session, so the user bus address is not in the environment
+   * and `systemctl --user` would fail with "Failed to connect to bus" on a
+   * perfectly healthy machine. `/run/user/<uid>` is where the user manager's bus
+   * is, it exists once the account lingers, and naming it is what makes the
+   * difference between this working over `ssh` and only working in a terminal.
+   */
+  const result = spawnSync(program, [...args], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      XDG_RUNTIME_DIR: process.env["XDG_RUNTIME_DIR"] ?? `/run/user/${String(process.getuid?.() ?? 0)}`,
+    },
+  });
+  return {
+    ok: result.error === undefined && result.status === 0,
+    stdout: `${result.stdout ?? ""}${result.stderr ?? ""}`,
+  };
+}
+
+/**
+ * Whether this machine has the one init system this packet supports.
+ *
+ * `/run/systemd/system` is systemd's own documented marker for *"this system is
+ * booted with systemd"* — the check `sd_booted(3)` performs — and it is a
+ * directory rather than a program on `PATH`, so a distribution that merely ships
+ * the binaries does not read as supported. That distinction is the point: this
+ * verb is about what happens at boot, and the question is which program is going
+ * to be doing the booting.
+ *
+ * A machine that answers no gets a **named** stop with its own sentence
+ * (`init_not_supported`), which is `host_pack_too_old`'s shape: a person on a
+ * host with a different init system is told what DASH cannot do there and is not
+ * handed a failed write to interpret.
+ *
+ * ## Why the marker is read from this program's own environment
+ *
+ * `hostRoot()`'s arrangement, for `hostRoot()`'s reason and one more. This is a
+ * **location**, and every location in this file comes from the helper's own
+ * environment rather than from a request — `DASH_HOST_ROOT` and
+ * `XDG_CONFIG_HOME` are the other two, and a request has no field any of them
+ * could arrive in. Nothing a client sends reaches this: a forced command is
+ * spawned by `sshd`, which does not pass the client's environment along.
+ *
+ * The one more is that without it this branch is untestable on any machine that
+ * is not the target. CI runs on Linux hosts that *are* booted with systemd and
+ * developers run Windows, so a check hard-wired to one absolute path would take
+ * a different branch on each of them and the named stop — which is a proof-bar
+ * item in its own right — could only ever be asserted by reading the source.
+ * Someone who can set this variable already has a shell on the machine, so it
+ * grants nothing: the two things it can produce are a refusal and a failed
+ * `systemctl`, both of which are already reachable by unplugging the daemon.
+ */
+function systemdBooted(): boolean {
+  return existsSync(process.env["DASH_HOST_SYSTEMD_MARKER"] ?? "/run/systemd/system");
+}
+
+/**
+ * Ask, or change, whether this bundle's runner comes back at boot.
+ *
+ * ## The order, and what each step is for
+ *
+ * `status` reads and writes nothing. `enable` writes the unit from
+ * `lib/deploy/service-unit.ts`, asks for lingering, reloads, and enables.
+ * `disable` disables and then removes the file. Every path is the helper's own
+ * and the whole text is generated rather than received.
+ *
+ * ## Why `enable` and not `enable --now`
+ *
+ * Because a runner is very often already up — `start` spawns one and leaves it
+ * detached — and `--now` would ask the service manager to start a **second**
+ * process over the first one's data directory and socket. `livePid` exists
+ * because of the same hazard read from the other side. So this arranges the next
+ * boot and says so; `lib/copy/host-residency.ts` carries the sentence, and the
+ * attended proof for ADR 0031 is a real reboot rather than a `--now` that would
+ * have proved something else.
+ *
+ * ## Why lingering is asked for and never taken away
+ *
+ * `loginctl enable-linger` is what makes a user manager run without somebody
+ * signed in, and without it an enabled unit starts at the operator's next login
+ * — which on a server nobody logs in to is never. So `enable` asks for it.
+ *
+ * `disable` does **not** ask for the opposite. Lingering is a property of the
+ * **account**, not of this unit: other things the operator arranged may depend
+ * on it, DASH did not necessarily turn it on, and switching it off would be this
+ * program changing something outside the thing it was asked about. It is
+ * reported instead, which is the honest half — `starts_at_boot` comes back on
+ * every answer, including a refusal-free `disable`.
+ *
+ * ## What a failed step leaves behind
+ *
+ * The unit is written before it is enabled, so a failure at the enable step
+ * leaves a file that starts nothing and a `disabled` state that says exactly
+ * that. That is the direction to fail in: the alternative — enable first, write
+ * second — cannot exist, and removing the file on a failed enable would delete
+ * the one artefact an operator could look at.
+ */
+function service(root: string, request: ServiceRequest): DeployAnswer {
+  /*
+   * Every bundle installed here, read the way `status` reads it.
+   *
+   * The helper enumerates; the request named nothing. That is what makes this a
+   * question about the server rather than a per-file switch, and it is also what
+   * keeps the whole act to one `ssh` round trip — a caller asking bundle by
+   * bundle would be a caller spawning a process per agent to answer one
+   * sentence.
+   */
+  const directory = path.join(root, "bundles");
+  const installed = existsSync(directory)
+    ? readdirSync(directory)
+        .filter((name) => name.endsWith(".json"))
+        .map((name) => name.slice(0, -".json".length))
+        .filter((id) => readRecord(root, id) !== null)
+    : [];
+  if (installed.length === 0) {
+    return {
+      ok: false,
+      problem: "not_installed",
+      detail: "Nothing is installed on this server, so there is nothing to start when it boots.",
+    };
+  }
+  if (!systemdBooted()) {
+    return {
+      ok: false,
+      problem: "init_not_supported",
+      detail:
+        "This server does not start its programs with systemd, so DASH cannot arrange for the " +
+        "agent runner to come back on its own here.",
+    };
+  }
+
+  const units = installed.map((id) => serviceUnitName(id));
+  const unitRoot = serviceUnitDirectory();
+
+  if (request.action === "enable") {
+    for (const bundleId of installed) {
+      const bundle = bundleDirectory(root, bundleId);
+      const unitFile = path.join(unitRoot, serviceUnitName(bundleId));
+      if (!containedIn(unitRoot, unitFile)) {
+        // Unreachable while `serviceUnitName` builds from an identifier that
+        // cannot spell a separator. Checked for `hostKeyFile`'s stated reason:
+        // reaching this branch means something upstream stopped validating.
+        return {
+          ok: false,
+          problem: "service_not_managed",
+          detail: "DASH could not work out where this server keeps its startup entries.",
+        };
+      }
+      const unit = serviceUnitText({
+        execPath: process.execPath,
+        bundleDirectory: bundle,
+        dataDirectory: path.join(bundle, "data"),
+        hostRoot: root,
+        bundleId,
+      });
+      if (!unit.ok) {
+        return {
+          ok: false,
+          problem: "service_not_managed",
+          detail:
+            "This server's folder names cannot be written into a startup entry, so DASH did not " +
+            "write one.",
+        };
+      }
+      try {
+        mkdirSync(unitRoot, { recursive: true, mode: 0o700 });
+        // 0644 and not 0600: the service manager reads it as the same account,
+        // and a unit is a thing an operator is meant to be able to read. It
+        // carries no secret — `lib/deploy/service-unit.ts` says why there is
+        // nowhere in it for one — so the owner-only discipline the secret store
+        // is held to would buy nothing and would make the file harder to
+        // inspect.
+        writeFileSync(unitFile, unit.text, { encoding: "utf8", mode: 0o644 });
+      } catch {
+        return {
+          ok: false,
+          problem: "service_not_managed",
+          detail: "DASH could not write the startup entries on this server.",
+        };
+      }
+    }
+    runInit("loginctl", ["enable-linger", os.userInfo().username]);
+    runInit("systemctl", ["--user", "daemon-reload"]);
+    for (const unitName of units) {
+      const enabled = runInit("systemctl", ["--user", "enable", unitName]);
+      if (!enabled.ok) {
+        return {
+          ok: false,
+          problem: "service_not_managed",
+          // The service manager's own words are not quoted back. They are text
+          // from a machine DASH does not administer, headed for a log and a
+          // screen, and the exit is the same whatever it said.
+          detail: "This server would not accept a startup entry for the agent runner.",
+        };
+      }
+    }
+  }
+
+  if (request.action === "disable") {
+    for (const unitName of units) {
+      runInit("systemctl", ["--user", "disable", unitName]);
+      const unitFile = path.join(unitRoot, unitName);
+      if (!containedIn(unitRoot, unitFile)) {
+        continue;
+      }
+      try {
+        rmSync(unitFile, { force: true });
+      } catch {
+        return {
+          ok: false,
+          problem: "service_not_managed",
+          detail: "DASH could not remove the startup entries on this server.",
+        };
+      }
+    }
+    runInit("systemctl", ["--user", "daemon-reload"]);
+  }
+
+  /*
+   * The state is read back from the service manager after every action,
+   * including `enable` and `disable` — never assumed from what was just done.
+   *
+   * ADR 0030 decision 2's rule, one machine over: *"Windows' own off switch is
+   * read, not just the value's existence."* A `disable` that could not remove a
+   * symlink, or an `enable` on a unit the operator has masked, is reported as
+   * what the machine now says rather than as what DASH asked for.
+   *
+   * The N states become one by `hostServiceReduction`, which under-claims on
+   * purpose — see its docblock for why a server that is half arranged reads as
+   * not arranged.
+   */
+  const states = units.map((unitName) => {
+    const unitFile = path.join(unitRoot, unitName);
+    const present = containedIn(unitRoot, unitFile) && existsSync(unitFile);
+    const enabled =
+      present && readIsEnabled(runInit("systemctl", ["--user", "is-enabled", unitName]).stdout);
+    return hostServiceState(present, enabled);
+  });
+  const linger = readLinger(
+    runInit("loginctl", ["show-user", os.userInfo().username, "--property=Linger"]).stdout,
+  );
+
+  return {
+    ok: true,
+    verb: "service",
+    state: hostServiceReduction(states),
+    starts_at_boot: linger,
+    units,
+  };
+}
+
+/* ---------------------------------------------------------------------- *
  * Small mechanics
  * ---------------------------------------------------------------------- */
 
@@ -1101,6 +1474,9 @@ export async function runHelper(argv: string[]): Promise<number> {
       return 0;
     case "install-key":
       answer(installKey(root, request));
+      return 0;
+    case "service":
+      answer(service(root, request));
       return 0;
     case "connect":
       // Unreachable: handled above, before stdin was read. Checked rather than

@@ -19,6 +19,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   KeyPlacementCeremony,
   KeysOnThisServer,
+  ResidencyOnThisServer,
   SendAnAgentHere,
   ServerCard,
 } from "../app/_components/server-card";
@@ -35,6 +36,7 @@ import {
   type HostConnectState,
 } from "../lib/host-connect";
 import { standingChip } from "../lib/server-card";
+import { RESIDENCY_COPY } from "../lib/copy/host-residency";
 import type { AgentDeployChoice, SavedServerView } from "../lib/views/types";
 
 const SERVER: SavedServerView = {
@@ -50,6 +52,9 @@ const SERVER: SavedServerView = {
   sent: [],
   placed_keys: [],
   key_offers: [],
+  // MAR-795, ADR 0031. Off, which is every server until somebody presses the
+  // switch — and the state this card must draw without inventing a claim.
+  residency: { asked_on: null, told_on: null, told_count: null },
 };
 
 const NOTHING = {
@@ -60,6 +65,10 @@ const NOTHING = {
   setup: () => Promise.resolve(null),
   bringHome: () => undefined,
   installKey: () => undefined,
+  // MAR-795, ADR 0031. Null is the honest fixture answer: the card must draw
+  // itself from DASH's own record before any server has been asked anything.
+  readResidency: () => Promise.resolve(null),
+  setResidency: () => Promise.resolve(null),
 };
 
 /**
@@ -749,5 +758,77 @@ describe("the consent ceremony", () => {
       />,
     );
     expect(html).toContain("nothing is retried on its own");
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * MAR-795, ADR 0031: what this server does when it restarts
+ * ---------------------------------------------------------------------- */
+
+describe("the residency section", () => {
+  function residency(server: SavedServerView): string {
+    return renderToStaticMarkup(
+      <ResidencyOnThisServer
+        server={server}
+        busy={false}
+        canAct
+        onRead={() => Promise.resolve(null)}
+        onSet={() => Promise.resolve(null)}
+      />,
+    );
+  }
+
+  it("says it is off until pressed, before anything is pressed", () => {
+    // ADR 0030 decision 4, one machine over: *"off until you turn it on"*, said
+    // where a person reads it rather than discovered afterwards.
+    const html = residency(SERVER);
+    expect(html).toContain("off until you turn it on");
+    expect(html).toContain(RESIDENCY_COPY.toggle_on);
+  });
+
+  it("draws the off state's own account rather than a blank", () => {
+    const html = residency(SERVER);
+    for (const line of RESIDENCY_COPY.liveness_off) {
+      expect(html).toContain(line);
+    }
+    // And not the on state's, which would be a claim about a reboot that will
+    // not start anything.
+    expect(html).not.toContain(RESIDENCY_COPY.liveness_on[0]);
+  });
+
+  it("keeps the missed-window and the cannot-spend sentences on the on state", () => {
+    /*
+     * The two sentences this feature would be judged on. ADR 0029 decision 7 —
+     * a window that came round while the machine was down is missed and is not
+     * run late — and ADR 0029 amendment 1's fourth sentence one machine over: a
+     * scheduled run on a server starts and publishes and cannot reach a model,
+     * because the host broker's allowance is opened by a Run press and nobody
+     * pressed anything.
+     */
+    const html = residency({
+      ...SERVER,
+      residency: { asked_on: "25 August 2026", told_on: null, told_count: null },
+    });
+    expect(html).toMatch(/still missed/i);
+    expect(html).toMatch(/cannot reach your model/i);
+  });
+
+  it("says when DASH last told this server, and says never when it never has", () => {
+    expect(residency(SERVER)).toMatch(/not told this server/i);
+    const told = residency({
+      ...SERVER,
+      residency: { asked_on: "25 August 2026", told_on: "25 August 2026", told_count: 2 },
+    });
+    expect(told).toContain("2 scheduled times");
+  });
+
+  it("draws no removal instructions before the server has named its entries", () => {
+    // The lines are built from names the server gave. A card that guessed them
+    // would be handing somebody commands for files that may not exist.
+    const html = residency({
+      ...SERVER,
+      residency: { asked_on: "25 August 2026", told_on: null, told_count: null },
+    });
+    expect(html).not.toContain(RESIDENCY_COPY.removal_label);
   });
 });

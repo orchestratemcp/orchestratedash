@@ -34,6 +34,13 @@ import {
   describePlacedKey,
 } from "../../lib/copy/host-pack";
 import { standingForPlacements } from "../../lib/deploy/key-placement";
+import type { HostServiceReport } from "../../lib/deploy/service-unit";
+import {
+  RESIDENCY_COPY,
+  describeResidency,
+  describeResidencyRemoval,
+  describeSchedulesTold,
+} from "../../lib/copy/host-residency";
 import type { AgentDeployChoice, KeyOfferView, SavedServerView } from "../../lib/views/types";
 
 /**
@@ -106,6 +113,23 @@ export interface ServerCardActions {
    * nowhere for one: the renderer has never held the value.
    */
   installKey(offer: { agent: string; connection_id: string; fingerprint: string }): void;
+  /**
+   * Ask this server what it does when it restarts (MAR-795, ADR 0031).
+   *
+   * A read that changes nothing, on the server or here — which is why the card
+   * may call it from a press rather than only from a form. Null when DASH could
+   * not ask; the card says so rather than drawing a switch over a machine it did
+   * not reach.
+   */
+  readResidency(): Promise<HostServiceReport | null>;
+  /**
+   * Turn it on, or off (MAR-795, ADR 0031).
+   *
+   * Answers with what the server said afterwards, never with what was asked —
+   * ADR 0030 decision 2's rule about reading the system's own off state, so a
+   * press that half-worked draws the half that is true.
+   */
+  setResidency(on: boolean): Promise<HostServiceReport | null>;
 }
 
 export function ServerCard({
@@ -295,6 +319,22 @@ export function ServerCard({
         busy={busy}
         canAct={canAct}
         onPlace={setPlacing}
+      />
+
+      {/*
+        MAR-795, ADR 0031. What this server does when it restarts.
+
+        Below the keys and above the identity, which is the order the card is
+        read in: an agent has to be here before there is anything to start, a key
+        is what it needs to think, and this is what happens to both of them when
+        nobody is watching.
+      */}
+      <ResidencyOnThisServer
+        server={server}
+        busy={busy}
+        canAct={canAct}
+        onRead={actions.readResidency}
+        onSet={actions.setResidency}
       />
 
       {placing === null ? null : (
@@ -970,6 +1010,177 @@ function ForgetConfirmation({
         </button>
         <button type="button" className="button-primary" disabled={busy} onClick={onForget}>
           {busy ? "Disconnecting..." : "Disconnect"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * What this server does when it restarts, and the one switch that changes it
+ * (MAR-795, ADR 0031).
+ *
+ * ## Why the live state is fetched on a press rather than on render
+ *
+ * Asking costs an `ssh` round trip to somebody's server. A section that asked on
+ * mount would reach every enrolled machine every time this page opened, which is
+ * the polling ADR 0015 refuses and `lib/views/build.ts` refuses one function
+ * over. So the card opens showing what DASH knows about its **own** acts —
+ * whether this person turned it on, and when DASH last told the server anything
+ * — and the server's own answer arrives when somebody asks for it.
+ *
+ * That split is the section's whole honesty. DASH's record can say *you turned
+ * this on*; only the server can say *and it is still switched on here*, and
+ * those two are drawn as two sentences rather than merged into one claim.
+ *
+ * ## Why the switch is one switch
+ *
+ * There is one runner per agent copy on the server and therefore one boot entry
+ * each, but *"does this server come back by itself"* is one question. The
+ * `service` verb reduces them — see `hostServiceReduction`, which under-claims
+ * on purpose — and the press applies to all of them, so the control matches the
+ * sentence beside it.
+ */
+export function ResidencyOnThisServer({
+  server,
+  busy,
+  canAct,
+  onRead,
+  onSet,
+}: {
+  server: SavedServerView;
+  busy: boolean;
+  canAct: boolean;
+  onRead: () => Promise<HostServiceReport | null>;
+  onSet: (on: boolean) => Promise<HostServiceReport | null>;
+}): ReactNode {
+  /** What the server itself said, or null until somebody asked. */
+  const [report, setReport] = useState<HostServiceReport | null>(null);
+  const [asking, setAsking] = useState(false);
+  /** True once an ask came back with nothing, so the card can say so. */
+  const [unreachable, setUnreachable] = useState(false);
+
+  const asked = server.residency.asked_on !== null;
+  const live = report === null ? null : describeResidency(report.state, report.starts_at_boot);
+
+  async function ask(action: () => Promise<HostServiceReport | null>): Promise<void> {
+    setAsking(true);
+    const answer = await action();
+    setAsking(false);
+    setUnreachable(answer === null);
+    if (answer !== null) {
+      setReport(answer);
+    }
+  }
+
+  return (
+    <section className="card-section">
+      <h4>{RESIDENCY_COPY.heading}</h4>
+
+      {/*
+        DASH's own record first, because it is true whether or not the server is
+        awake. `asked_on` is null for every server nobody has pressed this for,
+        and that is the state the opt-in sentence belongs to.
+      */}
+      {asked ? (
+        <p className="wrap">
+          <strong>{RESIDENCY_COPY.toggle.label}</strong>
+        </p>
+      ) : (
+        <p className="wrap muted">{RESIDENCY_COPY.opt_in}</p>
+      )}
+      <p className="card-meta wrap">{RESIDENCY_COPY.toggle.detail}</p>
+
+      {/*
+        MAR-795. When DASH last handed this server its scheduled times.
+
+        Its own sentence rather than part of the standing above, because "when
+        DASH last looked" and "when DASH last told it" are different facts, and a
+        card that ran them together would let a fresh check imply a fresh
+        instruction.
+      */}
+      <p className="card-meta wrap">
+        {describeSchedulesTold(server.residency.told_count ?? 0, server.residency.told_on)}
+      </p>
+
+      {/*
+        The server's own answer, when there is one. Never inferred from the row
+        above: a person who turned this on months ago and has since switched it
+        off on the machine itself is owed the machine's version.
+      */}
+      {live === null ? null : (
+        <>
+          <p className="wrap">
+            <strong>{live.headline}</strong>
+          </p>
+          <p className="wrap">{live.detail}</p>
+        </>
+      )}
+      {unreachable ? (
+        <p className="notice notice-warn wrap" role="status">
+          DASH could not reach this server, so it cannot say what it does when it restarts.
+        </p>
+      ) : null}
+
+      <ul className="plain-list">
+        {(asked ? RESIDENCY_COPY.liveness_on : RESIDENCY_COPY.liveness_off).map((line) => (
+          <li key={line} className="wrap">
+            {line}
+          </li>
+        ))}
+      </ul>
+
+      <details className="card-more">
+        <summary>What this does not do</summary>
+        <ul className="plain-list">
+          {RESIDENCY_COPY.not_this.map((line) => (
+            <li key={line} className="wrap">
+              {line}
+            </li>
+          ))}
+        </ul>
+        {/*
+          ADR 0030 decision 7's third answer, one machine over: somebody whose
+          DASH is gone can still undo this from the server. Drawn only once the
+          server has named its entries, because the lines are built from the
+          names it gave — a card that guessed them would be handing out commands
+          for files that may not exist.
+        */}
+        {report === null || report.units.length === 0 ? null : (
+          <>
+            <p className="wrap">
+              <strong>{RESIDENCY_COPY.removal_label}</strong>
+            </p>
+            <p className="card-meta wrap">{RESIDENCY_COPY.removal_note}</p>
+            {report.units.map((unit) => (
+              <pre key={unit} className="setup-script">
+                {describeResidencyRemoval(unit).join("\n")}
+              </pre>
+            ))}
+          </>
+        )}
+      </details>
+
+      <div className="button-row">
+        <button
+          type="button"
+          className="button-secondary"
+          disabled={busy || asking || !canAct}
+          onClick={() => {
+            void ask(onRead);
+          }}
+        >
+          {asking ? "Asking..." : "Ask the server"}
+        </button>
+        <button
+          type="button"
+          className={asked ? "button-secondary" : "button-primary"}
+          disabled={busy || asking || !canAct}
+          onClick={() => {
+            void ask(() => onSet(!asked));
+          }}
+        >
+          {asked ? RESIDENCY_COPY.toggle_off : RESIDENCY_COPY.toggle_on}
         </button>
       </div>
     </section>

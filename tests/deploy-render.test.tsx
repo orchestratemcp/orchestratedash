@@ -52,6 +52,9 @@ const SERVER: SavedServerView = {
   sent: [],
   placed_keys: [],
   key_offers: [],
+  // MAR-795, ADR 0031. Off, which is every server until somebody presses the
+  // switch — and the state this card must draw without inventing a claim.
+  residency: { asked_on: null, told_on: null, told_count: null },
 };
 
 const SECOND: SavedServerView = { ...SERVER, host_id: "host-2", label: "The spare" };
