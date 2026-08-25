@@ -21,7 +21,7 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { classifyProbe } from "../lib/ai/liveness";
 import { probeModelProvider } from "../lib/ai/probe";
@@ -303,13 +303,21 @@ describe("the probe, over real HTTP", () => {
   let server: Server;
   let origin: string;
   let answer: { status: number; body: string } = { status: 200, body: "{}" };
+  /**
+   * A second, path-specific answer for `/api/v1/key` — null except in the
+   * MAR-787 repro below, where the whole point is that the two paths must not
+   * answer the same way. Every other test in this block leaves it null, so the
+   * server answers every path with `answer`, exactly as it always has.
+   */
+  let keyCheckAnswer: { status: number; body: string } | null = null;
   const seen: Array<{ url: string; headers: Record<string, string | string[] | undefined> }> = [];
 
   beforeAll(async () => {
     server = createServer((request: IncomingMessage, response: ServerResponse) => {
       seen.push({ url: request.url ?? "", headers: request.headers });
-      response.writeHead(answer.status, { "content-type": "application/json" });
-      response.end(answer.body);
+      const reply = request.url === "/api/v1/key" && keyCheckAnswer !== null ? keyCheckAnswer : answer;
+      response.writeHead(reply.status, { "content-type": "application/json" });
+      response.end(reply.body);
     });
     await new Promise<void>((resolve) => {
       server.listen(0, "127.0.0.1", resolve);
@@ -323,6 +331,10 @@ describe("the probe, over real HTTP", () => {
         resolve();
       });
     });
+  });
+
+  afterEach(() => {
+    keyCheckAnswer = null;
   });
 
   /** The real OpenRouter profile, pointed at the loopback server. */
@@ -342,6 +354,30 @@ describe("the probe, over real HTTP", () => {
     expect(request?.url).toBe("/api/v1/models");
     expect(request?.headers["authorization"]).toBe(`Bearer ${PLANTED_PROVIDER_KEY}`);
     expect(classifyProbe(outcome, "2026-08-09T20:00:00.000Z")).toMatchObject({ state: "live" });
+  });
+
+  it("refuses a fixture key even though the models list would have taken it (MAR-787)", async () => {
+    // OpenRouter's models list, observed live: it answers 200 with a real
+    // catalogue for a key that is not accepted at all — that is the false
+    // positive `ai_key_checks` produced on 2026-08-24. This loopback server
+    // reproduces the same split: `/api/v1/models` answers for anyone,
+    // `/api/v1/key` — the path that is actually scoped to the credential —
+    // refuses this one.
+    answer = { status: 200, body: JSON.stringify({ data: [{ id: "a" }, { id: "b" }, { id: "c" }] }) };
+    keyCheckAnswer = { status: 401, body: JSON.stringify({ error: "invalid api key" }) };
+    const before = seen.length;
+
+    const outcome = await probeModelProvider(loopback(), PLANTED_PROVIDER_KEY);
+
+    // The fixture string reads as refused, not as a key with 3 models.
+    expect(outcome).toEqual({ status: 401, model_count: null });
+    expect(classifyProbe(outcome, "2026-08-09T20:00:00.000Z")).toMatchObject({
+      state: "key_refused",
+    });
+    // And the models path was never even worth asking once the key check said
+    // no — one request, not two, for a key that fails at the door.
+    const madeByThisTest = seen.slice(before);
+    expect(madeByThisTest.map((request) => request.url)).toEqual(["/api/v1/key"]);
   });
 
   it("returns a status and never a body", async () => {

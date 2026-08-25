@@ -1846,6 +1846,17 @@
         "command": "pnpm typecheck && pnpm test (PowerShell)",
         "run": "typecheck clean; pnpm test 255 files / 4799 passed / 11 skipped / 0 failed (PowerShell). tests/autostart.test.ts: 27/27 passed, including the new raw-value describe block. No verify:shell per session scope. NOT PROVEN HERE: the attended Startup-page press on Henrik's machine showing On with no foreign warning -- that is his screenshot after merge, per the session's instruction not to drive his DASH."
       }
+    },
+    {
+      "id": "MAR-787",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null,
+      "note": "PLANNED 2026-08-25: the AI key 'live' check cannot refuse a bad key, because OpenRouter's models list (`/api/v1/models`) answers 200 with a real catalogue for any key, valid or not -- confirmed live against OpenRouter with a fixture bearer token (curl, no auth and a fixture key both got 200; Anthropic and OpenAI's own /v1/models both 401 a fixture key already). Worktree wt-keycheck-k3, branch 000henrik/mar-787-keycheck, cut from origin/master 69a9158. FIX: `lib/ai/providers.ts` gains `key_check_path`, a second path per provider distinct from `models_path` -- OpenRouter's is `/api/v1/key` (a key-scoped endpoint that 401s a bad key, confirmed live), Anthropic's and OpenAI's are their existing models_path since that already validates. `probeModelProvider` (lib/ai/probe.ts) now asks `key_check_path` FIRST and its status is the outcome's status; only once that says the key is accepted does it go on to ask `models_path` for a count (skipped entirely as one request when the two paths are equal, i.e. for Anthropic/OpenAI). `classifyProbe` (lib/ai/liveness.ts) is UNCHANGED -- its 401/403-is-the-verdict rule was already correct, the outcome it was fed was wrong. Since `lib/ai/actions.ts`'s `check`/`connect`/`listAiKeyModels` and `lib/ai/refresh.ts`'s Refresh connections all resolve through the same injected `AiKeyOperations.probe` (wired to `probeModelProvider` at all three electron/main.ts call sites), the standing chip, the per-card check and Refresh connections inherit the fix from one place -- verified by grep, no second call site found. NEW TEST: tests/ai-key-broker.test.ts, 'refuses a fixture key even though the models list would have taken it (MAR-787)' -- a loopback server that answers /api/v1/models with a real 3-model catalogue and /api/v1/key with 401, proving the fixture key now reads key_refused, not live, and that the models path is never even asked once the key check refuses. Confirmed this test fails against the pre-fix code (200/3-models/live) by temporarily stashing the lib/ changes and re-running it. tests/ai-providers.test.ts pins the new key_check_path/aiKeyCheckUrl values by literal, same discipline as the existing models_path pin.",
+      "proof": {
+        "command": "pnpm typecheck && pnpm test (PowerShell)",
+        "run": "typecheck clean; pnpm test 255 files / 4801 passed / 11 skipped / 0 failed (PowerShell). tests/ai-key-broker.test.ts and tests/ai-providers.test.ts both green with the new MAR-787 cases. No verify:shell per session scope. NOT PROVEN HERE: a real-key round trip against live OpenRouter/Anthropic/OpenAI accounts -- only unauthenticated/fixture-key curl probes were run against the real endpoints to confirm which paths 401 a bad key, per the session's instruction to coordinate with Henrik rather than print a real key."
+      }
     }
   ]
 }
