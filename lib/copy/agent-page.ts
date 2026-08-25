@@ -449,8 +449,11 @@ export const AGENT_TRIGGER_COPY = {
    * which it was; the agent does not; the person is told.
    */
   ceiling_hit: (allowed: number): string =>
-    `This run used all ${String(allowed)} of its model call${allowed === 1 ? "" : "s"} and then ` +
-    "stopped asking, so the rest of its plan ran without one. It still published what it could.",
+    (allowed === 1
+      ? "This run used its one model call"
+      : `This run used all ${String(allowed)} of its model calls`) +
+    " and then stopped asking, so the rest of its plan ran without one. It still published what " +
+    "it could.",
   /** One settled window, in the person's words rather than the store's. */
   outcome: {
     ran: "Ran",

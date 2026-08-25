@@ -245,6 +245,15 @@ function manifestFor(name: string): string {
                 required: true,
               },
             ],
+            // Required by the contract on every connection, and `lib/sample-
+            // agent.ts` writes exactly this for the scout's model provider.
+            // Nothing in this proof presses it; it is here because a manifest
+            // without one is a manifest the runner will not start.
+            validation_action: {
+              id: "test_model_key",
+              label: "Check the key",
+              behavior: "test",
+            },
           },
         ],
       },

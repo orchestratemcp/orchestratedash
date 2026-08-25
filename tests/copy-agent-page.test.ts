@@ -194,6 +194,20 @@ describe("the agent page's copy", () => {
   });
 
   /**
+   * The singular, pinned because the acceptance proof printed the ungrammatical
+   * version of it before this test existed: *"used all 1 of its model call"*.
+   * A ceiling of one is the smallest a person can set and therefore the one most
+   * likely to be on somebody's screen, and a sentence that reads as a bug is a
+   * sentence that makes the number beside it look like one too.
+   */
+  it("says the singular degrade in English", () => {
+    const one = AGENT_TRIGGER_COPY.ceiling_hit(1);
+    expect(one).toContain("its one model call");
+    expect(one).not.toContain("all 1");
+    expect(AGENT_TRIGGER_COPY.ceiling_hit(2)).toContain("all 2 of its model calls");
+  });
+
+  /**
    * MAR-589's ruling, held to on the one surface that renders both.
    *
    * The name row now says a rename is possible rather than claiming DASH
