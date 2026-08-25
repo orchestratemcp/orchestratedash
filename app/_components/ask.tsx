@@ -10,7 +10,8 @@ import {
   ASK_CLEAR_DETAIL,
   ASK_CLOSE,
   ASK_HEADING,
-  ASK_MODEL_LABEL,
+  ASK_MODEL_CHIP_LABEL,
+  describeAgentScopeChip,
   describeAskActivity,
   describeChatSubject,
 } from "../../lib/copy/ask";
@@ -40,12 +41,15 @@ const ASK_COMPOSER_CLASSES: ComposerClassNames = {
   roomClear: "ask-room-clear",
   roomClose: "ask-room-close",
   roomScroll: "ask-room-scroll",
+  chips: "ask-composer-chips",
   compose: "ask-compose",
   field: "ask-field",
-  subject: "ask-subject",
   inputWrap: "ask-input-wrap",
   input: "ask-input",
   enterGlyph: "ask-enter-glyph",
+  foot: "ask-composer-foot",
+  modelChip: "ask-model-chip",
+  hint: "ask-composer-hint",
 };
 
 /**
@@ -401,6 +405,11 @@ export function AskComposer({
          answer, is the one thing this label says that nothing else on a
          non-Chat stage does. */
       subjectLabel={describeChatSubject(agentTitle)}
+      chips={
+        <span className="chip" title={describeChatSubject(agentTitle)}>
+          {describeAgentScopeChip(agentTitle)}
+        </span>
+      }
       placeholder={ask.placeholder}
       value={question}
       onChange={setQuestion}
@@ -409,27 +418,27 @@ export function AskComposer({
       }}
       pending={pending}
       textareaDisabled={busy}
-      modelLine={
-        <div className="ask-model-line">
-          <span className="ask-setting">
-            <span className="muted">{ASK_MODEL_LABEL}</span>{" "}
-            {/* The provider's own id, as a value. `AskModelView` states why
-                there is no friendlier name to give it and why inventing one
-                would be ADR 0012's refused price table in another costume. */}
-            <code className="value" title={model.note}>
-              {model.model_id}
-            </code>
-            {/* Said, not only shown in a tooltip: whose decision this was is the
-                fact that predicts what changing the fleet default will do here,
-                and `BrokerCapabilityView.consequence` records what a hover costs
-                — a fact somebody has to point at is a fact most people never
-                read. */}
-            <span className="visually-hidden">. {model.note}</span>
-          </span>
-          <Link className="ask-setting-change" href={agentStageHref(flow.agent_id, "settings")}>
-            {model.change_label}
-          </Link>
-        </div>
+      recallQuestions={visible.map((exchange) => exchange.question)}
+      modelChip={
+        /*
+         * MAR-711, compacted by MAR-742 roadmap item 1. `.ask-model-line`'s
+         * old sentence-plus-link is a chip-as-link now: the same destination
+         * ("Change in Settings") on the same fact — whose decision this
+         * model was — carried as the chip's own `title` rather than a
+         * `visually-hidden` sentence beside it (`hidden text is still in the
+         * markup` is exactly the pattern a `visually-hidden` span already
+         * was; a `title` on the control itself is the ordinary, reachable
+         * place for it). This surface has no picker of its own — `Change in
+         * Settings` is where it always went — so the chip is a link, never a
+         * button, `composer.tsx`'s own note on the per-surface split.
+         */
+        <Link
+          className="chip chip-model chip-link"
+          href={agentStageHref(flow.agent_id, "settings")}
+          title={`${model.note} ${model.change_label}`}
+        >
+          <span>{ASK_MODEL_CHIP_LABEL}</span> <code className="value">{model.model_id}</code>
+        </Link>
       }
     >
       <p className="wrap">{ask.purpose.headline}</p>

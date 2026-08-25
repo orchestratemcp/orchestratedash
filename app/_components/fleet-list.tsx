@@ -83,6 +83,7 @@ export function FleetList({
   canAct = false,
   onAsked,
   onToggleFavourite,
+  decisionsTotal = 0,
 }: {
   /** The whole fleet — the rail's own counts depend on this being unfiltered. */
   agents: readonly AgentRow[];
@@ -101,6 +102,13 @@ export function FleetList({
   onAsked?: () => void;
   /** Star — or unstar — one agent (MAR-640). Optional: see `FleetCard`'s own note. */
   onToggleFavourite?: (agent: string, next: boolean) => void;
+  /**
+   * `FleetView.decisions.total` (MAR-742 roadmap item 1, §4.5) — passed
+   * straight through to `ChiefChat`'s own decisions chip. `app/page.tsx`
+   * holds the fleet view this page reads; `FleetList` is just the one hop
+   * between it and the composer that draws the chip.
+   */
+  decisionsTotal?: number;
 }): ReactNode {
   const router = useRouter();
   const [view] = useFleetView();
@@ -397,6 +405,7 @@ export function FleetList({
         onClose={() => {
           setChiefOpen(false);
         }}
+        decisionsTotal={decisionsTotal}
       />
     </div>
   );

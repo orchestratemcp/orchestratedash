@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { agentStageHref } from "../_data/routes";
 import { askChief, listProviderModels, setChiefModel } from "../_data/source";
@@ -9,6 +9,7 @@ import { Composer, filterAfterClear, type ComposerClassNames } from "./composer"
 import { LinkOut } from "./link-out";
 import { useSingleFlight } from "./single-flight";
 import { OAvatar } from "./o-avatar";
+import { describeCatalogueResult } from "../../lib/ai/model-choice";
 import { aiProviderById } from "../../lib/ai/providers";
 import { answeredFromRecords } from "../../lib/chief/records-answer";
 import {
@@ -16,6 +17,7 @@ import {
   describeAmbiguous,
   describeChiefActivity,
   describeChiefModelLine,
+  describeDecisionsChip,
   describeMatch,
   describeRouted,
   type ChiefSentence,
@@ -42,12 +44,15 @@ const CHIEF_COMPOSER_CLASSES: ComposerClassNames = {
   roomClear: "chief-room-clear",
   roomClose: "chief-room-close",
   roomScroll: "chief-room-scroll",
+  chips: "chief-composer-chips",
   compose: "chief-compose",
   field: "chief-field",
-  subject: "chief-subject",
   inputWrap: "chief-input-wrap",
   input: "chief-input",
   enterGlyph: "chief-enter-glyph",
+  foot: "chief-composer-foot",
+  modelChip: "chief-model-chip",
+  hint: "chief-composer-hint",
 };
 
 /**
@@ -230,6 +235,7 @@ export function ChiefChat({
   open,
   onOpen,
   onClose,
+  decisionsTotal = 0,
 }: {
   /** The fleet as the band already has it — filtered, in the list's own order. */
   agents: readonly AgentRow[];
@@ -243,6 +249,14 @@ export function ChiefChat({
   open: boolean;
   onOpen: () => void;
   onClose: () => void;
+  /**
+   * `FleetView.decisions.total` (MAR-742 roadmap item 1, §4.5), for the
+   * decisions chip. `FleetList` reaches this from the fleet page's own view
+   * — one prop passed down, `fleet-list.tsx`'s own note on why. Defaulted to
+   * 0 (chip hidden) rather than required, so the render tests that predate
+   * this packet and hold no fleet view keep compiling.
+   */
+  decisionsTotal?: number;
 }): ReactNode {
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
@@ -361,11 +375,14 @@ export function ChiefChat({
       }}
       scrollSignal={visible.length}
       /*
-       * MAR-659. Visible rather than `visually-hidden`, so the subject of
-       * this room — the whole fleet, never one agent — is a fact a person
-       * reads rather than one this component just happens to be wired for.
+       * MAR-659, carried by MAR-742 roadmap item 1. The subject of this room
+       * — the whole fleet, never one agent — is still a fact this composer
+       * states, now as the field's own accessible name (`composer.tsx`'s own
+       * header) rather than a visible line; the words a sighted reader sees
+       * are the scope chip's, in `chips` below.
        */
       subjectLabel={CHIEF_CHAT_COPY.label}
+      chips={<ChiefChips decisionsTotal={decisionsTotal} />}
       placeholder={CHIEF_CHAT_COPY.placeholder}
       value={question}
       onChange={setQuestion}
@@ -387,7 +404,8 @@ export function ChiefChat({
        * `.chief-field` the visible subject caption sits above.
        */
       avatar={<ChiefComposerGlyph />}
-      modelLine={<ChiefModelLine view={view} canAct={canAct} onChanged={onAsked} />}
+      modelChip={<ChiefModelChip view={view} canAct={canAct} onChanged={onAsked} />}
+      recallQuestions={visible.map((turn) => turn.question)}
     >
       {visible.length === 0 ? null : (
         <ol className="chief-turns" aria-label={CHIEF_CHAT_COPY.thread_kept_heading}>
@@ -428,16 +446,65 @@ function ChiefComposerGlyph(): ReactNode {
 }
 
 /**
+ * The scope and decisions chips, above the field (MAR-742 roadmap item 1,
+ * §4.2/§4.5).
+ *
+ * The scope chip carries no destination — it says *whose* composer this is,
+ * the fact `subjectLabel` used to spend a whole line on — so it is a `<span>`
+ * rather than a control. The decisions chip is `.chip-link` (this
+ * stylesheet's own vocabulary for a chip that is a destination) to
+ * `/decisions`, absorbed from `app/page.tsx`'s own link rather than waiting
+ * on MAR-679's next slice (Henrik's ruling, not this proposal's own default
+ * of leaving it in place).
+ */
+function ChiefChips({ decisionsTotal }: { decisionsTotal: number }): ReactNode {
+  const decisions = decisionsTotal === 0 ? null : describeDecisionsChip(decisionsTotal);
+  return (
+    <>
+      <span className="chip" title={CHIEF_CHAT_COPY.label}>
+        {CHIEF_CHAT_COPY.scope}
+      </span>
+      {decisions === null ? null : (
+        <Link className="chip chip-link" href="/decisions" title={decisions.title}>
+          {decisions.text}
+        </Link>
+      )}
+    </>
+  );
+}
+
+/**
  * Whose model the chief is asking under, and a way to change it (MAR-696,
- * ADR 0023 amendment 1).
+ * ADR 0023 amendment 1; compacted into a chip and an anchored popover by
+ * MAR-742 roadmap item 1).
  *
  * Always drawn, open or closed — Henrik's own words, *"the chief's current
  * model and a swap control"*, under the field rather than inside the room, so
  * it is not something a person has to open a conversation to see. Not
  * `.chief-settings`, the standing scope paragraph MAR-683 dropped: this is
  * one fact and one control, not a paragraph explaining what the room can do.
+ *
+ * ## What used to be a sentence is now a chip's `title`
+ *
+ * `describeChiefModelLine`'s distinction — the chief's own pin versus the
+ * fleet default it falls back to — is still said, but the *fact that a
+ * fallback is happening at all* has to stay on screen rather than only in an
+ * attribute (`hidden text is still in the markup`): the `FLEET DEFAULT`
+ * companion chip carries that, present only when `model_is_own` is false.
+ *
+ * ## The popover: same logic, a different container
+ *
+ * `ChiefModelPicker` below is byte-for-byte what it was — fetch on press,
+ * never on mount, scoped to the provider already in force. What changed is
+ * only `.chief-model-picker`'s own CSS: `app/globals.css` moved it from
+ * `flex-basis: 100%` in this composer's flow to `position: absolute` anchored
+ * to `.chief-model-chip` (the wrapper `composer.tsx` already draws around
+ * whatever this returns), opening upward the same direction the room does.
+ * Escape and an outside click both close it (§4.6 addition 3) — neither did
+ * before, because there was nothing to click outside of when the panel was
+ * simply the next row in the flow.
  */
-function ChiefModelLine({
+function ChiefModelChip({
   view,
   canAct,
   onChanged,
@@ -447,34 +514,83 @@ function ChiefModelLine({
   onChanged: () => void;
 }): ReactNode {
   const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement | null>(null);
+  const popover = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    function onDocumentKeyDown(event: globalThis.KeyboardEvent): void {
+      if (event.key === "Escape") {
+        setOpen(false);
+        trigger.current?.focus();
+      }
+    }
+    function onDocumentPointerDown(event: MouseEvent): void {
+      const target = event.target as Node;
+      if (trigger.current?.contains(target) === true || popover.current?.contains(target) === true) {
+        return;
+      }
+      setOpen(false);
+    }
+    document.addEventListener("keydown", onDocumentKeyDown);
+    document.addEventListener("mousedown", onDocumentPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onDocumentKeyDown);
+      document.removeEventListener("mousedown", onDocumentPointerDown);
+    };
+  }, [open]);
 
   if (view.model_id === null || view.model_provider_id === null) {
-    return (
-      <p className="chief-model-line muted">
-        {CHIEF_CHAT_COPY.no_model}{" "}
-        {canAct ? <Link href="/settings/ai">{CHIEF_CHAT_COPY.no_model_link}</Link> : null}
-      </p>
+    const title = canAct ? `${CHIEF_CHAT_COPY.no_model} ${CHIEF_CHAT_COPY.no_model_link}` : CHIEF_CHAT_COPY.no_model;
+    return canAct ? (
+      <Link className="chip chip-warn chip-link" href="/settings/ai" title={title}>
+        {CHIEF_CHAT_COPY.no_model_chip}
+      </Link>
+    ) : (
+      <span className="chip chip-warn" title={title}>
+        {CHIEF_CHAT_COPY.no_model_chip}
+      </span>
     );
   }
 
+  const title = describeChiefModelLine(view.model_is_own);
+  const label = (
+    <>
+      <span>{CHIEF_CHAT_COPY.model_chip_label}</span> <code className="value">{view.model_id}</code>
+    </>
+  );
+
   return (
-    <div className="chief-model-line">
-      <p className="muted">
-        {describeChiefModelLine(view.model_is_own)} <code className="value">{view.model_id}</code>
-      </p>
+    <>
       {canAct ? (
         <button
+          ref={trigger}
           type="button"
-          className="chief-model-swap"
+          className="chip chip-model"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          title={title}
           onClick={() => {
             setOpen((was) => !was);
           }}
         >
-          {CHIEF_CHAT_COPY.swap}
+          {label} <span aria-hidden="true">▾</span>
         </button>
-      ) : null}
+      ) : (
+        <span className="chip chip-model" title={title}>
+          {label}
+        </span>
+      )}
+      {view.model_is_own ? null : (
+        <span className="chip chip-muted" title={title}>
+          {CHIEF_CHAT_COPY.fleet_default_chip}
+        </span>
+      )}
       {open ? (
         <ChiefModelPicker
+          containerRef={popover}
           providerId={view.model_provider_id}
           modelId={view.model_id}
           onChanged={() => {
@@ -486,7 +602,7 @@ function ChiefModelLine({
           }}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -499,13 +615,20 @@ function ChiefModelLine({
  * `ModelDefault`'s own job on the AI tab in Settings, and this is a narrower
  * one — *change what the chief is already asking under*, not *choose among
  * everything DASH could ask under*.
+ *
+ * `containerRef` is `ChiefModelChip`'s own outside-click detection (MAR-742
+ * roadmap item 1, §4.6 addition 3) — attached to this component's own root
+ * rather than a wrapper `<div>` around it, so an empty flex item never lands
+ * in `.chief-model-chip`'s row for the one frame this panel is closed.
  */
 function ChiefModelPicker({
+  containerRef,
   providerId,
   modelId,
   onChanged,
   onClose,
 }: {
+  containerRef: RefObject<HTMLDivElement | null>;
   providerId: string;
   modelId: string;
   onChanged: () => void;
@@ -546,7 +669,7 @@ function ChiefModelPicker({
   const listed = models === null ? [modelId] : models.includes(modelId) ? models : [modelId, ...models];
 
   return (
-    <div className="chief-model-picker">
+    <div className="chief-model-picker" ref={containerRef}>
       <select
         className="field"
         value={modelId}
@@ -568,8 +691,26 @@ function ChiefModelPicker({
       <button type="button" className="button-secondary" onClick={onClose}>
         Done
       </button>
-      {outcome === null || outcome.ok ? null : (
-        <p className="notice-warn" role="status">
+      {/*
+        What the press produced, in both directions (MAR-742).
+
+        This panel used to render its outcome only when the ask **failed**, and
+        the two states that are not a failure both draw a control that looks
+        untouched: a provider that names nothing leaves `listed` as the single
+        model already in force, and a provider that names plenty adds options
+        inside a closed `select`. So the honest cases and the broken ones were
+        equally silent, and Henrik pressed *See what OpenRouter offers* on
+        2026-08-24 and watched nothing happen — the evidence addendum's second
+        defect. Silence is not a state this panel is allowed to have.
+
+        The sentences are `ModelDefault`'s and `ModelChoice`'s, word for word
+        rather than paraphrased: three renderers draw this button, the other two
+        already said these things, and a fourth wording of "the provider named
+        nothing" would be the first place the vocabulary split.
+      */}
+      <p className="muted wrap">{describeCatalogueResult(service, models)}</p>
+      {outcome === null || outcome.detail === "" ? null : (
+        <p className={outcome.ok ? "notice-ok" : "notice-warn"} role="status">
           {outcome.detail}
         </p>
       )}

@@ -1,0 +1,10 @@
+If something has stopped working
+DASH will read every key it holds back out of this computer’s vault, ask each service whether it still accepts it, and hand what still works to the background service. It changes no key and deletes nothing, so it is always safe to press.
+DASH re-read 2 connections and 1 of them needs your attention.
+DASH found nothing stored for Anthropic
+DASH looked in the folder below and there is no entry under this connection's name. If you have connected this service on this computer before, the folder DASH is reading now may not be the one it wrote to — that is worth checking before you paste the key again.
+DASH looked in C:\Users\henri\AppData\Local\Temp\ud-vault-refresh-20260824-2345\vault\dash-secret-dash.fleet.anthropic.account-1.api_key.enc
+Connect Anthropic again, or check the folder below first
+OpenRouter accepted the key DASH holds
+The key read back from this computer's vault and the service accepted it just now. That is all DASH asked: whether the key is accepted. It does not tell you the account has credit.
+The background service was given what DASH now holds, so the chief is working from the same keys you are.

@@ -37,6 +37,12 @@ import type {
   AgentCommandInput,
   AgentCommandResult,
 } from "../agent-dom/runner";
+import {
+  describeRefreshSummary,
+  describeRunnerDelivery,
+  toRefreshRows,
+  type ConnectionRefreshReport,
+} from "../ai/refresh";
 import type { ConnectionActionResult } from "../connection-actions";
 import type { AddAgentCard } from "../copy/add-agent";
 import type { Recovery } from "../copy/recovery";
@@ -1539,6 +1545,45 @@ export const COMMANDS = {
     mutates: true,
     irreversible: false,
   },
+  /*
+   * MAR-742, roadmap item 3. The worst-case recovery, and the only member of
+   * this family that names no provider.
+   *
+   * Appended last on this catalogue's standing rule — `tests/shell.test.ts`
+   * pins the whole list in order, so a new command goes at the end of its
+   * family and the diff a reviewer reads is one added entry rather than a
+   * reordering.
+   *
+   * **Why it is not `fleet.test` in a loop.** `fleet.test` asks one provider
+   * whether one credential still works. This asks three questions of every
+   * connection at once — does the vault still hand it back, does the provider
+   * still take it, and does the background service have it — and the third has
+   * no per-provider spelling at all: what reaches the runner is one
+   * configuration built from everything DASH holds. Somebody pressing *check*
+   * on each card in turn would still not have done this, which is exactly the
+   * gap that left a fixed key and a chief that could not use it.
+   *
+   * **No payload, deliberately.** Every other member names a provider, and a
+   * renderer able to name one here would be a renderer able to decide which
+   * credentials get re-delivered to the runner — a decision about what the
+   * chief can spend under, made on the untrusted side. It acts on what DASH
+   * holds, and what DASH holds is main's own answer.
+   *
+   * `mutates` is true and it understates nothing: it opens the vault, presents
+   * every key it reads to that key's provider over the network, records what
+   * each one said in the row a check writes, and posts a configuration carrying
+   * those keys to the runner. `irreversible` is false because nothing in the
+   * world changes — no message is sent, no money moves, and every credential it
+   * touches it only ever *reads*.
+   */
+  "fleet.refresh": {
+    effect:
+      "Read every sign-in and key DASH holds back out of this computer's vault, check each one with its service, and hand what still works to the background service. Changes no credential.",
+    payload_keys: [],
+    required_keys: [],
+    mutates: true,
+    irreversible: false,
+  },
 
   "agent.approve": {
     effect: "Approve a guarded action the agent is waiting on. The runner performs it.",
@@ -2137,6 +2182,31 @@ export function isFleetCommandName(value: CommandName): value is FleetCommandNam
 }
 
 /**
+ * The refresh, routed on its own (MAR-742).
+ *
+ * It carries the `fleet.` prefix because that is what it is about, and it is
+ * *not* a member of `FLEET_ACTIONS` because that map's whole shape is one verb
+ * against one connection resolved from a provider — `connectionAction` takes an
+ * agent, a connection and a field, and answers with one state and one masked
+ * hint. This asks about every connection at once and answers with a list, so
+ * routing it through that seam would mean either flattening the list into a
+ * verdict (which erases the one fact MAR-742 is about: connections failing
+ * individually) or widening a five-year-old signature every other caller is
+ * happy with.
+ *
+ * One member, named rather than string-matched, so the trusted-side switch and
+ * the preload are both exhaustive over it — every other family's reason.
+ */
+export const FLEET_REFRESH_COMMAND = "fleet.refresh" as const;
+export type FleetRefreshCommandName = typeof FLEET_REFRESH_COMMAND;
+
+export function isFleetRefreshCommandName(
+  value: CommandName,
+): value is FleetRefreshCommandName {
+  return value === FLEET_REFRESH_COMMAND;
+}
+
+/**
  * The server commands, and what each one asks main to do (MAR-536).
  *
  * Deliberately a sixth family rather than runner lifecycle: a runner is a
@@ -2221,6 +2291,7 @@ type UnroutedCommand = Exclude<
   | RunnerCommandName
   | ConnectionCommandName
   | FleetCommandName
+  | FleetRefreshCommandName
   | HostCommandName
   | ShellUiCommandName
   | BrowserCommandName
@@ -2523,6 +2594,12 @@ export function executeCommand(review: CommandReview): CommandResult {
     // window or contact a provider. Same reason as the line above it, on a
     // target that names no agent.
     isFleetCommandName(review.command) ||
+    // MAR-742. Opens the vault once per connection, reaches every one of their
+    // providers over the network, and posts a configuration carrying those keys
+    // to the runner. Succeeding here would be the worst lie in this list: a page
+    // whose entire job is reporting what the vault and the providers actually
+    // said would report that nothing was wrong, having asked nobody.
+    isFleetRefreshCommandName(review.command) ||
     isHostCommandName(review.command) ||
     isShellUiCommandName(review.command) ||
     // MAR-628. One moves a native `WebContentsView` and one destroys a Chromium
@@ -3217,6 +3294,21 @@ export interface DispatchContext {
    * closes forgets the catalogue, which is the property `ai_key_checks` was
    * designed to keep and the one thing here that could quietly stop being true.
    */
+  /**
+   * Re-read every connection, re-check it, and re-deliver it (MAR-742).
+   *
+   * Injected for the same reason as the seams around it and then some: it opens
+   * the vault, reaches every provider DASH holds a key for, and posts to the
+   * runner over its authenticated pipe. A sandboxed preload may do none of the
+   * three.
+   *
+   * It takes nothing. What gets refreshed is what DASH holds, which is main's
+   * own answer and not a renderer's — the point the command's catalogue entry
+   * argues at length, restated here because this signature is where it is
+   * actually enforced.
+   */
+  refreshConnections(): Promise<ConnectionRefreshReport>;
+
   modelAction(
     action: ModelAction,
     target: {
@@ -3460,6 +3552,40 @@ export async function dispatchCommand(
       detail: result.detail,
       recovery: result.recovery,
       data: { state: result.state, masked_hint: result.masked_hint ?? "" },
+    };
+  }
+
+  if (isFleetRefreshCommandName(review.command)) {
+    /*
+     * MAR-742. Nothing is copied off the payload, because the command declares
+     * none — see its catalogue entry for why a renderer must not be able to name
+     * which credentials get re-read and re-delivered.
+     *
+     * The report goes back whole, in `data`. It carries names, codes, causes,
+     * counts and one filesystem path per failed read; it carries no credential
+     * and nothing derived from one, which is a property of
+     * `ConnectionRefreshEntry` rather than of this line.
+     */
+    const report = await context.refreshConnections();
+    const rows = toRefreshRows(report);
+    return {
+      /*
+       * `ok` is about the press, not about the fleet. Asking every question and
+       * getting some unwelcome answers is this command working exactly as
+       * intended — a refused key is a *finding*, and reporting it as a failed
+       * command would put a red banner over the one surface whose job is to
+       * tell somebody calmly what is wrong. It is false only when nothing could
+       * be asked at all.
+       */
+      ok: rows.length === 0 || rows.some((row) => row["ok"] === true),
+      request_id: review.audit.request_id,
+      detail: describeRefreshSummary(report),
+      data: {
+        checked_at: report.checked_at,
+        delivery: report.delivery,
+        delivery_detail: describeRunnerDelivery(report.delivery),
+        connections: rows,
+      },
     };
   }
 

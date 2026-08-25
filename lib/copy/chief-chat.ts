@@ -63,7 +63,41 @@ export interface ChiefSentence {
 export const CHIEF_CHAT_COPY = {
   /** The room's heading, and the composer's accessible name. */
   heading: "Ask the chief",
+  /**
+   * The composer's accessible name (MAR-659; carried as an `aria-label`
+   * since MAR-742 roadmap item 1 rather than a visible line of its own — see
+   * `scope` below for the words a sighted reader now sees instead).
+   */
   label: "Ask the chief about your fleet",
+  /**
+   * The scope chip's own visible word (MAR-742 roadmap item 1).
+   *
+   * The proposal's own default was the fuller `FLEET · 5 AGENTS`; Henrik's
+   * ruling on it was shorter — just this word, matched by the agent's own
+   * name on that page's equivalent chip (`describeChatSubject`). `.chip`
+   * uppercases it on screen; `label` above stays the fuller sentence, still
+   * reachable as the chip's `title` and as its accessible name.
+   */
+  scope: "Fleet",
+  /** The model chip's own label word (MAR-742 roadmap item 1) — DASH's own
+   *  vocabulary, meant to shout, which is why one short word has no
+   *  long-label problem at any width. */
+  model_chip_label: "Model",
+  /**
+   * The companion chip beside the model chip when the chief is asking under
+   * the fleet default rather than its own pin (MAR-742 roadmap item 1).
+   *
+   * `describeChiefModelLine`'s own distinction, moved on screen rather than
+   * only into a `title`: `hidden text is still in the markup` is the trap a
+   * `title`-only rendering of this fact would be, because whether a question
+   * follows the fleet default or a separate pin is a fact that changes what
+   * changing the fleet default here will do — not detail a reader opts into.
+   */
+  fleet_default_chip: "Fleet default",
+  /** The no-model chip's own visible words (MAR-742 roadmap item 1),
+   *  replacing the standing `no_model` sentence as the chip's visible text —
+   *  the fuller sentence stays reachable as the chip's `title`. */
+  no_model_chip: "No model",
   /**
    * The placeholder, and it is doing real work.
    *
@@ -72,12 +106,16 @@ export const CHIEF_CHAT_COPY = {
    * first is a standing question it answers itself; the second is one it hands
    * to an agent. Somebody who types either gets the shape of the thing back.
    *
-   * MAR-696 removed the submit button — Henrik's own words, "No button." — so
-   * this is also the only place left that says how to send a question. The
-   * trailing clause is what the button used to say with its label rather than
-   * its position.
+   * MAR-696 removed the submit button — Henrik's own words, "No button." — and
+   * the trailing "Press Enter to ask." was, until MAR-742 roadmap item 1, the
+   * only place left saying how to send a question. It is replaced rather than
+   * simply deleted: the composer's own footer now carries a standing `↵ to
+   * ask` hint (`composer.tsx`), which is where the reference on the issue puts
+   * its key hints, and that hint needs no copy entry — it is chrome, the same
+   * treatment the `↵` glyph itself already gets — so this string is free to go
+   * back to naming only what a question can be about.
    */
-  placeholder: "What needs me? Or: who reads the news? Press Enter to ask.",
+  placeholder: "What needs me? Or: who reads the news?",
   /**
    * The scrollback's heading.
    *
@@ -179,12 +217,14 @@ export const CHIEF_CHAT_COPY = {
    * has to read as one.
    */
   clear_detail: "Clears what's shown here — the chief still remembers this conversation",
-  /** Under the model line, when nobody has set one anywhere. */
+  /**
+   * The no-model chip's fuller sentence — its `title` now (MAR-742 roadmap
+   * item 1), not a standing line of its own; `no_model_chip` above is what a
+   * sighted reader sees.
+   */
   no_model: "No model set yet.",
   /** The link out of `no_model`, to the one place a fleet default is set. */
   no_model_link: "Set one in Settings",
-  /** The swap control's own label. */
-  swap: "Swap",
   /** The swap panel's own way back to the fleet default. */
   swap_default: "Use the fleet default",
 } as const;
@@ -276,6 +316,22 @@ export function describeChiefNoModel(): { headline: string; meaning: string } {
  */
 export function describeChiefModelLine(own: boolean): string {
   return own ? "The chief's own model:" : "Asking under DASH's fleet default:";
+}
+
+/**
+ * The decisions chip's own words (MAR-742 roadmap item 1, §4.5).
+ *
+ * Absorbed from `app/page.tsx`'s own `<p class="fleet-decisions-note">`,
+ * unchanged in substance — same singular/plural split, same destination
+ * (`/decisions`) — moved from a full-width link under the fleet into the
+ * chip row above the composer. `text` is short, for the chip; `title` keeps
+ * the fuller sentence the link used to say outright, reachable rather than
+ * lost.
+ */
+export function describeDecisionsChip(total: number): { text: string; title: string } {
+  return total === 1
+    ? { text: "1 decision", title: "1 decision recorded — see the log" }
+    : { text: `${String(total)} decisions`, title: `${String(total)} decisions recorded — see the log` };
 }
 
 /* ---------------------------------------------------------------------- *

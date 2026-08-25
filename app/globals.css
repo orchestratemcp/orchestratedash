@@ -1319,6 +1319,26 @@ code {
   color: var(--accent);
 }
 
+/*
+ * MAR-742 roadmap item 1. The model chip's own internal layout — the "Model"
+ * word, the id, and (on the chief's own button) a disclosure arrow — none of
+ * which the base `.chip` rule lays out, since every other chip here is a
+ * single run of text. `.chip .value`'s own un-casing rule (above) already
+ * covers the id, wherever it lands inside this.
+ */
+.chip-model {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.chip-model .value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---------------------------------------------------------------------- *
  * The fleet card's four answers (MAR-586)
  *
@@ -7639,38 +7659,16 @@ main:has(.agent-cockpit) {
  *
  * One composer, adopted by two surfaces (MAR-711). The fleet's band and the
  * agent page's bar both draw through `Composer`, so the field, the room and
- * the model line are one grammar by construction — see "The composer,
- * adopted by both surfaces" below for the shared rules, and `.ask-model-line`
- * for the row that used to be `.ask-settings`. Neither moves when its room
+ * the chip rows are one grammar by construction — see "The composer, adopted
+ * by both surfaces" below for the shared rules. `.ask-setting`/
+ * `.ask-setting-change` — the row that used to be `.ask-settings` and then
+ * `.ask-model-line` — are gone rather than repurposed (MAR-742 roadmap item
+ * 1): the model fact they drew is a chip now, `.chief-model-chip,
+ * .ask-model-chip` below, generic `.chip`/`.chip-link` vocabulary doing the
+ * work a per-surface rule used to. Neither composer moves when its room
  * opens, which is the shape Henrik asked for and the one constraint every
  * rule below is written to keep.
  * ------------------------------------------------------------------------ */
-
-.ask-setting {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-/* The model id can be long. It truncates rather than pushing the change link
-   off the row — the id is recognition here, not something to be read out. */
-.ask-setting > code {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ask-setting-change {
-  flex: none;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
-.ask-setting-change:hover,
-.ask-setting-change:focus-visible {
-  color: var(--accent);
-}
 
 /*
  * What DASH is doing while a question is in flight, inside a room now rather
@@ -8197,6 +8195,23 @@ main:has(.agent-cockpit) {
   color: var(--warn);
 }
 
+/*
+ * MAR-742 roadmap item 1. Above the field, always — the reference's own
+ * placement for what it will send along with the message, and the words
+ * `.chief-subject`/`.ask-subject` used to spend a whole line on (the scope
+ * chip inside carries that now, `ChiefChips`'/`AskComposer`'s own note).
+ * `.chips` already ships this exact rule for other rows of chips in this
+ * stylesheet; this is its own combined declaration rather than a shared
+ * class, so `tests/composer-shared.test.tsx`'s `CHROME_PARTS` loop can hold
+ * it to the same-selector discipline every other composer-chrome rule gets.
+ */
+.chief-composer-chips,
+.ask-composer-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
 .chief-compose,
 .ask-compose {
   display: block;
@@ -8209,24 +8224,10 @@ main:has(.agent-cockpit) {
 }
 
 /*
- * MAR-659. Above the box, on screen whether the room is open or not — the
- * fact a person needs before they type a word: whose composer this is. Used
- * to be `visually-hidden` on both surfaces before MAR-659/MAR-711.
- */
-.chief-subject,
-.ask-subject {
-  display: block;
-  margin-bottom: var(--space-1);
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-}
-
-/*
  * The positioning parent for the enter glyph and (on the chief's own field)
  * the perched O — both anchor here rather than to `.chief-field`/`.ask-field`,
- * which also carries the visible subject caption above the field: a glyph
- * centred on this box is centred on the rounded field a person actually
- * sees, not on a taller box that includes a line of text above it.
+ * so a glyph centred on this box is centred on the rounded field a person
+ * actually sees.
  */
 .chief-input-wrap,
 .ask-input-wrap {
@@ -8318,68 +8319,114 @@ main:has(.agent-cockpit) {
 }
 
 /*
- * MAR-696, ADR 0023 amendment 1. Always drawn, whether the room is open or
- * closed — Henrik's own words, *"the chief's current model and a swap
- * control."* One line and one control, never a paragraph: this is not
- * `.chief-scope`, the standing explainer MAR-683 removed as chrome nobody
- * asked to see yet.
+ * MAR-696, ADR 0023 amendment 1, compacted by MAR-742 roadmap item 1. Always
+ * drawn, whether the room is open or closed — Henrik's own words, *"the
+ * chief's current model and a swap control."* One chip and one control,
+ * never a paragraph: this is not `.chief-scope`, the standing explainer
+ * MAR-683 removed as chrome nobody asked to see yet.
  *
- * `.ask-model-line` (MAR-711) is the agent's own version of the same row —
- * what used to be `.ask-settings`, which only ever showed while the composer
- * was idle and swapped places with `.ask-activity` the moment a question was
- * in flight. It is now always drawn too, the same standing fact the chief's
- * line already was: whose model a question will be asked under does not stop
- * being true while one is running.
+ * `justify-content: space-between` is the whole reason this is `.foot` and
+ * not `.chips` again: the model chip sits at the row's left end and the send
+ * hint at its right, the same split the reference draws between its own
+ * model control and its key hints.
  */
-.chief-model-line,
-.ask-model-line {
+.chief-composer-foot,
+.ask-composer-foot {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-top: var(--space-1);
-  font-size: var(--text-sm);
 }
 
-.chief-model-line p {
-  margin: 0;
+/*
+ * The wrapper `composer.tsx` draws around whatever `modelChip` returns.
+ * `position: relative` is why this is its own rule rather than folded into
+ * `.chief-composer-foot`: it is `.chief-model-picker`'s own anchor below, and
+ * the popover must not anchor to the whole footer row (which also holds the
+ * hint) or it would open from the wrong edge once the hint pushed the model
+ * chip off centre.
+ */
+.chief-model-chip,
+.ask-model-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
-.chief-model-swap {
-  padding: 0;
-  background: none;
-  border: 0;
-  color: var(--accent);
-  font: inherit;
-  font-size: var(--text-sm);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.chief-model-swap:hover,
-.chief-model-swap:focus-visible {
-  color: var(--text);
-}
-
-.chief-model-swap:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
+/*
+ * MAR-696, MAR-711. The send hint, replacing the placeholder's own trailing
+ * "Press Enter to ask." (`lib/copy/chief-chat.ts`'s own note) — decorative
+ * chrome rather than a sentence, `.chief-enter-glyph`'s own treatment, which
+ * is why it is a literal in `composer.tsx` rather than a copy-gated string.
+ * `flex: none` keeps it from wrapping onto its own line before the model
+ * chip does, at the width this composer is tightest.
+ */
+.chief-composer-hint,
+.ask-composer-hint {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
 }
 
 /*
  * The picker itself, asked for on press — see `ChiefModelPicker`'s own
- * header on why the list is fetched rather than loaded on mount. A full-width
- * row of its own rather than inline with the swap button: a `<select>`, a
- * fetch button and an outcome sentence do not fit one line at any width this
- * composer is drawn at.
+ * header on why the list is fetched rather than loaded on mount.
+ *
+ * `position: absolute; bottom: 100%` (MAR-742 roadmap item 1, replacing
+ * `flex-basis: 100%` in the composer's own flow): the proposal's own §4.3
+ * point 3 derived what opening this in-flow cost — a three-row wrap pushing
+ * everything under it down, ≈116px at 375 every single time — and
+ * `qa-screenshots-chatui-proposal-followup/before/composer-swap-open-*`
+ * measured it directly rather than leaving that derived. Opening upward is
+ * the same direction `.chief-room` already opens for the same reason: this
+ * composer's own bottom edge never moves once a person has found it.
+ * `left: 0` at every width keeps this anchored to the chip's own left edge
+ * rather than its right (the default for an absolutely positioned box with
+ * no `left` set) — the panel's contents are wider than the chip, so anchoring
+ * right would run it off whichever edge of the composer the chip is nearer
+ * to. `max-width` is viewport-relative rather than a percentage of the
+ * chip's own (deliberately narrow) box — see the rule's own comment for what
+ * measuring the first cut of this caught.
  */
 .chief-model-picker {
-  flex-basis: 100%;
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  z-index: 20;
+  margin-bottom: var(--space-1);
+  /*
+   * `min-width: max-content` was the first cut here, and `layout.json`'s own
+   * `picker_box` is what caught it: a flex container's max-content intrinsic
+   * width is the sum of every child laid out on *one* line, wrapping ignored
+   * — so it forced the panel to 535px regardless of `max-width`, which
+   * overflowed a 374px viewport by 23px (`page_overflows` at 375 measured
+   * `true` against this exact rule). No `min-width` at all lets the box
+   * shrink-to-fit under `max-width` instead, which is what actually lets
+   * `flex-wrap: wrap` wrap it.
+   *
+   * `calc(100vw - 2 * var(--space-4))` rather than a percentage of this
+   * box's own containing block (`.chief-model-chip`, deliberately narrow —
+   * it is sized to the chip's own content, not the composer's) — a
+   * percentage there would still be a small number. Viewport-relative is
+   * what makes "never draws a panel off the right edge" true at every width
+   * this composer is drawn at, not only the 375 case the proposal named.
+   */
+  max-width: min(18rem, calc(100vw - 2 * var(--space-4)));
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  margin-top: var(--space-1);
+  padding: var(--space-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
 }
 
 /* ---------------------------------------------------------------------- *

@@ -558,6 +558,21 @@ export function describeChatSubject(agent: string | null): string {
   return agent === null ? "Message this agent" : `Message ${agent}`;
 }
 
+/**
+ * The scope chip's own visible word, on the agent page (MAR-742 roadmap
+ * item 1).
+ *
+ * Henrik's ruling on the proposal's open question 3: the chief's own chip
+ * reads the one word `Fleet` (`CHIEF_CHAT_COPY.scope`), and this one reads
+ * the agent's own name — not `describeChatSubject`'s fuller "Message X",
+ * which stays the composer's accessible name (`subjectLabel`) rather than
+ * becoming the chip's visible text. Falls back to a generic word for the one
+ * caller with no resolved title yet, `describeChatSubject`'s own reason.
+ */
+export function describeAgentScopeChip(agent: string | null): string {
+  return agent ?? "This agent";
+}
+
 /* ---------------------------------------------------------------------- *
  * The room (MAR-711, adopted from `CHIEF_CHAT_COPY`)
  *
@@ -618,14 +633,12 @@ export function describeAskModel(fromDefault: boolean): string {
 export const ASK_MODEL_CHANGE = "Change in Settings";
 
 /**
- * The label on the settings row itself.
- *
- * "Asking under" and not "Model", because the row sits under a box somebody is
- * about to type a question into and the useful reading is the whole phrase —
- * *asking under `claude-sonnet-5`*. A bare "Model:" would be a form field on a
- * thing that is not a form.
+ * The model chip's own label word, on the agent page (MAR-742 roadmap item
+ * 1) — `CHIEF_CHAT_COPY.model_chip_label`'s own word, restated here rather
+ * than imported: `lib/copy/ask.ts`'s own header keeps this module's words
+ * independent of the chief's, and one short word costs nothing to repeat.
  */
-export const ASK_MODEL_LABEL = "Asking under";
+export const ASK_MODEL_CHIP_LABEL = "Model";
 
 /* ---------------------------------------------------------------------- *
  * While a question is in flight (MAR-648)

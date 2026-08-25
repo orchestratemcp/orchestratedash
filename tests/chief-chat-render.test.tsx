@@ -130,10 +130,16 @@ describe("the composer, collapsed", () => {
     expect(/<textarea[^>]*\sdisabled/.test(html)).toBe(false);
   });
 
-  it("says whose composer this is, in words a sighted reader sees too", () => {
+  /*
+   * MAR-659, compacted by MAR-742 roadmap item 1. `label`'s full sentence
+   * used to be the visible line itself; it is the scope chip's `title` and
+   * the field's `aria-label` now, and the chip's own short visible word is
+   * `scope` — see "the chip row, above the field" below for both halves of
+   * that claim.
+   */
+  it("keeps the composer's full sentence reachable, not deleted", () => {
     const html = chat();
     expect(html).toContain(CHIEF_CHAT_COPY.label);
-    expect(html).not.toContain(`<span class="visually-hidden">${CHIEF_CHAT_COPY.label}</span>`);
   });
 
   /* MAR-696. Claude Code's own composer, the reference on the issue: an enter
@@ -169,46 +175,60 @@ describe("the composer, collapsed", () => {
   });
 });
 
-describe("the model line, always drawn (MAR-696, ADR 0023 amendment 1)", () => {
-  it("names the chief's own pin, distinctly from the fleet default", () => {
+describe("the model chip, always drawn (MAR-696, ADR 0023 amendment 1; compacted MAR-742 roadmap item 1)", () => {
+  it("names the chief's own pin, distinctly from the fleet default, in the chip's title", () => {
     const html = chat({
       view: view({ can_ask: true, model_id: "claude-haiku-4-5-20251001", model_provider_id: "anthropic", model_is_own: true }),
     });
     expect(html).toContain("The chief&#x27;s own model:");
     expect(html).toContain("claude-haiku-4-5-20251001");
+    // Own pin — no FLEET DEFAULT companion chip beside it.
+    expect(html).not.toContain(CHIEF_CHAT_COPY.fleet_default_chip);
   });
 
-  it("names the fleet default when the chief has no pin of its own", () => {
+  it("names the fleet default when the chief has no pin of its own, and says so with a visible chip", () => {
     const html = chat({
       view: view({ can_ask: true, model_id: "gpt-5-mini", model_provider_id: "openai", model_is_own: false }),
     });
     expect(html).toContain("Asking under DASH&#x27;s fleet default:");
     expect(html).toContain("gpt-5-mini");
+    /*
+     * MAR-742 roadmap item 1, §4.1. The fact a `title` alone would hide —
+     * `hidden text is still in the markup` — so this checks for the visible
+     * companion chip, not only the attribute both cases carry.
+     */
+    expect(html).toContain(`class="chip chip-muted"`);
+    expect(html).toContain(CHIEF_CHAT_COPY.fleet_default_chip);
   });
 
-  it("draws the swap control only where a person can act", () => {
+  it("draws the model chip as a button, with a popover trigger, only where a person can act", () => {
     const withAccess = chat({
       canAct: true,
       view: view({ can_ask: true, model_id: "gpt-5-mini", model_provider_id: "openai", model_is_own: false }),
     });
-    expect(withAccess).toContain(CHIEF_CHAT_COPY.swap);
+    expect(withAccess).toMatch(/<button[^>]*class="chip chip-model"[^>]*aria-haspopup="dialog"/);
+    expect(withAccess).toContain(CHIEF_CHAT_COPY.model_chip_label);
 
     const readOnly = chat({
       canAct: false,
       view: view({ can_ask: true, model_id: "gpt-5-mini", model_provider_id: "openai", model_is_own: false }),
     });
-    expect(readOnly).not.toContain(CHIEF_CHAT_COPY.swap);
+    expect(readOnly).not.toMatch(/<button[^>]*class="chip chip-model"/);
+    expect(readOnly).toContain('<span class="chip chip-model"');
   });
 
-  it("says no model is set, and links to Settings only where a person can act", () => {
+  it("says no model is set with a warn chip, and links to Settings only where a person can act", () => {
     const withAccess = chat({ canAct: true });
+    expect(withAccess).toContain(CHIEF_CHAT_COPY.no_model_chip);
     expect(withAccess).toContain(CHIEF_CHAT_COPY.no_model);
     expect(withAccess).toContain(CHIEF_CHAT_COPY.no_model_link);
-    expect(withAccess).toContain('href="/settings/ai"');
+    expect(withAccess).toMatch(/<a[^>]*class="chip chip-warn chip-link"[^>]*href="\/settings\/ai"/);
 
     const readOnly = chat({ canAct: false });
+    expect(readOnly).toContain(CHIEF_CHAT_COPY.no_model_chip);
     expect(readOnly).toContain(CHIEF_CHAT_COPY.no_model);
     expect(readOnly).not.toContain(CHIEF_CHAT_COPY.no_model_link);
+    expect(readOnly).not.toContain('href="/settings/ai"');
   });
 
   it("is not `.chief-settings`, the standing scope note MAR-683 removed", () => {
@@ -218,6 +238,34 @@ describe("the model line, always drawn (MAR-696, ADR 0023 amendment 1)", () => {
     expect(html).not.toContain("chief-settings");
     expect(html).not.toContain("I read your own records");
     expect(html).not.toContain("Nothing said here is saved");
+  });
+});
+
+describe("the chip row, above the field (MAR-742 roadmap item 1)", () => {
+  it("draws the scope chip with the composer's full sentence as its title", () => {
+    const html = chat();
+    expect(html).toContain(`class="chip" title="${CHIEF_CHAT_COPY.label}"`);
+    expect(html).toContain(`>${CHIEF_CHAT_COPY.scope}<`);
+  });
+
+  it("carries the composer's accessible name as an aria-label now, not a visible line", () => {
+    const html = chat();
+    expect(html).toContain(`aria-label="${CHIEF_CHAT_COPY.label}"`);
+    expect(html).not.toContain('class="chief-subject"');
+  });
+
+  it("draws no decisions chip when there are none to show", () => {
+    const html = chat({ decisionsTotal: 0 });
+    expect(html).not.toContain('href="/decisions"');
+  });
+
+  it("draws a decisions chip, singular and plural, linking to the log", () => {
+    const one = chat({ decisionsTotal: 1 });
+    expect(one).toContain('href="/decisions"');
+    expect(one).toContain(">1 decision<");
+
+    const many = chat({ decisionsTotal: 5 });
+    expect(many).toContain(">5 decisions<");
   });
 });
 

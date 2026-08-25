@@ -1,0 +1,967 @@
+{
+  "captured_at": "2026-08-24T20:42:36.259Z",
+  "measurements": [
+    {
+      "surface": "composer",
+      "state": "collapsed",
+      "viewport": 1279,
+      "theme": "light",
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": false,
+      "room_box": null,
+      "o_box": {
+        "x": 949,
+        "y": 647,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 264,
+        "y": 689,
+        "width": 751,
+        "height": 48
+      },
+      "field_box": {
+        "x": 264,
+        "y": 689,
+        "width": 751,
+        "height": 53
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "picker_box": null,
+      "room_heading_visible": null,
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "composer",
+      "state": "expanded",
+      "viewport": 1279,
+      "theme": "light",
+      "composer_focused": true,
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_box": {
+        "x": 264,
+        "y": 277,
+        "width": 751,
+        "height": 384
+      },
+      "o_box": {
+        "x": 949,
+        "y": 647,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 264,
+        "y": 689,
+        "width": 751,
+        "height": 48
+      },
+      "field_box": {
+        "x": 264,
+        "y": 689,
+        "width": 751,
+        "height": 53
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "picker_box": null,
+      "room_heading_visible": "Ask the chief",
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "composer",
+      "state": "swap-open",
+      "viewport": 1279,
+      "theme": "light",
+      "swap_opened": true,
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_box": {
+        "x": 264,
+        "y": 177,
+        "width": 751,
+        "height": 384
+      },
+      "o_box": {
+        "x": 949,
+        "y": 547,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 264,
+        "y": 589,
+        "width": 751,
+        "height": 48
+      },
+      "field_box": {
+        "x": 264,
+        "y": 589,
+        "width": 751,
+        "height": 53
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "picker_box": {
+        "x": 264,
+        "y": 683,
+        "width": 751,
+        "height": 88
+      },
+      "room_heading_visible": "Ask the chief",
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "composer",
+      "state": "expanded-scrolled",
+      "viewport": "1280",
+      "theme": "light",
+      "scrolled": true,
+      "scroll_height": 4704,
+      "scroll_client_height": 326,
+      "head_visible": true,
+      "close_visible": true,
+      "clear_visible": true
+    },
+    {
+      "surface": "composer",
+      "state": "post-ask",
+      "viewport": "1280",
+      "theme": "light",
+      "asked": {
+        "asked": true
+      },
+      "page_loading": false,
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_found": true,
+      "turn_count": 11
+    },
+    {
+      "surface": "picker",
+      "state": "closed",
+      "viewport": 1279,
+      "theme": "light",
+      "page_overflows": false,
+      "field_found": true,
+      "picker_open": false,
+      "option_count": 0,
+      "option_animated": 0,
+      "pressed_count": 0
+    },
+    {
+      "surface": "picker",
+      "state": "open",
+      "viewport": 1279,
+      "theme": "light",
+      "opened": true,
+      "page_overflows": false,
+      "field_found": true,
+      "picker_open": true,
+      "option_count": 11,
+      "option_animated": 11,
+      "pressed_count": 1
+    },
+    {
+      "surface": "composer",
+      "state": "collapsed",
+      "viewport": 767,
+      "theme": "light",
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": false,
+      "room_box": null,
+      "o_box": {
+        "x": 677,
+        "y": 771,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 63,
+        "y": 813,
+        "width": 680,
+        "height": 48
+      },
+      "field_box": {
+        "x": 63,
+        "y": 813,
+        "width": 680,
+        "height": 53
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "picker_box": null,
+      "room_heading_visible": null,
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "composer",
+      "state": "expanded",
+      "viewport": 767,
+      "theme": "light",
+      "composer_focused": true,
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_box": {
+        "x": 63,
+        "y": 401,
+        "width": 680,
+        "height": 384
+      },
+      "o_box": {
+        "x": 677,
+        "y": 771,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 63,
+        "y": 813,
+        "width": 680,
+        "height": 48
+      },
+      "field_box": {
+        "x": 63,
+        "y": 813,
+        "width": 680,
+        "height": 53
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "picker_box": null,
+      "room_heading_visible": "Ask the chief",
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "composer",
+      "state": "swap-open",
+      "viewport": 767,
+      "theme": "light",
+      "swap_opened": true,
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_box": {
+        "x": 63,
+        "y": 301,
+        "width": 680,
+        "height": 384
+      },
+      "o_box": {
+        "x": 677,
+        "y": 671,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 63,
+        "y": 713,
+        "width": 680,
+        "height": 48
+      },
+      "field_box": {
+        "x": 63,
+        "y": 713,
+        "width": 680,
+        "height": 53
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "picker_box": {
+        "x": 63,
+        "y": 807,
+        "width": 680,
+        "height": 88
+      },
+      "room_heading_visible": "Ask the chief",
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "picker",
+      "state": "closed",
+      "viewport": 767,
+      "theme": "light",
+      "page_overflows": false,
+      "field_found": true,
+      "picker_open": false,
+      "option_count": 0,
+      "option_animated": 0,
+      "pressed_count": 0
+    },
+    {
+      "surface": "picker",
+      "state": "open",
+      "viewport": 767,
+      "theme": "light",
+      "opened": true,
+      "page_overflows": false,
+      "field_found": true,
+      "picker_open": true,
+      "option_count": 11,
+      "option_animated": 11,
+      "pressed_count": 1
+    },
+    {
+      "surface": "composer",
+      "state": "collapsed",
+      "viewport": 374,
+      "theme": "light",
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": false,
+      "room_box": null,
+      "o_box": {
+        "x": 292,
+        "y": 546,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 55,
+        "y": 588,
+        "width": 303,
+        "height": 65
+      },
+      "field_box": {
+        "x": 55,
+        "y": 588,
+        "width": 303,
+        "height": 70
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "picker_box": null,
+      "room_heading_visible": null,
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "composer",
+      "state": "expanded",
+      "viewport": 374,
+      "theme": "light",
+      "composer_focused": true,
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_box": {
+        "x": 55,
+        "y": 176,
+        "width": 303,
+        "height": 384
+      },
+      "o_box": {
+        "x": 292,
+        "y": 546,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 55,
+        "y": 588,
+        "width": 303,
+        "height": 65
+      },
+      "field_box": {
+        "x": 55,
+        "y": 588,
+        "width": 303,
+        "height": 70
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "picker_box": null,
+      "room_heading_visible": "Ask the chief",
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "composer",
+      "state": "swap-open",
+      "viewport": 374,
+      "theme": "light",
+      "swap_opened": true,
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_box": {
+        "x": 55,
+        "y": 76,
+        "width": 303,
+        "height": 384
+      },
+      "o_box": {
+        "x": 292,
+        "y": 446,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 55,
+        "y": 488,
+        "width": 303,
+        "height": 65
+      },
+      "field_box": {
+        "x": 55,
+        "y": 488,
+        "width": 303,
+        "height": 70
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "picker_box": {
+        "x": 55,
+        "y": 599,
+        "width": 303,
+        "height": 88
+      },
+      "room_heading_visible": "Ask the chief",
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "picker",
+      "state": "closed",
+      "viewport": 374,
+      "theme": "light",
+      "page_overflows": false,
+      "field_found": true,
+      "picker_open": false,
+      "option_count": 0,
+      "option_animated": 0,
+      "pressed_count": 0
+    },
+    {
+      "surface": "picker",
+      "state": "open",
+      "viewport": 374,
+      "theme": "light",
+      "opened": true,
+      "page_overflows": false,
+      "field_found": true,
+      "picker_open": true,
+      "option_count": 11,
+      "option_animated": 11,
+      "pressed_count": 1
+    },
+    {
+      "surface": "composer",
+      "state": "collapsed",
+      "viewport": 1279,
+      "theme": "dark",
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": false,
+      "room_box": null,
+      "o_box": {
+        "x": 949,
+        "y": 647,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 264,
+        "y": 689,
+        "width": 751,
+        "height": 48
+      },
+      "field_box": {
+        "x": 264,
+        "y": 689,
+        "width": 751,
+        "height": 53
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "picker_box": null,
+      "room_heading_visible": null,
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "composer",
+      "state": "expanded",
+      "viewport": 1279,
+      "theme": "dark",
+      "composer_focused": true,
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_box": {
+        "x": 264,
+        "y": 277,
+        "width": 751,
+        "height": 384
+      },
+      "o_box": {
+        "x": 949,
+        "y": 647,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 264,
+        "y": 689,
+        "width": 751,
+        "height": 48
+      },
+      "field_box": {
+        "x": 264,
+        "y": 689,
+        "width": 751,
+        "height": 53
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "picker_box": null,
+      "room_heading_visible": "Ask the chief",
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "composer",
+      "state": "swap-open",
+      "viewport": 1279,
+      "theme": "dark",
+      "swap_opened": true,
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_box": {
+        "x": 264,
+        "y": 177,
+        "width": 751,
+        "height": 384
+      },
+      "o_box": {
+        "x": 949,
+        "y": 547,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 264,
+        "y": 589,
+        "width": 751,
+        "height": 48
+      },
+      "field_box": {
+        "x": 264,
+        "y": 589,
+        "width": 751,
+        "height": 53
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "picker_box": {
+        "x": 264,
+        "y": 683,
+        "width": 751,
+        "height": 88
+      },
+      "room_heading_visible": "Ask the chief",
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "picker",
+      "state": "closed",
+      "viewport": 1279,
+      "theme": "dark",
+      "page_overflows": false,
+      "field_found": true,
+      "picker_open": false,
+      "option_count": 0,
+      "option_animated": 0,
+      "pressed_count": 0
+    },
+    {
+      "surface": "picker",
+      "state": "open",
+      "viewport": 1279,
+      "theme": "dark",
+      "opened": true,
+      "page_overflows": false,
+      "field_found": true,
+      "picker_open": true,
+      "option_count": 11,
+      "option_animated": 11,
+      "pressed_count": 1
+    },
+    {
+      "surface": "composer",
+      "state": "collapsed",
+      "viewport": 767,
+      "theme": "dark",
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": false,
+      "room_box": null,
+      "o_box": {
+        "x": 677,
+        "y": 771,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 63,
+        "y": 813,
+        "width": 680,
+        "height": 48
+      },
+      "field_box": {
+        "x": 63,
+        "y": 813,
+        "width": 680,
+        "height": 53
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "picker_box": null,
+      "room_heading_visible": null,
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "composer",
+      "state": "expanded",
+      "viewport": 767,
+      "theme": "dark",
+      "composer_focused": true,
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_box": {
+        "x": 63,
+        "y": 401,
+        "width": 680,
+        "height": 384
+      },
+      "o_box": {
+        "x": 677,
+        "y": 771,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 63,
+        "y": 813,
+        "width": 680,
+        "height": 48
+      },
+      "field_box": {
+        "x": 63,
+        "y": 813,
+        "width": 680,
+        "height": 53
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "picker_box": null,
+      "room_heading_visible": "Ask the chief",
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "composer",
+      "state": "swap-open",
+      "viewport": 767,
+      "theme": "dark",
+      "swap_opened": true,
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_box": {
+        "x": 63,
+        "y": 301,
+        "width": 680,
+        "height": 384
+      },
+      "o_box": {
+        "x": 677,
+        "y": 671,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 63,
+        "y": 713,
+        "width": 680,
+        "height": 48
+      },
+      "field_box": {
+        "x": 63,
+        "y": 713,
+        "width": 680,
+        "height": 53
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "picker_box": {
+        "x": 63,
+        "y": 807,
+        "width": 680,
+        "height": 88
+      },
+      "room_heading_visible": "Ask the chief",
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "picker",
+      "state": "closed",
+      "viewport": 767,
+      "theme": "dark",
+      "page_overflows": false,
+      "field_found": true,
+      "picker_open": false,
+      "option_count": 0,
+      "option_animated": 0,
+      "pressed_count": 0
+    },
+    {
+      "surface": "picker",
+      "state": "open",
+      "viewport": 767,
+      "theme": "dark",
+      "opened": true,
+      "page_overflows": false,
+      "field_found": true,
+      "picker_open": true,
+      "option_count": 11,
+      "option_animated": 11,
+      "pressed_count": 1
+    },
+    {
+      "surface": "composer",
+      "state": "collapsed",
+      "viewport": 374,
+      "theme": "dark",
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": false,
+      "room_box": null,
+      "o_box": {
+        "x": 292,
+        "y": 546,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 55,
+        "y": 588,
+        "width": 303,
+        "height": 65
+      },
+      "field_box": {
+        "x": 55,
+        "y": 588,
+        "width": 303,
+        "height": 70
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "picker_box": null,
+      "room_heading_visible": null,
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "composer",
+      "state": "expanded",
+      "viewport": 374,
+      "theme": "dark",
+      "composer_focused": true,
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_box": {
+        "x": 55,
+        "y": 176,
+        "width": 303,
+        "height": 384
+      },
+      "o_box": {
+        "x": 292,
+        "y": 546,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 55,
+        "y": 588,
+        "width": 303,
+        "height": 65
+      },
+      "field_box": {
+        "x": 55,
+        "y": 588,
+        "width": 303,
+        "height": 70
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "picker_box": null,
+      "room_heading_visible": "Ask the chief",
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "composer",
+      "state": "swap-open",
+      "viewport": 374,
+      "theme": "dark",
+      "swap_opened": true,
+      "page_overflows": false,
+      "composer_found": true,
+      "composer_is_open": true,
+      "room_box": {
+        "x": 55,
+        "y": 76,
+        "width": 303,
+        "height": 384
+      },
+      "o_box": {
+        "x": 292,
+        "y": 446,
+        "width": 50,
+        "height": 50
+      },
+      "input_box": {
+        "x": 55,
+        "y": 488,
+        "width": 303,
+        "height": 65
+      },
+      "field_box": {
+        "x": 55,
+        "y": 488,
+        "width": 303,
+        "height": 70
+      },
+      "o_is_action": true,
+      "overlap_area": 400,
+      "overlap_past_padding": -4,
+      "overlap_with_field": 400,
+      "model_line_found": true,
+      "picker_box": {
+        "x": 55,
+        "y": 599,
+        "width": 303,
+        "height": 88
+      },
+      "room_heading_visible": "Ask the chief",
+      "strip_found": true,
+      "strip_total": 5,
+      "strip_animated": 5
+    },
+    {
+      "surface": "picker",
+      "state": "closed",
+      "viewport": 374,
+      "theme": "dark",
+      "page_overflows": false,
+      "field_found": true,
+      "picker_open": false,
+      "option_count": 0,
+      "option_animated": 0,
+      "pressed_count": 0
+    },
+    {
+      "surface": "picker",
+      "state": "open",
+      "viewport": 374,
+      "theme": "dark",
+      "opened": true,
+      "page_overflows": false,
+      "field_found": true,
+      "picker_open": true,
+      "option_count": 11,
+      "option_animated": 11,
+      "pressed_count": 1
+    }
+  ]
+}

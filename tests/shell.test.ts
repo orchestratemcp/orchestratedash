@@ -409,6 +409,14 @@ describe("the audited command chokepoint", () => {
       // an account name or credential.
       "fleet.default",
       "fleet.assign",
+      // MAR-742. The only member of this family that names no provider, and the
+      // widest single press in the catalogue: it opens the vault once per
+      // connection, presents each key to its own provider, and hands the result
+      // to the runner. It is also the only one of the seven that cannot write,
+      // replace or delete a credential — which is the entire reason it exists,
+      // since the recovery it replaces (disconnect, then re-add) does all three
+      // in order to find out whether it needed to.
+      "fleet.refresh",
       "agent.approve",
       "agent.reject",
       "agent.choose",
@@ -770,6 +778,13 @@ describe("dispatch", () => {
       action: ScheduleAction;
       target: { agent_id: string; at_local?: string };
     }> = [];
+    // MAR-742. Recorded, not performed, for every reason above at once: the real
+    // implementation opens the vault once per connection, reaches each of their
+    // providers, and posts a configuration carrying those keys to the runner.
+    // The fake answers with one connection that read back fine, so the default
+    // is a *working* fleet and a test about a failed read has to say so rather
+    // than inherit it.
+    const refreshes: Array<{ at: string }> = [];
     return {
       chiefDiscord,
       schedules,
@@ -777,6 +792,7 @@ describe("dispatch", () => {
         schedules.push({ action, target });
         return Promise.resolve({ ok: true });
       },
+      refreshes,
       audited,
       inputs,
       lifecycle,
@@ -793,6 +809,26 @@ describe("dispatch", () => {
       modelAction: (action: ModelAction, target: Record<string, unknown>) => {
         models.push({ action, target });
         return Promise.resolve({ ok: true, detail: `${action} ok` });
+      },
+      refreshConnections: () => {
+        refreshes.push({ at: "2026-08-24T18:57:34.414Z" });
+        return Promise.resolve({
+          checked_at: "2026-08-24T18:57:34.414Z",
+          entries: [
+            {
+              provider_id: "openrouter",
+              account_id: "account-1",
+              service: "OpenRouter",
+              vault: { held: true } as const,
+              liveness: {
+                state: "live" as const,
+                checked_at: "2026-08-24T18:57:34.414Z",
+                model_count: 312,
+              },
+            },
+          ],
+          delivery: "delivered" as const,
+        });
       },
       notifications,
       labTelemetry,
@@ -1674,6 +1710,60 @@ describe("dispatch", () => {
         ["provider", "account_id"],
         ["provider", "account_id", "agent_id"],
       ]);
+    });
+
+    it("routes fleet.refresh to main and returns the per-connection report (MAR-742)", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(
+        { command: "fleet.refresh", request_id: "req-fleet-refresh", payload: {} },
+        ctx,
+      );
+
+      expect(ctx.refreshes).toHaveLength(1);
+      // It reaches its own seam and not `connectionAction`: the fleet verbs act
+      // on one connection resolved from a provider, and this one takes no
+      // provider at all.
+      expect(ctx.connections).toEqual([]);
+      expect(result.ok).toBe(true);
+      expect(result.detail).toContain("one connection");
+
+      // The report arrives flat, already worded, with one row per connection —
+      // the shape `CommandResult.data` allows and the reason it is kept flat.
+      const rows = result.data?.["connections"];
+      expect(Array.isArray(rows)).toBe(true);
+      expect(rows).toHaveLength(1);
+      expect((rows as Record<string, unknown>[])[0]).toMatchObject({
+        provider_id: "openrouter",
+        ok: true,
+      });
+      expect(result.data?.["delivery"]).toBe("delivered");
+    });
+
+    it("audits fleet.refresh as carrying no payload at all (MAR-742)", async () => {
+      /*
+       * The security property, pinned where it can regress. A renderer able to
+       * name a provider here would be a renderer choosing which credentials get
+       * read out of the vault and posted to the runner — so the command
+       * declares no payload keys, and one that arrives is refused rather than
+       * ignored.
+       */
+      const ctx = context();
+      await dispatchCommand(
+        { command: "fleet.refresh", request_id: "req-fleet-refresh-clean", payload: {} },
+        ctx,
+      );
+      expect(ctx.audited.at(-1)?.payload_keys).toEqual([]);
+
+      const smuggled = await dispatchCommand(
+        {
+          command: "fleet.refresh",
+          request_id: "req-fleet-refresh-smuggled",
+          payload: { provider: "openrouter" },
+        },
+        ctx,
+      );
+      expect(smuggled.ok).toBe(false);
+      expect(ctx.refreshes).toHaveLength(1);
     });
 
     it.each(["account", "email", "token", "secret"])(
