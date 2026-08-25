@@ -332,6 +332,43 @@ export const COMMANDS = {
   },
 
   /*
+   * MAR-785, ADR 0030. Whether Windows starts DASH's runner when a person signs
+   * in.
+   *
+   * **Its own prefix, beside `runner.*` rather than inside it**, and the line is
+   * the same one `sample.refresh` draws below. `runner.*` is a family of things
+   * done to a runner that exists — start an agent, stop one, ask what is held.
+   * These two are about a machine: what Windows will do at a moment when no
+   * runner, no DASH and no person is present. Folding them into `runner.*` would
+   * put "change my computer's startup settings" behind a prefix a reader has
+   * learnt means "talk to the process on the other end of the pipe".
+   *
+   * `autostart.set` is the only command in DASH that changes something outside
+   * DASH's own files and sends nothing anywhere. `irreversible` is false in the
+   * strict sense this flag means — switching it off is a complete undo of
+   * switching it on, and `writeAutostart` reads the value back rather than
+   * trusting that the write landed — but the effect outlives the app, which no
+   * other `mutates` command's does. That is why the Startup page shows the
+   * literal command line before the press rather than after it.
+   */
+  "autostart.status": {
+    effect: "Report whether this computer is set to start DASH's helper when you sign in.",
+    payload_keys: [],
+    required_keys: [],
+    mutates: false,
+    irreversible: false,
+  },
+  "autostart.set": {
+    effect:
+      "Add or remove DASH's helper from this computer's list of programs that start when you sign in. Starts nothing now and opens no window.",
+    payload_keys: ["enabled"],
+    payload_types: { enabled: "boolean" },
+    required_keys: ["enabled"],
+    mutates: true,
+    irreversible: false,
+  },
+
+  /*
    * MAR-576. Re-import an agent DASH itself scaffolded, from DASH's own current
    * template.
    *
@@ -1755,6 +1792,27 @@ export function isRunnerCommandName(value: CommandName): value is RunnerCommandN
 }
 
 /**
+ * The two commands about this computer's startup list (MAR-785, ADR 0030).
+ *
+ * A map of two beside a map of six, and the separation is the catalogue's own
+ * argument repeated: the runner family reaches a process, this one reaches
+ * Windows. A reviewer asking *"what in DASH changes something about the machine
+ * that outlives DASH?"* reads exactly this map, and it is two entries long on
+ * purpose.
+ */
+export const AUTOSTART_ACTIONS = {
+  "autostart.status": "status",
+  "autostart.set": "set",
+} as const;
+
+export type AutostartCommandName = keyof typeof AUTOSTART_ACTIONS;
+export type AutostartCommandAction = (typeof AUTOSTART_ACTIONS)[AutostartCommandName];
+
+export function isAutostartCommandName(value: CommandName): value is AutostartCommandName {
+  return Object.hasOwn(AUTOSTART_ACTIONS, value);
+}
+
+/**
  * The connection commands, and what each one asks main to do (MAR-383).
  *
  * A third family rather than more `runner.*` entries, for the reason the second
@@ -2289,6 +2347,7 @@ type UnroutedCommand = Exclude<
   CommandName,
   | AgentCommandChannelName
   | RunnerCommandName
+  | AutostartCommandName
   | ConnectionCommandName
   | FleetCommandName
   | FleetRefreshCommandName
@@ -2589,6 +2648,13 @@ export function executeCommand(review: CommandReview): CommandResult {
   if (
     isAgentCommandName(review.command) ||
     isRunnerCommandName(review.command) ||
+    // MAR-785, ADR 0030. Both reach `app.setLoginItemSettings`, which a
+    // sandboxed preload has no business calling and could not anyway. The write
+    // is the one that matters: succeeding here would tell somebody their
+    // computer now starts DASH's helper at sign-in while nothing had been added
+    // to any startup list — a promise about a machine, made by a process that
+    // touched nothing, and only discovered at the next reboot.
+    isAutostartCommandName(review.command) ||
     isConnectionCommandName(review.command) ||
     // MAR-593. Every one of them opens the vault, and three of them open a
     // window or contact a provider. Same reason as the line above it, on a
@@ -3054,6 +3120,23 @@ export interface DispatchContext {
    * module having to know that could happen.
    */
   runnerLifecycle(action: string, agentId: string | undefined): Promise<RunnerLifecycleResult>;
+  /**
+   * Read or change this computer's startup list (MAR-785, ADR 0030).
+   *
+   * Injected for the reason above it, and one more that is specific to this
+   * family: the real implementation calls `app.setLoginItemSettings`, which
+   * exists only on an Electron `app`. A test supplies a fake and asserts what
+   * the dispatcher passed it, which is the only way to check "off is honoured
+   * even when the entry is somebody else's" without a registry.
+   *
+   * `enabled` is `undefined` for `status`, which takes no payload. Narrowed
+   * rather than defaulted: a `status` that arrived with a default of `false`
+   * would be one refactor away from being a `set` nobody pressed.
+   */
+  autostartAction(
+    action: AutostartCommandAction,
+    enabled: boolean | undefined,
+  ): Promise<RunnerLifecycleResult>;
   /**
    * Connect, test or forget a credential for one declared connection (MAR-383).
    *
@@ -4277,6 +4360,40 @@ export async function dispatchCommand(
       ok: result.ok,
       request_id: review.audit.request_id,
       detail: result.detail,
+      data: result.data,
+    };
+  }
+
+  if (isAutostartCommandName(review.command)) {
+    /*
+     * MAR-785, ADR 0030. One boolean, and nothing else in the payload.
+     *
+     * So the widest thing a compromised renderer can do with this family is add
+     * or remove **the command DASH itself computes** from the startup list. It
+     * cannot choose the executable, cannot choose the arguments, and cannot
+     * enrol a checkout that `autostartRefusal` says may not enrol — every one of
+     * those is decided in `electron/autostart.ts` from `process.execPath` and
+     * `app.getAppPath()`, which no payload reaches. A renderer that flipped this
+     * on has arranged for DASH's own runner to start at the next sign-in, which
+     * is the thing the person could have pressed anyway.
+     *
+     * The narrowing is `=== true` rather than a cast for `lab.setEnabled`'s
+     * reason: an absent key must not read as `true`, and a string "false" must
+     * not either.
+     */
+    const enabled = review.payload["enabled"];
+    const result = await context.autostartAction(
+      AUTOSTART_ACTIONS[review.command],
+      enabled === undefined ? undefined : enabled === true,
+    );
+    return {
+      ok: result.ok,
+      request_id: review.audit.request_id,
+      detail: result.detail,
+      // Flat primitives, like every result on this channel: whether it is
+      // available, whether it is enrolled, whether Windows will honour it, and
+      // the literal command. No path a person could not already read in Task
+      // Manager, and no secret — this family never touches one.
       data: result.data,
     };
   }

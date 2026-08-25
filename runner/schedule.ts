@@ -70,6 +70,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { buildEnvelope } from "../lib/agent-dom/envelope";
 import {
   decideSchedule,
+  isLocalTime,
   missedRowFor,
   type AgentSchedule,
   type ScheduleSettlement,
@@ -213,6 +214,20 @@ export class RunnerSchedule {
    * reason — the runner has to be able to see an instruction being withdrawn.
    */
   configure(configuration: ScheduleConfiguration): void {
+    this.#apply(configuration);
+    this.#remember(configuration);
+  }
+
+  /**
+   * Hold a set without writing it down. `configure` does both.
+   *
+   * Split so that `restore` can put back what was already on disk without
+   * writing it there again — a row re-saved on every start would move
+   * `received_at` forward at every login and make the store's own record of
+   * "when DASH last told this runner anything" a record of when the runner last
+   * started, which is a different fact wearing the same column.
+   */
+  #apply(configuration: ScheduleConfiguration): void {
     this.#configuration = configuration;
     /*
      * Forget what this process settled for an agent DASH now agrees about.
@@ -226,6 +241,111 @@ export class RunnerSchedule {
         this.#settled.delete(agent);
       }
     }
+  }
+
+  /**
+   * Write down what DASH just said, so a runner that starts without DASH has it
+   * (MAR-785, ADR 0030 decision 5).
+   *
+   * ## Why this is written on every push and not only on a change
+   *
+   * The push arrives twelve times a minute while DASH is open, and this row is
+   * one small `INSERT OR REPLACE` against a table with one row. Comparing first
+   * would save those writes and would introduce the one bug this whole shape is
+   * built to avoid: a comparison is a closed statement about which fields matter,
+   * and a field added later that the comparison did not learn about would be a
+   * field that stops reaching the disk — silently, and only visibly after a
+   * reboot. ADR 0029 decision 2 refused a closed list of push triggers for the
+   * identical reason, and refusing one here keeps the two halves symmetrical.
+   *
+   * `received_at` is the runner's own clock rather than the injected one. The
+   * injected `now` exists so that *scheduling decisions* can be held still by a
+   * test; this column is not a scheduling decision, it is a note about when a
+   * message arrived, and a frozen clock in it would make a restored row claim to
+   * have arrived at whatever moment a test picked.
+   *
+   * Failure is logged and swallowed. A runner that could not write this down is
+   * a runner that will honour these schedules for as long as it lives and forget
+   * them at the next restart — worse than the alternative, and not worth
+   * refusing a push over.
+   */
+  #remember(configuration: ScheduleConfiguration): void {
+    const database = this.#options.database();
+    if (database === null) {
+      return;
+    }
+    try {
+      database
+        .prepare(
+          "INSERT INTO schedule_standing (id, configuration, received_at) VALUES (1, ?, ?) " +
+            "ON CONFLICT(id) DO UPDATE SET configuration = excluded.configuration, " +
+            "received_at = excluded.received_at",
+        )
+        .run(JSON.stringify(configuration), new Date().toISOString());
+    } catch (error: unknown) {
+      this.#options.log(
+        `[runner] the standing schedules could not be written down: ${describeError(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Put back what this runner was last told, before anything ticks (MAR-785,
+   * ADR 0030 decision 5).
+   *
+   * Called by `runner/main.ts` between opening the store and `start()`. Before
+   * this existed, a runner began life with an empty set and fired nothing until
+   * DASH opened and pushed — which was correct while DASH was the only thing
+   * that could start a runner, and became the whole of ADR 0029's third liveness
+   * sentence the moment Windows could start one at login.
+   *
+   * **The row is parsed, not trusted.** `readScheduleConfiguration` is the same
+   * function the channel's body goes through, and a row it calls malformed is
+   * discarded: a set this runner would have refused from DASH is a set it
+   * refuses from its own disk. Nothing throws — a runner that cannot read its
+   * own note is a runner in exactly the state it was in before this method
+   * existed, and DASH's next push repairs it.
+   *
+   * Returns whether anything was restored, for `runner/main.ts`'s log line and
+   * for the tests. That line is load-bearing evidence: after a reboot with DASH
+   * never opened, `runner.log` saying how many schedules came back is the only
+   * thing on the machine that says the login did something.
+   */
+  restore(): boolean {
+    const database = this.#options.database();
+    if (database === null) {
+      return false;
+    }
+    let raw: string;
+    try {
+      const row = database
+        .prepare("SELECT configuration FROM schedule_standing WHERE id = 1")
+        .get() as { configuration?: unknown } | undefined;
+      if (row === undefined || typeof row.configuration !== "string") {
+        return false;
+      }
+      raw = row.configuration;
+    } catch (error: unknown) {
+      this.#options.log(
+        `[runner] the standing schedules could not be read back: ${describeError(error)}`,
+      );
+      return false;
+    }
+
+    let body: unknown;
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      this.#options.log("[runner] the standing schedules on disk were not valid JSON; ignoring them");
+      return false;
+    }
+    const parsed = readScheduleConfiguration(body);
+    if (parsed === "malformed") {
+      this.#options.log("[runner] the standing schedules on disk were not understood; ignoring them");
+      return false;
+    }
+    this.#apply(parsed);
+    return parsed.schedules.length > 0;
   }
 
   /** Whether anything is standing, for `/health` and for the tests. */
@@ -568,4 +688,81 @@ export class RunnerSchedule {
 
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The schedules DASH pushed, checked field by field (MAR-742 item 8, ADR 0029).
+ *
+ * `readChiefConfiguration`'s discipline with one deliberate difference in how it
+ * fails. That function refuses the whole bridge on a bad member, because a
+ * bridge with no boundary is worse than no bridge. This one **drops the bad
+ * member and keeps the rest**, because the thing on the other side of a refusal
+ * here is every *other* agent's schedule silently not firing — and a scheduler
+ * that stops without saying so is the one failure mode ADR 0029 is written
+ * against.
+ *
+ * The check is not a duplicate of DASH's. `lib/schedule/store.ts` re-checks these
+ * columns on the way out of the store and this re-checks them on the way into
+ * the process that will start an agent at the time they name. Two boundaries, on
+ * two sides of a channel — `runner/execute.ts`'s own argument for repeating
+ * DASH's checks rather than trusting them.
+ *
+ * Moved here from `runner/server.ts` when it gained a second caller (MAR-785,
+ * ADR 0030): `RunnerSchedule.restore` parses the set this runner remembered
+ * across a restart with the same function that parses the set DASH pushes. A
+ * row off this machine's own disk gets no more trust than a body off the
+ * channel, and one implementation is what keeps that true.
+ */
+export function readScheduleConfiguration(body: unknown): ScheduleConfiguration | "malformed" {
+  if (typeof body !== "object" || body === null) {
+    return "malformed";
+  }
+  const record = body as Record<string, unknown>;
+  const rawSchedules = record["schedules"];
+  if (!Array.isArray(rawSchedules)) {
+    return "malformed";
+  }
+
+  const schedules: AgentSchedule[] = [];
+  for (const raw of rawSchedules) {
+    if (typeof raw !== "object" || raw === null) {
+      continue;
+    }
+    const entry = raw as Record<string, unknown>;
+    const agent = entry["agent"];
+    const at = entry["at_local"];
+    // `kind` is checked by value rather than coerced: a runner that met an
+    // unknown kind and treated it as daily would be honouring an instruction
+    // nobody wrote, at a time nobody picked.
+    if (
+      typeof agent !== "string" ||
+      agent.length === 0 ||
+      agent.length > 128 ||
+      entry["kind"] !== "daily" ||
+      typeof at !== "string" ||
+      !isLocalTime(at)
+    ) {
+      continue;
+    }
+    const createdAt = entry["created_at"];
+    schedules.push({
+      agent,
+      enabled: entry["enabled"] === true,
+      kind: "daily",
+      at_local: at,
+      created_at: typeof createdAt === "string" ? createdAt : "",
+    });
+  }
+
+  const rawSince = record["since"];
+  const since: Record<string, string> = {};
+  if (typeof rawSince === "object" && rawSince !== null) {
+    for (const [agent, value] of Object.entries(rawSince as Record<string, unknown>)) {
+      if (typeof value === "string" && value.length > 0) {
+        since[agent] = value;
+      }
+    }
+  }
+
+  return { schedules, since };
 }

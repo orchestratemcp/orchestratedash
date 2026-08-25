@@ -224,6 +224,21 @@ function sendNotificationKind(kind: string, enabled: boolean): Promise<CommandRe
  * one boolean and nothing else — the whole of what a renderer may say about the
  * one setting that lets anything leave this machine.
  */
+/**
+ * The fifth (MAR-785, ADR 0030). One boolean again, and the narrowest payload
+ * in the file: the executable, the arguments and whether this checkout may
+ * enrol at all are every one of them decided in `electron/autostart.ts` from
+ * `process.execPath` and `app.getAppPath()`. Nothing a renderer says reaches
+ * the command line that ends up in the registry.
+ */
+function sendAutostart(enabled: boolean): Promise<CommandResult> {
+  return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
+    command: "autostart.set",
+    request_id: requestId(),
+    payload: { enabled },
+  }) as Promise<CommandResult>;
+}
+
 function sendLabEnabled(enabled: boolean): Promise<CommandResult> {
   return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
     command: "lab.setEnabled",
@@ -825,6 +840,18 @@ const dashShell = {
    */
   runnerStatus: () => send("runner.status", {}),
   retireRunnerStore: () => send("runner.retireStore", {}),
+
+  /**
+   * This computer's startup list (MAR-785, ADR 0030).
+   *
+   * A pair rather than one method taking an optional boolean, because they are
+   * two different acts and the catalogue treats them as two: one is
+   * `mutates: false`, the other changes something that outlives DASH. A single
+   * method would put "read the state" and "change the machine" one argument
+   * apart, which is the shape a mis-wired page turns into a press nobody made.
+   */
+  autostartStatus: () => send("autostart.status", {}),
+  setAutostart: (enabled: boolean) => sendAutostart(enabled),
 
   /**
    * Start one registered agent's process on this computer (MAR-657).

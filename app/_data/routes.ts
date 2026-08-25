@@ -142,6 +142,22 @@ export const SETTINGS_TABS: readonly Surface[] = [
   { href: "/settings/reporting", label: "Reporting" },
   { href: "/settings/servers", label: "Servers" },
   { href: "/settings/add-agent", label: "Add agent" },
+  /*
+   * MAR-785, ADR 0030. The eighth, and it sits beside Preferences rather than
+   * inside it.
+   *
+   * `app/settings/preferences/page.tsx` opens with "how DASH looks, not what it
+   * does", and MAR-599 wrote that line as a boundary. Startup is the other kind
+   * of setting and the clearest case of it in the product: it decides what this
+   * computer does at a moment when DASH is not running and nobody is at the
+   * keyboard. A ninth row on Preferences would have put "add DASH to my
+   * computer's startup list" into the inventory of how the window looks.
+   *
+   * Adjacent to it anyway, because a person who has gone looking for a switch
+   * about the app itself rather than about an agent will try Preferences first,
+   * and the tab they want should be the next word along.
+   */
+  { href: "/settings/startup", label: "Startup" },
   { href: "/settings/preferences", label: "Preferences" },
 ];
 

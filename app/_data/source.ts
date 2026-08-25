@@ -350,6 +350,16 @@ interface DashShellClient {
   runnerStatus?(): Promise<CommandResult>;
   retireRunnerStore?(): Promise<CommandResult>;
   /**
+   * This computer's startup list (MAR-785, ADR 0030).
+   *
+   * Optional for the reason every method around it is, and the case is real
+   * rather than theoretical: the Startup tab exists only in a build that has
+   * these, so an older installed shell has to be told it cannot rather than
+   * shown a switch that throws.
+   */
+  autostartStatus?(): Promise<CommandResult>;
+  setAutostart?(enabled: boolean): Promise<CommandResult>;
+  /**
    * Start one registered agent's process on this computer (MAR-657).
    *
    * Optional for the reason everything around it is: an installed shell built
@@ -1527,6 +1537,31 @@ export async function checkRunnerStatus(): Promise<CommandResult> {
     return { ok: false, request_id: "", reason: "read_only_host", detail: "" };
   }
   return bridge.runnerStatus();
+}
+
+/**
+ * Read this computer's startup list, and change it (MAR-785, ADR 0030).
+ *
+ * `checkRunnerStatus`' shape above, twice, and for its reason: this is a fact
+ * about the machine rather than about any agent, so it is read through the
+ * command channel rather than added to a view. `read_only_host` is what a
+ * browser tab or an older shell gets, and `app/settings/startup/page.tsx` draws
+ * the "this needs the DASH app" notice for it rather than a dead switch.
+ */
+export async function checkAutostart(): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined || bridge.autostartStatus === undefined) {
+    return { ok: false, request_id: "", reason: "read_only_host", detail: "" };
+  }
+  return bridge.autostartStatus();
+}
+
+export async function setAutostart(enabled: boolean): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined || bridge.setAutostart === undefined) {
+    return { ok: false, request_id: "", reason: "read_only_host", detail: "" };
+  }
+  return bridge.setAutostart(enabled);
 }
 
 /**

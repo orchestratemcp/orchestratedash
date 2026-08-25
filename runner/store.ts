@@ -289,6 +289,54 @@ const MIGRATIONS: readonly string[] = [
     detail     TEXT NOT NULL DEFAULT ''
   );
   `,
+
+  /*
+   * The last set of schedules DASH pushed, so a runner that started without DASH
+   * has something to honour (MAR-785, ADR 0030 decision 5).
+   *
+   * ## Why this is not the second home ADR 0029 refused
+   *
+   * ADR 0029 decision 1 refused a `schedules/` directory beside the
+   * registrations, and the refusal was about **where a schedule lives**: it is
+   * edited on a page, shown on a page and deleted with its agent, every one of
+   * those is a `dash.sqlite` operation, and a file that also held it would be a
+   * second copy free to disagree with the page that owns it.
+   *
+   * That argument is untouched here. `agent_schedules` is still the only home,
+   * still the only thing any surface reads, and nothing writes this row except
+   * the arrival of a push. What this table holds is not a schedule; it is **what
+   * this runner was last told**, which is the same category as `runner_audit`
+   * holding what it was last asked to do. The row is a receipt the runner keeps
+   * for itself, and DASH overwrites it within five seconds of its window opening.
+   *
+   * ADR 0029 decision 2 said the runner keeps *nothing* of its own across a
+   * restart, and that sentence was true of a runner DASH always started. ADR
+   * 0030 makes the runner start without DASH, which removes the party that used
+   * to hand it its world — so it has to remember, and the whole of the staleness
+   * this introduces is bounded by "the schedules can only change while DASH is
+   * open, and DASH re-asserts them every five seconds while it is".
+   *
+   * ## Shape
+   *
+   * One row, enforced by the primary key rather than by whoever writes it, and
+   * the payload is the pushed document verbatim. Parsed with the same code the
+   * push is parsed with, so a shape this runner cannot read is a shape it also
+   * could not have accepted over the channel — see `restore` in
+   * `runner/schedule.ts`, which discards an unreadable row rather than throwing.
+   *
+   * A store that gets retired for damage (`retireDamagedStore`) loses this row,
+   * and that is an accepted degradation rather than an oversight: a runner with
+   * no memory of its instructions is exactly the runner that existed before this
+   * migration, and DASH's next push repairs it.
+   */
+  `
+  CREATE TABLE schedule_standing (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    -- The pushed document, verbatim: { schedules: [...], since: {...} }.
+    configuration TEXT NOT NULL,
+    received_at   TEXT NOT NULL
+  );
+  `,
 ];
 
 export interface RunnerStore {

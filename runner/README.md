@@ -378,6 +378,15 @@ Named here rather than discovered later:
    whatever that agent did last — it never watches for an exit and never reacts
    to one. An agent that crashes at 08:01 stays crashed until 08:00 tomorrow,
    which is the sentence above still holding rather than an exception to it.
+
+   **Nor is starting at login** (MAR-785, ADR 0030). Windows can now be asked —
+   by a person, opt-in, never by an installer — to start *this process* when
+   they sign in. It brings back the runner, not the agents: a machine that
+   restarted is every agent exiting, and a runner that comes up at login
+   supervises nothing until a schedule fires or somebody presses Run. The one
+   thing it does bring back is what it was last told, out of `schedule_standing`
+   in its own store, because the party that used to hand it that on every poll
+   is not running.
 4. **No retention.** Nothing prunes `command_nonces` or `command_results`, in
    the runner or in DASH. Deferred by the contract; still deferred.
 5. **The human is not independently authenticated.** The runner authenticates
