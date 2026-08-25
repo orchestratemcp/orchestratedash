@@ -145,13 +145,35 @@ function ensureOwnerOnlyDirectory(directory: string): void {
   }
 }
 
+/**
+ * Whether this file is owner-only and owned by this process, where that is a
+ * question the platform can answer (MAR-794).
+ *
+ * Null on a platform with no owner and no mode worth reading, which is not the
+ * same as false: `writeHostKey` refuses on false and reports the null, because
+ * "the proof failed" and "there was no proof to run" are two different things to
+ * say on a receipt. ADR 0004's shape, one module down.
+ */
+function ownerOnlyProof(file: string): boolean | null {
+  if (!hasPosixModes()) {
+    return null;
+  }
+  try {
+    const found = statSync(file);
+    const uid = process.getuid?.();
+    return (found.mode & 0o777) === 0o600 && (uid === undefined || found.uid === uid);
+  } catch {
+    return false;
+  }
+}
+
 function writeOwnerOnlyFile(file: string, bytes: Buffer): void {
   /*
    * Written beside and renamed into place, so a failure part-way leaves the
-   * previous file rather than a truncated one. `install-key` will need exactly
-   * this property for a key replacement — ADR 0018: *"Failure replacing an
-   * existing key leaves the previous shadow and says so"* — and building the
-   * pack's own writes on it means the primitive is the same one.
+   * previous file rather than a truncated one. `install-key` needs exactly this
+   * property for a key replacement — ADR 0018: *"Failure replacing an existing
+   * key leaves the previous shadow and says so"* — and building the pack's own
+   * writes on it means the primitive is the same one.
    */
   const temporary = `${file}.tmp`;
   writeFileSync(temporary, bytes, { mode: 0o600 });
@@ -395,25 +417,63 @@ export function readHostKey(
   }
 }
 
-export type HostKeyWrite = { ok: true } | { ok: false; detail: string };
+export type HostKeyWrite =
+  | {
+      ok: true;
+      /** Whether a key was already in this slot and has now been replaced. */
+      replaced: boolean;
+      /** Whether the owner-and-mode read-back actually ran. See `ownerOnlyProof`. */
+      owner_proved: boolean;
+    }
+  | {
+      ok: false;
+      detail: string;
+      /**
+       * Whether the key that was already in this slot is still there (MAR-794).
+       *
+       * ADR 0018: *"Failure replacing an existing key leaves the previous shadow
+       * in place and says so; it must never report 'not installed' merely
+       * because the new value failed."* This boolean is how a caller obeys that
+       * without re-reading the store and without guessing — false means the slot
+       * was empty before and is empty now; true means the previous value is
+       * still on that machine and is still spendable.
+       */
+      previous_kept: boolean;
+    };
 
 /**
  * Seal one key into the store.
  *
- * **This is a primitive, not a verb.** ADR 0018's `install-key` is the admitted
- * way a key crosses, it is MAR-625's to write, and it is not in this pack —
- * ADR 0021 rule 6 and the ceremony in ADR 0018 are what stand between this
- * function and a key. What the pack owes that verb is the store it writes into,
- * with the encryption, the modes and the proof already decided, so that the
- * session which builds the ceremony is not also inventing a file format.
- *
- * So the callers today are `install-key`, when it lands, and the tests that
- * prove the broker can read what was placed. Nothing in DASH calls it: there is
- * no IPC route, no command and no deploy verb that reaches it, and adding one
- * without the ceremony would be the bulk-sync ADR 0021 rule 6 forbids.
+ * **This is the primitive; `install-key` is the verb** (ADR 0018, MAR-794). The
+ * ceremony, the consent and the admission argument live above this function;
+ * what the pack owes them is the store, with the encryption, the modes and the
+ * proof already decided. Nothing in DASH's own process calls this — the only
+ * caller is `scripts/host-helper/main.ts`, on the host, answering one verb, and
+ * adding a second one on this side without the ceremony would be the bulk-sync
+ * ADR 0021 rule 6 forbids.
  *
  * It refuses when the pack is missing, which is ADR 0021's stated obligation:
  * a key written beside an absent wrapping key is a key nothing can ever read.
+ *
+ * ## The ordering, which is the whole of ADR 0018's steps 3 and 4
+ *
+ * The temporary file is written, chmodded and **proved** before the rename, and
+ * the final file is proved again after it. That order is not decoration.
+ *
+ * - **Failure before the rename leaves no new key.** The temporary is removed
+ *   and whatever was in the slot is untouched, which is the guarantee ADR 0018
+ *   asks for by name.
+ * - **A failed replacement never destroys the previous shadow.** The first cut
+ *   of this function proved the *final* file and `rmSync`'d it when the proof
+ *   failed, so a bad mode on a replacement deleted a working key and left the
+ *   slot empty — the one outcome ADR 0018 forbids twice. Proving the temporary
+ *   moves every reachable failure to before the atomic step.
+ * - **The post-rename proof still runs**, because a rename can land somewhere
+ *   that does not preserve a mode. If it fails, the slot holds the new value
+ *   under permissions this code cannot vouch for, so the answer is a refusal
+ *   saying the placement could not be proved — and still not a delete, because
+ *   deleting would turn an unproved key into no key at all on a machine nobody
+ *   is watching.
  */
 export function writeHostKey(
   hostRoot: string,
@@ -423,46 +483,109 @@ export function writeHostKey(
 ): HostKeyWrite {
   const proof = proveHostPack(hostRoot);
   if (!proof.ok) {
-    return { ok: false, detail: proof.detail };
+    return { ok: false, detail: proof.detail, previous_kept: false };
   }
   const file = hostKeyFile(hostRoot, bundleId, connectionId);
   if (file === null) {
-    return { ok: false, detail: "The declared key slot did not resolve below the pack's keys root." };
+    return {
+      ok: false,
+      detail: "The declared key slot did not resolve below the pack's keys root.",
+      previous_kept: false,
+    };
   }
   const wrapping = readWrappingKey(hostRoot);
   if (wrapping === null) {
-    return { ok: false, detail: "This server's host pack has no usable wrapping key." };
+    return {
+      ok: false,
+      detail: "This server's host pack has no usable wrapping key.",
+      previous_kept: false,
+    };
   }
+  // Read before anything is written: after the rename there is no way left to
+  // tell a replacement from a first placement.
+  const replaced = existsSync(file);
+  const temporary = `${file}.tmp`;
   try {
     ensureOwnerOnlyDirectory(path.dirname(file));
     const nonce = randomBytes(NONCE_BYTES);
     const cipher = createCipheriv("aes-256-gcm", wrapping, nonce);
     cipher.setAAD(Buffer.from(`${bundleId} ${connectionId}`, "utf8"));
     const body = Buffer.concat([cipher.update(Buffer.from(key, "utf8")), cipher.final()]);
-    // `nonce | tag | body`, which is what `readHostKey` slices back apart. The
-    // tag is read from the cipher only after `final`, which is the one ordering
-    // rule GCM has and the one a rewrite gets wrong.
-    writeOwnerOnlyFile(file, Buffer.concat([nonce, cipher.getAuthTag(), body]));
-
     /*
-     * Read the owner and the mode back, and refuse if either cannot be proved.
-     * ADR 0018 rule 3 requires exactly this and it is the reason `install-key`
-     * is a verb rather than a bundle file: a key that landed world-readable is
-     * a key on somebody's server that this code told them was owner-only.
+     * The separator inside the AAD above is a **NUL**, not a space. It is
+     * invisible in an editor and in a diff, it is why `grep` calls this file
+     * binary, and it has to be byte-identical to `readHostKey`'s — a rewrite
+     * that types a space here produces files this pack then refuses as
+     * `unusable`, which the broker reports as `revoked`, which reads on screen
+     * as a key somebody rotated at the provider. It cost one bisect to find.
+     *
+     * `nonce | tag | body`, which is what `readHostKey` slices back apart. The
+     * tag is read from the cipher only after `final`, which is the one ordering
+     * rule GCM has and the one a rewrite gets wrong.
      */
+    const sealed = Buffer.concat([nonce, cipher.getAuthTag(), body]);
+
+    writeFileSync(temporary, sealed, { mode: 0o600 });
     if (hasPosixModes()) {
-      const found = statSync(file);
-      const uid = process.getuid?.();
-      if ((found.mode & 0o777) !== 0o600 || (uid !== undefined && found.uid !== uid)) {
-        rmSync(file, { force: true });
-        return { ok: false, detail: "The key file's owner and permissions could not be proved." };
-      }
+      chmodSync(temporary, 0o600);
     }
-    return { ok: true };
+    /*
+     * ADR 0018 rule 3, on the temporary and therefore before the slot changes.
+     * A key that landed world-readable is a key on somebody's server that this
+     * code told them was owner-only, and finding that out one step earlier is
+     * the difference between refusing and having already replaced.
+     */
+    if (ownerOnlyProof(temporary) === false) {
+      rmSync(temporary, { force: true });
+      return {
+        ok: false,
+        detail: "The key file's owner and permissions could not be proved.",
+        previous_kept: replaced,
+      };
+    }
+
+    renameSync(temporary, file);
+    if (hasPosixModes()) {
+      chmodSync(file, 0o600);
+    }
+    const proved = ownerOnlyProof(file);
+    if (proved === false) {
+      return {
+        ok: false,
+        detail: "The key file's owner and permissions could not be proved.",
+        // The rename already happened, so the slot holds the *new* value under
+        // permissions nothing vouched for. "The previous one was kept" would be
+        // false and "nothing is installed" is the sentence ADR 0018 forbids;
+        // neither is said, and the caller's copy names the third case.
+        previous_kept: false,
+      };
+    }
+    return { ok: true, replaced, owner_proved: proved === true };
   } catch (error: unknown) {
+    /*
+     * The cleanup must not become the failure.
+     *
+     * [[eperm-on-temp-cleanup-is-a-live-child]] and MAR-702 are both the same
+     * shape: a tidy-up that throws replaces a diagnosable refusal with a crash,
+     * and here the crash would land on the one path that has to be able to say
+     * *"the key that was already there is still there"*. `rmSync` throws on a
+     * directory without `recursive`, and a directory is exactly what a crashed
+     * previous attempt can leave at this name — so it is recursive, and it is
+     * wrapped, and whatever it could not remove is left for the next attempt
+     * rather than raised over the real error.
+     */
+    try {
+      rmSync(temporary, { force: true, recursive: true });
+    } catch {
+      /* the write's own failure is the one worth reporting */
+    }
     return {
       ok: false,
       detail: `The key could not be written: ${(error as { code?: string } | null)?.code ?? "unknown reason"}.`,
+      // Everything above the rename leaves the slot alone, and the two
+      // statements after it cannot throw in a way that removes a file. So a
+      // throw means the previous value, if there was one, is still there.
+      previous_kept: replaced,
     };
   } finally {
     wrapping.fill(0);

@@ -332,6 +332,13 @@ describe("the audited command chokepoint", () => {
       // the moment of the press and the host adjudicates it again.
       "host.run",
       "host.bringHome",
+      // MAR-794, ADR 0018. The first command in this whole list whose press
+      // moves a credential the user owns to a machine DASH does not administer,
+      // and the only one declared `irreversible` because of what it *creates*
+      // rather than what it destroys. Four payload keys, all of them names: the
+      // key is read from the vault in main and has no route through this
+      // boundary in either direction.
+      "host.installKey",
       "host.forget",
       // MAR-434. A fifth family, addressing the runner's task workspace over
       // routes the runner already served and proof 9 already exercised. Note
@@ -988,7 +995,8 @@ describe("dispatch", () => {
           | { label: string; address: string; username: string; port: number }
           | { host_id: string }
           | { host_id: string; fingerprint: string }
-          | { host_id: string; agent_id: string },
+          | { host_id: string; agent_id: string }
+          | { host_id: string; agent_id: string; connection_id: string; fingerprint: string },
       ) => {
         hosts.push({ action, target });
         switch (action) {
@@ -1075,6 +1083,25 @@ describe("dispatch", () => {
               detail:
                 "This agent is no longer on My server. Everything that server still had is on " +
                 "this computer now. It had no files there to bring back.",
+            });
+          /*
+           * MAR-794, ADR 0018. The one host answer that comes back from a press
+           * that moved a credential, and the property this fixture exists to
+           * hold is the same one `run`'s does, one direction over: there is no
+           * `key` here because `HostActionResult` has no member it could go in.
+           * A fixture that could return one would be a boundary that could.
+           */
+          case "installKey":
+            return Promise.resolve({
+              ok: true as const,
+              action,
+              host_id: "host-fake-1",
+              label: "My server",
+              agent_id: "fixture-agent",
+              connection_id: "models",
+              placed_on: "20 August 2026",
+              replaced: false,
+              detail: "The key is on My server. DASH cannot see or take back what uses it there.",
             });
           case "forget":
             return Promise.resolve({
@@ -1581,6 +1608,33 @@ describe("dispatch", () => {
         },
       },
       {
+        command: "host.installKey",
+        payload: {
+          host_id: "host-fake-1",
+          agent_id: "fixture-agent",
+          connection_id: "models",
+          fingerprint: "SHA256:fixture",
+        },
+        action: "installKey",
+        target: {
+          host_id: "host-fake-1",
+          agent_id: "fixture-agent",
+          connection_id: "models",
+          fingerprint: "SHA256:fixture",
+        },
+        result: {
+          detail: "The key is on My server. DASH cannot see or take back what uses it there.",
+          data: {
+            host_id: "host-fake-1",
+            label: "My server",
+            agent_id: "fixture-agent",
+            connection_id: "models",
+            placed_on: "20 August 2026",
+            replaced: false,
+          },
+        },
+      },
+      {
         command: "host.forget",
         payload: { host_id: "host-fake-1" },
         action: "forget",
@@ -1596,6 +1650,10 @@ describe("dispatch", () => {
         "host.deploy",
         "host.run",
         "host.bringHome",
+        // MAR-794, ADR 0018. The ninth, and the only host action whose press
+        // moves a credential outward. Pinned here for `DEPLOY_VERBS`' reason: a
+        // family that grows quietly is a family that was never closed.
+        "host.installKey",
         "host.forget",
       ]);
       const ctx = context();

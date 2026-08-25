@@ -70,6 +70,9 @@
  * - `pack` — which host pack this helper carries. The ninth (MAR-629, ADR 0021),
  *   and the only verb that asks about the machine rather than about a bundle.
  *   See below.
+ * - `install-key` — put one declared provider key in the host secret store. The
+ *   tenth (MAR-794, ADR 0018), and the only verb that carries a **user's**
+ *   credential towards the host. See below.
  *
  * ## The seventh, and why the set opened once (MAR-602, ADR 0014 amendment 1)
  *
@@ -190,11 +193,63 @@
  * helper is too old to know the question. `lib/deploy/host-pack.ts` is where
  * those two become one verdict, and it deliberately cannot produce a third.
  *
- * **What it is not.** It is not `install-key` (ADR 0018's verb, and still
- * unimplemented), and it is not a way to reach the host broker. The host broker
+ * **What it is not.** It is not `install-key` (ADR 0018's verb, added below as
+ * the tenth), and it is not a way to reach the host broker. The host broker
  * answers the agent beside it, on that machine, and has no route on this plane
  * or on the control plane — see ADR 0021 section 5, and the test at the bottom
  * of `tests/deploy-bridge.test.ts` that checks no verb is broker-shaped.
+ *
+ * ## The tenth, and the first verb that carries a user's credential (MAR-794, ADR 0018)
+ *
+ * Nine verbs move programs, questions and one machine-minted session secret.
+ * This one moves **a key the person owns**, in the DASH → host direction, and it
+ * is the only widening in this file whose first admission answer is *yes*.
+ *
+ * **Why it is a verb rather than a bundle file.** ADR 0014 amendment 1 already
+ * settled it and `checkDeployRequest` below is where the settlement lives: bundle
+ * modes are the closed pair `0644` / `0755`, and admitting `0600` for one file
+ * *"would put a hole in the closed set to avoid opening a closed set"*. A key
+ * arriving as bundle material would also make a re-`install` decide key custody
+ * by accident, which is the thing ADR 0018 spends its length refusing.
+ *
+ * **What narrows it to something smaller than a secret uploader.** Four things,
+ * and they are the reason this is admissible at all:
+ *
+ * - the bundle must already be installed on that host, so a key cannot be left
+ *   as a host-wide loose secret at a path nobody chose;
+ * - the bundle's agent must **declare** the named need — the helper reads the
+ *   manifest it already holds, so a caller cannot invent a slot and use this as
+ *   arbitrary encrypted file transfer;
+ * - the helper chooses the location. `bundle_id` and `connection_id` are
+ *   identifiers over the alphabet below, joined to a root the helper picked and
+ *   re-checked for containment afterwards (`runner/host-pack.ts`);
+ * - the request's field set is **closed** — `checkDeployRequest` refuses a
+ *   surplus member rather than ignoring it, so there is no path, filename, mode,
+ *   environment variable, command or executable a caller can name. That refusal
+ *   is stricter than every other verb's on purpose: elsewhere a surplus field is
+ *   a caller with a different model of the verb, and here it is the shape an
+ *   attempt to widen this into remote execution would arrive in.
+ *
+ * **Held to ADR 0014's three questions, and the first answer is the uncomfortable
+ * one.** (1) *Does it carry a credential in either direction?* **Yes, DASH to
+ * host**, once, after a per-key and per-host press. It carries no broker token
+ * and returns no credential — `DeployAnswer`'s `install-key` member below has no
+ * room for one. (2) *Does it choose what runs, or only which?* Neither. It
+ * chooses which already-installed agent copy receives which need it already
+ * declared; the helper still chooses the path and the runner still chooses what
+ * runs. (3) *Can DASH describe the result honestly afterwards?* **Yes, but only
+ * as custody**: DASH can say its enrolled helper accepted an owner-only
+ * placement at a time, and it can never describe, meter or revoke a provider
+ * call made with the copied key. Every receipt says so, which is why
+ * `lib/copy/host-pack.ts` and not this file owns the sentence.
+ *
+ * **Where the value is, and where it is not.** On stdin, inside the same JSON
+ * envelope every other verb's arguments travel in — never argv, which is the
+ * rule this file opens with and which matters more here than anywhere else. The
+ * `key` member is the only field in this module that is a value rather than a
+ * name, and no `detail` string produced below quotes it, no answer carries it
+ * back, and `electron/host-install-key.ts` is the only thing on this side that
+ * ever holds one.
  */
 export const DEPLOY_VERBS = [
   "install",
@@ -206,6 +261,7 @@ export const DEPLOY_VERBS = [
   "channel",
   "uninstall",
   "pack",
+  "install-key",
 ] as const;
 
 export type DeployVerb = (typeof DEPLOY_VERBS)[number];
@@ -233,6 +289,90 @@ export function isDeployVerb(candidate: string): candidate is DeployVerb {
  * root it chose.
  */
 const IDENTIFIER = /^[a-z0-9][a-z0-9_-]{2,63}$/;
+
+/* ---------------------------------------------------------------------- *
+ * The reserved bundle id (MAR-794, ADR 0018 amendment 1)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The bundle id for key slots that belong to **no bundle**.
+ *
+ * ## Why this is decided here rather than where it is first needed
+ *
+ * The host secret store is keyed `keys/{bundle_id}/{connection_id}`. The chief
+ * belongs to no bundle, so the obvious move — a null or empty `bundle_id` for a
+ * chief-owned slot — is available, cheap and wrong.
+ * [[connection-secrets-null-agent-is-a-trap]] is the local version of that
+ * mistake already made once: `connection_secrets` allowed a NULL agent, the
+ * primary key made the row unusable, and the repair was a reserved string. The
+ * same trap is open here — `hostKeyFile` joins the two ids into a path, and a
+ * null would join as the literal `"null"` or collapse the directory level
+ * entirely, depending on which caller got there first.
+ *
+ * So a **reserved string** the alphabet above can spell. Containment
+ * re-checking after the join works unchanged, a receipt can name which
+ * placement it is talking about, and nothing anywhere has to branch on absence.
+ *
+ * ## Why no bundle can ever collide with it
+ *
+ * `checkDeployRequest` refuses it as the `bundle_id` of **every** verb except
+ * `install-key`. So `install` cannot create a bundle under this name, `status`
+ * cannot be pointed at one, and `uninstall` cannot remove one — which means the
+ * orphan accounting in `lib/deploy/placements.ts` can treat a placement under
+ * this id as *never orphaned* without also having to prove no bundle shares the
+ * name. It is a name a bundle cannot have rather than a name no bundle happens
+ * to have.
+ *
+ * A hyphenated name and not a leading underscore or a `$`: the alphabet refuses
+ * both, and a reserved id the identifier check cannot spell would need its own
+ * exemption in every validator — which is the hole this constant exists to avoid
+ * rather than to open.
+ */
+export const RESERVED_HOST_BUNDLE_ID = "dash-host-reserved";
+
+/**
+ * The slots admitted under the reserved bundle id, as a closed set.
+ *
+ * **Empty in this packet, and the emptiness is the decision.** MAR-794 places
+ * keys for *agents*, where the narrowing is the agent's own declaration: the
+ * helper reads the manifest it already holds and refuses a need the document
+ * does not name. A reserved slot has no manifest, so the only thing that can
+ * narrow it is a list — and a list shipped with speculative names on it would be
+ * an open door with a comment above it.
+ *
+ * A later packet that needs one adds it here, and the addition is a diff a
+ * reviewer reads, which is `DEPLOY_VERBS`' own discipline applied to slots. Two
+ * of those names are already foreseen — ADR 0028's chief holds a Discord bot
+ * token and a model key, and a host chief will need both from a store rather
+ * than from memory — and neither is written here, because the packet that puts
+ * a chief on a server is the packet that must argue for them.
+ *
+ * **One constraint that packet inherits and should meet deliberately.** A wire
+ * `connection_id` is an identifier over the alphabet above, and the chief's
+ * local connection id is `chief:model-provider` — a colon, which the alphabet
+ * cannot spell. That is not an oversight to route around with a wider alphabet:
+ * the alphabet is what stops an id becoming a path. The chief's slot needs a
+ * wire name chosen on purpose, and finding that out here is cheaper than finding
+ * it out against a live host.
+ */
+export const RESERVED_HOST_SLOTS: readonly string[] = [];
+
+/** Whether this id names the reserved, bundle-less placement owner. */
+export function isReservedHostBundle(candidate: string): boolean {
+  return candidate === RESERVED_HOST_BUNDLE_ID;
+}
+
+/**
+ * The longest key this plane will carry.
+ *
+ * The same ceiling `lib/ai/credential.ts` puts on a stored key, restated rather
+ * than imported: this module is the one the **helper** runs, and a bound that
+ * arrived from a module about DASH's vault would be a bound the host's copy of
+ * the check could drift from. A provider key is a few dozen bytes; eight
+ * kilobytes is far more than one needs and far less than a way to fill a disk
+ * one JSON envelope at a time.
+ */
+export const MAX_KEY_CHARS = 8 * 1024;
 
 /** A file inside a bundle, as it travels. */
 export interface BundleFile {
@@ -328,6 +468,31 @@ export interface UninstallRequest {
 export interface PackRequest {
   verb: "pack";
 }
+/**
+ * Put one declared provider key in the host secret store (MAR-794, ADR 0018).
+ *
+ * Four members and `checkDeployRequest` refuses a fifth. That closed field set
+ * is the type-level half of ADR 0018's *"the request cannot name a path,
+ * filename, mode, environment variable, command or executable"* — there is
+ * nowhere for one to go, and a request that tries is refused rather than having
+ * the surplus quietly dropped.
+ *
+ * `bundle_id` names an installed bundle, or `RESERVED_HOST_BUNDLE_ID` for a slot
+ * that belongs to no bundle. `connection_id` names a need that bundle's agent
+ * **declared**; the helper proves that against the manifest it already holds, so
+ * this field selects among facts the agent's own document contains rather than
+ * inventing one.
+ *
+ * `key` is the only value in this module. It travels inside the stdin envelope
+ * with everything else — never argv — is written once by the helper and never
+ * returned, and appears in no `detail` string this file produces.
+ */
+export interface InstallKeyRequest {
+  verb: "install-key";
+  bundle_id: string;
+  connection_id: string;
+  key: string;
+}
 
 export type DeployRequest =
   | InstallRequest
@@ -338,7 +503,8 @@ export type DeployRequest =
   | ConnectRequest
   | ChannelRequest
   | UninstallRequest
-  | PackRequest;
+  | PackRequest
+  | InstallKeyRequest;
 
 /* ---------------------------------------------------------------------- *
  * The check, run on both ends
@@ -350,7 +516,27 @@ export type DeployRequestProblem =
   | "malformed_files"
   | "malformed_mode"
   | "too_large"
-  | "malformed_lines";
+  | "malformed_lines"
+  /**
+   * The `bundle_id` was `RESERVED_HOST_BUNDLE_ID` on a verb that is about
+   * bundles (MAR-794). Its own problem rather than `malformed_identifier`,
+   * because the id is perfectly well formed and the refusal is about what it
+   * names — and because a caller reading "must be 3-64 characters of lowercase
+   * letters" would go looking for a typo that is not there.
+   */
+  | "reserved_identifier"
+  /**
+   * `install-key` carried something that was not one non-empty key of admissible
+   * length, or carried a field this verb does not have (MAR-794).
+   *
+   * One problem for both, deliberately. A caller that sent `path`, `mode` or
+   * `environment` alongside the key has a model of this verb that does not match
+   * ADR 0018's, and splitting the refusal would invite a reader to think one of
+   * those halves is nearly allowed. The `detail` never quotes the value and
+   * never says which surplus field it saw — a name a request chose is a string
+   * from a machine DASH does not administer, headed for a log.
+   */
+  | "malformed_key";
 
 export type DeployRequestCheck =
   | { ok: true; request: DeployRequest }
@@ -413,6 +599,71 @@ export function checkDeployRequest(candidate: unknown): DeployRequestCheck {
     }
   } else if (!isIdentifier(bundleId)) {
     return identifierProblem("bundle_id");
+  }
+
+  /*
+   * The reserved id names a place for keys that belong to no bundle, and no
+   * bundle may ever be there (MAR-794).
+   *
+   * Refused on every verb but `install-key`, which is what makes
+   * `RESERVED_HOST_BUNDLE_ID`'s guarantee structural rather than conventional:
+   * `install` cannot create a directory under it, `uninstall` cannot remove one,
+   * and `status` cannot report one — so a placement recorded against it has no
+   * bundle to lose and the orphan accounting can say so without a second check.
+   */
+  if (
+    verb !== "install-key" &&
+    typeof bundleId === "string" &&
+    isReservedHostBundle(bundleId)
+  ) {
+    return {
+      ok: false,
+      problem: "reserved_identifier",
+      detail: "That name is reserved for keys that belong to no agent, and no agent may use it.",
+    };
+  }
+
+  if (verb === "install-key") {
+    if (!isIdentifier(request["connection_id"])) {
+      return identifierProblem("connection_id");
+    }
+    const key = request["key"];
+    if (typeof key !== "string" || key.length === 0 || key.length > MAX_KEY_CHARS) {
+      // Never the length that arrived and never a fragment of the value. The
+      // ceiling is DASH's own number and is safe to state; anything measured
+      // from what was sent is a fact about a secret.
+      return {
+        ok: false,
+        problem: "malformed_key",
+        detail: `A key is between 1 and ${String(MAX_KEY_CHARS)} characters.`,
+      };
+    }
+    // eslint-disable-next-line no-control-regex -- the point is to refuse them.
+    if (/[\u0000-\u001f\u007f]/.test(key)) {
+      return {
+        ok: false,
+        problem: "malformed_key",
+        detail: "A key is a single line of ordinary characters.",
+      };
+    }
+    /*
+     * The closed field set, and the strictest check in this function.
+     *
+     * Every other verb tolerates a member it does not read. This one refuses
+     * one, because the surplus field is precisely the shape ADR 0018 forbids —
+     * a path, a filename, a mode, an environment variable, a command — and a
+     * verb that ignored them would be a verb whose refusal depends on nobody
+     * later reading the field somebody already sent.
+     */
+    for (const field of Object.keys(request)) {
+      if (field !== "verb" && field !== "bundle_id" && field !== "connection_id" && field !== "key") {
+        return {
+          ok: false,
+          problem: "malformed_key",
+          detail: "A key placement names the agent and the need it satisfies, and nothing else.",
+        };
+      }
+    }
   }
 
   if (verb === "collect") {
@@ -586,4 +837,38 @@ export type DeployAnswer =
    * caller cannot accidentally treat a missing pack as a present one.
    */
   | { ok: true; verb: "pack"; pack_version: number }
+  /**
+   * One key placed, as the only thing the host says about it (MAR-794, ADR 0018).
+   *
+   * **Nothing here is the key and nothing here is derived from it.** Not the
+   * value, not a digest, not a length, not a prefix. ADR 0018 refuses the digest
+   * by name and gives the reason: *"a stable fingerprint of a low-entropy or
+   * reused credential would become another identifier to protect and is not
+   * needed to name the user's local key record"* — DASH already knows which of
+   * its own records it sent, so a fingerprint would buy nothing and cost a new
+   * secret-adjacent value on the wire, in a log and in a receipt.
+   *
+   * `replaced` is the difference between the first placement in a slot and one
+   * over an existing shadow. It changes what the receipt says — a replacement
+   * makes the previous receipt historical rather than adding a second placement
+   * — and it is a fact only the helper can know, because DASH's record of what
+   * it placed can be older than the host.
+   *
+   * `owner_proved` is whether the read-back of uid and mode actually ran. On
+   * Linux — the only platform a host is — it is always true, because
+   * `writeHostKey` refuses rather than returning false. It is false only where
+   * the platform has no owner to prove, which is a developer's Windows machine
+   * running the fixture, and reporting that honestly is `runner/host-pack.ts`'s
+   * standing rule: *"reports which happened rather than claiming a proof nobody
+   * performed."*
+   */
+  | {
+      ok: true;
+      verb: "install-key";
+      bundle_id: string;
+      connection_id: string;
+      placed_at: string;
+      replaced: boolean;
+      owner_proved: boolean;
+    }
   | { ok: false; problem: string; detail: string };

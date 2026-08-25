@@ -12,6 +12,7 @@
  * ssh host channel    <- hands back the credential that pipe is spoken with
  * ssh host uninstall  <- takes one bundle off this machine
  * ssh host pack       <- which host pack these bytes carry
+ * ssh host install-key <- put one declared provider key in the secret store
  * ```
  *
  * ## The pack, and why this program lays it down (MAR-629, ADR 0021)
@@ -94,15 +95,19 @@ import os from "node:os";
 import path from "node:path";
 
 import { PACK_UNPROVED } from "../../lib/deploy/host-pack";
+import { checkKeySlot, describeKeySlotRefusal } from "../../lib/deploy/key-placement";
+import type { ConnectionSourceManifest } from "../../lib/connections";
 import {
   MAX_COLLECT_LINES,
+  RESERVED_HOST_BUNDLE_ID,
   checkDeployRequest,
   type DeployAnswer,
   type DeployRequest,
   type HostBundleStatus,
+  type InstallKeyRequest,
   type InstallRequest,
 } from "../../lib/deploy/verbs";
-import { ensureHostPack, proveHostPack } from "../../runner/host-pack";
+import { ensureHostPack, proveHostPack, writeHostKey } from "../../runner/host-pack";
 import { containedIn, inspectComponent } from "../../runner/path-guard";
 
 /* ---------------------------------------------------------------------- *
@@ -735,6 +740,150 @@ function pack(root: string): DeployAnswer {
 }
 
 /* ---------------------------------------------------------------------- *
+ * install-key — the only verb that receives a credential (MAR-794, ADR 0018)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What the bundle's agent declared, read off this machine's own copy.
+ *
+ * The manifest `install` wrote, at the path `lib/deploy/folder-bundle.ts` puts
+ * it. Read here rather than taken from the request, which is the whole of
+ * ADR 0018's step 1: *"proves the bundle record exists and its agent declares
+ * the named need"*. A request that carried the declaration would be a request
+ * that declared itself.
+ *
+ * Null for anything that is not a readable JSON document. It is not validated
+ * against the manifest schema — `checkKeySlot` reads one list off it and
+ * `connectableFields` already skips a connection it cannot understand, and
+ * running the full validator here would let a schema this build tightened refuse
+ * a key for an agent that is running perfectly well on that server.
+ */
+function bundleManifest(root: string, bundleId: string): ConnectionSourceManifest | null {
+  const file = path.join(bundleDirectory(root, bundleId), "agent", "agent.manifest.json");
+  if (!containedIn(bundleDirectory(root, bundleId), file)) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+    // Cast rather than validated, for the reason above. `connectableFields`
+    // reads two optional members off it and skips whatever it cannot
+    // understand, so a document that is merely an object is enough to answer
+    // the one question this verb asks of it.
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as ConnectionSourceManifest)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Put one declared provider key in this host's secret store.
+ *
+ * ADR 0018's five steps, in order, and the order is the decision rather than the
+ * implementation:
+ *
+ * 1. **the pack, then the bundle, then the declaration** — three refusals before
+ *    a byte of the value is touched. The pack first because a key written beside
+ *    an absent wrapping key is a key nothing can ever read, and because
+ *    `host_pack_too_old` has an exit a person can take;
+ * 2. **owner-only parents**, created and re-chmodded, with containment
+ *    re-checked after the join;
+ * 3. **a temporary `0600` file**, written without a text conversion, its owner
+ *    and mode read back;
+ * 4. **an atomic rename**, and the final file proved again;
+ * 5. **a secret-free receipt**, and only after the final proof succeeded.
+ *
+ * Steps 2 to 5 are `writeHostKey`, which is where they were already written —
+ * the pack owed this verb the store, with the encryption, the modes and the
+ * proof decided, so that this session was not also inventing a file format.
+ * What is here is step 1 and the answer.
+ *
+ * ## What this function never does with the value
+ *
+ * It does not log it, echo it, hash it, measure it, or put it in a refusal. The
+ * only expression that touches `request.key` is the one that hands it to
+ * `writeHostKey`, and every `detail` below is a constant or comes from a module
+ * that has never seen the value. That is checkable rather than promised: the
+ * blocking proof in `tests/install-key.test.ts` drives this branch with a key it
+ * then greps for across the captured command line, the answer, both output
+ * streams and the whole error path.
+ *
+ * ## No fall-through, ever
+ *
+ * A pack that cannot be proved is `PACK_UNPROVED` and stops. It does not become
+ * an `install`, it does not write a bundle file with the key in it, and it does
+ * not leave a directory behind for a retry to find. ADR 0021 section 4:
+ * *"Do not fall through. An old helper that cannot answer `pack` cannot receive
+ * `install-key` either; both stops name the setup step."*
+ */
+function installKey(root: string, request: InstallKeyRequest): DeployAnswer {
+  const proved = proveHostPack(root);
+  if (!proved.ok) {
+    return { ok: false, problem: PACK_UNPROVED, detail: proved.detail };
+  }
+
+  const record = readRecord(root, request.bundle_id);
+  const reserved = request.bundle_id === RESERVED_HOST_BUNDLE_ID;
+  if (!reserved && record === null) {
+    /*
+     * ADR 0018: *"An installed bundle must already exist. A key cannot be placed
+     * at a free host path or left as a host-wide loose secret."* This is that
+     * sentence, and it is also what stops the verb creating a directory named by
+     * a caller under the tree with the keys in it.
+     */
+    return {
+      ok: false,
+      problem: "not_installed",
+      detail: "Nothing is installed under that name on this server, so there is nothing to place a key for.",
+    };
+  }
+
+  const slot = checkKeySlot(
+    record?.agent_id ?? request.bundle_id,
+    request.bundle_id,
+    reserved ? null : bundleManifest(root, request.bundle_id),
+    request.connection_id,
+  );
+  if (!slot.ok) {
+    return {
+      ok: false,
+      problem: slot.refusal,
+      detail: describeKeySlotRefusal(slot.refusal),
+    };
+  }
+
+  const written = writeHostKey(root, request.bundle_id, request.connection_id, request.key);
+  if (!written.ok) {
+    return {
+      ok: false,
+      problem: "key_not_placed",
+      /*
+       * ADR 0018: a failed *replacement* *"must never report 'not installed'
+       * merely because the new value failed"*. So the sentence about the
+       * previous shadow is appended here, from a boolean the write returned,
+       * rather than being left to a caller that would have to ask the store
+       * again to find out — and asking again is a read path into the secret
+       * tree that this decision deliberately does not create.
+       */
+      detail: written.previous_kept
+        ? `${written.detail} The key that was already there is still there and can still be used.`
+        : written.detail,
+    };
+  }
+
+  return {
+    ok: true,
+    verb: "install-key",
+    bundle_id: request.bundle_id,
+    connection_id: request.connection_id,
+    placed_at: new Date().toISOString(),
+    replaced: written.replaced,
+    owner_proved: written.owner_proved,
+  };
+}
+
+/* ---------------------------------------------------------------------- *
  * Small mechanics
  * ---------------------------------------------------------------------- */
 
@@ -949,6 +1098,9 @@ export async function runHelper(argv: string[]): Promise<number> {
       return 0;
     case "pack":
       answer(pack(root));
+      return 0;
+    case "install-key":
+      answer(installKey(root, request));
       return 0;
     case "connect":
       // Unreachable: handled above, before stdin was read. Checked rather than

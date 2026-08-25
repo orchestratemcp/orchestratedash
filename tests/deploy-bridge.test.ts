@@ -219,7 +219,20 @@ describe("the closed verb set", () => {
      * question the old bytes cannot answer, and an unknown verb is the only
      * thing on this plane with that property.
      *
-     * A tenth arriving without a line here is a verb nobody decided to add.
+     * The tenth is the first verb that carries a **user's** credential, in the
+     * DASH-to-host direction, and it is the only one whose first admission
+     * answer is *yes*. What belongs in this list is the reason that is
+     * admissible rather than the whole argument: enrolment already did the
+     * expensive work — DASH minted a distinct key, a person confirmed the
+     * server's fingerprint, and `authorized_keys` binds that key to a forced
+     * command — so `sshd` reaches a program with a closed vocabulary whatever a
+     * client asks for. That makes the channel good enough to carry a decision
+     * that is explicit about changing custody. It does not make a provider key
+     * ordinary deploy data, which is why ADR 0018 spends its length on the
+     * ceremony, the owner-only write and the receipt rather than on the
+     * transport.
+     *
+     * An eleventh arriving without a line here is a verb nobody decided to add.
      */
     expect([...DEPLOY_VERBS]).toEqual([
       "install",
@@ -231,6 +244,7 @@ describe("the closed verb set", () => {
       "channel",
       "uninstall",
       "pack",
+      "install-key",
     ]);
   });
 

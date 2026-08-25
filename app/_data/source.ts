@@ -124,6 +124,20 @@ export interface HostDeployCommandTarget extends HostCommandTarget {
  * on this machine, which is why it is representable here when a key or a path
  * is not.
  */
+/**
+ * One saved server, one agent copy on it, one declared need, and the identity
+ * the consent frame displayed (MAR-794, ADR 0018).
+ *
+ * Four names and no value. There is nowhere in this shape for a key, which is
+ * why it is its own type rather than `HostDeployCommandTarget` with two more
+ * fields: a reader counting the ways a credential could leave this process
+ * should be able to see that this is not one of them.
+ */
+export interface HostKeyCommandTarget extends HostDeployCommandTarget {
+  connection_id: string;
+  fingerprint: string;
+}
+
 export interface HostTrustCommandTarget extends HostCommandTarget {
   fingerprint: string;
 }
@@ -527,6 +541,8 @@ interface DashShellClient {
    * target on it.
    */
   runAgentOnHost?(args: HostDeployCommandTarget): Promise<CommandResult>;
+  /** MAR-794, ADR 0018. Four names; the value never crosses this bridge. */
+  installKeyOnHost?(args: HostKeyCommandTarget): Promise<CommandResult>;
   /**
    * Take the copy that is on a server back (MAR-611, ADR 0017).
    *
@@ -1992,12 +2008,26 @@ export async function submitHostCommand(
   target: HostCommandTarget,
 ): Promise<CommandResult>;
 export async function submitHostCommand(
-  action: "create" | "probe" | "trust" | "setup" | "deploy" | "run" | "bringHome" | "forget",
+  action: "installKey",
+  target: HostKeyCommandTarget,
+): Promise<CommandResult>;
+export async function submitHostCommand(
+  action:
+    | "create"
+    | "probe"
+    | "trust"
+    | "setup"
+    | "deploy"
+    | "run"
+    | "bringHome"
+    | "installKey"
+    | "forget",
   target:
     | HostCreateCommandArgs
     | HostCommandTarget
     | HostTrustCommandTarget
-    | HostDeployCommandTarget,
+    | HostDeployCommandTarget
+    | HostKeyCommandTarget,
 ): Promise<CommandResult> {
   const bridge = typeof window === "undefined" ? undefined : window.dashShell;
   if (bridge === undefined) {
@@ -2080,6 +2110,16 @@ export async function submitHostCommand(
         };
       }
       return bridge.bringAgentHome(target as HostDeployCommandTarget);
+    case "installKey":
+      if (bridge.installKeyOnHost === undefined) {
+        return {
+          ok: false,
+          request_id: "",
+          reason: "read_only_host",
+          detail: "This version of the DASH app cannot put a key on a server yet.",
+        };
+      }
+      return bridge.installKeyOnHost(target as HostKeyCommandTarget);
     case "forget":
       if (bridge.forgetHost === undefined) {
         return {

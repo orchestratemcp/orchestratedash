@@ -26,7 +26,15 @@ import {
   type AgentHostStanding,
 } from "../../lib/host-sighting";
 import { describeBringHome } from "../../lib/copy/bring-home";
-import type { AgentDeployChoice, SavedServerView } from "../../lib/views/types";
+import {
+  HOST_READY_AND_EMPTY,
+  describeForgettingWithKeys,
+  describeKeyPlacementFrame,
+  describeOrphanedKeys,
+  describePlacedKey,
+} from "../../lib/copy/host-pack";
+import { standingForPlacements } from "../../lib/deploy/key-placement";
+import type { AgentDeployChoice, KeyOfferView, SavedServerView } from "../../lib/views/types";
 
 /**
  * A saved server, as a card you manage (MAR-574).
@@ -85,6 +93,19 @@ export interface ServerCardActions {
    * naming the act.
    */
   bringHome(agentId: string): void;
+  /**
+   * Put one key DASH holds on this server, for one agent copy (MAR-794, ADR 0018).
+   *
+   * Called only after `KeyPlacementCeremony` has been read and its affirmative
+   * button pressed — the same shape `bringHome` has for its own confirmation,
+   * and for a stronger reason: this is the one press on this card whose
+   * consequence nothing in this product can undo.
+   *
+   * The fingerprint the frame displayed travels with it, so main can refuse when
+   * the record has been re-pinned since. There is no key in this signature and
+   * nowhere for one: the renderer has never held the value.
+   */
+  installKey(offer: { agent: string; connection_id: string; fingerprint: string }): void;
 }
 
 export function ServerCard({
@@ -125,6 +146,15 @@ export function ServerCard({
    * the card's other irreversible action.
    */
   const [confirmBringHome, setConfirmBringHome] = useState<string | null>(null);
+  /**
+   * The key placement being consented to, or null (MAR-794, ADR 0018).
+   *
+   * One at a time, like `confirmBringHome` beside it, and here the rule is
+   * ADR 0018's rather than the card's: *"A second key or a second host is a
+   * second ceremony."* Two frames open at once would be one press away from
+   * being one ceremony for two keys.
+   */
+  const [placing, setPlacing] = useState<KeyOfferView | null>(null);
 
   const copy = describeConnectState(standing);
   const chip = standingChip(standing);
@@ -252,6 +282,48 @@ export function ServerCard({
       )}
 
       {/*
+        MAR-794, ADR 0018. What this server holds of yours, and the one press
+        that puts something there.
+
+        Below what is on the server and above the identity, which is the order a
+        person reads the card in: an agent has to be here before a key can be
+        placed for it, and the identity is the thing the ceremony below quotes.
+      */}
+      <KeysOnThisServer
+        server={server}
+        standing={standing}
+        busy={busy}
+        canAct={canAct}
+        onPlace={setPlacing}
+      />
+
+      {placing === null ? null : (
+        <KeyPlacementCeremony
+          server={server}
+          offer={placing}
+          busy={busy}
+          onKeep={() => {
+            setPlacing(null);
+          }}
+          onConfirm={() => {
+            /*
+             * The fingerprint the frame displayed, carried back verbatim — the
+             * shape `trust` uses. An unpinned record sends the empty string and
+             * main refuses it, which is the correct outcome: ADR 0018 puts the
+             * confirmed identity on the frame, and a record with none has not
+             * had one confirmed.
+             */
+            actions.installKey({
+              agent: placing.agent,
+              connection_id: placing.connection_id,
+              fingerprint: server.fingerprint ?? "",
+            });
+            setPlacing(null);
+          }}
+        />
+      )}
+
+      {/*
         MAR-572, rendered rather than hidden. Every real record has a null
         fingerprint, so this is the branch a person actually sees, and it is the
         one fact on the card about *which machine this is* — the question the
@@ -357,6 +429,18 @@ export function ServerCard({
       {confirmForget ? (
         <ForgetConfirmation
           label={server.label}
+          /*
+           * MAR-794, ADR 0018. The unresolved-custody warning, said at the last
+           * moment it can be true.
+           *
+           * ADR 0018 asks the forget flow to preserve it *after* the act; ADR
+           * 0010 forbids the row that would carry it, because a record that
+           * outlived the label could only render as a claim about a machine DASH
+           * can no longer name. So it is said here instead — while the server
+           * still has a name to put in the sentence and while the person can
+           * still change their mind. ADR 0018 amendment 1 records the split.
+           */
+          placedKeys={server.placed_keys.length}
           busy={busy}
           onKeep={() => {
             setConfirmForget(false);
@@ -679,24 +763,207 @@ function SetupPanel({
  * keeps running and DASH can neither stop it nor show it — is a statement about
  * somebody's machine that a renderer must not be able to drop.
  */
+
+/* ---------------------------------------------------------------------- *
+ * Keys on this server (MAR-794, ADR 0018)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What this server holds of yours, and what it could be given.
+ *
+ * Exported so a render test can drive it without a click, for
+ * `WhatIsOnThisServer`'s reason and a sharper one: the custody sentences here
+ * are the load-bearing part of a decision that cannot be undone, and a sentence
+ * that disappeared when somebody tidied a component would take the disclosure
+ * with it.
+ *
+ * ## The three states, and there is no fourth
+ *
+ * - **This server cannot run a broker yet** — the shipped `host_pack_too_old`
+ *   sentence, whose exit is the setup control already on this card. Nothing is
+ *   offered, because a key placed there could not be used.
+ * - **Ready, and holding nothing of yours** — `HOST_READY_AND_EMPTY`, said out
+ *   loud rather than left blank.
+ * - **Holding these** — one line per placement, each with the moment DASH
+ *   proved it, plus the orphan line when the server's own last answer says a
+ *   placement has lost the agent it was for.
+ *
+ * A fourth state — the chief answering from this machine — is what ADR 0028's
+ * host half will add, and it is not written here as an empty branch.
+ */
+export function KeysOnThisServer({
+  server,
+  standing,
+  busy,
+  canAct,
+  onPlace,
+}: {
+  server: SavedServerView;
+  standing: HostConnectState;
+  busy: boolean;
+  canAct: boolean;
+  onPlace: (offer: KeyOfferView) => void;
+}): ReactNode {
+  /*
+   * The host's own account of what is installed, or null when nothing has
+   * asked. Null and empty are different claims — `standingForPlacements` treats
+   * null as "nothing is orphaned" rather than "everything is", which is the same
+   * distinction `describeWhatIsOnHost` draws one section up.
+   */
+  const installed =
+    standing.step === "reachable" ? standing.agents_there.map((one) => one.agent_id) : null;
+  const standings = standingForPlacements(
+    server.placed_keys.map((key) => ({
+      host_id: server.host_id,
+      bundle_id: key.agent,
+      connection_id: key.connection_id,
+      field_id: "",
+      placed_at: key.placed_at,
+    })),
+    installed,
+  );
+  const orphans = standings.filter((one) => one.orphaned).length;
+
+  return (
+    <section className="card-section">
+      <h4>Keys on this server</h4>
+      {server.placed_keys.length === 0 ? (
+        <p className="wrap muted">{HOST_READY_AND_EMPTY}</p>
+      ) : (
+        <ul className="plain-list">
+          {server.placed_keys.map((key) => (
+            <li key={`${key.agent} ${key.connection_id}`} className="wrap">
+              {describePlacedKey(key.service, key.agent, key.placed_on ?? "a date DASH cannot read")}
+            </li>
+          ))}
+        </ul>
+      )}
+      {orphans === 0 ? null : (
+        <p className="notice notice-warn wrap" role="status">
+          {describeOrphanedKeys(orphans)}
+        </p>
+      )}
+      {server.key_offers.length === 0 ? null : (
+        <div className="button-row">
+          {server.key_offers.map((offer) => (
+            <button
+              key={`${offer.agent} ${offer.connection_id}`}
+              type="button"
+              className="button-secondary"
+              disabled={busy || !canAct}
+              onClick={() => {
+                onPlace(offer);
+              }}
+            >
+              {offer.already_placed
+                ? `Replace ${offer.service}`
+                : `Put ${offer.service} here`}
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * The consent ceremony, before a byte moves (ADR 0018).
+ *
+ * ## Why the confirm press is not available until the frame is complete
+ *
+ * ADR 0018 rule 1: *"The confirm press is unavailable until all three are on
+ * screen"* — the key, the server and the agent — *"together with this
+ * sentence"*. The frame is one object built by one function
+ * (`describeKeyPlacementFrame`), so the four facts arrive together or not at
+ * all; there is no arrangement of this component that renders three of them.
+ *
+ * ## The action names the movement
+ *
+ * *"'Continue' and 'Allow' hide the consequence and are not admitted."* The
+ * label is `describeKeyPlacementAction`, which is built from the server's own
+ * displayed name. The other button says what it does too — keeping the key at
+ * home is the outcome of not pressing, and a button that said "Cancel" would
+ * describe the dialog rather than the decision.
+ *
+ * ## An unconfirmed identity is shown and not hidden
+ *
+ * Every real record has a null fingerprint today (MAR-572), and the frame says
+ * so rather than omitting the line. Main refuses the press in that state — a key
+ * does not cross to a machine nobody has identified — and a person reading the
+ * frame should be able to see why before they press, not after.
+ */
+export function KeyPlacementCeremony({
+  server,
+  offer,
+  busy,
+  onKeep,
+  onConfirm,
+}: {
+  server: SavedServerView;
+  offer: KeyOfferView;
+  busy: boolean;
+  onKeep: () => void;
+  onConfirm: () => void;
+}): ReactNode {
+  const frame = describeKeyPlacementFrame({
+    keyLabel: offer.service,
+    serverLabel: server.label,
+    address: server.address,
+    fingerprint: server.fingerprint,
+    agentName: offer.agent,
+    need: offer.need,
+  });
+  return (
+    <section className="notice wrap" role="alert">
+      <p>
+        <strong>{frame.headline}</strong>
+      </p>
+      <p>{frame.key}</p>
+      <p>{frame.server}</p>
+      <p>{frame.agent}</p>
+      <p>
+        <strong>{frame.custody}</strong>
+      </p>
+      <p>{frame.scope}</p>
+      <div className="button-row">
+        <button type="button" className="button-secondary" disabled={busy} onClick={onKeep}>
+          Keep it here
+        </button>
+        <button type="button" className="button-primary" disabled={busy} onClick={onConfirm}>
+          {busy ? "Sending..." : frame.action}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function ForgetConfirmation({
   label,
+  placedKeys,
   busy,
   onKeep,
   onForget,
 }: {
   label: string;
+  /** How many keys DASH has placed there and cannot take back (MAR-794). */
+  placedKeys: number;
   busy: boolean;
   onKeep: () => void;
   onForget: () => void;
 }): ReactNode {
   const copy = describeDisconnect(label);
+  const custody = describeForgettingWithKeys(placedKeys, label);
   return (
     <section className="notice wrap" role="alert">
       <p>
         <strong>{copy.headline}</strong>
       </p>
       <p>{copy.detail}</p>
+      {custody === null ? null : (
+        <p>
+          <strong>{custody}</strong>
+        </p>
+      )}
       <div className="button-row">
         <button type="button" className="button-secondary" disabled={busy} onClick={onKeep}>
           Keep using it

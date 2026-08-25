@@ -426,3 +426,154 @@ filesystem or the provider.
 The next session may implement this decision. This one ends with the decision,
 because the first code line is a security-boundary widening and now has a test
 to pass before it joins the closed set.
+
+---
+
+## Amendment 1 (MAR-794): the verb, built — the reserved slot, the orphan question, and where the forget warning goes
+
+Status: Accepted. Date: 2026-08-25. Issue: MAR-794, packet A of
+`docs/proposals/vps-residency-2026-08-25.md` §8. Closes MAR-625.
+
+Migration index **35**, producing `user_version` **36** — confirmed against the
+literal pin in `tests/store-sqlite.test.ts` at this branch point before it was
+written, which is the check that pin's own note asks for.
+
+This ADR's non-goals said *"No implementation of `install-key`, remove-key,
+consent UI or receipt storage"* and ended with *"The next session may implement
+this decision."* This is that session. Everything the decision fixed is built as
+written; what follows is the four places the implementation had to **decide**
+something the decision left open, and one place it deliberately did not.
+
+### 1. The reserved bundle id, because the chief belongs to no bundle
+
+The host store is keyed `keys/{bundle_id}/{connection_id}`. A slot that belongs
+to no agent — ADR 0028's chief needs two — has no bundle id, and the obvious
+answer is a null or an empty one.
+
+**Refused, and it is the same trap `connection_secrets` fell into once**: a NULL
+agent was admitted there and the primary key made the row unusable. Here the two
+ids are *joined into a path*, so a null joins as the literal `"null"` or
+collapses a directory level depending on which caller reaches it first.
+
+**Decided:** `RESERVED_HOST_BUNDLE_ID = "dash-host-reserved"`, a real string over
+the identifier alphabet in `lib/deploy/verbs.ts`, so containment re-checking
+after the join works unchanged and a receipt can name which placement it is
+about. `checkDeployRequest` refuses it as the `bundle_id` of **every verb except
+`install-key`**, which makes "no bundle can collide with it" structural rather
+than conventional — `install` cannot create one there, `uninstall` cannot remove
+one, and the orphan accounting can treat a reserved placement as never orphaned
+without a second check.
+
+**Its slots are a closed list, shipped empty.** An agent's slot is narrowed by
+the agent's own declaration; a reserved slot has no document, so the only thing
+that can narrow it is a list, and a list shipped with speculative names on it
+would be an open door with a comment above it. `RESERVED_HOST_SLOTS` is `[]`, and
+`install-key` against the reserved bundle answers `reserved_slot_not_admitted`.
+The packet that puts a chief on a server adds a name to that list and argues for
+it, which is `DEPLOY_VERBS`' discipline applied to slots.
+
+**One constraint that packet inherits, named here so it is not discovered against
+a live host.** A wire `connection_id` is an identifier, and the chief's local
+connection id is `chief:model-provider` — a colon, which the alphabet cannot
+spell. Widening the alphabet is not the answer: the alphabet is what stops an id
+becoming a path. The chief's slot needs a wire name chosen deliberately.
+
+### 2. The orphan question is answered by a join, not by a new read
+
+This ADR requires DASH to be able to say which placed keys still have a bundle
+to serve, and the residency proposal requires an orphaned slot to *"appear on the
+server row rather than surface as a refusal when an agent next asks."*
+
+**No verb was added for it, and none may be.** `pack`'s answer type is stated in
+ADR 0021 §4 as having no member a slot name, a key count or a path could travel
+in, and that guarantee is worth more than the convenience. The orphan standing is
+a **pure join** — `standingForPlacements` in `lib/deploy/key-placement.ts` —
+between DASH's own placement records and the bundle ids the host named in its
+last `status` answer. It needs nothing new from the host and it can be run on
+every render.
+
+Two properties of that join are decisions rather than details. **Null is not
+empty**: a server nobody has checked reports nothing orphaned rather than
+everything, because DASH's own silence is not evidence. And a placement under the
+reserved bundle id is **never** orphaned, which is the second reason §1's refusal
+had to be structural.
+
+### 3. Where the unresolved custody warning goes when a server is forgotten
+
+This ADR says the forget flow *"must preserve an unresolved custody warning until
+the user rotates the provider key or explicitly records that they removed the
+remote copy themselves."* ADR 0010 says the opposite about the row that would
+carry it: `forgetHostDeploys` exists precisely because a record that outlives its
+label can only render as a claim about a machine DASH can no longer name, and
+every sentence on a server card names the label rather than the address.
+
+**Both cannot be honoured by the same row.** The decision taken, and it is a
+genuine fork rather than a reading of either ADR:
+
+> **The warning is said before the act, not preserved after it.** Forgetting a
+> server that still holds placed keys names them, says that forgetting does not
+> remove them, and says that rotating at the provider is the only certain step —
+> on the confirmation, while DASH can still name the machine and while the person
+> can still change their mind. The rows are then deleted with the deploy rows.
+
+What that costs, stated rather than hidden: a person who forgets a server and
+does not rotate has no standing reminder anywhere in DASH afterwards. **The exit
+is a custody register keyed by the local key record rather than by the host** —
+"this key of yours has been placed on a machine, somewhere, and DASH cannot see
+it any more" — which is a fact about a credential rather than about a server and
+would therefore survive the label. It belongs with whoever owns rotation, and it
+is not this packet.
+
+### 4. The deploy sequence is unchanged, and `MODEL_KEY_STAYS_HOME_REFUSAL` still stands
+
+The section "The deploy sequence and its failures" describes turning the existing
+refusal into two honest exits, the second being *"install the ordinary bundle
+without starting it, perform the ceremony, invoke `install-key`, record the
+receipt, and only then start the remote runner."*
+
+**Not built, deliberately, and the refusal's wording is untouched.** That refusal
+fires when a deploy is stopped because the agent's plan needs a model and DASH
+holds the key — at which point **no bundle exists on the host**, and
+`install-key` can only target an installed bundle. Naming it as the exit would
+point a person at a control that would refuse them, which is the "surface claims
+a path that stops one step short" failure ADR 0002 exists to prevent, arrived at
+from the other side. The exit is a re-ordering of the deploy sequence, it is a
+packet, and `lib/copy/host-pack.ts` records why the sentence is still absent.
+
+The path this packet does open is the one the attended proof takes: an agent
+whose model connection is declared optional deploys and runs degraded, and one
+press on the server row gives it a key.
+
+### 5. What the implementation found that the decision had not anticipated
+
+**A failed replacement could delete the key it was replacing.** `writeHostKey`
+proved the owner and mode of the **final** file and removed it when the proof
+failed — after the atomic rename had already replaced the previous shadow. So the
+one outcome this ADR forbids twice was the shipped behaviour of the primitive it
+was going to be built on. The proof now runs on the temporary **before** the
+rename, which moves every reachable failure to before the slot changes; the
+post-rename proof still runs and, if it fails, refuses without deleting, because
+turning an unproved key into no key at all on a machine nobody is watching is
+worse than either.
+
+**The store's AAD separator is a NUL byte in the source.** It is invisible in an
+editor and in a diff, and retyping it as a space produces a `writeHostKey` whose
+output `readHostKey` refuses as `unusable` — which the host broker reports as
+`revoked`, which reads on screen as a key somebody rotated at the provider. It is
+now named in a comment where the two ends meet.
+
+### What the blocking proof establishes, and what it does not
+
+`tests/install-key.test.ts` drives the production helper, bundled by esbuild from
+the same entry point the standalone build uses, over the production
+`runDeployVerb`. It establishes the protocol, the refusal shape, the owner-only
+write, the replacement semantics, the closed field set, the alphabet, the
+containment re-check, the unchanged `0644`/`0755` bundle modes, the
+`host_pack_too_old` stop with no fall-through, and the reserved id's
+non-collision. The value's absence is asserted over the **captured command line**
+and the whole error path, and over every file under the host root.
+
+It does not establish `ssh`, the enrolled key, `sshd`, the host's filesystem or
+the provider. Those stay attended, permanently, under ADR 0004 — and the attended
+list in "Proof obligations for the implementation session" above is unchanged and
+unmet at the time of this amendment.

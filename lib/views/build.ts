@@ -124,6 +124,7 @@ import {
   readAgentDeploys,
   readAgentFavourites,
   readHostDeploys,
+  readHostKeyPlacements,
   readAgentManifest,
   readEvidencePulls,
   readHost,
@@ -169,6 +170,8 @@ import type {
   FleetLevelModelsView,
   FleetModelDefaultView,
   HostsView,
+  KeyOfferView,
+  PlacedKeyView,
   LabTelemetryView,
   NotificationsView,
   PlannedStepView,
@@ -932,8 +935,116 @@ export function hostsView(store: StoreShape = readStore()): HostsView {
             sent_at: deploy.sent_at,
             sent_on: plainDay(deploy.sent_at),
           })),
+        ...keysOn(record.host_id, store),
       };
     }),
+  };
+}
+
+/**
+ * What a placed key is called when its agent no longer declares the connection.
+ *
+ * Never the id. A person reading a server card has never seen a connection id
+ * and `lib/copy/identifiers.ts` forbids one on the guided path — and the id
+ * would tell them nothing about the key anyway. What they need to know is that
+ * something of theirs is on that machine, which is what this says, and the
+ * orphan line beside it says what to do about it.
+ */
+const UNNAMED_PLACED_KEY = "A key you placed";
+
+/**
+ * What this server holds of yours, and what it could be given (MAR-794, ADR 0018).
+ *
+ * ## Two lists out of one join, because they are two halves of one question
+ *
+ * The placements are DASH's record; the offers are what the same three sources —
+ * DASH's deploy record, the agent's document and `connection_secrets` — say
+ * could still be sent. Built together so they cannot disagree about which slot
+ * is already full: `already_placed` on an offer and the presence of a placement
+ * are the same fact read twice, and reading it twice in two functions is how
+ * a card comes to offer a first placement for a key it has just listed.
+ *
+ * ## Nothing here opens the vault, and nothing here asks the server
+ *
+ * `heldCredentials` reads `connection_secrets`, which records **where** a
+ * credential is and never what it is — the same read every other consumer of it
+ * on this page makes, and the reason a view function may make it at all.
+ *
+ * And no probe. A view runs on every read of this page, and a round trip per
+ * server on render is the polling ADR 0015 refuses. Whether a placement has lost
+ * the bundle it was placed for is therefore **not** decided here: it needs the
+ * host's own account of what is installed, which arrives on the standing when
+ * somebody presses Check. `standingForPlacements` is where the two are joined,
+ * and it answers "nothing is orphaned" rather than "everything is" for a server
+ * nobody has asked yet.
+ */
+function keysOn(
+  hostId: string,
+  store: StoreShape,
+): { placed_keys: PlacedKeyView[]; key_offers: KeyOfferView[] } {
+  const placements = readHostKeyPlacements(hostId);
+  const placed = new Set(placements.map((one) => `${one.bundle_id} ${one.connection_id}`));
+
+  /*
+   * The friendly names, from each agent's own document. A connection the
+   * document no longer declares resolves to nothing, and the id is used as the
+   * last resort — which is the honest answer for a placement whose agent has
+   * since been re-imported without that connection, and is exactly the state
+   * the orphan line exists to make visible rather than pretty — so the fallback
+   * is a plain phrase and never the id, which the guided-path copy rule forbids
+   * on screen and which would tell a person nothing anyway.
+   */
+  const serviceOf = (agent: string, connectionId: string): string | null => {
+    const manifest = store.agents[agent]?.manifest;
+    if (manifest === undefined) {
+      return null;
+    }
+    for (const target of connectableFields(agent, manifest)) {
+      if (target.connection_id === connectionId) {
+        return target.service;
+      }
+    }
+    return null;
+  };
+
+  const here = readHostDeploys(hostId).filter((deploy) => deploy.brought_home_at === null);
+  const offers: KeyOfferView[] = [];
+  for (const deploy of here) {
+    const manifest = store.agents[deploy.agent]?.manifest;
+    if (manifest === undefined) {
+      continue;
+    }
+    const held = new Set(
+      heldCredentials(deploy.agent).map((one) => `${one.connection_id} ${one.field_id}`),
+    );
+    const seen = new Set<string>();
+    for (const target of connectableFields(deploy.agent, manifest)) {
+      if (target.kind !== "provider_key" || seen.has(target.connection_id)) {
+        continue;
+      }
+      if (!held.has(`${target.connection_id} ${target.field_id}`)) {
+        continue;
+      }
+      seen.add(target.connection_id);
+      offers.push({
+        agent: deploy.agent,
+        connection_id: target.connection_id,
+        service: target.service,
+        need: target.purpose,
+        already_placed: placed.has(`${deploy.agent} ${target.connection_id}`),
+      });
+    }
+  }
+
+  return {
+    placed_keys: placements.map((one) => ({
+      agent: one.bundle_id,
+      connection_id: one.connection_id,
+      service: serviceOf(one.bundle_id, one.connection_id) ?? UNNAMED_PLACED_KEY,
+      placed_at: one.placed_at,
+      placed_on: plainDay(one.placed_at),
+    })),
+    key_offers: offers,
   };
 }
 

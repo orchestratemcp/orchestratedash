@@ -53,7 +53,7 @@ const opened: Array<{ dataDir: string; closeDb: () => void }> = [];
  * they assert that a re-open, or a migration of an old store, lands at the head,
  * and following the head is the whole content of that claim.
  */
-const HEAD_VERSION = 35;
+const HEAD_VERSION = 36;
 
 async function freshStore(seed?: (dataDir: string) => void): Promise<{
   dataDir: string;
@@ -222,8 +222,18 @@ describe("schema", () => {
     // the previous packet's assignment failed. `user_version` was 34 at that
     // branch point, so the next step is index 34 and produces 35 — the
     // off-by-one that note at the top of this file exists to keep straight.
+    // 36 is MAR-794 s `host_key_placements` (ADR 0018) — which of the user s
+    // keys DASH has placed on which server, as DASH s memory of its own
+    // outbound act. Appended on the standing terms: an installed store that has
+    // recorded 0 to 35 runs exactly one more, and the step is a bare
+    // `CREATE TABLE IF NOT EXISTS`, so a store rewound by the tests below runs
+    // it again without complaint.
+    //
+    // The index was **assigned as 35 and confirmed against this pin before it
+    // was written**. `user_version` was 35 at that branch point, so the next
+    // step is index 35 and produces 36.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(35);
+    expect(version.user_version).toBe(36);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")

@@ -1162,6 +1162,50 @@ export const COMMANDS = {
     mutates: true,
     irreversible: true,
   },
+  /*
+   * MAR-794, ADR 0018. Put one key the user owns on one server the user
+   * enrolled.
+   *
+   * ## `irreversible: true`, and it is the strongest sense of the word here
+   *
+   * `host.bringHome` is irreversible because it deletes something. This is
+   * irreversible because it **creates a copy DASH can never account for again**:
+   * after the press the key is on a machine DASH does not administer, calls made
+   * with it do not appear in DASH's broker audit, and nothing in this product can
+   * take it back. ADR 0018 says the only act that undoes it is rotating at the
+   * provider, which happens somewhere else entirely.
+   *
+   * ## The four keys, and why `fingerprint` is one of them
+   *
+   * The first three name what is moving and where. The fourth is the identity
+   * the person was shown on the consent frame, carried back the way
+   * `host.trust` carries it — so main can refuse when the server answering now
+   * is not the one the frame described. It is the only structural check the
+   * trusted side has that the ceremony named the right machine, and ADR 0018
+   * puts the fingerprint on the frame precisely so that *"the address and
+   * fingerprint make it the enrolled machine rather than another row with the
+   * same label"*.
+   *
+   * ## What is not here
+   *
+   * **No key, and no field a key could travel in.** The renderer has never held
+   * the value and cannot: main reads it from the vault, hands it to `ssh` on
+   * stdin, and drops it. `payload_keys` is the enforcement — a payload member
+   * this list does not name is refused before main is called.
+   *
+   * **No path, no mode, no environment name.** Those are the four things ADR
+   * 0018 rule 2 forbids a request to carry, and this boundary is the first of
+   * three places they are refused; `checkDeployRequest` is the second and the
+   * helper's own copy of it is the third.
+   */
+  "host.installKey": {
+    effect:
+      "Put one key DASH holds for you onto one saved server, for one agent copy that asks for it. DASH cannot see or take back what uses it there.",
+    payload_keys: ["host_id", "agent_id", "connection_id", "fingerprint"],
+    required_keys: ["host_id", "agent_id", "connection_id", "fingerprint"],
+    mutates: true,
+    irreversible: true,
+  },
   "host.forget": {
     effect:
       "Stop using one server and remove DASH's key for it. Anything already running there keeps running.",
@@ -2303,6 +2347,10 @@ export const HOST_ACTIONS = {
   "host.deploy": "deploy",
   "host.run": "run",
   "host.bringHome": "bringHome",
+  // MAR-794, ADR 0018. The ninth, and the only one that moves a credential
+  // outward. Named here rather than derived from a prefix, like the other
+  // eight, so the trusted-side switch and the preload stay exhaustive.
+  "host.installKey": "installKey",
   "host.forget": "forget",
 } as const;
 
@@ -2990,6 +3038,33 @@ export type HostActionResult =
       files_saved: number;
       detail: string;
     }
+  /**
+   * One key placed, as the only thing that crosses back (MAR-794, ADR 0018).
+   *
+   * **Spelled a field at a time, and the omission is the design.** There is no
+   * member here a key, a digest, a length, a prefix or a path could travel in —
+   * the same argument `host.create` makes about a host record and `run` makes
+   * about the channel token, at the one boundary where the value being withheld
+   * is a credential the renderer asked to have moved.
+   *
+   * `placed_on` is a rendered date rather than a stamp, because every sentence
+   * about it is a report with an age on it and `lib/copy/when.ts` owns that
+   * shape. `replaced` is the host's own answer to whether a key was already in
+   * that slot: ADR 0018 makes a successful replacement earn a new receipt and
+   * make the old one historical, and a surface cannot say that without knowing
+   * which of the two happened.
+   */
+  | {
+      ok: true;
+      action: "installKey";
+      host_id: string;
+      label: string;
+      agent_id: string;
+      connection_id: string;
+      placed_on: string;
+      replaced: boolean;
+      detail: string;
+    }
   | { ok: true; action: "forget"; host_id: string; label: string }
   | {
       ok: false;
@@ -3187,7 +3262,10 @@ export interface DispatchContext {
       | { label: string; address: string; username: string; port: number }
       | { host_id: string }
       | { host_id: string; fingerprint: string }
-      | { host_id: string; agent_id: string },
+      | { host_id: string; agent_id: string }
+      // MAR-794. Four names and no value: the widest host target there is, and
+      // still the only one that cannot carry a credential in either direction.
+      | { host_id: string; agent_id: string; connection_id: string; fingerprint: string },
   ): Promise<HostActionResult>;
   /**
    * Show the application menu at a point in the window (MAR-440).
@@ -3721,6 +3799,20 @@ export async function dispatchCommand(
             host_id: String(review.payload["host_id"]),
             agent_id: String(review.payload["agent_id"]),
           });
+        /*
+         * MAR-794. Four strings, and every one of them names something rather
+         * than being something. The connection id is the declared need, checked
+         * again by the helper against the agent's own document on the far side;
+         * the fingerprint is what the frame showed, checked by main against the
+         * record before `ssh` is spawned.
+         */
+        case "installKey":
+          return context.hostAction(action, {
+            host_id: String(review.payload["host_id"]),
+            agent_id: String(review.payload["agent_id"]),
+            connection_id: String(review.payload["connection_id"]),
+            fingerprint: String(review.payload["fingerprint"]),
+          });
         case "trust":
           return context.hostAction(action, {
             host_id: String(review.payload["host_id"]),
@@ -3876,6 +3968,22 @@ export async function dispatchCommand(
             label: result.label,
             agent_id: result.agent_id,
             files_saved: result.files_saved,
+          },
+        };
+      // The receipt, and nothing the value could ride out on. Five primitives,
+      // each of which the renderer already knew or is a date.
+      case "installKey":
+        return {
+          ok: true,
+          request_id: review.audit.request_id,
+          detail: result.detail,
+          data: {
+            host_id: result.host_id,
+            label: result.label,
+            agent_id: result.agent_id,
+            connection_id: result.connection_id,
+            placed_on: result.placed_on,
+            replaced: result.replaced,
           },
         };
       case "forget":

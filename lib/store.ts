@@ -64,6 +64,7 @@ import {
   type ChiefDiscordSettings,
 } from "./chief/discord";
 import { checkManifestConstraints } from "./manifest-constraints";
+import type { KeyPlacement } from "./deploy/key-placement";
 import { NO_NOTIFICATIONS, type NotificationSettings } from "./notify/settings";
 import { isMaskedHint } from "./secret-refs";
 import {
@@ -1955,6 +1956,82 @@ function deployRecord(row: Record<string, unknown>): AgentDeployRecord {
  */
 export function forgetHostDeploys(hostId: string): void {
   db().prepare("DELETE FROM agent_deploys WHERE host_id = ?").run(hostId);
+}
+
+/* ---------------------------------------------------------------------- *
+ * Placed keys (MAR-794, ADR 0018)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Write down that DASH placed one key on one server.
+ *
+ * `recordAgentDeploy`'s rule, one custody class over and with more at stake:
+ * **called after the helper proved the owner-only write, never before it and
+ * never on a refusal.** A row written on an attempt would claim a key is on a
+ * machine it may never have reached, and a custody claim that is wrong in that
+ * direction is the one ADR 0018 spends its length preventing.
+ *
+ * Overwrites per (server, bundle, connection), because a slot holds one file. A
+ * successful replacement earns a new receipt and makes the old one historical —
+ * ADR 0018's words — and a second row would be a second receipt for one
+ * placement.
+ */
+export function recordKeyPlacement(
+  placement: Omit<KeyPlacement, "placed_at">,
+  at: string = new Date().toISOString(),
+): void {
+  db()
+    .prepare(
+      "INSERT INTO host_key_placements (host_id, bundle_id, connection_id, field_id, placed_at) " +
+        "VALUES (?, ?, ?, ?, ?) ON CONFLICT (host_id, bundle_id, connection_id) DO UPDATE SET " +
+        "field_id = excluded.field_id, placed_at = excluded.placed_at",
+    )
+    .run(
+      placement.host_id,
+      placement.bundle_id,
+      placement.connection_id,
+      placement.field_id,
+      at,
+    );
+}
+
+/** Every key DASH has placed on one server, most recent first. */
+export function readHostKeyPlacements(hostId: string): KeyPlacement[] {
+  return db()
+    .prepare(
+      "SELECT host_id, bundle_id, connection_id, field_id, placed_at " +
+        "FROM host_key_placements WHERE host_id = ? ORDER BY placed_at DESC",
+    )
+    .all(hostId)
+    .map((row) => ({
+      host_id: text(row, "host_id"),
+      bundle_id: text(row, "bundle_id"),
+      connection_id: text(row, "connection_id"),
+      field_id: text(row, "field_id"),
+      placed_at: text(row, "placed_at"),
+    }));
+}
+
+/**
+ * Forget every placement on one server.
+ *
+ * `forgetHostDeploys`' obligation, and the reasoning is ADR 0010's rather than
+ * ADR 0018's, which is worth saying because the two pull in opposite directions
+ * here. ADR 0018 asks the forget flow to *"preserve an unresolved custody
+ * warning until the user rotates the provider key"*; ADR 0010 forbids a row that
+ * outlives the label, because `lib/server-card.ts` may only name a server by the
+ * name a person gave it, and after a forget there is no such name left. A
+ * surviving row could therefore only render as a claim about an unnameable
+ * machine.
+ *
+ * ADR 0010 wins on the **row**, and ADR 0018 is honoured **before** the act
+ * instead: the card's forget confirmation names every key still placed there and
+ * says that forgetting does not remove them and that rotation is the only
+ * certain step. The disclosure happens while DASH can still name the server,
+ * which is the last moment it can be true. See ADR 0018 amendment 1.
+ */
+export function forgetHostKeyPlacements(hostId: string): void {
+  db().prepare("DELETE FROM host_key_placements WHERE host_id = ?").run(hostId);
 }
 
 /* ---------------------------------------------------------------------- *

@@ -225,23 +225,27 @@ describe("sshArgv", () => {
 
   it("composes no command line: every verb comes from the closed set", () => {
     /*
-     * Pinned by value, and this pin has **fired four times**: once when MAR-487
+     * Pinned by value, and this pin has **fired five times**: once when MAR-487
      * widened the set from `["connect"]` to ADR 0007's six, again when MAR-602
-     * added `channel`, again when MAR-611 added `uninstall`, and again when
-     * MAR-629 added `pack`. Every time it did its job. The set being closed is
-     * only worth anything if adding to it is a change somebody has to make here
-     * and defend, rather than one that rides along in a commit about something
-     * else.
+     * added `channel`, again when MAR-611 added `uninstall`, again when MAR-629
+     * added `pack`, and again when MAR-794 added `install-key`. Every time it
+     * did its job. The set being closed is only worth anything if adding to it
+     * is a change somebody has to make here and defend, rather than one that
+     * rides along in a commit about something else.
      *
-     * What this file asserts about the last three is narrower than the argument
+     * What this file asserts about the last four is narrower than the argument
      * for admitting them, and it is the part that belongs here: whatever a verb
      * carries, **the verb is still the last thing on the command line**.
      * `channel`'s answer holds a credential, `uninstall` removes a directory,
-     * `pack` reads the identity of the tree the host's secret store lives in —
-     * and none of them puts anything on argv, because `pack` carries no
-     * identifier at all and the other two take one that travels on stdin like
-     * every other. `lib/deploy/verbs.ts` and `tests/deploy-bridge.test.ts` carry
-     * the admission arguments.
+     * `pack` reads the identity of the tree the host's secret store lives in,
+     * and `install-key` carries a provider key the user owns — and none of them
+     * puts anything on argv, because `pack` carries no identifier at all and the
+     * others take one that travels on stdin like every other. That last one is
+     * the reason this assertion matters more than it did: the value
+     * `install-key` carries is the one string in this product that must never
+     * reach a command line, and the loop below is what says it does not.
+     * `lib/deploy/verbs.ts` and `tests/deploy-bridge.test.ts` carry the admission
+     * arguments.
      */
     expect([...HOST_VERBS]).toEqual([
       "install",
@@ -253,6 +257,7 @@ describe("sshArgv", () => {
       "channel",
       "uninstall",
       "pack",
+      "install-key",
     ]);
     for (const verb of HOST_VERBS) {
       const built = sshArgv(record(), verb, paths);

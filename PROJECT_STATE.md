@@ -55,9 +55,15 @@ the packaged path.
   is the largest stated gap.
 - ADR 0020: an MCP server is a connection DASH brokers; tool set pinned at
   consent; curated catalogue ships empty. `planned`, no implementation.
+- ADR 0018 + amendment 1 (MAR-794): a key crosses only on a person's press.
+  `install-key` is **built** — the tenth deploy verb, the helper's owner-only
+  write, the reserved bundle id, the orphan join and the consent ceremony on the
+  server row. The blocking local bar is green; the attended half on the enrolled
+  VPS is unmet and is permanently attended (ADR 0004). Closes MAR-625.
 - ADR 0021: the host is a small DASH runtime (runner-local broker as an
-  install pack). `planned`, documentation only. Remote MCP parity waits on
-  this (MAR-629).
+  install pack). The pack **shipped** in MAR-629 and its store now has a writer;
+  nothing in it has yet run on the enrolled host, which is what the attended half
+  of MAR-794 establishes. Remote MCP parity still waits on this (MAR-633).
 - ADR 0022–0025: starting a stopped agent; the chief is a principal; a
   decision is filed where it is made; a brief is a document bound to its
   evidence (MAR-674, promoted to proven 2026-08-18, `8bf4671`).

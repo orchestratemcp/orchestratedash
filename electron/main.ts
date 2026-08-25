@@ -179,6 +179,7 @@ import {
   findHostByConnection,
   forgetHost,
   forgetHostDeploys,
+  forgetHostKeyPlacements,
   importManifest,
   listAgentNames,
   listHosts,
@@ -257,6 +258,7 @@ import {
   type SshDiagnostics,
 } from "./ssh-host";
 import { runAgentOnHost } from "./host-run";
+import { installKeyOnHost } from "./host-install-key";
 import { bringAgentHomeFromHost } from "./host-bring-home";
 import { authorizedKeysLine, buildBootstrapScript } from "../lib/host-bootstrap";
 import { classifyHostFailure, type HostReachProblem } from "../lib/host-connect";
@@ -2487,7 +2489,8 @@ async function hostAction(
     | { label: string; address: string; username: string; port: number }
     | { host_id: string }
     | { host_id: string; fingerprint: string }
-    | { host_id: string; agent_id: string },
+    | { host_id: string; agent_id: string }
+    | { host_id: string; agent_id: string; connection_id: string; fingerprint: string },
 ): Promise<HostActionResult> {
   if (action === "create") {
     if (!("label" in target)) {
@@ -2647,6 +2650,12 @@ async function hostAction(
       // the label is gone, a surviving row could only render as a claim about a
       // machine DASH can no longer reach or even name.
       forgetHostDeploys(record.host_id);
+      // MAR-794, ADR 0018 amendment 1. The placements go with the deploys and
+      // for ADR 0010's reason, not ADR 0018's: a row that outlived the label
+      // could only render as a claim about a machine DASH can no longer name.
+      // ADR 0018's *"unresolved custody warning"* is honoured on the card,
+      // before the press, while the server still has a name to put in it.
+      forgetHostKeyPlacements(record.host_id);
       forgetHost(record.host_id);
     } catch {
       return { ok: false, detail: "DASH could not forget this server safely." };
@@ -2746,6 +2755,43 @@ async function hostAction(
    * bundle DASH never sent (ADR 0015), and adopting a stranger's agent off a
    * server is a different act than taking back one DASH put there.
    */
+  /*
+   * MAR-794, ADR 0018. Put one key on this server.
+   *
+   * Beside `run` and `bringHome`, below the same enrolment gate, and last of the
+   * three for the reason the gate exists at all: this is the press that changes
+   * **custody**, and a path to it that skipped the pin would be a path to putting
+   * a person's provider key on a machine DASH has never been told to trust.
+   *
+   * Main holds the seam and not the argument, exactly as it does for `run`: the
+   * record, the data directory, and the agent's stored manifest — which is the
+   * one thing only main can answer, because "does DASH still hold this agent's
+   * document" is a question about this store. Everything else, including the
+   * vault read and the order the two `ssh` children go in, is inside
+   * `electron/host-install-key.ts`, beside the calls it guards.
+   */
+  if (action === "installKey") {
+    if (!("agent_id" in target) || !("connection_id" in target) || !("fingerprint" in target)) {
+      return { ok: false, detail: "DASH did not receive which key it should put on this server." };
+    }
+    const toolsForKey = probeSshTools();
+    if (!toolsForKey.present) {
+      return {
+        ok: false,
+        detail: toolsForKey.detail ?? "This computer cannot reach a server.",
+        problem: "no_ssh_on_this_computer",
+      };
+    }
+    return await installKeyOnHost({
+      record,
+      agentId: target.agent_id,
+      connectionId: target.connection_id,
+      fingerprint: target.fingerprint,
+      manifest: readAgentManifest(target.agent_id),
+      dataDir,
+    });
+  }
+
   if (action === "bringHome") {
     if (!("agent_id" in target)) {
       return { ok: false, detail: "DASH did not receive the agent it should bring home." };
