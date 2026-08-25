@@ -123,8 +123,14 @@ useUserDataDirectory();
  * before anything else, and a permission error on a `.git` is not a reason to
  * refuse to start; it is a reason to fall through to the refusal that names the
  * remedy, which is the same answer.
+ *
+ * Exported for `electron/autostart.ts` (MAR-785), which asks the identical
+ * question for the identical reason: ADR 0027 refuses a worktree the installed
+ * store, and ADR 0030 refuses a worktree the ability to put itself into a
+ * person's Windows startup list. One question, one implementation — a second
+ * copy of this would be free to drift from the one the store guard uses.
  */
-function gitEntryKind(): GitEntryKind {
+export function gitEntryKind(): GitEntryKind {
   const entry = path.join(app.getAppPath(), ".git");
   try {
     if (!existsSync(entry)) {

@@ -178,6 +178,13 @@ describe("the audited command chokepoint", () => {
       // MAR-518. Same family, and names no agent: a damaged store is a fact
       // about the runner, not about any one of the agents it supervises.
       "runner.retireStore",
+      // MAR-785, ADR 0030. Its own family beside `runner.*`, because these two
+      // are about the machine rather than about a running process: what Windows
+      // does at a moment when no runner, no DASH and no person exists. The write
+      // is the only command in DASH whose effect outlives the app without
+      // sending anything anywhere.
+      "autostart.status",
+      "autostart.set",
       // MAR-576. A fifth family, and the only command in DASH that can rewrite
       // an author's manifest. Its own prefix rather than `agent.*`, which is
       // reserved for the contract's seven verbs, and not `runner.*`, because no
@@ -666,6 +673,10 @@ describe("dispatch", () => {
     const audited: CommandAuditRecord[] = [];
     const inputs: AgentCommandInput[] = [];
     const lifecycle: Array<{ action: string; agent_id: string | undefined }> = [];
+    // MAR-785, ADR 0030. Recorded rather than performed, and the reason here is
+    // the sharpest in this list: performing one would write a value into the
+    // Windows startup list of the machine running the test suite.
+    const autostart: Array<{ action: string; enabled: boolean | undefined }> = [];
     const connections: Array<{ action: string; target: Record<string, string> }> = [];
     const hosts: Array<{ action: HostAction; target: Record<string, string | number> }> = [];
     // MAR-507. Recorded rather than performed, for the sharpest version of the
@@ -796,6 +807,7 @@ describe("dispatch", () => {
       audited,
       inputs,
       lifecycle,
+      autostart,
       connections,
       samples,
       looks,
@@ -1089,6 +1101,14 @@ describe("dispatch", () => {
         lifecycle.push({ action, agent_id: agentId });
         return Promise.resolve({ ok: true, detail: `${action} ok` });
       },
+      autostartAction: (action: string, enabled: boolean | undefined) => {
+        autostart.push({ action, enabled });
+        return Promise.resolve({
+          ok: true,
+          detail: `${action} ok`,
+          data: { available: true, refusal: "", enrolled: enabled === true, approved: enabled === true, foreign: false, command: "dash.exe --dash-start-runner" },
+        });
+      },
     };
   }
 
@@ -1245,6 +1265,73 @@ describe("dispatch", () => {
 
     expect(result).toMatchObject({ ok: true, detail: "retireStore ok" });
     expect(ctx.lifecycle).toEqual([{ action: "retireStore", agent_id: undefined }]);
+  });
+
+  /**
+   * MAR-785, ADR 0030. The startup family, which is its own and is not
+   * `runner.*`.
+   *
+   * The routing assertion is the point: these two must not fall through to
+   * `runnerLifecycle`, which reaches a process over a socket, and must not fall
+   * through to `executeCommand`, which throws for anything the trusted side
+   * owns. `ctx.lifecycle` staying empty is what says so.
+   */
+  it("routes the startup commands to their own handler, not to the runner", async () => {
+    const ctx = context();
+    const read = await dispatchCommand({ command: "autostart.status", request_id: "req-as1" }, ctx);
+    const write = await dispatchCommand(
+      { command: "autostart.set", request_id: "req-as2", payload: { enabled: true } },
+      ctx,
+    );
+
+    expect(read).toMatchObject({ ok: true, detail: "status ok" });
+    expect(write).toMatchObject({ ok: true, detail: "set ok" });
+    expect(ctx.autostart).toEqual([
+      { action: "status", enabled: undefined },
+      { action: "set", enabled: true },
+    ]);
+    expect(ctx.lifecycle).toHaveLength(0);
+  });
+
+  it("never reaches the handler with an enabled that is not a boolean", async () => {
+    /*
+     * The payload's one boolean is the difference between adding something to a
+     * person's Windows startup list and removing it, so `payload_types` declares
+     * it and the review refuses anything else **before** dispatch — a stronger
+     * answer than `lab.setEnabled`'s `=== true` narrowing, which only decides
+     * what a value means once it has arrived.
+     *
+     * Both halves are asserted because they are different failures: a string
+     * that coerced would be a press nobody made, and an absent key that
+     * defaulted would be a press nobody made either.
+     */
+    const ctx = context();
+    const coerced = await dispatchCommand(
+      { command: "autostart.set", request_id: "req-as3", payload: { enabled: "true" } },
+      ctx,
+    );
+    const absent = await dispatchCommand(
+      { command: "autostart.set", request_id: "req-as4", payload: {} },
+      ctx,
+    );
+
+    expect(coerced.ok).toBe(false);
+    expect(absent.ok).toBe(false);
+    expect(ctx.autostart).toHaveLength(0);
+  });
+
+  it("carries the whole startup state back as flat primitives", async () => {
+    // The channel's constraint, and the page depends on it: `parseAutostartState`
+    // is what turns this record back into the state, and a nested object would
+    // not have survived `RunnerLifecycleResult.data`.
+    const ctx = context();
+    const result = await dispatchCommand(
+      { command: "autostart.status", request_id: "req-as5" },
+      ctx,
+    );
+    for (const value of Object.values(result.data ?? {})) {
+      expect(["string", "number", "boolean"]).toContain(typeof value);
+    }
   });
 
   it("refuses to execute a lifecycle command outside the dispatcher", () => {

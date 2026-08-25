@@ -63,8 +63,17 @@ import type { ChiefBridgeConfiguration } from "./chief";
 import type { ChiefAuditRow } from "./chief-broker";
 import type { NotifyConfiguration } from "./notify";
 import type { ScheduleConfiguration, ScheduledAllowance } from "./schedule";
-import type { AgentSchedule, ScheduleSettlement } from "../lib/schedule/plan";
-import { allowanceCalls, isLocalTime } from "../lib/schedule/plan";
+/*
+ * MAR-785, ADR 0030. `readScheduleConfiguration` used to live in this file, and
+ * moved to `runner/schedule.ts` when a second caller appeared: the scheduler
+ * itself now parses the row it remembered across a restart. One parser rather
+ * than two is the point — a runner that would refuse a set over the channel must
+ * refuse the same set off its own disk, and two implementations of "checked
+ * field by field" is exactly the pair that drifts. MAR-784's allowance_calls
+ * handling travelled with the parser in the move.
+ */
+import { readScheduleConfiguration } from "./schedule";
+import type { ScheduleSettlement } from "../lib/schedule/plan";
 import { buildAgentDomState, type ProcessReport } from "./state";
 import type { AdoptionResult, Supervisor } from "./supervisor";
 import type { TaskWorkspaceApi } from "./task-api";
@@ -1496,88 +1505,6 @@ function readNotifyConfiguration(body: unknown): NotifyConfiguration | null | "m
  * sentence about a DASH that has none, and refusing the whole bridge over an
  * absent list would turn an empty fleet into a broken feature.
  */
-/**
- * The schedules DASH pushed, checked field by field (MAR-742 item 8, ADR 0029).
- *
- * `readChiefConfiguration`'s discipline with one deliberate difference in how it
- * fails. That function refuses the whole bridge on a bad member, because a
- * bridge with no boundary is worse than no bridge. This one **drops the bad
- * member and keeps the rest**, because the thing on the other side of a refusal
- * here is every *other* agent's schedule silently not firing — and a scheduler
- * that stops without saying so is the one failure mode ADR 0029 is written
- * against.
- *
- * The check is not a duplicate of DASH's. `lib/schedule/store.ts` re-checks these
- * columns on the way out of the store and this re-checks them on the way into
- * the process that will start an agent at the time they name. Two boundaries, on
- * two sides of a channel — `runner/execute.ts`'s own argument for repeating
- * DASH's checks rather than trusting them.
- */
-function readScheduleConfiguration(body: unknown): ScheduleConfiguration | "malformed" {
-  if (typeof body !== "object" || body === null) {
-    return "malformed";
-  }
-  const record = body as Record<string, unknown>;
-  const rawSchedules = record["schedules"];
-  if (!Array.isArray(rawSchedules)) {
-    return "malformed";
-  }
-
-  const schedules: AgentSchedule[] = [];
-  for (const raw of rawSchedules) {
-    if (typeof raw !== "object" || raw === null) {
-      continue;
-    }
-    const entry = raw as Record<string, unknown>;
-    const agent = entry["agent"];
-    const at = entry["at_local"];
-    // `kind` is checked by value rather than coerced: a runner that met an
-    // unknown kind and treated it as daily would be honouring an instruction
-    // nobody wrote, at a time nobody picked.
-    if (
-      typeof agent !== "string" ||
-      agent.length === 0 ||
-      agent.length > 128 ||
-      entry["kind"] !== "daily" ||
-      typeof at !== "string" ||
-      !isLocalTime(at)
-    ) {
-      continue;
-    }
-    const createdAt = entry["created_at"];
-    schedules.push({
-      agent,
-      enabled: entry["enabled"] === true,
-      kind: "daily",
-      at_local: at,
-      created_at: typeof createdAt === "string" ? createdAt : "",
-      /*
-       * MAR-784. Anything this build does not recognise as a ceiling becomes
-       * zero — a schedule that runs and does not spend — rather than being
-       * dropped along with the rest of the member. That split is deliberate and
-       * is the same one this function already makes for every other field: a bad
-       * *time* means DASH would start an agent at a moment nobody picked, so the
-       * member goes; a bad *ceiling* means DASH would spend money nobody agreed
-       * to, so the ceiling goes and the schedule keeps running. Dropping the
-       * whole member for a bad ceiling would silently stop somebody's agent.
-       */
-      allowance_calls: allowanceCalls(entry["allowance_calls"]),
-    });
-  }
-
-  const rawSince = record["since"];
-  const since: Record<string, string> = {};
-  if (typeof rawSince === "object" && rawSince !== null) {
-    for (const [agent, value] of Object.entries(rawSince as Record<string, unknown>)) {
-      if (typeof value === "string" && value.length > 0) {
-        since[agent] = value;
-      }
-    }
-  }
-
-  return { schedules, since };
-}
-
 function readChiefConfiguration(body: unknown): ChiefBridgeConfiguration | null | "malformed" {
   if (typeof body !== "object" || body === null) {
     return "malformed";

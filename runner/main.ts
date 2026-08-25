@@ -516,9 +516,24 @@ async function main(): Promise<void> {
    * ticked against an empty one — which for a machine that has just woken up is
    * the difference between "your 08:00 run was missed" and silence.
    *
-   * It fires nothing until that push arrives. The set is empty and
-   * `decideSchedule` reads an empty set as nothing to do.
+   * ## What it starts with (MAR-785, ADR 0030 decision 5)
+   *
+   * Until this packet, the answer was "nothing, until DASH pushes" — which was
+   * correct while DASH was the only thing that could start a runner, and stopped
+   * being enough the moment Windows could start one at login with DASH never
+   * opened. So the set this runner was last told is read back from its own store
+   * first, and `restore` parses it with the same function the channel's body
+   * goes through.
+   *
+   * The line is written whether or not anything came back. After a reboot where
+   * nobody opened DASH, `runner.log` is the only place on the machine that says
+   * what the login produced, and "restored 0" and silence have to be different
+   * sentences.
    */
+  const restored = schedule.restore();
+  console.warn(
+    `[runner] standing schedules: ${restored ? "restored from this runner's own store" : "none remembered; waiting for DASH"}`,
+  );
   schedule.start();
 
   writeFileSync(

@@ -104,6 +104,37 @@ redirected one, and it says the opposite of what was first written down.
   hook to show a warning from, the same way there is no hook to run cleanup
   from.
 
+### The one thing DASH writes outside its own tree (MAR-785, ADR 0030)
+
+Everything above is about the package's own folder, which Windows wipes. The
+**login entry** is not in it.
+
+When a person turns on Settings → Startup, DASH writes one value under
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, named `OrchestrateDASH`,
+holding `<DASH's exe> [<app path>] --dash-start-runner`. That is a per-user
+registry value rather than a file in the package tree, so **the uninstall wipe
+above does not take it with it** — and, as this section already established for
+credentials, there is no hook to run cleanup from on the way out. Not measured
+under a packaged install, because MSIX is a packaging proof and ships nothing;
+recorded here because it is the shape of the thing rather than a guess about a
+codepath.
+
+ADR 0030 decision 7 is what is done about it, and none of it is a promise DASH
+cannot keep:
+
+- turning the switch off removes the value, **including one that points at a
+  copy of DASH that is no longer there**;
+- a `Run` value was chosen over a logon scheduled task precisely because Task
+  Manager's *Startup apps* list already offers removal, so the door exists
+  without DASH having to build one;
+- the Startup page prints the literal command, so somebody whose DASH is
+  already gone can match it against what Windows shows them.
+
+One new file joins the data directory with this: `autostart.log`, one line per
+login saying whether the runner started and with which pid. It is inside the
+tree the uninstall wipes, and it is the only evidence a login leaves — the
+process that writes it has no window and no console anybody sees.
+
 ## Offline
 
 DASH is a monitor, not a runtime, and nothing on the local path needs the

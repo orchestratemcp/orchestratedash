@@ -223,6 +223,10 @@ import {
 } from "./browser-host";
 import { setBrowserViewportBounds } from "./browser-view";
 import { ensureRunner, runnerFetch, stopRunner, type RunnerHandle } from "./runner-process";
+// MAR-785, ADR 0030. The login entry, its state, and the two-second process it
+// starts. `isAutostartLaunch` is the pure half and lives in `lib/shell`.
+import { readAutostartState, startRunnerAtLogin, writeAutostart } from "./autostart";
+import { autostartStateData, isAutostartLaunch } from "../lib/shell/autostart";
 import { assertSampleTemplatesPresent, offerSampleAgent } from "./sample-agent";
 import {
   SHELL_WEB_PREFERENCES,
@@ -888,6 +892,32 @@ export function registerCommandChannel(
         });
       },
       runnerLifecycle: (action, agentId) => runnerLifecycle(runner, action, agentId),
+      /*
+       * MAR-785, ADR 0030. Reads and writes this computer's startup list.
+       *
+       * Synchronous underneath and wrapped in a resolved promise, because
+       * `app.getLoginItemSettings` and `app.setLoginItemSettings` are both
+       * synchronous and pretending otherwise would invent a suspense the page
+       * would then have to draw.
+       *
+       * The mechanism of a failed write goes to the shell log and never to the
+       * renderer — MAR-684's rule, and this is a case where it bites: the
+       * reasons Windows declines a Run key write are policy names and registry
+       * paths, and `STARTUP_COPY.failed` is what a person is owed instead.
+       */
+      autostartAction: (action, enabled) => {
+        if (action === "status") {
+          return Promise.resolve({
+            ok: true,
+            data: autostartStateData(readAutostartState(dataDir)),
+          });
+        }
+        const written = writeAutostart(dataDir, enabled === true);
+        if (written.problem !== undefined) {
+          console.warn(`[dash-shell] autostart: ${written.problem}`);
+        }
+        return Promise.resolve({ ok: written.ok, data: autostartStateData(written.state) });
+      },
       // MAR-440. Draws a menu and reaches nothing else — no store, no runner,
       // no provider. See `showApplicationMenu` for why the renderer cannot name
       // what it wants popped.
@@ -3388,7 +3418,27 @@ function reportStoreLocation(): void {
   console.warn(`[dash-shell] store: ${dataDir} (app_name=${app.getName()})`);
 }
 
-if (typeof app !== "undefined") {
+/**
+ * Is this launch the login-time runner start rather than a person opening DASH
+ * (MAR-785, ADR 0030)?
+ *
+ * Read once, at module scope, because both branches below have to agree about
+ * it and a second `process.argv` read is a second chance to disagree.
+ *
+ * The switch is what a Windows Run value holds, and `electron/autostart.ts` is
+ * both the thing that wrote the value and the thing this branch calls. Note that
+ * a login start deliberately never reaches `requestSingleInstanceLock` — the
+ * whole of that reasoning is on `startRunnerAtLogin`, and the short version is
+ * that a two-second process must not be handed the argv of a person's own
+ * double-click.
+ */
+const AUTOSTART_LAUNCH = typeof app !== "undefined" && isAutostartLaunch(process.argv);
+
+if (AUTOSTART_LAUNCH) {
+  void startRunnerAtLogin(dataDir);
+}
+
+if (typeof app !== "undefined" && !AUTOSTART_LAUNCH) {
   // ORDER-SENSITIVE, like the two imports at the top of this file and for a
   // comparable reason. `registerSchemesAsPrivileged` is only honoured before
   // `app.ready`; called later it succeeds silently and the packaged renderer

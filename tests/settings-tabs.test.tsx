@@ -116,6 +116,10 @@ describe("nothing was dropped on the way in", () => {
       "Reporting",
       "Servers",
       "Add agent",
+      // MAR-785, ADR 0030. Beside Preferences and not inside it: Preferences is
+      // "how DASH looks", and this one decides what this computer does when
+      // DASH is not running.
+      "Startup",
       "Preferences",
     ]);
   });
