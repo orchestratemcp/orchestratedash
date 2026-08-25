@@ -116,8 +116,28 @@ export interface RunSpendAllowance {
  * what an agent may spend is always one press's worth, however many times
  * somebody presses.
  */
-export function openRunSpend(at: number): RunSpendAllowance {
-  return { opened_at: at, remaining: SPEND_ALLOWANCE_CALLS };
+export function openRunSpend(at: number, calls = SPEND_ALLOWANCE_CALLS): RunSpendAllowance {
+  /*
+   * MAR-784, ADR 0029 amendment 1. A caller may name a smaller or larger number
+   * of calls than a press of Run now buys, and this is the one line that decides
+   * what "larger" means: nothing above `SPEND_ALLOWANCE_CALLS` is honoured, and
+   * anything that is not a positive integer opens an allowance of zero — which
+   * `spendAllowed` reads as not open at all.
+   *
+   * The ceiling on the ceiling lives here rather than at the call site because
+   * this function is the only constructor of the type. A bound stated where the
+   * value is built cannot be forgotten by a second caller, and there are now two:
+   * a person's press, and a schedule a person opted in for.
+   *
+   * Note which direction the clamp goes. `Math.min` and not `Math.max`: a caller
+   * asking for more than DASH's own press buys gets DASH's own press, never the
+   * larger number. An unattended run must not be able to be worth more than a
+   * watched one.
+   */
+  if (!Number.isInteger(calls) || calls <= 0) {
+    return { opened_at: at, remaining: 0 };
+  }
+  return { opened_at: at, remaining: Math.min(calls, SPEND_ALLOWANCE_CALLS) };
 }
 
 /**

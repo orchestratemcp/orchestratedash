@@ -6387,6 +6387,21 @@ button:disabled {
   min-width: 9ch;
 }
 
+/* MAR-784's opt-in, ADR 0029 amendment 1. A row rather than a block, and inside
+   `.trigger-time` rather than beside it, because the ceiling and the cadence are
+   one press — see `TriggerSwitch`. `justify-items: start` on the parent already
+   keeps it off the drawer's full width, so this only has to put the box and its
+   label on one line. */
+.trigger-allowance {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* Not 650 like `.trigger-option label`: that weight marks the three radios as
+     the choices on this panel, and a fourth thing wearing it would read as a
+     fourth option rather than as a setting on the one that is chosen. */
+  font-weight: 500;
+}
+
 /* ADR 0029's three liveness sentences. A list rather than a paragraph because
    they are three separate claims — the third one, about a computer that is off,
    is the one somebody has to be able to find again. */

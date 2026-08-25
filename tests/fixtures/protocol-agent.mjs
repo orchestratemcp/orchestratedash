@@ -18,6 +18,9 @@
  * - `AGENT_IGNORE_TERM=1` ignore SIGTERM, to exercise the SIGKILL escalation
  * - `AGENT_NOISE=1`      write non-protocol lines, which must be tolerated
  * - `AGENT_TELEMETRY=valid|mixed` emit telemetry candidates for drain tests
+ * - `AGENT_CURATE=<n>`   with `AGENT_PENDING=1`, ask the broker to curate `n`
+ *                        times when a `retry` lands, and report each answer
+ *                        (MAR-784)
  */
 
 const ack = process.env.AGENT_ACK ?? "ok";
@@ -50,6 +53,18 @@ if (process.env.AGENT_NOISE === "1") {
  *
  * A separate branch rather than a widened default, so every test that was
  * written against the state below still gets exactly that state.
+ *
+ * `AGENT_CURATE=<n>` (MAR-784) makes that retry ask for `n` model calls in a
+ * row. It exists because the one thing no real agent in this repository can
+ * demonstrate is **running out**: the Agent Kit template curates exactly once
+ * per run, so a ceiling can only ever be reached by an agent willing to ask past
+ * it, and "what happens when a scheduled run hits its ceiling" is half of what
+ * ADR 0029 amendment 1 has to prove.
+ *
+ * It asks serially and reports each answer on its own line, because the fact
+ * being proven is an ordering: the first `n` are allowed and the rest are
+ * refused with the same word a schedule carrying no allowance at all gets. A
+ * burst of parallel asks would prove the same arithmetic and none of the order.
  */
 if (process.env.AGENT_PENDING === "1") {
   send({
@@ -72,6 +87,81 @@ if (process.env.AGENT_PENDING === "1") {
   });
   process.stdin.setEncoding("utf8");
   let pendingBuffer = "";
+
+  /*
+   * MAR-784. The pending answers, by request id, so the asks below can be
+   * serial. A map rather than a single slot because a later reader will
+   * reasonably try to make them parallel, and a single slot would go wrong
+   * silently rather than at the type.
+   */
+  const curateWaiters = new Map();
+  const curateCount = Number(process.env.AGENT_CURATE ?? "0");
+
+  /** One brokered ask, resolved when the answer for its id comes back. */
+  function askCurate(index) {
+    const requestId = `curate-${String(index)}`;
+    return new Promise((resolve) => {
+      curateWaiters.set(requestId, resolve);
+      send({
+        type: "broker_request",
+        request: {
+          request_id: requestId,
+          connection_id: "model_provider",
+          operation: "openrouter.digest.curate",
+          input: {
+            material: `1. A lab shipped a smaller model\n2. A round closed at a supervision startup`,
+          },
+        },
+      });
+    });
+  }
+
+  /**
+   * Ask `n` times in a row, then say what happened and finish.
+   *
+   * The run **completes either way**, which is the half of the degrade worth
+   * demonstrating: an agent that ran out of allowance is not an agent that
+   * failed, and a fixture that exited non-zero on a refusal would be proving the
+   * opposite of ADR 0029 amendment 1's claim.
+   */
+  async function curateThenFinish() {
+    const answers = [];
+    for (let index = 1; index <= curateCount; index += 1) {
+      answers.push(await askCurate(index));
+    }
+    const allowed = answers.filter((answer) => answer.ok === true).length;
+    const refused = answers.length - allowed;
+    console.log(
+      `fixture: asked ${String(answers.length)} time(s), ${String(allowed)} allowed, ` +
+        `${String(refused)} refused (${answers.map((one) => one.refusal ?? "ok").join(", ")})`,
+    );
+    send({
+      type: "state",
+      state: {
+        status: "idle",
+        runs: [
+          {
+            id: "run-scheduled-01",
+            status: "completed",
+            started_at: "2026-08-25T00:00:01Z",
+            progress: 1,
+          },
+        ],
+        tasks: [
+          {
+            id: "task-waiting-01",
+            run_id: "run-scheduled-01",
+            label: "Waiting to be run",
+            status: "completed",
+            created_at: "2026-08-25T00:00:00Z",
+          },
+        ],
+        actions: [],
+        approval_requests: [],
+      },
+    });
+  }
+
   process.stdin.on("data", (chunk) => {
     pendingBuffer += chunk;
     let newline = pendingBuffer.indexOf("\n");
@@ -83,6 +173,14 @@ if (process.env.AGENT_PENDING === "1") {
       try {
         message = JSON.parse(line);
       } catch {
+        continue;
+      }
+      if (message.type === "broker_response") {
+        const waiter = curateWaiters.get(message.request_id);
+        if (waiter !== undefined) {
+          curateWaiters.delete(message.request_id);
+          waiter(message);
+        }
         continue;
       }
       if (message.type !== "command") {
@@ -121,6 +219,11 @@ if (process.env.AGENT_PENDING === "1") {
           approval_requests: [],
         },
       });
+      // MAR-784. Only when asked for, so every test written against this branch
+      // before the flag existed sees exactly what it saw.
+      if (curateCount > 0) {
+        void curateThenFinish();
+      }
     }
   });
   setInterval(() => {}, 60_000);

@@ -260,7 +260,7 @@ async function main(): Promise<void> {
   for (const sentence of view.liveness) {
     say(`  · ${sentence}`);
   }
-  say(`  · ${view.no_spend}`);
+  say(`  · ${view.spend_line}`);
   if (view.last === null) {
     say("Scheduled runs: nothing has come round yet.");
   } else {

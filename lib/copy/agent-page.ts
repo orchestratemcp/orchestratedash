@@ -321,12 +321,36 @@ export const AGENT_TILE_COPY = {
  * information, and hiding it would leave the person believing DASH had silently
  * ignored the ask.
  *
- * ## The sentence about money
+ * ## The sentences about money
  *
- * `no_spend` is here because ADR 0029 decision 6 refuses to open a spend
+ * `spend.none` is here because ADR 0029 decision 6 refuses to open a spend
  * allowance on an unattended run, and a person whose agent curates through a
  * model would otherwise discover that from a refusal in a log at 03:00. It is
  * shown next to the control that causes it rather than in a document.
+ *
+ * MAR-784 makes that refusal a **default instead of a rule**, on Henrik's
+ * ruling that *"some agents really need to use AI and some don't"* — so there are
+ * now three sentences where there was one, and which of them is on screen is
+ * decided by what the person has actually chosen:
+ *
+ * - `spend.none` — the default, unchanged, word for word. A schedule nobody
+ *   opted in for says exactly what it said before this feature existed.
+ * - `spend.allowed` — the swap. It states the ceiling as a number, because a
+ *   person who has just permitted unattended spending is owed the size of what
+ *   they permitted, and because a count of calls is the only unit DASH can
+ *   promise (see `lib/broker/spend-allowance.ts` on why it is not a currency).
+ * - `spend.needs_dash_open` — the sentence that costs this feature something to
+ *   say and is said anyway. A schedule *starts* an agent with DASH closed, and
+ *   an agent with DASH closed cannot reach a model, because the broker that
+ *   holds the key runs in DASH's own process — `electron/broker-host.ts`'s
+ *   header has said so since MAR-458. So an allowance is real at 08:00 with the
+ *   window open and inert at 03:00 with it shut, and the panel says which.
+ *
+ * Not saying that third sentence was the tempting option and it is exactly the
+ * failure ADR 0029's own "the bar this is being held to" section is about: a
+ * product that replaces a true sentence with a control and silence has taken
+ * information away. The person setting a nightly schedule is the person who most
+ * needs to know that nightly is the case it does not cover.
  */
 export const AGENT_TRIGGER_COPY = {
   heading: "When this agent starts",
@@ -365,15 +389,68 @@ export const AGENT_TRIGGER_COPY = {
     "If this computer is asleep, off, or restarting, nothing runs. DASH will tell you it was missed, and it does not run it late.",
   ] as readonly string[],
   /**
-   * ADR 0029 decision 6, said where the decision is made.
+   * ADR 0029 decision 6 and its amendment, said where the decision is made.
    *
-   * Deliberately not hidden behind a disclosure. The agent it is most true of is
-   * the one somebody is most likely to want on a timer.
+   * Deliberately not hidden behind a disclosure. The agent these are most true
+   * of is the one somebody is most likely to want on a timer.
    */
-  no_spend:
-    "A scheduled run cannot spend on a model. Steps that need one are skipped; press Run now for those.",
+  spend: {
+    /** The default. ADR 0029 decision 6, unchanged. */
+    none: "A scheduled run cannot spend on a model. Steps that need one are skipped; press Run now for those.",
+    /**
+     * The swap, when a person has opted in (MAR-784).
+     *
+     * Says the number rather than "may use AI", because the number is the whole
+     * of what was agreed to. "Per run" and not "per day": the agent may also be
+     * run by hand, and each of those presses buys its own allowance — a sentence
+     * implying a daily total would be describing a budget DASH does not keep.
+     */
+    allowed: (calls: number): string =>
+      `A scheduled run may use your model up to ${String(calls)} ` +
+      `time${calls === 1 ? "" : "s"} — the same as pressing Run now. Steps past that are skipped.`,
+    /** The bound on the sentence above. See the header. */
+    needs_dash_open:
+      "That works while DASH is open. With DASH closed the run still starts and still publishes, but nothing can reach your model until you open DASH again.",
+  },
+  /** The opt-in itself, beside the time. MAR-784. */
+  allowance_label: "Let a scheduled run use your model",
+  /**
+   * Under the switch, in its off state.
+   *
+   * Names the money and names whose it is, which is the one thing a switch
+   * cannot say on its own. `curateOperation.consequence`'s register: what happens
+   * to the person, in plain language, with no identifiers.
+   */
+  allowance_hint: (calls: number): string =>
+    `Off by default. On, DASH may charge your own model account for up to ` +
+    `${String(calls)} call${calls === 1 ? "" : "s"} each time this schedule starts the agent.`,
   /** The heading over what the schedule has actually done. */
   history_heading: "Scheduled runs",
+  /**
+   * What the last scheduled run actually spent (MAR-784).
+   *
+   * Counted from `broker_audit` rather than reported by the agent — see
+   * `readScheduleSpend` — so this is a receipt and not a claim. Both numbers are
+   * shown even when they are equal, because "used 2 of 2" and "used 2" are
+   * different sentences to somebody deciding whether the ceiling is right.
+   */
+  spent: (used: number, allowed: number): string =>
+    `Used ${String(used)} of ${String(allowed)} model call${allowed === 1 ? "" : "s"}.`,
+  /**
+   * The degrade, said in the person's terms rather than the broker's.
+   *
+   * A run that reaches its ceiling is refused with `needs_a_person` — the exact
+   * refusal a schedule with no allowance at all gets, which is ADR 0029
+   * amendment 1's stated intent: it degrades the way today's no-spend run
+   * degrades, publishing what it could produce without spending. What this
+   * sentence adds is the *reason*, which the refusal itself deliberately does not
+   * carry (`spendAllowed` refuses to distinguish absent, expired and spent, so
+   * an agent cannot learn the shape of the budget by probing it). DASH knows
+   * which it was; the agent does not; the person is told.
+   */
+  ceiling_hit: (allowed: number): string =>
+    `This run used all ${String(allowed)} of its model call${allowed === 1 ? "" : "s"} and then ` +
+    "stopped asking, so the rest of its plan ran without one. It still published what it could.",
   /** One settled window, in the person's words rather than the store's. */
   outcome: {
     ran: "Ran",

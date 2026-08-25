@@ -40,6 +40,7 @@ import {
   RunnerSchedule,
   SCHEDULE_PRINCIPAL,
   type ScheduleConfiguration,
+  type ScheduledAllowance,
 } from "../runner/schedule";
 import { createRunnerServer } from "../runner/server";
 import { openRunnerStore, type RunnerStore } from "../runner/store";
@@ -119,8 +120,15 @@ function harness(options: { registrations?: AgentRegistration[]; now: () => Date
   return { schedule, supervisor, database: opened.store.database, logs };
 }
 
-function scheduleFor(at: string, created: string): AgentSchedule {
-  return { agent: "scout", enabled: true, kind: "daily", at_local: at, created_at: created };
+function scheduleFor(at: string, created: string, allowance = 0): AgentSchedule {
+  return {
+    agent: "scout",
+    enabled: true,
+    kind: "daily",
+    at_local: at,
+    created_at: created,
+    allowance_calls: allowance,
+  };
 }
 
 /** `HH:MM` for a `Date`, in the local clock the planner reads. */
@@ -302,6 +310,17 @@ describe("the routes DASH pushes and drains over", () => {
   async function servedSchedule(): Promise<{
     call: ReturnType<typeof ipcFetch>;
     taken: ScheduleConfiguration[];
+    /**
+     * Set what the next broker drain reports as live ceilings (MAR-784).
+     *
+     * A setter rather than a constructor argument, so one served server can
+     * answer both "nothing standing" and "one fire open" — the two are a
+     * before-and-after of the same route, and two servers would prove them
+     * about two different processes.
+     */
+    withAllowances: (allowances: ScheduledAllowance[]) => {
+      call: ReturnType<typeof ipcFetch>;
+    };
     close: () => Promise<void>;
   }> {
     const dataDir = mkdtempSync(path.join(tmpdir(), "dash-schedule-route-"));
@@ -310,6 +329,7 @@ describe("the routes DASH pushes and drains over", () => {
     open.push({ store, supervisor, dataDir });
 
     const taken: ScheduleConfiguration[] = [];
+    let allowances: ScheduledAllowance[] = [];
     const server = createRunnerServer({
       supervisor,
       database: store.database,
@@ -317,15 +337,21 @@ describe("the routes DASH pushes and drains over", () => {
       principal: SCHEDULE_PRINCIPAL,
       configureSchedules: (configuration) => taken.push(configuration),
       drainSchedules: () => [],
+      scheduledAllowances: () => allowances,
       log: () => {},
     });
     const endpoint = runnerEndpoint(dataDir, randomBytes(8).toString("hex"));
     await prepareEndpoint(endpoint);
     await listenOnEndpoint(server, endpoint);
 
+    const call = ipcFetch(endpoint.path);
     return {
-      call: ipcFetch(endpoint.path),
+      call,
       taken,
+      withAllowances: (next: ScheduledAllowance[]) => {
+        allowances = next;
+        return { call };
+      },
       close: () =>
         new Promise<void>((resolve) => {
           server.close(() => {
@@ -398,6 +424,117 @@ describe("the routes DASH pushes and drains over", () => {
       });
       expect(response.status).toBe(400);
       expect(served.taken).toEqual([]);
+    } finally {
+      await served.close();
+    }
+  });
+
+  /**
+   * MAR-784, ADR 0029 amendment 1. The one field whose failure mode is different
+   * from every other field's on this route.
+   *
+   * A bad **time** drops the whole member, because DASH would otherwise start an
+   * agent at a moment nobody picked — that is the test directly above. A bad
+   * **ceiling** drops only the ceiling, because dropping the member would
+   * silently stop somebody's agent running at all, and a schedule that runs
+   * without spending is strictly better than a schedule that has quietly
+   * stopped.
+   */
+  it("keeps a schedule whose ceiling it cannot read, and reads the ceiling as nothing", async () => {
+    const served = await servedSchedule();
+    try {
+      const response = await served.call(`${IPC_ORIGIN}/schedules`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${ROUTE_TOKEN}` },
+        body: JSON.stringify({
+          schedules: [
+            {
+              agent: "sane",
+              enabled: true,
+              kind: "daily",
+              at_local: "08:00",
+              created_at: "x",
+              allowance_calls: 2,
+            },
+            // A number no build of DASH could have written.
+            {
+              agent: "greedy",
+              enabled: true,
+              kind: "daily",
+              at_local: "08:00",
+              created_at: "x",
+              allowance_calls: 500,
+            },
+            // A string where a number belongs, which is what an older or a
+            // hand-edited sender produces.
+            {
+              agent: "stringy",
+              enabled: true,
+              kind: "daily",
+              at_local: "08:00",
+              created_at: "x",
+              allowance_calls: "2",
+            },
+            // Absent entirely, which is every schedule set before this field
+            // existed and every push from a DASH that predates it.
+            { agent: "old", enabled: true, kind: "daily", at_local: "08:00", created_at: "x" },
+          ],
+          since: {},
+        }),
+      });
+      expect(await response.json()).toMatchObject({ ok: true, taken: 4 });
+
+      const byAgent = new Map(
+        (served.taken[0]?.schedules ?? []).map((entry) => [entry.agent, entry.allowance_calls]),
+      );
+      expect(byAgent.get("sane")).toBe(2);
+      expect(byAgent.get("greedy")).toBe(0);
+      expect(byAgent.get("stringy")).toBe(0);
+      expect(byAgent.get("old")).toBe(0);
+    } finally {
+      await served.close();
+    }
+  });
+
+  /**
+   * MAR-784. The ceilings ride the **broker** drain rather than a route of their
+   * own, so that a request and the allowance covering it arrive in one reply and
+   * there is no ordering between two polls to get wrong.
+   *
+   * A runner with no scheduler answers with an empty list rather than omitting
+   * the field: a reader must never have to decide whether "no allowances" and
+   * "this runner cannot say" are different.
+   */
+  it("reports live scheduled ceilings on the broker drain", async () => {
+    const served = await servedSchedule();
+    try {
+      const empty = await served.call(`${IPC_ORIGIN}/broker/drain`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ROUTE_TOKEN}` },
+      });
+      expect(await empty.json()).toMatchObject({ ok: true, scheduled_allowances: [] });
+
+      const withOne = await served.withAllowances([
+        {
+          agent_id: "scout",
+          fire_id: "schedule-fire-abc",
+          opened_at: "2026-08-25T03:00:00.000Z",
+          calls: 2,
+        },
+      ]).call(`${IPC_ORIGIN}/broker/drain`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${ROUTE_TOKEN}` },
+      });
+      expect(await withOne.json()).toMatchObject({
+        ok: true,
+        scheduled_allowances: [
+          {
+            agent_id: "scout",
+            fire_id: "schedule-fire-abc",
+            calls: 2,
+          },
+        ],
+      });
     } finally {
       await served.close();
     }

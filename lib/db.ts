@@ -1926,6 +1926,46 @@ const MIGRATIONS: readonly Migration[] = [
   CREATE INDEX IF NOT EXISTS agent_schedule_runs_by_agent
     ON agent_schedule_runs (agent, due_at DESC);
   `,
+
+  /**
+   * MAR-784, ADR 0029 amendment 1: what a scheduled run of this agent may spend,
+   * and what the one that already happened was given.
+   *
+   * Two columns and no table, on `chief_messages.evidence_json`'s terms: neither
+   * fact has any life apart from the row it hangs off, neither is ever queried
+   * across agents, and both die with the thing they are about. A join would be a
+   * second place for a ceiling to go missing from.
+   *
+   * ## `agent_schedules.allowance_calls`: the ceiling, and why zero is the default
+   *
+   * **Zero, and zero is the whole of ADR 0029 decision 6 kept as the default.**
+   * Every schedule that exists in an installed store today was set under a rule
+   * that said an unattended run may not spend, and a migration that opened one
+   * for them would be DASH changing what somebody has already agreed to. So the
+   * column arrives at 0 for every existing row, and the only thing that can make
+   * it anything else is a person opening the panel and asking for it.
+   *
+   * A count of model calls rather than an amount of money, `SPEND_ALLOWANCE_CALLS`'
+   * own reason restated where the number is stored: two of the three providers
+   * never state a price at all and the third states it after the call, so a
+   * dollar ceiling could only ever be checked once the money was gone. Calls are
+   * the unit DASH holds exactly and in advance. `lib/schedule/plan.ts` bounds the
+   * value, and re-checks it on the way back out of this column.
+   *
+   * ## `agent_schedule_runs.allowance_calls`: what that window was actually given
+   *
+   * Written by the drain from the runner's own settlement, never derived from the
+   * schedule row at read time. Those are two different facts the moment somebody
+   * edits a ceiling: the schedule says what the *next* run may spend, and this
+   * says what *that* run was handed. A panel showing today's ceiling against last
+   * night's spend would report a pairing nothing ever agreed to.
+   * `broker_audit.decided_on`'s rule — a row must not be able to lose the thing
+   * that makes it true by being read later.
+   */
+  (database: DatabaseSync): void => {
+    addColumn(database, "agent_schedules", "allowance_calls", "INTEGER NOT NULL DEFAULT 0");
+    addColumn(database, "agent_schedule_runs", "allowance_calls", "INTEGER NOT NULL DEFAULT 0");
+  },
 ];
 
 /**

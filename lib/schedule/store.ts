@@ -29,7 +29,14 @@
  */
 
 import { db } from "../db";
-import { isLocalTime, type AgentSchedule, type ScheduleSettlement } from "./plan";
+import { isSpendOperation, operationById } from "../broker/operations";
+import {
+  allowanceCalls,
+  isLocalTime,
+  MAX_SCHEDULE_ALLOWANCE_CALLS,
+  type AgentSchedule,
+  type ScheduleSettlement,
+} from "./plan";
 
 /**
  * How many settled windows are kept per agent.
@@ -62,6 +69,13 @@ function toSchedule(row: Record<string, unknown>): AgentSchedule | null {
     kind: "daily",
     at_local: at,
     created_at: text(row, "created_at"),
+    /*
+     * The fourth re-check, and the one this module's header is most about
+     * (MAR-784). `allowanceCalls` answers zero for anything it does not
+     * recognise, so a column somebody widened with a database browser reads back
+     * as the no-spend default rather than as permission to spend that much.
+     */
+    allowance_calls: allowanceCalls(Number(row["allowance_calls"] ?? 0)),
   };
 }
 
@@ -69,7 +83,8 @@ function toSchedule(row: Record<string, unknown>): AgentSchedule | null {
 export function readAgentSchedule(agent: string): AgentSchedule | null {
   const row = db()
     .prepare(
-      "SELECT agent, enabled, kind, at_local, created_at FROM agent_schedules WHERE agent = ?",
+      "SELECT agent, enabled, kind, at_local, created_at, allowance_calls " +
+        "FROM agent_schedules WHERE agent = ?",
     )
     .get(agent) as Record<string, unknown> | undefined;
   return row === undefined ? null : toSchedule(row);
@@ -88,7 +103,8 @@ export function readAgentSchedule(agent: string): AgentSchedule | null {
 export function readAgentSchedules(): AgentSchedule[] {
   return db()
     .prepare(
-      "SELECT agent, enabled, kind, at_local, created_at FROM agent_schedules ORDER BY agent",
+      "SELECT agent, enabled, kind, at_local, created_at, allowance_calls " +
+        "FROM agent_schedules ORDER BY agent",
     )
     .all()
     .map((row) => toSchedule(row as Record<string, unknown>))
@@ -111,6 +127,7 @@ export function writeAgentSchedule(
   agent: string,
   atLocal: string,
   now: string,
+  allowance = 0,
 ): { ok: boolean; refusal?: string } {
   if (agent.trim().length === 0) {
     return { ok: false, refusal: "A schedule has to name an agent." };
@@ -118,13 +135,30 @@ export function writeAgentSchedule(
   if (!isLocalTime(atLocal)) {
     return { ok: false, refusal: "A daily schedule needs a time of day written as HH:MM." };
   }
+  /*
+   * MAR-784. Refused rather than quietly reduced, unlike every *read* of this
+   * column, and the asymmetry is deliberate. A value arriving here came from a
+   * person pressing Save on a panel, so silently storing a different number than
+   * the one on screen would be the page lying about what it saved. A value
+   * arriving from the column came from a disk, where the honest response to
+   * something unrecognised is the safe default and no sentence at all.
+   */
+  if (!Number.isInteger(allowance) || allowance < 0 || allowance > MAX_SCHEDULE_ALLOWANCE_CALLS) {
+    return {
+      ok: false,
+      refusal:
+        `A scheduled run may be allowed between 0 and ${String(MAX_SCHEDULE_ALLOWANCE_CALLS)} ` +
+        "model calls.",
+    };
+  }
   db()
     .prepare(
-      "INSERT INTO agent_schedules (agent, enabled, kind, at_local, created_at) " +
-        "VALUES (?, 1, 'daily', ?, ?) " +
-        "ON CONFLICT(agent) DO UPDATE SET enabled = 1, kind = 'daily', at_local = excluded.at_local",
+      "INSERT INTO agent_schedules (agent, enabled, kind, at_local, created_at, allowance_calls) " +
+        "VALUES (?, 1, 'daily', ?, ?, ?) " +
+        "ON CONFLICT(agent) DO UPDATE SET enabled = 1, kind = 'daily', " +
+        "at_local = excluded.at_local, allowance_calls = excluded.allowance_calls",
     )
-    .run(agent, atLocal.trim(), now);
+    .run(agent, atLocal.trim(), now, allowance);
   return { ok: true };
 }
 
@@ -183,8 +217,8 @@ export function recordScheduleRuns(settlements: readonly ScheduleSettlement[]): 
   }
   const database = db();
   const insert = database.prepare(
-    "INSERT INTO agent_schedule_runs (agent, due_at, settled_at, outcome, detail) " +
-      "SELECT ?, ?, ?, ?, ? " +
+    "INSERT INTO agent_schedule_runs (agent, due_at, settled_at, outcome, detail, allowance_calls) " +
+      "SELECT ?, ?, ?, ?, ?, ? " +
       "WHERE NOT EXISTS (SELECT 1 FROM agent_schedule_runs WHERE agent = ? AND due_at = ?)",
   );
   const prune = database.prepare(
@@ -204,6 +238,13 @@ export function recordScheduleRuns(settlements: readonly ScheduleSettlement[]): 
       settlement.settled_at,
       settlement.outcome,
       settlement.detail,
+      /*
+       * MAR-784. Re-checked here even though the runner already checked it, for
+       * `readScheduleConfiguration`'s reason pointed the other way down the
+       * channel: this is the boundary between a number another process sent and
+       * a number DASH's own store will report back as what it permitted.
+       */
+      allowanceCalls(settlement.allowance_calls),
       settlement.agent,
       settlement.due_at,
     );
@@ -222,8 +263,8 @@ export function recordScheduleRuns(settlements: readonly ScheduleSettlement[]): 
 export function readScheduleRuns(agent: string, limit = MAX_SCHEDULE_RUNS_KEPT): ScheduleSettlement[] {
   return db()
     .prepare(
-      "SELECT agent, due_at, settled_at, outcome, detail FROM agent_schedule_runs " +
-        "WHERE agent = ? ORDER BY due_at DESC, id DESC LIMIT ?",
+      "SELECT agent, due_at, settled_at, outcome, detail, allowance_calls " +
+        "FROM agent_schedule_runs WHERE agent = ? ORDER BY due_at DESC, id DESC LIMIT ?",
     )
     .all(agent, limit)
     .map((raw) => {
@@ -239,6 +280,98 @@ export function readScheduleRuns(agent: string, limit = MAX_SCHEDULE_RUNS_KEPT):
         outcome:
           outcome === "ran" || outcome === "missed" || outcome === "refused" ? outcome : "refused",
         detail: text(row, "detail"),
+        allowance_calls: allowanceCalls(Number(row["allowance_calls"] ?? 0)),
       };
     });
+}
+
+/**
+ * What a scheduled run actually spent, counted from the rows DASH already writes
+ * (MAR-784).
+ *
+ * ## Why this is counted and not recorded
+ *
+ * The obvious implementation is a `spent_calls` column on `agent_schedule_runs`,
+ * written when the run ends. It is refused, and the reason is the one ADR 0029
+ * decision 8 gives for the spool existing at all: **the party that would report
+ * the number is the party being reported on.** A run's end reaches DASH as a
+ * `run_completed` event the agent emits, so a spend count written from it would
+ * be a child process telling DASH how much of somebody's money it had used.
+ *
+ * `broker_audit` is the opposite kind of fact. DASH's broker writes one row per
+ * adjudicated request, at the moment it adjudicates, and it writes the refusals
+ * too. So the answer to *"what did last night's run cost, and did it run out?"*
+ * is already in the store, written by the only party that could know, and this
+ * function reads it rather than asking anybody.
+ *
+ * ## The window
+ *
+ * From the moment the runner settled the window to `SPEND_ALLOWANCE_MS` after it,
+ * which is the exact life of the allowance the fire opened. Bounding it by the
+ * allowance rather than by "until the next scheduled run" is what stops a press
+ * of Run now at nine in the morning being counted against the 03:00 schedule —
+ * that press opens its own allowance and its calls land outside this window.
+ *
+ * The imprecision that remains is stated rather than papered over: a person who
+ * presses Run now *within ten minutes of a scheduled fire* has their press
+ * counted here too. DASH cannot tell those apart — `broker_audit` records which
+ * agent and which operation, never which press — and the alternative is a
+ * request that carries its own provenance, which is the one thing
+ * `BrokerOrigin` exists to refuse.
+ */
+export interface ScheduleSpend {
+  /** Spend calls this window's allowance actually paid for. */
+  allowed: number;
+  /**
+   * Spend calls refused for want of an allowance in the same window.
+   *
+   * Non-zero is the ceiling being reached: the fire opened an allowance, the
+   * agent spent it, and the next model step was refused with the same
+   * `needs_a_person` a schedule with no allowance at all gets. That equivalence
+   * is deliberate — see ADR 0029 amendment 1 — and this counter is how a person
+   * finds out it happened without reading a log.
+   */
+  refused: number;
+}
+
+export function readScheduleSpend(
+  agent: string,
+  from: string,
+  windowMs: number,
+): ScheduleSpend {
+  const start = new Date(from);
+  if (Number.isNaN(start.getTime())) {
+    return { allowed: 0, refused: 0 };
+  }
+  const until = new Date(start.getTime() + windowMs).toISOString();
+
+  const rows = db()
+    .prepare(
+      "SELECT operation, decision FROM broker_audit " +
+        "WHERE agent = ? AND decided_at >= ? AND decided_at < ?",
+    )
+    .all(agent, start.toISOString(), until) as Record<string, unknown>[];
+
+  let allowed = 0;
+  let refused = 0;
+  for (const row of rows) {
+    /*
+     * Resolved through the catalogue rather than matched on the id's shape. A
+     * `LIKE '%.digest.curate'` would have counted one of the three spend
+     * operations and silently missed the other two the day a plan used them —
+     * `isSpendOperation` is the predicate the broker itself charges by, and
+     * asking the same question here is what keeps the receipt and the charge in
+     * agreement.
+     */
+    const operation = operationById(text(row, "operation"));
+    if (operation === null || !isSpendOperation(operation)) {
+      continue;
+    }
+    if (text(row, "decision") === "allowed") {
+      allowed += 1;
+    } else {
+      refused += 1;
+    }
+  }
+  return { allowed, refused };
 }

@@ -20,7 +20,18 @@
  * "the machine woke up at 14:20 and it is now time to do the 08:00 run" and "the
  * tick ran fifteen seconds late" are the same sentence, and only one of them
  * should start an agent.
+ *
+ * ## The one import
+ *
+ * `SPEND_ALLOWANCE_CALLS`, and it is the only thing this file takes from
+ * anywhere. It is a number and not a mechanism — `lib/broker/spend-allowance.ts`
+ * is pure too, and holds nothing — so the property this module's header claims
+ * is unchanged. It is imported rather than restated because
+ * `MAX_SCHEDULE_ALLOWANCE_CALLS` *is* that bound, and a second copy of it would
+ * be exactly the drift ADR 0029 amendment 1's ceiling exists to prevent.
  */
+
+import { SPEND_ALLOWANCE_CALLS } from "../broker/spend-allowance";
 
 /** How a schedule says when. One member; ADR 0029 decision 9 for why. */
 export type ScheduleKind = "daily";
@@ -34,6 +45,23 @@ export interface AgentSchedule {
   at_local: string;
   /** ISO 8601. When the person set it — the earliest window that can be due. */
   created_at: string;
+  /**
+   * How many model calls one fire of this schedule may pay for (MAR-784).
+   *
+   * **Zero means no spend, and zero is the default everywhere** — the column's,
+   * this type's, the parser's on the runner's side of the channel, and the
+   * panel's. ADR 0029 decision 6 is still the rule for a schedule nobody has
+   * opted in; what amendment 1 adds is a way to opt one out of it, per schedule,
+   * because Henrik's ruling was that *"some agents really need to use AI and some
+   * don't"* and that is a per-agent fact rather than a product-wide one.
+   *
+   * Bounded by `MAX_SCHEDULE_ALLOWANCE_CALLS` and re-checked on every boundary it
+   * crosses. A number that is not an integer in range reads as zero rather than
+   * being clamped up towards it: the direction to be wrong in, for a value that
+   * decides how much of somebody's account an unattended process may spend, is
+   * *less*.
+   */
+  allowance_calls: number;
 }
 
 /**
@@ -56,6 +84,20 @@ export interface ScheduleSettlement {
   settled_at: string;
   outcome: ScheduleOutcome;
   detail: string;
+  /**
+   * What this window was handed, not what the schedule says today (MAR-784).
+   *
+   * Carried on the settlement rather than looked up when the row is drawn,
+   * because a ceiling is editable and a window is not: somebody who lowers a
+   * schedule from two calls to one at lunchtime must not find last night's run
+   * retrospectively described as having been allowed one. The runner knows the
+   * number at the moment it fires and this is how that moment travels.
+   *
+   * Always zero for `missed` and for `refused`, because neither started anything
+   * — see `missedRowFor`, which writes the zero rather than leaving it to a
+   * caller's default.
+   */
+  allowance_calls: number;
 }
 
 /**
@@ -71,6 +113,69 @@ export interface ScheduleSettlement {
  * rather than a constant that drifted.
  */
 export const SCHEDULE_GRACE_MS = 5 * 60 * 1000;
+
+/**
+ * The most model calls one scheduled fire may be given (MAR-784).
+ *
+ * **`SPEND_ALLOWANCE_CALLS`, and it is that constant rather than a number of
+ * this feature's own.** An unattended run must never be worth more than a
+ * watched one: whatever a person's own press of Run now buys is the ceiling on
+ * what a schedule they opted in for can buy, and writing the bound as the same
+ * symbol is what stops the two drifting apart in somebody's later diff.
+ *
+ * That is a stronger bound than ADR 0029 decision 6's replacement needed to be,
+ * and it is chosen deliberately. Decision 6's whole argument is that *"a schedule
+ * is typed once and fires forever"* — the thing that makes an unattended
+ * allowance frightening is repetition, not size, and the answer to repetition is
+ * not to make each firing bigger.
+ *
+ * `openRunSpend` clamps to the same number on the other side of the seam, so a
+ * value that got past every check here still cannot open a wider allowance than
+ * a press. Two boundaries, one bound, `runner/execute.ts`'s own argument.
+ */
+export const MAX_SCHEDULE_ALLOWANCE_CALLS = SPEND_ALLOWANCE_CALLS;
+
+/**
+ * What opting in means, since the panel offers a switch and not a number.
+ *
+ * The maximum, which is the same as saying: *a run you said yes to gets exactly
+ * what your own press would have got.* A person opting in is asking for the run
+ * they would have had by pressing the button, at a time they are not there to
+ * press it, and offering them a smaller version of it would be DASH being
+ * cautious with somebody else's decision after they already made it.
+ *
+ * The column holds a number rather than a flag even though every value this
+ * build writes is 0 or this one. `agent_schedules.kind` is a string for the same
+ * reason: the shapes this feature declines are values, not migrations, and a
+ * `may_spend INTEGER` column would have to become a number the day anybody wants
+ * to type one.
+ */
+export const DEFAULT_SCHEDULE_ALLOWANCE_CALLS = MAX_SCHEDULE_ALLOWANCE_CALLS;
+
+/**
+ * A stored or transmitted ceiling, made safe to act on.
+ *
+ * Every boundary this value crosses calls this, and it always answers with an
+ * integer in `[0, MAX_SCHEDULE_ALLOWANCE_CALLS]`. Anything else — a float, a
+ * string, a negative, a number somebody typed into the column with a database
+ * browser, a value from a build that allowed more — becomes **zero** and not the
+ * nearest legal value.
+ *
+ * That direction is the whole point. Clamping down to the maximum would turn a
+ * corrupt row into the largest spend this build permits; falling to zero turns
+ * it into the behaviour DASH had before this field existed, which is a schedule
+ * that runs and does not spend. `readAgentSchedules`' discipline, pointed at the
+ * one column in this feature that costs money.
+ */
+export function allowanceCalls(value: unknown): number {
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    return 0;
+  }
+  if (value < 0 || value > MAX_SCHEDULE_ALLOWANCE_CALLS) {
+    return 0;
+  }
+  return value;
+}
 
 /**
  * How far back a single tick will look for windows nobody settled.
@@ -255,6 +360,9 @@ export function missedRowFor(
     due_at: due.toISOString(),
     settled_at: now.toISOString(),
     outcome: "missed",
+    // Nothing started, so nothing was allowed. Written rather than defaulted, so
+    // that a reader of this row never has to decide what an absent ceiling meant.
+    allowance_calls: 0,
     detail:
       count === 1
         ? "This computer was asleep, off, or restarting when this run was due, so nothing started. DASH does not run it late."

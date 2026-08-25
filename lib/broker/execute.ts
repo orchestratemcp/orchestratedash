@@ -490,8 +490,27 @@ export interface Broker {
    * Idempotent in the direction that matters: a second press replaces the
    * allowance rather than adding to it, so the ceiling stays one press's worth
    * however many times somebody presses. See `openRunSpend`.
+   *
+   * ## `calls` (MAR-784, ADR 0029 amendment 1)
+   *
+   * Absent is a person's press and means `SPEND_ALLOWANCE_CALLS` — the whole of
+   * what this method meant before there was a second caller, so the Run-now path
+   * reads exactly as it did.
+   *
+   * Present is a **scheduled** fire the person opted in for, and the number is
+   * the ceiling they set on their own page. It cannot widen anything:
+   * `openRunSpend` clamps it to `SPEND_ALLOWANCE_CALLS`, and the caller that
+   * supplies it has already taken the smaller of what the runner reported and
+   * what DASH's own store holds. The sentence ADR 0016 protects — *a person is
+   * behind every penny* — survives with one word changed: the person is behind
+   * it when they set the schedule rather than when it fires, which is what
+   * `AGENT_TRIGGER_COPY` now says on the panel where they set it.
+   *
+   * There is still **no way for a request to open one.** This is a method on the
+   * broker for `BrokerOrigin`'s stated reason, and adding a parameter to it does
+   * not change which side of the seam it lives on.
    */
-  allowRunSpend(agentId: string, at: Date): void;
+  allowRunSpend(agentId: string, at: Date, calls?: number): void;
   /**
    * Answer one request about one principal's connection.
    *
@@ -533,8 +552,11 @@ export function createBroker(deps: BrokerDeps): Broker {
   }
 
   return {
-    allowRunSpend(agentId: string, at: Date): void {
-      budgetFor({ kind: "agent", agent_id: agentId }).runSpend = openRunSpend(at.getTime());
+    allowRunSpend(agentId: string, at: Date, calls?: number): void {
+      budgetFor({ kind: "agent", agent_id: agentId }).runSpend = openRunSpend(
+        at.getTime(),
+        calls,
+      );
     },
 
     async handle(

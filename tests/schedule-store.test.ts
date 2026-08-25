@@ -64,6 +64,9 @@ describe("writing a schedule", () => {
       kind: "daily",
       at_local: "08:00",
       created_at: "2026-08-24T12:00:00.000Z",
+      // MAR-784. A schedule saved without naming a ceiling is a schedule that
+      // may not spend, which is ADR 0029 decision 6 kept as the default.
+      allowance_calls: 0,
     });
   });
 
@@ -147,6 +150,7 @@ describe("turning a schedule off", () => {
         settled_at: "2026-08-25T06:00:12.000Z",
         outcome: "ran",
         detail: "Started on time.",
+        allowance_calls: 0,
       },
     ]);
     schedules.clearAgentSchedule("scout");
@@ -165,6 +169,7 @@ describe("recording what the runner settled", () => {
         settled_at: "2026-08-25T06:00:12.000Z",
         outcome: "ran",
         detail: "Started on time.",
+        allowance_calls: 0,
       },
       {
         agent: "scout",
@@ -172,6 +177,7 @@ describe("recording what the runner settled", () => {
         settled_at: "2026-08-26T12:20:00.000Z",
         outcome: "missed",
         detail: "This computer was asleep.",
+        allowance_calls: 0,
       },
     ]);
     expect(written).toBe(2);
@@ -195,6 +201,7 @@ describe("recording what the runner settled", () => {
       settled_at: "2026-08-25T06:00:12.000Z",
       outcome: "ran" as const,
       detail: "Started on time.",
+      allowance_calls: 0,
     };
     expect(schedules.recordScheduleRuns([row])).toBe(1);
     expect(schedules.recordScheduleRuns([row])).toBe(0);
@@ -211,6 +218,7 @@ describe("recording what the runner settled", () => {
       settled_at: `2026-09-${String(index + 1).padStart(2, "0")}T06:00:05.000Z`,
       outcome: "ran" as const,
       detail: "Started on time.",
+      allowance_calls: 0,
     }));
     schedules.recordScheduleRuns(rows);
 
@@ -232,6 +240,7 @@ describe("recording what the runner settled", () => {
         settled_at: "2026-08-25T06:00:12.000Z",
         outcome: "ran",
         detail: "",
+        allowance_calls: 0,
       },
       {
         agent: "scout",
@@ -239,6 +248,7 @@ describe("recording what the runner settled", () => {
         settled_at: "2026-08-26T06:00:12.000Z",
         outcome: "ran",
         detail: "",
+        allowance_calls: 0,
       },
       {
         agent: "digest",
@@ -246,6 +256,7 @@ describe("recording what the runner settled", () => {
         settled_at: "2026-08-20T06:00:12.000Z",
         outcome: "refused",
         detail: "",
+        allowance_calls: 0,
       },
     ]);
     expect(schedules.newestScheduleWindows()).toEqual({
@@ -311,6 +322,7 @@ describe("removing the agent", () => {
         settled_at: "2026-08-25T06:00:12.000Z",
         outcome: "ran",
         detail: "Started on time.",
+        allowance_calls: 0,
       },
     ]);
     expect(schedules.readAgentSchedule(agent)).not.toBeNull();

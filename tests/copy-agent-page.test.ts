@@ -147,8 +147,50 @@ describe("the agent page's copy", () => {
    * discovered from a log at 03:00.
    */
   it("says a scheduled run cannot spend, and where to press instead", () => {
-    expect(AGENT_TRIGGER_COPY.no_spend).toContain("cannot spend");
-    expect(AGENT_TRIGGER_COPY.no_spend).toContain("Run now");
+    expect(AGENT_TRIGGER_COPY.spend.none).toContain("cannot spend");
+    expect(AGENT_TRIGGER_COPY.spend.none).toContain("Run now");
+  });
+
+  /**
+   * MAR-784, ADR 0029 amendment 1. The swap, and the bound that has to come
+   * with it.
+   *
+   * The second assertion is the one worth having. An allowance sentence with no
+   * "while DASH is open" beside it would be the exact downgrade in honesty ADR
+   * 0029's own "the bar this is being held to" section is written against: a
+   * true sentence replaced by a control and silence. A person setting a 03:00
+   * schedule is the person that sentence is for.
+   */
+  it("swaps the no-spend sentence for one that states the ceiling and its bound", () => {
+    const allowed = AGENT_TRIGGER_COPY.spend.allowed(2);
+    expect(allowed).toContain("2");
+    expect(allowed).toContain("Run now");
+    expect(allowed).not.toContain("cannot spend");
+
+    expect(AGENT_TRIGGER_COPY.spend.needs_dash_open).toContain("DASH closed");
+    expect(AGENT_TRIGGER_COPY.spend.needs_dash_open).toContain("still starts");
+  });
+
+  /**
+   * The switch's own copy names the money and whose it is, which is the one
+   * thing a checkbox cannot say for itself.
+   */
+  it("says whose account a scheduled run would charge", () => {
+    expect(AGENT_TRIGGER_COPY.allowance_label).toContain("model");
+    const hint = AGENT_TRIGGER_COPY.allowance_hint(2);
+    expect(hint).toContain("Off by default");
+    expect(hint).toContain("your own model account");
+  });
+
+  /**
+   * The receipt and the degrade. `ceiling_hit` has to say the run still
+   * published, because the whole claim of the amendment is that reaching a
+   * ceiling is a degrade and not a failure.
+   */
+  it("reports what a scheduled run spent, and says a run that ran out still published", () => {
+    expect(AGENT_TRIGGER_COPY.spent(1, 2)).toBe("Used 1 of 2 model calls.");
+    expect(AGENT_TRIGGER_COPY.spent(1, 1)).toBe("Used 1 of 1 model call.");
+    expect(AGENT_TRIGGER_COPY.ceiling_hit(2)).toContain("still published");
   });
 
   /**
