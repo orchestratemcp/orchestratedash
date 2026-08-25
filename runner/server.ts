@@ -62,14 +62,15 @@ import {
 import type { ChiefBridgeConfiguration } from "./chief";
 import type { ChiefAuditRow } from "./chief-broker";
 import type { NotifyConfiguration } from "./notify";
-import type { ScheduleConfiguration } from "./schedule";
+import type { ScheduleConfiguration, ScheduledAllowance } from "./schedule";
 /*
  * MAR-785, ADR 0030. `readScheduleConfiguration` used to live in this file, and
  * moved to `runner/schedule.ts` when a second caller appeared: the scheduler
  * itself now parses the row it remembered across a restart. One parser rather
  * than two is the point — a runner that would refuse a set over the channel must
  * refuse the same set off its own disk, and two implementations of "checked
- * field by field" is exactly the pair that drifts.
+ * field by field" is exactly the pair that drifts. MAR-784's allowance_calls
+ * handling travelled with the parser in the move.
  */
 import { readScheduleConfiguration } from "./schedule";
 import type { ScheduleSettlement } from "../lib/schedule/plan";
@@ -186,6 +187,20 @@ export interface RunnerServerOptions {
   configureSchedules?: (configuration: ScheduleConfiguration) => void;
   /** What the scheduler settled while DASH was closed (ADR 0029 decision 8). */
   drainSchedules?: () => ScheduleSettlement[];
+  /**
+   * Which scheduled fires are still inside their ceiling (MAR-784).
+   *
+   * Read on the broker drain rather than drained, and the difference is the
+   * point: a drain empties a queue, and this is a *standing* fact for as long as
+   * the window lasts. DASH may poll twice inside one allowance and must get the
+   * same answer both times — with the same `fire_id`, which is what lets it open
+   * the ceiling exactly once. See `ScheduledAllowance`.
+   *
+   * Absent on a runner built without a scheduler, where the honest answer is an
+   * empty list rather than a missing field: a reader must never have to decide
+   * whether "no allowances" and "this runner cannot say" are different.
+   */
+  scheduledAllowances?: () => ScheduledAllowance[];
   /** Graceful process shutdown, supplied only by the standalone runner. */
   shutdown?: () => void;
   /**
@@ -717,13 +732,32 @@ async function handle(
   // parses each candidate on the DASH side, which is where the operation
   // allowlist and the vault are. What the runner contributes, and what nothing
   // else could, is the identity of the child that wrote each line.
+  //
+  // MAR-784 adds the second thing only this process can contribute: **which of
+  // those children it started itself, on a schedule that carries a ceiling.**
+  // It rides this reply rather than a route of its own, and that is the whole
+  // safety argument for the feature. A ceiling delivered on a separate poll
+  // would be a ceiling that might arrive after the request it was meant to
+  // cover, and the failure would be a scheduled run refused at 03:00 for a
+  // reason nobody could reproduce at nine. In one reply there is no ordering to
+  // get wrong: every request in this body was written by a child of this
+  // process, and every allowance in it was opened by this process before it
+  // answered. See `ScheduledAllowance`.
+  //
+  // It is still only a claim. `electron/broker-host.ts` reads it against DASH's
+  // own `agent_schedules` row and grants the smaller of the two, so this route
+  // cannot widen anything the person did not already set on their own page.
   if (
     request.method === "POST" &&
     segments.length === 2 &&
     segments[0] === "broker" &&
     segments[1] === "drain"
   ) {
-    send(response, 200, { ok: true, ...options.supervisor.drainBrokerRequests() });
+    send(response, 200, {
+      ok: true,
+      ...options.supervisor.drainBrokerRequests(),
+      scheduled_allowances: options.scheduledAllowances?.() ?? [],
+    });
     return;
   }
 

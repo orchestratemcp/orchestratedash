@@ -31,7 +31,17 @@ import {
  * created-at floor unless it means to.
  */
 function scheduleAt(at: string, created = "2026-01-01T00:00:00.000Z"): AgentSchedule {
-  return { agent: "scout", enabled: true, kind: "daily", at_local: at, created_at: created };
+  // MAR-784: no allowance, which is the default every schedule in this file is
+  // about. `decideSchedule` has no opinion about money and must not grow one —
+  // the tests for the ceiling live beside the ceiling.
+  return {
+    agent: "scout",
+    enabled: true,
+    kind: "daily",
+    at_local: at,
+    created_at: created,
+    allowance_calls: 0,
+  };
 }
 
 /** A local-time `Date`, so the tests read in the same clock the planner uses. */

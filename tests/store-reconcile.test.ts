@@ -46,14 +46,20 @@ const opened: Array<{ dataDir: string; closeDb: () => void }> = [];
  * real days: they are frozen, and changing one changes what is under test. This
  * one only says "and then the loop ran to the end", so every appended migration
  * moves it — MAR-654 took it to 28, MAR-479 to 31, ADR 0028's `chief_discord`
- * to 32, MAR-744's `evidence_json` to 33, and ADR 0029's two schedule tables to
- * 34.
+ * to 32, MAR-744's `evidence_json` to 33, ADR 0029's two schedule tables to 34,
+ * and MAR-784's two `allowance_calls` columns to 35.
+ *
+ * `RECONCILED_VERSION` stayed at 27 through all of them, which is the property
+ * the paragraph above is guarding and the one MAR-784 was told to check: a
+ * reconciliation is about a store that existed on a real machine on a real day,
+ * and a constant that followed the head would rewrite what is under test every
+ * time somebody appended a column.
  *
  * A constant rather than nine literals, because the alternative makes appending
  * a migration look like nine broken assertions — which is how a signature
  * number gets "fixed" by somebody moving it.
  */
-const HEAD_VERSION = 34;
+const HEAD_VERSION = 35;
 
 async function freshStore(): Promise<{ dataDir: string; db: typeof import("../lib/db") }> {
   const dataDir = mkdtempSync(path.join(tmpdir(), "dash-reconcile-"));

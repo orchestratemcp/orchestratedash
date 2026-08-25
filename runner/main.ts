@@ -378,6 +378,11 @@ async function main(): Promise<void> {
       schedule.configure(configuration);
     },
     drainSchedules: () => schedule.drain(),
+    // MAR-784, ADR 0029 amendment 1. The ceilings this process opened when it
+    // fired, read on the broker drain so they arrive in the same reply as the
+    // requests they cover. Nothing here is a credential and nothing here spends:
+    // see `ScheduledAllowance` for what the receiving broker does with it.
+    scheduledAllowances: () => schedule.allowances(),
     // MAR-745. The read side of `configureChief`, so DASH's settings row can
     // ask what the runner actually has rather than trusting that a push landed.
     describeChief: () => chief.describe(),

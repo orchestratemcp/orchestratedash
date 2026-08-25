@@ -291,6 +291,23 @@ const MIGRATIONS: readonly string[] = [
   `,
 
   /*
+   * What that window was allowed to spend (MAR-784, ADR 0029 amendment 1).
+   *
+   * Its own step and an `ALTER`, `chief_turn_spool.evidence_json`'s reason
+   * verbatim: a runner that has already run once has this table and will never
+   * see the `CREATE` above again, so widening the original statement would give
+   * the column to fresh installs only — and a spooled row silently missing its
+   * ceiling would reach `agent_schedule_runs` as a run that was allowed nothing,
+   * which is a false receipt rather than a missing one.
+   *
+   * Zero for every row already in the queue, which is exactly what those rows
+   * were: settled under the rule that a scheduled fire opens no allowance.
+   */
+  `
+  ALTER TABLE schedule_spool ADD COLUMN allowance_calls INTEGER NOT NULL DEFAULT 0;
+  `,
+
+  /*
    * The last set of schedules DASH pushed, so a runner that started without DASH
    * has something to honour (MAR-785, ADR 0030 decision 5).
    *

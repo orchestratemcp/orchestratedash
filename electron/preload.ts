@@ -177,6 +177,37 @@ function sendStepLevel(args: {
 }
 
 /**
+ * A schedule and its ceiling, as a mixed string/number payload (MAR-784).
+ *
+ * `sendStepLevel`'s shape and its rule, which is now stated for the third time
+ * and holds for the third reason: every field copied explicitly, so a page
+ * cannot put anything at the command boundary merely to have it refused later,
+ * and `send` stays string-only so that no existing method starts carrying
+ * numbers because one of them needed to.
+ *
+ * That matters more here than for either of the two before it. This payload's
+ * number is a **ceiling on somebody's model spending**, and the failure this
+ * function exists to make impossible is a renderer passing `allowance_calls`
+ * through a string-typed sender, having it arrive as `"2"`, and being refused at
+ * the seam at three in the morning rather than in an editor.
+ */
+function sendSchedule(args: {
+  agent_id: string;
+  at_local: string;
+  allowance_calls: number;
+}): Promise<CommandResult> {
+  return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
+    command: "schedule.set",
+    request_id: requestId(),
+    payload: {
+      agent_id: args.agent_id,
+      at_local: args.at_local,
+      allowance_calls: args.allowance_calls,
+    },
+  }) as Promise<CommandResult>;
+}
+
+/**
  * Drop the optional fields a caller left unset (MAR-583).
  *
  * `fields` above does the same for the Agent DOM commands, from an allowlist of
@@ -950,9 +981,18 @@ const dashShell = {
    * will accept" — and it is checked twice further down: in
    * `lib/schedule/store.ts` before a row is written, and again in
    * `runner/server.ts` before the runner will fire on it.
+   *
+   * MAR-784: `allowance_calls` is how many model calls one of these runs may pay
+   * for, and it is **not optional here** even though zero is the default
+   * everywhere else. A bridge that let it be omitted would be a bridge on which
+   * "leave the ceiling alone" and "set the ceiling to nothing" look identical,
+   * and this command replaces the whole row — so the renderer states the number
+   * on every save, including when it is zero. It is checked as a number at the
+   * seam (`payload_types`), bounded in `lib/schedule/store.ts`, and bounded
+   * again by `openRunSpend` before anything can be spent under it.
    */
-  setAgentSchedule: (args: { agent_id: string; at_local: string }) =>
-    send("schedule.set", { ...args }),
+  setAgentSchedule: (args: { agent_id: string; at_local: string; allowance_calls: number }) =>
+    sendSchedule(args),
 
   /** `setAgentSchedule`'s undo. The record of what it already did is kept. */
   clearAgentSchedule: (args: { agent_id: string }) => send("schedule.clear", { ...args }),

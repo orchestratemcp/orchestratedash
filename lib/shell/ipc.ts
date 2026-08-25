@@ -589,12 +589,35 @@ export const COMMANDS = {
    * ADR 0029 decision 9 says why. It is re-checked against `isLocalTime` in
    * `lib/schedule/store.ts` before anything is written, so a value that got past
    * this seam still cannot become a cadence.
+   *
+   * ## The third field, and why the sentence changed (MAR-784)
+   *
+   * `allowance_calls` is how many model calls one fire of this schedule may pay
+   * for. It is **required**, and that is the deliberate half: a caller that
+   * omitted it would be a caller taking a decision about somebody's money by
+   * default, and there is no safe side to default to — zero would silently undo
+   * a ceiling on every save that forgot it, and anything else would open one
+   * nobody asked for. So the renderer says the number every time, including when
+   * the number is zero.
+   *
+   * A **number**, which needs `payload_types`: `reviewCommand` treats a required
+   * key as a string unless told otherwise, and this one arriving as `"2"` would
+   * have been refused at the seam rather than reaching the bound below.
+   *
+   * `effect` says the money out loud now. It is the sentence a person confirms,
+   * and *"nothing is contacted now"* would have become a half-truth the moment
+   * the command could also arrange for a provider to be paid later. Both halves
+   * are said instead: nothing is contacted now, and this is what may be spent
+   * when it is. `lib/schedule/store.ts` bounds the value and refuses out of
+   * range rather than clamping, so a number that got past this seam still
+   * cannot become a ceiling.
    */
   "schedule.set": {
     effect:
-      "Start this agent every day at the time you pick, on this computer, without asking again. Nothing is contacted now; the run happens later.",
-    payload_keys: ["agent_id", "at_local"],
-    required_keys: ["agent_id", "at_local"],
+      "Start this agent every day at the time you pick, on this computer, without asking again. Nothing is contacted now; the run happens later, and may use your own model account up to the number of calls you allow.",
+    payload_keys: ["agent_id", "at_local", "allowance_calls"],
+    required_keys: ["agent_id", "at_local", "allowance_calls"],
+    payload_types: { allowance_calls: "number" },
     mutates: true,
     irreversible: false,
   },
@@ -3356,12 +3379,20 @@ export interface DispatchContext {
    * 0029 decision 2 refuses, because MAR-745 is what a push-on-change list looks
    * like when it is one event short.
    *
-   * `at_local` is read only on `set`; `reviewCommand`'s payload rules keep it
-   * from crossing on `clear`.
+   * `at_local` and `allowance_calls` are read only on `set`; `reviewCommand`'s
+   * payload rules keep them from crossing on `clear`.
+   *
+   * MAR-784: `allowance_calls` is optional **in the type and required in the
+   * catalogue**, and the asymmetry is worth a sentence. The catalogue's
+   * `required_keys` is what a caller has to satisfy; this signature also has to
+   * describe `clear`, which names no ceiling at all. So the field is optional
+   * here and its absence on `set` is a refusal rather than a default — see
+   * `performScheduleAction`, which is the one place that decides what an
+   * unstated ceiling means.
    */
   scheduleAction(
     action: ScheduleAction,
-    target: { agent_id: string; at_local?: string },
+    target: { agent_id: string; at_local?: string; allowance_calls?: number },
   ): Promise<{ ok: boolean; refusal?: string }>;
   /**
    * Choose a model, set one step's level, or ask what models there are (MAR-583).
@@ -4246,6 +4277,22 @@ export async function dispatchCommand(
       agent_id: String(review.payload["agent_id"]),
       at_local:
         review.payload["at_local"] === undefined ? undefined : String(review.payload["at_local"]),
+      /*
+       * MAR-784. Read as a number and left undefined when it is not one, rather
+       * than coerced with `Number(...)`. A coercion here would turn `"two"` into
+       * `NaN` and `null` into `0`, and both would reach `performScheduleAction`
+       * looking like a decision somebody made about a ceiling. Undefined reaches
+       * it looking like what it is — nothing was said — and that path refuses.
+       *
+       * `required_keys` above already refuses the command when the field is
+       * absent, and `payload_types` already refuses it when it is not a number.
+       * This is the third check, at the last line before the value leaves the
+       * seam, on `runner/execute.ts`' terms.
+       */
+      allowance_calls:
+        typeof review.payload["allowance_calls"] === "number"
+          ? review.payload["allowance_calls"]
+          : undefined,
     });
     return { ok: result.ok, request_id: review.audit.request_id, reason: result.refusal };
   }

@@ -166,6 +166,10 @@ a third place.
 
 ### 6. A scheduled fire opens no spend allowance
 
+**Superseded in part by amendment 1 (MAR-784), at the end of this document.**
+The default below is unchanged and is still what an untouched schedule does; what
+amendment 1 adds is the per-schedule ceiling this decision names as its own exit.
+
 ADR 0016's allowance is opened in exactly one place — `input.command === "retry"`
 in `electron/main.ts` — and a run fired by the runner does not pass through it.
 This decision is that it stays that way, and that the absence is stated rather
@@ -291,7 +295,7 @@ ADR asks the surface to do.
   now something concrete waiting on it, which is a better argument than the
   hypothetical one it was left open against.
 - **A per-schedule spend ceiling.** Decision 6 names it as the precondition that
-  lifts decision 6. Nothing here builds it.
+  lifts decision 6. Nothing here builds it. **Built by amendment 1 (MAR-784).**
 - **Cron.** Decision 9.
 - **More than one schedule per agent.** The table's primary key is the agent, and
   that is a decision the same way `chief_discord.allowed_user_id` being a column
@@ -321,3 +325,192 @@ ADR asks the surface to do.
 - A person can now be wrong about when their agent ran, in a way they could not
   before, and the missed-window record is the only thing standing between them
   and that. It is therefore load-bearing and is written even when it is boring.
+
+---
+
+## Amendment 1 (MAR-784): a schedule may carry a spend ceiling, and the runner carries it to the broker
+
+Status: Accepted — Henrik's ruling on decision 6, 2026-08-25: *"Sure, but can we
+have the option to opt out on this. Some agents really need to use AI and some
+don't."* Built in the same packet.
+
+Date: 2026-08-25. Issue: MAR-784, a child of MAR-742.
+
+Migration index **34**, producing `user_version` **35** — confirmed against the
+literal pin in `tests/store-sqlite.test.ts` at this branch point before it was
+written, which is the check the note beside that pin asks for and the one the
+previous packet's assignment failed.
+
+### What decision 6 actually refused
+
+Read it again, because it names its own exit and this amendment takes exactly
+that exit and no other:
+
+> **What would lift it, named rather than implied.** A per-schedule ceiling the
+> person sets when they set the time — *"this may spend at most N model calls per
+> scheduled run"* — plus the runner-side broker that could enforce it…
+
+Decision 6 refused **an unbounded unattended allowance**, and its argument was
+never about size. It was about repetition: *"A Discord message needs a person to
+type it every time; a schedule is typed once and fires forever."* That argument
+survives a ceiling completely — a bound that holds on every firing is the direct
+answer to a thing that fires forever — and it does not survive the absence of
+one. So the shape of the lift was fixed before this amendment started.
+
+### 1. The ceiling is a count of model calls, per schedule, defaulting to zero
+
+`agent_schedules.allowance_calls`. Zero is off, and **zero is what every schedule
+already in an installed store migrates to**, because those schedules were set
+under a rule that said an unattended run may not spend and a migration that
+opened an allowance for them would be DASH changing what somebody already agreed
+to.
+
+A count and not a currency, `lib/broker/spend-allowance.ts`' reason unchanged:
+two of the three providers never state a price and the third states it after the
+call, so a dollar ceiling could only ever be checked once the money was gone.
+
+**The ceiling on the ceiling is `SPEND_ALLOWANCE_CALLS`, by identity rather than
+by coincidence.** `MAX_SCHEDULE_ALLOWANCE_CALLS` *is* that constant, so an
+unattended run can never be worth more than the press of Run now it stands in
+for, and the two cannot drift apart in a later diff. `openRunSpend` clamps to the
+same number on the other side of the seam — down, never up — so a value that got
+past every check still cannot open a wider allowance than a press.
+
+**The panel offers a switch and not a number.** The question a person actually
+has is *may this one use AI*, and a number field would ask them to have an
+opinion about a quantity whose only honest ceiling is a constant they cannot see.
+The column stays a number so that offering the quantity later is a control rather
+than a migration — `agent_schedules.kind`'s own argument about itself.
+
+### 2. The runner carries the ceiling; it does not enforce it and cannot spend
+
+This is the half the packet chose deliberately, and the half that costs
+something, so it is stated first and stated plainly.
+
+The runner still holds no broker, no key and no provider. What it gained is one
+sentence it is uniquely able to say: *I started this agent, at this moment, under
+a schedule carrying this ceiling.* That travels as a `ScheduledAllowance` and is
+read by the broker in DASH's window, which is where ADR 0016's allowance has
+always been opened.
+
+**It rides the reply to `POST /broker/drain`, not a route of its own**, and that
+is the whole safety argument. DASH's broker loop and DASH's evidence poll are two
+independent timers; a ceiling delivered on one and a request drained by the other
+would sometimes arrive after the request it was meant to cover, and the symptom
+would be a scheduled run refused at 03:00 for a reason nobody could reproduce at
+nine. In one reply there is no ordering to get wrong: every request in the body
+was written by a child of the process that reported the ceilings, and the
+ceilings are opened before any of the requests is looked at.
+
+**A fire id, and the broker opens each one exactly once.** The runner reports a
+live ceiling on every drain for as long as the window lasts — it must, because a
+drain that failed cannot be allowed to cost somebody their run — and
+`allowRunSpend` *replaces* rather than tops up. Without an identity per fire the
+report would refresh the ceiling to full several times a minute, which is not a
+ceiling at all.
+
+**And it is still only a claim.** `electron/broker-host.ts` reads DASH's own
+`agent_schedules` row and grants `min(reported, stored)`, refusing outright if
+the person has since switched the schedule off. So the wire can only ever narrow
+what somebody set on their own page, and a compromised runner's best available
+move is to ask for less.
+
+### 3. The cost: a scheduled run spends only while DASH is open, and the panel says so
+
+`electron/broker-host.ts`'s header has been explicit since MAR-458 — *"when DASH
+is not running, the broker is not running"* — and locally an agent's brokered
+requests are buffered by the runner for DASH to drain. That is not new and this
+amendment does not worsen it: with DASH closed, a scheduled run's model step has
+always settled as `broker_unavailable`. What is new is that the ceiling makes the
+boundary visible, so it has to be said.
+
+So there is a fourth sentence beside the three liveness sentences, and it is on
+the panel next to the switch rather than in this document:
+
+> That works while DASH is open. With DASH closed the run still starts and still
+> publishes, but nothing can reach your model until you open DASH again.
+
+**Not saying it was the tempting option**, and it is precisely the failure this
+ADR's own *"the bar this is being held to"* section is about: a product that
+replaces a true sentence with a control and silence has taken information away.
+The person setting a 03:00 schedule is exactly the person that sentence is for.
+
+**What would lift *this*, named rather than implied — and not built here.** A
+broker in the runner, holding a model key, narrowed the way
+`runner/chief-broker.ts` is narrowed for the chief and `runner/host-broker.ts` is
+for a host. It is a real packet and not a line in this one: it needs a credential
+route, per-agent model resolution in main, an audit drain, and — the part that
+makes it a decision rather than a task — **a model key in a second process for
+every scheduled agent**, which is the widening ADR 0028 decision 5 accepted once,
+for one key, with its blast radius argued in full. That argument has to be made
+again at the new size before anybody makes it.
+
+### 4. Hitting the ceiling is a degrade, and it degrades exactly like decision 6
+
+A run that spends its allowance gets `needs_a_person` on the next model step —
+**the same refusal, by the same code path, that a schedule carrying no allowance
+at all gets today.** `spendAllowed` deliberately cannot tell absent, expired and
+spent apart, so an agent cannot learn the shape of a budget by probing it, and
+the consequence is the property this amendment wanted anyway: there is no new
+failure mode to design for. The agent stops asking, finishes its plan without a
+model, and publishes what it could produce — decision 6's stated cost, arriving
+partway through a run instead of at the start of one.
+
+What DASH adds is the *reason*, which the refusal itself must not carry. The
+panel counts the window's rows in `broker_audit` and says `Used 1 of 2 model
+calls.`, and — only when a call was actually refused — that the run used them all
+and still published.
+
+**Counted, not reported.** There is no `spent_calls` column, because a run's end
+reaches DASH as an event the agent emits and a spend count written from it would
+be the party being reported on doing the reporting. `broker_audit` is written by
+DASH's broker at the moment it adjudicates, refusals included, so the receipt is
+evidence. The imprecision that remains is stated rather than papered over: a
+press of Run now within ten minutes of a scheduled fire is counted in the same
+window, because `broker_audit` records which agent and which operation and never
+which press — and a request that could name its own press is the thing
+`BrokerOrigin` exists to refuse.
+
+**The ceiling is reported as reached when a call was refused, never when
+`used === allowed`.** Those come apart in the case that matters: an agent whose
+plan needed exactly its two calls used both and asked for no third, and telling
+that person their run was cut short would be DASH inventing a degrade out of
+arithmetic.
+
+### 5. What a settled window was allowed is kept on the window
+
+`agent_schedule_runs.allowance_calls`, written from the runner's own settlement
+and never derived from the schedule row at read time. Those are two different
+facts the moment somebody edits a ceiling — the schedule says what the *next* run
+may spend, the row says what *that* run was handed — and a panel pairing today's
+ceiling with last night's spend would report an agreement that never existed.
+`broker_audit.decided_on`'s rule: a row must not be able to lose the thing that
+makes it true by being read later.
+
+### What this amendment does not change
+
+- **Decision 6's default.** Off is still off, and a schedule nobody has opted in
+  for says the same sentence it said before this was built, word for word.
+- **Decisions 1 through 5, 7, 8, 9 and 10.** The schedule is still one row with
+  one home, still re-asserted whole on the evidence poll, still fired only by the
+  runner, still `retry` with no new verb, still under `SCHEDULE_PRINCIPAL`, still
+  never backfilled, still spooled, still daily-only, and MAR-588's Discord
+  message is still unchanged.
+- **Restart-on-boot.** ADR 0007's, still open.
+- **Who may set one.** Not the chief. ADR 0028 decision 3's list is unchanged,
+  and a standing instruction that can now spend is a stronger reason to keep a
+  schedule off it, not a weaker one.
+
+### What is proven
+
+`scripts/prove-schedule-spend.mjs` — a real detached runner, two real schedules
+that come round in real wall-clock time, the real Agent Kit template as one of
+the two agents, and DASH's own `createBroker` standing where
+`electron/broker-host.ts` stands. It ends with one of two verdicts and says which:
+with `DASH_PROOF_MODEL_KEY` set it makes at most two real, bounded calls to a real
+provider; without one it serves a provider on the loopback and says in the PASS
+line that no real provider was asked.
+
+The unit suite covers the five boundaries the number crosses —
+`tests/schedule-allowance.test.ts` — plus the channel's own half in
+`tests/schedule-runner.test.ts`.

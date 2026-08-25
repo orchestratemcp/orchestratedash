@@ -426,7 +426,12 @@ interface DashShellClient {
    * would tell somebody their agent runs nightly on an install where nothing
    * ever will.
    */
-  setAgentSchedule?(args: { agent_id: string; at_local: string }): Promise<CommandResult>;
+  setAgentSchedule?(args: {
+    agent_id: string;
+    at_local: string;
+    /** MAR-784. Model calls one fire of this schedule may pay for. Zero is off. */
+    allowance_calls: number;
+  }): Promise<CommandResult>;
   clearAgentSchedule?(args: { agent_id: string }): Promise<CommandResult>;
   /**
    * The four notification commands (MAR-588).
@@ -1822,6 +1827,17 @@ export async function clearStandingAnswer(args: {
 export async function setAgentSchedule(args: {
   agent_id: string;
   at_local: string;
+  /**
+   * How many model calls one of these runs may pay for (MAR-784).
+   *
+   * Required rather than defaulted here as well as at the bridge, and for the
+   * same reason: `schedule.set` replaces the whole row, so a caller that omitted
+   * this would be turning somebody's ceiling off as a side effect of saving a
+   * time. An older shell that has never heard of the field refuses the whole
+   * command at the seam, which is the honest failure — see the second refusal
+   * below.
+   */
+  allowance_calls: number;
 }): Promise<CommandResult> {
   const bridge = typeof window === "undefined" ? undefined : window.dashShell;
   if (bridge === undefined) {

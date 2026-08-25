@@ -82,6 +82,7 @@ const DAILY: AgentSchedule = {
   kind: "daily",
   at_local: "08:00",
   created_at: "2026-08-25T06:00:00.000Z",
+  allowance_calls: 0,
 };
 
 describe("a runner that started without DASH", () => {

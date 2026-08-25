@@ -38,6 +38,7 @@ import {
   type BrokerOperation,
 } from "../broker/operations";
 import { describeClientOwner, describeCustody, describeDashClosedWindow } from "../broker/providers";
+import { SPEND_ALLOWANCE_MS } from "../broker/spend-allowance";
 import { listReceipts, readBrokerAudit, readBrokerLapses, type BrokerLapse } from "../broker/store";
 import { describeRunSpend } from "../copy/curation";
 import { describeBrokerRefusal } from "../copy/recovery";
@@ -71,7 +72,7 @@ import {
   readCommandAudit,
 } from "../agent-dom/store";
 import { readStandingAnswers } from "../agent-dom/standing-answers";
-import { readAgentSchedule, readScheduleRuns } from "../schedule/store";
+import { readAgentSchedule, readScheduleRuns, readScheduleSpend } from "../schedule/store";
 import { buildAgentScheduleView } from "./agent-schedule";
 import { dataDir } from "../db";
 /* MAR-697. The exports folder and the two words DASH puts around a file in it.
@@ -1659,6 +1660,15 @@ export function workspaceView(
    */
   const snapshot = stored === null ? null : workspaceSnapshot(workspaceManifest, stored, now);
 
+  /*
+   * MAR-784. Read once and named, because the receipt below needs the newest
+   * row's own `settled_at` and `allowance_calls` and the panel needs the whole
+   * list — and two reads of `agent_schedule_runs` on one page draw could
+   * disagree about which window is newest if the drain landed between them.
+   */
+  const scheduleRuns = readScheduleRuns(agent);
+  const newestScheduleRun = scheduleRuns[0] ?? null;
+
   return {
     found: true,
     agent,
@@ -1760,7 +1770,20 @@ export function workspaceView(
     // other setting on this page. Two reads rather than one because the
     // instruction and what became of it are different rows with different
     // lifetimes — turning a schedule off keeps the history.
-    schedule: buildAgentScheduleView(readAgentSchedule(agent), readScheduleRuns(agent)),
+    //
+    // MAR-784 makes it three, and the third is conditional on purpose. The
+    // receipt is a scan of `broker_audit` over one ten-minute window, and the
+    // only window it can be about is the newest settled one; asking for it when
+    // that window was allowed nothing would be a query on every page draw whose
+    // answer is always "nothing was allowed, so nothing was spent". See
+    // `readScheduleSpend`.
+    schedule: buildAgentScheduleView(
+      readAgentSchedule(agent),
+      scheduleRuns,
+      newestScheduleRun === null || newestScheduleRun.allowance_calls <= 0
+        ? null
+        : readScheduleSpend(agent, newestScheduleRun.settled_at, SPEND_ALLOWANCE_MS),
+    ),
     // MAR-645. A projection of records already read or stored, with no probe
     // and no provider call. The page draws it only on the Health stage.
     health,

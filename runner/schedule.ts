@@ -52,16 +52,35 @@
  *
  * ## What this file may not do
  *
- * **Open a spend allowance.** It cannot: `allowRunSpend` is main's broker's, the
- * local runner holds no broker of its own, and ADR 0029 decision 6 decides it
- * stays that way. A scheduled run does everything the agent does that does not
- * cost money; a step that needs a model is refused, recorded where every other
- * brokered refusal is, and named in the copy on the settings page rather than
- * discovered.
+ * **Answer a spend.** It holds no broker, no key and no provider, and MAR-784
+ * does not change that. What it gained is the ability to *carry a ceiling a
+ * person set* to the broker that does answer — see the section below — and the
+ * distinction is the whole security shape of ADR 0029 amendment 1: this process
+ * says how much was authorised, and the process holding the key decides whether
+ * to believe it and never grants more than its own store already agreed to.
  *
  * **Write to `dash.sqlite`.** It writes to `schedule_spool` in the runner's own
  * store and DASH drains it. ADR 0028 decision 6, ADR 0027, and the file that was
  * destroyed twice.
+ *
+ * ## The allowance a fire opens (MAR-784, ADR 0029 amendment 1)
+ *
+ * A schedule may carry a ceiling — *this may spend at most N model calls per
+ * scheduled run* — and when one does, a successful fire records a live allowance
+ * here, keyed by a **fire id minted once per fire**.
+ *
+ * That fire id is what makes the whole arrangement safe against the failure a
+ * simpler design walks straight into. DASH's broker opens an allowance by
+ * *replacing* whatever it held (`openRunSpend`), and this process is polled
+ * repeatedly while an allowance is live; a report carrying only "agent X may
+ * spend twice" would therefore refresh the ceiling on every poll and add up to
+ * no ceiling at all. Reporting the same fire id every time instead lets the
+ * broker open it exactly once and ignore every later mention of it.
+ *
+ * Nothing durable. An allowance does not survive this process, is never spooled,
+ * and is dropped the moment it is older than the window DASH's own broker would
+ * honour. A runner that restarts mid-run leaves an agent unable to spend, which
+ * is the correct direction to fail in.
  */
 
 import { randomUUID, randomBytes } from "node:crypto";
@@ -69,12 +88,14 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { buildEnvelope } from "../lib/agent-dom/envelope";
 import {
+  allowanceCalls,
   decideSchedule,
   isLocalTime,
   missedRowFor,
   type AgentSchedule,
   type ScheduleSettlement,
 } from "../lib/schedule/plan";
+import { SPEND_ALLOWANCE_MS } from "../lib/broker/spend-allowance";
 import { executeCommand, type ChannelPrincipal } from "./execute";
 import { buildAgentDomState } from "./state";
 import type { Supervisor } from "./supervisor";
@@ -153,6 +174,35 @@ export interface ScheduleConfiguration {
   since: Record<string, string>;
 }
 
+/**
+ * One live ceiling, as the runner reports it to whoever holds the key
+ * (MAR-784, ADR 0029 amendment 1).
+ *
+ * Deliberately not a credential, a grant or an instruction. It is the runner
+ * saying *"I started this agent, at this moment, under a schedule that carries
+ * this ceiling"* — three facts about this process's own act — and the party that
+ * can actually spend decides what to do with them. `electron/broker-host.ts`
+ * takes the smaller of this number and the ceiling in DASH's own
+ * `agent_schedules` row, so a runner that reported four for a schedule set to
+ * one grants one.
+ */
+export interface ScheduledAllowance {
+  agent_id: string;
+  /**
+   * Unique to one fire, and the reason the report can be repeated safely.
+   *
+   * See the file header: an allowance is *replaced* rather than topped up when
+   * it is opened, and this process is polled far more often than it fires, so a
+   * report the reader could not recognise as "the same one again" would refresh
+   * the ceiling to full several times a minute.
+   */
+  fire_id: string;
+  /** When this process delivered the run. DASH's broker times the window from it. */
+  opened_at: string;
+  /** Model calls, `1..MAX_SCHEDULE_ALLOWANCE_CALLS`. Never zero — see `#openAllowance`. */
+  calls: number;
+}
+
 export interface RunnerScheduleOptions {
   /** The runner's store, or null while it is damaged. Resolved per use. */
   database: () => DatabaseSync | null;
@@ -188,6 +238,17 @@ export class RunnerSchedule {
    * closed is the entire time it stays closed.
    */
   readonly #settled = new Map<string, string>();
+
+  /**
+   * The ceilings this process has opened, by agent (MAR-784).
+   *
+   * One entry per agent rather than a list, because one agent has one schedule
+   * and `#firing` makes two fires of it impossible to overlap. A second fire
+   * replaces the first, which is the same arithmetic `openRunSpend` does on the
+   * other side of the channel and for the same reason: the ceiling is always one
+   * fire's worth, however many fires there have been.
+   */
+  readonly #allowances = new Map<string, ScheduledAllowance>();
 
   readonly #options: RunnerScheduleOptions & { now: () => Date; sleep: (ms: number) => Promise<void> };
 
@@ -349,12 +410,41 @@ export class RunnerSchedule {
   }
 
   /** Whether anything is standing, for `/health` and for the tests. */
-  describe(): { schedules: number; enabled: number; spooled: number } {
+  describe(): { schedules: number; enabled: number; spooled: number; allowances: number } {
     return {
       schedules: this.#configuration.schedules.length,
       enabled: this.#configuration.schedules.filter((schedule) => schedule.enabled).length,
       spooled: this.#count(),
+      allowances: this.allowances().length,
     };
+  }
+
+  /**
+   * The ceilings that are still live, for the broker drain (MAR-784).
+   *
+   * Filtered by age on every read rather than swept by a timer, `spendAllowed`'s
+   * own shape: a clock cannot be argued with, and a sweep is a second thing that
+   * has to run at the right moment for a security bound to hold. An allowance
+   * older than `SPEND_ALLOWANCE_MS` is dropped here because DASH's broker would
+   * refuse it anyway — reporting it would be this process asking for something it
+   * knows will not be granted, which is how a reader learns to ignore a field.
+   *
+   * Expired entries are deleted as they are found. That is the only pruning this
+   * map gets, and it is enough: nothing adds to it except a fire, and a fire
+   * cannot happen more often than once per agent per window.
+   */
+  allowances(): ScheduledAllowance[] {
+    const now = this.#options.now().getTime();
+    const live: ScheduledAllowance[] = [];
+    for (const [agent, allowance] of this.#allowances) {
+      const opened = new Date(allowance.opened_at).getTime();
+      if (Number.isNaN(opened) || now - opened >= SPEND_ALLOWANCE_MS) {
+        this.#allowances.delete(agent);
+        continue;
+      }
+      live.push(allowance);
+    }
+    return live;
   }
 
   start(): void {
@@ -410,7 +500,7 @@ export class RunnerSchedule {
 
       this.#firing = true;
       try {
-        const settlement = await this.#fire(schedule.agent, decision.due_at);
+        const settlement = await this.#fire(schedule, decision.due_at);
         this.#spool(settlement);
         this.#settled.set(schedule.agent, decision.due_at.toISOString());
       } finally {
@@ -446,6 +536,39 @@ export class RunnerSchedule {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
+  /**
+   * Record what this fire is allowed to spend, and return the number
+   * (MAR-784, ADR 0029 amendment 1).
+   *
+   * Zero for the default schedule, and zero takes no entry in the map at all —
+   * absence and "allowed nothing" are one state here, `lib/schedule/store.ts`'
+   * rule about a deleted row versus `enabled = 0` applied to a shorter-lived
+   * thing. A reader iterating live allowances therefore sees only the fires
+   * somebody actually opted in for, and there is no branch anywhere downstream
+   * for "an allowance of zero".
+   *
+   * `allowanceCalls` is applied here even though the schedule arrived through
+   * `readScheduleConfiguration`, which already applied it. That is the same
+   * repetition `runner/execute.ts` argues for: this is the last line before a
+   * number becomes a claim about how much of somebody's account may be spent,
+   * and a check at the last line is the one that survives a refactor of the
+   * first.
+   */
+  #openAllowance(schedule: AgentSchedule, at: Date): number {
+    const calls = allowanceCalls(schedule.allowance_calls);
+    if (calls <= 0) {
+      this.#allowances.delete(schedule.agent);
+      return 0;
+    }
+    this.#allowances.set(schedule.agent, {
+      agent_id: schedule.agent,
+      fire_id: `schedule-fire-${randomUUID()}`,
+      opened_at: at.toISOString(),
+      calls,
+    });
+    return calls;
+  }
+
   /* -------------------------------------------------------------------- *
    * One fire
    * -------------------------------------------------------------------- */
@@ -458,13 +581,22 @@ export class RunnerSchedule {
    * tell from a scheduler that is not running — and ADR 0029's whole claim is
    * that DASH says what happened while nobody was watching.
    */
-  async #fire(agent: string, due: Date): Promise<ScheduleSettlement> {
+  async #fire(schedule: AgentSchedule, due: Date): Promise<ScheduleSettlement> {
+    const agent = schedule.agent;
+    /*
+     * MAR-784. Zero on every refusal, and it is written rather than defaulted for
+     * `missedRowFor`'s reason: a window that started nothing was allowed nothing,
+     * and a reader of the row should never have to work out what an absent
+     * ceiling meant. The allowance is opened at the *end* of this function, after
+     * the run is actually going — see below.
+     */
     const refused = (detail: string): ScheduleSettlement => ({
       agent,
       due_at: due.toISOString(),
       settled_at: this.#options.now().toISOString(),
       outcome: "refused",
       detail,
+      allowance_calls: 0,
     });
 
     const database = this.#options.database();
@@ -532,12 +664,37 @@ export class RunnerSchedule {
         `The runner refused to start this run (${result.reason ?? "unknown"}): ${result.detail ?? "no detail"}`,
       );
     }
+    /*
+     * MAR-784. The ceiling opens here and nowhere earlier.
+     *
+     * After `executeCommand` returned ok, which is to say after the runner has
+     * accepted the run and the agent is working, rather than before the two acts
+     * on the strength of a schedule that carries a number. The ordering is the
+     * mirror of `electron/main.ts`'s — which opens *before* the command, because
+     * there the agent begins the instant the line is written and would otherwise
+     * race an allowance opened on the way back. Here the two acts include
+     * starting a process and waiting up to twenty seconds for it to publish
+     * something, and any of that can fail; an allowance opened at the top would
+     * be a live ceiling attached to a run that never began, sitting there for ten
+     * minutes for something else to spend.
+     *
+     * The cost of this ordering is the mirror image and is small: the window
+     * between `executeCommand` returning and this line is microseconds, and the
+     * agent's own first act is to start working rather than to ask for a model.
+     */
+    const granted = this.#openAllowance(schedule, now);
+
     return {
       agent,
       due_at: due.toISOString(),
       settled_at: this.#options.now().toISOString(),
       outcome: "ran",
-      detail: "Started on time by this agent's daily schedule.",
+      allowance_calls: granted,
+      detail:
+        granted === 0
+          ? "Started on time by this agent's daily schedule."
+          : `Started on time by this agent's daily schedule, allowed ${String(granted)} model ` +
+            `call${granted === 1 ? "" : "s"}.`,
     };
   }
 
@@ -618,7 +775,8 @@ export class RunnerSchedule {
     try {
       database
         .prepare(
-          "INSERT INTO schedule_spool (agent, due_at, settled_at, outcome, detail) VALUES (?, ?, ?, ?, ?)",
+          "INSERT INTO schedule_spool (agent, due_at, settled_at, outcome, detail, allowance_calls) " +
+            "VALUES (?, ?, ?, ?, ?, ?)",
         )
         .run(
           settlement.agent,
@@ -626,6 +784,7 @@ export class RunnerSchedule {
           settlement.settled_at,
           settlement.outcome,
           settlement.detail,
+          settlement.allowance_calls,
         );
       database
         .prepare(
@@ -655,7 +814,10 @@ export class RunnerSchedule {
     try {
       database.exec("BEGIN IMMEDIATE");
       const rows = database
-        .prepare("SELECT agent, due_at, settled_at, outcome, detail FROM schedule_spool ORDER BY id")
+        .prepare(
+          "SELECT agent, due_at, settled_at, outcome, detail, allowance_calls " +
+            "FROM schedule_spool ORDER BY id",
+        )
         .all()
         .map((raw) => {
           const row = raw as Record<string, unknown>;
@@ -669,6 +831,7 @@ export class RunnerSchedule {
                 ? outcome
                 : ("refused" as const),
             detail: String(row["detail"] ?? ""),
+            allowance_calls: allowanceCalls(Number(row["allowance_calls"] ?? 0)),
           } satisfies ScheduleSettlement;
         });
       database.exec("DELETE FROM schedule_spool");
@@ -751,6 +914,15 @@ export function readScheduleConfiguration(body: unknown): ScheduleConfiguration 
       kind: "daily",
       at_local: at,
       created_at: typeof createdAt === "string" ? createdAt : "",
+      /*
+       * MAR-784. Anything this build does not recognise as a ceiling becomes
+       * zero — a schedule that runs and does not spend — rather than being
+       * dropped along with the rest of the member. A bad *time* means starting
+       * an agent at a moment nobody picked, so the member goes; a bad *ceiling*
+       * means spending money nobody agreed to, so the ceiling goes and the
+       * schedule keeps running.
+       */
+      allowance_calls: allowanceCalls(entry["allowance_calls"]),
     });
   }
 
