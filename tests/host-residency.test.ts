@@ -492,9 +492,15 @@ describe("what the helper does when asked", () => {
     expect(asked.ok).toBe(true);
     const state = asked.ok && asked.verb === "service" ? asked.state : "enabled";
     expect(state).not.toBe("enabled");
-    // And whatever the machine said, the answer never claims a boot on an
-    // account it could not prove lingers.
-    expect(asked.ok && asked.verb === "service" ? asked.starts_at_boot : true).toBe(false);
+    /*
+     * `starts_at_boot` is deliberately **not** asserted here, and the reason is
+     * itself worth recording: it is a property of the account the helper runs
+     * as, and CI's own Linux runner turns out to have lingering enabled — so an
+     * assertion either way would be a test about GitHub's machine rather than
+     * about this code. What it is read from is asserted purely, in `readLinger`
+     * above, and whether a real host lingers is the one line of the attended bar
+     * most likely to need a person.
+     */
   });
 });
 
