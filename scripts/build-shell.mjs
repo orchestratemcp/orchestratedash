@@ -342,6 +342,19 @@ await Promise.all([
     format: "esm",
   }),
 
+  // *Refresh connections*, pressed against a store whose rows and whose vault
+  // deliberately disagree (MAR-742 item 3b) — on `capture-settings-polish.ts`'s
+  // exact terms, and for one extra reason of its own: the bug under test *is*
+  // the split between `DASH_DATA_DIR` and `app.getPath("userData")`, so a
+  // harness that claimed the installed identity would be staging the failure
+  // against the real vault. See `electron/capture-vault-refresh.ts`.
+  build({
+    ...shared,
+    entryPoints: [path.join(repoRoot, "electron", "capture-vault-refresh.ts")],
+    outfile: path.join(outDir, "capture-vault-refresh.mjs"),
+    format: "esm",
+  }),
+
   // The bottom strip, the chief's spotlight and the avatar picker (MAR-615),
   // on `capture-settings-polish.ts`'s exact terms — no `smoke-identity.ts`, so
   // it runs beside a live DASH without claiming its lock or its store. Its own

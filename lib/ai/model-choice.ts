@@ -782,6 +782,51 @@ export function describeKeysHeld(held: number, offered: number): string {
     : `DASH holds ${String(held)} keys. ${String(offered - held)} more can be added.`;
 }
 
+/**
+ * What *See what {service} offers* produced, in one line (MAR-742).
+ *
+ * ## Why this is a function and not three string literals
+ *
+ * Because it *was* three string literals, and one of the three renderers did
+ * not have them. `ModelDefault` on the AI tab and `ModelChoice` on an agent's
+ * page both drew this sentence inline; `ChiefModelPicker` in the chief's
+ * composer drew nothing at all, and rendered its outcome **only when the ask
+ * failed** — so both states that are not failures were silent. Henrik pressed
+ * the button on 2026-08-24, the catalogue came back, and nothing on screen
+ * changed: the evidence addendum's second defect.
+ *
+ * That is a trap this codebase has hit before — two renderers drawing one
+ * thing, and a fix applied to one of them. A shared sentence makes the silence
+ * structurally impossible rather than fixed once: a fourth picker cannot be
+ * written without either calling this or visibly choosing not to.
+ *
+ * ## Why an empty list is its own branch
+ *
+ * Because it is the state that looks exactly like nothing having happened. A
+ * provider that names no models leaves the dropdown holding what it held
+ * before, so without a sentence the person has pressed a button and been told
+ * nothing — indistinguishable from the button being broken. "Answered, and
+ * named nothing" is a real answer, and says so.
+ *
+ * `models` is null before anything has been asked, which is not the same as an
+ * empty list: null is DASH having no answer, `[]` is the provider's answer.
+ */
+export function describeCatalogueResult(service: string, models: readonly string[] | null): string {
+  if (models === null) {
+    return (
+      `DASH will present the key it holds to ${service} and list what that key can reach. ` +
+      "It keeps no copy of the list."
+    );
+  }
+  if (models.length === 0) {
+    return `${service} answered, and named nothing this key can reach.`;
+  }
+  return (
+    `${String(models.length)} to choose from, as ${service} answered a moment ago. ` +
+    "DASH keeps no copy of the list."
+  );
+}
+
 /* ---------------------------------------------------------------------- *
  * What travels in a deploy bundle (MAR-583)
  * ---------------------------------------------------------------------- */

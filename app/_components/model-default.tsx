@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 
+import { describeCatalogueResult } from "../../lib/ai/model-choice";
 import { listProviderModels, setDefaultModel, setLevelModel } from "../_data/source";
 import type {
   FleetConnectorView,
@@ -240,11 +241,10 @@ export function ModelDefault({
                 : `Ask ${chosen?.service ?? "this service"} again`}
             </button>
             <p className="muted wrap">
-              {listed === null
-                ? `DASH will present the key it holds to ${chosen?.service ?? "this service"} and list what that key can reach. It keeps no copy of the list.`
-                : listed.length === 0
-                  ? `${chosen?.service ?? "This service"} answered, and named nothing this key can reach.`
-                  : `${String(listed.length)} to choose from, as ${chosen?.service ?? "this service"} answered a moment ago. DASH keeps no copy of the list.`}
+              {/* MAR-742. One wording, three pickers — see
+                  `describeCatalogueResult` for the renderer that did not have
+                  it, and what its silence cost. */}
+              {describeCatalogueResult(chosen?.service ?? "this service", listed)}
             </p>
           </div>
 

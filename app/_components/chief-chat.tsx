@@ -9,6 +9,7 @@ import { Composer, filterAfterClear, type ComposerClassNames } from "./composer"
 import { LinkOut } from "./link-out";
 import { useSingleFlight } from "./single-flight";
 import { OAvatar } from "./o-avatar";
+import { describeCatalogueResult } from "../../lib/ai/model-choice";
 import { aiProviderById } from "../../lib/ai/providers";
 import { answeredFromRecords } from "../../lib/chief/records-answer";
 import {
@@ -568,8 +569,26 @@ function ChiefModelPicker({
       <button type="button" className="button-secondary" onClick={onClose}>
         Done
       </button>
-      {outcome === null || outcome.ok ? null : (
-        <p className="notice-warn" role="status">
+      {/*
+        What the press produced, in both directions (MAR-742).
+
+        This panel used to render its outcome only when the ask **failed**, and
+        the two states that are not a failure both draw a control that looks
+        untouched: a provider that names nothing leaves `listed` as the single
+        model already in force, and a provider that names plenty adds options
+        inside a closed `select`. So the honest cases and the broken ones were
+        equally silent, and Henrik pressed *See what OpenRouter offers* on
+        2026-08-24 and watched nothing happen — the evidence addendum's second
+        defect. Silence is not a state this panel is allowed to have.
+
+        The sentences are `ModelDefault`'s and `ModelChoice`'s, word for word
+        rather than paraphrased: three renderers draw this button, the other two
+        already said these things, and a fourth wording of "the provider named
+        nothing" would be the first place the vocabulary split.
+      */}
+      <p className="muted wrap">{describeCatalogueResult(service, models)}</p>
+      {outcome === null || outcome.detail === "" ? null : (
+        <p className={outcome.ok ? "notice-ok" : "notice-warn"} role="status">
           {outcome.detail}
         </p>
       )}

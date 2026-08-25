@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 
 import { describeKeysHeld } from "../../../lib/ai/model-choice";
+import { ConnectionsRefresh } from "../../_components/connections-refresh";
 import { FleetConnectorCard } from "../../_components/fleet-connector";
 import { ModelDefault } from "../../_components/model-default";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
@@ -62,6 +63,23 @@ export default function AiPage(): ReactNode {
           what is actually here: the keys, and the model they buy. */}
       <h1>Models and keys</h1>
       <HostNotice host={host} />
+
+      {/*
+        MAR-742. Beside the gate below rather than inside it, and the placement
+        is the whole of what makes the control work: `useView` returns to
+        `loading` on every `bump`, so everything under that gate unmounts while
+        the view reloads — and the report this control produces is held in its
+        own state. Mounted under the gate, a refresh would destroy its own
+        answer: MAR-685's failure, in the one place it would be least
+        forgivable — a page telling somebody nothing happened to their
+        credentials.
+
+        Above `AiSettings` rather than below it because of when it is reached
+        for. Somebody scrolling here has a chief saying it has no model and a
+        key on the page that looks fine; the recovery belongs where they are
+        already looking, not under three cards.
+      */}
+      <ConnectionsRefresh canAct={canAct} onRefreshed={bump} />
 
       {state.status === "loading" ? (
         <ViewLoading what="the models DASH can reach" />

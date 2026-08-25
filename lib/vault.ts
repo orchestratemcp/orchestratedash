@@ -89,6 +89,22 @@ export interface VaultOptions {
 const FILE_PREFIX = "dash-secret-";
 const FILE_SUFFIX = ".enc";
 
+/**
+ * How long a failed read waits before each further attempt (MAR-742).
+ *
+ * Two pauses, so three attempts in all, and the shape matters more than the
+ * numbers: the first is short enough to cost nothing when the read was going to
+ * fail anyway, and the second is long enough to outlast the brief open-failure
+ * an on-access antivirus scan produces while it has a file mid-scan. Together
+ * they bound the whole ladder at 125ms — see `readWithRetry` for why a read is
+ * retried at all, and why an unreadable envelope is not.
+ *
+ * Deliberately a constant array rather than a count and a multiplier: the total
+ * a genuinely-missing secret pays is the thing to keep small, and it should be
+ * readable off one line rather than derived.
+ */
+const READ_BACKOFF_MS: readonly number[] = [25, 100];
+
 interface VaultEntry {
   /** Bumped if the envelope ever changes, so a re-key can migrate rather than guess. */
   format_version: 1;
@@ -256,16 +272,93 @@ export class Vault implements SecureStore {
     return segments[segments.length - 2] ?? "unknown";
   }
 
+  /**
+   * Where this vault keeps its files. The seam's optional `describeLocation`.
+   *
+   * Synchronous, touches nothing and cannot prompt: it is the constructor
+   * argument, handed back. See `SecureStore.describeLocation` for what it is
+   * for and `SecureStoreError.resolved_path` for the failure it exists beside.
+   */
+  describeLocation(): string {
+    return this.directory;
+  }
+
+  /**
+   * Read the file, giving a transient failure a second and third chance
+   * (MAR-742).
+   *
+   * ## Why a read is retried at all
+   *
+   * Because on Windows a read can fail for reasons that have nothing to do with
+   * whether the file is there, and one of them presents as `ENOENT` — the errno
+   * this class maps to "you never stored that", the one whose recovery is
+   * *paste the credential again*. A minifilter (antivirus, a backup agent, a
+   * search indexer) that is mid-scan on a file can fail the open, and the
+   * failure a filter chooses is its own: some return a sharing violation, some
+   * return access-denied, and some deliberately return
+   * `STATUS_OBJECT_NAME_NOT_FOUND` — indistinguishable from here, at the
+   * `readFileSync` boundary, from a file that genuinely is not there.
+   *
+   * MAR-742's evidence is one of these read once as `not_found:ENOENT` while
+   * its siblings in the same directory read fine in the same seconds, and the
+   * user's recovery was to disconnect and re-add a credential that was on disk
+   * the whole time. Whether that specific read was a filter or a split vault
+   * root could not be settled afterwards *because nothing recorded enough* —
+   * which is why this pairs with `resolved_path` rather than replacing it.
+   *
+   * ## Why the cost is acceptable
+   *
+   * The retry ladder is only ever walked by a read that has already failed, and
+   * `get` is called on names the store says it wrote — so a miss is the
+   * exceptional path, not the common one. A genuinely absent secret pays
+   * `READ_BACKOFF_MS` summed (125ms) before it is reported, once, on a path
+   * that was about to tell a person to re-enter a credential. That is a trade
+   * worth making in this direction and not the other.
+   *
+   * ## What is deliberately not retried
+   *
+   * An unreadable envelope and a refused `decryptString`. Neither is a
+   * filesystem race: `set` writes to `<target>.tmp` and renames onto the name,
+   * so a torn envelope is not a state this vault can be caught in, and an OS
+   * that will not release a key will not release it 100ms later either. Retrying
+   * them would add latency to two failures that are already stable.
+   */
+  private async readWithRetry(name: string): Promise<string> {
+    const file = this.fileFor(name);
+    let last: unknown = null;
+    for (let attempt = 0; attempt <= READ_BACKOFF_MS.length; attempt += 1) {
+      try {
+        return readFileSync(file, "utf8");
+      } catch (error: unknown) {
+        last = error;
+        const pause = READ_BACKOFF_MS[attempt];
+        if (pause !== undefined) {
+          // Awaited rather than spun: `get` is called from the main process, and
+          // a busy-wait here would block the very thread that draws the window
+          // — MAR-746's lesson, for 125ms, on a path a person is watching.
+          await new Promise<void>((resolve) => setTimeout(resolve, pause));
+        }
+      }
+    }
+    throw last;
+  }
+
   async get(name: string): Promise<string> {
     this.guard(name);
 
     let raw: string;
     try {
-      raw = readFileSync(this.fileFor(name), "utf8");
+      raw = await this.readWithRetry(name);
     } catch (error: unknown) {
       const errno = (error as NodeJS.ErrnoException | null)?.code ?? "read_failed";
       if (errno === "ENOENT") {
-        throw new SecureStoreError("not_found", `No secret stored as "${name}".`, name, errno);
+        throw new SecureStoreError(
+          "not_found",
+          `No secret stored as "${name}".`,
+          name,
+          errno,
+          this.fileFor(name),
+        );
       }
       /*
        * MAR-684. Any other failure to read the file is NOT `not_found`. The
@@ -283,6 +376,7 @@ export class Vault implements SecureStore {
           `It is still on disk; close anything else using DASH's folder and try again.`,
         name,
         errno,
+        this.fileFor(name),
       );
     }
 
@@ -303,6 +397,7 @@ export class Vault implements SecureStore {
         `The stored entry for "${name}" is unreadable and must be set again.`,
         name,
         "envelope_unreadable",
+        this.fileFor(name),
       );
     }
 
@@ -332,6 +427,7 @@ export class Vault implements SecureStore {
             : `(${error instanceof Error ? error.message : "decryption failed"})`),
         name,
         foreign ? `decrypt_failed_foreign_identity:${writtenBy}` : "decrypt_failed",
+        this.fileFor(name),
       );
     }
   }
@@ -401,6 +497,7 @@ export class Vault implements SecureStore {
           `Whatever DASH previously held under that name is untouched. Try again.`,
         name,
         "readback_failed",
+        this.fileFor(name),
       );
     }
 
@@ -411,8 +508,19 @@ export class Vault implements SecureStore {
     this.guard(name);
     try {
       unlinkSync(this.fileFor(name));
-    } catch {
-      throw new SecureStoreError("not_found", `No secret stored as "${name}".`, name);
+    } catch (error: unknown) {
+      // The errno and the path travel with it for `get`'s reason (MAR-742):
+      // "nothing to delete" and "the file is there and something else has it"
+      // are different facts, and a disconnect that reported the second as the
+      // first would leave a credential on disk while telling a person it was
+      // gone.
+      throw new SecureStoreError(
+        "not_found",
+        `No secret stored as "${name}".`,
+        name,
+        (error as NodeJS.ErrnoException | null)?.code ?? "unlink_failed",
+        this.fileFor(name),
+      );
     }
   }
 
