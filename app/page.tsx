@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { FleetList } from "./_components/fleet-list";
 import { FleetRail } from "./_components/fleet-rail";
@@ -175,6 +174,23 @@ export default function AgentsPage(): ReactNode {
             which is a sentence about a *filter*, not about having no agents at
             all — the onboarding copy above already says that.
           */}
+          {/*
+            MAR-679 interim, absorbed by MAR-742 roadmap item 1. The decisions
+            log used to mount here twice over: first a full-width
+            `<FleetDecisions>` section, sometimes five screens of it, directly
+            under the fleet ("the fleet view is so cluttered now I can't even
+            see the fleet"); then, as the interim fix, a full-width
+            `<p class="fleet-decisions-note">` link — a surface you visit
+            deliberately (`/decisions`) rather than one stacked on top of the
+            fleet. Henrik's ruling on the design proposal's own open question
+            2: absorb it into the chief's chip row now rather than wait for
+            MAR-679's next slice, so `FleetList` carries `decisionsTotal`
+            straight through to `ChiefChat`'s decisions chip and nothing
+            mounts here any more. The count still outlives its subjects —
+            `decisionsTotal` is read off `display.data.decisions.total`
+            regardless of `agents.length`, the same "outside the agents-length
+            branch" reasoning this paragraph used to state for itself.
+          */}
           <FleetList
             agents={agents}
             chief={display.data.chief}
@@ -183,32 +199,8 @@ export default function AgentsPage(): ReactNode {
               setRefreshKey((value) => value + 1);
             }}
             onToggleFavourite={toggleFavourite}
+            decisionsTotal={display.data.decisions.total}
           />
-          {/*
-            MAR-679 interim. The decisions log used to mount here — a full-width
-            `<FleetDecisions>` section, sometimes five screens of it, sitting
-            directly under the fleet it describes. Henrik: *"the fleet view is
-            so cluttered now I can't even see the fleet."* This link is the
-            interim fix: a surface you visit deliberately (`/decisions`) rather
-            than one stacked on top of the thing people actually opened this
-            page for. The indicator-on-the-card, popups-on-interaction shape he
-            asked for is MAR-679's next slice; this only moves the log off this
-            page without losing the way to it — *unfindable is the same as
-            missing*.
-
-            Outside the agents-length branch, `<FleetDecisions>`'s own mount
-            was too: decisions outlive their subjects, so an emptied fleet with
-            history still needs a way to it.
-          */}
-          {display.data.decisions.total === 0 ? null : (
-            <p className="fleet-decisions-note">
-              <Link href="/decisions">
-                {display.data.decisions.total === 1
-                  ? "1 decision recorded — see the log"
-                  : `${String(display.data.decisions.total)} decisions recorded — see the log`}
-              </Link>
-            </p>
-          )}
         </>
       )}
       </div>
