@@ -140,6 +140,19 @@ export const LAB_TELEMETRY_CONTENTS: readonly string[] = [
 ];
 
 /**
+ * What LAB is, before anything about what DASH tells it (MAR-742).
+ *
+ * The tab this page sits under is hidden until somebody has configured a LAB
+ * address — `app/_components/settings-tabs.tsx` — so everybody who reaches
+ * this page arrived on purpose. What they are not owed is a page that assumes
+ * they already know what the word names. This is the one sentence that says
+ * so, ahead of `LAB_TELEMETRY_PURPOSE`, which answers what DASH sends it
+ * rather than what it is.
+ */
+export const LAB_TELEMETRY_INTRO =
+  "LAB is a separate program — usually on this same computer, since that is where it defaults to listening — that turns patterns from many DASH installs into ready-made recipes.";
+
+/**
  * The one sentence this feature is for, from ADR 0026 decision 1.
  *
  * On the page above the contents, because "what is this for" is the question
@@ -278,6 +291,7 @@ export function everyLabTelemetrySentence(): string[] {
       }),
     ),
     ...states.map((settings) => describeEndpointReach(settings.endpoint)),
+    LAB_TELEMETRY_INTRO,
     LAB_TELEMETRY_PURPOSE,
     ...LAB_TELEMETRY_CONTENTS,
     ...LAB_TELEMETRY_RECEIPT,

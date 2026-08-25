@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 
 import {
   LAB_TELEMETRY_CONTENTS,
+  LAB_TELEMETRY_INTRO,
   LAB_TELEMETRY_PURPOSE,
   LAB_TELEMETRY_RECEIPT,
   LAB_TELEMETRY_REVOKE,
@@ -140,6 +141,15 @@ export function ReportingSettings({
 
   return (
     <>
+      {/*
+        MAR-742. This tab is invisible in the strip until a LAB is configured
+        — `app/_components/settings-tabs.tsx` — so everyone who reaches this
+        page typed an address in themselves and is owed the plain answer to
+        "what is LAB" before anything else on it, `LAB_TELEMETRY_INTRO`'s
+        reason.
+      */}
+      <p className="wrap">{LAB_TELEMETRY_INTRO}</p>
+
       {/*
         The whole state in one row, `NotificationSettings`' shape and its
         reasons. Both halves come from `describeLabTelemetryStanding`, already

@@ -394,6 +394,21 @@ const dashShell = {
     send("fleet.default", { ...args }),
   assignFleet: (args: { provider: string; account_id: string; agent_id: string }) =>
     send("fleet.assign", { ...args }),
+  /**
+   * Re-read, re-check and re-deliver everything DASH holds (MAR-742).
+   *
+   * **It takes no arguments, and that is the point rather than an economy.**
+   * Every method above names a provider; page script that could name one here
+   * would be page script choosing which credentials get read out of the vault
+   * and posted to the runner. There is no argument, so there is no choice to
+   * make on this side — main acts on what DASH holds.
+   *
+   * A separate named method rather than a flag on `testFleet`, this object's
+   * standing reason: a reviewer counting the ways page script can cause the
+   * vault to be opened should find them by name, and this is the widest of
+   * them.
+   */
+  refreshConnections: () => send("fleet.refresh", {}),
 
   /**
    * The host actions (MAR-536/MAR-556), one named method each.
