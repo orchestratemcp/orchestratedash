@@ -519,6 +519,65 @@ export const COMMANDS = {
   },
 
   /*
+   * MAR-742 item 8, ADR 0029. When DASH should start this agent without being
+   * asked again.
+   *
+   * **Its own family beside `standing_answer.*` rather than a member of it**,
+   * and the two are worth separating out loud because they are the same
+   * sentence pointed at different things. A standing answer is what DASH should
+   * say when the *agent* asks a question. A schedule is what DASH should do when
+   * *nobody* asks anything. Folding them together would put "start a process at
+   * 03:00" behind a family whose whole catalogue entry promises it contacts
+   * nobody and changes nothing but a remembered reply.
+   *
+   * ## `effect` says the honest thing, which is not "contacts nobody"
+   *
+   * Setting a schedule contacts nobody *at the moment it is set*, exactly as
+   * `notify.connect`'s entry notes about storing an address. What it does is
+   * arrange for an agent to be started later, on this computer, with nobody
+   * watching — and that is what a person is being asked to confirm, so it is
+   * what the sentence says. The run itself is the ordinary `retry` the runner
+   * adjudicates; this command does not perform one.
+   *
+   * ## What crosses, and what cannot
+   *
+   * An agent id and `HH:MM`. There is no field for a command, a script, an
+   * argument, an environment variable or a URL, because a schedule names *when*
+   * and never *what* — what runs is the registration the runner already holds,
+   * unchanged. A family that could carry the second half would be a way to make
+   * DASH execute something of the caller's choosing on a timer, which is a
+   * different product.
+   *
+   * `at_local` is a wall-clock time on this machine and carries no timezone;
+   * ADR 0029 decision 9 says why. It is re-checked against `isLocalTime` in
+   * `lib/schedule/store.ts` before anything is written, so a value that got past
+   * this seam still cannot become a cadence.
+   */
+  "schedule.set": {
+    effect:
+      "Start this agent every day at the time you pick, on this computer, without asking again. Nothing is contacted now; the run happens later.",
+    payload_keys: ["agent_id", "at_local"],
+    required_keys: ["agent_id", "at_local"],
+    mutates: true,
+    irreversible: false,
+  },
+  /**
+   * `schedule.set`'s undo, and it is a real undo: the standing instruction is
+   * deleted and nothing starts on its own again.
+   *
+   * What it deliberately does **not** clear is the record of what the schedule
+   * already did. A person turning a cadence off because it kept failing is
+   * exactly the person who still wants to read why — see `clearAgentSchedule`.
+   */
+  "schedule.clear": {
+    effect: "Stop starting this agent on a schedule. Contacts nobody.",
+    payload_keys: ["agent_id"],
+    required_keys: ["agent_id"],
+    mutates: true,
+    irreversible: false,
+  },
+
+  /*
    * MAR-583. Which model an agent uses.
    *
    * **An eighth family, and it is one because the question it answers is one.**
@@ -1856,6 +1915,33 @@ export function isStandingAnswerCommandName(value: CommandName): value is Standi
 }
 
 /**
+ * When DASH should start an agent with nobody watching (MAR-742 item 8,
+ * ADR 0029).
+ *
+ * Its own map rather than a third member of `STANDING_ANSWER_ACTIONS`, whose own
+ * note already draws this line once: that map is about a *question the agent
+ * asked*, and this is about a time of day at which nothing will be asked at all.
+ * The catalogue entries carry the longer version.
+ *
+ * Two members and not three. There is no `schedule.runNow` here, and its absence
+ * is the design: Run now already exists, goes through `runAgentCommand`, and is
+ * the one place ADR 0016's spend allowance opens. A second door to the same act
+ * that happened to sit in this family would be a second place that decides what
+ * a run press means.
+ */
+export const SCHEDULE_ACTIONS = {
+  "schedule.set": "set",
+  "schedule.clear": "clear",
+} as const;
+
+export type ScheduleCommandName = keyof typeof SCHEDULE_ACTIONS;
+export type ScheduleAction = (typeof SCHEDULE_ACTIONS)[ScheduleCommandName];
+
+export function isScheduleCommandName(value: CommandName): value is ScheduleCommandName {
+  return Object.hasOwn(SCHEDULE_ACTIONS, value);
+}
+
+/**
  * An agent's folder, as edited from outside DASH (MAR-584).
  *
  * A seventh family with three members, and the reason it is a family rather
@@ -2215,6 +2301,7 @@ type UnroutedCommand = Exclude<
   | GlanceCommandName
   | IdentityCommandName
   | StandingAnswerCommandName
+  | ScheduleCommandName
   | FolderCommandName
   | ModelCommandName
   | NotifyCommandName
@@ -2547,6 +2634,13 @@ export function executeCommand(review: CommandReview): CommandResult {
     // remembered or forgotten that never touched the store, and the next run
     // would show the popup this feature exists to suppress.
     isStandingAnswerCommandName(review.command) ||
+    // MAR-742 item 8, ADR 0029. Writes a row through `node:sqlite`, and the
+    // consequence of succeeding without it is the worst in this list: a person
+    // would be shown a cadence their agent has, walk away, and come back to a
+    // machine that never started anything — with a settings page still saying it
+    // would. A schedule that quietly does not exist is the exact failure this
+    // feature was built to end.
+    isScheduleCommandName(review.command) ||
     // MAR-584. Two of the three read the folder off disk and the third opens a
     // window on it, none of which a sandboxed preload may do. `folder.check`
     // matters most here despite changing nothing: succeeding without looking
@@ -3162,6 +3256,29 @@ export interface DispatchContext {
       option_id?: string;
       option_label?: string;
     },
+  ): Promise<{ ok: boolean; refusal?: string }>;
+  /**
+   * Set — or clear — when DASH starts this agent on its own (MAR-742 item 8,
+   * ADR 0029).
+   *
+   * Injected for `standingAnswerAction`'s own reason immediately above: the real
+   * implementation reaches `node:sqlite`, and this module has to stay importable
+   * from a sandboxed preload.
+   *
+   * **The row is the whole of the write, and the runner is not contacted here.**
+   * That is deliberate rather than an omission: the schedule set is re-asserted
+   * to the runner on every evidence poll (`electron/agent-adapters.ts`), so this
+   * seam has nothing to push and no push to fail. The alternative — a
+   * `pushToRunner` beside this one, `notifyAction`'s shape — is the design ADR
+   * 0029 decision 2 refuses, because MAR-745 is what a push-on-change list looks
+   * like when it is one event short.
+   *
+   * `at_local` is read only on `set`; `reviewCommand`'s payload rules keep it
+   * from crossing on `clear`.
+   */
+  scheduleAction(
+    action: ScheduleAction,
+    target: { agent_id: string; at_local?: string },
   ): Promise<{ ok: boolean; refusal?: string }>;
   /**
    * Choose a model, set one step's level, or ask what models there are (MAR-583).
@@ -4027,6 +4144,25 @@ export async function dispatchCommand(
         review.payload["option_id"] === undefined ? undefined : String(review.payload["option_id"]),
       option_label:
         review.payload["option_label"] === undefined ? undefined : String(review.payload["option_label"]),
+    });
+    return { ok: result.ok, request_id: review.audit.request_id, reason: result.refusal };
+  }
+
+  if (isScheduleCommandName(review.command)) {
+    /*
+     * MAR-742 item 8, ADR 0029. `at_local` is absent on `clear` — the payload
+     * rules require it only on the member that names it, the same division the
+     * two branches above draw.
+     *
+     * Copied explicitly rather than spread, `toAgentCommandInput`'s rule: a
+     * spread would mean the day somebody adds a payload key it silently becomes
+     * part of what main acts on, and the key somebody would want to add to this
+     * particular family is one that says *what* to run.
+     */
+    const result = await context.scheduleAction(SCHEDULE_ACTIONS[review.command], {
+      agent_id: String(review.payload["agent_id"]),
+      at_local:
+        review.payload["at_local"] === undefined ? undefined : String(review.payload["at_local"]),
     });
     return { ok: result.ok, request_id: review.audit.request_id, reason: result.refusal };
   }

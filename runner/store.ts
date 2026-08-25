@@ -252,6 +252,43 @@ const MIGRATIONS: readonly string[] = [
   `
   ALTER TABLE chief_turn_spool ADD COLUMN evidence_json TEXT;
   `,
+
+  /*
+   * What the scheduler did while DASH was closed (MAR-742 item 8, ADR 0029).
+   *
+   * A queue, not a home — `chief_turn_spool`'s whole argument above, and this
+   * table inherits every sentence of it. `agent_schedule_runs` in `dash.sqlite`
+   * is where a settled window lives; the runner cannot write that file, so it
+   * writes here and DASH drains it on its next poll. A drained row is deleted.
+   *
+   * ## Why this exists at all, when the run itself already travels
+   *
+   * A scheduled run reaches DASH's store on its own, as ordinary telemetry,
+   * through the drain that has always been there. What telemetry cannot carry is
+   * **that a schedule caused it**: the agent mints the run id and has never
+   * heard of the schedule, and the runner is the only party that knows both
+   * halves. It is also the only party that can report the window where *nothing*
+   * ran, which has no telemetry to travel on at all and is the row a person most
+   * needs when they ask why their agent has been quiet since Tuesday.
+   *
+   * ## What is deliberately absent
+   *
+   * No run id, no artifact, no agent output, no payload. The row says which
+   * agent, which window, when it was settled, what happened, and one sentence.
+   * Everything else about the run is already somewhere DASH can read it.
+   */
+  `
+  CREATE TABLE schedule_spool (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent      TEXT NOT NULL,
+    -- The scheduled moment. Not when anything happened.
+    due_at     TEXT NOT NULL,
+    settled_at TEXT NOT NULL,
+    -- 'ran' | 'missed' | 'refused'.
+    outcome    TEXT NOT NULL,
+    detail     TEXT NOT NULL DEFAULT ''
+  );
+  `,
 ];
 
 export interface RunnerStore {

@@ -53,7 +53,7 @@ const opened: Array<{ dataDir: string; closeDb: () => void }> = [];
  * they assert that a re-open, or a migration of an old store, lands at the head,
  * and following the head is the whole content of that claim.
  */
-const HEAD_VERSION = 33;
+const HEAD_VERSION = 34;
 
 async function freshStore(seed?: (dataDir: string) => void): Promise<{
   dataDir: string;
@@ -191,6 +191,18 @@ describe("schema", () => {
     // in `lib/db.ts` argues why, and the short version is that only one of the
     // two claims can go stale.
     //
+    // 34 is MAR-742 item 8's `agent_schedules` and `agent_schedule_runs`
+    // (ADR 0029) — when a person asked for an agent to be started without them,
+    // and what became of each time it came round. Appended on the standing
+    // terms: an installed store that has recorded 0 to 33 runs exactly one
+    // more.
+    //
+    // **That step was assigned as "index 32, producing user_version 33" and
+    // that slot was already MAR-744's.** Which is the collision the paragraph
+    // below predicts, caught exactly where it says it will be caught, by the
+    // pin rather than by an installed store silently skipping somebody's step.
+    // The index that shipped is the end of the list, as it has been every time.
+    //
     // **These indexes were chosen by worker sessions, which AGENTS.md says is
     // not how serial-numbered resources get assigned.** The end of the list is
     // the only position that leaves an already-migrated installed store alone,
@@ -198,7 +210,7 @@ describe("schema", () => {
     // exactly the blocking gate the note at 25 describes. Confirm the number at
     // the merge rather than assuming it survived.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(33);
+    expect(version.user_version).toBe(34);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -231,6 +243,13 @@ describe("schema", () => {
     expect(tables).toContain("agent_looks");
     // MAR-640. The reader's own favourite flag, one row per agent.
     expect(tables).toContain("agent_prefs");
+    // MAR-742 item 8, ADR 0029. Two, and the split is the point: the standing
+    // instruction is one row per agent and survives being edited, while what
+    // became of each window is a bounded history that survives the instruction
+    // being turned off. Neither has a column that could say *what* to run —
+    // a schedule names when, and the runner's own registration names what.
+    expect(tables).toContain("agent_schedules");
+    expect(tables).toContain("agent_schedule_runs");
     // MAR-584, ADR 0010. What DASH sent to a server, and never what is running
     // there — the ADR bounds the columns, and the migration's own note says why
     // there is no `running` column for a later feature to reach for.

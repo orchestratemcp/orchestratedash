@@ -205,6 +205,7 @@ import {
   registerCredentialChannels,
 } from "./credential-prompt";
 import { performFolderAction } from "./folder-update";
+import { performScheduleAction } from "./schedule-settings";
 import {
   buildChiefBridgeConfiguration,
   ingestChiefDrain,
@@ -1037,6 +1038,13 @@ export function registerCommandChannel(
       // plain `node:sqlite` write that main.ts is the trusted side for.
       standingAnswerAction: (action, target) =>
         Promise.resolve(performStandingAnswerAction(action, target)),
+      // MAR-742 item 8, ADR 0029. `performStandingAnswerAction`'s neighbour and
+      // the same reason again: a plain `node:sqlite` write. The runner is not
+      // contacted from here — `electron/agent-adapters.ts` re-asserts the whole
+      // set on every evidence poll, which is decision 2 and why this line has no
+      // `pushToRunner` beside it.
+      scheduleAction: (action, target) =>
+        Promise.resolve(performScheduleAction(action, target)),
       // MAR-584. The one route in DASH that accepts a document somebody else's
       // editor wrote. Every gate is inside `electron/folder-update.ts`, beside
       // the reads and the write it guards, for `refreshSampleAgent`'s reason.

@@ -913,6 +913,23 @@ const dashShell = {
   clearStandingAnswer: (args: { agent_id: string; question_key: string }) =>
     send("standing_answer.clear", { ...args }),
 
+  /**
+   * Start this agent every day at a time, without asking again (MAR-742 item 8,
+   * ADR 0029).
+   *
+   * `at_local` is `HH:MM` on this computer's own clock and carries no timezone.
+   * Nothing here checks it — this bridge names commands and validates none of
+   * them, `renameAgent`'s division between "a string arrived" and "a value DASH
+   * will accept" — and it is checked twice further down: in
+   * `lib/schedule/store.ts` before a row is written, and again in
+   * `runner/server.ts` before the runner will fire on it.
+   */
+  setAgentSchedule: (args: { agent_id: string; at_local: string }) =>
+    send("schedule.set", { ...args }),
+
+  /** `setAgentSchedule`'s undo. The record of what it already did is kept. */
+  clearAgentSchedule: (args: { agent_id: string }) => send("schedule.clear", { ...args }),
+
   approve: (args: AgentCommandArgs) => send("agent.approve", fields(args, APPROVAL_FIELDS)),
   reject: (args: AgentCommandArgs) => send("agent.reject", fields(args, APPROVAL_FIELDS)),
   choose: (args: AgentCommandArgs) => send("agent.choose", fields(args, CHOICE_FIELDS)),

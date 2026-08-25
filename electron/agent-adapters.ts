@@ -42,6 +42,12 @@ import {
 } from "../lib/agent-dom/standing-answers";
 import { fetchAgentDomState, httpAdapter, type ControlChannel } from "../lib/agent-dom/transport";
 import { isManifestV2 } from "../lib/contracts";
+import type { ScheduleSettlement } from "../lib/schedule/plan";
+import {
+  newestScheduleWindows,
+  readAgentSchedules,
+  recordScheduleRuns,
+} from "../lib/schedule/store";
 import { isSecureStoreError, type SecureStore } from "../lib/secure-store";
 import { listAgentNames, readAgentManifest, recordEvidencePull } from "../lib/store";
 import { runnerFetch, type RunnerHandle } from "./runner-process";
@@ -177,6 +183,83 @@ export function createAgentChannels(
     }
   }
 
+  /**
+   * The schedules, in both directions, on every tick (MAR-742 item 8, ADR 0029).
+   *
+   * ## Why this rides the poll rather than a push on the settings change
+   *
+   * MAR-588 and ADR 0028 both push their configuration when a person changes it,
+   * and MAR-745 is the bug that shape produces: the chief's snapshot was pushed
+   * at bridge-setup time and on nothing else, so a runner went on answering from
+   * a fleet that had stopped being real. The repair was to enumerate *every*
+   * event that must also push — a closed list somebody has to keep widening
+   * correctly, forever.
+   *
+   * A total re-assertion on the tick has no such list. A push that failed is
+   * retried in five seconds; a runner adopted from a previous launch is
+   * corrected in five seconds; a schedule saved while the socket was briefly
+   * wedged lands in five seconds. It costs a few hundred bytes on a local socket
+   * twelve times a minute, and it removes a whole class of "the runner is still
+   * holding what it was told in March".
+   *
+   * ## Why the drain comes first
+   *
+   * `electron/main.ts`'s note on the chief, and it is load-bearing for the same
+   * reason: the push replaces what the runner holds, including the cursor it
+   * resumes from, and pushing before draining would hand it a `since` computed
+   * without the rows still sitting in its own spool. Emptying the queue before
+   * refilling the process is the ordering that stays true.
+   *
+   * Neither half is allowed to throw. A poll that stops because a schedule could
+   * not be pushed is a poll that stops reporting every agent's state.
+   */
+  async function syncSchedules(): Promise<void> {
+    if (runner === null) {
+      return;
+    }
+
+    try {
+      const response = await runnerFetch(runner)(`${runner.origin}/schedules/drain`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${runner.token}` },
+        signal: AbortSignal.timeout(3_000),
+      });
+      if (response.ok) {
+        const body = (await response.json()) as { settled?: ScheduleSettlement[] };
+        const written = recordScheduleRuns(body.settled ?? []);
+        if (written > 0) {
+          // Said once per drain and only when something actually arrived. These
+          // are the runs nobody was there for, and a line in the log is the
+          // first place somebody debugging "did it run overnight" will look.
+          log(
+            `[dash-shell] took ${String(written)} scheduled window(s) the runner settled while DASH was closed`,
+          );
+        }
+      }
+    } catch {
+      // A runner that stopped answering is not an error to shout about on every
+      // tick — `refresh`'s own reason. The rows stay in its spool; a drain that
+      // failed loses nothing because nothing was deleted.
+    }
+
+    try {
+      await runnerFetch(runner)(`${runner.origin}/schedules`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${runner.token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          schedules: readAgentSchedules(),
+          since: newestScheduleWindows(),
+        }),
+        signal: AbortSignal.timeout(3_000),
+      });
+    } catch {
+      // Same, and with less at stake: the next tick pushes the same thing again.
+    }
+  }
+
   /** Synchronous channel resolution, for the command path. */
   function channelFor(agentId: string): ControlChannel | null {
     if (runner !== null && hosted.has(agentId)) {
@@ -267,6 +350,11 @@ export function createAgentChannels(
     async poll(): Promise<void> {
       await refresh();
       await pullLocalEvidence();
+      // MAR-742 item 8, ADR 0029. Beside the evidence pull because it is the
+      // same kind of act — one pass over the runner's own routes — and after it
+      // because a scheduled run's telemetry should be in the store before the
+      // row saying a schedule caused it.
+      await syncSchedules();
 
       for (const agentId of listAgentNames()) {
         // Warm the vault lookup so `channelFor` can stay synchronous on the

@@ -536,6 +536,17 @@ export function forgetAgent(
     // agent that was never re-added, or silently answer the same-worded
     // question of an unrelated agent added under the same name later.
     database.prepare("DELETE FROM standing_answers WHERE agent = ?").run(name);
+    // MAR-742 item 8, ADR 0029. Beside the standing answers, for a sharpened
+    // version of their reason: a schedule that outlived its agent is not merely
+    // a stale row, it is a *standing instruction* — DASH would go on pushing it
+    // to the runner every five seconds, and an agent later added under the same
+    // name would inherit a cadence nobody set for it.
+    //
+    // The history goes with it. `clearAgentSchedule` deliberately keeps those
+    // rows, because turning a cadence off is not the same act as removing the
+    // thing they are a record of. This is that other act.
+    database.prepare("DELETE FROM agent_schedules WHERE agent = ?").run(name);
+    database.prepare("DELETE FROM agent_schedule_runs WHERE agent = ?").run(name);
     // MAR-458. A receipt and a call history for an agent DASH no longer knows
     // are orphans: nothing renders them, nothing can act on them, and they name
     // an account.

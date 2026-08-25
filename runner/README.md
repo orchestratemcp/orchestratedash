@@ -20,6 +20,7 @@ The process that actually holds a running agent.
 | `state.ts` | Builds the Agent DOM state document. Pure. |
 | `store.ts` | The runner's own SQLite: nonces, idempotency, approvals, audit. |
 | `store-damage.ts` | What to do when that database cannot be read: classify, refuse, set aside. |
+| `schedule.ts` | The scheduler (ADR 0029). Ticks, fires ADR 0022's two acts, spools what it did. |
 
 ## What this is, in one paragraph
 
@@ -370,6 +371,13 @@ Named here rather than discovered later:
    means "knows it died and says so", not "brings it back" — a restart loop
    around a crashing agent that holds provider credentials is a decision that
    deserves its own issue.
+
+   **A schedule is not a restart policy** (MAR-742 item 8, ADR 0029), and the
+   distinction is worth stating out loud now that `runner/schedule.ts` does
+   start agents. It starts one at a time a person named, once per window,
+   whatever that agent did last — it never watches for an exit and never reacts
+   to one. An agent that crashes at 08:01 stays crashed until 08:00 tomorrow,
+   which is the sentence above still holding rather than an exception to it.
 4. **No retention.** Nothing prunes `command_nonces` or `command_results`, in
    the runner or in DASH. Deferred by the contract; still deferred.
 5. **The human is not independently authenticated.** The runner authenticates

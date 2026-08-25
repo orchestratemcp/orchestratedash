@@ -50,6 +50,7 @@ import { DASH_LOCAL_PRINCIPAL } from "./execute";
 import { hostBrokerFor } from "./host-broker";
 import { RunnerChief } from "./chief";
 import { DiscordNotifier } from "./notify";
+import { RunnerSchedule } from "./schedule";
 import { createRunnerServer } from "./server";
 import { RUNNER_BUILD_ID, RUNNER_PROTOCOL_VERSION } from "./identity";
 import { channelSecretFingerprint, clearSessionKey, writeSessionKey } from "./session-key";
@@ -271,6 +272,32 @@ async function main(): Promise<void> {
   );
 
   /**
+   * The scheduler (MAR-742 item 8, ADR 0029).
+   *
+   * Constructed unconditionally and idle for the notifier's and the chief's
+   * reason: with nothing pushed it holds an empty set, fires nothing, and there
+   * is no branch anywhere else in this file for "has anybody set a schedule".
+   * DASH pushes the whole set on every evidence poll and takes it away by
+   * pushing one without it.
+   *
+   * After the supervisor because it takes it, and that ordering is the feature:
+   * a scheduled fire is `supervisor.start` followed by a `retry` through
+   * `executeCommand`, which is ADR 0022's two acts and no new verb.
+   *
+   * `database` is a **function** rather than the handle, `RunnerChief`'s reason
+   * verbatim: a damaged store can be retired and re-opened under a running
+   * runner, and a scheduler holding the old handle would spool into a database
+   * the runner had just abandoned.
+   */
+  const schedule = new RunnerSchedule({
+    database: () => store?.database ?? null,
+    supervisor,
+    log: (line) => {
+      console.warn(line);
+    },
+  });
+
+  /**
    * Attach the workspace to whatever store is currently open (MAR-506).
    *
    * A function rather than one expression because it happens twice: at startup,
@@ -308,6 +335,13 @@ async function main(): Promise<void> {
     // left open would go on receiving messages the chief can no longer answer,
     // and the person would be talking to a process that is on its way out.
     chief.stop();
+    /*
+     * Before the store closes, beside the other two, and for a reason of its
+     * own: a timer that fired during shutdown would start an agent the line
+     * above has just stopped, and the person would be left with a child process
+     * the runner that spawned it is no longer around to supervise.
+     */
+    schedule.stop();
     const finish = (): never => {
       store?.close();
       releaseEndpoint(endpoint);
@@ -336,6 +370,14 @@ async function main(): Promise<void> {
       chief.configure(configuration);
     },
     drainChief: () => chief.drain(),
+    // MAR-742 item 8, ADR 0029. The standing instructions, handed over on the
+    // same authenticated channel as the notifier's address and the chief's
+    // snapshot — and on a faster cadence, because unlike those two this one is
+    // re-asserted whole on every evidence poll rather than pushed on a change.
+    configureSchedules: (configuration) => {
+      schedule.configure(configuration);
+    },
+    drainSchedules: () => schedule.drain(),
     // MAR-745. The read side of `configureChief`, so DASH's settings row can
     // ask what the runner actually has rather than trusting that a push landed.
     describeChief: () => chief.describe(),
@@ -459,6 +501,20 @@ async function main(): Promise<void> {
   });
 
   await listenOnEndpoint(server, endpoint);
+
+  /*
+   * MAR-742 item 8, ADR 0029. The loop starts once the endpoint is up.
+   *
+   * After listening, so that a runner which cannot be reached is also a runner
+   * that has not yet started anything: the first thing DASH does on this channel
+   * is push the current set, and a scheduler that had already ticked would have
+   * ticked against an empty one — which for a machine that has just woken up is
+   * the difference between "your 08:00 run was missed" and silence.
+   *
+   * It fires nothing until that push arrives. The set is empty and
+   * `decideSchedule` reads an empty set as nothing to do.
+   */
+  schedule.start();
 
   writeFileSync(
     endpointFilePath(dataDir),

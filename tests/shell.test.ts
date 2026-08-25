@@ -24,6 +24,7 @@ import type {
   NotifyAction,
   OpenAction,
   SampleAction,
+  ScheduleAction,
   StandingAnswerAction,
   WorkspaceAction,
 } from "../lib/shell/ipc";
@@ -215,6 +216,16 @@ describe("the audited command chokepoint", () => {
       // words. Contacts nobody, like every member of the family beside it.
       "standing_answer.set",
       "standing_answer.clear",
+      // MAR-742 item 8, ADR 0029. Its own family beside the one above, and the
+      // line between them is that a standing answer says what DASH should reply
+      // when the *agent* asks, while a schedule says what DASH should do when
+      // *nobody* asks. Note the payloads: an agent id and `HH:MM`, and no field
+      // for a command, an argument, a path or a URL — a schedule names *when*
+      // and never *what*, so page script cannot use this family to make DASH
+      // execute something of its own choosing on a timer. What runs is the
+      // registration the runner already holds.
+      "schedule.set",
+      "schedule.clear",
       // MAR-584. A seventh family, and the only route in DASH that accepts a
       // document somebody else's editor wrote. Three members and the split
       // between the first two is the point: comparing is a read and accepting
@@ -756,6 +767,17 @@ describe("dispatch", () => {
       action: ChiefDiscordAction;
       target: { channel_id?: string; allowed_user_id?: string; enabled?: boolean };
     }> = [];
+    // MAR-742 item 8, ADR 0029. Recorded, not performed, for `standingAnswers`'
+    // reason: the real one writes a row through `node:sqlite`, which this
+    // process has no store for. Whether a window is due is
+    // `tests/schedule-plan.test.ts` and whether the row is written correctly is
+    // `tests/schedule-store.test.ts`; what is under test here is that the
+    // command is reviewed, audited and routed to *this* seam rather than to
+    // another one.
+    const schedules: Array<{
+      action: ScheduleAction;
+      target: { agent_id: string; at_local?: string };
+    }> = [];
     // MAR-742. Recorded, not performed, for every reason above at once: the real
     // implementation opens the vault once per connection, reaches each of their
     // providers, and posts a configuration carrying those keys to the runner.
@@ -765,6 +787,11 @@ describe("dispatch", () => {
     const refreshes: Array<{ at: string }> = [];
     return {
       chiefDiscord,
+      schedules,
+      scheduleAction: (action: ScheduleAction, target: { agent_id: string; at_local?: string }) => {
+        schedules.push({ action, target });
+        return Promise.resolve({ ok: true });
+      },
       refreshes,
       audited,
       inputs,

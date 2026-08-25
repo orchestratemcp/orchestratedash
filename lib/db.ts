@@ -1848,6 +1848,84 @@ const MIGRATIONS: readonly Migration[] = [
   (database: DatabaseSync): void => {
     addColumn(database, "chief_messages", "evidence_json", "TEXT");
   },
+
+  // MAR-742 item 8, ADR 0029: when a person asked for this agent to be started
+  // without them, and what became of each time it came round.
+  //
+  // ## `agent_schedules`: the standing instruction, and its one home
+  //
+  // One row per agent — the primary key is the agent id, and that is a decision
+  // rather than a convenience. Two schedules on one agent is a thing to build
+  // when somebody asks for it; a table shaped to allow it now would be an
+  // invitation to design a list UI for a feature whose novice default is *"every
+  // day at eight"*. `chief_discord.allowed_user_id` is a column and not a table
+  // for the same reason and says so.
+  //
+  // **The runner never reads this.** ADR 0029 decision 1: DASH pushes a copy
+  // over the authenticated local channel and the runner holds it in memory, so
+  // `dash.sqlite` keeps the single writer ADR 0027 was written to protect. A
+  // `schedules/` directory beside `agents/` would have given the runner its own
+  // durable copy and was refused for making two homes for one fact — see the
+  // ADR.
+  //
+  // `at_local` is `HH:MM` in this machine's own local time and there is
+  // deliberately **no timezone column**. The schedule fires on this computer and
+  // nowhere else; a stored zone would be a promise about portability that
+  // nothing in DASH keeps.
+  //
+  // `kind` is `'daily'` for every row this build can write. It exists so that
+  // the weekly and cron shapes ADR 0029 decision 9 declines are a value and not
+  // a migration, which is `broker_audit.decided_on`'s own argument for carrying
+  // `'host'` before anything writes one.
+  //
+  // ## `agent_schedule_runs`: what became of each window
+  //
+  // Written only by draining the runner's spool — never by the window, which
+  // has no way to know. A run that happened at 03:00 reaches the store as
+  // ordinary telemetry the next time DASH opens; what telemetry cannot carry is
+  // *that a schedule caused it*, because the agent minting the run id has never
+  // heard of the schedule. This is where that fact travels.
+  //
+  // `due_at` is the scheduled moment and `settled_at` is when the runner decided
+  // about it, and they are two columns rather than one because for a missed
+  // window they are hours apart — which is the whole content of the row. ADR
+  // 0029 decision 7: the runner cannot record a thing at a moment it did not
+  // exist for, so a missed window is stamped when the machine came back and the
+  // pair says so.
+  //
+  // `outcome` is `'ran' | 'missed' | 'refused'`. Failures sit beside successes
+  // for `lab_telemetry_sends`' reason: somebody checking whether their agent has
+  // been running is at least as interested in the times it did not.
+  `
+  CREATE TABLE IF NOT EXISTS agent_schedules (
+    agent      TEXT PRIMARY KEY,
+    -- Off until a person turns it on, and off is the absence of a row as well
+    -- as a 0 here: notify_discord's rule, for its reason. Nothing about this
+    -- feature happens to an agent nobody has asked it for.
+    enabled    INTEGER NOT NULL DEFAULT 0,
+    -- 'daily' for everything this build writes. See the note above.
+    kind       TEXT NOT NULL DEFAULT 'daily',
+    -- 'HH:MM', 24-hour, this machine's local time. Never a timezone.
+    at_local   TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT ''
+  );
+
+  CREATE TABLE IF NOT EXISTS agent_schedule_runs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent      TEXT NOT NULL,
+    -- The scheduled moment, ISO 8601. Not the moment anything happened.
+    due_at     TEXT NOT NULL,
+    -- When the runner decided about it. Hours after due_at for a missed window.
+    settled_at TEXT NOT NULL,
+    -- 'ran' | 'missed' | 'refused'.
+    outcome    TEXT NOT NULL,
+    -- One sentence, the runner's own words. Never a path and never a payload.
+    detail     TEXT NOT NULL DEFAULT ''
+  );
+
+  CREATE INDEX IF NOT EXISTS agent_schedule_runs_by_agent
+    ON agent_schedule_runs (agent, due_at DESC);
+  `,
 ];
 
 /**
