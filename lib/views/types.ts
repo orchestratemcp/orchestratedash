@@ -1730,6 +1730,7 @@ export interface StandingAnswerView {
   question_key: string;
   question_label: string;
   option_label: string;
+  /** "25 August 2026" (MAR-793) — `plainDay` of the row's own ISO instant, never the instant itself. */
   chosen_at: string;
 }
 

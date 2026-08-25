@@ -3021,16 +3021,22 @@ a.plain:hover {
 }
 
 /*
- * One row per agent: character, name and purpose, then its own standing.
+ * MAR-792. One row per agent: name, then its own standing — two children,
+ * not three. This used to declare a third `auto` column for a leading
+ * character glyph `fleet-connector.tsx` has never rendered; with only the
+ * name and the chip to place, grid auto-placement filled the *first* two
+ * tracks, so the chip landed in the stretchy `minmax(0, 1fr)` one meant for
+ * the name and stretched the full width of a 1280px card instead of sitting
+ * snug against it.
  *
- * The chip is last and does not shrink, so a long purpose sentence pushes the
- * text and never the answer. `minmax(0, 1fr)` on the middle column is what
- * actually lets it wrap — `1fr` alone floors at min-content and a long unbroken
- * word would push the chip off the tile.
+ * The chip is last and does not shrink, so a long name pushes the text and
+ * never the answer. `minmax(0, 1fr)` on the name column is what actually lets
+ * it wrap — `1fr` alone floors at min-content and a long unbroken word would
+ * push the chip off the tile.
  */
 .connector-agent {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-3);
   align-items: center;
 }
@@ -3038,25 +3044,16 @@ a.plain:hover {
 /*
  * At narrow widths the standing moves under the text instead of beside it.
  *
- * Found by photographing 375px: three columns left the middle one about ten
- * characters wide, so "Read meeting requests and save reply drafts" ran down
- * eight lines next to a chip that had the room. The breakpoint is the `560px`
- * the density control already uses, so the page has one narrow width rather
- * than two.
- *
- * The chip is placed rather than left to flow: with two tracks it would
- * otherwise land under the character, in the column that exists to hold a 50px
- * sprite.
+ * Found by photographing 375px: two columns left the name about ten
+ * characters wide next to a chip that had the room. The breakpoint is the
+ * `560px` the density control already uses, so the page has one narrow width
+ * rather than two. One column, both children stacked in source order — no
+ * placement needed once there is nothing beside the name to place against.
  */
 @media (max-width: 560px) {
   .connector-agent {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     align-items: start;
-  }
-
-  .connector-agent > .chip {
-    grid-column: 2;
-    justify-self: start;
   }
 }
 
@@ -5679,8 +5676,21 @@ button:disabled {
 .model-picker {
   display: grid;
   gap: var(--space-2);
-  /* Capped so a dropdown of model names does not stretch the full width of a
-     1280px window; the same cap the folder note takes for its caption. */
+}
+
+/*
+ * MAR-791. The cap moved here, off `.model-picker` itself, so it only reaches
+ * the dropdowns it was written for. `.model-picker` gained a nested section
+ * after this rule was written — `.level-models`, MAR-654's per-level rows,
+ * grid-child of `.model-default`'s picker — and a `max-width` on the
+ * container is a `max-width` on everything inside it: the level rows' own
+ * prose declares `max-width: 60ch` for exactly this text, but a containing
+ * block narrower than that leaves 60ch nothing to reach. The cap belongs on
+ * the controls it was measured against, not on their container.
+ */
+.model-picker > .field {
+  /* Same cap the folder note takes for its caption; a dropdown of model
+     names should not stretch the full width of a 1280px window. */
   max-width: 46ch;
 }
 
